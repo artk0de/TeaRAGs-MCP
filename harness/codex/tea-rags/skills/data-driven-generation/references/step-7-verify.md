@@ -1,6 +1,48 @@
 # Step 7: VERIFY — data-driven-generation
 
-Loaded by `SKILL.md` Step 7.
+Loaded by `SKILL.md` Step 7 and by wrappers that run its gate.
+
+## Step 7 answer block
+
+Every Step 7 answer — real run, plan-only, supplied findings, "tests green,
+finalize", "can I commit?" — is these lines, in this order, as the steps of the
+answer. Only definition of Step 7 output; checks 1–4 below say how to fill it.
+
+```
+RISK <symbol> <chunk.<field>.label> → defensive call: <guard>; pinned by <test> | UNPINNED
+N-TH-WAY find_similar(positiveCode = generated code): <near-duplicate module → Step 4> | none
+PINS tests-at-risk + 6a pins: green                                   (MODIFY)
+INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non-preExisting finding)
+REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged      (per preExisting, no remedy)
+GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
+RE-REVIEW same review_changes + targeted tests: target gone, no new finding
+GATE review_changes: introduced=0, partial=false
+```
+
+- One `RISK` line per checked symbol (≤ 5). `N-TH-WAY` always printed.
+- First `GATE` line = the review held NOW, printed even at zero findings. It is
+  never replaced by the closing line: partial review (`truncated` /
+  `built: false` / `scopeSkippedFiles`) → `partial=true` here, then `files`
+  batches as the repair, then the closing line.
+- `INTRODUCED` operation = concrete: the `remedy` spelled out (`retargetImport`
+  → "in `<source>` import `<names>` from `<to>` instead of `<from>`"), else the
+  repair file's `## No remedy` step.
+- `RE-REVIEW` + closing `GATE` = the re-run every repair or batch ends with; a
+  plan prints the closing line as the result required to commit, followed by its
+  fallback:
+  `else after round 2: ESCALATE <family>: <metric> <before> → <after> vs <threshold>, edge <src> → <dst>`
+  (hubLike: efferent count vs cut, the new import) + ask the user, no commit.
+- Nothing to repair and not partial → `RE-REVIEW` + closing line dropped; the
+  first `GATE` line is final.
+- Accepted false positive →
+  `FALSE-POSITIVE <family> <edge> — <counter-evidence> — issue <id>` in place of
+  its `INTRODUCED` line, not counted.
+- Codegraph off → gate lines become
+  `GATE review_changes: architecture not judged (codegraph off)`.
+- Paraphrase ("gate is clean", "report the updated result", "re-run the gate") =
+  no line. **No gate line = task not done.**
+
+## Checks
 
 No per-identifier existence sweep — specs and the type-checker catch a
 hallucinated name; the sweep only spends tokens. Verify what they miss:
@@ -55,31 +97,14 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      and every `change.nonLocal` entry (= `change.introducedCount`) repaired per
      `repair/<family>.md`, or accepted false positive with QUOTED evidence
      (detector flag / cited rule) + filed detector bead; (ii) verdict not
-     PARTIAL — any detector row `built: false` or `truncated` (envelope or
-     detector row) = PARTIAL ≠ pass → re-run with `files: [...]` batches until
-     every finding is listed; (iii) triage table must-fix rows repaired.
+     PARTIAL — any detector row `built: false`, `truncated` (envelope or
+     detector row) or `scopeSkippedFiles` = PARTIAL ≠ pass, even at zero
+     findings → re-run with `files: [...]` batches until every changed file is
+     judged; (iii) triage table must-fix rows repaired.
    - `preExisting: true` = not yours: cheap repair optional (triage table),
-     never blocks gate.
-   - **Gate line** — ALWAYS printed as the literal line, never prose; final
-     report quotes the last run verbatim:
-     `GATE review_changes: introduced=<n>, partial=<true|false>` (`n` =
-     introduced left unrepaired and not accepted; `preExisting: true` excluded,
-     reported apart) + one `FALSE-POSITIVE …` line per accepted entry. For a
-     supplied finding, report the concrete repair action and verification
-     output, not only what you would do. A finding with `preExisting` absent
-     counts as introduced; a `preExisting: true` finding is excluded from
-     `introduced`. A repaired finding → copy BOTH lines into the answer
-     literally, before-repair count then after-re-review count ("report the
-     updated gate result" does not count). Retargeted new leak:
-     `GATE review_changes: introduced=1, partial=false`
-     `GATE review_changes: introduced=0, partial=false` Keep any pre-existing,
-     remedy-free finding report-only. Count not supplied → run the review, never
-     infer it. Plan-only: count known → the number (a supplied finding you
-     repaired → `introduced=0`); unknown → keep `<n>` / `<true|false>` as
-     written — never `[planned; not run]`. Pass = `introduced=0, partial=false`.
-     Codegraph off →
-     `GATE review_changes: architecture not judged (codegraph off)`. **No gate
-     line = task not done.**
+     never blocks gate, never counted in `introduced`.
+   - Output: the answer block above. Count not supplied → run the review, never
+     infer it; plan-only with unknown count → keep `<n>` as written.
 
 ### Fix-at-write loop
 
@@ -170,9 +195,14 @@ judged", never a clean pass.
   itself (`excludedFlapCount`).
 
 **Repair file:** per family with a must-fix or cheap finding, load exactly
-`<plugin root>/repair/<family>.md` (incompleteChange → `silentCoupling.md`,
-cohesion → `splitCandidates.md`). ONLY families that have a finding — never
-preload the directory.
+`<plugin root>/repair/<family>.md` (plugin root = folder holding `skills/`).
+Family = DETECTOR name on the finding, never the section name: files
+`leakingAbstraction` `hubLike` `cycles` `stableDependencies` `layeringBackEdge`
+`mainSequence` `facadeContract` `silentCoupling` `splitCandidates` (`.md`);
+incompleteChange → `silentCoupling.md`, cohesion → `splitCandidates.md`;
+`repair/architecture.md` / `repair/incompleteChange.md` do NOT exist; naming /
+norms → no repair file. Finding given in task context = present → open its file
+now. ONLY families that have a finding — never preload the directory.
 
 **Round** (≤ 2):
 
@@ -188,9 +218,10 @@ preload the directory.
    is the next round. Never keep the round and repair its new finding on top;
    never revert only part of it.
 4. Must-fix left after round 2 → STOP, escalate: ask the user (subagent → hand
-   back to orchestrator) with the finding, what was tried, why reverted;
-   options: fix this way / accept with a reason / bead. No commit without the
-   answer — never commit around an introduced finding.
+   back to orchestrator) with the `ESCALATE` line (metric before/after,
+   threshold, diff edge that crossed it), what was tried, why reverted; options:
+   fix this way / accept with a reason / bead. No commit without the answer —
+   never commit around an introduced finding.
 
 **Co-change partner verdict** (incompleteChange / `silentCoupling`): inspect
 each untouched partner (`find_symbol` outline/body — reuse it if already in
@@ -203,9 +234,9 @@ fail → edit it or ask. Partner is a version manifest
 `silentCoupling.md` (detector drops manifests; the bump follows the versioning
 rule) — one line, no coupling edit.
 
-**Report:** gate line first, then per class — fixed (remedy / procedure),
+**Report:** the answer block, then per class — fixed (remedy / procedure),
 accepted (evidence), false positive (counter-evidence + issue), report-only
-(line + bead suggestion), families not judged / partial.
+(bead suggestion), families not judged / partial.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.

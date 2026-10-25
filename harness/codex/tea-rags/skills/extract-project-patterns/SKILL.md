@@ -1,15 +1,22 @@
 ---
 name: extract-project-patterns
 description:
-  "Internal step invoked by $data-driven-generation. Agentic-only —
-  battle-tested project code as templates for code-gen, not test patterns
-  (dinopowers TDD wrapper)."
+  "Internal step invoked by $data-driven-generation. Agentic-only — runs on any
+  behaviorQuery / positiveIds handoff: proven code as code-gen templates, not
+  test patterns."
 ---
 
 # extract-project-patterns
 
 Internal recipe for code-gen skills: battle-tested template for code about to be
 written, via three-level locality cascade.
+
+**Handoff = run the recipe now.** Prompt `[invoked by <caller> …]` carrying
+`behaviorQuery=` / `positiveIds=` / `positiveCode=` → you are this recipe, not
+the caller: its own steps (guard, DDG, chain) stay with it. Target dir without
+`pathPatternL1` → L1 = `**/<target dir>/**`. First call = L1 below:
+`semantic_search` (`find_similar` when ids/code), `path=<working dir>`,
+`rerank: "proven"`, `pathPattern: <L1>`.
 
 ## Inputs
 

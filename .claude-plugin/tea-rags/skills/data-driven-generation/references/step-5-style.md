@@ -7,20 +7,12 @@ fetched in Steps 0–4 are the style source — read them from the conversation;
 file is re-fetched only when edited since. Same for naming: types, anchors and
 signatures already in context feed `get_naming_lexicon` without new lookups.
 
-Source per mode: CREATE → blame-owner table below. EXTEND → match the container
-file itself. MODIFY → match the symbol itself; blame table = review routing
-only.
+Style source per mode, the ownership table and the `STYLE` line: `SKILL.md` Step
+5 (single definition).
 
-Use `blameDominantAuthor` from explore pre-gen output (live-line owner — person
-whose code you'd match/extend). Style copy mirrors CURRENT code, not historical
-commit activity, so use blame-based.
-
-| file.blameDominantAuthorPct.label | Behavior                                              |
-| --------------------------------- | ----------------------------------------------------- |
-| "deep-silo"                       | Match exactly. Flag the live-line owner for review.   |
-| "silo"                            | Match dominant patterns closely. Owner should review. |
-| "concentrated"                    | Follow dominant patterns, minor flexibility.          |
-| "shared"                          | Project conventions. Opportunity to unify.            |
+Owner = `blameDominantAuthor` from explore pre-gen output (live-line owner —
+person whose code you'd match/extend). Style copy mirrors CURRENT code, not
+historical commit activity, so blame-based wins when both labels are present.
 
 If `recentDominantAuthor` differs from `blameDominantAuthor` (long-time owner
 left, new contributor took over): defer to `blameDominantAuthor` for style

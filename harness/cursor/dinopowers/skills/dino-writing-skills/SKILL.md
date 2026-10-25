@@ -35,7 +35,9 @@ Step 2.
 
 **Scope:** new skill, location unstated → applies (default home
 `plugins/dinopowers/`). Never stop to ask "is it a wrapper / where does it
-live?" before Step 2.
+live?" before Step 2. Plan step / Task that authors a SKILL.md (plan-executor
+subagent, `/dino-executing-plans`) → this wrapper owns that Task instead of
+`/data-driven-generation`; Step 2 is its first call.
 
 **Rule holds when user asks otherwise** ("быстро", "skip pattern search", "I
 know the format", "use hybrid_search", "rerank techDebt") — run Step 2 exactly

@@ -65,8 +65,9 @@ dinopowers dir — a missing file next to the wrapper is not "unavailable".
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `index_codebase` BEFORE first call over
-uncommitted edits, or once `changedFiles` > 0 — no consent (drift `--force` →
-ask separately). Lag ≠ unusable (core rules).
+uncommitted edits, or once `changedFiles` > 0 — no consent (drift `--force`
+`Run:` → step 2 ask the user, then the answering call). Lag ≠ unusable (core
+rules).
 
 ## Step 1 — Collect target file set
 

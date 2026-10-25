@@ -2,8 +2,8 @@
 name: extract-project-patterns
 user-invocable: false
 description:
-  Agentic-only — battle-tested project code as templates for code-gen, not
-  test patterns (dinopowers TDD wrapper). Read
+  Agentic-only — runs on any behaviorQuery / positiveIds handoff: proven code as
+  code-gen templates, not test patterns. Read
   body before planning: locality cascade L1 = target subdomain → L2 = infra
   prefix + first semantic segment (skipped when semantic tail ≤ 1 segment) → L3
   = project; find_similar (behaviorQuery → semantic_search) + rerank proven +
@@ -17,6 +17,13 @@ description:
 
 Internal recipe for code-gen skills: battle-tested template for code about to be
 written, via three-level locality cascade.
+
+**Handoff = run the recipe now.** Prompt `[invoked by <caller> …]` carrying
+`behaviorQuery=` / `positiveIds=` / `positiveCode=` → you are this recipe, not
+the caller: its own steps (guard, DDG, chain) stay with it. Target dir without
+`pathPatternL1` → L1 = `**/<target dir>/**`. First call = L1 below:
+`semantic_search` (`find_similar` when ids/code), `path=<working dir>`,
+`rerank: "proven"`, `pathPattern: <L1>`.
 
 ## Inputs
 

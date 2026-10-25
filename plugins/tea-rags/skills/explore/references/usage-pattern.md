@@ -1,13 +1,16 @@
 # USAGE Pattern
 
-**Codegraph off** (explicit statement or tools absent) → `find_symbol` +
-`hybrid_search` name-match (no edge truth — say so); path A→B = manual chain,
-"no static path tool". Never call/plan `get_callers` / `get_callees` /
-`trace_path`.
+**Codegraph off** (stated, or registry says off — SKILL.md "Codegraph
+availability") → `find_symbol` + `hybrid_search` name-match (no edge truth — say
+so); path A→B = manual chain, "no static path tool". Never call/plan
+`get_callers` / `get_callees` / `trace_path`.
 
 Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
-call edges), not content matching. Beats `hybrid_search` for "who calls X" — no
-false hits on comments, strings, same-named unrelated symbols.
+call edges), not content matching — no false hits on comments, strings,
+same-named symbols. "Every / all callers of X" (exhaustive) → Step 2's
+`get_callers`, THEN `hybrid_search metaOnly:true query=<name>` — it adds, never
+replaces: graph = resolved edges, hybrid = recall for calls the graph did not
+resolve. Report both, edges first.
 
 ## Step 1 — resolve exact symbolId (MANDATORY)
 

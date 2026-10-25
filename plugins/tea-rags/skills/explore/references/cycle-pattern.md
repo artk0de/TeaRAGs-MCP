@@ -1,7 +1,8 @@
 # CYCLE Pattern
 
-**Codegraph off** (explicit statement or tools absent) → "cycle detection
-unavailable", never "no cycles"; never call/plan `find_cycles`.
+**Codegraph off** (stated, or registry says off — SKILL.md "Codegraph
+availability") → "cycle detection unavailable", never "no cycles"; never
+call/plan `find_cycles`.
 
 Circular-dependency intents. `find_cycles` edge truth (SCCs of import/call
 graph, pre-computed table, sub-ms) — NOT content matching.

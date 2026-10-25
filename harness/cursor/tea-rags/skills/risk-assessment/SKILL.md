@@ -24,8 +24,9 @@ generation ("before implementing" / "generate"): resolved scope + per-symbol
 overlay labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
-0. SCOPE → pathPattern=<resolved | none>
+0. SCOPE → location test (Phase 0): pass → pathPattern; fail → ONE semantic_search → prefixes; whole project → none
 1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
+   stop per preset: gradient drop > 2× avg gap | < 3 new files | page 3 (offset 20)
 1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
 2. MERGE — negativeIds dedup, never manual filtering
 3. EXPAND — healthy-demoted candidates
@@ -48,11 +49,10 @@ No `## Label maps` above → read
 ## Phase Order (MANDATORY — do not skip any phase)
 
 🛑 STOP — read all phases before scanning. Order = the numbered steps of the
-skeleton at the top; Phase 1 plan states its Pagination stops. Phase 1b MUST run
-in the same parallel block — structural debt is git-blind, a big quiet method
-never reaches Phase 1. Stratified scan MUST run even when Phase 1 found enough
-hits — single-preset risk maps are biased. Report signal pairs — single-signal
-reports mislead.
+skeleton at the top. Phase 1b MUST run in the same parallel block — structural
+debt is git-blind, a big quiet method never reaches Phase 1. Stratified scan
+MUST run even when Phase 1 found enough hits — single-preset risk maps are
+biased. Report signal pairs — single-signal reports mislead.
 
 ## Top Anti-patterns (read before scanning)
 
@@ -86,9 +86,9 @@ Codebase".
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+`index_codebase` now (drift `--force` `Run:` → step 2 ask the user, then keep
+working); subagent / linked worktree → never reindex. Protocol:
+`tea-rags://guide/freshness` "Lag never licenses leaving tea-rags".
 
 1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
@@ -134,16 +134,19 @@ $ARGUMENTS describes...
 │   → pathPattern = none
 │   → scopeType = "broad"
 │
-├─ Domain/directory/named module ("ingest domain", "explore/", "the chunker")
-│   → pathPattern = "**/ingest/**" (noun → stem dir: "chunker" → "**/chunk*/**")
+├─ LOCATION TEST passes — the phrase holds one of: a path ("explore/",
+│   "src/x"); a name + container word (domain, module, package, directory,
+│   layer, area); one component's agent-noun name ("the chunker", "the parser")
+│   → pathPattern = "**/<name>/**" (noun → stem dir: "chunker" → "**/chunk*/**")
 │   → scopeType = "domain"
 │
-└─ Intent/concept, no module named ("error handling")
+└─ Test fails = concept — a process, behaviour or topic ("error handling",
+    "request lifecycle", "billing flow"); never guess a directory from its nouns
     → ONE search call (concept/behavior → semantic_search,
       named symbol + context → hybrid_search):
       query = extracted concept, language = primary, limit = 10
     → extract directory prefixes from result relativePaths:
-      - Shared prefix → "**/enrichment/**"
+      - Shared prefix → "**/<dir>/**"
       - 2-3 clusters → "{**/dir1/**,**/dir2/**}"
       - Scattered → no pathPattern (scan everything)
     → scopeType = "intent"
@@ -276,10 +279,10 @@ own OUTPUT section, annotated with risk and fix cost.
 
 Degradation:
 
-- **Codegraph off** (no `## Codegraph resolve`, graph tools absent) →
-  `decomposition` resolves the size-only static variant. Note "god-method lens
-  unavailable — codegraph off". `godModule` resolves the mass-only static
-  variant, still valid.
+- **Codegraph off** (request says so, or prime / `metrics?section=registry` says
+  off — an unseen graph tool alone is not off) → `decomposition` resolves the
+  size-only static variant. Note "god-method lens unavailable — codegraph off".
+  `godModule` resolves the mass-only static variant, still valid.
 
 ## Phase 2: MERGE
 
@@ -399,7 +402,7 @@ Count only. "Show medium risks" to expand.
 ## Structural risks (codegraph axis)
 
 Only when codegraph is active. Omit the whole section (or state "structural risk
-not assessed — codegraph off") when graph tools absent.
+not assessed — codegraph off") when codegraph is off by that test.
 
 - **Blast-radius hubs** — Critical/High candidates that are also `isHub` /
   high-`fanIn`: `symbol() file.ts:line — fanIn:N, blast-radius`.

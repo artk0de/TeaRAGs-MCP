@@ -56,8 +56,8 @@ that `path`.
 index↔tree, never licence to leave tea-rags — thousands of changed files
 included. Row without `treeState` = file unchanged in your tree = current. Own
 checkout with `changedFiles` > 0 → incremental `index_codebase` now, no consent
-(drift `--force` → ask separately, keep working). Full protocol: "Lag never
-licenses leaving tea-rags" below.
+(drift `--force` `Run:` → step 2 AskUserQuestion, then keep working). Full
+protocol: "Lag never licenses leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.

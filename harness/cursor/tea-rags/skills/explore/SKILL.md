@@ -93,10 +93,12 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`. "How does X reach Y": endpoints named as
-  symbols → `find_symbol` each, then `trace_path`; endpoints described in words
-  ("OAuth callback", "sign-in") → call 1 = `semantic_search` for that behaviour,
-  call 2 = `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
+  `get_callees symbolId=<that id>`; "every / all callers" → call 3 =
+  `hybrid_search metaOnly:true` on the name (adds recall, never replaces 2).
+  "How does X reach Y": endpoints named as symbols → `find_symbol` each, then
+  `trace_path`; endpoints described in words ("OAuth callback", "sign-in") →
+  call 1 = `semantic_search` for that behaviour, call 2 =
+  `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
   `find_symbol symbol=`.
 
 - **Rows 3 + 4, call 1 = ORIENT:**
@@ -128,15 +130,18 @@ wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
 an earlier request never carries over — re-decide per request. The digest never
 states it — no codegraph line there means nothing, never read it as OFF. No
-statement → decide from YOUR OWN tool list and say so ("`get_callers` in my
-tools → codegraph on") — no digest read needed for it: graph tools
-(`get_callers`, `trace_path`, …) present = on; unsure → read
-`tea-rags://project/<alias>/metrics?section=registry`. Graph tools absent = not
-registered, NOT empty result — never call absent tool to probe, never read
-absence as positive fact. Codegraph off → content-matching table: TRACE covers
+statement → a graph tool you SEE in your tool list (`get_callers`, `trace_path`,
+… under any prefix — `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
+`tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
+decides. "Not in my tool list" alone never selects the off route — not checked ≠
+absent. Plan line 1, copied:
+`Codegraph: on|off — <request | tool seen | registry>`. Never call a graph tool
+to probe; an unregistered tool is not an empty result — never read it as "no
+callers" / "no cycles". Codegraph off → content-matching table: TRACE covers
 usage, EXPLAIN covers architecture. Broad orientation / structure ("introduce
 me", row 4) → ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
-relevance + `chunkSize` heuristic. Both flagged content-inferred; never
+`references/entry-point-pattern.md` off procedure (relevance, drop tiny
+`chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own
 fallback.
 

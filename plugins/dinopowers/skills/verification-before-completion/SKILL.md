@@ -41,35 +41,15 @@ itself to the parent.
 in your tool list; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
 
-**Diff review, same gate** (codegraph on) = `tea-rags:data-driven-generation`
-Step 7 GATE — read the tea-rags plugin file
+**Diff review, same gate** (codegraph on, session edited files) — BEFORE "done"
+/ commit: open the tea-rags plugin file
 `skills/data-driven-generation/references/step-7-verify.md` (not under
-dinopowers) and run it; nothing here narrows it. BEFORE "done" / commit when
-session edited files: ONE
-`review_changes(changes:{}, sections:["naming","incompleteChange","cohesion","architecture","norms"])`
-(`{}` = uncommitted edit; committed branch → `changes:{base}`, base =
-`git merge-base HEAD main`, never a sibling / integration branch; findings from
-a stack below = its owner's, cite the commit, no triage). Triage: no
-`preExisting` → repair; `preExisting` + `remedy` → apply the remedy;
-`preExisting`, no `remedy` → one report line + bead suggestion, commit allowed.
-Answer prints, before any repair (supplied findings too, plan-only too):
-
-```
-INTRODUCED <finding> — repair: <concrete operation>
-REPORT-ONLY <finding> — preExisting, left unchanged
-GATE review_changes: introduced=<INTRODUCED count>, partial=<true|false>
-```
-
-and after the repair's re-review:
-`GATE review_changes: introduced=<n>, partial=<…>` (plan-only: the expected
-`introduced=0`, or `<n>` + "must be 0 to commit"). After every repair: re-run
-the SAME `review_changes` + targeted tests — target gone AND no new finding,
-else revert the whole round; 2 rounds left a must-fix → AskUserQuestion
-(finding, rounds tried, why reverted; fix / accept with reason / bead), no
-commit. `truncated` / `built: false` / skipped files = PARTIAL ≠ pass → re-run
-with `files` batches. `entryPoint` / `compositionRoot` / `foundationTerminal`
-QUOTED from the finding = placement, not defect. Naming verdicts: MISFIT →
-rename to the suggestion before commit; NEW_TERM → decide now + one-line why.
+dinopowers) in this turn, plan-only included, run it, and print its
+`## Step 7 answer block` line by line — that block IS the answer; nothing here
+narrows or restates it. Wrapper-only: `changes:{}` = uncommitted edit; committed
+branch → `changes:{base}`, base = `git merge-base HEAD main`, never a sibling /
+integration branch; findings from a stack below = its owner's, cite the commit,
+no triage.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
@@ -120,7 +100,8 @@ file next to the wrapper is not "unavailable".
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE
 first call over uncommitted edits, or once `changedFiles` > 0 — no consent
-(drift `--force` → ask separately). Lag ≠ unusable (core rules).
+(drift `--force` `Run:` → step 2 AskUserQuestion, then the answering call). Lag
+≠ unusable (core rules).
 
 ## Step 1 — Collect edited file set
 

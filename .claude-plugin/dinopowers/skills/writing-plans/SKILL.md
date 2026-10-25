@@ -63,7 +63,8 @@ not "unavailable".
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE
 first call over uncommitted edits, or once `changedFiles` > 0 — no consent
-(drift `--force` → ask separately). Lag ≠ unusable (core rules).
+(drift `--force` `Run:` → step 2 AskUserQuestion, then the answering call). Lag
+≠ unusable (core rules).
 
 ## Step 1 — Collect target file set
 

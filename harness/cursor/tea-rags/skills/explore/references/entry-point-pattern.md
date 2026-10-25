@@ -1,15 +1,24 @@
 # ENTRY-POINT Pattern
 
-Plan line 1 = codegraph state + source: THIS request states it → that; else
-`get_callers` in my tools → on, absent → off. Never from the digest.
+Plan line 1, copied: `Codegraph: on|off — <source>`, decided per SKILL.md
+"Codegraph availability": THIS request states it → that; a graph tool seen in
+your tool list → on; not seen → registry read decides. Never the digest.
 
-**Codegraph off** (explicit statement or tools absent) → relevance +
-`chunkSize`, flagged content-inferred; never `rerank="entryPoint"` / `minFanOut`
-/ graph tools.
+**Codegraph off** (stated, or registry says off) — whole procedure, nothing
+below applies:
 
-"Where does X start?" intents. Flow entry points (low fan-in, high fan-out —
-drives others, not driven) via `entryPoint` rerank over codegraph fan-graph
-signals, not content matching.
+1. `semantic_search rerank="relevance" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`.
+2. Drop rows with tiny `chunkSize` (one-line helpers); larger chunks remain
+   candidates.
+3. Answer carries this line:
+   `Codegraph off — candidates are content-inferred (relevance + chunkSize filter), not call-graph entry points.`
+
+Never `rerank="entryPoint"` / `minFanOut` / graph tools; strategy label names
+the off route, not "codegraph".
+
+**Codegraph on** — "Where does X start?" intents. Flow entry points (low fan-in,
+high fan-out — drives others, not driven) via `entryPoint` rerank over codegraph
+fan-graph signals, not content matching.
 
 - **"Where does X start?" / "entry point" / "main flow" / "where does X begin"**
   →

@@ -6,10 +6,10 @@ description:
   cascade for code-generation and behavior-modification Tasks (strategy+template
   from proven neighbors, callers + tests-at-risk on modify). Triggers on
   "execute the plan", "start Task N", "выполни план", "начни задачу", "run the
-  plan", "implement the plan steps". NOT for one-off edits without a written
-  plan, NOT a step that drafts a (sub-)plan (→ /dino-writing-plans). Wraps
-  /executing-plans with tea-rags git-signal verdicts and /data-driven-generation
-  cascade.'
+  plan", "implement the plan steps". NOT for one-off edits with no plan, issue
+  or quoted Task, NOT a step that drafts a (sub-)plan (→ /dino-writing-plans).
+  Wraps /executing-plans with tea-rags git-signal verdicts and
+  /data-driven-generation cascade.'
 ---
 
 # dinopowers: executing-plans
@@ -37,8 +37,10 @@ ladder (SAFE / CAUTION / UNSAFE) + gating (CAUTION = confirm, UNSAFE = pause).
 call on them; verdict `SAFE (new files only)`, said in the answer, then
 Step 5.** Never invent pathPattern to justify guard.
 
-**Plan = any written Task source**: plan file, OR tracker issue handed to an
-autonomous task-agent ("Execute beads issue X: write Y in path Z"). Issue = one
+**Plan = any written Task source**: plan file, tracker issue handed to an
+autonomous task-agent ("Execute beads issue X: write Y in path Z"), OR a Task
+quoted in the prompt (`Execute Task: '<text>'`, `Plan Task N: '<text>'`) — no
+plan file needed; route here, never decline as "no written plan". Issue = one
 Task → full step order below, each step named in your answer: guard ("guard SAFE
 — new file") → `/data-driven-generation` (MUST for new code, esp. "match shape
 of A/B") → its Step 6a `/test-first` writes the red tests (name `/test-first`;
@@ -49,6 +51,10 @@ hand.
 
 0. **Step 0** — name the entry call FIRST, in words: `/dino-executing-plans`
    (already loaded → say so). Walking Steps 2–6 without stating it = skipped.
+   Exception: prompt `[invoked by /dino-executing-plans …]` + `behaviorQuery=` /
+   `positiveIds=` = you ARE the Step 4.5 callee → run
+   `/extract-project-patterns` only (its L1 search first); guard + DDG are the
+   caller's.
 1. **Step 2.0** — addressing, EVERY Task: every tea-rags read passes
    `project=<alias>` + `path=<your working directory>`. No clone, no reindex for
    tree's own edits.
@@ -89,11 +95,11 @@ worktree: none (`find_symbol` reads tree).
 
 ## Step 1 — Extract Task's file list
 
-| Source                      | Example                                                                                                                                             |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Task explicitly names files | "Task 3: update `a.ts`, `b.ts`"                                                                                                                     |
-| Task refers to symbols      | "refactor `Class.method()`" → resolve via `find_symbol` to get file                                                                                 |
-| Task refers to a small dir  | "update all files in `language/ruby/chunking/`" → `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
+- Task names files: "Task 3: update `a.ts`, `b.ts`"
+- Task names symbols: "refactor `Class.method()`" → file via `find_symbol`
+- Task names a small dir: "update all files in `language/ruby/chunking/`" →
+  `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true`
+  (one row per file)
 
 Output: `taskFileList` (paths Task modifies, typically 1-5) + `taskIntent` (one
 sentence). Empty (pure new-file creation) → Step 4, verdict
@@ -175,11 +181,12 @@ Ladder uses **adaptive labels**, never magic percentages — labels = per-codeba
 percentiles. Need boundaries → read
 `tea-rags://project/<alias>/metrics?section=labelMap&language=<lang>`.
 
-| Verdict   | Any of these triggers                                                                                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `UNSAFE`  | blast radius (fanIn / imports) top 5% of result set AND `bugFixRate.label ∈ {"concerning", "critical"}`; OR `blameDominantAuthorPct.label === "deep-silo"` (one author owns the live code) |
-| `CAUTION` | blast radius (fanIn / imports) top 15%; OR `bugFixRate.label === "concerning"`; OR `blameDominantAuthorPct.label === "silo"`                                                               |
-| `SAFE`    | none of the above                                                                                                                                                                          |
+- `UNSAFE` — blast radius (fanIn / imports) top 5% of result set AND
+  `bugFixRate.label ∈ {"concerning", "critical"}`; OR
+  `blameDominantAuthorPct.label === "deep-silo"` (one author owns the live code)
+- `CAUTION` — blast radius top 15%; OR `bugFixRate.label === "concerning"`; OR
+  `blameDominantAuthorPct.label === "silo"`
+- `SAFE` — none of the above
 
 **Signals given as numbers** (prompt / user states the guard result:
 `imports=40 (top 12%)`, `bugFixRate=32%`, `shared (42%)`) = Step 2 output.
@@ -212,11 +219,13 @@ Task verdict = worst per-file (UNSAFE > CAUTION > SAFE). Guard block:
 
 Branch on Task verdict BEFORE invoking `/executing-plans`:
 
-| Verdict   | Action                                                                                                                                                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SAFE`    | Proceed without interruption — Step 4.5 / Step 5 (code-gen, modify Tasks), then `/executing-plans`                                                                                                                 |
-| `CAUTION` | Surface the guard block to the user. Ask "Proceed with Task N?". Wait for explicit confirmation before invoking `/executing-plans`.                                                                                |
-| `UNSAFE`  | Pause — surface block + recommend one of: (a) split Task into smaller Tasks, (b) add owner as co-author/reviewer, (c) require tests-before-edit. Do NOT invoke `/executing-plans` until user explicitly overrides. |
+- `SAFE` → proceed without interruption: Step 4.5 / Step 5 (code-gen, modify
+  Tasks), then `/executing-plans`
+- `CAUTION` → surface the guard block, ask "Proceed with Task N?", wait for
+  explicit confirmation before `/executing-plans`
+- `UNSAFE` → pause: surface block + recommend (a) split Task into smaller Tasks,
+  (b) add owner as co-author/reviewer, (c) require tests-before-edit. No
+  `/executing-plans` until the user explicitly overrides.
 
 Guard block = circuit breaker, not documentation. NEVER silently downgrade
 (UNSAFE→CAUTION, CAUTION→SAFE) "to keep momentum"; surface true verdict, user
@@ -258,13 +267,24 @@ Gate cleared (SAFE / CAUTION confirmed / UNSAFE overridden) → classify Task
 BEFORE `/executing-plans`. DDG picks own mode (CREATE / EXTEND / MODIFY) via
 `find_symbol` probe — wrapper decides only WHETHER to invoke.
 
-| Task intent                                                                                                  | Action                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `/data-driven-generation` BEFORE any Edit/Write (CREATE / EXTEND)                                                                            |
-| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `/data-driven-generation` BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips TEMPLATE"                                   |
-| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5; new name → `get_naming_lexicon(names[])` BEFORE Edit, `MISFIT` → use `suggestion` (naming note); file move → still DDG Step 6 SIM + Step 7 gate |
-| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                                                                                  |
-| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                                                                                          |
+- **Generation** (new file, new function, new class, new method on existing
+  class, rewrite-to-new-template) → **MUST** `/data-driven-generation` BEFORE
+  any Edit/Write (CREATE / EXTEND)
+- **Modification** (change behavior of EXISTING symbol in place: bug fix,
+  condition tweak, new branch, hotfix) → **MUST** `/data-driven-generation`
+  BEFORE any Edit/Write (MODIFY); state "Step 4.5 skipped — MODIFY skips
+  TEMPLATE"
+- **Skill authoring** (Task writes / rewrites a `SKILL.md`) → NO DDG:
+  `/dino-writing-skills` — its `**/SKILL.md` `semantic_search` first, then
+  `/writing-skills`, Write last (non-dinopowers SKILL.md → `/writing-skills`)
+- **Refactor only** (rename, move, extract, inline, reformat — no behavior
+  change) → skip Step 5; new name → `get_naming_lexicon(names[])` BEFORE Edit,
+  `MISFIT` → use `suggestion` (naming note); file move → still DDG Step 6 SIM +
+  Step 7 gate
+- **Deletion** (remove file / function, prune dead code) → guard still runs (the
+  file exists), skip Step 5 — no generation; then remaining-import check, delete
+- **Trivial** (typo, comment / log-message text, single-token swap, no behavior
+  change) → skip Step 5 AND the wrapper — direct Edit
 
 **Naming note (rename / extract, codegraph on):** new name →
 `get_naming_lexicon(names=[{name, kind, type?}], language, pathPattern)` (`kind`

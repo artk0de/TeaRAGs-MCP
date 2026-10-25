@@ -7,12 +7,10 @@ alwaysApply: true
 
 > **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no resource tool, or the read fails), run `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-**Addressing.** Every read call (search, symbol, graph, review, lexicon):
-`project=<alias>` (which index) + `path=<your working directory>` (which tree).
-Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
-→ `path` alone. No working dir → `project` alone. Raw collection name →
-`collection=` (+ `path` if your repo). `index_codebase`: `project` ONLY (`path`
-= NEW project).
+**Addressing.** Every read call: `project=<alias>` (which index) +
+`path=<your working directory>` (which tree). Alias: prime `## Project`,
+SubagentStart line or `workingTree.project`; unknown → `path` alone. No working
+dir → `project` alone. `index_codebase`: `project` ONLY (`path` = NEW project).
 
 **Routing** (first match wins; a loaded skill's step overrides; tools =
 `mcp__tea-rags__*`):
@@ -21,17 +19,18 @@ Alias: prime `## Project`, SubagentStart line or `workingTree.project`; unknown
 | -------------------------- | ---------------------------------------------- |
 | file: outline / doc TOC    | `find_symbol(relativePath:)`                   |
 | known symbol: body/outline | `find_symbol(symbol:)` (`Class#inst`, `C.st`)  |
+| every/all callers of X     | `get_callers` + `hybrid_search(metaOnly)`      |
 | usages of an identifier    | `hybrid_search` (`metaOnly`, `offset`)         |
 | behaviour/intent, no name  | `semantic_search` only (no `hybrid_search`)    |
 | code like a chunk in hand  | `find_similar(positiveIds:)`                   |
 | who calls X / impact       | `find_symbol` id → `get_callers`/`get_callees` |
 | how does X reach Y / A→B   | `find_symbol` ids → `trace_path`               |
 | diff review; a name's fit  | `review_changes` / `get_naming_lexicon`        |
-| literal: TODO/phrase/regex | text search (your client's Grep / `rg`)        |
+| literal: TODO/phrase/regex | `rg` / client Grep — never a tea-rags tool     |
 
-Text search = literal text only; never it, Glob or `cat`/`sed`/`grep` to locate
-or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
-`names:[{name,kind}]`; a diff's → `review_changes` verdicts, nothing after.
+Grep/`rg` = literal text; never them, Glob or `cat`/`sed` to locate or read code
+— identifiers (even `a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`;
+a diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 
@@ -43,15 +42,15 @@ or read code — identifiers (even `a|b`) are SYMBOL searches. A name →
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
   `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
-- Subagent: no reindex at all, no user question — parent note, not a step.
-  Otherwise own checkout (tree = alias's path), `changedFiles` > 0, stale banner
-  or unindexed edits → incremental `index_codebase(project=)` first, no consent,
-  plans too; drift `--force*` `Run:` → ask, never instead. Linked worktree →
-  overlay only.
+- Subagent: no reindex, no user question — parent note, not a step. Otherwise
+  own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
+  unindexed edits → step 1 incremental `index_codebase(project=)`, no consent;
+  drift `--force*` `Run:` → step 2 ask the user (adds, not replaces); then
+  the answering call — never index-only. Linked worktree → overlay only.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
   changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`, no
-  graph retry. Graph tools absent = codegraph off → never claim "no cycles";
-  on + empty `find_cycles` = DAG.
+  graph retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles`
+  = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.

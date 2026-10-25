@@ -5,18 +5,19 @@ files many others depend on) via `architecturalHub` rerank over codegraph
 fan-graph signals → answer reflects real dependency centrality, not prose that
 says "architecture".
 
-Plan line 1 = codegraph state + source: THIS request states it → that; else
-`get_callers` in my tools → on, absent → off. Never from the digest.
+Plan line 1, copied: `Codegraph: on|off — <source>`, decided per SKILL.md
+"Codegraph availability": THIS request states it → that; a graph tool seen in
+your tool list → on; not seen → registry read decides. Never the digest.
 
-**Codegraph off** (explicit statement or graph tools absent) → skip Step 0 and
-Step 1: ORIENT `semantic_search rerank="onboarding"`, flagged content-inferred;
-never `rerank="entryPoint"` / `rerank="architecturalHub"` / graph tools (no
-fan-graph signals — they silently degrade to similarity). Say fan-in centrality
+**Codegraph off** (stated, or registry says off) → skip Step 0 and Step 1:
+ORIENT `semantic_search rerank="onboarding"`, flagged content-inferred; never
+`rerank="entryPoint"` / `rerank="architecturalHub"` / graph tools (no fan-graph
+signals — they silently degrade to similarity). Say fan-in centrality
 unavailable; offer git imports/churn or relevance — never similarity top hit as
 "the architectural centre". Distinct from no-hubs case (codegraph on, flat
 scope).
 
-## Step 0 — ORIENT (entry points first)
+## Step 0 — ORIENT (entry points first; codegraph on)
 
 Broad target (system / domain / directory) → ENTRY POINTS before hubs — hubs =
 what everything routes THROUGH, entries = where flow STARTS; answer needs both:

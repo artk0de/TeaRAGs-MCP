@@ -177,10 +177,10 @@ TS/Java/Swift/Rust/Go: compiler-enforced. Ruby (`send`), Python (`_x`
 convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
 — never read as public.
 
-**When codegraph is off** (graph tools absent from the tool list), route by
-intent to a non-graph substitute — never read an absent/empty graph tool as
-positive fact (no "it's a DAG", no "path structurally impossible", no
-"architectural centre"):
+**When codegraph is off** (stated, or no graph tool seen AND the
+`metrics?section=registry` codegraph line says off), route by intent to a
+non-graph substitute — never read an absent/empty graph tool as positive fact
+(no "it's a DAG", no "path structurally impossible", no "architectural centre"):
 
 | Graph intent        | Non-codegraph fallback                                                                   |
 | ------------------- | ---------------------------------------------------------------------------------------- |

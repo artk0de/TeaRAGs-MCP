@@ -7,10 +7,11 @@ description:
   of reinventing what the project already solved. Triggers on "implement
   function X", "add method to class Y", "write a helper for Z", "modify function
   X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
-  "измени поведение", "overlay labels → strategy?". NOT for discovery or
-  exploration — use tea-rags:explore for that. NOT for pure rename/extract; a
-  file MOVE still runs Step 6 restructure SIM + Step 7 gate. An overlay →
-  strategy question runs Step 1 and answers it, even with no code to write.
+  "измени поведение", "overlay labels → strategy?", a hotfix with location +
+  fix named (cause known → not bug-hunt). NOT for discovery — use
+  tea-rags:explore. NOT for pure rename/extract; a file MOVE still runs Step 6
+  restructure SIM + Step 7 gate. Overlay → strategy question: Step 1 answers it,
+  no code needed.
 ---
 
 # Data-Driven Generation
@@ -18,12 +19,12 @@ description:
 Don't invent — find how it's solved HERE, repeat: strategy from overlay labels
 (not thresholds), helpers via reuse gate, style from live code.
 
-**References MANDATORY when their step runs** — open the file, never work the
-step from this summary: Step 5 → `references/step-5-style.md`; Step 6 →
-`references/step-6-generate.md` + `tea-rags:test-first`; Step 7 →
-`references/step-7-verify.md`; each finding family → its
-`<plugin root>/repair/<family>.md` (plugin root = folder holding `skills/`; Step
-7 map).
+**References: open in the turn that answers the step** — real run, plan-only or
+a question about it alike; "I'll open it when Step N runs" = step not done. Step
+5 → `references/step-5-style.md`; Step 6 → `references/step-6-generate.md` +
+`tea-rags:test-first`; Step 7 → `references/step-7-verify.md`; each finding
+family → its `<plugin root>/repair/<family>.md` (plugin root = folder holding
+`skills/`; map in step-7-verify.md).
 
 ## Prerequisites
 
@@ -86,12 +87,13 @@ Ambiguous → ask which mode (one question, genuine ambiguity only).
 | 7 VERIFY    | symbol risks + N-th-way + gate | same                           | + re-run 6a baseline pins                   |
 | 8 IMPACT    | blastRadius of new code        | container fanIn                | `get_callers` — MANDATORY                   |
 
-- **Hotfix** (exact location given) = MODIFY, skip STRATEGY + blame part of
-  STYLE — say so. REUSE still applies to introduced logic; lexicon runs when fix
-  introduces a name (MODIFY row: `types` = signature + local types, `anchors` =
-  the symbol, `names` = only new names, no `concept`). VERIFY in full.
-  Location + fix named ("line 88 nil — reload X before send") = this skill, no
-  clarifying question; bug-hunt only when cause unknown.
+- **Hotfix** (location + fix named: "line 42 raises on nil — reload the record
+  before save") = THIS skill, MODIFY — no clarifying question, no bug-hunt /
+  debugging wrapper (those = cause unknown). Answer lines, in order:
+  `HOTFIX → MODIFY: STRATEGY + blame STYLE skipped`; Step 4 REUSE for introduced
+  logic; each introduced name → ONE
+  `get_naming_lexicon(language, types: [<signature + local types>], anchors: [<symbol>], names: [<new names only>])`
+  — no `concept`, no existence sweep; RED; Step 7 in full.
 - **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first; fix still
   runs 6a in order: baseline GREEN → reproduction test (asserts correct output,
   e.g. `formatDuration(0) === "0s"`) RED on that assertion → only then patch.
@@ -172,7 +174,8 @@ counted), L3 = project) + quality gate (commitCount low/typical + ageDays
 old/legacy + bugFixRate healthy; lone ideal on hub file also accepts; reject
 bugFixRate critical or ageDays recent + commitCount low).
 
-`locality` → Step 5: `L1` → template's `blameDominantAuthor` for style + review
+`locality` = WHAT of the template to reuse (how closely: Step 5 ownership
+label): `L1` → template's `blameDominantAuthor` = Step 5 style owner + review
 routing; `L2` → author reviews technique, not exact code; `L3` → technique only,
 verify architectural fit before adopting verbatim; `none` → no template,
 generate from scratch, tell user to scrutinize result.
@@ -212,23 +215,36 @@ Output: **reuse manifest** (helpers to call) → Step 6.
 
 ### Step 5: STYLE
 
-**MANDATORY open [references/step-5-style.md](./references/step-5-style.md)
-before Step 5.** Style source: CREATE → blame-owner table, EXTEND → container
-file, MODIFY → symbol itself. Naming (codegraph on): ONE `get_naming_lexicon`
-call before GENERATE — project's name for a value it already names; holder that
-IS what you are about to write → back to Step 4, never rename and write a
-sibling.
+Open [references/step-5-style.md](./references/step-5-style.md) (lexicon
+detail). Style source: CREATE → template's live-line owner, EXTEND → container
+file, MODIFY → symbol itself (owner = review routing only). How closely = the
+dominant-author label in context (`file.blameDominantAuthorPct`; any supplied
+`*DominantAuthorPct` label reads the same rows):
 
-Every name you are about to write is a draft and goes into that call — user's
-drafts included (`row = find_vendor_envelope(id)` → `row` as `local`,
-`find_vendor_envelope` as `return`), held value types into `types[]`. New class
-/ module / interface →
+| Label        | Behaviour                                               |
+| ------------ | ------------------------------------------------------- |
+| deep-silo    | match exactly; owner reviews                            |
+| silo         | match dominant patterns closely; owner reviews          |
+| concentrated | follow dominant patterns, minor flexibility             |
+| shared       | project conventions, unify; never copy one author style |
+
+First Step 5 line, label given = row applied:
+`STYLE <label> → <behaviour>; review: <owner | none>`.
+
+Naming (codegraph on): ONE `get_naming_lexicon` call before GENERATE — project's
+name for a value it already names; holder that IS what you are about to write →
+back to Step 4, never rename and write a sibling. Print the call, arguments
+filled from the task, then its result lines:
+`get_naming_lexicon(language, types: [<held value types>], anchors: [...], concept: <description — new type/service only>, names: [<every draft>])`.
+
+Every name you are about to write is a draft in `names[]` — user's included
+(`row = find_vendor_envelope(id)` → `row` as `local`, `find_vendor_envelope` as
+`return`). New class / module / interface →
 `{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
-— never name a type from neighbours without the call. CREATE of new
-type/service: `concept` = DESCRIPTION of what it does (never draft name) +
-`language` (required with concept); draft name → `names[]`. `MISFIT` → take
-`suggestion`, type MISFIT included (missing `role` suffix →
-`RubyConstReceiverPass` → `RubyConstReceiverStrategy`); keep draft only when
+— never name a type from neighbours without the call. `concept` = DESCRIPTION of
+what it does (never draft name) + `language`. `MISFIT` → take `suggestion`, type
+MISFIT included (missing `role` suffix: `PaymentRetryHandler` extending
+`RetryPolicy` → `PaymentRetryPolicy`); keep draft only when
 `role.evidence: "directory"` and type outside `role.examples`' family.
 `NEW_TERM` + same-meaning word in `topTerms` / `alternatives` → name the adopted
 term now, say why (`organizer` in topTerms → `IntakeOrganizer`). Codegraph off →
@@ -277,75 +293,24 @@ placement, re-simulate, then move. Output line:
 
 ### Step 7: VERIFY
 
-**MANDATORY open [references/step-7-verify.md](./references/step-7-verify.md)
-before Step 7 — never skipped, also on "tests green, finalize".** In order:
+Open [references/step-7-verify.md](./references/step-7-verify.md) — never
+skipped, also on "tests green, finalize" / "can I commit?". **Its
+`## Step 7 answer block` IS the answer, line for line, in order;** no other
+place defines Step 7 output. Checks:
 
 1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
    on called / changed symbols, ≤ 5, most central first; read
    `rankingOverlay.chunk.<field>.label`. Not `get_callers`, not existence sweep,
-   not `dangerous`. One line per symbol:
-   `RISK <symbol> <label> → defensive call: <guard>; pinned by <test> | UNPINNED`
-   (callee `bugFixRate` critical → call defensively, name pinning test). Changed
-   symbol `pageRank` critical / `fanIn` central → Step 8 `get_callers`.
-2. N-th-way `find_similar` (`positiveCode` = generated code).
-3. MODIFY (signature change included): `tests-at-risk`
-   (`tea-rags:tests-as-context`, `affectedFiles` = changed file) scenarios + 6a
-   pins re-run green. No 6a baseline (edit outside this flow) → run
-   `tests-at-risk` now.
-4. **GATE `review_changes` before EVERY commit** + fix-at-write loop. ONE call,
-   ALL five sections
-   `["naming","incompleteChange","cohesion","architecture","norms"]` — a wrapper
-   prescribing fewer never narrows it. Base: `changes: {}` (uncommitted) or
-   `git merge-base HEAD main` — never sibling / integration branch; stack-below
-   findings = owner's, cite commit, no triage.
-   - **Repair file map:** family = DETECTOR name on the finding, never section
-     name. Files: `leakingAbstraction` `hubLike` `cycles` `stableDependencies`
-     `layeringBackEdge` `mainSequence` `facadeContract` `silentCoupling`
-     `splitCandidates` (`.md`); incompleteChange → `silentCoupling.md`, cohesion
-     → `splitCandidates.md`. `repair/architecture.md` /
-     `repair/incompleteChange.md` do NOT exist; naming / norms → no repair file.
-     Finding given in task context = present → open its file now; only families
-     with a finding.
-   - **Confirm first:** finding's edge / symbol exists in diff AND is the edge
-     in its evidence → REAL (type-only import = edge). Looks-wrong ≠ false
-     positive.
-   - Triage — `preExisting` absent = must-fix → repair (`remedy` present → apply
-     verbatim); `preExisting` + `remedy` → apply remedy; `preExisting`, no
-     `remedy` / pre-existing cohesion cluster → one report line + bead
-     suggestion, never refactored here, commit allowed; own new cohesion cluster
-     → move it now. Print per finding, before any repair:
-     `INTRODUCED <finding> — repair: <concrete operation>` /
-     `REPORT-ONLY <finding> — preExisting, left unchanged`, then
-     `GATE review_changes: introduced=<INTRODUCED count>, partial=<…>`. Flap (≤
-     0.02 over tolerance) = ordinary introduced: fix if cheap, else report
-     metric before/after, threshold, moving diff edge — user decides. Co-change
-     partner: inspect each — depends on changed contract → edit in this diff;
-     else known-noise class shown to hold (version manifest per
-     `silentCoupling.md`) or checkable `not touched because` line.
-   - **After every repair: re-run SAME `review_changes` + targeted tests, state
-     "target gone, no new finding", print BOTH lines:**
-     `GATE review_changes: introduced=<before>, partial=<…>`, then the re-review
-     line (plan-only: `introduced=0` expected for a supplied finding you
-     repaired, else `introduced=<n>` + "must be 0 to commit"). Prose "re-run the
-     gate" ≠ the line. ANY new finding or red test → round regressed → revert
-     WHOLE round (even if target gone), different repair next round; never fix
-     new finding on top. Round ≤ 2; must-fix left → AskUserQuestion (finding,
-     each round tried, why reverted, metric before/after + threshold + diff edge
-     that crossed it — hubLike: efferent count vs cut, the new import; options
-     fix this way / accept with reason / bead), no commit until answered.
-   - `truncated` / `built: false` / skipped files = PARTIAL ≠ pass, even at zero
-     findings → re-run with `files: [...]` batches until every changed file
-     judged; `partial=true` until then.
-   - Accepted false positive = counter-evidence + FILED detector issue +
-     `FALSE-POSITIVE … — issue <id>` line; no issue → not accepted.
-   - Naming `NEW_TERM` → state decision now (keep X / use Y) + one-line why,
-     never "needs a decision"; `MISFIT` → rename before commit.
+   not `dangerous`.
+2. N-th-way `find_similar` (`positiveCode` = generated code) — every mode.
+3. MODIFY: `tests-at-risk` scenarios + 6a pins re-run green.
+4. **GATE `review_changes` before EVERY commit** — ONE call, ALL five sections
+   `["naming","incompleteChange","cohesion","architecture","norms"]`; a wrapper
+   prescribing fewer never narrows it. Base `changes: {}` or
+   `git merge-base HEAD main`. Triage, repair files, rounds, partial: the
+   reference.
 
-Gate fails → no commit, no "done". Copy gate line LITERALLY, prefix included —
-paraphrase ("gate is introduced=0, partial=false") = no gate line:
-`GATE review_changes: introduced=<n>, partial=<true|false>` (codegraph off →
-`architecture not judged`); `n` counts only non-`preExisting` findings. Repair
-round → both lines (item 4). **No gate line = task not done.**
+Gate fails → no commit, no "done". **No gate line = task not done.**
 
 ### Step 8: IMPACT
 

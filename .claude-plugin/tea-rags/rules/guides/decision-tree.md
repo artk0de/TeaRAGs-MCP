@@ -205,7 +205,8 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Judging a name by grep or semantic_search on the draft name** — the draft
   pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`); a
   diff → review_changes `naming` (never hand-list a diff's names)
-- **hybrid_search for TODO/FIXME/HACK markers** — use text search
+- **hybrid_search / search_code for TODO/FIXME/HACK markers** — use text search
+  (`rg` / client Grep); no tea-rags tool serves literal markers
 - **git log/diff for code history** — overlay already has git signals
 - **10+ text-search calls instead of reading a file** — just read it
 - **search_code directly** — ONLY used through /tea-rags:explore skill for
