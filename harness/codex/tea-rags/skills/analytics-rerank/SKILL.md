@@ -39,9 +39,10 @@ Existing preset fits the analytics question?  (cheat sheet below)
 │         curated weights; custom never replaces a matching preset. Read tea-rags://guide/presets for the full catalog with
 │         weights and tools each preset is registered on.
 │
-└─ No → build custom weights. Read tea-rags://guide/signals for the
-         canonical weight-key catalog (it is generated from the live
-         registry; never invent weight key names from memory).
+└─ No → a recipe below (Custom weight recipes) matches the ask → copy its
+         keys + numbers verbatim. No recipe matches → build custom weights:
+         read tea-rags://guide/signals for the canonical weight-key catalog
+         (generated from the live registry; never invent key names).
 ```
 
 ## Catalogs — always read on demand
@@ -72,17 +73,24 @@ path (auth, crypto, payments, permissions, sessions) + legacy / old / untouched
 path). Recipe rows (custom) are exact weight sets below — copy keys + numbers,
 never re-derive them from `guide/signals`.
 
+**Area binding (every row):** ask names an area ("in <area>", "in the <area>
+module / pipeline / service / domain") → the call carries
+`pathPattern: "**/<area>/**"` (area word, container noun dropped). Never omit it
+on the guess that the word may not be a dir name; `pathPattern` is scope, not
+the hard `filter` the inventory rule below forbids. Plan line, copied:
+`semantic_search(query=<ask>, rerank=<row>, pathPattern="**/<area>/**")`.
+
 | Question                                                                        | Preset                                                                                                                                                                                               |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                                                                                                                                    |
-| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — not `stable`, not bug-hunt                                                                                                                                 |
+| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — even in a security-sensitive path (path → `pathPattern`); never `securityAudit`, not `stable`, not bug-hunt                                                |
 | "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                                                                                                                             |
-| "Old + churny + bug-fixed legacy in domain X?" (non-security path)              | `techDebt`                                                                                                                                                                                           |
+| "Tech debt / old + churny + bug-fixed legacy in X?" (non-security path)         | `techDebt` + `pathPattern: "**/<X>/**"`                                                                                                                                                              |
 | "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                                                                                                                                          |
 | "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                                                                                                                                  |
 | "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — question carries a dir word (even generic, `<word>/<word> paths`) → `pathPattern: "**/{<word>,<word>}/**"`, no filter preset; no dir word → `filter: { presets: "securityPaths" }` |
 | "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                                                                                                                             |
-| "Stable, low-bug template code"                                                 | `proven` / `stable`                                                                                                                                                                                  |
+| "Stable, low-bug template / reference implementation of X"                      | `proven` (preset; never custom weights)                                                                                                                                                              |
 | "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                                                                                                                                        |
 | "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                                                                                                                                          |
 | "Find candidates to decompose"                                                  | `decomposition`                                                                                                                                                                                      |
@@ -98,8 +106,9 @@ centrality is approximate. See `tea-rags://guide/navigation` "Graph navigation".
 
 ## Custom weight recipes
 
-No preset fits exactly → combine weight keys from `tea-rags://guide/signals`.
-Format:
+Ask matches a recipe below → copy its keys + numbers verbatim, never rebuilt
+from the catalog. No preset and no recipe fits → combine weight keys from
+`tea-rags://guide/signals`. Format:
 
 ```jsonc
 { "rerank": { "custom": { "<weightKey>": <number>, ... } } }
@@ -186,7 +195,7 @@ filter-building (`modifiedBefore: <today − 365d>` — file-level, query-time; 
 ```jsonc
 {
   "rerank": "securityAudit",
-  "pathPattern": "src/auth/**",
+  "pathPattern": "**/<dir>/**",
   "modifiedBefore": "<ISO date, today − 365 days>",
 }
 ```
@@ -226,9 +235,10 @@ available; git/codegraph presets require those trajectories to be registered.
 **Inventory-vs-query narrowing rule.** A HARD specific filter belongs to
 query-absent inventory mode (the query is empty and you want a specific slice of
 the codebase). When a natural-language query is present, rank broadly — don't
-also hard-filter — so recall is not lost. Hygiene presets (`production`,
-`coreLogic`) are safe in either mode and are the defaults applied automatically
-by those rerank presets.
+also hard-filter (`filter` presets / raw) — so recall is not lost. The ask's
+area `pathPattern` is not a hard filter: it stays. Hygiene presets
+(`production`, `coreLogic`) are safe in either mode and are the defaults applied
+automatically by those rerank presets.
 
 Full catalog: read `tea-rags://guide/filters` (generated from the live
 registry). Do not memorize from training data — read on demand.

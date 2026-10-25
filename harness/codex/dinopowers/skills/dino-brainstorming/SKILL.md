@@ -63,18 +63,17 @@ identifiable — proceeding without tea-rags enrichment".
 ## Step 2 — Codegraph decision, then ONE parallel block (A–E on / A–C off)
 
 **2.0 — decide codegraph state FIRST, state it in output before the block:**
-graph tools (`get_callers`, `trace_path`, …) in your tool list → write
-"codegraph on (graph tools in my list) → A–E"; absent → "codegraph off → A–C,
-backbone + vocabulary not assessed". Unsure → metrics `codegraph on|off`
-(below). SessionStart digest never states it — silence ≠ off. No stated decision
-= Step 2 not started.
+graph tools (`get_callers`, `trace_path`, …) in your tool list → print the
+`codegraph on` line of the block below; absent → its `codegraph off` line.
+Unsure → metrics `codegraph on|off` (below). SessionStart digest never states it
+— silence ≠ off. No stated decision = Step 2 not started.
 
 Plan-only with the state not given in the prompt → print BOTH lines, each branch
 complete (the off line is never implied by the on line):
 
 ```
-codegraph on (graph tools in my list) → A–E in one block
-codegraph off → A–C in one block; backbone + vocabulary not assessed
+codegraph on (graph tools in my list) → A–E in one block: A hotspots, B ownership, C techDebt, D architecturalHub (semantic_search, metaOnly, pathPattern=<Step 1>) + E get_naming_lexicon(concept, language, pathPattern=<Step 1>)
+codegraph off → A–C in one block: A hotspots, B ownership, C techDebt (semantic_search, metaOnly, pathPattern=<Step 1>); backbone + vocabulary not assessed
 ```
 
 Then ALL calls **in parallel** (one tool block — D + E in the SAME block as A–C,
@@ -101,8 +100,9 @@ codegraph on; A–D without E = incomplete Step 2):**
 `concept.terms` = words project already uses for area. `concept` = change intent
 sentence, NEVER a draft symbol name. `language` = area's language from its path
 / project stack; unsure → still run E, never skip it over a language-capability
-doubt. Output → "Project vocabulary" line in the block + handoff rule (names[]
-check). Reading: `$data-driven-generation` Step 5 "Naming (lexicon)".
+doubt. Output → two block lines, both printed: "Project vocabulary" from
+`concept.terms`, and "Names check (handoff)": names the design proposes for new
+symbols go through `get_naming_lexicon(names=[…])` before being fixed.
 
 Exact parameters per call:
 
@@ -160,7 +160,12 @@ Compact block (max ~15 lines):
 - ... (top 3)
 
 **Project vocabulary (Call E):** <term> (<holder>), ... (top 5)
+
+**Names check (handoff):** names the design proposes for new symbols go through get_naming_lexicon(names=[{name, kind}], language) before being fixed — MISFIT → take suggestion; NEW_TERM → vocabulary term if same meaning, else justify the new word.
 ```
+
+Codegraph on → both last lines printed verbatim, plan-only answer included
+(`[planned; not run]` covers the terms, never the Names check line).
 
 Cap 3 per section. File in several sections → mark (`→ also in Hotspots`) —
 overlap = strong signal. No raw JSON; `relativePath` + 2-3 key signals per
@@ -170,9 +175,8 @@ blame\*), raw. File-level presets (ownership, architecturalHub) → no startLine
 
 **Done-check before Step 4 (codegraph on) — state all three, else Step 2/3
 incomplete:** (1) E issued in the same parallel block as A–D; (2) block carries
-"Project vocabulary" line from `concept.terms`; (3) handoff carries the names[]
-rule — every new-symbol name the design proposes → `get_naming_lexicon(names)`
-before it is fixed.
+"Project vocabulary" line from `concept.terms`; (3) block carries the "Names
+check (handoff)" line verbatim.
 
 ## Step 4 — Invoke $brainstorming
 
@@ -180,11 +184,8 @@ Invoke `Skill` tool with `$brainstorming`. Prepend enrichment block from Step 3
 as context. Phrase handoff as:
 
 > "Before exploring, note these risk signals in the target area: …<block>… Use
-> them to pressure-test ideas — especially around the hotspot files. A name the
-> design proposes for a new symbol goes through
-> `get_naming_lexicon(names, language)` before the design fixes it: `MISFIT` →
-> take `suggestion`; `NEW_TERM` → a vocabulary term if it means the same,
-> otherwise justify the new word.
+> them to pressure-test ideas — especially around the hotspot files. Apply the
+> block's Names check line to every name the design proposes for a new symbol.
 >
 > Chaining rule reminder: if your cycle would next invoke a `$Y` skill
 > (writing-plans, test-driven-development, etc.), invoke the `$dino-Y` wrapper

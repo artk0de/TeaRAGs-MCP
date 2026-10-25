@@ -26,7 +26,9 @@ right mechanism — they compose.
 **Scope only — rerank is not here.** Request names weights, a preset, or "custom
 rerank" ("rank by high bugFix + ownership") → invoke `tea-rags:analytics-rerank`
 for the `rerank` value. This skill builds the scope (`pathPattern`, typed sugar)
-in parallel. Never compose `rerank: { custom: … }` here.
+in parallel: every scope word (area, time, author, test/doc) still becomes its
+typed field in the same call — the rerank value never replaces one. Never
+compose `rerank: { custom: … }` here.
 
 **Raw filter → read syntax FIRST.** Before writing any raw `filter` object (even
 one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
@@ -37,28 +39,29 @@ one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
 tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 
-| User said... (paraphrased)                          | Filter to add                                     |
-| --------------------------------------------------- | ------------------------------------------------- |
-| "in the X domain / module / area"                   | `pathPattern: "**/X/**"`                          |
-| "tests of X" / "test coverage of X"                 | `hybrid_search` + `testFile: "only"`, no symbolId |
-| "production code for X" / "actual implementation"   | `testFile: "exclude"`                             |
-| "Ruby / TypeScript / Python code"                   | `language: "<lang>"` (NOT pathPattern `**/*.rb`)  |
-| "modified recently" / "changed this week"           | `modifiedAfter: <ISO>` (no `level` needed)        |
-| "old code" / "legacy" / "untouched for a while"     | `modifiedBefore: <ISO>` (no `level` needed)       |
-| "what's new" / "fresh additions" / "sprint review"  | `modifiedAfter: <ISO>` (no `level` needed)        |
-| "Alice's code" (lines she owns)                     | `author: "Alice Smith"` (exact blame name)        |
-| "what did Alice work on" / "Alice's recent work"    | `recentAuthor` (name/email) + `modifiedAfter`     |
-| "everything Alice touched" / files she committed to | `contributor: "Alice Smith"` (exact name)         |
-| "related to ticket JIRA-X" / "for issue #N"         | `taskId: "JIRA-X"`                                |
-| "drop one-off scripts" / "real code, not snippets"  | `minCommitCount: 5`+                              |
-| "docs about X" / "what's documented"                | `documentation: "only"`                           |
-| "code, not docs"                                    | `documentation: "exclude"`                        |
-| "AuthService class" (not its tests)                 | `symbolId: "AuthService"` OR `hybrid_search`      |
-| "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`      |
-| "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)   |
+| User said... (paraphrased)                            | Filter to add                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| "in the X domain / module / area / pipeline"          | `pathPattern: "**/X/**"` — always, beside rerank                         |
+| "tests of X" / "tests for <Class>" (even a class)     | `hybrid_search` + `testFile: "only"`; no symbolId, never semantic_search |
+| "production code for X" / "actual implementation"     | `testFile: "exclude"`                                                    |
+| "Ruby / TypeScript / Python code"                     | `language: "<lang>"` (NOT pathPattern `**/*.rb`)                         |
+| "modified recently" / "changed this week"             | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
+| "old code" / "legacy" / "untouched for a while"       | `modifiedBefore: <ISO>` (no `level` needed)                              |
+| "what's new" / "fresh additions" / "sprint review"    | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
+| "<person>'s code" (lines they own)                    | `author: "<exact git name>"`                                             |
+| "what did <person> work on" / recent work             | `recentAuthor: "<exact git name>"` + `modifiedAfter`                     |
+| "everything <person> touched" / files committed to    | `contributor: "<exact git name>"`                                        |
+| "related to ticket JIRA-X" / "for issue #N"           | `taskId: "JIRA-X"`                                                       |
+| "drop one-off scripts" / "real code, not snippets"    | `minCommitCount: 5`+                                                     |
+| "docs about X" / "what's documented"                  | `documentation: "only"`                                                  |
+| "code, not docs"                                      | `documentation: "exclude"`                                               |
+| "<Class> class itself" (prod code, ask has no "test") | `symbolId: "<Class>"` OR `hybrid_search`                                 |
+| "in /full/abs/path/" (subagent context)               | `pathPattern: "<path from project root>/**"`                             |
+| "exclude vendor / generated / migrations"             | `pathPattern: "!**/vendor/**"` (no typed sugar)                          |
 
 **Person name (`author` / `recentAuthor` / `contributor`) — exact match only.**
-User gives a short or first name → resolve it before the filtered call: call 1 =
+User gives a short or first name (no surname, as typed in chat) → resolve it
+before the filtered call: call 1 =
 `rank_chunks(rerank="ownership", pathPattern=<scope>, metaOnly=true)`, read the
 full spelling from `git.file.recentAuthors` / `git.file.blameAuthors`; call 2
 carries it. Plan line, copied:
@@ -218,7 +221,7 @@ Compose with typed filters (e.g. `language: "ruby"` +
 
 Matched exactly (picomatch) against project-relative `relativePath`.
 
-- GOOD: `**/enrichment/**` (directory at any depth)
+- GOOD: `**/<dir>/**` (directory at any depth)
 - GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from
   results)
 - GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
@@ -254,10 +257,17 @@ params AND-compose with it.
   "metaOnly": true
 }
 
-// Triage: securityAudit rerank, security paths narrowed, Ruby only
+// Ask names dir words ("<a>/<b> paths") → pathPattern, NO securityPaths
 {
-  "query": "authentication token validation",
-  "language": "ruby",
+  "query": "<topic>",
+  "pathPattern": "**/{<a>,<b>}/**",
+  "rerank": "securityAudit"
+}
+
+// Ask names NO dir word ("security-sensitive code") → securityPaths preset
+{
+  "query": "<topic>",
+  "language": "<lang>",
   "filter": { "presets": "securityPaths" },
   "rerank": "securityAudit"
 }
@@ -312,8 +322,8 @@ dominated by the highest-churn domain. To surface the rest, run a SECOND scan
 with the dominant domain negated:
 
 ```jsonc
-// Pass 1: full project, no pathPattern → identifies dominant domain (say "ingest")
-// Pass 2: same query, pathPattern: "!**/ingest/**"
+// Pass 1: full project, no pathPattern → identifies dominant domain <dir>
+// Pass 2: same query, pathPattern: "!**/<dir>/**"
 //         → surfaces risk zones in the rest of the codebase
 ```
 

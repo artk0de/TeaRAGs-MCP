@@ -21,8 +21,7 @@ decision.
   directory under `.claude/worktrees/`, `.git` a file, or `workingTree.tree` ≠
   alias's registered path → linked worktree: overlay only, never
   `index_codebase` of the alias. Print
-  `linked worktree (<which test>) — overlay, no reindex`. None holds → own
-  checkout.
+  `linked worktree (<which test>) — no reindex`. None holds → own checkout.
 - **`collection="<qdrant-name>"`** — only when you hold a raw collection name
   and no alias (e.g. `list_collections`): first call `collection` alone; every
   later call `project=<workingTree.project of that answer>` + `path`, no
@@ -66,12 +65,11 @@ tree, re-call with `project` + that `path`.
 index↔tree, never licence to leave tea-rags — thousands of changed files
 included. Row without `treeState` = current (file unchanged, or a floor read it
 from your tree). Linked worktree / subagent → no reindex. Own checkout with
-`changedFiles` > 0 → incremental `index_codebase` now, no consent (drift
-`--force` `Run:` → step 2 AskUserQuestion, never awaited; print
-`Drift --force: not run — consent asked; reads continue on the current index`);
-step 3 `find_symbol` on user-named files/symbols, callers
-`hybrid_search(metaOnly)`, before any skill's enrichment block. Full protocol:
-"Lag never licenses leaving tea-rags" below.
+`changedFiles` > 0 → incremental `index_codebase` now, no consent. Drift `Run:`
+with `--force*`, any `changedFiles` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`. Always: `find_symbol` on user-named
+files/symbols, callers `hybrid_search(metaOnly)`, before any skill's enrichment
+block. Full protocol: "Lag never licenses leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.

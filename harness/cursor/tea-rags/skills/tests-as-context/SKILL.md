@@ -221,7 +221,7 @@ or unstable fixture infra (flaky setup).
 
 **Caller inputs:**
 
-- `intent`: scope description ("payments tests", "ingest pipeline test setup")
+- `intent`: scope description ("payments tests", "<dir> pipeline test setup")
 - `target`: `"scenarios"` | `"infra"` — selects chunkType
 - `subjectPath` (optional): pathPattern scope
 

@@ -36,9 +36,10 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force` `Run:` → step 2 ask the user, then keep
-working); subagent / linked worktree → never reindex. Protocol:
-`tea-rags://guide/freshness` "Lag never licenses leaving tea-rags".
+`index_codebase` now (drift `Run:` with `--force*` → ask the user, never
+awaited; print `--force not run; reads continue`; then keep working); subagent /
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ## Intent Classification
 

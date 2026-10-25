@@ -23,29 +23,30 @@ finding's counts) is written out. A skill's "ask the user" fires in this answer.
 Describing compliance is not compliance.
 
 **Addressing.** Every read call: `project=<alias>` (which index) +
-`path=<your working directory>` (which tree). Alias: prime `## Project`,
-SubagentStart line or `workingTree.project`; unknown → `path` alone. No working
-dir → `project` alone. `index_codebase`: `project` ONLY (`path` = NEW project).
+`path=<your working directory>` (which tree, re-checks too). Alias: prime
+`## Project`, SubagentStart line or `workingTree.project`; unknown / "not
+registered" → `path` alone, never ask. Only a `collection` → it alone, then its
+`workingTree.project` + `path`. No working dir → `project` alone. Answer's
+`workingTree.tree` ≠ your dir → rows unusable; re-call `path=<your dir>`.
+`index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-**Routing** (first match wins; a loaded skill's step overrides; tools
-`mcp__tea-rags__*`):
+**Routing** (first match wins; a loaded skill's step overrides every row except
+file path; tools `mcp__tea-rags__*`):
 
-| Need                      | Call                                        |
-| ------------------------- | ------------------------------------------- |
-| file: outline / doc TOC   | `find_symbol(relativePath:)`                |
-| known symbol body/outline | `find_symbol(symbol:)` `Class#inst`/`C.st`  |
-| every/all callers of X    | `get_callers` + `hybrid_search(metaOnly)`   |
-| usages of an identifier   | `hybrid_search` (`metaOnly`, `offset`)      |
-| behaviour/intent, no name | `semantic_search` only (no `hybrid_search`) |
-| code like a chunk in hand | `find_similar(positiveIds:)`                |
-| who calls X / impact      | `find_symbol` → `get_callers`/`get_callees` |
-| how does X reach Y / A→B  | `find_symbol` ids → `trace_path`            |
-| diff review; a name's fit | `review_changes` / `get_naming_lexicon`     |
-| literal TODO/phrase/regex | `rg` / client Grep — never a tea-rags tool  |
+- file path / doc TOC → `find_symbol(relativePath:)`
+- known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
+- every/all callers of X → `get_callers` + `hybrid_search(metaOnly)`
+- usages; who constructs X → `hybrid_search` (`metaOnly`, `offset`)
+- behaviour/intent, no name → `semantic_search` only, no `hybrid_search`
+- code like a chunk in hand → `find_similar(positiveIds:)`
+- who calls X / impact → `find_symbol` → `get_callers`/`get_callees`
+- how does X reach Y / A→B → `find_symbol` ids → `trace_path`
+- diff review; a name's fit → `review_changes` / `get_naming_lexicon`
+- literal TODO/phrase/regex → `rg` / client Grep — never a tea-rags tool
 
-Grep/`rg` = literal text; never them, Glob or `cat`/`sed` to locate or read code
-— identifiers (even `a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`;
-a diff's → `review_changes` verdicts, nothing after.
+Never Grep/`rg`, Glob or `cat`/`sed` to locate or read code — identifiers (even
+`a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`; a diff's →
+`review_changes` verdicts, nothing after.
 
 **Invariants.**
 
@@ -55,39 +56,36 @@ a diff's → `review_changes` verdicts, nothing after.
 - `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
   parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
-  license leaving tea-rags — ticket files → `find_symbol`. No `treeState` =
-  current; `treeState` row = pre-edit copy → `find_symbol`.
-- Linked worktree (cwd in `.claude/worktrees/` or ≠ alias's path) / subagent →
-  never reindex; subagent: no user question (parent note). Own checkout,
-  `changedFiles` > 0, stale banner or unindexed edits → step 1 incremental
-  `index_codebase(project=)`, no consent; drift `--force*` `Run:` → step 2 ask
-  the user, never awaited: print `--force not run; reads continue`; step 3
-  `find_symbol` user-named files/symbols, callers `hybrid_search(metaOnly)`,
-  before skill enrichment.
+  license leaving tea-rags. No `treeState` = current; `treeState` row = pre-edit
+  copy → `find_symbol`.
+- Freshness: (1) cwd in `.claude/worktrees/` or ≠ alias's path, or subagent →
+  print `linked worktree (<which test>) — no reindex` (subagent: parent note,
+  never ask user); else own checkout with `changedFiles` > 0, stale banner or
+  unindexed edits → incremental `index_codebase(project=)`, no consent. (2)
+  Drift `Run:` with `--force*`, any `changedFiles` → ask the user, never
+  awaited; print `--force not run; reads continue`. (3) Always: `find_symbol`
+  user-named files/symbols, callers `hybrid_search(metaOnly)`, before skill
+  enrichment.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
   changed files → `find_symbol` its caller + `hybrid_search(metaOnly)`, no graph
-  retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles` =
-  DAG.
+  retry; own checkout adds incremental `index_codebase(project=)`. Codegraph off
+  → never claim "no cycles"; on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
-`tea-rags resource <uri>`):
-
-- after any search, before answering → `navigation`; 0 hits, too many, ambiguous
-  name, when to stop → `pagination`
-- picking a skill, prohibited patterns, fallbacks → `decision-tree`
-- stale banner, drift, `treeState`, `degraded`, linked worktree → `freshness`
-- embedding/qdrant error, `denseUnavailable` → `degraded`
-- before a raw `filter:` → `filters`
-- before picking `rerank` → `presets` + `signals`; reading labels →
-  `signal-labels`
-- graph/AST, non-primary language → `language-capability`
-- no prime digest/labelMap → `tea-rags://project/<alias>/digest` / `…/metrics`
+`tea-rags resource <uri>`): after any search → `navigation`; 0 hits, too many,
+ambiguous name, when to stop → `pagination`; picking a skill, prohibited
+patterns, fallbacks → `decision-tree`; stale banner, drift, `treeState`,
+`degraded`, linked worktree → `freshness`; embedding/qdrant error,
+`denseUnavailable` → `degraded`; raw `filter:` → `filters`; picking `rerank` →
+`presets` + `signals`; reading labels → `signal-labels`; graph/AST, non-primary
+language → `language-capability`; no prime digest/labelMap →
+`tea-rags://project/<alias>/digest` / `…/metrics`.
 
 **Destructive — explicit user consent:** `force_reindex`, `clear_index`,
-`delete_*`, `--force*` reindex.
+`delete_*`.
 
 **Skills are not loaded for you.** A task a skill covers (`$name` /
 `$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would

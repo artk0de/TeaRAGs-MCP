@@ -17,6 +17,9 @@ description:
 Checked first, before this table: structure phrasing ("organized", "end to end",
 "structure", "architecture", "backbone", "walk me through") → codegraph row 4
 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
+used" / "callers of X" → decide codegraph first (plan line below); on →
+`Strategy: codegraph row 2` (`get_callers`), never TRACE-only `hybrid_search`.
 
 | User intent contains                                                                                         | Strategy | Skip if                                                                                      |
 | ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
@@ -107,11 +110,12 @@ plan.
   (`minFanOut` alone = file import count) or drop tiny-`chunkSize` rows.
 - **Row 3** ("where X starts"): ORIENT result IS the answer → `get_callees` from
   top entry.
-- **Row 4** (structure / organized / walk me through / end to end): ORIENT
-  FIRST, then `rerank="architecturalHub"` (same filters) backbone, then
-  `get_callees symbolId=<top entry id>` walk through the hubs, then
-  `find_symbol` depth. Sources only — no tests / docs axis searches. Hubs before
-  entries = wrong order.
+- **Row 4** (structure / organized / walk me through / end to end), codegraph on
+  — plan, copied, all four calls: `1 ORIENT semantic_search rerank="entryPoint"`
+  → `2 semantic_search rerank="architecturalHub"` (same filters) →
+  `3 get_callees symbolId=<top entry id>` walked through the hubs →
+  `4 find_symbol` depth. Sources only — no tests / docs axis searches. Hubs
+  before entries = wrong order; a plan without call 3 = wrong.
 
 **Naming (row 5):** `get_naming_lexicon(concept+language | types | names)`.
 Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a
@@ -153,12 +157,12 @@ fallback.
 
 ## Pattern-search keyword groups (EXEMPLAR routing)
 
-| Strategy        | Keywords (any match)                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever |
-| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module       |
-| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose       |
-| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example    |
+| Strategy        | Keywords (any match)                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever                                                  |
+| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module                                                        |
+| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose                                                        |
+| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example — SEED rerank `proven` preset, never custom weights |
 
 **Exception:** "all call sites / all usages of X" names ONE symbol's usages →
 TRACE / codegraph row 2 wins over generic Collect.
@@ -191,8 +195,11 @@ Apply tables above, first match:
    I/O in hot path", "N+1") → pattern-search Antipattern (SEED techDebt →
    EXPAND), even unscoped. Collect / Spread / Reference → pattern-search.
 4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md),
-   calls named in the plan: PG-1 DISCOVER `semantic_search` (known symbol →
-   `find_symbol` + `hybrid_search`)
+   calls named in the plan. PG-1 DISCOVER, first matching branch: user names a
+   file path → `find_symbol(path=<cwd>, relativePath=<file>)` outline, then
+   `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
+   `hybrid_search` / `semantic_search` on it; known symbol, no file →
+   `find_symbol` + `hybrid_search`; else `semantic_search`
    `metaOnly=true limit=10 documentation="exclude"` → PG-2
    `find_symbol rerank="techDebt"` per 2–5 key symbols (own overlay signals, no
    risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols only (e.g.
@@ -207,8 +214,8 @@ Apply tables above, first match:
 Extract `pathPattern` from $ARGUMENTS:
 
 **Explicit markers** — `in/inside/within/under/from <X>` → `**/<X>/**`. Named
-component ("the qdrant adapter", "ingest pipeline") = scope too → directory
-probe below. Scope found → EVERY breadth call carries that `pathPattern`.
+component ("the <name> adapter", "<dir> pipeline") = scope too → directory probe
+below. Scope found → EVERY breadth call carries that `pathPattern`.
 
 **Directory matching** — word looks like directory name:
 

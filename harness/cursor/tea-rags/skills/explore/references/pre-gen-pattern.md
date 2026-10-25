@@ -5,8 +5,11 @@ signals, overlay labels.
 
 ## PG-1. DISCOVER
 
-Target area files:
+Target area files, first matching branch:
 
+- **User names a file path** → `find_symbol(path=<cwd>, relativePath=<file>)`
+  outline, then `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
+  `hybrid_search` / `semantic_search` on it
 - **Behavior/intent** → `semantic_search` (query=$ARGUMENTS, metaOnly=true,
   limit=10, documentation="exclude")
 - **Known symbol** → `find_symbol` (symbol=<id>) for definition; surrounding

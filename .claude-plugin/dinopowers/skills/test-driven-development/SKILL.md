@@ -98,8 +98,9 @@ the full workflow.
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE
 first call over uncommitted edits, or once `changedFiles` > 0 — no consent
-(drift `--force` `Run:` → step 2 AskUserQuestion, then the answering call). Lag
-≠ unusable (core rules).
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then the answering call). Lag ≠ unusable
+(core rules).
 
 ## Step 1 — Frame the test intent
 

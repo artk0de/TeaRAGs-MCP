@@ -45,10 +45,11 @@ bugFixRate <X>") + "you are overriding a calibrated prior". User still insists �
 note the override in the hypothesis block, proceed with `/systematic-debugging`
 on that file.
 
-**Order — state all three, subagents included:** (1) `/bug-hunt` with framed
-symptom → (2) Step 3 hypothesis block built from its PRESENT output → (3)
-`/systematic-debugging` with that block PREPENDED. "Hand off" / "continue after
-triage" without naming the block = Step 3 skipped.
+**Order — state all three, subagents included** (you ARE the subagent → run
+bug-hunt here; "execute yourself" forbids spawning one, never running it): (1)
+`/bug-hunt` with framed symptom → (2) Step 3 hypothesis block built from its
+PRESENT output → (3) `/systematic-debugging` with that block PREPENDED. "Hand
+off" / "continue after triage" without naming the block = Step 3 skipped.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every /dino-X
 redirects /X. NEVER bypass wrapper.
@@ -64,15 +65,17 @@ the full workflow.
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `index_codebase` BEFORE first call over
-uncommitted edits, or once `changedFiles` > 0 — no consent (drift `--force`
-`Run:` → step 2 ask the user, then the answering call). Lag ≠ unusable (core
-rules).
+uncommitted edits, or once `changedFiles` > 0 — no consent (drift `Run:` with
+`--force*` → ask the user, never awaited; print
+`--force not run; reads continue`; then the answering call). Lag ≠ unusable
+(core rules).
 
 ## Root cause already found → copies of the same bug
 
 Prompt says the root cause is located (`<file>:<line>`, or a bug-hunt result you
-hold) and asks whether the same bug lives elsewhere → no bug-hunt re-run, no new
-`semantic_search` seed, no Grep. Seed from the root-cause chunk itself:
+hold) and asks whether the same bug lives elsewhere → this route replaces
+explore EXEMPLAR / pattern-search: no bug-hunt re-run, no new `semantic_search`
+seed, no multi-seed expansion, no Grep. Seed from the root-cause chunk itself:
 
 ```
 1. chunk id: reuse the bug-hunt result id; only <file>:<line> given → find_symbol(relativePath=<file>) → id of the chunk spanning <line>
@@ -85,6 +88,18 @@ Prevention names the matches.
 
 ## Step 1 — Frame the symptom
 
+**Check first — these prompts never take the skip branches below** (first match
+wins; the plan prints the line):
+
+| Prompt                                                                                          | Plan line                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bug investigation to a subagent / Task (symptom or not)                                         | `bug-hunt runs in this session, not in a subagent — step 0 (git status --porcelain -uall) runs now; send the error / failing behaviour and the three probes run here.` — never "bug-hunt skipped"                    |
+| Demands `hybrid_search` on an error string                                                      | `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.` then Step 2                                                            |
+| Suspect already named by an earlier search + "not sure" / "want to be sure" / "one more search" | `No confirmatory search: confirmatory searches almost never change the answer.` + `Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.` — no bug-hunt Loop, no question |
+| Where is a literal string / error phrase written (no tool demanded)                             | `rg -n -F "<phrase>" .` + `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body` — no Loop                                                      |
+| Suspect files named + targeted search over them                                                 | `hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")` — ONE call, paths in full                                                                            |
+| Explain / compare a known file (even "a bug was found there")                                   | `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body` — no search                                                                                    |
+
 From user report extract:
 
 | Element                      | Example                                                   |
@@ -95,7 +110,8 @@ From user report extract:
 
 Compose:
 
-- `symptom`: concise sentence (→ `/bug-hunt` query)
+- `symptom`: one behaviour sentence `<operation> fails: <error text>` (→
+  `/bug-hunt` query) — never the bare error string
 - `pathHint`: optional pathPattern if scope known
 
 Speculative "maybe <defect> in <area>?" / "let's think" — no error, no failing
@@ -104,13 +120,13 @@ then invoke the skill:
 
 ```
 speculative, no symptom — bug-hunt skipped
-Step 4: /dino-brainstorming, area "<named area>" → pathPattern="**/<area word>/**" on every enrichment call
+Step 4: /dino-brainstorming — it prints: area "<named area>" → pathPattern="**/<word>/**", on every enrichment call (A–E)
 ```
 
-No symptom text (vague "something's off", no error, no failing behaviour) → no
-bug-hunt, no search; the plan prints these two lines and invokes the skill NOW —
-asking the user for a symptom without invoking it = workflow skipped (its Phase
-1 is where the symptom gets gathered):
+No symptom text (vague "something's off", no error, no failing behaviour), no
+check-first row matched → no bug-hunt, no search; the plan prints these two
+lines and invokes the skill NOW — asking the user for a symptom without invoking
+it = workflow skipped (its Phase 1 is where the symptom gets gathered):
 
 ```
 symptom not framed — bug-hunt skipped
@@ -144,14 +160,14 @@ Step 4: /systematic-debugging with that block prepended
 
 Do NOT substitute:
 
-| Wrong approach                                   | Why wrong                                                                    |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Direct `semantic_search` with `rerank="bugHunt"` | Bypasses bug-hunt triage (healthy → SKIP, concerning+churn) + PRESENT format |
-| Named preset `"hotspots"` / `"techDebt"`         | `bugHunt` calibrated for symptom→suspect; others = broader risk lenses       |
-| `hybrid_search` on the error string              | BM25 on error text → where string is logged, not where bug originates        |
-| Custom rerank weights                            | Weighting owned by `bug-hunt` skill — don't duplicate                        |
-| Built-in Grep / Read on stack trace files        | Loses bugFixRate; reads healthy code                                         |
-| `git log --grep` / `git blame` for bug history   | `bug-hunt` reads git signals via overlay; manual git slower + noisier        |
+| Wrong approach                                                                      | Why wrong                                                                    |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Direct `semantic_search` with `rerank="bugHunt"`                                    | Bypasses bug-hunt triage (healthy → SKIP, concerning+churn) + PRESENT format |
+| Named preset `"hotspots"` / `"techDebt"`                                            | `bugHunt` calibrated for symptom→suspect; others = broader risk lenses       |
+| `hybrid_search` on the error string (even naming an identifier, even user-demanded) | BM25 on error text → where string is logged, not where bug originates        |
+| Custom rerank weights                                                               | Weighting owned by `bug-hunt` skill — don't duplicate                        |
+| Built-in Grep / Read on stack trace files                                           | Loses bugFixRate; reads healthy code                                         |
+| `git log --grep` / `git blame` for bug history                                      | `bug-hunt` reads git signals via overlay; manual git slower + noisier        |
 
 ## Step 3 — Convert suspects to hypothesis block
 
@@ -253,16 +269,18 @@ Inner skill runs its hypothesis / experiment / rule-out cycle. Wrapper seeds,
 not replaces.
 
 **Follow-up searches in cycle** (callers, definition, where X happens): pick
-tool from `tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. State
-choice in one line before call:
+tool from `tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE
+line per call, printed right before it — N calls → N lines, also for a
+`find_symbol` on a symbol whose name the user gave:
 
 ```
 consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>
 ```
 
-e.g. `→ hybrid_search because exhaustive usage of identifier StatsCache#load`;
-`→ find_symbol because study known symbol`. Follow-up rerank = Step 3.5 preset
-table; bug-hunt weighting stays in bug-hunt.
+e.g.
+`consulting decision tree → hybrid_search because exhaustive usage of identifier Foo#bar`
+then `consulting decision tree → find_symbol because study known symbol`.
+Follow-up rerank = Step 3.5 preset table; bug-hunt weighting stays in bug-hunt.
 
 ## Step 5 — Root-cause report: Cause / Fix / Prevention (MANDATORY)
 
@@ -299,8 +317,8 @@ no other query, no custom re-rank.
 
 Rules:
 
-- **Cause sentence carries literal `<file>:<line>`** (`stats-cache.ts:40`) — a
-  symbol name alone (`StatsCache#load`) fails; file:line only in Fix ≠ Cause.
+- **Cause sentence carries literal `<file>:<line>`** (`foo.ts:40`) — a symbol
+  name alone (`Foo#bar`) fails; file:line only in Fix ≠ Cause.
 - **Every line cites source** — Cause `signals:` + each Prevention bullet names
   `<level>.<signal>=<label>` or `mechanism`. Uncited → rewrite.
 - **Regression test always present** — one bullet: test file + assertion.

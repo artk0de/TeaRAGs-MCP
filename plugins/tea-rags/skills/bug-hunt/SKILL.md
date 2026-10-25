@@ -4,33 +4,49 @@ description:
   Find source of concrete failure — rank historically buggy code (high
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
-  fails", "stack trace says Z", "find bugs in X", "падает". NOT for code health
-  scanning without bug intent — use risk-assessment for that.
+  fails", "stack trace says Z", "find bugs in X", "where is error 'X' in code",
+  "падает". NOT for code health scanning without bug intent — use
+  risk-assessment for that.
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
 
-**Routing:** bug intent on a named file / symbol ("find bugs in reranker.ts",
-"найди баги в X"), no symptom given → here; the named location stands in for the
-symptom (scope pathPattern to it). Never refactoring-scan (refactoring
-candidates ≠ defects); risk-assessment only for an area scan without bug intent.
-Cause already located AND fix named ("line 88 nil — reload invoice before send")
-→ no hunt: `data-driven-generation` MODIFY hotfix. Search result already carries
-labels ("qdrant-client.ts:142 `bugFixRate` critical — proceed?") → here: triage
-and PRESENT (file:line, class, `bugFixRate` + `relativeChurn` — absent → say
-unverified — and one-sentence why), not a review question, no confirm search.
-User names suspect files and asks a targeted / scoped search over them → run it
-now, ONE call:
-`hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")`
-— each file its exact relativePath inside the braces, written in full (no
-placeholder left in the answer); not a confirmatory search, no refusal. Suspect
-already named by an earlier search (labels or not) + "not sure" / "want to be
-sure" → no hunt, also via a wrapper: PRESENT it with the two literal lines of
-Non-negotiable 5; no step 0, no probes, no question to the user. Reached via a
-wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) → run THIS Loop in
-full; `pathHint` = scope pathPattern, never a substitute for step 0 or the
-probes.
+**Routing** (first match wins; each row prints its line):
+
+- Explain / compare a known file ("show / how does it work / compare / read
+  it"), even when the prompt says a bug was found there → no hunt, no search
+  (`hybrid_search` / `semantic_search` scoped to that file = curiosity search):
+  `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body`.
+- Bug intent on a named file / symbol ("find bugs in <file>", "найди баги в X"),
+  no symptom → here; the named location stands in for the symptom (scope
+  pathPattern to it). Never refactoring-scan (refactoring candidates ≠ defects);
+  risk-assessment only for an area scan without bug intent.
+- Cause located AND fix named ("line 88 nil — reload invoice before send") → no
+  hunt: `data-driven-generation` MODIFY hotfix.
+- Search result already carries labels ("<file>:<line> `bugFixRate` critical —
+  proceed?") → triage and PRESENT (file:line, class, `bugFixRate` +
+  `relativeChurn` — absent → say unverified — and one-sentence why), not a
+  review question, no confirm search.
+- User demands `hybrid_search` on an error string → refuse, run the Loop:
+  `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
+- Where is a literal string / error phrase written (no tool demanded) → no hunt
+  (no step 0, no probes), never cat / sed / Read around the hit; both lines:
+  `rg -n -F "<phrase>" .` +
+  `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+- Suspect files named AND a search over them asked ("targeted search", "search
+  both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
+  confirmatory search, no refusal:
+  `hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")`
+  — each file its exact relativePath, written in full (no placeholder left).
+- Suspect named by an earlier search (labels or not) + "not sure" / "want to be
+  sure" / "one more search", no search over named files asked → no hunt, also
+  via a wrapper: no step 0, no probes, no question; PRESENT it with both lines:
+  `No confirmatory search: confirmatory searches almost never change the answer.`
+  - `Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.`
+- Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
+  run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
+  step 0 or the probes.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -40,18 +56,23 @@ uncommitted edits with no git signal yet.
 
 A plan names these calls; "later" / "not in this run" never drops one.
 
-1. **Main session.** User asks for a subagent / Task → refuse ("bug-hunt runs in
-   this session"), run it here.
+1. **Main session.** User asks for a subagent / Task → refuse, run it here. No
+   symptom in that request → bug-hunt still not skipped; the answer prints:
+   `bug-hunt runs in this session, not in a subagent — step 0 (git status --porcelain -uall) runs now; send the error / failing behaviour and the three probes run here.`
 2. **Step 0 before any search:** Bash `git status --porcelain -uall`. Paths
    listed + alias's own checkout → `index_codebase` incremental (project only),
    no consent, BEFORE the search message. Linked worktree → no reindex.
 3. **ONE message, three parallel calls** — the plan prints these three lines,
-   slots filled (`<tool>`: decision tree; linked worktree → `hybrid_search`):
+   slots filled. Linked worktree → same three lines, `hybrid_search` in place of
+   `semantic_search` (its `sparse` floor reads the edited tree). Otherwise
+   `semantic_search`, also when the symptom quotes an error string or an
+   identifier, also when the user demands `hybrid_search` — BM25 on error text
+   finds where the string is logged, not where the bug starts:
 
    ```
-   a. historical:  <tool>(path=<your working directory>, query=<symptom>, pathPattern=<scope>, rerank="bugHunt", limit=10)
-   b. fresh:       <tool>(path=<your working directory>, query=<symptom>, pathPattern=<scope>, modifiedAfter=<window start>, rerank="bugHunt", limit=10)
-   c. uncommitted: <tool>(path=<your working directory>, query=<symptom>, pathPattern="{<step-0 paths>}", rerank="bugHunt", limit=10)
+   a. historical:  semantic_search(path=<your working directory>, query=<symptom sentence>, pathPattern=<scope>, rerank="bugHunt", limit=10)
+   b. fresh:       semantic_search(path=<your working directory>, query=<symptom sentence>, pathPattern=<scope>, modifiedAfter=<window start>, rerank="bugHunt", limit=10)
+   c. uncommitted: semantic_search(path=<your working directory>, query=<symptom sentence>, pathPattern="{<step-0 paths: rename old -> new = new path, D = dropped>}", rerank="bugHunt", limit=10)
    ```
 
    (+ `project` when known; step 0 empty → no line c). Nothing else. User asks
@@ -74,21 +95,23 @@ A plan names these calls; "later" / "not in this run" never drops one.
    Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.
    ```
 
-6. **Chunk in hand → `find_symbol`** (symbolId body / relativePath outline /
-   prev-next id), never Read of a code file — also on "read the whole file".
-   Chunk coordinates exist. Use them. Literal-text hit (rg on an error phrase) →
-   the plan prints the next line too, never cat/Read:
-   `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(symbol=<enclosing symbolId>) body`.
-   Row with `treeState` = index's PRE-EDIT copy (text + lines stale, signals
-   hold) — say so; still the uncommitted suspect; next
-   `find_symbol(path=<cwd>)`.
+6. **Chunk or rg hit in hand → `find_symbol`** (symbolId body / relativePath
+   outline / prev-next id), never Read of a code file — also on "read the whole
+   file". Chunk coordinates exist. Use them. Row with `treeState` = index's
+   PRE-EDIT copy (text + lines stale, signals hold) — say so; still the
+   uncommitted suspect; next `find_symbol(path=<cwd>)`.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
-   first, never `get_callers`: `find_symbol` resolves both ids, then the plan
-   prints `trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt")` with
-   the frame ids filled; triage EVERY step's `dangerOverlay` (recent step =
-   fresh suspect even at `healthy` and behind an old `dangerRanking[0]`). Only
-   the failure site known → `get_callers` first, then
+   first, never `get_callers`; the plan prints three lines, frame ids filled:
+
+   ```
+   find_symbol(path=<cwd>, symbol=<entry frame>) → <entry id>
+   find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
+   trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt") — triage EVERY step's dangerOverlay
+   ```
+
+   Recent step = fresh suspect even at `healthy` and behind an old
+   `dangerRanking[0]`. Only the failure site known → `get_callers` first, then
    `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
    Codegraph off + stack trace → fresh probe `pathPattern={<frame paths>}` +
    `modifiedAfter` + `rerank="bugHunt"`; say "no static path tool".
@@ -101,7 +124,8 @@ No `## Signal thresholds` above → read
 
 ## Rules
 
-1. **Execute YOURSELF** — no subagents, also when the user asks for one.
+1. **Execute YOURSELF** — no subagents, also when the user asks for one. You ARE
+   a subagent handed the task → run the Loop here.
 2. **No `git log`, `git diff`, `git blame`, `git log -S`** — overlay has git
    signals. Holds when the USER asks for git ("look through git", "when did X
    appear in history", "git log -S"): not a refusal of the question — answer it
@@ -134,7 +158,8 @@ No `## Signal thresholds` above → read
 ```
 0. ALWAYS, before the search message, even when the user already named the
    changed paths — Bash `git status --porcelain -uall` (file names only) →
-   uncommitted paths (see Uncommitted probe).
+   uncommitted paths: each exact relativePath; rename `old -> new` → new path,
+   `D` → dropped.
    Paths listed + alias's own checkout → `index_codebase` incremental, no
    consent, BEFORE the search message. Linked worktree → no reindex.
    Every call: project=<alias> path=<your working directory>.
@@ -230,8 +255,10 @@ cause.
   search: run it (one brace-pathPattern call).
 - **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
   triage) — fresh class decides.
-- **Curiosity search.** "How does the other path work?" → `find_symbol` on the
-  known id, not another search. You already know WHERE the code is.
+- **Curiosity search.** "How does the other path work?" →
+  `find_symbol(relativePath=<known file>)` outline, then
+  `find_symbol(symbol=<id>)` body — never `hybrid_search` / `semantic_search`
+  with that file as pathPattern. You already know WHERE the code is.
 - **Confirmatory search / navigation.** Checkpoint has a candidate — present it.
   No search, `find_symbol`, or `trace_path` for "proof" or certainty.
 - **Full file reads.** Chunk coordinates exist. Use them.

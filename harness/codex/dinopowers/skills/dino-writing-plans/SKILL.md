@@ -70,9 +70,10 @@ the full workflow.
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
 reindex. Main checkout → incremental `index_codebase` BEFORE first call over
-uncommitted edits, or once `changedFiles` > 0 — no consent (drift `--force`
-`Run:` → step 2 ask the user, then the answering call). Lag ≠ unusable (core
-rules).
+uncommitted edits, or once `changedFiles` > 0 — no consent (drift `Run:` with
+`--force*` → ask the user, never awaited; print
+`--force not run; reads continue`; then the answering call). Lag ≠ unusable
+(core rules).
 
 ## Step 1 — Collect target file set
 
@@ -111,7 +112,7 @@ Describing the call (plan-only / subagent report) → print this line, slots
 filled, never "the specified calls" or "scoped to the files":
 
 ```
-Step 2: semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true)
+Step 2 (first tool call — explore PRE-GEN / find_symbol / get_callers only after it): semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true)
 ```
 
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
@@ -203,9 +204,10 @@ drop row silently.
 ## Step 3.5 — Per-Task proven-template enrichment (code-generation Tasks)
 
 Per Task in draft (or unit to become a Task) whose title/description mentions
-code gen/modification — keywords "implement", "add", "write", "extend",
-"refactor", "modify" + "function", "method", "class", "helper", "module" —
-invoke `$extract-project-patterns`:
+code gen/modification — keywords "implement", "add", "create", "new", "write",
+"extend", "refactor", "modify" + "function", "method", "class", "helper",
+"module" (a Task creating a named class / function always qualifies) — invoke
+`$extract-project-patterns`:
 
 1. `pathPatternL1` = deepest common ancestor of Task's Affected Files as
    `**/<dir>/**` glob.

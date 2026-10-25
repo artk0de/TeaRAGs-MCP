@@ -21,7 +21,7 @@ generation ("before implementing" / "generate"): resolved scope + per-symbol
 overlay labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
-0. SCOPE (Phase 0): process noun last → concept; location test: pass → pathPattern; concept → ONE semantic_search → prefixes; whole project → none
+0. SCOPE (Phase 0): "<word> <process noun>" → ONE semantic_search(query=<phrase>, pathPattern="**/<word>/**") → hits: pathPattern="**/<word>/**" kept; location test: pass → pathPattern; concept → ONE semantic_search → prefixes; whole project → none
 1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
    stop per preset: gradient drop > 2× avg gap | < 3 new files | page 3 (offset 20)
 1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
@@ -73,17 +73,19 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ## Rules
 
-**Addressing:** every call passes `project=<alias>` +
-`path=<your working directory>` — `tea-rags://guide/freshness` "Addressing the
-Codebase".
+**Addressing:** every call passes `path=<your working directory>` +
+`project=<alias>`; alias unknown / "not registered" → `path` alone, never ask. A
+failed metrics / label-map read never stops the run: Phase 0 still resolves
+`pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force` `Run:` → step 2 ask the user, then keep
-working); subagent / linked worktree → never reindex. Protocol:
-`tea-rags://guide/freshness` "Lag never licenses leaving tea-rags".
+`index_codebase` now (drift `Run:` with `--force*` → ask the user, never
+awaited; print `--force not run; reads continue`; then keep working); subagent /
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
@@ -129,8 +131,14 @@ $ARGUMENTS describes...
 │   → pathPattern = none
 │   → scopeType = "broad"
 │
-├─ Last word a process noun (pipeline, flow, lifecycle, handling, processing,
-│   logic, workflow) → concept, even after a name: "<name> pipeline" ≠ **/<name>/**
+├─ "<word> <process noun>" — last word pipeline, flow, lifecycle, handling,
+│   processing, logic, workflow, a word before it ("<dir> pipeline") — checked
+│   BEFORE the location test; the area word is never dropped:
+│   → ONE semantic_search(query=<whole phrase>, pathPattern="**/<word>/**",
+│     language = primary, limit = 10)
+│   → hits → pathPattern = "**/<word>/**" on every scan call, scopeType =
+│     "domain"; the phrase stays the query only
+│   → 0 hits → <word> is no directory → Concept below, unscoped
 │
 ├─ LOCATION TEST passes — the phrase holds one of: a path ("explore/",
 │   "src/x"); a name + container word (domain, module, package, directory,
@@ -138,7 +146,7 @@ $ARGUMENTS describes...
 │   → pathPattern = "**/<name>/**" (noun → stem dir: "chunker" → "**/chunk*/**")
 │   → scopeType = "domain"
 │
-└─ Concept (process noun, or test fails) — a process, behaviour or topic;
+└─ Concept (process noun alone, or test fails) — a process, behaviour or topic;
     never guess a directory from its nouns
     → ONE search call (concept/behavior → semantic_search,
       named symbol + context → hybrid_search):
