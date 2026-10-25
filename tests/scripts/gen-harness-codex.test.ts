@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -434,6 +435,36 @@ describe("renderCodexHarness — dinopowers package", () => {
       expect(table, event).toContain("$dino-brainstorming");
       expect(table, event).toContain("$data-driven-generation");
       expect(table, event).not.toContain("Skill(");
+    }
+  });
+
+  it("routing hook names the installed SKILL.md of every routed skill, in both plugins", () => {
+    const cache = mkdtempSync(join(tmpdir(), "codex-cache-"));
+    try {
+      const dino = join(cache, "tea-rags", "dinopowers", "0.1.0");
+      const teaRags = join(cache, "tea-rags", "tea-rags", "0.2.0");
+      for (const [path, content] of rendered) {
+        const [plugin, ...rest] = path.split("/");
+        if (plugin !== "dinopowers" && plugin !== "tea-rags") continue;
+        const target = join(plugin === "dinopowers" ? dino : teaRags, ...rest);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, content);
+      }
+
+      for (const script of ["main-session-routing.sh", "wrapper-routing.sh"]) {
+        const out = execFileSync("bash", [join(dino, "scripts", script)], {
+          env: { ...process.env, PLUGIN_ROOT: dino },
+          input: "{}",
+        }).toString();
+        const context: string = JSON.parse(out).hookSpecificOutput.additionalContext;
+
+        expect(context, script).toContain(`$dino-brainstorming → ${dino}/skills/dino-brainstorming/SKILL.md`);
+        expect(context, script).toContain(
+          `$data-driven-generation → ${teaRags}/skills/data-driven-generation/SKILL.md`,
+        );
+      }
+    } finally {
+      rmSync(cache, { recursive: true, force: true });
     }
   });
 

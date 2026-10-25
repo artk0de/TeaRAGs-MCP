@@ -139,14 +139,14 @@ metaOnly:    true
 
 Do NOT substitute:
 
-| Wrong tool                                                      | Why wrong                                                                                                                   |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `mcp__tea-rags__hybrid_search`                                  | BM25 leg re-ranks by token overlap — want semantic + signals                                                                |
-| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` doesn't exist; `hotspots` = BUG-prone history, not BLAST radius. `"blastRadius"` correct when codegraph on |
-| `mcp__tree-sitter__trace_impact`                                | Structural call trace = complementary, not git-signal blast radius; tea-rags first                                          |
-| One call per file                                               | Brace expansion covers all                                                                                                  |
-| Built-in `grep -r "import.*<file>"`                             | Misses ranked `imports` overlay; miscounts re-exports (barrel `export … from`); slower                                      |
-| `git log --oneline <files>`                                     | History of edited files, not dependents                                                                                     |
+| Wrong tool                                                      | Why wrong                                                                                                                                                                               |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp__tea-rags__hybrid_search`                                  | BM25 leg re-ranks by token overlap — want semantic + signals                                                                                                                            |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` doesn't exist; `hotspots` = BUG-prone history, not BLAST radius. `"blastRadius"` correct when codegraph on                                                             |
+| `mcp__tree-sitter__trace_impact`                                | Structural call trace = complementary, not git-signal blast radius; tea-rags first                                                                                                      |
+| One call per file                                               | Brace expansion covers all                                                                                                                                                              |
+| Built-in `grep -r "import.*<file>"`                             | Not grep: it matches import text only — misses re-exports and call weight. Importers via `get_callers(relativePath=<module>)` (codegraph on) / `hybrid_search` on the module path (off) |
+| `git log --oneline <files>`                                     | History of edited files, not dependents                                                                                                                                                 |
 
 Do NOT pass:
 
@@ -250,8 +250,9 @@ scope, never substitutes.
 - "Only tests need to run, change isolated" / "edited files' tests pass" → ANY
   edited file `imports > 0` → run Step 2; dependents may break
 - "git diff small, skip scan" / "trivial rename" → run Step 2
-- Substituted `grep -r` / `git log` → redo with `semantic_search` + Step 2
-  rerank
+- Substituted `grep -r` / `git log` → importers via
+  `get_callers(relativePath=<module>)` (codegraph off: `hybrid_search` on the
+  module path); blast radius via Step 2
 - Rerank wrong for codegraph state → redo: on → `"blastRadius"`, off →
   `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
 - `rerank: "hotspots"` → bug history, not blast radius; redo

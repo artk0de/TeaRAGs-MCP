@@ -10,6 +10,28 @@ if [ -z "$CONTEXT" ]; then
   exit 0
 fi
 
+# The skills list is cut to a char budget, so a routed skill may be absent from it:
+# name the installed SKILL.md of every \$mention. tea-rags sits beside dinopowers —
+# <marketplace>/tea-rags/<version> in the plugin cache, ../tea-rags in the repo.
+TEA_RAGS=$(ls -d "$ROOT"/../../tea-rags/*/ 2>/dev/null | sort -V | tail -1)
+[ -n "$TEA_RAGS" ] || TEA_RAGS="$ROOT/../tea-rags/"
+TEA_RAGS=$(cd "$TEA_RAGS" 2>/dev/null && pwd)
+FILES=""
+for skill in $(printf '%s' "$CONTEXT" | grep -oE '\$[a-z][a-z-]*' | sort -u | cut -c2-); do
+  for dir in "$ROOT" "$TEA_RAGS"; do
+    if [ -n "$dir" ] && [ -f "$dir/skills/$skill/SKILL.md" ]; then
+      FILES="$FILES
+\$$skill → $dir/skills/$skill/SKILL.md"
+      break
+    fi
+  done
+done
+if [ -n "$FILES" ]; then
+  CONTEXT="$CONTEXT
+
+Skill files — read the routed skill from this path; absent from the skills list ≠ not installed:$FILES"
+fi
+
 jq -n --arg context "$CONTEXT" '{
   hookSpecificOutput: {
     hookEventName: "SubagentStart",
