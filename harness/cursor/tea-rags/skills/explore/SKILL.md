@@ -93,7 +93,11 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`.
+  `get_callees symbolId=<that id>`. "How does X reach Y": endpoints named as
+  symbols → `find_symbol` each, then `trace_path`; endpoints described in words
+  ("OAuth callback", "sign-in") → call 1 = `semantic_search` for that behaviour,
+  call 2 = `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
+  `find_symbol symbol=`.
 
 - **Rows 3 + 4, call 1 = ORIENT:**
   `semantic_search rerank="entryPoint" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
@@ -249,8 +253,8 @@ query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
 DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
 name + behaviour words ("where hybrid_search handles BM25 scoring") →
 hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
-Combined behaviour + "how does X reach Y" → steps in this order:
-`semantic_search` for the behaviour, `find_symbol` both endpoints, `trace_path`.
+Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
+first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).
 Subagent: drift / reindex is a note to the parent, never a plan step in place of
 these calls.
 

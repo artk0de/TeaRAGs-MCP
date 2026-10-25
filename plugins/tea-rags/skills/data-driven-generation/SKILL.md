@@ -43,8 +43,9 @@ use it.
 
 **Session-context reuse:** outlines, bodies, search hits fetched here = source
 of truth for their file until it is edited. Before any search or `find_symbol`,
-reuse what the conversation holds; re-fetch ONLY a file edited after fetch.
-State both halves: "re-fetch <edited symbol>; reuse in-context <other files>".
+reuse what the conversation holds; re-fetch ONLY a file edited after fetch (by
+you or a tool). State both halves: "re-fetch <edited symbol>; reuse in-context
+<other files>".
 
 ## Reading Overlay Labels
 
@@ -68,7 +69,7 @@ Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 | Container exists, symbol new ("add method to Y")   | EXTEND |
 | Neither exists                                     | CREATE |
 
-Ambiguous → ask which mode (one question).
+Ambiguous → ask which mode (one question, genuine ambiguity only).
 
 **Step matrix** — mode selects steps + signal sources:
 
@@ -100,7 +101,8 @@ Ambiguous → ask which mode (one question).
   green, none edited; Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade, don't
   pre-skip.
-- **REUSE never skipped in any mode.**
+- **REUSE never skipped in any mode** — shared infra exists even when the
+  feature is new.
 - **RED never skipped** except a named `test-first` exception (no-tests language
   / config-docs only), stated in one line. Hotfix included.
 - **VERIFY never skipped. Ever.**
@@ -125,15 +127,28 @@ before generation).
 | file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE          |
 | No match                                                   | Autonomous Judgment ↓ |
 
-**Autonomous Judgment Protocol.** Answer = each label → its axis → NAMED
-strategy (DEFENSIVE/STABILIZATION/CONSERVATIVE/STANDARD) → why + actions. "X
-leaning Y" → last line, even when justified: `X or Y?` No name = Step 1 not
-done, code or not. Axes: **Risk** grows bugFixRate healthy→concerning→critical,
-churnVolatility stable→erratic; **Stability** grows ageDays recent→legacy;
-**Confidence** falls with commitCount "low". E.g.
-`bugFixRate concerning, ageDays recent, commitCount typical` → Risk rising,
-Stability low, Confidence medium → STANDARD leaning STABILIZATION; DEFENSIVE
-needs `critical` + old.
+**Autonomous Judgment Protocol** (no hard rule matches) — all three steps:
+
+1. **Decide** — closest NAMED strategy
+   (DEFENSIVE/STABILIZATION/CONSERVATIVE/STANDARD) by the signal axes. No name =
+   Step 1 not done, code or not.
+2. **Justify** — each label → its axis → why + specific actions.
+3. **Ask if uncertain** — present the dilemma with options. "X leaning Y" → last
+   line, even when justified: `X or Y?`
+
+Signal axes:
+
+- **Risk** grows: bugFixRate healthy→concerning→critical, churnVolatility
+  stable→erratic
+- **Stability** grows: ageDays recent→legacy
+- **Confidence** falls: commitCount "low" = few data points
+
+Answer opens with this line, slots filled:
+`No hard rule matches → Autonomous Judgment: Risk <…>, Stability <…>, Confidence <…> → <X> leaning <Y>`
+— then actions, then `<X> or <Y>?`. E.g.
+`bugFixRate healthy, ageDays old, commitCount low` → Risk low, Stability high,
+Confidence low → CONSERVATIVE leaning STANDARD (CONSERVATIVE's hard rule needs
+`legacy`).
 
 **Load strategy (MANDATORY, name the file):** custom `strategy-<mode>` skill →
 use it; else READ `strategies/<mode>.md` (DEFENSIVE → `strategies/defensive.md`)
@@ -298,11 +313,15 @@ before Step 7 — never skipped, also on "tests green, finalize".** In order:
      verbatim); `preExisting` + `remedy` → apply remedy; `preExisting`, no
      `remedy` / pre-existing cohesion cluster → one report line + bead
      suggestion, never refactored here, commit allowed; own new cohesion cluster
-     → move it now. Flap (≤ 0.02 over tolerance) = ordinary introduced: fix if
-     cheap, else report metric before/after, threshold, moving diff edge — user
-     decides. Co-change partner: inspect each — depends on changed contract →
-     edit in this diff; else known-noise class shown to hold (version manifest
-     per `silentCoupling.md`) or checkable `not touched because` line.
+     → move it now. Print per finding, before any repair:
+     `INTRODUCED <finding> — repair: <concrete operation>` /
+     `REPORT-ONLY <finding> — preExisting, left unchanged`, then
+     `GATE review_changes: introduced=<INTRODUCED count>, partial=<…>`. Flap (≤
+     0.02 over tolerance) = ordinary introduced: fix if cheap, else report
+     metric before/after, threshold, moving diff edge — user decides. Co-change
+     partner: inspect each — depends on changed contract → edit in this diff;
+     else known-noise class shown to hold (version manifest per
+     `silentCoupling.md`) or checkable `not touched because` line.
    - **After every repair: re-run SAME `review_changes` + targeted tests, state
      "target gone, no new finding", print BOTH lines:**
      `GATE review_changes: introduced=<before>, partial=<…>`, then the re-review
@@ -335,12 +354,13 @@ the index's (`tea-rags://guide/freshness`).
 
 Blast radius of generated change:
 
-- **Codegraph on:** `rerank="blastRadius"`, metaOnly=true (real edges). Warn on
-  high-`fanIn` / `isHub` dependents.
+- **Codegraph on:** `rerank="blastRadius"`, metaOnly=true — real `fanIn` +
+  churn + bugFix over actual call/import edges. Warn on high-`fanIn` / `isHub`
+  dependents.
 - **Codegraph off** (`fanIn` absent): custom weights
   `{ imports: 0.5, churn: 0.3, ownership: 0.2 }`, metaOnly=true, note
   approximate (import-proxy) — `tea-rags://guide/navigation` "Graph navigation".
-- **MODIFY: `get_callers` on modified symbol MANDATORY** — import proxy
-  insufficient.
+- **MODIFY: `get_callers` on modified symbol MANDATORY** — changed behaviour
+  propagates through real call edges; import proxy insufficient.
 
 Warn on high-impact modules. Flag shared taskIds → coordinated change.

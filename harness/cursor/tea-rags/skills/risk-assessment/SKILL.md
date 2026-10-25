@@ -48,8 +48,11 @@ No `## Label maps` above → read
 ## Phase Order (MANDATORY — do not skip any phase)
 
 🛑 STOP — read all phases before scanning. Order = the numbered steps of the
-skeleton at the top; Phase 1 plan states its Pagination stops; structural debt
-is git-blind; single-signal reports mislead.
+skeleton at the top; Phase 1 plan states its Pagination stops. Phase 1b MUST run
+in the same parallel block — structural debt is git-blind, a big quiet method
+never reaches Phase 1. Stratified scan MUST run even when Phase 1 found enough
+hits — single-preset risk maps are biased. Report signal pairs — single-signal
+reports mislead.
 
 ## Top Anti-patterns (read before scanning)
 
@@ -147,9 +150,9 @@ $ARGUMENTS describes...
 ```
 
 **pathPattern rules:** Scope = directory-level prefixes. Brace of full file
-paths matches ONLY those files.
+paths matches ONLY those files — scan misses rest of domain.
 
-**One call only.**
+**One call only.** Scope resolution not exhaustive.
 
 ## Phase 1: SCAN
 

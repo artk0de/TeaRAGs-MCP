@@ -32,13 +32,15 @@ instance, `Class.method` static, `functionName` top-level). Bare
 
 ## Step 3 — multi-hop (how X reaches Y)
 
-"How does a webhook reach the job queue?" asks for the full chain: resolve both
-endpoint symbols with `find_symbol`, then `trace_path from=<X> to=<Y>` — all
-paths, one call (per core routing "how does X reach Y / A→B"). `namesakes` in
-answer / `paths: []` with `namesakes` → disambiguate via `fromPath` / `toPath`
-(exact relativePath from prior result), not absence of path. Model hops carry
-`p`; path `minP` = weakest link — say so. Present `X → A.run() → B.help() → Y`.
-Genuinely no path → say so; never pad with content-search guesses.
+"How does a webhook reach the job queue?" asks for the full chain: endpoint
+symbol names known → `find_symbol` each; endpoints described in words →
+`semantic_search` for them, ids from its hits (a phrase is never a
+`find_symbol symbol=`). Then `trace_path from=<X> to=<Y>` — all paths, one call
+(per core routing "how does X reach Y / A→B"). `namesakes` in answer /
+`paths: []` with `namesakes` → disambiguate via `fromPath` / `toPath` (exact
+relativePath from prior result), not absence of path. Model hops carry `p`; path
+`minP` = weakest link — say so. Present `X → A.run() → B.help() → Y`. Genuinely
+no path → say so; never pad with content-search guesses.
 
 ## Output
 
