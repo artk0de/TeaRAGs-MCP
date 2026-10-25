@@ -28,24 +28,24 @@ risk tiers) BEFORE inner skill; direct `$Y` skips it.
 ## Missing superpowers (MANDATORY)
 
 Every wrapper chains into a superpowers skill; dinopowers does not bundle
-superpowers. Wrapped `superpowers:` skill not available (see "Available" below)
-→ STOP and ask the user to install superpowers:
+superpowers. Availability check — in this order, plan-only included:
+
+1. `$Y` / `$Y` in your skills list → available.
+2. Not in the list → that is NOT evidence: the skills list is truncated to a
+   character budget, and superpowers often falls off it. Read its installed file
+   with ONE command — Codex:
+   `ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/<Y>/SKILL.md` (default
+   `~/.codex`), then read that file. superpowers is a separate plugin, never
+   under the dinopowers dir. Found → available; invoke `$Y` after the wrapper's
+   required enrichment.
+3. Only when step 2's read fails (or the invocation fails) → unavailable: STOP
+   and ask the user to install superpowers:
 
 - Source: https://github.com/obra/superpowers
 - Claude Code: `/plugin install superpowers@claude-plugins-official`
 - Codex / Cursor: the install steps in the superpowers repository README
 
-NEVER run the wrapper's tea-rags enrichment alone and present it as the full
-workflow. A wrapper whose SKILL.md requires its enrichment regardless
+Unavailable: NEVER run the wrapper's tea-rags enrichment alone and present it as
+the full workflow. A wrapper whose SKILL.md requires its enrichment regardless
 (verification-before-completion's scan) runs it first; the missing skill then
 blocks only the inner step and any completion claim.
-
-Available = `$Y` / `superpowers:Y` is in your skills list, or its installed
-`SKILL.md` has been found and read. If either check succeeds, invoke the inner
-skill with `$Y` after completing the wrapper's required enrichment. Treat it as
-unavailable only when neither check succeeds or the invocation fails.
-superpowers is a separate plugin, never under the dinopowers dir — a missing
-file next to the wrapper is not "unavailable". Not in the list → look for its
-installed `SKILL.md` in the plugin cache (Codex:
-`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/<Y>/`, default `~/.codex`)
-before calling it unavailable.

@@ -26,14 +26,13 @@ No code area identifiable (pure conceptual) → skip enrichment, invoke
 **Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
 `superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
-**Requires superpowers:** `superpowers:brainstorming` unavailable → stop, ask
-the user to install superpowers (https://github.com/obra/superpowers; steps in
-[CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow. Available = `$brainstorming` /
-`superpowers:brainstorming` is in your skills list or its installed SKILL.md was
-found and read (then invoke it after this enrichment); superpowers is a separate
-plugin, never under the dinopowers dir — a missing file next to the wrapper is
-not "unavailable".
+**Requires superpowers:** `superpowers:brainstorming` — availability per
+[CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): read
+`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/brainstorming/SKILL.md` first;
+only a failed read → stop and ask the user to install superpowers
+(https://github.com/obra/superpowers). NEVER present this enrichment alone as
+the full workflow.
 
 **Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
 `tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`

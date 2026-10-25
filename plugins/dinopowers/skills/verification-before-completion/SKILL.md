@@ -84,17 +84,15 @@ redirects superpowers:X. NEVER bypass the wrapper. Open each chained SKILL.md
 with its own read.
 
 **Requires superpowers for the inner step:**
-`superpowers:verification-before-completion` unavailable → still run the
-collateral-damage scan first (Iron Rule); then stop before claiming "done", say
-the inner verification step could not run, ask the user to install superpowers
-(https://github.com/obra/superpowers; steps in
-[CHAINING.md](../../CHAINING.md)). The missing skill blocks only the inner step
-and the completion claim, never the scan. NEVER present the scan alone as the
-full workflow. Available = `$verification-before-completion` /
-`superpowers:verification-before-completion` is in your skills list or its
-installed SKILL.md was found and read (then invoke it after this enrichment);
-superpowers is a separate plugin, never under the dinopowers dir — a missing
-file next to the wrapper is not "unavailable".
+`superpowers:verification-before-completion` — availability per
+[CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): read
+`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/verification-before-completion/SKILL.md`
+first. Only a failed read → still run the collateral-damage scan (Iron Rule),
+then stop before claiming "done", say the inner step could not run, ask the user
+to install superpowers (https://github.com/obra/superpowers). The missing skill
+blocks only the inner step and the completion claim, never the scan; NEVER
+present the scan alone as the full workflow.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never

@@ -83,14 +83,13 @@ First test in project (no tests) → skip pattern search,
 redirects $X. NEVER bypass the wrapper. Open each chained SKILL.md with its own
 read.
 
-**Requires superpowers:** `$test-driven-development` unavailable → stop, ask the
-user to install superpowers (https://github.com/obra/superpowers; steps in
-[CHAINING.md](../../CHAINING.md)). NEVER run this enrichment alone and present
-it as the full workflow. Available = `$test-driven-development` /
-`superpowers:test-driven-development` is in your skills list or its installed
-SKILL.md was found and read (then invoke it after this enrichment); superpowers
-is a separate plugin, never under the dinopowers dir — a missing file next to
-the wrapper is not "unavailable".
+**Requires superpowers:** `$test-driven-development` — availability per
+[CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): read
+`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/test-driven-development/SKILL.md`
+first; only a failed read → stop and ask the user to install superpowers
+(https://github.com/obra/superpowers). NEVER present this enrichment alone as
+the full workflow.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
 `tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
