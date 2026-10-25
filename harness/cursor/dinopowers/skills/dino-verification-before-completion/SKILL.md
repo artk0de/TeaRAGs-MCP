@@ -55,15 +55,24 @@ session edited files: ONE
 a stack below = its owner's, cite the commit, no triage). Triage: no
 `preExisting` → repair; `preExisting` + `remedy` → apply the remedy;
 `preExisting`, no `remedy` → one report line + bead suggestion, commit allowed.
-After every repair: re-run the SAME `review_changes` + targeted tests — target
-gone AND no new finding, else revert the whole round; 2 rounds left a must-fix →
-ask the user (finding, rounds tried, why reverted; fix / accept with reason /
-bead), no commit. `truncated` / `built: false` / skipped files = PARTIAL ≠ pass
-→ re-run with `files` batches. `entryPoint` / `compositionRoot` /
-`foundationTerminal` QUOTED from the finding = placement, not defect. Report
-`GATE review_changes: introduced=<n>, partial=<true|false>` with the real
-counts. Naming verdicts: MISFIT → rename to the suggestion before commit;
-NEW_TERM → decide now + one-line why.
+Answer prints, before any repair (supplied findings too, plan-only too):
+
+```
+INTRODUCED <finding> — repair: <concrete operation>
+REPORT-ONLY <finding> — preExisting, left unchanged
+GATE review_changes: introduced=<INTRODUCED count>, partial=<true|false>
+```
+
+and after the repair's re-review:
+`GATE review_changes: introduced=<n>, partial=<…>` (plan-only: the expected
+`introduced=0`, or `<n>` + "must be 0 to commit"). After every repair: re-run
+the SAME `review_changes` + targeted tests — target gone AND no new finding,
+else revert the whole round; 2 rounds left a must-fix → ask the user (finding,
+rounds tried, why reverted; fix / accept with reason / bead), no commit.
+`truncated` / `built: false` / skipped files = PARTIAL ≠ pass → re-run with
+`files` batches. `entryPoint` / `compositionRoot` / `foundationTerminal` QUOTED
+from the finding = placement, not defect. Naming verdicts: MISFIT → rename to
+the suggestion before commit; NEW_TERM → decide now + one-line why.
 
 ## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
