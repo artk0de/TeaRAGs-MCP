@@ -19,7 +19,7 @@ Describing compliance is not compliance.
 SubagentStart line or `workingTree.project`; unknown → `path` alone. No working
 dir → `project` alone. `index_codebase`: `project` ONLY (`path` = NEW project).
 
-**Routing** (first match wins; a loaded skill's step overrides; tools =
+**Routing** (first match wins; a loaded skill's step overrides; tools
 `mcp__tea-rags__*`):
 
 | Need                       | Call                                           |
@@ -49,15 +49,16 @@ a diff's → `review_changes` verdicts, nothing after.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
   `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
-- Subagent: no reindex, no user question — parent note, not a step. Otherwise
-  own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
-  unindexed edits → step 1 incremental `index_codebase(project=)`, no consent;
-  drift `--force*` `Run:` → step 2 ask the user (adds, never awaited); answering
-  call runs now — never index-only. Linked worktree → overlay only.
+- Subagent: no reindex, no user question (parent note). Otherwise own checkout
+  (tree = alias's path), `changedFiles` > 0, stale banner or unindexed edits →
+  step 1 incremental `index_codebase(project=)`, no consent; drift `--force*`
+  `Run:` → step 2 ask the user, never awaited: print
+  `--force not run; reads continue`; answer, never index-only. Linked worktree →
+  overlay only.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
-  changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`, no
-  graph retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles`
-  = DAG.
+  changed files → step 1, `find_symbol` its caller, `hybrid_search(metaOnly)`;
+  no graph retry. Codegraph off → never claim "no cycles"; on + empty
+  `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.
@@ -68,8 +69,7 @@ a diff's → `review_changes` verdicts, nothing after.
 - after any search, before answering → `navigation`; 0 hits, too many, ambiguous
   name, when to stop → `pagination`
 - picking a skill, prohibited patterns, fallbacks → `decision-tree`
-- stale banner, drift, `treeState`, `degraded`, edited files, linked worktree →
-  `freshness`
+- stale banner, drift, `treeState`, `degraded`, linked worktree → `freshness`
 - embedding / qdrant error, `denseUnavailable` → `degraded`
 - before a raw `filter:` → `filters`
 - before choosing `rerank` → `presets` + `signals`; reading labels →
