@@ -56,7 +56,7 @@ a diff's → `review_changes` verdicts, nothing after.
   parts = one hit.
 - Lag ≠ unusable: `changedFiles`, `pendingFiles`, `floors: []`, drift never
   license leaving tea-rags — ticket-named files too. No `treeState` = current;
-  `treeState` row = pre-edit copy (signals hold, text stale) → `find_symbol`.
+  `treeState` row = pre-edit copy (text stale) → `find_symbol`.
 - Subagent: no reindex, no user question (parent note). Otherwise own checkout
   (tree = alias's path), `changedFiles` > 0, stale banner or unindexed edits →
   step 1 incremental `index_codebase(project=)`, no consent; drift `--force*`
@@ -64,9 +64,9 @@ a diff's → `review_changes` verdicts, nothing after.
   `--force not run; reads continue`; answer, never index-only. Linked worktree →
   overlay only.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
-  changed files → step 1, `find_symbol` its caller, `hybrid_search(metaOnly)`;
-  no graph retry. Codegraph off → never claim "no cycles"; on + empty
-  `find_cycles` = DAG.
+  changed files → own-checkout incremental, `find_symbol` its caller,
+  `hybrid_search(metaOnly)`; no graph retry. Codegraph off → never claim "no
+  cycles"; on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
 - User-named action ("read `x.ts`") → do it; user's weaker method → keep the
   rule's, say why.
