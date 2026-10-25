@@ -118,6 +118,10 @@ Invoke `Skill` tool with `/writing-skills`. Prepend Step 3 block. Handoff:
 
 Inner skill runs RED-GREEN-REFACTOR — wrapper enriches, not replaces.
 
+In the tea-rags repo, authoring a skill under `plugins/**`: follow
+`.claude/rules/skill-authoring.md` (harness matrix, cross-harness practices,
+checklist).
+
 ## Red Flags — STOP and restart from Step 2
 
 - "I already know the SKILL.md format" / "tea-rags slow, skip" → run Step 2
