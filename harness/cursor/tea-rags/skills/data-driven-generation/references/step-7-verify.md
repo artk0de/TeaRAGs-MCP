@@ -14,6 +14,7 @@ N-TH-WAY find_similar(positiveCode = generated code): <near-duplicate module →
 PINS tests-at-risk + 6a pins: green                                   (MODIFY)
 INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non-preExisting finding)
 FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
+REMEDY-APPLIED <family> <edge|symbol> — preExisting, server remedy applied: <remedy operation>   (per preExisting WITH remedy — never optional)
 REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
 GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
 RE-REVIEW same review_changes + targeted tests: target gone, no new finding
@@ -102,8 +103,9 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
      detector row) or `scopeSkippedFiles` = PARTIAL ≠ pass, even at zero
      findings → re-run with `files: [...]` batches until every changed file is
      judged; (iii) triage table must-fix rows repaired.
-   - `preExisting: true` = not yours: cheap repair optional (triage table),
-     never blocks gate, never counted in `introduced`.
+   - `preExisting: true` = not yours: never blocks gate, never counted in
+     `introduced`. With `remedy` → apply it (triage row cheap-preExisting);
+     without → report-only line + bead.
    - Output: the answer block above. Count not supplied → run the review, never
      infer it; plan-only with unknown count → keep `<n>` as written.
 

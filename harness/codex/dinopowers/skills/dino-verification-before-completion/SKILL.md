@@ -248,6 +248,8 @@ scope, never substitutes.
 - "Only tests need to run, change isolated" / "edited files' tests pass" → ANY
   edited file `imports > 0` → run Step 2; dependents may break
 - "git diff small, skip scan" / "trivial rename" → run Step 2
+- User offers `grep` for importers → answer opens with the `Not grep: …` line of
+  the table above, verbatim
 - Substituted `grep -r` / `git log` → importers via
   `get_callers(relativePath=<module>)` (codegraph off: `hybrid_search` on the
   module path); blast radius via Step 2

@@ -234,7 +234,7 @@
     {
       "id": "E15",
       "context": "control-ish, own checkout",
-      "prompt": "prime stale 3d, drift none, changedFiles 12; explain retry logic",
+      "prompt": "prime stale 3d, drift none, changedFiles 12; explain how the project's retry logic works",
       "expected": "index_codebase incremental then semantic_search / explore",
       "audit_finding": "A1",
       "results": {

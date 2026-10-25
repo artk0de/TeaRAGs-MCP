@@ -62,7 +62,10 @@ Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 
 ## Step 0: MODE
 
-`find_symbol(metaOnly=true)` on named target, zero guessing:
+Target's file outline / body already in the conversation and unedited since →
+that IS the probe, no call; print
+`REUSE <file> — unedited since fetch; in-context outline/body stand, no find_symbol`.
+Otherwise `find_symbol(metaOnly=true)` on named target, zero guessing:
 
 | Probe result                                       | Mode   |
 | -------------------------------------------------- | ------ |

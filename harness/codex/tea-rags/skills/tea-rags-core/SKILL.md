@@ -60,8 +60,8 @@ a diff's → `review_changes` verdicts, nothing after.
 - Subagent: no reindex, no user question — parent note, not a step. Otherwise
   own checkout (tree = alias's path), `changedFiles` > 0, stale banner or
   unindexed edits → step 1 incremental `index_codebase(project=)`, no consent;
-  drift `--force*` `Run:` → step 2 ask the user (adds, not replaces); then the
-  answering call — never index-only. Linked worktree → overlay only.
+  drift `--force*` `Run:` → step 2 ask the user (adds, never awaited); answering
+  call runs now — never index-only. Linked worktree → overlay only.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
   changed files → `find_symbol` its caller, then `hybrid_search(metaOnly)`, no
   graph retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles`
