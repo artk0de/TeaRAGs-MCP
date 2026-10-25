@@ -24,7 +24,7 @@ generation ("before implementing" / "generate"): resolved scope + per-symbol
 overlay labels, no extra block or scan. `Output:` = last line, verbatim:
 
 ```
-0. SCOPE → location test (Phase 0): pass → pathPattern; fail → ONE semantic_search → prefixes; whole project → none
+0. SCOPE (Phase 0): process noun last → concept; location test: pass → pathPattern; concept → ONE semantic_search → prefixes; whole project → none
 1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
    stop per preset: gradient drop > 2× avg gap | < 3 new files | page 3 (offset 20)
 1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
@@ -134,14 +134,17 @@ $ARGUMENTS describes...
 │   → pathPattern = none
 │   → scopeType = "broad"
 │
+├─ Last word a process noun (pipeline, flow, lifecycle, handling, processing,
+│   logic, workflow) → concept, even after a name: "<name> pipeline" ≠ **/<name>/**
+│
 ├─ LOCATION TEST passes — the phrase holds one of: a path ("explore/",
 │   "src/x"); a name + container word (domain, module, package, directory,
 │   layer, area); one component's agent-noun name ("the chunker", "the parser")
 │   → pathPattern = "**/<name>/**" (noun → stem dir: "chunker" → "**/chunk*/**")
 │   → scopeType = "domain"
 │
-└─ Test fails = concept — a process, behaviour or topic ("error handling",
-    "request lifecycle", "billing flow"); never guess a directory from its nouns
+└─ Concept (process noun, or test fails) — a process, behaviour or topic;
+    never guess a directory from its nouns
     → ONE search call (concept/behavior → semantic_search,
       named symbol + context → hybrid_search):
       query = extracted concept, language = primary, limit = 10

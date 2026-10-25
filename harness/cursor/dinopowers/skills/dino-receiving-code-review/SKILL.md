@@ -211,9 +211,9 @@ Rename / "unclear name" comment →
   current name, cite project's term + its holder (file) as precedent
 
 Before results, write which row applies and its action. A shorter / abbreviated
-rename of a current name (`doc` for `tax_automation_document`) = row "proposed
-`MISFIT` / `NEW_TERM` while current `CONFORMS`": plan to push back, keeping the
-current name, citing the project term + its holder file.
+rename of a current name (`entry` for `ledger_entry`) = row "proposed `MISFIT` /
+`NEW_TERM` while current `CONFORMS`": plan to push back, keeping the current
+name, citing the project term + its holder file.
 
 Naming across whole change, no identifier named ("names in this PR don't match
 the codebase") →

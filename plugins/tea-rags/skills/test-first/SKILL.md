@@ -18,14 +18,14 @@ description:
 RED phase. Output = recorded red, the gate GENERATE needs. No production code
 here.
 
-Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
-0 → incremental `index_codebase`; subagent / linked worktree → never reindex. →
+Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` > 0
+→ incremental `index_codebase`; subagent / linked worktree → never reindex. →
 `tea-rags://guide/freshness`.
 
 ## Iron Rules
 
-1. **Red before code.** No production edit until every new test ran + failed
-   for right reason (bug fix: reproduction first). Code written first → delete,
+1. **Red before code.** No production edit until every new test ran + failed for
+   right reason (bug fix: reproduction first). Code written first → delete,
    start from test.
 2. **Right reason only.** Red = assertion failed, or behaviour/symbol under test
    missing (not-implemented, method absent on existing object). NOT red: import
@@ -70,8 +70,8 @@ files, `intent` = change description). Run those scenarios + target's own test
 file BEFORE any edit.
 
 - All green → baseline recorded.
-- Red before your edit → pre-existing failure: report, don't fix silently,
-  don't count as your red.
+- Red before your edit → pre-existing failure: report, don't fix silently, don't
+  count as your red.
 - Pin asserts OLD behaviour this task explicitly changes → becomes red test of
   new behaviour (expectation → spec, state `PIN-UPDATED <test> — <spec line>`).
   Other pins untouched.
@@ -103,11 +103,16 @@ Before writing a test:
 
 ```text
 RED <mode>/<change kind>
-- <test id> — FAIL: <assertion/missing-behaviour line, verbatim excerpt>
+RED <test> — FAIL: <failure excerpt | [planned; not run]> — right reason: <assertion | stub>
 BASELINE: <n> pins green | unpinned | pre-existing red: <test ids>
 PIN-UPDATED <test> — <spec line>        (only when Step 1 rule fired)
 EXCEPTION <kind> — <reason>             (only when Step 0 exception fired)
 ```
+
+One `RED` line per new test — the only definition of that line. Plan-only /
+not-yet-run answer still prints it, excerpt `[planned; not run]`, right reason =
+the one the run must show; "I would run the test" without the line = RED not
+done.
 
 Caller (data-driven-generation 6b GREEN) implements until every listed test and
 every baseline pin is green.

@@ -94,7 +94,7 @@ Ambiguous → ask which mode (one question, genuine ambiguity only).
   debugging wrapper (those = cause unknown). Answer lines, in order:
   `HOTFIX → MODIFY: STRATEGY + blame STYLE skipped`; Step 4 REUSE for introduced
   logic; each introduced name → ONE
-  `get_naming_lexicon(language, types: [<signature + local types>], anchors: [<symbol>], names: [<new names only>])`
+  `get_naming_lexicon(language, types: [<signature + local types>], anchors: [<symbol>], names: [<new names only, each { name, kind, type }>])`
   — no `concept`, no existence sweep; RED; Step 7 in full.
 - **Bug fix** = MODIFY; cause unknown → `bug-hunt` locates it first; fix still
   runs 6a in order: baseline GREEN → reproduction test (asserts correct output,
@@ -234,14 +234,16 @@ First Step 5 line, label given = row applied:
 `STYLE <label> → <behaviour>; review: <owner | none>`.
 
 Naming (codegraph on): ONE `get_naming_lexicon` call before GENERATE — project's
-name for a value it already names; holder that IS what you are about to write →
-back to Step 4, never rename and write a sibling. Print the call, arguments
-filled from the task, then its result lines:
-`get_naming_lexicon(language, types: [<held value types>], anchors: [...], concept: <description — new type/service only>, names: [<every draft>])`.
+name for a value it already names. Print the call, arguments filled from the
+task, then its result lines:
+`get_naming_lexicon(language, types: [<held value types>], anchors: [...], concept: <description — new type/service only>, names: [{ name: <draft>, kind: <local|param|field|return>, type: <its value type when known> }, …])`.
 
-Every name you are about to write is a draft in `names[]` — user's included
-(`row = find_vendor_envelope(id)` → `row` as `local`, `find_vendor_envelope` as
-`return`). New class / module / interface →
+Every name you are about to write is a draft in `names[]`, each entry carrying
+its own `type` (the same type also in `types[]`) — user's included:
+`rec = load_entry(id)` returning `LedgerEntry` →
+`{ name: "rec", kind: "local", type: "LedgerEntry" }`,
+`{ name: "load_entry", kind: "return", type: "LedgerEntry" }`. New class /
+module / interface →
 `{ name, kind: "type", path: <new file>, symbolKind, extends: <planned ancestor> }`
 — never name a type from neighbours without the call. `concept` = DESCRIPTION of
 what it does (never draft name) + `language`. `MISFIT` → take `suggestion`, type
@@ -249,23 +251,31 @@ MISFIT included (missing `role` suffix: `PaymentRetryHandler` extending
 `RetryPolicy` → `PaymentRetryPolicy`); keep draft only when
 `role.evidence: "directory"` and type outside `role.examples`' family.
 `NEW_TERM` + same-meaning word in `topTerms` / `alternatives` → name the adopted
-term now, say why (`organizer` in topTerms → `IntakeOrganizer`). Codegraph off →
-concept-only `semantic_search` per the reference; split holders' symbolIds and
-paths into words, recurring word = project term; values named as template's code
-names the same types.
+term now, say why (user says "coupon", `voucher` in topTerms → `VoucherIssuer`).
+Codegraph off → concept-only `semantic_search` per the reference; split holders'
+symbolIds and paths into words, recurring word = project term; values named as
+template's code names the same types.
+
+Holder (`concept` / `names[].holder`) that already IS what you are about to
+write = missed reuse, not naming → back to Step 4, its gate run on THAT holder,
+printed:
+`BACK-EDGE <holder symbolId> → Step 4 gate: locality <L1|L2|L3>, fanIn <label> → <import | extend minimal-diff | follow approach>`
+— never rename the draft and write a sibling.
 
 Step 5 output = CONCRETE final names, one line per draft:
-`<draft> → <name> (<shape>, <kind>)`, from dominant row of
-`byType[].kinds.<kind>` (highest `n`), in its casing:
-`row → tax_automation_document (EXACT, local)`,
-`find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`,
-`graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`.
-Concept new (no same-meaning term, even when context names its namespace/class
-or gives the lexicon) → pick the term now; print BOTH slots filled:
+`<draft> → <name> (<shape>, <kind>)`, `<name>` = the top name of
+`byType[].kinds.<kind>` (highest `n`; listed order when `n` absent), in its
+casing, whatever the dominant shape — `FREE` = project names by role → that top
+name, never the type-spelled draft: `rec → ledger_entry (EXACT, local)`,
+`load_entry → find_ledger_entry! (VERB_TYPE, return)`,
+`graph_db_client → client (TAIL, param — client n=40 beats graphDb n=12)`,
+`fileHandle → out (FREE, param — kinds.param: out, w, sink)`. Concept new (no
+same-meaning term, even when context names its namespace/class or gives the
+lexicon) → pick the term now; print BOTH slots filled:
 `NEW_TERM Debouncer — no project term denotes coalescing bursts into one call`.
-A line still showing `<term>`, conditional, or described not printed = not the
-line. "Project vocabulary" / "a name that describes the lookup" without the name
-= Step 5 not done.
+A line still showing `<term>`, conditional ("X is a candidate, conventions
+decide"), or described not printed = not the line. "Project vocabulary" / "a
+name that describes the lookup" without the name = Step 5 not done.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
@@ -276,15 +286,16 @@ and GREEN; never `test-driven-development` / superpowers TDD as separate phase.
 **No production edit without a recorded RED block** (or its one-line named
 exception). RED block = each test RUN, failing for the RIGHT reason — assertion
 / missing behaviour (stub); import, compile, syntax, missing-fixture failures
-are not red. Say it per test: `RED <test> — right reason: <assertion | stub>`.
-Plan-given test code goes in byte-exact. MODIFY / bug fix / refactor-move:
-`tests-at-risk` pins + target's own tests GREEN BEFORE first edit or move — then
-bug fix: reproduction red; behaviour change an existing pin asserts (old
-default) → that pin, updated to spec value, IS the red:
-`PIN-UPDATED <test> — <spec line>`, other pins untouched, run red, then edit;
-refactor: no new test, same tests green after. Moving first, testing after =
-baseline skipped. 6b GREEN — minimal; call reuse-manifest helpers, NEVER
-reimplement. 6c REFACTOR under green only.
+are not red. Per test, the line `/test-first` Step 4 defines:
+`RED <test> — FAIL: <failure excerpt | [planned; not run]> — right reason: <assertion | stub>`;
+"I would run the test" without it = no RED. Plan-given test code goes in
+byte-exact. MODIFY / bug fix / refactor-move: `tests-at-risk` pins + target's
+own tests GREEN BEFORE first edit or move — then bug fix: reproduction red;
+behaviour change an existing pin asserts (old default) → that pin, updated to
+spec value, IS the red: `PIN-UPDATED <test> — <spec line>`, other pins
+untouched, run red, then edit; refactor: no new test, same tests green after.
+Moving first, testing after = baseline skipped. 6b GREEN — minimal; call
+reuse-manifest helpers, NEVER reimplement. 6c REFACTOR under green only.
 
 Move / merge / split of existing files → ONE `get_architecture_report`
 `restructure` hypothesis first (`move{files, toComponent}` +

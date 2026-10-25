@@ -13,7 +13,8 @@ RISK <symbol> <chunk.<field>.label> → defensive call: <guard>; pinned by <test
 N-TH-WAY find_similar(positiveCode = generated code): <near-duplicate module → Step 4> | none
 PINS tests-at-risk + 6a pins: green                                   (MODIFY)
 INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non-preExisting finding)
-REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged      (per preExisting, no remedy)
+FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
+REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
 GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
 RE-REVIEW same review_changes + targeted tests: target gone, no new finding
 GATE review_changes: introduced=0, partial=false
@@ -34,9 +35,9 @@ GATE review_changes: introduced=0, partial=false
   (hubLike: efferent count vs cut, the new import) + ask the user, no commit.
 - Nothing to repair and not partial → `RE-REVIEW` + closing line dropped; the
   first `GATE` line is final.
-- Accepted false positive →
-  `FALSE-POSITIVE <family> <edge> — <counter-evidence> — issue <id>` in place of
-  its `INTRODUCED` line, not counted.
+- `FALSE-POSITIVE` = not counted in `introduced`. Filing the issue in the
+  session's tracker is part of this step (no separate consent); the issue id
+  comes from that filing call — **Confirm first** below.
 - Codegraph off → gate lines become
   `GATE review_changes: architecture not judged (codegraph off)`.
 - Paraphrase ("gate is clean", "report the updated result", "re-run the gate") =
@@ -139,9 +140,8 @@ folder" ≠ `compositionRoot: true`).
 **Every accepted false positive files a detector issue** — the detector is
 wrong, that is a defect, never a silent accept. Session has an issue tracker
 (project beads, tickets) → file there; else `$report-issue`. Body: family,
-finding fields verbatim, counter-evidence. Report line:
-`FALSE-POSITIVE <family> <edge> — <counter-evidence> — issue <id|url>`. No issue
-→ not accepted → fix or ask.
+finding fields verbatim, counter-evidence. Report line = the `FALSE-POSITIVE`
+line of the answer block. No issue → not accepted → fix or ask.
 
 **Triage** every architecture / cohesion / incompleteChange / norms finding
 confirmed REAL:

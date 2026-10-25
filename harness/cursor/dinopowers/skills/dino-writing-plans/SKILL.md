@@ -102,9 +102,12 @@ limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
 ```
 
-Describing the call (plan-only / subagent report) → write `pathPattern`
-literally as the brace string (`"{src/a.ts,src/b.ts}"`), never "scoped to the
-files".
+Describing the call (plan-only / subagent report) → print this line, slots
+filled, never "the specified calls" or "scoped to the files":
+
+```
+Step 2: semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}}>, metaOnly=true)
+```
 
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
 bugFix = true blast radius); off → `fanIn` gone →

@@ -247,7 +247,9 @@ Code-generation Task (heuristic = `/dino-writing-plans` Step 3.5: "implement" /
 "add" / "write" / "extend" + "function | method | class | helper | module") =
 Step 5 **Generation** row (DDG CREATE / EXTEND). **Modification** Tasks skip 4.5
 — DDG MODIFY skips TEMPLATE (symbol itself = reference). Non-code Tasks (config,
-test, doc) → straight to Step 5.
+test, doc) → straight to Step 5 — except a test Task whose test calls a symbol /
+module that does not exist yet: that is a **Generation** Task (DDG CREATE: the
+plan's test byte-exact as Step 6a RED, then GREEN).
 
 1. Plan carries `**Proven templates**` for this Task (writing-plans Step 3.5) →
    USE it, no recipe re-invocation (plan canonical).

@@ -26,13 +26,12 @@ project's name; a new term only for a genuinely new concept. Learn the
 CONVENTION — how a name relates to its value's type and to the call it is bound
 from — not one name to copy.
 
-Canonical failure (taxdome, Ruby): the project writes
-`tax_automation_document = find_tax_automation_document!(id)`, and a second
-binding of that model in one scope gets a qualifier
-(`tax_automation_document_ignored`). The agent wrote
-`row = find_vendor_envelope(id)` returning a `TaxAutomationDocument`: `row`
-carries no type (the Ruby resolver types receivers from names, so the graph
-loses edges), `vendor_envelope` is a term the project never uses.
+Canonical failure (Ruby): the project writes
+`ledger_entry = find_ledger_entry!(id)`, and a second binding of that model in
+one scope gets a qualifier (`ledger_entry_reversed`). The agent wrote
+`rec = load_record(id)` returning a `LedgerEntry`: `rec` carries no type (the
+Ruby resolver types receivers from names, so the graph loses edges), `record` is
+a term the project never uses.
 
 **Codegraph on** (graph tools registered) → ONE `get_naming_lexicon` call here,
 before GENERATE — the vocabulary sits in context while writing, so misfits are
@@ -55,9 +54,10 @@ prevented, not detected:
   name: a draft pulls in its own lexical neighbours.
 - `names[]` = drafts with `kind` (`local`/`param`/`field`/`return`) and `type`
   when known. Every draft — the user's included: a draft method/finder goes in
-  as `return`, the local it binds as `local`, their model type into `types[]`.
-  Type unknown but bound from a call → `callee: { member, receiver? }`. A new
-  class, module, interface, enum or constant →
+  as `return`, the local it binds as `local`, each entry carrying its own `type`
+  (the same type also in `types[]`). Type unknown but bound from a call →
+  `callee: { member, receiver? }`. A new class, module, interface, enum or
+  constant →
   `{ name, kind: "type", path: <its file>, symbolKind: <class|module|interface|enum|type_alias|constant>, extends?: <planned ancestor> }`:
   the ancestor's family and the directory set the expected role suffix;
   `symbolKind` keeps interface/type_alias/enum out of a class directory's role,
@@ -72,12 +72,12 @@ Reading the answer — the dominant shape per kind IS the convention:
 
 | Shape            | Name to build (casing as the returned names show)                          |
 | ---------------- | -------------------------------------------------------------------------- |
-| `EXACT`          | the type itself: `tax_automation_document`, plural for a collection        |
+| `EXACT`          | the type itself: `ledger_entry`, plural for a collection                   |
 | `QUALIFIED`      | EXACT + qualifier, for a second binding of the type in one scope           |
 | `TAIL`           | trailing word(s) of the type: `document`; `GraphDbClient` param → `client` |
-| `VERB_TYPE`      | `return`: verb + type — `find_tax_automation_document!`                    |
+| `VERB_TYPE`      | `return`: verb + type — `find_ledger_entry!`                               |
 | `CALLEE_DERIVED` | the callee without verb prefix and `!`/`?`: `x = find_x!(id)`              |
-| `FREE`           | project names by ROLE — pick from `kinds.<kind>` names; never force EXACT  |
+| `FREE`           | project names by ROLE — the top `kinds.<kind>` name; never force EXACT     |
 
 - `byType[].kinds.<kind>[].name` = the vocabulary; the dominant name (highest
   `n`) is reused verbatim — `[client n=40, graphDb n=12]` → `client`, never the
@@ -86,7 +86,8 @@ Reading the answer — the dominant shape per kind IS the convention:
 - `byCallee` = how the project names values bound from that call (untyped path).
 - `concept.terms` = the project's words for the concept. A holder that already
   IS what you are about to write → back to Step 4 and gate that holder (a missed
-  reuse, not a naming issue) — never rename and write a sibling.
+  reuse, not a naming issue) — the `BACK-EDGE` line of `SKILL.md` Step 5; never
+  rename and write a sibling.
 - `names[]`: `CONFORMS` → keep (it means consistent with the project's
   vocabulary, not a verdict on behaviour; an `alternatives` word on it is the
   project's term for the same concept → prefer it). `MISFIT` → take `suggestion`
@@ -112,7 +113,6 @@ paths into words; recurring terms = the vocabulary. Value names: follow how the
 template's code names the same types.
 
 Output for Step 6: the concrete final name per draft —
-`<draft> → <name> (<shape>, <kind>)`, e.g.
-`row → tax_automation_document (EXACT, local)`,
-`find_vendor_envelope → find_tax_automation_document! (VERB_TYPE, return)`. A
-plan that says "project vocabulary" without spelling the name = not done.
+`<draft> → <name> (<shape>, <kind>)`, e.g. `rec → ledger_entry (EXACT, local)`,
+`load_record → find_ledger_entry! (VERB_TYPE, return)`. A plan that says
+"project vocabulary" without spelling the name = not done.

@@ -37,12 +37,19 @@ A plan names these calls; "later" / "not in this run" never drops one.
 2. **Step 0 before any search:** Bash `git status --porcelain -uall`. Paths
    listed + alias's own checkout → `index_codebase` incremental (project only),
    no consent, BEFORE the search message. Linked worktree → no reindex.
-3. **ONE message, parallel** — same tool, query, `rerank="bugHunt"`, limit=10,
-   every call `path=<your working directory>` (+ `project`), stated in plan:
-   historical (scope) + fresh (`modifiedAfter=<window start>`) + uncommitted
-   (pathPattern = step-0 paths, brace-joined). Nothing else. User asks per-zone
-   queries ("adapters, pipeline, tests") → refuse: one query finds the area;
-   broad pathPattern or none.
+3. **ONE message, three parallel calls** — the plan prints these three lines,
+   slots filled (`<tool>`: decision tree; linked worktree → `hybrid_search`):
+
+   ```
+   a. historical:  <tool>(path=<your working directory>, query=<symptom>, pathPattern=<scope>, rerank="bugHunt", limit=10)
+   b. fresh:       <tool>(path=<your working directory>, query=<symptom>, pathPattern=<scope>, modifiedAfter=<window start>, rerank="bugHunt", limit=10)
+   c. uncommitted: <tool>(path=<your working directory>, query=<symptom>, pathPattern="{<step-0 paths>}", rerank="bugHunt", limit=10)
+   ```
+
+   (+ `project` when known; step 0 empty → no line c). Nothing else. User asks
+   per-zone queries ("adapters, pipeline, tests") → refuse: one query finds the
+   area; broad pathPattern or none.
+
 4. **Two-class triage, every hit and trace step:** historical (`critical` →
    prime; `concerning` + `relativeChurn` high → secondary) | fresh (burst;
    recent + high churn; recent on failing path; fresh-probe hit) | uncommitted
@@ -114,13 +121,8 @@ No `## Signal thresholds` above → read
    consent, BEFORE the search message. Linked worktree → no reindex.
    Every call: project=<alias> path=<your working directory>.
 
-1. Search — ONE message, parallel calls. Same tool (`tea-rags://guide/decision-tree`;
-   linked worktree → hybrid_search for all three), same query,
-   rerank="bugHunt", limit=10:
-   a. Historical — scope pathPattern, no time filter.
-   b. Fresh probe — scope pathPattern + modifiedAfter=<window start>
-      (see Fresh probe).
-   c. Uncommitted probe — pathPattern = step-0 paths. Step 0 empty → skip.
+1. Search — the three lines a/b/c of Non-negotiable 3, ONE message, parallel.
+   b = Fresh probe, c = Uncommitted probe (sections below).
 
 2. CHECKPOINT — fill from ALL available info:
    - Suspect file(s): ___

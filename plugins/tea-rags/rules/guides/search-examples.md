@@ -66,11 +66,11 @@ never another language's rows. Ruby: `@@x`, `x ||= v`, and accessor macros
 (`attr_*`, `cattr_*`/`mattr_*`, catalogue accessors — one field per operand) all
 declare `kind: "field"` rows, same as `@ivar =`.
 
-- "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
+- "What does the project call values of type T?" → types=["LedgerEntry"], language="ruby"
 - "Is Helper or Concern this area's suffix?" → types=["Helper","Concern"], `pathPattern="app/lib/**"` —
   a one-word type also answers typeNameHeads { scope, heads[{ head, n, files, kinds, examples }] }:
   the declarations under the pattern whose names END in it (namespace modules excluded)
-- "Is this name right?" (one draft / rename) → names=[{ name: "row", kind: "local", type: "TaxAutomationDocument" }]
+- "Is this name right?" (one draft / rename) → names=[{ name: "rec", kind: "local", type: "LedgerEntry" }]
 - An EXISTING name → add path: "<its file>" (any kind): that file is left out of the evidence, as a
   review leaves out changed files — a declaration never counts, collides with or confirms itself.
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]

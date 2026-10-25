@@ -1,6 +1,6 @@
 {
   "name": "dinopowers",
-  "version": "0.24.19",
+  "version": "0.24.20",
   "description": "Wrapper skills over superpowers:* that inject tea-rags signals (risk, ownership, churn, impact) into brainstorming, planning, execution, debugging, and review flows",
   "skills": "./skills/",
   "hooks": "./hooks/hooks.json"

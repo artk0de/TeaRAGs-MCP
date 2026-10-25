@@ -87,8 +87,9 @@ No symptom text (vague "something's off") → Step 4 without suspect block, stat
 Invoke `Skill` tool with `$bug-hunt`, pass `symptom` (+ `pathHint`). **OPEN the
 bug-hunt skill and run ITS steps** (no Skill tool → read its `SKILL.md` first).
 The triage below is a summary for reading its output, NOT a substitute — running
-`rerank="bugHunt"` from this summary = Step 2 skipped. Skill runs
-`semantic_search` `rerank="bugHunt"` + own triage:
+`rerank="bugHunt"` from this summary = Step 2 skipped. Plan line = bug-hunt's
+own search block, copied from its SKILL.md (three parallel calls, not one).
+Triage of its output:
 
 - `bugFixRate "critical"` → prime suspect
 - `bugFixRate "concerning"` + high churn → secondary suspect

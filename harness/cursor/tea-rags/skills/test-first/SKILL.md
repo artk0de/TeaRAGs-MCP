@@ -99,11 +99,16 @@ Before writing a test:
 
 ```text
 RED <mode>/<change kind>
-- <test id> — FAIL: <assertion/missing-behaviour line, verbatim excerpt>
+RED <test> — FAIL: <failure excerpt | [planned; not run]> — right reason: <assertion | stub>
 BASELINE: <n> pins green | unpinned | pre-existing red: <test ids>
 PIN-UPDATED <test> — <spec line>        (only when Step 1 rule fired)
 EXCEPTION <kind> — <reason>             (only when Step 0 exception fired)
 ```
+
+One `RED` line per new test — the only definition of that line. Plan-only /
+not-yet-run answer still prints it, excerpt `[planned; not run]`, right reason =
+the one the run must show; "I would run the test" without the line = RED not
+done.
 
 Caller (data-driven-generation 6b GREEN) implements until every listed test and
 every baseline pin is green.

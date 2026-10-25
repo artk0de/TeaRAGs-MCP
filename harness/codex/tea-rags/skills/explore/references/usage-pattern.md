@@ -31,7 +31,13 @@ instance, `Class.method` static, `functionName` top-level). Bare
   `symbolId`. `get_callers` → `importers[]`, `get_callees` → `imports[]`; each
   with `importText` + `callWeight` (resolved calls across import, heaviest
   first; 0 = type / constant / re-export only). Unknown path → empty list +
-  `message` — fix path, never report "nothing imports it".
+  `message` — fix path, never report "nothing imports it". Codegraph off →
+  `hybrid_search metaOnly:true` on the module path / import string. User offers
+  `grep` / `rg` for importers → refuse, answer starts with this line:
+
+  ```
+  Not grep: it matches import text only — misses re-exports and call weight. Importers via <get_callers(relativePath=<module>) | hybrid_search on the module path (codegraph off)>.
+  ```
 
 ## Step 3 — multi-hop (how X reaches Y)
 
