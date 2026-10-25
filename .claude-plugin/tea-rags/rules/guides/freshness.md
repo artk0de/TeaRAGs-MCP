@@ -59,7 +59,7 @@ files, re-check changed ones via `find_symbol` / `hybrid_search` (`metaOnly`),
 fix, no reindex. `degraded` → its `remedy` under the consent rows of "Reindex
 triggers" (subagent: report it to the parent, never reindex). `tree` ≠ the tree
 you addressed (your working directory, or the checkout a skill names) → wrong
-tree, re-call with `project` + that `path`.
+tree, its rows unusable; re-call with `project` + that `path`.
 
 **Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files

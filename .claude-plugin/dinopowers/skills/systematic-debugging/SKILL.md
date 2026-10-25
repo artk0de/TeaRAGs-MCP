@@ -6,8 +6,9 @@ description:
   ends with Cause / Fix / Prevention report. Triggers on
   "debug X", "fix the bug", "why does Y fail", "test fails", "same bug
   elsewhere?", "падает", "почему не работает", "ошибка в", "стектрейс", "такой
-  же баг в других местах", "which tool next mid-investigation", "final
-  report of a confirmed cause". NOT for code review, code-health questions, or
+  же баг в других местах", "something feels wrong with X, can't say what",
+  "which tool next mid-investigation", "final report of a confirmed cause".
+  NOT for code review, a code-health scan with no felt malfunction, or
   a request to apply a named fix at a named location (→ data-driven-generation).
   Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
 ---
@@ -32,10 +33,16 @@ are ranked, not assumed." bug-hunt `symptom` = the OBSERVED failure (error text,
 failing test, wrong output) — never the hypothesis restated (`<area> fails` =
 hypothesis); no `pathHint` to that file, no read of it before PRESENT. Report
 also states a failure → that is the symptom, bug-hunt now, no question. Report
-holds only the hypothesis → the plan prints both lines (question never replaces
-the invoke):
-`What fails — error text, failing test or wrong output? bug-hunt runs FIRST on that symptom; <file> is read only if it ranks as a suspect.`
-`Step 2 on the answer: Skill(tea-rags:bug-hunt) symptom="<observed failure>" — its three probes, no pathHint to <file>.`
+holds only the hypothesis → this branch wins over every "no symptom → skip
+bug-hunt" line below; the plan prints these three lines verbatim — a question
+without the invoke line = bug-hunt deferred = FAIL:
+
+```
+Running bug-hunt first so the suspects are ranked, not assumed.
+What fails — error text, failing test or wrong output? bug-hunt runs FIRST on that symptom; <file> is read only if it ranks as a suspect.
+Step 2: Skill(tea-rags:bug-hunt) invoked FIRST, before any read — symptom="<observed failure from the answer>", its three probes, no pathHint to <file>.
+```
+
 Never bug-hunt as post-hoc validation.
 
 **User insists on a file bug-hunt marked healthy** → do NOT re-run bug-hunt, do
@@ -118,7 +125,9 @@ From user report extract:
 Compose:
 
 - `symptom`: one behaviour sentence `<operation> fails: <error text>` (→
-  `tea-rags:bug-hunt` query) — never the bare error string
+  `tea-rags:bug-hunt` query) — never the bare error string. Stack trace → EVERY
+  named user-code frame + error text, framework / `at ...` frames dropped:
+  `<top frame> fails: <error text> during <next user frame>`
 - `pathHint`: optional pathPattern if scope known
 
 Speculative "maybe <defect> in <area>?" / "let's think" — no error, no failing
@@ -286,9 +295,14 @@ symbol whose name the user gave:
 consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>
 ```
 
-e.g.
-`consulting decision tree → hybrid_search because exhaustive usage of identifier Foo#bar`
-then `consulting decision tree → find_symbol because study known symbol`.
+Usage listing + known-symbol body → both lines, each before its call (a bare
+`find_symbol` with no line = silent choice):
+
+```
+consulting decision tree → hybrid_search because exhaustive usage of identifier Foo#bar
+consulting decision tree → find_symbol because study known symbol
+```
+
 Follow-up rerank = Step 3.5 preset table; bug-hunt weighting stays in bug-hunt.
 
 ## Step 5 — Root-cause report: Cause / Fix / Prevention (MANDATORY)
@@ -345,7 +359,7 @@ Rules:
 - Fabricated `symptom` from "it feels off" → skip Step 2, state it
 - Re-ran bug-hunt per hypothesis → one call per symptom; iteration = inner
   skill's job
-- Full stack trace as `symptom` → extract user-code frame / error message only
+- Full stack trace as `symptom` → named user-code frames + error message only
 - Inner skill chained raw `superpowers:test-driven-development` /
   `superpowers:verification-before-completion` → intercept, invoke
   `dinopowers:Y` (Chaining rule)

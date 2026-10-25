@@ -16,8 +16,9 @@ description:
 **Routing** (first match wins; each row prints its line):
 
 - Explain / compare a known file ("show / how does it work / compare / read
-  it"), even when the prompt says a bug was found there → no hunt, no search
-  (`hybrid_search` / `semantic_search` scoped to that file = curiosity search):
+  it"), even when the prompt says a bug was found there → no hunt, no search;
+  also via `explore` the answer prints both lines:
+  `'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
   `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body`.
 - Bug intent on a named file / symbol ("find bugs in <file>", "найди баги в X"),
   no symptom → here; the named location stands in for the symptom (scope
@@ -77,10 +78,13 @@ A plan names these calls; "later" / "not in this run" never drops one.
    c. uncommitted: semantic_search(path=<your working directory>, query=<symptom sentence>, pathPattern="{<step-0 paths: rename old -> new = new path, D = dropped>}", rerank="bugHunt", limit=10)
    ```
 
-   (+ `project` when known; step 0 empty → no line c). Nothing else. User names
-   zones to cover ("<zone A>, <zone B>, <zone C>") → refuse per-zone queries;
-   zones never become `pathPattern` (no brace of zones) — a and b run with the
-   same query and NO pathPattern; print:
+   (+ `project` when known; step 0 empty → no line c). Step-0 output not yet
+   seen (plan) → line c keeps its slot text verbatim, rename + `D` rule included
+   — never shorten it to "paths from git status". Nothing else. User names
+   zones/areas to cover ("<zone A>, <zone B>, <zone C>"), no stack trace →
+   refuse per-zone queries; zones never become `pathPattern` (no brace of zones)
+   — a and b run with the same query and NO pathPattern (stack-trace frame paths
+   are not zones: Non-negotiable 7); print:
    `one query finds the area — probes a/b run without pathPattern, no per-zone search.`
 
 4. **Two-class triage, every hit and trace step:** historical (`critical` →
@@ -113,14 +117,15 @@ A plan names these calls; "later" / "not in this run" never drops one.
    ```
    find_symbol(path=<cwd>, symbol=<entry frame>) → <entry id>
    find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
-   trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt") — triage EVERY step's dangerOverlay
+   trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt") — two-class triage of EVERY step's dangerOverlay: step ageDays recent = fresh suspect even at bugFixRate healthy and behind an old dangerRanking[0]
    ```
 
-   Recent step = fresh suspect even at `healthy` and behind an old
-   `dangerRanking[0]`. Only the failure site known → `get_callers` first, then
+   Only the failure site known → `get_callers` first, then
    `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
-   Codegraph off + stack trace → fresh probe `pathPattern={<frame paths>}` +
-   `modifiedAfter` + `rerank="bugHunt"`; say "no static path tool".
+   Codegraph off + stack trace → probe b (fresh) gets
+   `pathPattern="{<frame path 1>,<frame path 2>,…}"` + `modifiedAfter` +
+   `rerank="bugHunt"` (a: no pathPattern; c: step-0 paths); say "no static path
+   tool".
 
 No `## Signal thresholds` above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`

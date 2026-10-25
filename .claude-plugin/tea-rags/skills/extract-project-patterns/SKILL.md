@@ -18,6 +18,10 @@ description:
 Internal recipe for code-gen skills: battle-tested template for code about to be
 written, via three-level locality cascade.
 
+**Not a callee without the marker:** THIS prompt lacks `[invoked by …]` (user
+says "execute the plan" / "start the task") → caller's flow runs (executor guard
+first), not this recipe; markers never carry over between requests.
+
 **Handoff = run the recipe now.** Prompt `[invoked by <caller> …]` carrying
 `behaviorQuery=` / `positiveIds=` / `positiveCode=` → you are this recipe, not
 the caller: its own steps (guard, DDG, chain) stay with it. Target dir without

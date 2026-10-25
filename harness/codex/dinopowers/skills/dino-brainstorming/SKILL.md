@@ -27,13 +27,19 @@ params + right order = wrapper's value.
 No code area identifiable (pure conceptual) → skip enrichment, invoke
 `$brainstorming` directly, say so explicitly. Never fabricate area.
 
-**Step 2 block = this wrapper's FIRST tool calls. No `find_symbol` in this
-wrapper** — not before Step 2 (a user-named dir / file / symbol becomes
-`pathPattern`, never a read), not after (enrichment rows are metaOnly signals,
-handed to brainstorming as-is; the "after search → `find_symbol`" depth rule
-does not fire on them). Print:
-`first calls: Step 2 block; no find_symbol before or after it`. Sole exception:
-user asks to SEE file content → Step 2 "Do NOT pass" content line.
+**User explicitly asks to read named files / find callers of a symbol** → those
+reads are the USER's task, not wrapper enrichment: plan them in the SAME step as
+the Step 2 block, never deferred — `find_symbol relativePath=<file>` per named
+file, `hybrid_search metaOnly:true query=<symbol>` for callers (graph tools on →
+`get_callers`). Print:
+`user reads: find_symbol / hybrid_search metaOnly, alongside the Step 2 block`.
+
+**Otherwise Step 2 block = this wrapper's FIRST tool calls; the wrapper adds no
+`find_symbol` of its own** — not before Step 2 (a user-named area / dir becomes
+`pathPattern`), not after (enrichment rows are metaOnly signals, handed to
+brainstorming as-is; the "after search → `find_symbol`" depth rule does not fire
+on them). Print: `first calls: Step 2 block; wrapper adds no find_symbol`. User
+asks to SEE file content → Step 2 "Do NOT pass" content line.
 
 **User demands another scan tool** (swap `semantic_search` for `hybrid_search`
 in the risk scan, "more reliable") → stay in this wrapper, refuse, print
@@ -249,8 +255,9 @@ as context. Phrase handoff as:
 - Custom weights / `rerank: "relevance"` instead of risk presets → redo
 - `hybrid_search` / `find_similar` / `find_symbol` substituted → redo with
   `semantic_search` + preset
-- `find_symbol` planned before or after Step 2 (named dir, result paths, doc
-  TOC) → drop it; Step 2 block first, brainstorming next
+- Wrapper-own `find_symbol` before or after Step 2 (named dir, result paths, doc
+  TOC) → drop it; Step 2 block first, brainstorming next. User-asked reads of
+  named files / callers stay (see Iron Rule)
 - Scan-tool demand rerouted to `risk-assessment` / `rank_chunks` → back here,
   print the refusal line, `semantic_search` presets
 - Calls sequential → reissue parallel

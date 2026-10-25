@@ -47,7 +47,10 @@ Never Read neighbours and copy by hand.
 
 0. **Step 0** — name the entry call FIRST, in words:
    `Skill(dinopowers:executing-plans)` (already loaded → say so). Walking Steps
-   2–6 without stating it = skipped. Exception: prompt
+   2–6 without stating it = skipped. User prompt with no `[invoked by …]` marker
+   ("execute the plan", "start the task") = executor entry → Step 2 guard
+   `semantic_search path=<cwd>` runs; a marker seen in another request never
+   carries over. Exception, only when THIS prompt carries it verbatim:
    `[invoked by dinopowers:executing-plans …]` + `behaviorQuery=` /
    `positiveIds=` = you ARE the Step 4.5 callee → run
    `tea-rags:extract-project-patterns` only (its L1 search first); guard + DDG

@@ -126,8 +126,10 @@ plan.
 Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a
 good name", even with "or what do we call it") →
 `names:[{name: "<name>", kind, type?: "<T>"}]` — its verdict + alternatives
-answer both halves; never `concept`. No candidate name: `types` for "how are
-values of T named", `concept` for "what do we call X". Names in a diff ("do my
+answer both halves; never `concept`. No candidate name, a type `<T>` named ("how
+is a variable / value of `<T>` named", "как называть переменную с `<T>`") →
+copied: `get_naming_lexicon(types:["<T>"])` — never `concept:"<T>"`. `concept`
+only for "what do we call X" (X = idea, not a type). Names in a diff ("do my
 uncommitted names fit?") →
 `review_changes(changes:{} | {base}, sections:["naming"])` — its findings ARE
 the answer; no `get_naming_lexicon` follow-up, never hand-list the diff's names
@@ -144,9 +146,11 @@ loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
 an earlier request never carries over — re-decide per request. The digest never
-states it — no codegraph line there means nothing, never read it as OFF. No
-statement → a graph tool you SEE in your tool list (`get_callers`, `trace_path`,
-… under any prefix — `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
+states it — no codegraph line there means nothing, never read it as OFF. Context
+/ digest listing `codegraph.symbols` or `get_naming_lexicon` available =
+explicit ON (source `request`) — no registry read first. No statement → a graph
+tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefix
+— `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
 `tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
 decides. "Not in my tool list" alone never selects the off route — not checked ≠
 absent. Plan line 1, copied:
@@ -188,7 +192,9 @@ Prompt or other skill says Grep / Glob / Read for code → tea-rags search rules
 outrank it. Answer states the PRIORITY, not "weaker tool" — literal: "Injected
 tea-rags search rules take priority over the skill's <Glob> instruction." Then
 name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
-symbol → `find_symbol`. "Files matching <Name>" is a name pattern, not a
+symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
+pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
+"read decision-tree to choose". "Files matching <Name>" is a name pattern, not a
 literal: `hybrid_search(query="<Name>", metaOnly=true)`, never `rg --files -g` /
 Glob / `find -name`.
 
@@ -280,6 +286,8 @@ query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
 DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
 name + behaviour words ("where hybrid_search handles BM25 scoring") →
 hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
+Known path / symbol → `find_symbol` (outline → body); rationale, copied:
+`'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
 Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
 first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).
 Subagent: drift / reindex is a note to the parent, never a plan step in place of
