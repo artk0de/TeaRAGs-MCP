@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   CODEX_HARNESS_DIR,
+  CODEX_HOOK_CONTEXT_BUDGET,
   CODEX_MARKETPLACE_PATH,
   DINOPOWERS_SKILLS_LIST_BUDGET,
   renderCodexHarness,
@@ -247,6 +248,69 @@ describe("renderCodexHarness", () => {
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
       rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps SessionStart context within Codex's hook-output cap: whole core first, digest by section priority, pointer last", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
+    const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
+    try {
+      mkdirSync(join(pluginRoot, "scripts"));
+      for (const [path, content] of rendered) {
+        if (!path.startsWith("tea-rags/scripts/")) continue;
+        writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
+      }
+      const table = Array.from({ length: 300 }, (_, i) => `| signal${i} | low/high | ${i} / ${i * 2} | — |`).join("\n");
+      const digest = [
+        "# tea-rags prime — /work/demo",
+        "",
+        "## Status",
+        "indexed · collection `code_x` · last indexed: 6d ago",
+        "",
+        "## Project",
+        "name: `demo`",
+        `registry: ${"ENV_VAR=value ".repeat(60)}`,
+        "",
+        "## Signal thresholds — ruby",
+        table,
+        "",
+        "## Drift",
+        "Run: tea-rags index-codebase --project demo --force",
+        "",
+        "## Enrichment",
+        "codegraph.symbols: file healthy, chunk healthy",
+      ].join("\n");
+      writeFileSync(join(bin, "digest.txt"), digest);
+      writeFileSync(join(bin, "tea-rags"), `#!/bin/bash\ncat "${join(bin, "digest.txt")}"\n`, { mode: 0o755 });
+      const context: string = JSON.parse(
+        execFileSync("bash", [join(pluginRoot, "scripts", "session-start.sh")], {
+          env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: `${bin}:/usr/bin:/bin` },
+          cwd: bin,
+          input: "{}",
+        }).toString(),
+      ).hookSpecificOutput.additionalContext;
+
+      expect(context.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+      expect(context.startsWith(core.trimEnd())).toBe(true);
+      expect(context).toContain("name: `demo`");
+      expect(context).toContain("Run: tea-rags index-codebase --project demo --force");
+      expect(context).toContain("codegraph.symbols: file healthy");
+      expect(context).not.toContain("| signal299 |");
+      expect(context.trimEnd().split("\n").at(-1)).toContain("tea-rags://project/demo/digest");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps every hook text payload within Codex's hook-output cap", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const payloads = [...rendered].filter(([path]) => /^[^/]+\/scripts\/[^/]+\.txt$/.test(path));
+    expect(payloads.length).toBeGreaterThanOrEqual(4);
+    for (const [path, content] of payloads) {
+      expect(content.length, path).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
     }
   });
 
