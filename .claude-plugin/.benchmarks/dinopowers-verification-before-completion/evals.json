@@ -179,8 +179,8 @@
       "expected": {
         "mustDo": [
           "Refuse grep substitute",
-          "Rationale: grep finds textual imports but misses the ranked imports overlay signal; miscounts re-exports",
-          "Use semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
+          "Rationale: grep matches import text only — misses re-exports and call weight",
+          "Importer listing: codegraph on → get_callers(relativePath=<the errors module>) → importers[] with callWeight; codegraph off → hybrid_search on the module path / import string (impact rerank only when the user asks what breaks)"
         ],
         "mustNotDo": ["Comply with grep"]
       },

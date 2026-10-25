@@ -663,7 +663,7 @@
           "Classify the finding as must-fix (no preExisting)",
           "Load only repair/leakingAbstraction.md",
           "Apply the remedy verbatim: retarget foo.ts's import of percentileOf to git/index.ts",
-          "Re-run review_changes + targeted tests; finding gone, none new, then commit"
+          "Re-run review_changes + targeted tests; finding gone, none new, then report ready to commit (the commit itself only on an explicit user instruction)"
         ],
         "mustNotDo": [
           "Commit with the introduced finding",
