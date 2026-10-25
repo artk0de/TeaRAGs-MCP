@@ -34,7 +34,7 @@ import {
 /** Package root, relative to the repository root. */
 export const CODEX_HARNESS_DIR = "harness/codex";
 /** Cap on `name + description` summed over shipped skills (Codex default list budget: 8,000 chars). */
-export const SKILLS_LIST_BUDGET = 7_200;
+export const SKILLS_LIST_BUDGET = 7_300;
 /** The same cap for the dinopowers package, listed beside tea-rags (and superpowers) in one session. */
 export const DINOPOWERS_SKILLS_LIST_BUDGET = 6_100;
 

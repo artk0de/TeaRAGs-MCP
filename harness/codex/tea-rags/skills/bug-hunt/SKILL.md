@@ -5,8 +5,10 @@ description:
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
   fails", "stack trace says Z", "find bugs in X", "where is error ''X'' in
-  code", "где в коде строка ''X''", "падает". NOT for code health scanning
-  without bug intent — use risk-assessment for that.'
+  code", "где в коде строка ''X''", "when did error ''X'' appear in git
+  history", "посмотри через git", "read the whole file" of a search hit,
+  "падает". NOT for code health scanning without bug intent — use
+  risk-assessment for that.'
 ---
 
 # Bug Hunt
@@ -45,7 +47,8 @@ description:
   - `Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.`
 - Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
   run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
-  step 0 or the probes.
+  step 0 or the probes. PRESENT/STOP ends bug-hunt only — the wrapper's
+  hypothesis block + handoff follow, checkpoint filled or not.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -74,9 +77,11 @@ A plan names these calls; "later" / "not in this run" never drops one.
    c. uncommitted: semantic_search(path=<your working directory>, query=<symptom sentence>, pathPattern="{<step-0 paths: rename old -> new = new path, D = dropped>}", rerank="bugHunt", limit=10)
    ```
 
-   (+ `project` when known; step 0 empty → no line c). Nothing else. User asks
-   per-zone queries ("adapters, pipeline, tests") → refuse: one query finds the
-   area; broad pathPattern or none.
+   (+ `project` when known; step 0 empty → no line c). Nothing else. User names
+   zones to cover ("<zone A>, <zone B>, <zone C>") → refuse per-zone queries;
+   zones never become `pathPattern` (no brace of zones) — a and b run with the
+   same query and NO pathPattern; print:
+   `one query finds the area — probes a/b run without pathPattern, no per-zone search.`
 
 4. **Two-class triage, every hit and trace step:** historical (`critical` →
    prime; `concerning` + `relativeChurn` high → secondary) | fresh (burst;
@@ -248,10 +253,8 @@ cause.
 
 ## Anti-patterns
 
-- **Extra parallel searches in discovery.** Historical + fresh probe (+
-  uncommitted probe when `git status` lists paths) IS the discovery — no other
-  query variant. ONE query finds the area: returns `<file A>` AND `<file B>` —
-  both suspects found. User-asked targeted search over named files ≠ extra
+- **Extra parallel searches in discovery.** Probes a/b (+ c) ARE the discovery
+  (Non-negotiable 3). User-asked targeted search over named files ≠ extra
   search: run it (one brace-pathPattern call).
 - **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
   triage) — fresh class decides.

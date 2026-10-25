@@ -77,8 +77,9 @@ Disqualifier first: user rules files out ("no specific files", "без конк�
 файлов", "conceptually") → no area, a subsystem word in the request ("cache
 layer design") notwithstanding — never glob it; Step 4 without enrichment.
 
-Named path new / not in git yet → `pathPattern` = that path exactly. NEVER widen
-to a parent dir to find signals.
+Named path new / not in git yet → `pathPattern` = that path exactly, Step 2
+calls still RUN (new path ≠ no area). NEVER widen to a parent dir to find
+signals.
 
 Compose `pathPattern` (e.g. `**/auth/**`,
 `src/core/domains/ingest/**/chunker/**`) + `query` (one sentence, change
@@ -109,6 +110,14 @@ complete (the off line is never implied by the on line):
 codegraph on (graph tools in my list) → A–E in one block: A hotspots, B ownership, C techDebt, D architecturalHub (semantic_search, metaOnly, pathPattern=<Step 1>) + E get_naming_lexicon(concept, language, pathPattern=<Step 1>)
 codegraph off → A–C in one block: A hotspots, B ownership, C techDebt (semantic_search, metaOnly, pathPattern=<Step 1>); backbone + vocabulary not assessed
 ```
+
+Print these lines verbatim — also when entered from another wrapper (plan step,
+subagent). "follow the wrapper's enrichment order" / "run Step 2" without the
+calls + presets named = Step 2 not stated.
+
+Presets FIXED: A hotspots, B ownership, C techDebt — area type never swaps one
+(security / auth / payments area → still `techDebt`, NEVER `securityAudit` or
+another preset in its place).
 
 Then ALL calls **in parallel** (one tool block — D + E in the SAME block as A–C,
 never appended after): A–D `semantic_search`, each `metaOnly: true` (signals,
@@ -174,11 +183,15 @@ All risk calls 0 results (new / unindexed area) → report "no git-enriched
 results for pathPattern `<X>` — area is new or excluded from indexing", Step 4
 WITHOUT block: no Step 3 block, no `[planned; not run]` rows, never "pass the
 enrichment". No retry: no wider `pathPattern`, no other tool. NEVER fabricate.
-Plan-only, path new / not in git → print the outcome, not a block:
+Plan-only, path new / not in git → calls are NOT skipped: list the A–C calls (+
+D/E when on) with pathPattern = that path, then the outcome of their result:
 
 ```
-0 results expected → "no git-enriched results — area is new"; /brainstorming invoked WITHOUT enrichment block
+A hotspots, B ownership, C techDebt (semantic_search, metaOnly, pathPattern=<new path>) → when they return 0 rows: "no git-enriched results — area is new"; /brainstorming invoked WITHOUT enrichment block
 ```
+
+NEVER "skip the enrichment calls" / "no tea-rags call" because the path is new —
+0 rows is the calls' result, not a reason to not issue them.
 
 ## Step 3 — Build enrichment block
 

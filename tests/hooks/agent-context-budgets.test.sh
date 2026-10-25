@@ -45,8 +45,8 @@ INJECT="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
 # core.md doubles as server `instructions` (≤ 4,096) and Cursor's tea-rags-core.mdc
 # (≤ 4,096 incl. ~330 chars of wrapper), hence 3,700 chars.
 CORE="$ROOT/plugins/tea-rags/rules/core.md"
-[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 3700 ]
-note $? "rules/core.md ≤ 3700 chars"
+[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 3760 ]
+note $? "rules/core.md ≤ 3760 chars (Cursor .mdc wrapper ~330 → 4096 cap)"
 
 # Description = value of the top-level `description:` key: inline text, or an
 # indented block (plain, `>` / `|` folded) running to the next top-level key.

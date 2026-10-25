@@ -17,8 +17,8 @@ duplicates**. Repo: `artk0de/TeaRAGs-MCP`.
 
 ## MANDATORY: never duplicate, never auto-file
 
-1. **Known-issue check BEFORE composing / filing anything** (step 2). Skipping
-   = hard error — go back.
+1. **Known-issue check BEFORE composing / filing anything** (step 2). Skipping =
+   hard error — go back.
 2. **Never create issue w/o explicit user confirmation.** Default: pre-filled
    URL user submits.
 3. **Never include source code** — diagnostics only; found in body → remove.
@@ -85,8 +85,8 @@ prefillable — user ticks them.
   URL past ~8000 chars → drop `logs` then `index-status` from URL, print them
   for user to paste into form.
 - **`gh` installed AND authenticated** (`gh auth status` ok) — offer one-step
-  alternative, run ONLY after user confirms. API bypasses form → body
-  file carries one `### <form label>` heading per field (`TeaRAGs version`,
+  alternative, run ONLY after user confirms. API bypasses form → body file
+  carries one `### <form label>` heading per field (`TeaRAGs version`,
   `MCP client`, `Embedding provider and model`, `Qdrant mode and version`,
   `OS and Node version`, `Reproduction steps`, `Expected behavior`,
   `Actual behavior`, `get_index_status output`, `Logs`) — same shape as

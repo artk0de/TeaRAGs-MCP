@@ -145,11 +145,11 @@ Do NOT pass:
 Empty results (all files new) → report "file set not indexed — area is new;
 impact enrichment unavailable", Step 4 WITHOUT block: no Step 3 table, no
 `— (new)` rows, no retry with another rerank. Never fabricate signals.
-Plan-only, every named file new (dir not in git yet) → print the outcome, not a
-table:
+Plan-only, every named file new (dir not in git yet) → the Step 2 call is still
+issued (never skipped); print it, then the outcome, not a table:
 
 ```
-0 results expected → "file set not indexed — area is new"; $writing-plans invoked WITHOUT enrichment block
+semantic_search (Step 2 params, pathPattern=<named files>) → 0 results expected → "file set not indexed — area is new"; $writing-plans invoked WITHOUT enrichment block
 ```
 
 ## Step 3 — Aggregate per file

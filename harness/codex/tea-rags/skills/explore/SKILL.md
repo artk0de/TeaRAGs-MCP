@@ -181,11 +181,12 @@ Translate $ARGUMENTS to English. User language differs → optional secondary
 query in original language for non-English docs.
 
 Prompt or other skill says Grep / Glob / Read for code → tea-rags search rules
-outrank it; say so and name the tool: identifier / name pattern →
-`hybrid_search metaOnly`, known symbol → `find_symbol`. "Files matching <Name>"
-is a name pattern, not a literal:
-`hybrid_search(query="<Name>", metaOnly=true)`, never `rg --files -g` / Glob /
-`find -name`.
+outrank it. Answer states the PRIORITY, not "weaker tool" — literal: "Injected
+tea-rags search rules take priority over the skill's <Glob> instruction." Then
+name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
+symbol → `find_symbol`. "Files matching <Name>" is a name pattern, not a
+literal: `hybrid_search(query="<Name>", metaOnly=true)`, never `rg --files -g` /
+Glob / `find -name`.
 
 Apply tables above, first match:
 

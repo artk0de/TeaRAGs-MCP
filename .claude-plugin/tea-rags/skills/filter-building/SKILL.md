@@ -50,6 +50,7 @@ tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 | "Ruby / TypeScript / Python code"                     | `language: "<lang>"` (NOT pathPattern `**/*.rb`)                         |
 | "modified recently" / "changed this week"             | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
 | "old code" / "legacy" / "untouched for a while"       | `modifiedBefore: <ISO>` (no `level` needed)                              |
+| "older than N days" / "at least N days old"           | `modifiedBefore: <today-N ISO>`; NOT chunk `minAgeDays: N` (level unset) |
 | "what's new" / "fresh additions" / "sprint review"    | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
 | "<person>'s code" (lines they own)                    | `author: "<exact git name>"`                                             |
 | "what did <person> work on" / recent work             | `recentAuthor: "<exact git name>"` + `modifiedAfter`                     |
@@ -150,7 +151,9 @@ Effective level = explicit `level`, else rerank preset `signalLevel` (e.g.
 only its preset sets it.
 
 **NEVER set `level: "file"` just to make a time filter file-level** → unwanted
-file-grouped results. Pick time filter by intent:
+file-grouped results. Not a licence for chunk `minAgeDays` (see caveat): "older
+than N days" → `modifiedBefore: <today-N ISO>`, or `minAgeDays: N` +
+`level: "file"` for a file list. Pick time filter by intent:
 
 | Intent                                        | Use                                           | Reads                                    |
 | --------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
@@ -179,7 +182,7 @@ data = key absent). Point not re-enriched keeps old stamp → overlay value, `ag
 
 | Sugar field                        | Resolves to                                                              | Pair with                                           |
 | ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
-| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `level: "file"` only for a file list                |
+| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `minAgeDays` → always `level: "file"`               |
 | `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)                      | drop one-off scripts                                |
 | `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level                            | nothing — no `level` needed                         |
 | `author`                           | `git.<effective level>.blameDominantAuthor` (file default)               | exact blame NAME, not email                         |

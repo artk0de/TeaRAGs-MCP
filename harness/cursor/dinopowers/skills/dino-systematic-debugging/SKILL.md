@@ -34,8 +34,11 @@ Speculative "bug" with no symptom ("maybe race somewhere") → skip wrapper,
 are ranked, not assumed." bug-hunt `symptom` = the OBSERVED failure (error text,
 failing test, wrong output) — never the hypothesis restated (`<area> fails` =
 hypothesis); no `pathHint` to that file, no read of it before PRESENT. Report
-holds only the hypothesis → ONE question, the plan prints:
+also states a failure → that is the symptom, bug-hunt now, no question. Report
+holds only the hypothesis → the plan prints both lines (question never replaces
+the invoke):
 `What fails — error text, failing test or wrong output? bug-hunt runs FIRST on that symptom; <file> is read only if it ranks as a suspect.`
+`Step 2 on the answer: /bug-hunt symptom="<observed failure>" — its three probes, no pathHint to <file>.`
 Never bug-hunt as post-hoc validation.
 
 **User insists on a file bug-hunt marked healthy** → do NOT re-run bug-hunt, do
@@ -45,10 +48,10 @@ note the override in the hypothesis block, proceed with `/systematic-debugging`
 on that file.
 
 **Order — state all three, subagents included** (you ARE the subagent → run
-bug-hunt here; "execute yourself" forbids spawning one, never running it): (1)
-`/bug-hunt` with framed symptom → (2) Step 3 hypothesis block built from its
-PRESENT output → (3) `/systematic-debugging` with that block PREPENDED. "Hand
-off" / "continue after triage" without naming the block = Step 3 skipped.
+bug-hunt here, never spawn one): (1) `/bug-hunt` with framed symptom → (2) Step
+3 hypothesis block built from its PRESENT output → (3) `/systematic-debugging`
+with that block PREPENDED. Unconditional: "if the checkpoint is incomplete" /
+"continue after triage" without naming the block = Step 3 skipped.
 
 **bug-hunt = first tea-rags call** (only step 0 / freshness before it). No
 `find_symbol` / `get_index_status` / Read before its probes — also for a file,
@@ -157,8 +160,8 @@ Triage of its output:
 Wait for `PRESENT` output — ranked suspects, `file:line` + signal labels + one
 observation each.
 
-Bug-hunt's own "present and stop" / "report to the parent" ends Step 2, not this
-wrapper — subagents included. The plan's next two lines, always:
+Bug-hunt's "present and stop" / filled checkpoint / "report to the parent" ends
+Step 2, not this wrapper — subagents included. Next two lines, always:
 
 ```
 Step 3: hypothesis block from bug-hunt's PRESENT output
