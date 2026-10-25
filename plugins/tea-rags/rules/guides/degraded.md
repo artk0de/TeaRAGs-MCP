@@ -17,15 +17,16 @@ other leg: they fail FAST with the provider's outage error (no recovery wait).
 Down embedding degrades behavioral/semantic recall — does NOT justify text
 search for class/method/constant lookups.
 
-If a LIVE `get_index_status` reports embedding error, or any tea-rags semantic
-call fails with embedding/connection error — STOP, ask the user (via
+Code-identifier lookup (definition, class / method / constant name) →
+`find_symbol` / `hybrid_search` BM25 NOW: no stop, no question, no live-status
+gate — neither needs embedding. Same for tasks needing no semantic search
+(literal TODO/FIXME scan, known file path, exact import string).
+
+Otherwise, if a LIVE `get_index_status` reports embedding error, or any tea-rags
+semantic call fails with embedding/connection error — STOP, ask the user (via
 `AskUserQuestion`) to start `ollama serve` or repoint `EMBEDDING_URL`, WAIT for
-explicit answer before anything else. Do NOT silently downgrade to text search /
-Read for code discovery — text search loses recall the user didn't agree to
-trade. Skip the prompt ONLY for tasks needing no semantic search (literal
-TODO/FIXME scan, reading a known file by exact path, exact import-string lookup)
-— and for code-identifier lookups reach for `find_symbol` / `hybrid_search` BM25
-first (need no embedding), not text search. See
+explicit answer. Do NOT silently downgrade to text search / Read for code
+discovery — text search loses recall the user didn't agree to trade. See
 `rules/references/runtime-introspection.md` for `infraHealth` diagnosis.
 
 **Qdrant down** (`[QDRANT_UNAVAILABLE]`, vector-store connection error) — same
