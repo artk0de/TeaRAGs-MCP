@@ -45,12 +45,13 @@ metrics + duration) — even when nothing ran:
 
 1. `path` from message / argument; absent → cwd. Linked git worktree
    (`git rev-parse --git-common-dir` ≠ `<path>/.git`) of registered repo → do
-   NOT register or index; read tools already answer for that tree
-   (`tea-rags://guide/freshness`, linked worktree). Say literally: "Not
-   indexing: read tools (project + path=<worktree>) already answer for this
-   tree." `--project <alias>` reindex refreshes main checkout only, never
-   worktree edits. Index worktree as own project only if user insists (seeds
-   separate project).
+   NOT register or index — the plan has NO `index_codebase` step, not even a
+   planned one, and this check runs BEFORE any next-call line; read tools
+   already answer for that tree (`tea-rags://guide/freshness`, linked worktree).
+   Say literally: "Not indexing: read tools (project + path=<worktree>) already
+   answer for this tree." `--project <alias>` reindex refreshes main checkout
+   only, never worktree edits. Index worktree as own project only if user
+   insists (seeds separate project).
 
 2. Registered? `mcp__tea-rags__list_projects` → entry with `path` = target AND
    non-empty `name` (recovery auto-created entries have `name=""`).

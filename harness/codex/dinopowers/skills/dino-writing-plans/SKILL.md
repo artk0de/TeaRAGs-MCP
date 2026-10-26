@@ -2,11 +2,11 @@
 name: dino-writing-plans
 description:
   'Implementation plan + per-file tea-rags signals. Plan request beats explore
-  PRE-GEN (even "add X"/"impact analysis"/"before changing"/[subagent:…]) and
+  PRE-GEN (even "add X"/"impact analysis"/"before changing") and
   data-driven-generation (class-creating Task = plan Task). Triggers
   "write/draft a (sub-)plan", "plan the change to <files>", "plan the refactor",
-  "add Task to plan", "напиши/допиши план", "распиши план изменения <files>",
-  "распиши задачи по файлам". NOT plans naming no files/code area.'
+  "add Task to plan", "напиши/допиши план", "распиши план/задачи по <files>".
+  NOT plans naming no files/code area, NOT "how is X organized" (explore).'
 ---
 
 # dinopowers: writing-plans

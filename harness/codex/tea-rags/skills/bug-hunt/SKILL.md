@@ -58,9 +58,9 @@ description:
   `git log refused — git history is already in the index signals; answering via semantic_search(query=<symptom>, rerank="bugHunt"): ageDays / commitCount / taskIds.`
 - Where is a literal string / error phrase written (no tool demanded) → no hunt
   (no step 0, no probes), never cat / sed / Read around the hit; the plan never
-  ends at the rg hit — find_symbol follows it; print both lines, slots filled:
-  `rg -n -F "<phrase>" .` +
-  `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+  ends at the rg hit — find_symbol follows it; print this ONE line, slots
+  filled:
+  `rg -n -F "<phrase>" . → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
   both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
   confirmatory search, no refusal:

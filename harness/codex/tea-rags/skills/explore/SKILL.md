@@ -35,6 +35,12 @@ fail.
 risk / change / ownership / codegraph row) + the matched phrase — routing on
 surface keywords without this line = wrong.
 
+**Doc claim in hand** (prompt or a doc chunk states a number / limit / default),
+any strategy → verify in source (`documentation:"exclude"` + `find_symbol`)
+before the answer repeats it; the plan prints both outcome lines, copied:
+`On conflict: Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
+`On match: Doc matches code at <file:line>.`
+
 **PRE-GEN wins** over EXPLAIN / EXEMPLAR words when a pre-change signal is
 present: "understand X before I modify it", "research the error patterns — I
 need to add a new error type", "about to refactor X, research first", plan step
