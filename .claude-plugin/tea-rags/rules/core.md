@@ -52,6 +52,8 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   never re-search/`Read`.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
+- Answer has `truncated` → next call = `truncated.next` as given, or narrowed
+  (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
   No `treeState` = current; `treeState` row = pre-edit copy (say why, e.g.
   `denseUnavailable`): dependents' fanIn/churn valid, not proof of the edit →
@@ -89,12 +91,12 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
-`empty.reason`, ambiguous name, when to stop → `pagination`; skill pick,
-fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked worktree →
-`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw
-`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;
-graph/AST, other language → `language-capability`; architecture report /
-`review_changes` answer → `architecture` / `review`; no prime digest →
+`truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`; skill
+pick, fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked
+worktree → `freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`;
+raw `filter:` → `filters`; `rerank`, labels → `presets`, `signals`,
+`signal-labels`; graph/AST, other language → `language-capability`; architecture
+report / `review_changes` answer → `architecture` / `review`; no prime digest →
 `tea-rags://project/<alias>/digest`; numeric filter value not given
 (minCommitCount/minAgeDays/maxAgeDays/minFanIn/modifiedAfter window) or bare raw
 number, no label → `…/metrics?language=<lang>&section=thresholds`.
