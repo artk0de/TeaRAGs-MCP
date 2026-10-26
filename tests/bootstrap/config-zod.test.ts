@@ -109,6 +109,8 @@ describe("parseAppConfigZod", () => {
       "DELETE_CONCURRENCY",
       "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
       "DELETE_FLUSH_TIMEOUT_MS",
+      // mcp server
+      "MCP_SERVER_INSTRUCTIONS",
       // vcs
       "GIT_ADAPTER",
       // codegraph
