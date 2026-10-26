@@ -166,11 +166,12 @@ tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefi
 `tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
 decides. "Not in my tool list" alone never selects the off route — not checked ≠
 absent. Plan line 1, copied:
-`Codegraph: on|off — <request | tool seen | registry>`. Never call a graph tool
-to probe; an unregistered tool is not an empty result — never read it as "no
-callers" / "no cycles". Codegraph off → content-matching table: TRACE covers
-usage, EXPLAIN covers architecture. Broad orientation / structure ("introduce
-me", row 4) → ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+`Codegraph: on|off — <request | tool seen | registry>`. Never `unknown`: scan
+your tool list before writing it. Never call a graph tool to probe; an
+unregistered tool is not an empty result — never read it as "no callers" / "no
+cycles". Codegraph off → content-matching table: TRACE covers usage, EXPLAIN
+covers architecture. Broad orientation / structure ("introduce me", row 4) →
+ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
 `references/entry-point-pattern.md` off procedure (relevance, drop tiny
 `chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own

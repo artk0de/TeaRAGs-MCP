@@ -6,7 +6,7 @@ description:
   bugs in X", "found a bug in X — compare Y", "suspects in X and Y", hit with
   bugFixRate labels, "прочитай весь файл" of a hit, "где в коде строка ''X''",
   "посмотри через git". Beats explore; symptom + zones to check ("проверь зоны
-  A, B") beats risk-assessment. NOT health scan.'
+  A, B") beats risk-assessment. NOT health scan, test counts.'
 ---
 
 # Bug Hunt
@@ -48,9 +48,9 @@ description:
   proceed?") → triage and PRESENT now, also via a wrapper: no symptom question,
   no review question, no confirm search, no step 0; print, slots filled:
   `Suspect: <file>:<line> — <class> (prime | secondary | fresh | uncommitted | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
-  SKIP + "check there (anyway)" → print Rule 7's skip line, no drill (no
-  `find_symbol` / outline / Read of that file), also in wrapper handoff and
-  after an override note.
+  SKIP + "check there" before the user saw the verdict → print Rule 7's skip
+  line, no drill (no `find_symbol` / outline / Read of that file), also in
+  wrapper handoff. Verdict known + user insists → wrapper's override line.
 - User demands `hybrid_search` on an error string → refuse, run the Loop:
   `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
 - When did an error / code appear in history, git asked ("посмотри через git",
@@ -74,8 +74,8 @@ description:
 - Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
   run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
   step 0 or the probes. PRESENT/STOP ends bug-hunt only — the wrapper's
-  hypothesis block + handoff follow, checkpoint filled or not; override note ≠
-  new evidence, SKIP stays undrilled.
+  hypothesis block + handoff follow, checkpoint filled or not; SKIP stays
+  undrilled unless the user insists after seeing the verdict.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,

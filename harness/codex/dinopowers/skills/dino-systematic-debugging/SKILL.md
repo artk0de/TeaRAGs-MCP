@@ -2,11 +2,11 @@
 name: dino-systematic-debugging
 description:
   'Debug concrete failure — $bug-hunt first for ranked suspects. Felt
-  malfunction beats explore and risk-assessment, zones listed too. Triggers
-  "debug X", "fix the bug", "why Y fails", "test fails", "something feels wrong
-  with X, can''t say what", "same bug elsewhere?", "падает", "почему не
-  работает", "стектрейс". NOT code review, health scan, symbol body/callers with
-  no failure, named fix at named spot (→ data-driven-generation).'
+  malfunction (zones too) beats explore, risk-assessment. Triggers "debug X",
+  "fix the bug", "why Y fails", "test fails", "X feels off", "same bug
+  elsewhere?", "падает", "почему не работает", "стектрейс". NOT code review,
+  health scan, "сколько тестов падает" (count), symbol body/callers with no
+  failure, named fix at named spot (→ data-driven-generation).'
 ---
 
 # dinopowers: systematic-debugging
@@ -64,14 +64,19 @@ Step 2: $bug-hunt invoked FIRST, before any read — symptom="<observed failure 
 
 Never bug-hunt as post-hoc validation.
 
-**User insists / "check there" on a file bug-hunt marked healthy (SKIP)** → do
-NOT re-run bug-hunt, do NOT drill it (no `find_symbol` / outline / Read of that
-file, now or in Step 4). Print both:
-`<file>: healthy, old, not fresh, no probe hit — neither suspect class, skipping`
+**User pushes back on a file bug-hunt marked healthy (SKIP)** — two steps, by
+what the user has already seen:
 
-- `you are overriding a calibrated prior — override noted, file stays undrilled until new evidence (stack frame, trace step) ties it to the symptom`.
-  Still insists → override note in the hypothesis block; note ≠ new evidence,
-  SKIP holds in the inner cycle.
+- Verdict not yet shown ("check there", "проверь там" right after triage) → do
+  NOT re-run bug-hunt, do NOT drill it (no `find_symbol` / outline / Read of
+  that file). Print:
+  `<file>: healthy, old, not fresh, no probe hit — neither suspect class, skipping`
+- User already knows the healthy verdict and insists ("anyway", "всё равно",
+  "I'm sure it's there", "я уверен") → no bug-hunt re-run, never promote it to
+  prime suspect; print
+  `you are overriding a calibrated prior — override noted; proceeding with systematic-debugging on <file>`
+  and hand that file to Step 4 as the user's hypothesis (override note in the
+  hypothesis block).
 
 **Order — state all three, subagents included** (you ARE the subagent → run
 bug-hunt here, never spawn one): (1) `$bug-hunt` with framed symptom → (2) Step
@@ -297,10 +302,10 @@ Handoff:
 
 > "Before forming hypotheses, note these bug-hunt priors: …<block>… Start
 > hypothesis space with prime suspects; escalate to secondary only if primes
-> rule out. SKIP rows stay undrilled — a user override note is not new evidence;
-> drill one only when a stack frame / trace step ties it to the symptom. Root
-> cause confirmed → report as Cause / Fix / Prevention block (wrapper Step 5),
-> Prevention driven by suspect overlay signals.
+> rule out. SKIP rows stay undrilled unless the user, knowing the verdict,
+> insisted (override noted) or a stack frame / trace step ties one to the
+> symptom. Root cause confirmed → report as Cause / Fix / Prevention block
+> (wrapper Step 5), Prevention driven by suspect overlay signals.
 >
 > Chaining rule reminder: when you (the inner skill) would next invoke
 > `$test-driven-development` or `$verification-before-completion` (or any

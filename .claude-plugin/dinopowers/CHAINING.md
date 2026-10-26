@@ -39,10 +39,11 @@ superpowers. Availability check — in this order, plan-only included:
    `~/.codex`) — run that glob as written: the plugin sits one level down, under
    a marketplace dir (`cache/<marketplace>/superpowers/<version>/`), so a bare
    `ls cache` never shows it. Then read that file. superpowers is a separate
-   plugin, never under the dinopowers dir. Found → available; invoke
+   plugin, never under the dinopowers or tea-rags dir — a hand-built path there
+   failing proves nothing; run the glob. Found → available; invoke
    `Skill(superpowers:Y)` after the wrapper's required enrichment.
-3. Only when step 2's read fails (or the invocation fails) → unavailable: STOP
-   and ask the user to install superpowers:
+3. Only when step 2's glob itself matches nothing (or the invocation fails) →
+   unavailable: STOP and ask the user to install superpowers:
 
 - Source: https://github.com/obra/superpowers
 - Claude Code: `/plugin install superpowers@claude-plugins-official`

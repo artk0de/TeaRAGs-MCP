@@ -155,6 +155,10 @@ issued (never skipped); print it, then the outcome, not a table:
 semantic_search (Step 2 params, pathPattern=<named files>) → 0 results expected → "file set not indexed — area is new"; superpowers:writing-plans invoked WITHOUT enrichment block
 ```
 
+Answer's `workingTree.tree` ≠ your cwd → wrong tree, rows unusable: re-issue
+THIS Step 2 `semantic_search` (same params) with `path=<cwd>` — not
+`find_symbol`; `find_symbol` is for a `treeState` row of the right tree.
+
 ## Step 3 — Aggregate per file
 
 MUST output: (a) ONE row per file with exactly these columns, named:

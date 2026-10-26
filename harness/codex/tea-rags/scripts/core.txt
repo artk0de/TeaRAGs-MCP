@@ -27,9 +27,10 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `commitCount`, `taskIds`
 - non-identifier text — regex syntax, TODO/FIXME, phrase, error string, even
   "every …" → `rg -n 'TODO|FIXME'` (no `-E`)/Grep only, no tea-rags seed or
-  fallback; hit → `find_symbol` on its enclosing symbol. A code name, even
-  called a "pattern"/"glob", is a symbol (→ `hybrid_search`, not `rg --files`).
-  Command output → `<cmd> 2>&1 | grep -E '…'`
+  fallback; plan: `rg -n -F '<text>'` → `find_symbol` on each hit's enclosing
+  symbol. A code name, even called a "pattern"/"glob", is a symbol (→
+  `hybrid_search`, not `rg --files`). Command output, failing tests, counts →
+  `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`
@@ -40,8 +41,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - diff review; a name's fit → `review_changes` / `get_naming_lexicon`
 
 Never Grep/`rg`/`rg --files`, Glob or `cat`/`sed` to locate or read code —
-identifiers (even `a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`; a
-diff's → `review_changes` verdicts, nothing after.
+identifiers (even `a|b`) are SYMBOL searches. A name → lexicon
+`names:[{name,kind}]`; a diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 
@@ -74,8 +75,8 @@ diff's → `review_changes` verdicts, nothing after.
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → `Read`,
   no confirmation question. "Whole file"/"весь файл"/"целиком"/"for context"
   without that order → `find_symbol` (the hit's `symbolId`/lines, then file
-  outline), say why, never `Read`. Their plan or tool idea ("use Grep/Glob") →
-  keep the rule's tool, say why.
+  outline), print `Chunk coordinates exist. Use them.`, never `Read`. Their plan
+  or tool idea ("use Grep/Glob") → keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

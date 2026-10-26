@@ -343,7 +343,7 @@
     },
     {
       "id": 17,
-      "prompt": "[codegraph ON — prime lists codegraph.symbols] How is the domain src/core/domains/ingest organized? Walk me through it.",
+      "prompt": "[codegraph ON — session digest ## Enrichment lists codegraph.symbols] How is the domain src/core/domains/ingest organized? Walk me through it.",
       "expected_output": "Codegraph row 4 → architecture-pattern: Step 0 ORIENT rerank=entryPoint (sources-axis filters) BEFORE Step 1 rerank=architecturalHub, then find_symbol depth.",
       "failure_mode": "orientation-skipped-on-broad-target",
       "audit_finding": "D1-orient-gate",
@@ -416,7 +416,7 @@
     },
     {
       "id": 20,
-      "prompt": "[codegraph ON — prime lists codegraph.symbols] Where does the indexing flow start?",
+      "prompt": "[codegraph ON — session digest ## Enrichment lists codegraph.symbols] Where does the indexing flow start?",
       "expected_output": "Codegraph intent row 3 → entry-point-pattern: rerank=entryPoint as the ANSWER, chunkSize post-filter, tail get_callees.",
       "failure_mode": "explicit-entry-intent-misrouted",
       "audit_finding": "control-row3-intact",
