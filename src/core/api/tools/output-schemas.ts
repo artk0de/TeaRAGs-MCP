@@ -148,4 +148,16 @@ export const SearchResultOutputSchema = {
         "build skew, daemon down, lock held). Names error code + remedy; results may miss collapsed symbols. " +
         "Surface to user.",
     ),
+  empty: z
+    .object({
+      reason: z.string(),
+      message: z.string(),
+      suggestions: z.array(z.string()).optional(),
+    })
+    .optional()
+    .describe(
+      "Empty results only — why. hybrid_search / semantic_search reasons: pathPatternMatchesNothing " +
+        "(suggestions = nearest existing prefix), filteredOut (suggestions = what to drop, filter: {}), noMatch. " +
+        "Act on it; empty answer with reason ≠ grep needed.",
+    ),
 };

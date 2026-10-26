@@ -37,6 +37,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
       ...(response.workingTree && { workingTree: response.workingTree }),
       ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
+      ...(response.empty && { empty: response.empty }),
     },
     // A degraded ranking is said in text too: a reader of the text channel
     // would otherwise take a BM25-only answer for a hybrid one.

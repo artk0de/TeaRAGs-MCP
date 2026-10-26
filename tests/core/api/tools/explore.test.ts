@@ -369,6 +369,25 @@ describe("registerSearchTools — workingTree", () => {
   });
 });
 
+// Agent turn economy N6 (bd tea-rags-mcp-wrosj): the empty-answer reason reaches the MCP output.
+describe("registerSearchTools — empty answer explanation", () => {
+  it("semantic_search and hybrid_search carry empty in structuredContent", async () => {
+    const empty = { reason: "filteredOut", message: "filters removed every match", suggestions: ["filter: {}"] };
+    const { captured } = makeHarness({
+      semanticSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, empty }),
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, empty }),
+    });
+
+    for (const name of ["semantic_search", "hybrid_search"]) {
+      const tool = captured.find((t) => t.name === name);
+      const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+        structuredContent: { empty?: unknown };
+      };
+      expect(result.structuredContent.empty).toEqual(empty);
+    }
+  });
+});
+
 // hybrid_search answered from BM25 alone because the embedding provider is down.
 describe("registerSearchTools — denseUnavailable", () => {
   const reason = "No llama-server endpoint is reachable at http://127.0.0.1:9";
