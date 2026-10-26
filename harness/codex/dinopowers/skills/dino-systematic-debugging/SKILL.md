@@ -1,16 +1,12 @@
 ---
 name: dino-systematic-debugging
 description:
-  'Debug concrete failure: first run $bug-hunt for ranked suspect list
-  (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
-  ends with Cause / Fix / Prevention report. Triggers on "debug X", "fix the
-  bug", "why does Y fail", "test fails", "same bug elsewhere?", "падает",
-  "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах",
-  "something feels wrong with X, can''t say what", "which tool next
-  mid-investigation", "final report of a confirmed cause". NOT for code review,
-  a code-health scan with no felt malfunction, or a request to apply a named fix
-  at a named location (→ data-driven-generation). Wraps $systematic-debugging
-  with $bug-hunt suspect ranking.'
+  'Debug concrete failure — $bug-hunt first for ranked suspects. Felt
+  malfunction beats explore and risk-assessment. Triggers "debug X", "fix the
+  bug", "why does Y fail", "test fails", "something feels wrong with X, can''t
+  say what", "same bug elsewhere?", "падает", "почему не работает", "ошибка в",
+  "стектрейс". NOT code review, health scan with no felt malfunction, or named
+  fix at named spot (→ data-driven-generation).'
 ---
 
 # dinopowers: systematic-debugging

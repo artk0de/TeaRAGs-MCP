@@ -11,6 +11,13 @@ description:
   context before requesting review (use dinopowers:requesting-code-review), NOT
   for health scan without a diff (use risk-assessment), NOT for debugging a
   concrete failure (use bug-hunt).
+codex-description:
+  Signal-driven review of a merge request or local branch — rank diff risks
+  (blast radius, fragile zones, missing tests), comments naming concrete fixes.
+  Triggers "review this MR <url>", "review MR/PR", "review my branch", "проведи
+  ревью MR", "сделай ревью ветки". NOT reviewer context before requesting review
+  (dinopowers:requesting-code-review), NOT health scan without a diff
+  (risk-assessment), NOT debugging a failure (bug-hunt).
 argument-hint: "[MR/PR URL — omit for local review]"
 ---
 

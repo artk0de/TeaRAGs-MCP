@@ -1,14 +1,12 @@
 ---
 name: explore
 description:
-  'Explore, understand, explain, investigate code — "how does X work", "show me
-  the architecture of Y", "what does Z do", "where is X used", "find all X",
-  "antipatterns in X", "best example of X", "files matching <Name>" (not Glob).
-  Also pre-generation investigation — "before I code/change/modify/refactor X",
-  "what should I know before touching X", "research before coding", "context for
-  changing X", "risks before refactoring X". NOT for active bugs (use bug-hunt),
-  NOT for standalone code health scan without specific area (use
-  risk-assessment)'
+  'Explain/investigate code — "how does X work", "where is X used", "find all
+  X", "architecture of Y", "best example of X"; pre-generation context — "before
+  I change/refactor X", "what to know before touching X". NOT for active bugs, a
+  bug already found, named suspects, hits with bugFixRate labels (bug-hunt). NOT
+  for writing a plan (writing-plans). NOT standalone health scan
+  (risk-assessment).'
 ---
 
 # Explore
@@ -216,7 +214,10 @@ Apply tables above, first match:
    risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols only (e.g.
    base error classes), never call chains.
 5. EXPLAIN → Explore Flow below, format per
-   [references/explain-pattern.md](./references/explain-pattern.md).
+   [references/explain-pattern.md](./references/explain-pattern.md). Named
+   component ("the <name> adapter") → Scope extraction probe FIRST, then
+   `semantic_search(query=<behaviour>, pathPattern="**/<name>/**")` — the
+   component word in query text alone is NOT scope. Skip ORIENT ≠ skip probe.
 6. TRACE → Explore Flow below, format per
    [references/trace-pattern.md](./references/trace-pattern.md).
 
@@ -256,7 +257,7 @@ find_similar with code as input → EXPLAIN similarities.
 **Gate by target.** System / domain / directory ("introduce me to the project",
 "full picture of X", "walk me through domain Y") → ORIENT first. Named symbol /
 narrow question ("what does Reranker#rerank do", "where is X used") → SKIP to
-BREADTH.
+BREADTH (Scope extraction still runs; its pathPattern rides on BREADTH).
 
 Architecture phrasing never reaches here — codegraph row 4 catches it;
 architecture-pattern.md Step 0 runs same orientation.

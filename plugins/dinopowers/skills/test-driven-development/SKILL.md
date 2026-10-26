@@ -11,6 +11,13 @@ description:
   code (function, behaviour change, bug fix) → tea-rags:data-driven-generation
   (RED = its Step 6a). Wraps superpowers:test-driven-development with tea-rags
   test-pattern search.
+codex-description:
+  Write failing test BEFORE implementation, matching local test conventions via
+  tea-rags. Triggers "write a test", "TDD", "failing test first", "RED phase",
+  "add test for Y", "find test patterns/conventions", "напиши тест", "сначала
+  тест", "извлеки паттерны из тестов". NOT production code — function, behaviour
+  change, bug fix (→ data-driven-generation). NOT repos with no tests (→
+  superpowers:test-driven-development).
 ---
 
 # dinopowers: test-driven-development

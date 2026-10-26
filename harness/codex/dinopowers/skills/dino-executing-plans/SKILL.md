@@ -1,15 +1,12 @@
 ---
 name: dino-executing-plans
 description:
-  'Execute written implementation plan or tracker issue whose Tasks edit code,
-  per-Task SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven
-  cascade for code-generation and behavior-modification Tasks (strategy+template
-  from proven neighbors, callers + tests-at-risk on modify). Triggers on
-  "execute the plan", "start Task N", "выполни план", "начни задачу", "run the
-  plan", "implement the plan steps". NOT for one-off edits with no plan, issue
-  or quoted Task, NOT a step that drafts a (sub-)plan (→ $dino-writing-plans).
-  Wraps $executing-plans with tea-rags git-signal verdicts and
-  $data-driven-generation cascade.'
+  'Execute written plan or tracker issue whose Tasks edit code — per-Task
+  SAFE/CAUTION/UNSAFE git verdict + data-driven-generation cascade. Plan, issue
+  or quoted Task beats data-driven-generation. Triggers "execute the plan",
+  "start Task N", "run the plan", "implement the plan steps", "выполни план",
+  "начни задачу". NOT one-off edits with no plan/issue/quoted Task (→
+  data-driven-generation), NOT drafting a (sub-)plan (→ writing-plans).'
 ---
 
 # dinopowers: executing-plans

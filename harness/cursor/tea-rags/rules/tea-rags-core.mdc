@@ -53,13 +53,16 @@ diff's → `review_changes` verdicts, nothing after.
   `index_codebase(project=)` first, no consent. (3) Drift `Run:` `--force*` →
   subagent: (1); main: own ask the user: run <Run: line>?`, never awaited;
 print `--force not run; reads continue`, next = a read.
-- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
-  changed files → own checkout → `index_codebase` first, then `find_symbol`
-  caller + `hybrid_search(metaOnly)`, no graph retry. Codegraph off → never
-  claim "no cycles"; on + empty `find_cycles` = DAG.
+- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`. Edges at
+  changed files (graph timeout, `floors: []`) → all 3 steps, in order, none
+  dropped (a `--force` ask rides beside them, never takes a slot):
+  `1. index_codebase(project=)` (own checkout only; linked → skip)
+  `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` — callers the
+  index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
+  empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
-- User names a tool/action ("read `x.ts`" → `Read`) → do it, over rows; user's
-  weaker search method → keep rule's, say why.
+- User orders a manual read ("read `x.ts` by hand") → `Read`; their plan, tool
+  idea or "whole file" → keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

@@ -7,13 +7,6 @@ in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` wit
 its own command first; a plan from memory is not reading it. A skill path you
 did not open with a command in this turn is invalid in a plan — open it first.
 
-**Plan-only / describe-the-plan answers: every skill output contract applies
-NOW.** Print every literal line and every template IN FULL (table headings +
-header rows, never a schema line). `[planned; not run]` only for tool results
-not gathered yet; a value derivable from the prompt (pathPattern, a repaired
-finding's counts) is written out. A skill's "ask the user" fires in this answer.
-Describing compliance is not compliance.
-
 **Addressing.** Every read call: `project=<alias>` (which index) +
 `path=<this task's cwd>` (which tree, re-checks too). Alias: prime `## Project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
@@ -60,13 +53,16 @@ diff's → `review_changes` verdicts, nothing after.
   `--force*` → subagent: (1); main: own ask the user: run <Run:
   line>?`, never awaited; print `--force not run; reads continue`, next = a
   read.
-- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`; edges at
-  changed files → own checkout → `index_codebase` first, then `find_symbol`
-  caller + `hybrid_search(metaOnly)`, no graph retry. Codegraph off → never
-  claim "no cycles"; on + empty `find_cycles` = DAG.
+- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`. Edges at
+  changed files (graph timeout, `floors: []`) → all 3 steps, in order, none
+  dropped (a `--force` ask rides beside them, never takes a slot):
+  `1. index_codebase(project=)` (own checkout only; linked → skip)
+  `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` — callers the
+  index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
+  empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
-- User names a tool/action ("read `x.ts`" → `Read`) → do it, over rows; user's
-  weaker search method → keep rule's, say why.
+- User orders a manual read ("read `x.ts` by hand") → `Read`; their plan, tool
+  idea or "whole file" → keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

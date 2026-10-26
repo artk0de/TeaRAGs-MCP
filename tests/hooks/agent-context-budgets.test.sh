@@ -42,11 +42,13 @@ INJECT="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
 [ "$(bash "$INJECT" --count)" = 1 ]; note $? "rules injection is one part"
 [ "$(bash "$INJECT" --part 1 --parts 1 | wc -c)" -le 8000 ]; note $? "rules injection ≤ 8000 bytes"
 [ "$(bash "$INJECT" | wc -c)" -le 8000 ]; note $? "legacy no-arg rules dump ≤ 8000 bytes"
-# core.md doubles as server `instructions` (≤ 4,096) and Cursor's tea-rags-core.mdc
-# (≤ 4,096 incl. ~330 chars of wrapper), hence 3,769 chars.
+# core.md ≤ 5,000 chars. Server `instructions` get a ≤ 4,096 head of it plus a
+# pointer to tea-rags://guide/core (serverInstructions); the SessionStart hooks and
+# Cursor's tea-rags-core.mdc (≤ 5,400 incl. wrapper) carry the full core. Codex's
+# hook budget of 8,500 is shared with the digest — fit-digest trims the digest.
 CORE="$ROOT/plugins/tea-rags/rules/core.md"
-[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 3769 ]
-note $? "rules/core.md ≤ 3769 chars (Cursor .mdc wrapper 327 → 4096 cap)"
+[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 5000 ]
+note $? "rules/core.md ≤ 5000 chars (instructions head ≤ 4096, Cursor .mdc ≤ 5400)"
 
 # Description = value of the top-level `description:` key: inline text, or an
 # indented block (plain, `>` / `|` folded) running to the next top-level key.

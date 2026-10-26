@@ -53,6 +53,10 @@ Defects found on the way:
 | Skill load-time shell injection  | yes, `` !`cmd` ``                                       | no                                                                             | no (custom commands only, with confirmation)    | no                                                           |
 | Always-on rules file             | CLAUDE.md / rules                                       | AGENTS.md                                                                      | GEMINI.md                                       | `.mdc alwaysApply`                                           |
 
+Only Claude Code's `instructions` cut is real and documented. Cursor documents
+no `.mdc` size limit, so the rules core is not capped by the narrowest channel:
+`instructions` carry a ≤ 4,096 head of it, the full core is a resource.
+
 Local Codex: codex-cli 0.162.1; plugins are `.codex-plugin/plugin.json` with
 `skills: "./skills/"`; hooks and MCP servers live in `~/.codex/config.toml`.
 
@@ -135,14 +139,17 @@ text to hooks and skills.** No new MCP tools.
 
 ## Budgets (enforced by tests)
 
-| Artifact                           | Cap                                                          |
-| ---------------------------------- | ------------------------------------------------------------ |
-| Server `instructions`              | ≤ 4,096 chars; first 512 self-contained                      |
-| Injected rules core (all parts)    | ≤ 8,000 bytes, 1 part                                        |
-| `tea-rags prime` / digest resource | ≤ 2,500 bytes target, test cap 9,000 on a 4-language fixture |
-| Subagent block incl. alias line    | ≤ 3,000 bytes target, test cap 9,000                         |
-| Skill description                  | ≤ 1,024 chars                                                |
-| `resources/list` entries           | ≤ 20                                                         |
+| Artifact                           | Cap                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server `instructions`              | ≤ 4,096 chars: the core when it fits, else its head cut on a line boundary + a pointer to `tea-rags://guide/core`; first 512 self-contained |
+| Rules core `rules/core.md`         | ≤ 5,000 chars (hooks and Cursor carry it whole)                                                                                             |
+| Cursor `tea-rags-core.mdc`         | ≤ 5,400 chars incl. wrapper — our cap, Cursor documents none                                                                                |
+| Codex SessionStart context         | ≤ 8,500 chars, core + digest; `fit-digest.py` trims the digest                                                                              |
+| Injected rules core (all parts)    | ≤ 8,000 bytes, 1 part                                                                                                                       |
+| `tea-rags prime` / digest resource | ≤ 2,500 bytes target, test cap 9,000 on a 4-language fixture                                                                                |
+| Subagent block incl. alias line    | ≤ 3,000 bytes target, test cap 9,000                                                                                                        |
+| Skill description                  | ≤ 1,024 chars                                                                                                                               |
+| `resources/list` entries           | ≤ 20                                                                                                                                        |
 
 Expected effect (Claude Code): session start and every compaction ~24–25k →
 ~6.6k tokens; per subagent 2.9k → ≤1.3k; per prompt −0.4k; a skill needing

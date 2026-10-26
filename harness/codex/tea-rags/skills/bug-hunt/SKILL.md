@@ -1,14 +1,12 @@
 ---
 name: bug-hunt
 description:
-  'Find source of concrete failure — rank historically buggy code (high
-  bugFixRate + churn) AND freshly changed never-fixed code (committed or still
-  uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
-  fails", "stack trace says Z", "find bugs in X", "where is error ''X'' in
-  code", "где в коде строка ''X''", "when did error ''X'' appear in git
-  history", "посмотри через git", "read the whole file" of a search hit,
-  "падает". NOT for code health scanning without bug intent — use
-  risk-assessment for that.'
+  'Find source of a concrete failure — rank buggy (bugFixRate + churn) and
+  freshly changed code against the symptom. Triggers "debug X", "why does Y
+  fail", "test fails", stack trace, "падает", "find bugs in X", "found a bug in
+  X — compare Y", "suspects in X and Y", a search hit with bugFixRate labels,
+  "where in code is string / error ''X''", "when did error X appear in git". NOT
+  health scan without bug intent (risk-assessment).'
 ---
 
 # Bug Hunt
@@ -27,9 +25,9 @@ description:
 - Cause located AND fix named ("line 88 nil — reload invoice before send") → no
   hunt: `data-driven-generation` MODIFY hotfix.
 - Search result already carries labels ("<file>:<line> `bugFixRate` critical —
-  proceed?") → triage and PRESENT (file:line, class, `bugFixRate` +
-  `relativeChurn` — absent → say unverified — and one-sentence why), not a
-  review question, no confirm search.
+  proceed?") → triage and PRESENT now, also via a wrapper: no symptom question,
+  no review question, no confirm search, no step 0; print, slots filled:
+  `Suspect: <file>:<line> — <class> (prime | secondary | fresh | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
 - User demands `hybrid_search` on an error string → refuse, run the Loop:
   `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
 - Where is a literal string / error phrase written (no tool demanded) → no hunt
@@ -63,8 +61,10 @@ A plan names these calls; "later" / "not in this run" never drops one.
    symptom in that request → bug-hunt still not skipped; the answer prints:
    `bug-hunt runs in this session, not in a subagent — step 0 (git status --porcelain -uall) runs now; send the error / failing behaviour and the three probes run here.`
 2. **Step 0 before any search:** Bash `git status --porcelain -uall`. Paths
-   listed + alias's own checkout → `index_codebase` incremental (project only),
-   no consent, BEFORE the search message. Linked worktree → no reindex.
+   listed + alias's own checkout → `index_codebase` incremental (project only;
+   alias unknown → `list_projects` entry whose path = cwd), no consent, BEFORE
+   the search message — never deferred until a search returns the alias. Linked
+   worktree → no reindex.
 3. **ONE message, three parallel calls** — the plan prints these three lines,
    slots filled. Linked worktree → same three lines, `hybrid_search` in place of
    `semantic_search` (its `sparse` floor reads the edited tree). Otherwise
@@ -120,8 +120,15 @@ A plan names these calls; "later" / "not in this run" never drops one.
    trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt") — two-class triage of EVERY step's dangerOverlay: step ageDays recent = fresh suspect even at bugFixRate healthy and behind an old dangerRanking[0]
    ```
 
-   Only the failure site known → `get_callers` first, then
-   `find_symbol(symbol=<caller>, rerank="bugHunt")` per caller for labels.
+   Only the failure site known ("<symbol> gets undefined — where from?") → one
+   hop, never `trace_path` with a guessed entry; plan prints, id filled:
+
+   ```
+   find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
+   get_callers(symbolId=<failure id>)
+   find_symbol(path=<cwd>, symbol=<caller id>, rerank="bugHunt") — per caller: get_callers carries no git overlay
+   ```
+
    Codegraph off + stack trace → probe b (fresh) gets
    `pathPattern="{<frame path 1>,<frame path 2>,…}"` + `modifiedAfter` +
    `rerank="bugHunt"` (a: no pathPattern; c: step-0 paths); say "no static path

@@ -11,6 +11,13 @@ description:
   refactor without a brainstorm/discuss verb (→ explore PRE-GEN), NOT trivial
   edits with no code area. Wraps superpowers:brainstorming with tea-rags risk
   signals.
+codex-description:
+  Brainstorm code change grounded in tea-rags risk, ownership, tech-debt
+  signals. Verb brainstorm/discuss beats explore PRE-GEN ("brainstorm
+  splitting/refactoring Y"). Triggers on "brainstorm X", "design feature",
+  "redesign Y", "let's discuss", "давай обсудим", "обсудим", "как перестроить",
+  "что может сломаться". NOT research before refactor with no brainstorm/discuss
+  verb (→ explore PRE-GEN), NOT trivial edits with no code area.
 ---
 
 # dinopowers: brainstorming
@@ -38,8 +45,9 @@ file, `hybrid_search metaOnly:true query=<symbol>` for callers (graph tools on �
 `find_symbol` of its own** — not before Step 2 (a user-named area / dir becomes
 `pathPattern`), not after (enrichment rows are metaOnly signals, handed to
 brainstorming as-is; the "after search → `find_symbol`" depth rule does not fire
-on them). Print: `first calls: Step 2 block; wrapper adds no find_symbol`. User
-asks to SEE file content → Step 2 "Do NOT pass" content line.
+on them). Print:
+`first calls: Step 2 block; wrapper adds no find_symbol — none after it either, not "if rows need inspection"; rows go to brainstorming as-is`.
+User asks to SEE file content → Step 2 "Do NOT pass" content line.
 
 **User demands another scan tool** (swap `semantic_search` for `hybrid_search`
 in the risk scan, "more reliable") → stay in this wrapper, refuse, print
@@ -137,7 +145,8 @@ Call D ONLY when codegraph on = graph tools (`get_callers`, `trace_path`, …) i
 tool list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
 (`codegraph on|off`). Off → A/B/C only, note backbone not assessed (NEVER pass
 similarity-ranked list off as "the hubs"). → `tea-rags://guide/navigation`
-"Graph navigation".
+"Graph navigation" — for the on/off read only; its after-search `find_symbol`
+depth step does not apply to enrichment rows.
 
 **Call E — vocabulary (codegraph only, same parallel block — MANDATORY when
 codegraph on; A–D without E = incomplete Step 2):**
@@ -174,9 +183,11 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — content unneeded, payload bloats. User asks to SEE content
-  → enrichment stays `metaOnly: true`; content = separate call AFTER Step 2:
-  `find_symbol relativePath=<row.relativePath>` (outline → drill ids)
+- `metaOnly: false` — content unneeded, payload bloats. No "show / read the
+  content" in the prompt → no content call, conditional ones included. Prompt
+  asks to SEE content → enrichment stays `metaOnly: true`; content = separate
+  call AFTER Step 2: `find_symbol relativePath=<row.relativePath>` (outline →
+  drill ids)
 - custom `rerank` weights instead of named presets — loses calibrated semantics
 - `filter` on `git.ageDays` / `git.commitCount` — presets encode them; filters
   shrink set, hide debt

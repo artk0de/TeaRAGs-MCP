@@ -180,7 +180,7 @@
       "id": "S4",
       "skill": "tea-rags:bug-hunt (result)",
       "cwd": "/work/acme/.claude/worktrees/fix-rerank",
-      "prompt": "Search answer workingTree{tree=cwd, changedFiles:1, floors{chunks,sparse}}; top row reranker.ts Reranker#score 40-88 treeState:modified, bugFixRate healthy.",
+      "prompt": "Inside tea-rags:bug-hunt for a test failing since my uncommitted edit to reranker.ts, the search answer: workingTree{tree=cwd, changedFiles:1, floors{chunks,sparse}}; top row reranker.ts Reranker#score 40-88 treeState:modified, bugFixRate healthy.",
       "expected": "row = pre-edit index copy (text/lines stale), still the uncommitted suspect; next find_symbol(path=<cwd>, symbol=Reranker#score)",
       "assertions": ["A2"],
       "audit_finding": "F6",

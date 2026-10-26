@@ -70,7 +70,7 @@
     },
     {
       "id": "C6",
-      "prompt": "path-only answer carried workingTree.project=acme; next call",
+      "prompt": "cwd: /work/acme/.claude/worktrees/feat-x (linked worktree). A path-only answer carried workingTree.project=acme; next call",
       "expected": "project=acme + path=<worktree>",
       "finding": "B3",
       "before": "FAIL (kept path only)",
@@ -94,7 +94,7 @@
     },
     {
       "id": "C9",
-      "prompt": "unregistered repo first index",
+      "prompt": "cwd: /work/newrepo, a repository not registered with tea-rags yet; first index",
       "expected": "index_codebase path=/work/newrepo",
       "finding": "control",
       "before": "PASS",

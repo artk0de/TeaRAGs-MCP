@@ -1,4 +1,14 @@
-import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
@@ -11,6 +21,7 @@ import {
   writeClaudePackages,
 } from "../../scripts/gen-harness-claude.js";
 import { PLUGINS_DIR, walk } from "../../scripts/harness/package.js";
+import { stripFrontmatterKey } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
 
@@ -23,7 +34,7 @@ describe("claudePluginNames", () => {
 });
 
 describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage(%s)", (name) => {
-  it("copies the source verbatim, executable bits included", () => {
+  it("copies the source verbatim (SKILL.md minus codex-description), executable bits included", () => {
     const rendered = renderClaudePackage(ROOT, name);
     const src = join(ROOT, PLUGINS_DIR, name);
 
@@ -33,7 +44,12 @@ describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage
         .sort(),
     );
     for (const [path, file] of rendered) {
-      expect(file.content.equals(readFileSync(join(src, path))), path).toBe(true);
+      const source = readFileSync(join(src, path));
+      const expected = path.endsWith("SKILL.md")
+        ? Buffer.from(stripFrontmatterKey(source.toString("utf8"), "codex-description"))
+        : source;
+      expect(file.content.equals(expected), path).toBe(true);
+      if (path.endsWith("SKILL.md")) expect(file.content.toString("utf8"), path).not.toMatch(/^codex-description:/m);
       expect(file.mode & 0o111, path).toBe(statSync(join(src, path)).mode & 0o111);
     }
   });
@@ -54,6 +70,34 @@ describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage
       expect(file, path).toBeDefined();
       expect((file?.mode ?? 0) & 0o111, `${path} executable`).not.toBe(0);
     }
+  });
+});
+
+describe("renderClaudePackage — codex-description", () => {
+  let fixtureRoot: string;
+
+  beforeAll(() => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), "harness-claude-codex-"));
+    const plugin = join(fixtureRoot, PLUGINS_DIR, "p");
+    mkdirSync(join(plugin, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(plugin, "skills/s"), { recursive: true });
+    writeFileSync(join(plugin, ".claude-plugin/plugin.json"), '{"name":"p"}\n');
+    writeFileSync(
+      join(plugin, "skills/s/SKILL.md"),
+      "---\nname: s\ndescription:\n  Full text, all triggers.\ncodex-description:\n  Short text.\n  Second line.\nuser-invocable: true\n---\n\n# S\n\ncodex-description: stays in the body.\n",
+    );
+  });
+
+  afterAll(() => {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  it("strips codex-description from SKILL.md frontmatter and keeps everything else", () => {
+    const skill = renderClaudePackage(fixtureRoot, "p").get("skills/s/SKILL.md")?.content.toString("utf8");
+
+    expect(skill).toBe(
+      "---\nname: s\ndescription:\n  Full text, all triggers.\nuser-invocable: true\n---\n\n# S\n\ncodex-description: stays in the body.\n",
+    );
   });
 });
 

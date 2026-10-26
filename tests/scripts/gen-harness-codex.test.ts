@@ -16,13 +16,12 @@ import { dirname, join, relative, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  CODEX_DESCRIPTION_MAX_CHARS,
   CODEX_HARNESS_DIR,
   CODEX_HOOK_CONTEXT_BUDGET,
   CODEX_MARKETPLACE_PATH,
-  DINOPOWERS_SKILLS_LIST_BUDGET,
   renderCodexHarness,
   renderCodexMarketplace,
-  SKILLS_LIST_BUDGET,
   toCodexSkill,
   writeCodexHarness,
 } from "../../scripts/gen-harness-codex.js";
@@ -125,6 +124,17 @@ describe("toCodexSkill", () => {
     expect(fields.description).toBe(
       'Find source of concrete failure. Triggers on "debug X". NOT for scans — use $explore.',
     );
+  });
+
+  it("emits codex-description as the description when the source carries one", () => {
+    const source = FIXTURE.replace(
+      "argument-hint:",
+      "codex-description:\n  Concrete failure → rank buggy code. NOT for scans — use\n  tea-rags:explore.\nargument-hint:",
+    );
+    const { fields } = parseFrontmatter(toCodexSkill(source, { skillNames: KNOWN }));
+
+    expect(Object.keys(fields)).toEqual(["name", "description"]);
+    expect(fields.description).toBe("Concrete failure → rank buggy code. NOT for scans — use $explore.");
   });
 
   it("drops load-time blocks", () => {
@@ -305,6 +315,67 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  it("fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, threshold tables dropped first", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const dir = mkdtempSync(join(tmpdir(), "codex-fit-digest-"));
+    try {
+      const script = join(dir, "fit-digest.py");
+      writeFileSync(script, rendered.get("tea-rags/scripts/fit-digest.py") ?? "");
+      const row = (i: number) => `| signal${i} | low/high | ${i} / ${i * 2} |`;
+      const digest = [
+        "# tea-rags prime — /work/demo",
+        "",
+        "## Signal thresholds — ruby",
+        Array.from({ length: 12 }, (_, i) => row(i)).join("\n"),
+        "",
+        "## Status",
+        `indexed · collection \`code_x\` · ${"last indexed: 6d ago · ".repeat(6)}`,
+        "",
+        "## Project",
+        "name: `demo`",
+        `registry: ${"ENV_VAR=value ".repeat(14)}`,
+        "",
+        "## Drift",
+        "Run: tea-rags index-codebase --project demo --force",
+        "",
+        "## Enrichment",
+        `codegraph.symbols: file healthy, chunk healthy · ${"git: healthy · ".repeat(8)}`,
+        "",
+        "## Language capability — ceiling tier · realized resolve",
+        `ruby: A · 92% ${"· typescript: A · 97% ".repeat(5)}`,
+        "",
+        "## Codegraph resolve",
+        "resolve rate: 94%",
+        "",
+        "## Scale",
+        `chunks: 41k · files: 3.2k ${"· languages: 4 ".repeat(10)}`,
+      ].join("\n");
+      const budget = CODEX_HOOK_CONTEXT_BUDGET;
+      const used = budget - 1_600;
+
+      const fitted = execFileSync("python3", ["-I", script, String(budget), String(used)], {
+        input: digest,
+      }).toString();
+
+      expect(fitted.length + 2).toBeLessThanOrEqual(1_600);
+      for (const kept of [
+        "name: `demo`",
+        "## Status",
+        "Run: tea-rags index-codebase --project demo --force",
+        "## Enrichment",
+        "## Language capability",
+        "resolve rate: 94%",
+        "## Scale",
+      ]) {
+        expect(fitted).toContain(kept);
+      }
+      expect(fitted).not.toContain("## Signal thresholds");
+      expect(fitted.trimEnd().split("\n").at(-1)).toContain("tea-rags resource tea-rags://project/demo/digest");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps every hook text payload within Codex's hook-output cap", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const payloads = [...rendered].filter(([path]) => /^[^/]+\/scripts\/[^/]+\.txt$/.test(path));
@@ -314,21 +385,31 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("ships no dinopowers skill and keeps the skills list within budget", async () => {
+  it("ships no dinopowers skill, every skill named after its folder", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const skills = [...rendered].filter(([path]) => /^tea-rags\/skills\/[^/]+\/SKILL\.md$/.test(path));
-    let total = 0;
     for (const [path, content] of skills) {
       const { fields } = parseFrontmatter(content);
       expect(Object.keys(fields), path).toEqual(["name", "description"]);
       expect(path).toBe(`tea-rags/skills/${fields.name}/SKILL.md`);
-      total += fields.name.length + fields.description.length;
     }
 
     expect(skills.length).toBeGreaterThan(0);
     expect(skills.map(([path]) => path).join()).not.toMatch(/dinopowers|writing-plans|executing-plans/);
-    expect(total).toBeLessThanOrEqual(SKILLS_LIST_BUDGET);
   });
+
+  it.each(["tea-rags", "dinopowers"])(
+    "keeps every %s skill description within what Codex shows unclipped",
+    async (pkg) => {
+      const rendered = await renderCodexHarness(ROOT);
+      const over = [...rendered]
+        .filter(([path]) => new RegExp(`^${pkg}/skills/[^/]+/SKILL\\.md$`).test(path))
+        .map(([path, content]) => [path, parseFrontmatter(content).fields.description.length] as const)
+        .filter(([, length]) => length > CODEX_DESCRIPTION_MAX_CHARS);
+
+      expect(over).toEqual([]);
+    },
+  );
 
   it("ships every plugin file a shipped skill links to by relative path", async () => {
     const rendered = await renderCodexHarness(ROOT);
@@ -422,21 +503,14 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  // Codex T22 introspection, all six suites: a plan-only answer described a future report instead of printing the contract.
-  it("tells the core, beside the read discipline, that output contracts apply now in plan-only answers", async () => {
+  // The plan-only output-contract rule is eval-stand behaviour; it lives in the stand prompt, not the core.
+  it("keeps the eval-stand plan-only rule out of the core", async () => {
     const rendered = await renderCodexHarness(ROOT);
 
     for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
-      const body = (rendered.get(path) ?? "").replace(/^---\n[\s\S]*?\n---\n/, "");
-      const head = body.split("\n").slice(0, 16).join("\n");
-      expect(head).toMatch(/Plan-only\s+\/\s+describe-the-plan\s+answers/);
-      expect(head).toMatch(/every\s+skill\s+output\s+contract\s+applies\s+NOW/);
-      expect(head).toMatch(/`\[planned; not run\]`/);
-      // Codex T22 r18: the placeholder spread to values the prompt already fixes (pathPattern, a repaired finding's count).
-      expect(head).toMatch(/only\s+for\s+tool\s+results\s+not\s+gathered\s+yet/);
-      expect(head).toMatch(/derivable\s+from\s+the\s+prompt/);
-      expect(head).toMatch(/Describing\s+compliance\s+is\s+not\s+compliance\./);
-      expect(body.match(/Plan-only \/ describe-the-plan/g)).toHaveLength(1);
+      const body = rendered.get(path) ?? "";
+      expect(body).not.toMatch(/Plan-only\s+\/\s+describe-the-plan/);
+      expect(body).not.toMatch(/Describing\s+compliance\s+is\s+not\s+compliance/);
     }
   });
 
@@ -504,15 +578,6 @@ describe("renderCodexHarness — dinopowers package", () => {
       expect(content.replace(listed, ""), path).not.toMatch(/\b(?:dinopowers|superpowers):[A-Za-z]/);
       expect(content, path).not.toMatch(/Skill\(/);
     }
-  });
-
-  it("keeps the dinopowers skills list within its own budget", () => {
-    const total = wrappers().reduce((sum, [, content]) => {
-      const { fields } = parseFrontmatter(content);
-      return sum + fields.name.length + fields.description.length;
-    }, 0);
-
-    expect(total).toBeLessThanOrEqual(DINOPOWERS_SKILLS_LIST_BUDGET);
   });
 
   it("resolves every relative link inside the package", () => {

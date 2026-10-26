@@ -1,16 +1,12 @@
 ---
 name: mr-review
 description:
-  'Signal-driven review of merge request or local branch — rank diff risks via
-  tea-rags (blast radius, fragile zones, silo style, missing tests, doc
-  invariants, cycles, naming), emit plain-language comments each naming a
-  concrete fix. Triggers on "review this MR <url>", "review MR/PR", "проведи
-  ревью MR", "сделай ревью ветки", "review my branch". External URL → inline
-  comments posted via session''s MR-platform mechanism after ONE draft-gate
-  confirm, signed agent, [minor] prefix on style nits. NOT for building reviewer
-  context before requesting review (use requesting-code-review), NOT for health
-  scan without a diff (use risk-assessment), NOT for debugging a concrete
-  failure (use bug-hunt).'
+  'Signal-driven review of a merge request or local branch — rank diff risks
+  (blast radius, fragile zones, missing tests), comments naming concrete fixes.
+  Triggers "review this MR <url>", "review MR/PR", "review my branch", "проведи
+  ревью MR", "сделай ревью ветки". NOT reviewer context before requesting review
+  (requesting-code-review), NOT health scan without a diff (risk-assessment),
+  NOT debugging a failure (bug-hunt).'
 ---
 
 # MR Review

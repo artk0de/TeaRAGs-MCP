@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -95,6 +105,18 @@ describe("toCursorSkill", () => {
     expect(Object.keys(fields)).toEqual(["name", "description"]);
     expect(fields.description).toBe("Build a raw filter. Use /explore first.");
     expect(out).toContain("Chain /explore, then `/test-first`.");
+  });
+
+  it("keeps the full description and drops codex-description", () => {
+    const withCodex = toCursorSkill(
+      "---\nname: explore\ndescription: Full text.\ncodex-description:\n  Short.\n---\n\n# Explore\n\nBody.\n",
+      { skillNames: KNOWN },
+    );
+    const { fields } = parseFrontmatter(withCodex);
+
+    expect(Object.keys(fields)).toEqual(["name", "description"]);
+    expect(fields.description).toBe("Full text.");
+    expect(withCodex).not.toContain("Short.");
   });
 
   it("names Cursor's resource tool and the terminal fallback under the title", () => {
@@ -267,6 +289,17 @@ describe("renderCursorHarness — core rule", () => {
     expect(rule.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
     expect(out.get("README.md")).not.toContain("`rules/core.md` does not exist yet");
   });
+
+  it("fits a core at its 5,000-char cap, wrapper included, under the rule cap", async () => {
+    const line = "Pass project= and path= on every tea-rags read call; see tea-rags://guide/navigation.\n";
+    const core = `# tea-rags core\n\n${line.repeat(Math.ceil(5_000 / line.length))}`.slice(0, 5_000);
+    writeFileSync(join(fixtureRoot, PLUGIN_SRC, "rules/core.md"), core);
+    const out = await renderCursorHarness(fixtureRoot);
+    const rule = out.get("tea-rags/rules/tea-rags-core.mdc") ?? "";
+
+    expect(rule.length).toBeGreaterThan(5_000);
+    expect(rule.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
+  });
 });
 
 describe("renderCursorHarness — dinopowers package", () => {
@@ -349,10 +382,7 @@ describe("renderCursorHarness — tea-rags sessionStart script", () => {
     const binDir = join(dir, name);
     mkdirSync(binDir, { recursive: true });
     const bin = join(binDir, "tea-rags");
-    writeFileSync(
-      bin,
-      `#!/bin/bash\necho "$@" > "${join(binDir, "args")}"\nprintf 'D%.0s' $(seq 1 ${digestChars})\n`,
-    );
+    writeFileSync(bin, `#!/bin/bash\necho "$@" > "${join(binDir, "args")}"\nprintf 'D%.0s' $(seq 1 ${digestChars})\n`);
     chmodSync(bin, 0o755);
     return binDir;
   }

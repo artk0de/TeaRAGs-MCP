@@ -1,16 +1,12 @@
 ---
 name: refactoring-planning
 description:
-  'Turn architecture diagnosis into ordered, simulated refactoring plan — expand
-  each critical/active finding (SDP, hub-like, leaking abstraction, layering
-  back-edge) into restructure ops from repair recipes, order them with
-  `restructurePlan` (greedy, by tier), hand steps to writing-plans as Tasks with
-  expected violation delta and execution contract. Use when asked "plan a
-  refactoring", "plan the architecture fix", "in what order to fix these
-  violations", "refactoring roadmap", "спланируй рефакторинг", "в каком порядке
-  чинить нарушения" — NOT for diagnosis alone (use architecture-diagnostics),
-  NOT for one in-file change (use data-driven-generation), NOT for code health
-  scan (use risk-assessment).'
+  'Turn architecture diagnosis into an ordered, simulated refactoring plan —
+  findings → restructure ops → restructurePlan order → Tasks for writing-plans.
+  Triggers "plan a refactoring", "plan the architecture fix", "in what order to
+  fix these violations", "refactoring roadmap", "спланируй рефакторинг". NOT
+  diagnosis alone (architecture-diagnostics), NOT one in-file change
+  (data-driven-generation), NOT health scan (risk-assessment).'
 ---
 
 # Refactoring Planning

@@ -10,6 +10,13 @@ description:
   or quoted Task, NOT a step that drafts a (sub-)plan (→
   dinopowers:writing-plans). Wraps superpowers:executing-plans with tea-rags
   git-signal verdicts and tea-rags:data-driven-generation cascade.
+codex-description:
+  Execute written plan or tracker issue whose Tasks edit code — per-Task
+  SAFE/CAUTION/UNSAFE git verdict + data-driven-generation cascade. Plan, issue
+  or quoted Task beats data-driven-generation. Triggers "execute the plan",
+  "start Task N", "run the plan", "implement the plan steps", "выполни план",
+  "начни задачу". NOT one-off edits with no plan/issue/quoted Task (→
+  data-driven-generation), NOT drafting a (sub-)plan (→ writing-plans).
 ---
 
 # dinopowers: executing-plans

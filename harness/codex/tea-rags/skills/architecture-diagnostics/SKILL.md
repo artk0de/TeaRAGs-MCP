@@ -1,20 +1,12 @@
 ---
 name: architecture-diagnostics
 description:
-  'Check code layout: dependency direction, module borders, Stable Dependencies
-  Principle violations, leaking abstractions (imports past adopted facade),
-  silent coupling (files changing together, no import/call between),
-  main-sequence distance (zone of pain / uselessness), hub-like dependencies
-  (high Ca AND Ce), inferred layer stack (SCC-condensed levels, knots,
-  back-edges, layer map, move candidates) with evidence per line, grouped into
-  root causes. Use when asked "is architecture right", "layering violations",
-  "layer map", "which layer", "levels", "move candidate", "wrong dependency
-  direction", "SDP", "stable depends on unstable", "module borders", "facade
-  bypass", "deep imports", "leaking abstraction", "hidden coupling", "change
-  together", "shotgun surgery", "zone of pain", "main sequence", "abstractness",
-  "hub-like dependency", "архитектурные нарушения" — NOT for risk/health of code
-  (use risk-assessment), NOT for one failure (use bug-hunt), NOT for plain cycle
-  listing (find_cycles).'
+  'Check code layout — dependency direction, SDP violations, module borders,
+  leaking abstractions, silent coupling, zone of pain, hub-like deps, layer map
+  / move candidates. Triggers "is architecture right", "layering violations",
+  "which layer", "wrong dependency direction", "shotgun surgery", "архитектурные
+  нарушения". NOT risk/health (risk-assessment), NOT one failure (bug-hunt), NOT
+  plain cycle listing (find_cycles).'
 ---
 
 # Architecture Diagnostics

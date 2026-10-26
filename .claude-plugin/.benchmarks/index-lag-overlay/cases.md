@@ -6,7 +6,9 @@ For EACH case state the NEXT actions you would take (max 3, in order): tool name
   anything. If you would ask the user something, write
   `AskUserQuestion: <text>`.
 
-Shared fixture — the `workingTree` marker and drift text used below:
+Shared definitions — a case has this marker / drift only when it names
+`MARKER-COLD` / `DRIFT-FORCE`; a case naming neither has only the state it
+states itself:
 
 ```
 MARKER-COLD = "workingTree":{"tree":"/work/acme","indexedCommit":"cbb76f5","treeCommit":"d569ae8",

@@ -11,6 +11,13 @@ description:
   NOT for code review, a code-health scan with no felt malfunction, or
   a request to apply a named fix at a named location (→ data-driven-generation).
   Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
+codex-description:
+  Debug concrete failure — tea-rags:bug-hunt first for ranked suspects. Felt
+  malfunction beats explore and risk-assessment. Triggers "debug X", "fix the
+  bug", "why does Y fail", "test fails", "something feels wrong with X, can't
+  say what", "same bug elsewhere?", "падает", "почему не работает", "ошибка в",
+  "стектрейс". NOT code review, health scan with no felt malfunction, or named
+  fix at named spot (→ data-driven-generation).
 ---
 
 # dinopowers: systematic-debugging

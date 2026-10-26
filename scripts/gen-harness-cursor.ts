@@ -33,8 +33,11 @@ import {
 export const CURSOR_HARNESS_DIR = "harness/cursor";
 /** Root marketplace manifest: the repository is a Cursor marketplace [facts §B: \`{name, owner, plugins[{name, source}]}\`]. */
 export const CURSOR_MARKETPLACE_PATH = ".cursor-plugin/marketplace.json";
-/** Cap on the generated always-on core rule, frontmatter included. */
-export const CORE_RULE_MAX_CHARS = 4_096;
+/**
+ * Cap on the generated always-on core rule, frontmatter included. The limit is
+ * ours — Cursor documents none: core cap 5,000 + ~330 chars of wrapper + margin.
+ */
+export const CORE_RULE_MAX_CHARS = 5_400;
 
 const CORE_RULE = "tea-rags-core";
 const CORE_DESCRIPTION =

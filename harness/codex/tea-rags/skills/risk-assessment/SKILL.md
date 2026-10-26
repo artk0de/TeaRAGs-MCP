@@ -1,16 +1,18 @@
 ---
 name: risk-assessment
 description:
-  'Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
-  debt) into tiers. Use to evaluate risks, assess code health, find zones
-  needing attention — NOT one-preset asks like bug-prone areas
-  (analytics-rerank), NOT bug symptoms (bug-hunt), NOT refactoring candidates
-  ("what to refactor in X", "cleanup X" → explore). Answer: phases 0–5,
-  Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
-  Output: line'
+  'Project/domain health — multi-preset risk scan (bugs, hotspots, tech debt)
+  into tiers; "evaluate risks", "assess code health", "zones needing attention".
+  NOT one-preset asks like bug-prone areas (analytics-rerank). NOT bug symptoms
+  (bug-hunt). NOT an unframed "something''s off in X" (systematic-debugging).
+  NOT refactoring candidates, "what to refactor in X" (explore).'
 ---
 
 # Risk Assessment
+
+**Not this skill — check first:** user feels something is wrong / off in an area
+and names no risk dimension (risk, health, debt, hotspots) → stop here, route to
+systematic-debugging (unframed symptom: bug-hunt skipped there). No scan.
 
 **Answer contract — reports AND plan-only answers.** Copy the skeleton below:
 plan-only → its numbered steps first, one line per phase, never merged or moved

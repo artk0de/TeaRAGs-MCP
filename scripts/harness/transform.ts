@@ -53,6 +53,24 @@ export function parseFrontmatter(md: string): Frontmatter {
   return { fields, body: md.slice(match[0].length) };
 }
 
+/**
+ * `md` without the top-level frontmatter `key` and its indented continuation
+ * lines; every other byte kept. No frontmatter or no such key → `md` unchanged.
+ */
+export function stripFrontmatterKey(md: string, key: string): string {
+  const match = FRONTMATTER.exec(md);
+  if (!match) return md;
+  const kept: string[] = [];
+  let dropping = false;
+  for (const line of match[1].split("\n")) {
+    const keyLine = /^([A-Za-z][\w-]*):/.exec(line);
+    if (keyLine) dropping = keyLine[1] === key;
+    else if (!/^\s+\S/.test(line)) dropping = false;
+    if (!dropping) kept.push(line);
+  }
+  return `---\n${kept.join("\n")}\n---${md.slice(match[0].length - (match[0].endsWith("\n") ? 1 : 0))}`;
+}
+
 function unquote(value: string): string {
   if (value.startsWith("'")) return value.slice(1, -1).replace(/''/g, "'");
   try {

@@ -5,11 +5,20 @@ description:
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
   reflects real impact+risk. Triggers on "write a plan", "draft a plan",
   "draft implementation plan", "draft sub-plan", "напиши план", "допиши план",
-  "add a Task to the plan", "распиши задачи по файлам", "plan the refactor". A
-  plan request beats explore PRE-GEN (any [subagent: …] label) and
-  data-driven-generation (a Task that creates a class stays a plan Task). NOT
-  for plans with no named files or code area to enrich. Wraps
-  superpowers:writing-plans with per-file tea-rags signal enrichment.
+  "add a Task to the plan", "распиши задачи по файлам", "распиши план
+  изменения <files>", "plan the change to <files>", "plan the refactor". A plan
+  request beats explore PRE-GEN, also when it adds "impact analysis" / "before
+  changing" (any [subagent: …] label), and data-driven-generation (a Task that
+  creates a class stays a plan Task). NOT for plans with no named files or code
+  area to enrich. Wraps superpowers:writing-plans with per-file tea-rags signal
+  enrichment.
+codex-description:
+  Implementation plan with per-file tea-rags signals. Plan request beats explore
+  PRE-GEN (even with "impact analysis"/"before changing") and
+  data-driven-generation (class-creating Task stays plan Task). Triggers
+  "write/draft a (sub-)plan", "plan the change to <files>", "plan the refactor",
+  "add Task to plan", "напиши план", "допиши план", "распиши план изменения
+  <files>", "распиши задачи по файлам". NOT plans naming no files/code area.
 ---
 
 # dinopowers: writing-plans

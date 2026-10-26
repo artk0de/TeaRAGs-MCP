@@ -4,10 +4,10 @@ description:
   'Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
-  (analytics-rerank), NOT bug symptoms (bug-hunt), NOT refactoring candidates
-  ("what to refactor in X", "cleanup X" → explore). Answer: phases 0–5,
-  Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
-  Output: line'
+  (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something''s
+  off in X" (systematic-debugging), NOT refactoring candidates ("what to
+  refactor in X", "cleanup X" → explore). Answer: phases 0–5, Critical/High
+  tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final Output: line'
 ---
 
 # Risk Assessment
@@ -15,6 +15,10 @@ description:
 > **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
+**Not this skill — check first:** user feels something is wrong / off in an area
+and names no risk dimension (risk, health, debt, hotspots) → stop here, route to
+systematic-debugging (unframed symptom: bug-hunt skipped there). No scan.
 
 **Answer contract — reports AND plan-only answers.** Copy the skeleton below:
 plan-only → its numbered steps first, one line per phase, never merged or moved

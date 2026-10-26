@@ -1,7 +1,7 @@
 /**
  * Claude Code package generator: `plugins/<name>/` (already in the Claude Code
  * dialect) → `.claude-plugin/<name>/`, copied verbatim — bytes, executable bits
- * and symlinks kept, `.claude-plugin/plugin.json` included. The root
+ * and symlinks kept, minus the Codex-only `codex-description` SKILL.md key, `.claude-plugin/plugin.json` included. The root
  * `.claude-plugin/marketplace.json` and `.claude-plugin/.benchmarks/` are not
  * packages and stay untouched.
  */
@@ -22,6 +22,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { PLUGINS_DIR, walk } from "./harness/package.js";
+import { stripFrontmatterKey } from "./harness/transform.js";
 
 /** Folder holding the generated Claude Code packages and the root marketplace manifest. */
 export const CLAUDE_PACKAGES_DIR = ".claude-plugin";
@@ -51,7 +52,13 @@ export function renderClaudePackage(root: string, name: string): Map<string, Pac
       files.set(path, { content: Buffer.alloc(0), mode: 0o777, link: readlinkSync(file) });
       continue;
     }
-    files.set(path, { content: readFileSync(file), mode: stat.mode & 0o111 ? 0o755 : 0o644 });
+    const content = readFileSync(file);
+    files.set(path, {
+      content: path.endsWith("SKILL.md")
+        ? Buffer.from(stripFrontmatterKey(content.toString("utf8"), "codex-description"))
+        : content,
+      mode: stat.mode & 0o111 ? 0o755 : 0o644,
+    });
   }
   return files;
 }

@@ -15,6 +15,13 @@ description:
   "hub-like dependency", "архитектурные нарушения" — NOT for risk/health of code
   (use risk-assessment), NOT for one failure (use bug-hunt), NOT for plain cycle
   listing (find_cycles).
+codex-description:
+  Check code layout — dependency direction, SDP violations, module borders,
+  leaking abstractions, silent coupling, zone of pain, hub-like deps, layer map
+  / move candidates. Triggers "is architecture right", "layering violations",
+  "which layer", "wrong dependency direction", "shotgun surgery", "архитектурные
+  нарушения". NOT risk/health (risk-assessment), NOT one failure (bug-hunt), NOT
+  plain cycle listing (find_cycles).
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 
