@@ -133,12 +133,81 @@
         "hybrid_search",
         "ripgrep"
       ]
+    },
+    {
+      "id": 13,
+      "audit_finding": "batch drill — several known ids",
+      "context": "find_symbol(relativePath: \"src/core/domains/ingest/pipeline/chunker/tree-sitter.ts\") just answered an outline whose member lines include TreeSitterChunker#chunk, TreeSitterChunker#enforceMaxChunkSize and TreeSitterChunker#splitLarge.",
+      "prompt": "Show me the bodies of chunk, enforceMaxChunkSize and splitLarge.",
+      "expected": "ONE find_symbol(symbols: [\"TreeSitterChunker#chunk\", \"TreeSitterChunker#enforceMaxChunkSize\", \"TreeSitterChunker#splitLarge\"]) — ids verbatim from the outline; rows keyed by request, misses in missing[]",
+      "not": [
+        "three separate find_symbol(symbol:) calls",
+        "Read",
+        "text search",
+        "another search"
+      ]
+    },
+    {
+      "id": 14,
+      "audit_finding": "directory listing via find_symbol",
+      "prompt": "What is in src/core/domains/explore/strategies/?",
+      "expected": "find_symbol(relativePath: \"src/core/domains/explore/strategies\") — directory frame: its files with their top-level symbols, plus subdirs",
+      "not": [
+        "ls",
+        "Glob / rg --files / find",
+        "semantic_search with pathPattern as a listing",
+        "Read"
+      ]
+    },
+    {
+      "id": 15,
+      "audit_finding": "small file read via find_symbol",
+      "context": "src/core/domains/explore/strategies/factory.ts is a 38-line TypeScript file.",
+      "prompt": "Show me the whole src/core/domains/explore/strategies/factory.ts.",
+      "expected": "find_symbol(relativePath: \"src/core/domains/explore/strategies/factory.ts\") — a small code file answers with its full text (kind: \"file\"); that is the read, nothing after it",
+      "not": ["Read", "cat / sed / head", "Read after the find_symbol answer"]
+    },
+    {
+      "id": 16,
+      "audit_finding": "empty answer acted on by reason",
+      "context": "find_symbol(relativePath: \"src/core/domains/explre\") answered results: [] with empty: {reason: \"unknownPath\", message: \"No indexed file or directory at …\", suggestions: [\"src/core/domains/explore/CLAUDE.md\", \"src/core/domains/explore/chunk-grouping/code.ts\"]}.",
+      "prompt": "So that directory does not exist?",
+      "expected": "Act on empty.reason unknownPath: the path is a typo of src/core/domains/explore (from suggestions) → find_symbol(relativePath: \"src/core/domains/explore\"); no absence claim from the empty list",
+      "not": [
+        "answer \"the directory does not exist\" without the retry",
+        "ls / Glob",
+        "semantic_search"
+      ]
+    },
+    {
+      "id": 17,
+      "audit_finding": "imports list — count in rows, edges in graph tools",
+      "context": "Graph tools are in your tool list (codegraph on). An earlier search row for src/core/domains/explore/reranker.ts shows imports: 12.",
+      "prompt": "Which modules does src/core/domains/explore/reranker.ts import?",
+      "expected": "get_callees(relativePath: \"src/core/domains/explore/reranker.ts\") → imports[] with importText + callWeight; the row value 12 is a count, not the list (search with includeImports: true is the non-graph alternative)",
+      "not": [
+        "report 12 as the answer",
+        "Read the file for import lines",
+        "text search for import statements"
+      ]
     }
   ],
   "results": {
-    "after_fix": { "pass": 10, "total": 10, "pct": 100 },
-    "before_fix": { "pass": 10, "total": 10, "pct": 100 },
-    "no_rule": { "pass": 7, "total": 10, "pct": 70 },
+    "after_fix": {
+      "pass": 10,
+      "total": 10,
+      "pct": 100
+    },
+    "before_fix": {
+      "pass": 10,
+      "total": 10,
+      "pct": 100
+    },
+    "no_rule": {
+      "pass": 7,
+      "total": 10,
+      "pct": 70
+    },
     "delta_cascade_vs_nothing_pp": 30,
     "delta_after_vs_before_pp": 0
   }

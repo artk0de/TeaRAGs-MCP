@@ -122,8 +122,14 @@
           "text": "Uses rank_chunks with rerank=codeReview",
           "type": "tool_selection"
         },
-        { "text": "Does NOT use ripgrep", "type": "negative" },
-        { "text": "Does NOT use git log/git diff", "type": "negative" }
+        {
+          "text": "Does NOT use ripgrep",
+          "type": "negative"
+        },
+        {
+          "text": "Does NOT use git log/git diff",
+          "type": "negative"
+        }
       ]
     },
     {
@@ -152,7 +158,10 @@
       "expected_output": "Delegates to pattern-search skill. Does NOT search directly.",
       "failure_mode": "no-delegation",
       "assertions": [
-        { "text": "Classifies as Collect intent", "type": "classification" },
+        {
+          "text": "Classifies as Collect intent",
+          "type": "classification"
+        },
         {
           "text": "Delegates to pattern-search, does not search directly",
           "type": "delegation"
@@ -232,7 +241,10 @@
           "text": "Uses mcp__tea-rags__hybrid_search for symbol+context query",
           "type": "tool_selection"
         },
-        { "text": "Does NOT use built-in Grep/Glob", "type": "negative" },
+        {
+          "text": "Does NOT use built-in Grep/Glob",
+          "type": "negative"
+        },
         {
           "text": "Does NOT use ripgrep as first choice (this is semantic, not exact text)",
           "type": "negative"
@@ -317,7 +329,10 @@
           "text": "Does NOT use ripgrep for semantic/behavioral search",
           "type": "negative"
         },
-        { "text": "Does NOT use built-in Grep", "type": "negative" }
+        {
+          "text": "Does NOT use built-in Grep",
+          "type": "negative"
+        }
       ]
     },
     {
@@ -450,7 +465,10 @@
           "text": "Issues separate per-axis calls with correct filters",
           "type": "tool_selection"
         },
-        { "text": "Sources axis queried first", "type": "ordering" },
+        {
+          "text": "Sources axis queried first",
+          "type": "ordering"
+        },
         {
           "text": "Does NOT merge axes into one unfiltered query",
           "type": "negative"
@@ -541,7 +559,10 @@
           "text": "Determines codegraph availability from own tool list, not prime",
           "type": "classification"
         },
-        { "text": "Runs ORIENT before backbone/breadth", "type": "ordering" }
+        {
+          "text": "Runs ORIENT before backbone/breadth",
+          "type": "ordering"
+        }
       ]
     },
     {
@@ -550,13 +571,19 @@
       "expected_output": "find_symbol(symbol=ChunkerPool) — full class outline. NO ORIENT, NO axis split, NO Read after find_symbol.",
       "failure_mode": "orientation-overhead-in-plan-step",
       "audit_finding": "D1-subagent-point-control",
-      "results": { "iteration_4_prefix": "PASS", "baseline": "PASS" },
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "baseline": "PASS"
+      },
       "assertions": [
         {
           "text": "Single find_symbol lookup as primary call",
           "type": "tool_selection"
         },
-        { "text": "Does NOT run ORIENT or axis splitting", "type": "negative" }
+        {
+          "text": "Does NOT run ORIENT or axis splitting",
+          "type": "negative"
+        }
       ]
     },
     {
@@ -573,6 +600,27 @@
         },
         {
           "text": "Does NOT grep or semantic_search for candidate names",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "prompt": "Before I refactor the rerank pipeline, research the risks of Reranker#rerank, Reranker#extractAllDerived and BaseExploreStrategy#postProcess.",
+      "expected_output": "PRE-GEN: PG-2 = ONE find_symbol(symbols=[\"Reranker#rerank\", \"Reranker#extractAllDerived\", \"BaseExploreStrategy#postProcess\"], rerank=\"techDebt\", metaOnly=false) — labels from rankingOverlay, raw from payload.git.*; rows keyed by request, misses in missing[]",
+      "failure_mode": "one find_symbol call per key symbol",
+      "audit_finding": "batch-drill-pre-gen",
+      "assertions": [
+        {
+          "text": "A single find_symbol call with symbols: [3 ids] and rerank techDebt",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT issue one find_symbol call per symbol",
+          "type": "negative"
+        },
+        {
+          "text": "Does NOT use metaOnly=true for the PG-2 call (raw git.* would be dropped)",
           "type": "negative"
         }
       ]
