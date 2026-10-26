@@ -52,6 +52,29 @@ collections, queries.
 - Cross-preset: stop when merge produces < 2 new candidates appearing in 2+
   presets per additional page
 
+## Empty answers — act on `empty.reason`
+
+An empty answer carries `empty: {reason, message, suggestions?}` when the tool
+can say why. The reason is the next step; an empty list is never "absent" on its
+own. No `empty` block → the tool's own fallback (`find_symbol`: partial name,
+then `hybrid_search`). `missing[]` rows of a batched
+`find_symbol(symbols: [...])` carry the same kind of `message`.
+
+| `empty.reason`                | Next call                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `unknownSymbol`               | a `suggestions` id verbatim; none → partial name (`Class`, bare method) → `hybrid_search(metaOnly: true)` |
+| `ambiguous`                   | pick the id from `suggestions` that the task names (path, class) → `find_symbol(symbol: <that id>)`       |
+| `unknownPath` / `unknownFile` | a `suggestions` path (`find_symbol(relativePath: <it>)`); never report "file does not exist" before that  |
+| `pathPatternMatchesNothing`   | fix the glob: a bare dir matches nothing → `**/<dir>/**`; a named root-relative path stays as-is          |
+| `filteredOut`                 | the filter / preset default removed rows: drop or relax the one `message` names, same query               |
+| `noEdges`                     | a lower bound, not "no callers": `hybrid_search(query: <name>, metaOnly: true)` for name-match usages     |
+| `notBuilt`                    | co-change never built for this index: say so; no "no co-change" claim                                     |
+| `noHistory`                   | the file has no commits in the window (new / untracked): say "no history", never fabricate                |
+| `noMatch`                     | reformulate (rules above, max 3)                                                                          |
+
+`get_callers` with a wrong `#` / `.` separator resolves through a swap and
+reports `resolvedSymbolId` — use that id in every later call.
+
 ## No-Match Detection
 
 Detect "no relevant results" via relative patterns in result set:

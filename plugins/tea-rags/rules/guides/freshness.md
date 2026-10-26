@@ -46,26 +46,28 @@ Index resolution priority: `collection > project > path`; the tree comes from
 index that answered (pass it on later calls); `tree` = tree it read (a check
 only: every next call, re-checks included, keeps `path=<your working directory>`
 — never `path=<answer's tree>`); `changedFiles` / `deletedFiles` = distance from
-`indexedCommit` (`0` = measured clean); `floors` = layers read from the tree —
-`chunks` (find_symbol / outline, rank_chunks rows), `sparse` (hybrid_search
-BM25), `dense` (semantic_search / find_similar / hybrid vector ranking of
-changed files), `codegraph` (graph tools' edges). A row or edge no floor covers
-reflects the index; `denseUnavailable` / `treeGraphUnavailable` name why a layer
-fell back to it; `gitUnavailable` counts changed-file rows whose git signals are
-still computing — they rank without that history this call, re-call later.
-`pendingFiles` = re-read files not yet warm: their rows are the index's
-(`treeState: "modified"`), a later call reads more of the tree — re-call for
-current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
-files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
-the index's (`treeState: "modified"`); current text → `Read` the file. Graph
-answer with `changedFiles` > 0 and no `codegraph` floor → edges touching changed
-files are the index's (`degraded` says why): trust edges between untouched
-files, re-check changed ones via `find_symbol` / `hybrid_search` (`metaOnly`),
-`path=<your working directory>`; linked worktree → that re-check is the whole
-fix, no reindex. `degraded` → its `remedy` under the consent rows of "Reindex
-triggers" (subagent: report it to the parent, never reindex). `tree` ≠ the tree
-you addressed (your working directory, or the checkout a skill names) → wrong
-tree, its rows unusable; re-call with `project` + that `path`.
+`indexedCommit` (`0` = measured clean — a clean marker is compacted to
+`{tree, project?, changedFiles: 0}`, the other keys absent); `floors` = layers
+read from the tree — `chunks` (find_symbol / outline, rank_chunks rows),
+`sparse` (hybrid_search BM25), `dense` (semantic_search / find_similar / hybrid
+vector ranking of changed files), `codegraph` (graph tools' edges). A row or
+edge no floor covers reflects the index; `denseUnavailable` /
+`treeGraphUnavailable` name why a layer fell back to it; `gitUnavailable` counts
+changed-file rows whose git signals are still computing — they rank without that
+history this call, re-call later. `pendingFiles` = re-read files not yet warm:
+their rows are the index's (`treeState: "modified"`), a later call reads more of
+the tree — re-call for current code; never a reindex trigger by itself.
+`indexOnlyFiles` = changed files with no AST chunking (json / yaml / sql / toml
+…): never re-read, rows are the index's (`treeState: "modified"`); current text
+→ `Read` the file. Graph answer with `changedFiles` > 0 and no `codegraph` floor
+→ edges touching changed files are the index's (`degraded` says why): trust
+edges between untouched files, re-check changed ones via `find_symbol` /
+`hybrid_search` (`metaOnly`), `path=<your working directory>`; linked worktree →
+that re-check is the whole fix, no reindex. `degraded` → its `remedy` under the
+consent rows of "Reindex triggers" (subagent: report it to the parent, never
+reindex). `tree` ≠ the tree you addressed (your working directory, or the
+checkout a skill names) → wrong tree, its rows unusable; re-call with
+`project` + that `path`.
 
 **Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files

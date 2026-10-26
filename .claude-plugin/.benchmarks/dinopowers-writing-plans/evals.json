@@ -6,24 +6,76 @@
     {
       "date": "2026-04-20",
       "iteration": 0,
-      "withRule": { "pass": 14, "fail": 0, "total": 14, "passRate": "100%" },
-      "withoutRule": { "pass": 4, "fail": 10, "total": 14, "passRate": "29%" },
+      "withRule": {
+        "pass": 14,
+        "fail": 0,
+        "total": 14,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 4,
+        "fail": 10,
+        "total": 14,
+        "passRate": "29%"
+      },
       "delta": "+71pp",
       "perCase": {
-        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-4": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-5": { "withRule": "PASS", "baseline": "PASS" },
-        "eval-6": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-7": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-8": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-9": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-10": { "withRule": "PASS", "baseline": "PASS" },
-        "eval-11": { "withRule": "PASS", "baseline": "FAIL" },
-        "eval-12": { "withRule": "PASS", "baseline": "PASS" },
-        "eval-13": { "withRule": "PASS", "baseline": "PASS" },
-        "eval-14": { "withRule": "PASS", "baseline": "FAIL" }
+        "eval-1": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-2": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-3": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-4": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-5": {
+          "withRule": "PASS",
+          "baseline": "PASS"
+        },
+        "eval-6": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-7": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-8": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-9": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-10": {
+          "withRule": "PASS",
+          "baseline": "PASS"
+        },
+        "eval-11": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        },
+        "eval-12": {
+          "withRule": "PASS",
+          "baseline": "PASS"
+        },
+        "eval-13": {
+          "withRule": "PASS",
+          "baseline": "PASS"
+        },
+        "eval-14": {
+          "withRule": "PASS",
+          "baseline": "FAIL"
+        }
       }
     }
   ],
@@ -193,7 +245,12 @@
       "prompt": "Какие файлы есть в src/core/domains/ingest/pipeline/chunker/?",
       "expected": {
         "mustNotTrigger": "writing-plans wrapper (user asks for directory listing)",
-        "acceptable": ["Glob or ls on the directory"]
+        "acceptable": [
+          "find_symbol(relativePath: \"src/core/domains/ingest/pipeline/chunker\") — directory frame: files + top-level symbols + subdirs"
+        ],
+        "mustNotDo": [
+          "ls / Glob on the directory (find_symbol lists directories)"
+        ]
       },
       "failureMode": "Agent over-triggers plan-authoring flow"
     },
@@ -237,6 +294,26 @@
         ]
       },
       "failureMode": "Plan fixes names the project vocabulary contradicts"
+    },
+    {
+      "id": "eval-16",
+      "category": "metaOnly-raw-git",
+      "prompt": "[codegraph ON — session digest ## Enrichment lists codegraph.symbols] Распиши план изменения src/core/domains/explore/reranker.ts и src/core/api/internal/ops/explore-ops.ts — по каждому файлу нужны taskIds и владелец.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search Step 2 with rerank \"blastRadius\", metaOnly: true AND fields: [\"relativePath\", \"imports\", \"git\"] — a metaOnly payload is locator-only, taskIds / blame* are raw git.*"
+        ],
+        "mustDo": [
+          "Per file: taskIds and dominantAuthor read from payload.git.file.*",
+          "Coordinated change candidates from shared taskIds (or \"none\")"
+        ],
+        "mustNotDo": [
+          "Step 2 with metaOnly: true and no fields (taskIds would be absent)",
+          "Report taskIds as unavailable / read them from rankingOverlay",
+          "Switch Step 2 to metaOnly: false"
+        ]
+      },
+      "failureMode": "metaOnly drops raw git.*; plan loses taskIds and owners"
     }
   ]
 }

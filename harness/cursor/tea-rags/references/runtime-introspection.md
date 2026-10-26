@@ -129,7 +129,8 @@ Every reranked result carries `rankingOverlay`, metaOnly included:
 - `{value,label}` when labelled (→ `tea-rags://guide/signal-labels`), else raw.
   Result table (2+ results): two columns `rankingOverlay.chunk.<field>.value` /
   `.label`.
-- Labels ONLY here. Payload = raw values at filter-key paths, metaOnly or not.
+- Labels ONLY here. Payload = raw values at filter-key paths; a `metaOnly`
+  payload carries none unless `fields` names them (`["git"]` = whole subtree).
   Contract owner: `tea-rags://guide/overview` → `### metaOnly`.
 
 Use overlay to: answer "why this result?" without re-search; detect pattern

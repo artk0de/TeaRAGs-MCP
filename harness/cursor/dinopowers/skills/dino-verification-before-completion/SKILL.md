@@ -136,6 +136,7 @@ pathPattern: "{editedFile1,editedFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
 limit:       <editedFiles.length * 3>
 metaOnly:    true
+fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw git.* / imports
 ```
 
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`); off →
@@ -164,11 +165,12 @@ Empty results (files brand-new / not in git) → Step 4, verdict
 
 ## Step 3 — Compute collateral-damage verdict
 
-Per unique `relativePath`: raw values from `payload.git.file.*` + labels from
+Per unique `relativePath`: raw values from `payload.git.file.*` + `imports`
+(present only because Step 2 names them in `fields`) + labels from
 `rankingOverlay.file.*` (kept under metaOnly; payload never labelled):
 
-- blast radius — `codegraph.file.fanIn` (blastRadius, codegraph on) or `imports`
-  score (custom fallback, off)
+- blast radius — `rankingOverlay.file.fanIn` (blastRadius, codegraph on) or
+  `imports` count (custom fallback, off)
 - `commitCount` — churn
 - `blameDominantAuthorPct` + adaptive label — silo risk (use label `silo` /
   `deep-silo`, codebase-relative, not magic %)

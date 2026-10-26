@@ -230,10 +230,10 @@ Apply tables above, first match:
    `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
    `hybrid_search` / `semantic_search` on it; known symbol, no file →
    `find_symbol` + `hybrid_search`; else `semantic_search`
-   `metaOnly=true limit=10 documentation="exclude"` → PG-2
-   `find_symbol rerank="techDebt"` per 2–5 key symbols (own overlay signals, no
-   risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols only (e.g.
-   base error classes), never call chains.
+   `metaOnly=true limit=10 documentation="exclude"` → PG-2 ONE
+   `find_symbol(symbols=[<2–5 key symbols>], rerank="techDebt")` (own overlay
+   signals, no risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols
+   only (e.g. base error classes), never call chains.
 5. EXPLAIN → Explore Flow below, format per
    [references/explain-pattern.md](./references/explain-pattern.md). Named
    component ("the <name> adapter") → Scope extraction probe FIRST, then
@@ -337,8 +337,9 @@ Scan results: files, modules, patterns, domain boundaries.
 Per interesting result:
 
 - **"Same thing elsewhere?"** → find_similar (code or chunk ID)
-- **"What is this symbol?"** → find_symbol (full definition). 0 results →
-  hybrid_search.
+- **"What is this symbol?"** → find_symbol (full definition). 0 results → act on
+  `empty.reason` (`unknownSymbol` / `ambiguous` → a `suggestions` id verbatim),
+  still nothing → hybrid_search.
 - **"Surrounding context"** → `find_symbol` `relativePath` outline → drill
   neighbour id (`navigation.prev/nextSymbolId`); never Read.
 

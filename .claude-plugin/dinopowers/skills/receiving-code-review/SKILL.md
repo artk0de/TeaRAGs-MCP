@@ -91,6 +91,7 @@ pathPattern: <targetPathPattern>
 rerank:      "blastRadius"               ← codegraph on; else { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
 limit:       10
 metaOnly:    true
+fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw git.* / imports
 ```
 
 Do NOT substitute:
@@ -117,11 +118,11 @@ verdict.
 
 ## Step 3 — Compute agreement verdict
 
-Raw from payload: `imports` root, `git.file.commitCount`,
-`git.file.blameDominantAuthor` (live-line owner). Labels + non-essentials
-(`bugFixRate`, `recentDominantAuthor` recent committer) from
-`rankingOverlay.file.*` when rerank surfaces them — metaOnly payload keeps git
-essentials only.
+Raw from payload (present only because Step 2 names them in `fields`): `imports`
+(a count), `git.file.commitCount`, `git.file.blameDominantAuthor` (live-line
+owner), `git.file.bugFixRate`, `git.file.recentDominantAuthor` (recent
+committer); a field the index lacks is absent. Labels from
+`rankingOverlay.file.*`.
 
 Verdict ladder — check top-down, FIRST match wins, always name one verdict:
 

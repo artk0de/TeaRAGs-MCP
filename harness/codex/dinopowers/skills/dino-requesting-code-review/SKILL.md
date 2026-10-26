@@ -71,6 +71,7 @@ pathPattern: "{diffFile1,diffFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; else { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
 limit:       <diffFiles.length * 3>
 metaOnly:    true
+fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw git.* (taskIds, blame*)
 ```
 
 Do NOT substitute:
@@ -139,10 +140,10 @@ action). Reading: `$data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
 
-Aggregate by `relativePath`. Per file — raw essentials (`blame*`, `commitCount`,
-`ageDays`, `taskIds`) from payload `git.file.*`; `recent*` / `bugFixRate` +
-labels from `rankingOverlay.file.*` when rerank surfaces them, else absent
-(metaOnly payload never carries them):
+Aggregate by `relativePath`. Per file — raw values (`blame*`, `recent*`,
+`commitCount`, `ageDays`, `taskIds`, `bugFixRate`) from payload `git.file.*`
+(present only because Step 2 names `"git"` in `fields`; a field the index lacks
+is absent — never fabricate); labels from `rankingOverlay.file.*`:
 
 - `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner (approves
   on current code)

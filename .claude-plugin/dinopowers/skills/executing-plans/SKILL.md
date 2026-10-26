@@ -99,10 +99,12 @@ TOC read; linked worktree: none (`find_symbol` reads tree).
 
 - Task names files: "Task 3: update `a.ts`, `b.ts`"
 - Task names symbols: "refactor `Class.method()`" → file via
-  `mcp__tea-rags__find_symbol`
+  `mcp__tea-rags__find_symbol`; 2+ symbols → ONE
+  `find_symbol(symbols: [<names>], metaOnly: true)`, files = rows'
+  `relativePath`
 - Task names a small dir: "update all files in `language/ruby/chunking/`" →
-  `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true`
-  (one row per file)
+  `find_symbol(relativePath: "<dir>")` (its files + top-level symbols; never
+  `ls` / glob)
 
 Output: `taskFileList` (paths Task modifies, typically 1-5) + `taskIntent` (one
 sentence). Empty (pure new-file creation) → Step 4, verdict
@@ -137,6 +139,7 @@ pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
 rerank:      "blastRadius"               ← codegraph on; OFF fallback below
 limit:       <taskFileList.length * 3>
 metaOnly:    true
+fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw git.* (blame*, commitCount)
 ```
 
 **Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn` + churn +
@@ -172,14 +175,15 @@ for untracked files.
 
 Per unique `relativePath`: labels from `rankingOverlay.file.*` (`{value,label}`;
 table columns `rankingOverlay.file.<signal>.value` / `.label`; kept under
-metaOnly), raw from `payload.git.file.*` (essentials only under metaOnly):
+metaOnly), raw from `payload.git.file.*` (present only because Step 2 names
+`"git"` in `fields`; unlabelled → label via the labelMap below):
 
 - `commitCount` — churn magnitude
-- `bugFixRate` — % fix/bug commits; overlay only under metaOnly
+- `bugFixRate` — % fix/bug commits; absent on a young file — never fabricate
 - `blameDominantAuthorPct` (label `shared` / `concentrated` / `silo` /
   `deep-silo`) — live-line silo indicator
-- blast radius — `codegraph.file.fanIn` (blastRadius, codegraph on) or `imports`
-  (custom fallback)
+- blast radius — `rankingOverlay.file.fanIn` (blastRadius, codegraph on) or
+  `imports` (a count; custom fallback)
 
 Ladder uses **adaptive labels**, never magic percentages — labels = per-codebase
 percentiles. Need boundaries → read

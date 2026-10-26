@@ -12,8 +12,8 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
-- file path / doc TOC → `find_symbol(relativePath:)`; user's manual-read order →
-  `Read` (Invariants)
+- file/dir path, doc TOC → `find_symbol(relativePath:)`; user's manual-read
+  order → `Read` (Invariants)
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
@@ -44,11 +44,12 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 **Invariants.**
 
 - Never `Read` after `find_symbol` — method = full body; outline
-  (class/file/doc) → drill `find_symbol(symbol: <id>)`. After a search, or a
-  file/id already known: `find_symbol` next — another search is the "Curiosity
-  search" anti-pattern; never re-search/`Read`.
-- `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
-  parts = one hit.
+  (class/file/doc) → drill `find_symbol(symbol: <id>)`; 2+ ids → ONE
+  `find_symbol(symbols: [<ids>])`. After a search, or a file/id already known:
+  `find_symbol` next — another search is the "Curiosity search" anti-pattern;
+  never re-search/`Read`.
+- `symbolId` ends `#partN` = fragment →
+  `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
   No `treeState` = current; `treeState` row = pre-edit copy (say why, e.g.
   `denseUnavailable`): dependents' fanIn/churn valid, not proof of the edit →
@@ -85,8 +86,8 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
-ambiguous name, when to stop → `pagination`; skill pick, fallbacks →
-`decision-tree`; stale banner, drift, `treeState`, linked worktree →
+`empty.reason`, ambiguous name, when to stop → `pagination`; skill pick,
+fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked worktree →
 `freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw
 `filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;
 graph/AST, other language → `language-capability`; no prime digest →

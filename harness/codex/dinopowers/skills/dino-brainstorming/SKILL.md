@@ -232,9 +232,10 @@ Codegraph on → both last lines printed verbatim, plan-only answer included
 
 Cap 3 per section. File in several sections → mark (`→ also in Hotspots`) —
 overlap = strong signal. No raw JSON; `relativePath` + 2-3 key signals per
-entry. Values: `rankingOverlay.{file,chunk}.<field>` (preset-surfaced,
-labelled); metaOnly `git.*` = essentials only (commitCount, ageDays, taskIds,
-blame\*), raw. File-level presets (ownership, architecturalHub) → no startLine.
+entry. Values: `rankingOverlay.{file,chunk}.<field>` (preset-surfaced, labelled)
+— the only signal source: a metaOnly payload is locator-only, no raw `git.*`; a
+signal the preset does not surface → leave it out. File-level presets
+(ownership, architecturalHub) → no startLine.
 
 **Done-check before Step 4 (codegraph on) — state all three, else Step 2/3
 incomplete:** (1) E issued in the same parallel block as A–D; (2) block carries
