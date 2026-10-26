@@ -2,8 +2,10 @@
  * Explore domain DTOs — search request/response types.
  */
 
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
+import type { SuggestedToolCall } from "../../../contracts/types/suggested-tool-call.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { SearchConfidence } from "../../../domains/explore/index.js";
@@ -277,6 +279,18 @@ export interface ExploreResponse {
    * fails with the provider's error instead.
    */
   denseUnavailable?: { reason: string };
+  /**
+   * Present only when `results` is empty: why, in a closed reason code, plus
+   * concrete alternatives (agent turn economy N6). Absent on every non-empty
+   * answer.
+   */
+  empty?: EmptyAnswerExplanation;
+  /**
+   * Ready-to-run expansion calls from the top result files (N5): co-change
+   * partners and importers. Present on hybrid_search / semantic_search when
+   * codegraph is on and a code result exists; args address the answering tree.
+   */
+  next?: SuggestedToolCall[];
 }
 
 // ---------------------------------------------------------------------------
