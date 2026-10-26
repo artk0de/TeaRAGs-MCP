@@ -15,6 +15,9 @@ in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` wit
 its own command first; a plan from memory is not reading it. A skill path you
 did not open with a command in this turn is invalid in a plan — open it first.
 
+**Every code search and code read goes through tea-rags.** Shell, `Read`, Grep
+only for files outside the index (`db/`, `*.yml`, `*.json`) — say so.
+
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +
 `path=<this task's cwd>` (which tree, re-checks too). Alias: prime `## Project`,
@@ -63,10 +66,10 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 - Never `Read` after `find_symbol` — method = full body; small file
   (`kind: "file"`) = full text, the read itself, nothing after; outline
-  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; 2+ ids → ONE
-  `find_symbol(symbols: [<ids>])`. After a search, or a file/id already known:
-  `find_symbol` next — another search is the "Curiosity search" anti-pattern;
-  never re-search/`Read`.
+  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; every id you will
+  read from one answer → ONE `find_symbol(symbols: [<ids>])`, never one id per
+  turn. After a search, or a file/id already known: `find_symbol` next — another
+  search is the "Curiosity search" anti-pattern; never re-search/`Read`.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
   it better → it becomes the anchor. Which files change / every place → in
@@ -119,11 +122,13 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
 `truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`; skill
-pick, fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked
-worktree → `freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`;
-raw `filter:` → `filters`; `rerank`, labels → `presets`, `signals`,
-`signal-labels`; graph/AST, other language → `language-capability`; architecture
-report / `review_changes` answer → `architecture` / `review`; no prime digest →
+pick, fallbacks, research / planning question (architecture, contracts, flags,
+models, owners) → `decision-tree` "Question → call"; stale banner, drift,
+`treeState`, linked worktree → `freshness`; embedding/qdrant error,
+`denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`, labels →
+`presets`, `signals`, `signal-labels`; graph/AST, other language →
+`language-capability`; architecture report / `review_changes` answer →
+`architecture` / `review`; no prime digest →
 `tea-rags://project/<alias>/digest`; numeric filter value not given
 (minCommitCount/minAgeDays/maxAgeDays/minFanIn/modifiedAfter window) or bare raw
 number, no label → `…/metrics?language=<lang>&section=thresholds`.

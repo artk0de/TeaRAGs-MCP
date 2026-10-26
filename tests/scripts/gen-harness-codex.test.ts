@@ -246,19 +246,22 @@ describe("renderCodexHarness", () => {
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
     expect(Object.keys(hooks).sort()).toEqual(["PreToolUse", "SessionStart", "SubagentStart"]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
-    // A cold `tea-rags prime` boots the server (measured 12–26 s); `project exist` ~4 s.
-    expect(hooks.SessionStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(60);
+    // Core hook only cats a file; a cold `tea-rags prime` boots the server (measured 12–26 s).
+    expect(hooks.SessionStart[0].hooks[0].timeout).toBe(10);
+    expect(hooks.SessionStart[1].hooks[0].timeout).toBeGreaterThanOrEqual(60);
     expect(hooks.SubagentStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(30);
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
     expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
     expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);
   });
 
-  it("SessionStart hands core and the prime digest to the session; core alone without the CLI", async () => {
+  it("SessionStart runs two hooks, core first and the prime digest second; the digest hook is silent without the CLI", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
-    const { command } = hooks.SessionStart[0].hooks[0];
-    expect(command).toBe(`\${PLUGIN_ROOT}/scripts/session-start.sh`);
+    expect(hooks.SessionStart.map((entry: { hooks: { command: string }[] }) => entry.hooks[0].command)).toEqual([
+      `\${PLUGIN_ROOT}/scripts/session-start.sh`,
+      `\${PLUGIN_ROOT}/scripts/session-digest.sh`,
+    ]);
 
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
     const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
@@ -269,32 +272,37 @@ describe("renderCodexHarness", () => {
         writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
       }
       writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $2"\n', { mode: 0o755 });
-      const script = join(pluginRoot, "scripts", "session-start.sh");
-      const run = (path: string): string =>
-        JSON.parse(
-          execFileSync("bash", [script], {
-            env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: path },
-            cwd: bin,
-            input: "{}",
-          }).toString(),
-        ).hookSpecificOutput.additionalContext;
+      const run = (script: string, path: string): string =>
+        execFileSync("bash", [join(pluginRoot, "scripts", script)], {
+          env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: path },
+          cwd: bin,
+          input: "{}",
+        }).toString();
+      const contextOf = (stdout: string): string => JSON.parse(stdout).hookSpecificOutput.additionalContext;
 
-      const withCli = run(`${bin}:/usr/bin:/bin`);
-      expect(withCli).toContain("# tea-rags core");
-      expect(withCli).toContain(`PRIME-DIGEST for ${realpathSync(bin)}`);
+      for (const path of [`${bin}:/usr/bin:/bin`, "/usr/bin:/bin"]) {
+        const core = contextOf(run("session-start.sh", path));
+        expect(core).toContain("# tea-rags core");
+        expect(core).not.toContain("PRIME-DIGEST");
+      }
 
-      const withoutCli = run("/usr/bin:/bin");
-      expect(withoutCli).toContain("# tea-rags core");
-      expect(withoutCli).not.toContain("PRIME-DIGEST");
+      const digest = JSON.parse(run("session-digest.sh", `${bin}:/usr/bin:/bin`)).hookSpecificOutput;
+      expect(digest.hookEventName).toBe("SessionStart");
+      expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)}`);
+      expect(digest.additionalContext).not.toContain("# tea-rags core");
+
+      expect(run("session-digest.sh", "/usr/bin:/bin")).toBe("");
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
       rmSync(bin, { recursive: true, force: true });
     }
   });
 
-  it("keeps SessionStart context within Codex's hook-output cap: whole core first, digest by section priority, pointer last", async () => {
+  it("keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    const coreSource = readFileSync(join(ROOT, PLUGINS_DIR, "tea-rags/rules/core.md"), "utf8");
+    expect(coreSource.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
     const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
     try {
@@ -325,21 +333,60 @@ describe("renderCodexHarness", () => {
       ].join("\n");
       writeFileSync(join(bin, "digest.txt"), digest);
       writeFileSync(join(bin, "tea-rags"), `#!/bin/bash\ncat "${join(bin, "digest.txt")}"\n`, { mode: 0o755 });
+      const contextOf = (script: string): string =>
+        JSON.parse(
+          execFileSync("bash", [join(pluginRoot, "scripts", script)], {
+            env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: `${bin}:/usr/bin:/bin` },
+            cwd: bin,
+            input: "{}",
+          }).toString(),
+        ).hookSpecificOutput.additionalContext;
+
+      const coreContext = contextOf("session-start.sh");
+      expect(coreContext).toBe(core.replace(/\n+$/, ""));
+      expect(coreContext.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+
+      const context = contextOf("session-digest.sh");
+      expect(context.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+      expect(context).not.toContain(core.trimEnd());
+      expect(context).toContain("name: `demo`");
+      expect(context).toContain("Run: tea-rags index-codebase --project demo --force");
+      expect(context).toContain("codegraph.symbols: file healthy");
+      expect(context).not.toContain("| signal299 |");
+      expect(context.trimEnd().split("\n").at(-1)).toContain("tea-rags://project/demo/digest");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it("gives the digest hook the whole budget: a section larger than what core would leave is kept", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
+    const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
+    try {
+      mkdirSync(join(pluginRoot, "scripts"));
+      for (const [path, content] of rendered) {
+        if (!path.startsWith("tea-rags/scripts/")) continue;
+        writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
+      }
+      const rows = Array.from({ length: 60 }, (_, i) => `scale row ${i}: chunks 41k · files 3.2k · languages 4`);
+      const digest = ["# tea-rags prime — /work/demo", "", "## Project", "name: `demo`", "", "## Scale", ...rows].join(
+        "\n",
+      );
+      expect(digest.length).toBeGreaterThan(CODEX_HOOK_CONTEXT_BUDGET - core.length);
+      writeFileSync(join(bin, "digest.txt"), digest);
+      writeFileSync(join(bin, "tea-rags"), `#!/bin/bash\ncat "${join(bin, "digest.txt")}"\n`, { mode: 0o755 });
       const context: string = JSON.parse(
-        execFileSync("bash", [join(pluginRoot, "scripts", "session-start.sh")], {
+        execFileSync("bash", [join(pluginRoot, "scripts", "session-digest.sh")], {
           env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: `${bin}:/usr/bin:/bin` },
           cwd: bin,
           input: "{}",
         }).toString(),
       ).hookSpecificOutput.additionalContext;
 
-      expect(context.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
-      expect(context.startsWith(core.trimEnd())).toBe(true);
-      expect(context).toContain("name: `demo`");
-      expect(context).toContain("Run: tea-rags index-codebase --project demo --force");
-      expect(context).toContain("codegraph.symbols: file healthy");
-      expect(context).not.toContain("| signal299 |");
-      expect(context.trimEnd().split("\n").at(-1)).toContain("tea-rags://project/demo/digest");
+      expect(context).toBe(digest);
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
       rmSync(bin, { recursive: true, force: true });

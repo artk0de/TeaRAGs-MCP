@@ -6,6 +6,15 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/session-digest.sh",
             "timeout": 60
           }
         ]
