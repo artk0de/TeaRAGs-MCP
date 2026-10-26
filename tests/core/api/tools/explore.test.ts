@@ -14,6 +14,7 @@ type CapturedTool = {
     inputSchema?: Record<string, unknown>;
     outputSchema?: unknown;
     annotations?: Record<string, unknown>;
+    _meta?: Record<string, unknown>;
   };
   handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
 };
@@ -155,7 +156,8 @@ describe("registerSearchTools", () => {
   });
 
   it("emits results as a column table, one row per result, envelope fields beside it", async () => {
-    const workingTree = { tree: "/x", changedFiles: 0, deletedFiles: 0, floors: [] };
+    // A changed tree: a clean marker goes out compact (bd tea-rags-mcp-45kbu).
+    const workingTree = { tree: "/x", changedFiles: 1, deletedFiles: 0, floors: [] };
     const { captured } = makeHarness({
       hybridSearch: vi.fn().mockResolvedValue({
         results: [
@@ -366,6 +368,42 @@ describe("registerSearchTools — workingTree", () => {
     for (const tool of captured) {
       expect(tool.config.outputSchema).toHaveProperty("workingTree");
     }
+  });
+
+  // bd tea-rags-mcp-45kbu: a clean tree's marker goes out compact, and the
+  // output schema the SDK validates every answer against accepts that shape.
+  it.each(Object.keys(appMethods) as (keyof typeof appMethods)[])(
+    "%s emits a clean marker as tree, project and changedFiles 0",
+    async (toolName) => {
+      const clean = { ...marker, changedFiles: 0, deletedFiles: 0, project: "proj" };
+      const { captured } = makeHarness({
+        [appMethods[toolName]]: vi.fn().mockResolvedValue({ results: [], workingTree: clean }),
+      });
+      const tool = captured.find((t) => t.name === toolName);
+
+      const result = (await tool!.handler({ path: "/x", query: "q", symbol: "s" }, {})) as {
+        structuredContent: { workingTree?: unknown };
+      };
+
+      expect(result.structuredContent.workingTree).toStrictEqual({
+        tree: "/repo/wt",
+        project: "proj",
+        changedFiles: 0,
+      });
+      expect(() => z.object(tool!.config.outputSchema as z.ZodRawShape).parse(result.structuredContent)).not.toThrow();
+    },
+  );
+});
+
+// bd tea-rags-mcp-45kbu: Claude Code defers MCP tool schemas behind ToolSearch;
+// the two tools an agent loads first ask to load upfront.
+describe("registerSearchTools — anthropic/alwaysLoad", () => {
+  it("marks exactly find_symbol and hybrid_search to load upfront", () => {
+    const { captured } = makeHarness();
+
+    const upfront = captured.filter((t) => t.config._meta?.["anthropic/alwaysLoad"] === true).map((t) => t.name);
+
+    expect(upfront.sort()).toEqual(["find_symbol", "hybrid_search"]);
   });
 });
 

@@ -139,14 +139,15 @@ describe("formatWorkingTreeMarker — answering alias", () => {
       indexedCommit: "0123456789abcdef0123456789abcdef01234567",
       treeCommit: "fedcba9876543210fedcba9876543210fedcba98",
       indexedDirty: false,
-      changedFiles: 0,
+      changedFiles: 1,
       deletedFiles: 0,
       floors: [],
       project: "proj",
     });
 
+    // A changed tree: a clean one renders compact (bd tea-rags-mcp-45kbu).
     expect(text).toBe(
-      "workingTree: /repo/wt · project proj · index @0123456 · tree @fedcba9 · changed 0 · deleted 0 · floors none",
+      "workingTree: /repo/wt · project proj · index @0123456 · tree @fedcba9 · changed 1 · deleted 0 · floors none",
     );
   });
 });
