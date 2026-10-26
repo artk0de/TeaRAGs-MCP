@@ -66,9 +66,9 @@ description:
   `git log refused — git history is already in the index signals; answering via semantic_search(query=<symptom>, rerank="bugHunt"): ageDays / commitCount / taskIds.`
 - Where is a literal string / error phrase written (no tool demanded) → no hunt
   (no step 0, no probes), never cat / sed / Read around the hit; the plan never
-  ends at the rg hit — find_symbol follows it; print this ONE line, slots
-  filled:
-  `rg -n -F "<phrase>" . → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+  ends at the code-search hit — find_symbol follows it; print this ONE line,
+  slots filled:
+  `standard code search tool "<phrase>" (literal) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
   both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
   confirmatory search, no refusal:
@@ -139,12 +139,13 @@ A plan names these calls; "later" / "not in this run" never drops one.
    Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.
    ```
 
-6. **Chunk or rg hit in hand → `find_symbol`** (symbolId body / relativePath
-   outline / prev-next id), never Read of a code file. "Read the whole file" →
-   Routing row 1, both lines. Row with `treeState` = index's PRE-EDIT copy
-   (text + lines stale) — say so; it stays the **uncommitted suspect**, no
-   symptom needed: `healthy` history never clears uncommitted code. Next call =
-   `find_symbol(path=<cwd>, symbol=<id>)` — never a re-run of probes a/b/c.
+6. **Chunk or code-search hit in hand → `find_symbol`** (symbolId body /
+   relativePath outline / prev-next id), never Read of a code file. "Read the
+   whole file" → Routing row 1, both lines. Row with `treeState` = index's
+   PRE-EDIT copy (text + lines stale) — say so; it stays the **uncommitted
+   suspect**, no symptom needed: `healthy` history never clears uncommitted
+   code. Next call = `find_symbol(path=<cwd>, symbol=<id>)` — never a re-run of
+   probes a/b/c.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
    first, never `get_callers`; the plan prints three lines, frame ids filled:

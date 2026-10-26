@@ -18,8 +18,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug
-  → bug-hunt), even "every …" → `rg -n 'TODO|FIXME'` (no `-E`)/Grep only, no
-  tea-rags seed/fallback; plan: `rg -n -F '<lit>'` / `rg -n '<re>'` →
+  → bug-hunt), even "every …" → standard code search tool only, no tea-rags
+  seed/fallback; plan: standard code search tool `<lit>` / `<re>` →
   `find_symbol` on each hit's symbol. A code name, even called a
   "pattern"/"glob", is a symbol (→ `hybrid_search`, not `rg --files`). Command
   output, failing tests, counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`),
