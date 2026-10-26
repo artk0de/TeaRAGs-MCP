@@ -61,6 +61,9 @@ reading per `$architecture-diagnostics` Phase 1 (do not restate). Keep:
   per-judge cost).
 - `R` = `summary.splitMerge` split + merge candidates (report candidates
   `restructurePlan` adds). Block not built → R = 0.
+- Totals > rows returned, or `truncated` present → page the held report
+  (`reportId`, per architecture-diagnostics Phase 1) BEFORE Phase 2 caps
+  candidates — a critical finding on page 2 is still a candidate.
 
 User already ran architecture-diagnostics this session → reuse that report, no
 re-call.

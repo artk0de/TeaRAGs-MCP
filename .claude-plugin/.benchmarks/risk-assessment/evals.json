@@ -127,6 +127,17 @@
       "baseline_grade": "N/A",
       "before_grade": "N/A",
       "after_grade": "PASS"
+    },
+    {
+      "id": 15,
+      "prompt": "Risk-assess src/billing in /work/shop. Codegraph is on; you already have three High candidates from the git presets and want the structural-violation amplifier.",
+      "expected": "One get_architecture_report call scoped to the same area and narrowed to the groups the amplifier reads: get_architecture_report(path: '/work/shop', pathPattern: 'src/billing/**', detectors: ['stableDependencies', 'mainSequence', 'hubLikeDependency']). Does not pull every detector group, does not run it per candidate.",
+      "audit_finding": [
+        "detectors param narrows the report to the groups read"
+      ],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
     }
   ]
 }

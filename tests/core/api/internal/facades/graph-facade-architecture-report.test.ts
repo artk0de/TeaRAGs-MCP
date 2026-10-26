@@ -41,7 +41,7 @@ describe("GraphFacade#getArchitectureReport", () => {
     expect(graphDb.readFileDependencyGraph).toHaveBeenCalledTimes(1);
     expect(graphDb.close).toHaveBeenCalledTimes(1);
     expect(report.pathPattern).toBe("src/**");
-    expect(report.summary.stableDependencies.edgeCount).toBe(0);
+    expect(report.summary.stableDependencies?.edgeCount).toBe(0);
   });
 
   it("reads a one-walked violation's import specifiers from the addressed collection (bd tea-rags-mcp-rbnkp)", async () => {
@@ -76,7 +76,7 @@ describe("GraphFacade#getArchitectureReport", () => {
 
     expect(readImportSpecifiers).toHaveBeenCalledWith("code_x", ["app/Editor.tsx"]);
     expect(report.violations.silentCoupling).toBeUndefined();
-    expect(report.summary.silentCoupling.strongLinkedCount).toBe(1);
+    expect(report.summary.silentCoupling?.strongLinkedCount).toBe(1);
   });
 
   it("gates the zone of pain on commit counts read from the addressed collection (bd tea-rags-mcp-r8hme.14)", async () => {
@@ -250,7 +250,7 @@ describe("GraphFacade#getArchitectureReport", () => {
     const report = await facade.getArchitectureReport({ collection: "code_x" });
 
     expect(report.violations).toEqual({});
-    expect(report.summary.stableDependencies.edgeCount).toBe(0);
+    expect(report.summary.stableDependencies?.edgeCount).toBe(0);
   });
 
   it("surfaces the failure when the graph database exists but cannot be read", async () => {

@@ -197,12 +197,12 @@ describe("presentArchitectureReport", () => {
 
   it("reduces the explained pairs to their TOTAL count, not the limit-capped list's length; lists them on includeExplainedPairs", () => {
     const counted = present().summary.silentCoupling;
-    expect(counted.explainedPairCount).toBe(5);
+    expect(counted?.explainedPairCount).toBe(5);
     expect(counted).not.toHaveProperty("explainedPairs");
 
     const listed = present({ includeExplainedPairs: true }).summary.silentCoupling;
-    expect(listed.explainedPairCount).toBe(5);
-    expect(listed.explainedPairs).toHaveLength(2);
+    expect(listed?.explainedPairCount).toBe(5);
+    expect(listed?.explainedPairs).toHaveLength(2);
   });
 
   it("emits one next per trimmed group: the same call on that detector with evidenceLimit all, addressed to the tree", () => {
@@ -247,9 +247,148 @@ describe("presentArchitectureReport", () => {
     const view = presentArchitectureReport(source, architectureReportViewOf(request), MARKER);
 
     expect(view.summary.layering).toEqual({ levelCount: 4 });
-    expect(view.summary.silentCoupling.violationCount).toBe(7);
+    expect(view.summary.silentCoupling?.violationCount).toBe(7);
     expect(view.pathPattern).toBe("src/**");
     expect(view.workingTree).toBe(MARKER);
     expect(source).toEqual(report());
+  });
+});
+
+/** The report with list-valued summary blocks and root causes (bd tea-rags-mcp-q1g6s.1). */
+function reportWithSummaryLists(): GetArchitectureReportResponse {
+  const base = report();
+  return {
+    ...base,
+    summary: {
+      ...base.summary,
+      impactTiers: {
+        built: true,
+        notApplicable: { detectors: ["mainSequence", "hubLikeDependency", "silentCoupling", "shotgunSurgery"] },
+      },
+      leakingAbstraction: {
+        moduleCount: 9,
+        activeModuleCount: 5,
+        activeModules: files(5, "src/la").map((facade) => ({ facade, adoption: 0.9 })),
+        notAdoptedModules: files(4, "src/na").map((facade) => ({ facade, adoption: 0.1 })),
+      },
+      propagationCost: {
+        fileCount: 40,
+        componentCount: 12,
+        components: files(6, "src/pc").map((component) => ({ component, propagationCost: 0.2 })),
+      },
+    },
+    rootCauses: [
+      {
+        detector: "silentCoupling",
+        relPath: "src/s.ts",
+        violationCount: 5,
+        maxStrength: 0.7,
+        partners: files(5, "src/p"),
+        evidence: { sampleCommits: ["c1", "c2", "c3", "c4"] },
+      },
+      {
+        detector: "stableDependencies",
+        targetComponent: "src/b",
+        targetInstability: 0.8,
+        violationCount: 1,
+        maxInstabilityDelta: 0.3,
+        sources: ["src/a"],
+        cycleWithDependents: false,
+      },
+    ],
+  } as unknown as GetArchitectureReportResponse;
+}
+
+function presentLists(extra: Record<string, unknown> = {}) {
+  return presentArchitectureReport(
+    reportWithSummaryLists(),
+    architectureReportViewOf({ ...request, ...extra }),
+    MARKER,
+  ) as unknown as {
+    summary: Record<string, Record<string, unknown> | undefined>;
+    rootCauses: Record<string, unknown>[];
+    evidenceTrimmed?: { limit: number };
+    next?: { tool: string; args: Record<string, unknown>; why: string }[];
+  };
+}
+
+describe("presentArchitectureReport summary and root-cause lists (bd tea-rags-mcp-q1g6s.1)", () => {
+  it("caps a summary list longer than evidenceLimit and adds <key>Count unless the block already counts it", () => {
+    const view = presentLists();
+
+    const leaking = view.summary.leakingAbstraction as Record<string, unknown>;
+    expect(leaking.activeModules).toEqual(files(3, "src/la").map((facade) => ({ facade, adoption: 0.9 })));
+    expect(leaking.activeModuleCount).toBe(5);
+    expect(leaking).not.toHaveProperty("activeModulesCount");
+    expect(leaking.notAdoptedModules).toHaveLength(3);
+    expect(leaking.notAdoptedModulesCount).toBe(4);
+    expect(leaking.moduleCount).toBe(9);
+    expect(view.evidenceTrimmed).toEqual({ limit: 3 });
+  });
+
+  it("leaves aggregates whole: numbers, single objects and the impact-tier detector set", () => {
+    const view = presentLists();
+
+    expect(view.summary.layering).toEqual({ levelCount: 4 });
+    expect(view.summary.silentCoupling).toMatchObject({ violationCount: 7, explainedPairCount: 5 });
+    expect(view.summary.impactTiers).toEqual(reportWithSummaryLists().summary.impactTiers);
+    expect(view.summary.propagationCost).toMatchObject({ fileCount: 40, componentCount: 12 });
+  });
+
+  it("restores every summary and root-cause entry under evidenceLimit all", () => {
+    const view = presentLists({ evidenceLimit: "all" });
+
+    expect((view.summary.leakingAbstraction as Record<string, unknown>).activeModules).toHaveLength(5);
+    expect((view.summary.propagationCost as Record<string, unknown>).components).toHaveLength(6);
+    expect(view.rootCauses[0].evidence).toEqual({ sampleCommits: ["c1", "c2", "c3", "c4"] });
+    expect(view).not.toHaveProperty("next");
+  });
+
+  it("trims root-cause evidence like violation evidence: nested lists capped, the row's own subject list whole", () => {
+    const view = presentLists();
+
+    const [silent] = view.rootCauses;
+    expect(silent.partners).toHaveLength(5);
+    expect(silent.evidence).toEqual({ sampleCommits: ["c1", "c2", "c3"], sampleCommitsCount: 4 });
+  });
+
+  it("drills a trimmed detector summary block through its detector, a graph-wide block through an unscoped call", () => {
+    const view = presentLists();
+
+    const drilled = (view.next ?? []).map((call) => call.args.detectors ?? "unscoped");
+    expect(drilled).toEqual([
+      ["stableDependencies"],
+      ["shotgunSurgery"],
+      ["silentCoupling"],
+      ["leakingAbstraction"],
+      "unscoped",
+    ]);
+    const unscoped = view.next?.find((call) => call.args.detectors === undefined);
+    expect(unscoped?.args).toEqual({
+      project: "tea-rags",
+      path: MARKER.tree,
+      pathPattern: "src/**",
+      limit: 20,
+      evidenceLimit: "all",
+    });
+    expect(unscoped?.why).toContain("propagationCost");
+  });
+
+  it("scopes detector summary blocks and root causes to the detectors selector; graph-wide blocks stay", () => {
+    const view = presentLists({ detectors: ["layering"] });
+
+    expect(view.summary).not.toHaveProperty("leakingAbstraction");
+    expect(view.summary).not.toHaveProperty("silentCoupling");
+    expect(view.summary.layering).toEqual({ levelCount: 4 });
+    expect(view.summary).toHaveProperty("propagationCost");
+    expect(view.summary).toHaveProperty("impactTiers");
+    expect(view.rootCauses).toEqual([]);
+  });
+
+  it("leaves the flat report untouched", () => {
+    const source = reportWithSummaryLists();
+    presentArchitectureReport(source, architectureReportViewOf(request), MARKER);
+
+    expect(source).toEqual(reportWithSummaryLists());
   });
 });

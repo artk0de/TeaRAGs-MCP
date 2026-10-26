@@ -12,6 +12,20 @@ offset=0 → offset=15 → offset=30 → ... (no iteration limit)
 
 Same query, same filters, increasing offset.
 
+**Response budget — `truncated`** — any tool answer over ~12k tokens is cut to
+fit and says so: `truncated: {returned, omitted, next?, message}`. `returned` /
+`omitted` = rows kept / dropped; `next` = the ready call for the omitted rows
+(`offset` moved, remaining `limit`, `reportId` for an architecture report);
+`message` names the knobs that shrink the answer (`limit`, `pathPattern`,
+`metaOnly`, `detectors`…). Next step, in order:
+
+1. Need the omitted rows → run `truncated.next` verbatim (`tool` + `args`).
+2. Need fewer rows → re-call with the knob `message` names.
+3. Never re-run the identical call — it is cut the same way.
+
+An answer with `truncated` is partial: a count or "none found" claim reads the
+answer's totals (`<key>Count`, `summary`), never the listed rows.
+
 **Reformulation** — results NOT relevant:
 
 ```
@@ -60,17 +74,19 @@ own. No `empty` block → the tool's own fallback (`find_symbol`: partial name,
 then `hybrid_search`). `missing[]` rows of a batched
 `find_symbol(symbols: [...])` carry the same kind of `message`.
 
-| `empty.reason`                | Next call                                                                                                 |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `unknownSymbol`               | a `suggestions` id verbatim; none → partial name (`Class`, bare method) → `hybrid_search(metaOnly: true)` |
-| `ambiguous`                   | pick the id from `suggestions` that the task names (path, class) → `find_symbol(symbol: <that id>)`       |
-| `unknownPath` / `unknownFile` | a `suggestions` path (`find_symbol(relativePath: <it>)`); never report "file does not exist" before that  |
-| `pathPatternMatchesNothing`   | fix the glob: a bare dir matches nothing → `**/<dir>/**`; a named root-relative path stays as-is          |
-| `filteredOut`                 | the filter / preset default removed rows: drop or relax the one `message` names, same query               |
-| `noEdges`                     | a lower bound, not "no callers": `hybrid_search(query: <name>, metaOnly: true)` for name-match usages     |
-| `notBuilt`                    | co-change never built for this index: say so; no "no co-change" claim                                     |
-| `noHistory`                   | the file has no commits in the window (new / untracked): say "no history", never fabricate                |
-| `noMatch`                     | reformulate (rules above, max 3)                                                                          |
+| `empty.reason`                | Next call                                                                                                                                                                                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unknownSymbol`               | `find_symbol(symbol: <suggestions[0] verbatim>)` — the id that exists (other `#`/`.` separator, `#partN` parent, same short name); none → partial name (`Class`, bare method) → `hybrid_search(metaOnly: true)`; never "symbol does not exist" before that |
+| `unknownProject`              | `list_projects` `project` names no alias: retry with a `suggestions` alias; none → `list_projects()` (compact rows) and pick by `path`                                                                                                                     |
+| `reportStale`                 | the `reportId` page no longer matches a held report: re-call once WITHOUT `reportId` (same scope) for a fresh report, then page that one's `reportId`                                                                                                      |
+| `ambiguous`                   | pick the id from `suggestions` that the task names (path, class) → `find_symbol(symbol: <that id>)`                                                                                                                                                        |
+| `unknownPath` / `unknownFile` | a `suggestions` path (`find_symbol(relativePath: <it>)`); never report "file does not exist" before that                                                                                                                                                   |
+| `pathPatternMatchesNothing`   | fix the glob: a bare dir matches nothing → `**/<dir>/**`; a named root-relative path stays as-is                                                                                                                                                           |
+| `filteredOut`                 | the filter / preset default removed rows: drop or relax the one `message` names, same query                                                                                                                                                                |
+| `noEdges`                     | a lower bound, not "no callers": `hybrid_search(query: <name>, metaOnly: true)` for name-match usages                                                                                                                                                      |
+| `notBuilt`                    | co-change never built for this index: say so; no "no co-change" claim                                                                                                                                                                                      |
+| `noHistory`                   | the file has no commits in the window (new / untracked): say "no history", never fabricate                                                                                                                                                                 |
+| `noMatch`                     | reformulate (rules above, max 3)                                                                                                                                                                                                                           |
 
 `get_callers` with a wrong `#` / `.` separator resolves through a swap and
 reports `resolvedSymbolId` — use that id in every later call.

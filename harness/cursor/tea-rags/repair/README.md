@@ -31,3 +31,8 @@ Rules common to all families:
   with the counter-evidence.
 - At most two repair rounds. A round that adds a finding or breaks a test is
   reverted whole. Findings still introduced after round two go to the user.
+- A finding read from `get_architecture_report` may carry trimmed evidence
+  lists: `<key>Count` = the full length. A step that judges every entry
+  (`evidence.edges` one by one, every file edge) first runs the answer's `next`
+  call for that detector (`evidenceLimit: "all"`) verbatim; a verdict over the
+  listed entries alone is partial — say so.

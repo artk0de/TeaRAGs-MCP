@@ -1,5 +1,9 @@
 # Phase 1 — REPORT — architecture-diagnostics
 
+> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
+> resource tool, or the read fails), run
+> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
 Loaded by `SKILL.md` Phase 1.
 
 - `pathPattern` scopes JUDGED edges by SOURCE file (SDP: component dependency
@@ -50,6 +54,29 @@ Loaded by `SKILL.md` Phase 1.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
+- Answer shape (reading = `tea-rags://guide/architecture`):
+  `violations.<detector>` = one column table per detector (`columns` + `rows`;
+  dotted column = nested field, `evidence.drillDown.files`).
+  `detectors: ["<detector>"]` keeps only those groups — one detector's question
+  → pass it, never read the rest.
+- List fields may be trimmed to `evidenceLimit` (default 3): `<key>Count` = the
+  FULL length — cite it, never the listed length. `evidenceTrimmed` present →
+  the answer's `next[]` holds one ready call per cut detector (same scope,
+  `evidenceLimit: "all"`): run `next` verbatim when the finding needs every
+  entry; never re-run the first call with a bigger `limit`.
+- Drill call: `violationDrillDownHints.<detector>` is a TEMPLATE shared by the
+  group
+  (`call find_co_changed(files: drillDown.files, limit: drillDown.limit) …`) —
+  fill it from THAT row:
+  `find_co_changed(path: "<your working directory>", files: <row evidence.drillDown.files>, limit: <row evidence.drillDown.limit>)`.
+  No hoisted entry → the row's own `evidence.drillDown.hint`.
+- `summary.silentCoupling.explainedPairCount` = total pairs a shared neighbour
+  explains; the pair list itself only with `includeExplainedPairs: true`.
+- More rows: `reportId` from the answer + `offset` (+ same `limit`) re-cuts the
+  held report, no re-judging. `empty.reason: "reportStale"` → re-call once
+  without `reportId` (fresh report). `truncated {returned, omitted, next}` (12k
+  response budget) → run `truncated.next` verbatim or narrow (`detectors`,
+  `pathPattern`); never repeat the same call.
 - Each detector's `violations` ranked costliest-first (before `limit`) by
   `maintenanceCost` — except `shotgunSurgery` (Phase 3c2): tagged, not
   re-sorted. Carriers = files on edges that MAKE violation: named files; all
@@ -76,7 +103,8 @@ Loaded by `SKILL.md` Phase 1.
   findings, never tiered). `built: false` = no co-change history → no tier ≠
   structural. Lead with critical, then active; structural-only = cheap direction
   fix, low urgency.
-- Every finding carries `detector`: `stableDependencies` (Phases 2–3),
+- Violations are grouped per detector (`violations.<detector>`; `rootCauses`
+  rows keep a `detector` column): `stableDependencies` (Phases 2–3),
   `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c), `mainSequence`
   (Phase 3d), `hubLikeDependency` (Phase 3d2) or `layering` (Phase 3e). Never
   mix groups across detectors.
