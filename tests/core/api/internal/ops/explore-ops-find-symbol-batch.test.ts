@@ -176,6 +176,57 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
     });
   });
 
+  describe("batch with file paths (q1g6s.4)", () => {
+    const files = { "src/lib/h.ts": "export function helper() {}\n", "src/lib/foo.ts": "class Foo {}\n" };
+
+    it("answers two path entries with one file row each, kind file", async () => {
+      const response = await facade(fakeWorkingTreeView({ files })).findSymbol({
+        collection: "code_x",
+        symbols: ["src/lib/h.ts", "src/lib/foo.ts"],
+      });
+
+      expect(response.results.map((r) => [r.payload?.request, r.payload?.kind, r.payload?.relativePath])).toEqual([
+        ["src/lib/h.ts", "file", "src/lib/h.ts"],
+        ["src/lib/foo.ts", "file", "src/lib/foo.ts"],
+      ]);
+      expect(response.results[0].payload?.content).toBe(files["src/lib/h.ts"]);
+      expect(response.missing).toEqual([]);
+    });
+
+    it("answers path and symbol entries mixed, in request order", async () => {
+      const response = await facade(fakeWorkingTreeView({ files })).findSymbol({
+        collection: "code_x",
+        symbols: ["Foo#bar", "src/lib/h.ts", "helper"],
+      });
+
+      expect(response.results.map((r) => [r.payload?.request, r.payload?.kind ?? r.payload?.symbolId])).toEqual([
+        ["Foo#bar", "Foo#bar"],
+        ["src/lib/h.ts", "file"],
+        ["helper", "helper"],
+      ]);
+    });
+
+    it("lists an unknown path entry in missing with the nearest indexed paths", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbols: ["src/lib/nope/h.ts", "helper"] });
+
+      expect(response.results.map((r) => r.payload?.request)).toEqual(["helper"]);
+      expect(response.missing).toEqual([
+        {
+          request: "src/lib/nope/h.ts",
+          message: expect.stringContaining("unknown path"),
+          suggestions: ["src/lib/h.ts", "src/lib/foo.ts"],
+        },
+      ]);
+    });
+
+    it("keeps FQN entries with ::, # or . as symbols", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbols: ["Foo.bar", "A::B#c"] });
+
+      expect(response.results.map((r) => [r.payload?.request, r.payload?.symbolId])).toEqual([["Foo.bar", "Foo#bar"]]);
+      expect(response.missing).toEqual([{ request: "A::B#c", message: expect.stringContaining("unknown symbol") }]);
+    });
+  });
+
   describe("directory", () => {
     it("answers a directory path with file rows and the directory frame", async () => {
       const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/" });

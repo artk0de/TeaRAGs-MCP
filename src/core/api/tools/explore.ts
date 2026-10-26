@@ -166,7 +166,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "relativePath mode: small code file (≤150 lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; " +
       "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
       "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
-      "symbols mode: 1-20 addresses one call, rows keyed by `request`, misses in `missing`, lean payload. " +
+      "symbols mode: 1-20 symbol ids and/or file paths one call (a path answers as relativePath mode), " +
+      "rows keyed by `request`, misses in `missing` (unknown path → `suggestions`), lean payload unless fields/rerank. " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +
       "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +

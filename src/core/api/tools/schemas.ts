@@ -490,7 +490,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
       .max(20)
       .optional()
       .describe(
-        "1-20 addresses, one call, each as `symbol`. Rows carry request; misses → missing. Lean payload unless fields/rerank. Excludes symbol, relativePath.",
+        "1-20 symbol ids and file paths, several files in ONE call. Rows carry request; misses → missing. Excludes symbol, relativePath.",
       ),
     relativePath: z
       .string()

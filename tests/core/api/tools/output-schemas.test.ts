@@ -428,4 +428,10 @@ describe("SearchResultOutputSchema — find_symbol batch, directory and empty an
       empty,
     });
   });
+
+  it("keeps the nearest-path suggestions of an unknown path entry (q1g6s.4)", () => {
+    const missing = [{ request: "src/nope.ts", message: "unknown path", suggestions: ["src/a/x.ts"] }];
+
+    expect(schema.parse({ results: EMPTY_TABLE, missing }).missing).toEqual(missing);
+  });
 });
