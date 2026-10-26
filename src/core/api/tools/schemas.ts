@@ -469,7 +469,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
       .string()
       .optional()
       .describe(
-        "File → outline (code) or heading TOC (docs). Directory → its files + top-level symbols, subdirs. Excludes symbol.",
+        "File → full text if small, else outline; doc → heading TOC. Directory → files, top-level symbols, subdirs. Excludes symbol.",
       ),
     ...collectionPathFields(),
     language: z

@@ -22,6 +22,8 @@ export interface FakeWorkingTreeViewInput {
   dense?: WorkingTreeDenseVectors;
   /** The touched files' base points. Omit → no base-point reader wired. */
   basePoints?: WorkingTreeTouchedBasePointsByPath;
+  /** The tree's file texts by relative path, as `readTreeFile` answers them. Omit → no tree file reader wired. */
+  files?: Record<string, string>;
 }
 
 export function fakeWorkingTreeView({
@@ -31,6 +33,7 @@ export function fakeWorkingTreeView({
   rows,
   dense,
   basePoints,
+  files,
 }: FakeWorkingTreeViewInput): WorkingTreeView {
   const view: WorkingTreeView = {
     marker: {
@@ -49,6 +52,7 @@ export function fakeWorkingTreeView({
   if (rows) view.readDeltaChunks = async () => rows;
   if (dense) view.readDeltaVectors = async () => dense;
   if (basePoints) view.readTouchedBasePoints = async () => basePoints;
+  if (files) view.readTreeFile = async (relativePath) => files[relativePath];
   return view;
 }
 

@@ -15,6 +15,7 @@ import type { WorkingTree } from "../../../../../src/core/contracts/types/workin
 import {
   createWorkingTreeChunkLayer,
   createWorkingTreeDeltaReader,
+  WorkingTreeContentHashes,
   WorkingTreeOverlay,
   workingTreeStateOf,
   type WorkingTreeDeltaReader,
@@ -86,6 +87,47 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
   afterEach(() => {
     fixture.cleanup();
     rmSync(registryDir, { recursive: true, force: true });
+  });
+
+  // bd tea-rags-mcp-03yel: a small-file find_symbol answers with the file's
+  // text, read from the tree this view addresses — never from the index.
+  describe("readTreeFile", () => {
+    const viewWithFiles = async () =>
+      new WorkingTreeOverlay({
+        registry,
+        deltaReader: createWorkingTreeDeltaReader(),
+        createFileFilter,
+        treeFiles: new WorkingTreeContentHashes(),
+      }).view(workingTree(), "proj");
+
+    it("should read the tree's text of a modified file", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      writeFileSync(join(tree, "src/keep.ts"), "export const keep = 2;\n");
+
+      const view = await viewWithFiles();
+
+      expect(await view.readTreeFile?.("src/keep.ts")).toBe("export const keep = 2;\n");
+    });
+
+    it("should read nothing for a deleted, missing, or out-of-tree path", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      fixture.git(tree, "rm", "-q", "src/keep.ts");
+
+      const view = await viewWithFiles();
+
+      expect(view.readTreeFile).toBeDefined();
+      expect(await view.readTreeFile?.("src/keep.ts")).toBeUndefined();
+      expect(await view.readTreeFile?.("src/none.ts")).toBeUndefined();
+      expect(await view.readTreeFile?.("../outside.ts")).toBeUndefined();
+    });
+
+    it("should carry no reader when no tree file source is wired", async () => {
+      record({ indexedCommit, indexedDirty: false });
+
+      const view = await overlayWith().view(workingTree(), "proj");
+
+      expect(view.readTreeFile).toBeUndefined();
+    });
   });
 
   it("should mark a clean tree at the indexed commit as measured and empty", async () => {

@@ -21,8 +21,7 @@ import type { DirectoryOutline } from "../../../contracts/types/directory-outlin
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RerankMode } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import { CodeChunkGrouper, DirectoryChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
-import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { CodeChunkGrouper, DirectoryChunkGrouper, DocChunkGrouper, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { RerankerPort } from "../reranker-port.js";
@@ -48,6 +47,9 @@ const DIRECTORY_PAYLOAD = [
 
 /** Alternatives an unknown path is answered with. */
 const NEAREST_PATH_CAP = 5;
+
+/** Files up to this many lines answer with their full text instead of an outline. */
+const FULL_TEXT_MAX_LINES = 150;
 
 export interface FileOutlineInput {
   relativePath: string;
@@ -128,14 +130,36 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     if (isDoc) return [DocChunkGrouper.group(chunks)];
     // Member lines carry declared visibility (bd tea-rags-mcp-sqqkz); metaOnly
     // strips the outline text, so there is nothing to decorate.
-    return [
-      await renderWithDeclaredVisibility(
-        (visibilityOf) => CodeChunkGrouper.groupFile(chunks, visibilityOf),
-        ctx.metaOnly ? undefined : this.visibilityResolver,
-        ctx.collectionName,
-        recordingTreeGraphReader(ctx.workingTreeView),
-      ),
-    ];
+    const outline = await renderWithDeclaredVisibility(
+      (visibilityOf) => CodeChunkGrouper.groupFile(chunks, visibilityOf),
+      ctx.metaOnly ? undefined : this.visibilityResolver,
+      ctx.collectionName,
+      recordingTreeGraphReader(ctx.workingTreeView),
+    );
+    return [ctx.metaOnly ? outline : await this.fullTextOrOutline(outline, ctx)];
+  }
+
+  /**
+   * A small file answers with its own text (bd tea-rags-mcp-03yel): at most
+   * {@link FULL_TEXT_MAX_LINES} lines, or an outline at least as long as the
+   * file, costs the caller a second turn reading the file anyway. The text is
+   * the tree's, read whole — chunks overlap and member chunks carry container
+   * headers, so no concatenation of them is the file. A file the view serves
+   * from the index (`treeState: "modified"`) or cannot read keeps the outline.
+   */
+  private async fullTextOrOutline(outline: ExploreResult, ctx: ExploreContext): Promise<ExploreResult> {
+    const view = ctx.workingTreeView;
+    const path = this.input.relativePath;
+    if (!view?.readTreeFile || view.indexServedPaths?.has(path)) return outline;
+    const text = await view.readTreeFile(path);
+    if (text === undefined) return outline;
+    const lineCount = countLines(text);
+    const outlineText = typeof outline.payload?.content === "string" ? outline.payload.content : "";
+    if (lineCount > FULL_TEXT_MAX_LINES && outlineText.length < text.length) return outline;
+    return {
+      ...outline,
+      payload: { ...outline.payload, kind: "file", content: text, startLine: 1, endLine: lineCount },
+    };
   }
 
   /**
@@ -295,6 +319,13 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 function pickListingFields(payload: Record<string, unknown> | undefined): Record<string, unknown> {
   const { relativePath, language, symbols } = payload ?? {};
   return { relativePath, language, symbols };
+}
+
+/** Lines of `text`; a trailing newline ends the last line rather than opening one. */
+function countLines(text: string): number {
+  if (text === "") return 0;
+  const breaks = text.split("\n").length - 1;
+  return text.endsWith("\n") ? breaks : breaks + 1;
 }
 
 function distinctPaths(rows: readonly ScrollChunk[]): string[] {

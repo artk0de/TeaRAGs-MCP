@@ -189,6 +189,7 @@ export {
   createWorkingTreeFileWriter,
   scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
+  WorkingTreeContentHashes,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,

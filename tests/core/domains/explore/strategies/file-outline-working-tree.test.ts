@@ -82,4 +82,111 @@ describe("FileOutlineStrategy working-tree chunk floor", () => {
 
     expect(JSON.stringify(withView)).toBe(JSON.stringify(without));
   });
+
+  // bd tea-rags-mcp-03yel: an outline of a small file costs a second turn (the
+  // agent Reads the file anyway), so a small file answers with its full text,
+  // read from the tree — never reassembled from overlapping chunks.
+  describe("small file answers with its full text", () => {
+    const lines = (n: number, width = 1) =>
+      `${Array.from({ length: n }, (_, i) => "x".repeat(width) + String(i)).join("\n")}\n`;
+    const outlineCtx = async (view: WorkingTreeView, extra: Record<string, unknown> = {}) =>
+      new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: FOO }).execute({
+        collectionName: "c",
+        limit: 1,
+        workingTreeView: view,
+        ...extra,
+      });
+
+    it("answers a file of at most 150 lines with the tree's text as one file row", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+      const text = lines(150);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: text } }));
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload).toMatchObject({
+        kind: "file",
+        relativePath: FOO,
+        language: "typescript",
+        content: text,
+        startLine: 1,
+        endLine: 150,
+      });
+    });
+
+    it("keeps the outline of a file over 150 lines whose outline is shorter than its text", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: lines(151, 40) } }));
+
+      expect(results[0].payload?.kind).toBeUndefined();
+      expect(String(results[0].payload?.content)).toContain("Foo#bar");
+    });
+
+    it("answers a file over 150 lines with its text when the outline is at least as long", async () => {
+      const members = Array.from({ length: 40 }, (_, i) => member(`m${i}`, `Foo#aRatherLongMemberName${i}`));
+      mockScrollFiltered.mockResolvedValue(members);
+      const text = "\n".repeat(160);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: text } }));
+
+      expect(results[0].payload).toMatchObject({ kind: "file", content: text, startLine: 1, endLine: 160 });
+    });
+
+    it("keeps the doc TOC of a small markdown file", async () => {
+      const DOC = "docs/a.md";
+      mockScrollFiltered.mockResolvedValue([
+        codeRow("d", { relativePath: DOC, language: "markdown", isDocumentation: true, symbolId: "doc:1", name: "A" }),
+      ]);
+
+      const results = await new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: DOC }).execute({
+        collectionName: "c",
+        limit: 1,
+        workingTreeView: fakeWorkingTreeView({ files: { [DOC]: "# A\n" } }),
+      });
+
+      expect(results[0].payload?.kind).toBeUndefined();
+    });
+
+    it("keeps the outline under metaOnly", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: lines(3) } }), { metaOnly: true });
+
+      expect(results[0].payload?.kind).toBeUndefined();
+      expect(results[0].payload?.content).toBeUndefined();
+    });
+
+    it("falls back to the outline when the tree cannot read the file", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: {} }));
+
+      expect(results[0].payload?.kind).toBeUndefined();
+      expect(String(results[0].payload?.content)).toContain("Foo#bar");
+    });
+
+    it("keeps the outline of a file the view serves from the index", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ indexServed: [FOO], files: { [FOO]: lines(3) } }));
+
+      expect(results[0].payload?.kind).toBeUndefined();
+      expect(results[0].treeState).toBe("modified");
+    });
+
+    it("answers a modified file with the tree's text, not the index's", async () => {
+      mockScrollFiltered.mockResolvedValue([member("old", "Foo#oldName")]);
+      const view = fakeWorkingTreeView({
+        changed: [FOO],
+        rows: [member("new", "Foo#newName")],
+        files: { [FOO]: "class Foo { newName() {} }\n" },
+      });
+
+      const results = await outlineCtx(view);
+
+      expect(results[0].payload).toMatchObject({ kind: "file", content: "class Foo { newName() {} }\n", endLine: 1 });
+      expect(results[0].treeState).toBeUndefined();
+    });
+  });
 });

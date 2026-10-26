@@ -142,7 +142,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
       "symbol mode: function/method → merged full body; class/module → OUTLINE only " +
       "(member symbolIds, no bodies, tests excluded); doc:<hash> → full section content. " +
-      "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids); " +
+      "relativePath mode: small code file (≤150 lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; " +
+      "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
       "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
       "symbols mode: 1-20 addresses one call, rows keyed by `request`, misses in `missing`, lean payload. " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +

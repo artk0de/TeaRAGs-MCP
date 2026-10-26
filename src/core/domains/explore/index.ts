@@ -59,6 +59,7 @@ export {
   relativePathOf,
   scheduleWorkingTreeBasePointSweep,
   scheduleWorkingTreeChunkSweep,
+  WorkingTreeContentHashes,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
   WorkingTreeOverlay,
