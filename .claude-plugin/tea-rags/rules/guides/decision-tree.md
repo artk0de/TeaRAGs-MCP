@@ -4,13 +4,14 @@
 
 **Semantic First, Exact Second.** Code search starts with tea-rags
 (semantic_search, hybrid_search, find_symbol, find_similar). Text search — your
-client's standard code search tool — only for non-identifier text (regex syntax,
-TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path strings), or
-fallback when tea-rags unavailable. Then the hit's enclosing symbol →
-find_symbol, never Read/cat. Code identifiers (class/method/constant names) are
-SYMBOL searches — use hybrid_search (BM25 = exact-name match, score up to 1.0)
-or find_symbol, NEVER text search, even if query has `|` alternation or the user
-calls the name a "pattern"/"glob". Glob — never for code discovery.
+client's standard code search tool (not a tea-rags tool) — only for
+non-identifier text (regex syntax, TODO/FIXME/HACK/NOTE markers, phrases, error
+strings, import path strings), or fallback when tea-rags unavailable. Then the
+hit's enclosing symbol → find_symbol, never Read/cat. Code identifiers
+(class/method/constant names) are SYMBOL searches — use hybrid_search (BM25 =
+exact-name match, score up to 1.0) or find_symbol, NEVER text search, even if
+query has `|` alternation or the user calls the name a "pattern"/"glob". Glob —
+never for code discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for code.
 

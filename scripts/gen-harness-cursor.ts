@@ -52,6 +52,7 @@ const CURSOR_DIALECT: HarnessDialect = {
   projectDirVar: "$PWD",
   readResourceTool: "FetchMcpResource",
   listResourcesTool: "ListMcpResources",
+  codeSearchTool: "Grep tool",
 };
 
 /**

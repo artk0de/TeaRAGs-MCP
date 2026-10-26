@@ -99,7 +99,9 @@ tea-rags search reads payloads written at index time. Index lags working tree �
 results silently stale. Before first tea-rags search/explore of turn, check
 conditions below (signals from **prime** digest layer); reindex when one fires.
 Subagent: no row fires — never `index_codebase`, never `AskUserQuestion`; the
-row's trigger and its `Run:` line go into the report to the parent.
+answer prints the report line
+`to parent: index behind (changedFiles <N>) — run <Run: line>` (no drift → no
+`run` part).
 
 | Trigger (signal in prime / session)                                                                                                                              | Action                                                                                                                                                                                                                                             | User confirmation          |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -135,8 +137,10 @@ and tree, never "index unusable". Thousands of changed files included.
   current. Quote `floors` exactly as the answer lists them, then print
   `current — <floor> floor covers it`.
 - Row without `treeState` from an unchanged file → row current. Use it.
-- Row with `treeState` / file in `pendingFiles` → `find_symbol` (re-call; reads
-  tree once warm). `indexOnlyFiles` only → `Read`.
+- Row with `treeState` / file in `pendingFiles` → `find_symbol` (reads tree once
+  warm); a `pendingFiles` file → plan both lines: `find_symbol(<same params>)`
+  and `still in pendingFiles → find_symbol(<same params>) again`.
+  `indexOnlyFiles` only → `Read`.
 - `floors: []` on first calls = overlay warming, not failure. Subagent or linked
   worktree → no reindex, keep calling, later calls read more; main session in
   the own checkout → incremental `index_codebase` now (table above).

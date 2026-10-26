@@ -60,7 +60,7 @@ description:
   (no step 0, no probes), never cat / sed / Read around the hit; the plan never
   ends at the code-search hit — find_symbol follows it; print this ONE line,
   slots filled:
-  `standard code search tool "<phrase>" (literal) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+  `shell grep -rn "<phrase>" (literal) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
   both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
   confirmatory search, no refusal:

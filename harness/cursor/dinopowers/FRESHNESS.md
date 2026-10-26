@@ -14,12 +14,16 @@ Addressing + lag rules: core rules (always on). Wrappers follow, never restate.
   `path=<your working directory>`; linked worktree → own tree vs repo index, no
   clone, no reindex. `index_codebase`: `project` only.
 - **Index behind** (uncommitted / session edits, HEAD moved, any
-  `changedFiles` > 0), first match: subagent → never reindex, never ask (drift,
-  `--force` go into the report to the parent); linked worktree → never reindex
-  (overlay serves tree; `treeState` row = pre-edit copy → `find_symbol`); main
-  session in the alias's own checkout → incremental `index_codebase(project=)`
-  NOW, no consent. Drift `Run:` with `--force` adds ask the user: run <Run:
-  line>?` beside that incremental call — never instead of it; reads continue in
+  `changedFiles` > 0), first match: subagent → never reindex, never ask; the
+  answer prints the report line
+  `to parent: index behind (changedFiles <N>) — run <Run: line>` (no drift → no
+  `run` part); linked worktree → never reindex (overlay serves tree; `treeState`
+  row = pre-edit copy → `find_symbol`; file in `pendingFiles` → plan both lines:
+  `find_symbol(<same params>)` and
+  `still in pendingFiles → find_symbol(<same params>) again`); main session in
+  the alias's own checkout → incremental `index_codebase(project=)` NOW, no
+  consent. Drift `Run:` with `--force` adds ask the user: run <Run: line>?`
+  beside that incremental call — never instead of it; reads continue in
   tea-rags.
 - **Lag ≠ unusable** — never licence for Bash `cat`/`sed`/`grep`/`rg` or `Read`
   over code (→ guide/freshness "Lag never licenses leaving tea-rags").

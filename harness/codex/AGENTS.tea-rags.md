@@ -25,11 +25,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
-  or a search tool demanded on an error → bug-hunt), even "every …" → standard
-  code search tool (no tea-rags seed); phrase/error string: THEN `find_symbol`
-  per hit's enclosing symbol. A code name, even called a "pattern"/"glob", is a
-  symbol (→ `hybrid_search`, not `rg --files`). Command output, failing tests,
-  counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
+  or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
+  -rn, never tea-rags; phrase/error string: THEN `find_symbol` per hit's symbol.
+  A code name, even called a "pattern"/"glob", is a symbol (→ `hybrid_search`,
+  not `rg --files`). Command output, failing tests, counts →
+  `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`

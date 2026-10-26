@@ -66,6 +66,16 @@ escalate: AskUserQuestion (subagent → hand back).
 Run \${CLAUDE_PLUGIN_ROOT}/scripts/x.sh in "$CLAUDE_PROJECT_DIR".
 `;
 
+const CODE_SEARCH_SOURCE = `---
+name: bug-hunt
+description: Find source of concrete failure.
+---
+
+TODO markers → client's standard code search tool, never tea-rags.
+Print \`standard code search tool "<phrase>" (literal) → find_symbol\`.
+Wrapped: the client's
+  standard code search tool (not a tea-rags tool).
+`;
 const KNOWN = new Set(["bug-hunt", "data-driven-generation", "explore", "test-first"]);
 
 function listFiles(dir: string): string[] {
@@ -168,6 +178,15 @@ describe("toCodexSkill", () => {
 
   it("replaces Claude Code environment variables", () => {
     expect(out).toContain(`Run \${PLUGIN_ROOT}/scripts/x.sh in "$PWD".`);
+  });
+
+  it("names Codex's shell grep for the client's standard code search tool, wrapped lines included", () => {
+    const text = toCodexSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
+
+    expect(text).toContain("TODO markers → shell grep -rn, never tea-rags.");
+    expect(text).toContain('Print `shell grep -rn "<phrase>" (literal) → find_symbol`.');
+    expect(text).toContain("Wrapped: shell grep -rn (not a tea-rags tool).");
+    expect(text).not.toMatch(/standard\s+code\s+search\s+tool/);
   });
 
   it("falls back to the folder name and a body-derived description", () => {

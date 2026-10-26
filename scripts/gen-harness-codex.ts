@@ -57,6 +57,7 @@ const CODEX_DIALECT: HarnessDialect = {
   projectDirVar: "$PWD",
   readResourceTool: "read_mcp_resource",
   listResourcesTool: "list_mcp_resources",
+  codeSearchTool: "shell grep -rn",
 };
 
 /**
@@ -469,7 +470,10 @@ function listChars(skills: ShippedSkill[]): number {
 
 function skillRows(skills: ShippedSkill[]): string {
   return skills
-    .map((skill) => `| \`${skill.name}\` | ${skill.description.length} | ${skill.name.length + skill.description.length} |`)
+    .map(
+      (skill) =>
+        `| \`${skill.name}\` | ${skill.description.length} | ${skill.name.length + skill.description.length} |`,
+    )
     .join("\n");
 }
 

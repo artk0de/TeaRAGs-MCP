@@ -87,6 +87,16 @@ Chain Skill(tea-rags:explore), then \`tea-rags:test-first\`.
 Run \${CLAUDE_PLUGIN_ROOT}/scripts/x.sh in "$CLAUDE_PROJECT_DIR".
 `;
 
+const CODE_SEARCH_SOURCE = `---
+name: bug-hunt
+description: Find source of concrete failure.
+---
+
+TODO markers → client's standard code search tool, never tea-rags.
+Print \`standard code search tool "<phrase>" (literal) → find_symbol\`.
+Wrapped: the client's
+  standard code search tool (not a tea-rags tool).
+`;
 const KNOWN = new Set(["explore", "filter-building", "test-first"]);
 
 function listFiles(dir: string): string[] {
@@ -98,6 +108,15 @@ function listFiles(dir: string): string[] {
 
 describe("toCursorSkill", () => {
   const out = toCursorSkill(FIXTURE, { skillNames: KNOWN });
+
+  it("names Cursor's Grep tool for the client's standard code search tool, wrapped lines included", () => {
+    const text = toCursorSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
+
+    expect(text).toContain("TODO markers → Grep tool, never tea-rags.");
+    expect(text).toContain('Print `Grep tool "<phrase>" (literal) → find_symbol`.');
+    expect(text).toContain("Wrapped: Grep tool (not a tea-rags tool).");
+    expect(text).not.toMatch(/standard\s+code\s+search\s+tool/);
+  });
 
   it("keeps only name and description and mentions skills as slash commands", () => {
     const { fields } = parseFrontmatter(out);
