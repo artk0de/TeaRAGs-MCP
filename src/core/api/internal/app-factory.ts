@@ -271,6 +271,7 @@ export function createApp(deps: AppDeps): App {
     // -- Project registry — delegate to ProjectRegistryOps --
     registerProject: async (input) => ops.projectRegistry.register(input),
     listProjects: async () => ops.projectRegistry.list(),
+    getProjectListing: async (request) => ops.projectRegistry.listing(request),
     unregisterProject: async (input) => ops.projectRegistry.unregister(input),
 
     // -- Codegraph — getCallers/getCallees/findCycles delegate to GraphFacade;

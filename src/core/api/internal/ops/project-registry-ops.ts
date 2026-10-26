@@ -6,7 +6,11 @@ import { validatePath, validatePathSync } from "../../../adapters/filesystem/pat
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
-import { PROJECT_NAME_RE } from "../../../contracts/types/registry.js";
+import {
+  PROJECT_LISTING_COMPACT_FIELDS,
+  PROJECT_NAME_RE,
+  type ProjectListingRow,
+} from "../../../contracts/types/registry.js";
 import { isCollectionBuildInFlight } from "../../../domains/ingest/infra/index.js";
 import {
   applyOperatorEnvPinEdit,
@@ -23,7 +27,13 @@ import {
 } from "../../../domains/maintenance/registry/index.js";
 import { ConfigError } from "../../../primitives/errors/index.js";
 import { resolveCollectionName } from "../../../primitives/ids/index.js";
-import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
+import type {
+  ListProjectsRequest,
+  ListProjectsResponse,
+  ProjectRegistryAddress,
+  StaleProjectEntry,
+  StaleProjectPruneReport,
+} from "../../public/dto/registry.js";
 import {
   InvalidParameterError,
   MissingArgumentError,
@@ -34,6 +44,45 @@ import {
   ProjectNotRegisteredError,
   ProjectPathAlreadyRegisteredError,
 } from "../../public/errors.js";
+
+/** A registry entry reduced to the compact `list_projects` fields; absent fields stay absent. */
+function toListingRow(projectInfo: ProjectInfo): ProjectListingRow {
+  const row: Record<string, unknown> = {};
+  for (const field of PROJECT_LISTING_COMPACT_FIELDS) {
+    if (projectInfo[field] !== undefined) row[field] = projectInfo[field];
+  }
+  return row;
+}
+
+/** Classic two-row edit distance — aliases are short, the registry is dozens of entries. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const substitution = (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(substitution, (previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1);
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? 0;
+}
+
+const MAX_ALIAS_SUGGESTIONS = 5;
+
+/** Aliases containing (or contained in) the miss first, then by edit distance, then alphabetical. */
+function nearestAliases(miss: string, aliases: readonly string[]): string[] {
+  const needle = miss.toLowerCase();
+  const scored = aliases.map((alias) => {
+    const lower = alias.toLowerCase();
+    const related = lower.includes(needle) || needle.includes(lower);
+    return { alias, related, distance: editDistance(needle, lower) };
+  });
+  scored.sort(
+    (x, y) => Number(y.related) - Number(x.related) || x.distance - y.distance || x.alias.localeCompare(y.alias),
+  );
+  return scored.slice(0, MAX_ALIAS_SUGGESTIONS).map((s) => s.alias);
+}
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
@@ -388,6 +437,31 @@ export class ProjectRegistryOps {
 
   async list(): Promise<{ projects: ProjectInfo[] }> {
     return { projects: this.deps.registry.list() };
+  }
+
+  /**
+   * The `list_projects` answer. Default: compact rows
+   * (`PROJECT_LISTING_COMPACT_FIELDS`) — enough to find an alias and its path.
+   * `project`: that one entry's full record, env and language versions
+   * included; an alias no entry carries answers `unknownProject` with the
+   * nearest aliases instead of throwing.
+   */
+  async listing(request: ListProjectsRequest): Promise<ListProjectsResponse> {
+    const entries = this.deps.registry.list();
+    if (request.project === undefined) {
+      return { projects: entries.map(toListingRow) };
+    }
+    const entry = entries.find((e) => e.name === request.project);
+    if (entry) return { projects: [entry] };
+    const aliases = entries.map((e) => e.name).filter((n): n is string => typeof n === "string" && n.length > 0);
+    return {
+      projects: [],
+      empty: {
+        reason: "unknownProject",
+        message: `No project registered as "${request.project}". Retry with one of the suggestions, or call list_projects without project.`,
+        suggestions: nearestAliases(request.project, aliases),
+      },
+    };
   }
 
   /**

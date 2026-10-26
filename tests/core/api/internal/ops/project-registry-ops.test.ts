@@ -15,6 +15,7 @@ import {
   ProjectNameNotUniqueError,
   ProjectPathAlreadyRegisteredError,
 } from "../../../../../src/core/api/public/errors.js";
+import { PROJECT_LISTING_COMPACT_FIELDS } from "../../../../../src/core/contracts/types/registry.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName } from "../../../../../src/core/primitives/ids/collection-identity.js";
 
@@ -206,6 +207,54 @@ describe("ProjectRegistryOps", () => {
     const out = await ops.list();
     expect(out.projects).toHaveLength(1);
     expect(out.projects[0].name).toBe("alpha");
+  });
+
+  describe("listing()", () => {
+    let repo2: string;
+    beforeEach(async () => {
+      repo2 = join(dir, "repo2");
+      mkdirSync(repo2);
+      await ops.register({ path: realPath, name: "alpha" });
+      await ops.register({ path: repo2, name: "alphabet" });
+    });
+
+    it("pins the compact field list, in wire order", () => {
+      expect([...PROJECT_LISTING_COMPACT_FIELDS]).toEqual([
+        "name",
+        "path",
+        "collectionName",
+        "chunksCount",
+        "indexedAt",
+        "codegraphEnabled",
+        "worktreeOf",
+      ]);
+    });
+
+    it("default rows carry only compact fields, in compact order", async () => {
+      const out = await ops.listing({});
+      expect(out.projects).toHaveLength(2);
+      expect(out.empty).toBeUndefined();
+      for (const row of out.projects) {
+        const keys = Object.keys(row);
+        expect(keys).toEqual(PROJECT_LISTING_COMPACT_FIELDS.filter((f) => keys.includes(f)));
+        expect(keys).toEqual(expect.arrayContaining(["name", "path", "collectionName"]));
+      }
+    });
+
+    it("project filter returns that one full record", async () => {
+      const out = await ops.listing({ project: "alpha" });
+      expect(out.projects).toHaveLength(1);
+      expect(out.projects[0]).toEqual(expect.objectContaining({ name: "alpha", teaRagsVersion: expect.any(String) }));
+      expect(Object.keys(out.projects[0]).length).toBeGreaterThan(PROJECT_LISTING_COMPACT_FIELDS.length);
+    });
+
+    it("unknown alias answers empty with the nearest aliases", async () => {
+      const out = await ops.listing({ project: "alph" });
+      expect(out.projects).toEqual([]);
+      expect(out.empty?.reason).toBe("unknownProject");
+      expect(out.empty?.message).toContain("alph");
+      expect(out.empty?.suggestions).toEqual(["alpha", "alphabet"]);
+    });
   });
 
   it("unregister() is idempotent (removed=false when missing)", async () => {

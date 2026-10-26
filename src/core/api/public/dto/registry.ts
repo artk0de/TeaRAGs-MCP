@@ -2,6 +2,24 @@
  * Registry domain DTOs — the answer shapes of registry maintenance.
  */
 
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
+import type { ProjectInfo, ProjectListingRow } from "../../../contracts/types/registry.js";
+
+/** `list_projects` request — `project` narrows the answer to that one alias. */
+export interface ListProjectsRequest {
+  project?: string;
+}
+
+/**
+ * `list_projects` answer. Default: compact `rows` (alias → path lookup). With
+ * `project`: that ONE project's full registry record in `projects`. An unknown
+ * alias carries `empty` (unknownProject + nearest aliases) and no rows.
+ */
+export interface ListProjectsResponse {
+  projects: (ProjectListingRow | ProjectInfo)[];
+  empty?: EmptyAnswerExplanation;
+}
+
 /**
  * A registry entry whose project directory is gone from disk.
  *

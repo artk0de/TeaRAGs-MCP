@@ -99,6 +99,8 @@ export type {
   AddDocumentsRequest,
   DeleteDocumentsRequest,
   // Registry DTOs
+  ListProjectsRequest,
+  ListProjectsResponse,
   ProjectRegistryAddress,
   StaleProjectEntry,
   StaleProjectPruneReport,

@@ -389,6 +389,7 @@ describe("App interface", () => {
       checkIndexDrift: true,
       registerProject: true,
       listProjects: true,
+      getProjectListing: true,
       unregisterProject: true,
       whenEnrichmentComplete: true,
       getCollectionMemory: true,
@@ -412,7 +413,7 @@ describe("App interface", () => {
       createPathCollectionResolver: true,
       hasProvider: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(42);
+    expect(Object.keys(_methods)).toHaveLength(43);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {
