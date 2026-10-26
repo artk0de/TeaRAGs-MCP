@@ -12,8 +12,8 @@ description:
 codex-description:
   Project/domain health — multi-preset risk scan (bugs, hotspots, tech debt)
   into tiers; "evaluate risks", "assess code health", "zones needing attention".
-  NOT one-preset asks like bug-prone areas (analytics-rerank). NOT bug symptoms
-  (bug-hunt). NOT an unframed "something's off in X"
+  NOT one-preset asks like bug-prone areas (analytics-rerank). NOT bug symptoms,
+  even with zones to check ("проверь зоны A, B") (bug-hunt). NOT an unframed "something's off in X"
   (dinopowers:systematic-debugging). NOT refactoring candidates, "what to
   refactor in X" (explore).
 argument-hint: "[scope — domain, subsystem, or 'whole project']"

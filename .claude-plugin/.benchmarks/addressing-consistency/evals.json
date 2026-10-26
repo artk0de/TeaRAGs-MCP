@@ -118,7 +118,7 @@
     },
     {
       "id": "C12",
-      "prompt": "only a raw collection name",
+      "prompt": "main session, cwd /work/acme; you only hold the raw collection name `code_1a2b3c` from list_collections, project unknown. Search it — addressing of the first call and of any follow-up call?",
       "expected": "collection (then project from marker)",
       "finding": "control",
       "before": "PASS",

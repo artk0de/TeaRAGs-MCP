@@ -12,12 +12,12 @@ description:
   of a search hit, "падает". NOT for code health scanning without bug intent —
   use risk-assessment for that.
 codex-description:
-  Find source of concrete failure — rank buggy (bugFixRate) and fresh code vs
-  symptom. Triggers "debug X", "why Y fails", "test fails", stack trace,
-  "падает", "find bugs in X", "found a bug in X — compare Y", "suspects in X and
-  Y", hit with bugFixRate labels, "read the whole file" / "прочитай весь файл"
-  of a hit, string 'X' in code / "где упоминается строка", "посмотри через git".
-  These beat explore. NOT health scan (risk-assessment).
+  Find failure source — rank buggy (bugFixRate) + fresh code vs symptom.
+  Triggers "debug X", "why Y fails", "test fails", stack trace, "падает", "find
+  bugs in X", "found a bug in X — compare Y", "suspects in X and Y", hit with
+  bugFixRate labels, "прочитай весь файл" of a hit, "где в коде строка 'X'",
+  "посмотри через git". Beats explore; symptom + zones to check ("проверь зоны
+  A, B") beats risk-assessment. NOT health scan.
 argument-hint: [bug description or symptom]
 ---
 
@@ -29,6 +29,22 @@ argument-hint: [bug description or symptom]
   refuse — no hunt / search / outline walk, also via `explore`; print both:
   `Full file reads refused. Chunk coordinates exist. Use them. Depth → find_symbol, never Read.`
   `find_symbol(path=<cwd>, symbol=<chunk symbolId>) body (lines <start>–<end>); neighbours: navigation.prev/nextSymbolId`.
+- No failure text, request = a named symbol's body / callers / usages (also
+  mid-investigation, after a hunt) → not a hunt: no step 0, no probes, no
+  symptom question, no reindex (cold index / drift → report it, read on). Each
+  call preceded by its decision-tree line, printed in the answer (prose "I'll
+  use X" ≠ the line):
+  - `consulting decision tree → find_symbol because study known symbol` →
+    `find_symbol(path=<cwd>, symbol=<name>)` body
+  - `consulting decision tree → get_callers because callers of known symbol` →
+    `get_callers(symbolId=<id from find_symbol>)`
+  - codegraph off / callers missed →
+    `consulting decision tree → hybrid_search because exhaustive usage of identifier <name>`
+    → `hybrid_search(path=<cwd>, query=<name>, metaOnly=true)`
+- Probe rows already shown (this Loop's result in hand, next step asked) → no
+  step 0, no re-probe, no symptom question; triage its rows. Row with
+  `treeState` → print, slots filled; that `find_symbol` IS the next call:
+  `<file> <symbolId> treeState:<state> = index's pre-edit copy (text + lines stale) — still the uncommitted suspect; next: find_symbol(path=<cwd>, symbol=<symbolId>) for current code, no re-probe.`
 - Explain / compare a known file ("show / how does it work / compare / read
   it"), even when the prompt says a bug was found there → no hunt, no search;
   also via `explore` the answer prints both lines verbatim, before any plan:
@@ -44,8 +60,9 @@ argument-hint: [bug description or symptom]
   proceed?") → triage and PRESENT now, also via a wrapper: no symptom question,
   no review question, no confirm search, no step 0; print, slots filled:
   `Suspect: <file>:<line> — <class> (prime | secondary | fresh | uncommitted | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
-  SKIP + "check there (anyway)" → print Rule 7's skip line, no drill, also in
-  wrapper handoff.
+  SKIP + "check there (anyway)" → print Rule 7's skip line, no drill (no
+  `find_symbol` / outline / Read of that file), also in wrapper handoff and
+  after an override note.
 - User demands `hybrid_search` on an error string → refuse, run the Loop:
   `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
 - When did an error / code appear in history, git asked ("посмотри через git",
@@ -130,8 +147,8 @@ A plan names these calls; "later" / "not in this run" never drops one.
    outline / prev-next id), never Read of a code file. "Read the whole file" →
    Routing row 1, both lines. Row with `treeState` = index's PRE-EDIT copy
    (text + lines stale) — say so; it stays the **uncommitted suspect**, no
-   symptom needed: `healthy` history never clears uncommitted code. Next
-   `find_symbol(path=<cwd>, symbol=<id>)`.
+   symptom needed: `healthy` history never clears uncommitted code. Next call =
+   `find_symbol(path=<cwd>, symbol=<id>)` — never a re-run of probes a/b/c.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
    first, never `get_callers`; the plan prints three lines, frame ids filled:
@@ -220,7 +237,8 @@ No `## Signal thresholds` above → read
 
 3. ONLY IF checkpoint incomplete — ONE action for what's missing:
    - Symptom names entry point or failure site → Call path (below).
-   - Otherwise `tea-rags://guide/decision-tree` for tool selection.
+   - Otherwise `tea-rags://guide/decision-tree` for tool selection; before
+     each call print `consulting decision tree → <tool> because <branch>`.
    Go to step 2.
 ```
 

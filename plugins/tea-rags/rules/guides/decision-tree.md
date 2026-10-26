@@ -5,11 +5,14 @@
 **Semantic First, Exact Second.** Code search starts with tea-rags
 (semantic_search, hybrid_search, find_symbol, find_similar). Text search — your
 client's literal search tool (Grep, `rg`, a ripgrep MCP: whichever it has) —
-only for literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or
-fallback when tea-rags unavailable. Code identifiers (class/method/constant
-names) are SYMBOL searches — use hybrid_search (BM25 = exact-name match, score
-up to 1.0) or find_symbol, NEVER text search, even if query has `|` alternation.
-Glob — never for code discovery.
+only for non-identifier text (regex syntax, TODO/FIXME/HACK/NOTE markers,
+phrases, error strings, import path strings), or fallback when tea-rags
+unavailable; `rg -n 'TODO|FIXME'` (in `rg`, `-E` is `--encoding`). Then the
+hit's enclosing symbol → find_symbol, never Read/cat. Code identifiers
+(class/method/constant names) are SYMBOL searches — use hybrid_search (BM25 =
+exact-name match, score up to 1.0) or find_symbol, NEVER text search, even if
+query has `|` alternation or the user calls the name a "pattern"/"glob". Glob —
+never for code discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for code.
 
@@ -207,7 +210,15 @@ working directory as `path`; the hook supplies the repository's `project` alias
   diff → review_changes `naming` (never hand-list a diff's names)
 - **hybrid_search / search_code for TODO/FIXME/HACK markers** — use text search
   (`rg` / client Grep); no tea-rags tool serves literal markers
-- **git log/diff for code history** — overlay already has git signals
+- **git log/blame/`-S`/show for code history** ("when did X appear", "посмотри
+  через git") — overlay already has git signals:
+  `semantic_search(query: <X>, rerank: "bugHunt")` (ageDays, commitCount,
+  taskIds)
+- **Curiosity search** — file or id already known → find_symbol, never another
+  search
+- **Read for "whole file" / "весь файл" / "for context"** — find_symbol (the
+  hit's symbolId, then file outline); `Read` only on an explicit manual-read
+  order ("by hand" / "руками" / "вручную" / "with Read"), no confirmation asked
 - **10+ text-search calls instead of reading a file** — just read it
 - **search_code directly** — ONLY used through /tea-rags:explore skill for
   user-facing exploration. Agents and subagents NEVER call search_code directly

@@ -12,9 +12,17 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
-- file path / doc TOC → `find_symbol(relativePath:)`
-- regex / literal TODO/phrase, even "every …" → `rg`/Grep only — no tea-rags
-  seed or fallback; command output → `<cmd> 2>&1 | grep -E '…'`
+- file path / doc TOC → `find_symbol(relativePath:)`; user's manual-read order →
+  `Read` (Invariants)
+- code history — when did X appear/change, "посмотри через git" → never
+  `git log`/`blame`/`-S`/`show`:
+  `semantic_search(query: <X>, rerank: "bugHunt")` — overlay carries `ageDays`,
+  `commitCount`, `taskIds`
+- non-identifier text — regex syntax, TODO/FIXME, phrase, error string, even
+  "every …" → `rg -n 'TODO|FIXME'` (no `-E`)/Grep only, no tea-rags seed or
+  fallback; hit → `find_symbol` on its enclosing symbol. A code name, even
+  called a "pattern"/"glob", is a symbol (→ `hybrid_search`, not `rg --files`).
+  Command output → `<cmd> 2>&1 | grep -E '…'`
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`
@@ -31,8 +39,9 @@ diff's → `review_changes` verdicts, nothing after.
 **Invariants.**
 
 - Never `Read` after `find_symbol` — method = full body; outline
-  (class/file/doc) → drill `find_symbol(symbol: <id>)`. After a search:
-  `find_symbol` next, not re-search/`Read`.
+  (class/file/doc) → drill `find_symbol(symbol: <id>)`. After a search, or a
+  file/id already known: `find_symbol` next — another search is the "Curiosity
+  search" anti-pattern; never re-search/`Read`.
 - `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
   parts = one hit.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
@@ -55,8 +64,11 @@ diff's → `review_changes` verdicts, nothing after.
   index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
   empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
-- User orders a manual read ("read `x.ts` by hand") → `Read`; their plan, tool
-  idea or "whole file" → keep the rule's tool, say why.
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → `Read`,
+  no confirmation question. "Whole file"/"весь файл"/"целиком"/"for context"
+  without that order → `find_symbol` (the hit's `symbolId`/lines, then file
+  outline), say why, never `Read`. Their plan or tool idea ("use Grep/Glob") →
+  keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

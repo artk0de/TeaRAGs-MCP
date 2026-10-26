@@ -2,17 +2,41 @@
 name: dino-systematic-debugging
 description:
   'Debug concrete failure — $bug-hunt first for ranked suspects. Felt
-  malfunction beats explore and risk-assessment. Triggers "debug X", "fix the
-  bug", "why does Y fail", "test fails", "something feels wrong with X, can''t
-  say what", "same bug elsewhere?", "падает", "почему не работает", "ошибка в",
-  "стектрейс". NOT code review, health scan with no felt malfunction, or named
-  fix at named spot (→ data-driven-generation).'
+  malfunction beats explore and risk-assessment, zones listed too. Triggers
+  "debug X", "fix the bug", "why Y fails", "test fails", "something feels wrong
+  with X, can''t say what", "same bug elsewhere?", "падает", "почему не
+  работает", "стектрейс". NOT code review, health scan, symbol body/callers with
+  no failure, named fix at named spot (→ data-driven-generation).'
 ---
 
 # dinopowers: systematic-debugging
 
 Wrapper over `$systematic-debugging`. Debug loop starts from bug-proneness data
 (`bugFixRate` + churn), not flat search.
+
+## Before the Iron Rule — no symptom question, no bug-hunt re-run
+
+First match wins; these beat every Iron Rule branch below (hypothesis question
+included). Print the line:
+
+- **No failure text, request = a named symbol's body / callers / usages** → not
+  debugging: no bug-hunt, no `git status`, no symptom question, no reindex (cold
+  index / drift → report it, read on). Each call preceded by its line:
+  - `consulting decision tree → find_symbol because study known symbol` →
+    `find_symbol(path=<cwd>, symbol=<name>)`
+  - `consulting decision tree → get_callers because callers of known symbol` →
+    `get_callers(symbolId=<id>)`
+  - codegraph off →
+    `consulting decision tree → hybrid_search because exhaustive usage of identifier <name>`
+    → `hybrid_search(path=<cwd>, query=<name>, metaOnly=true)`
+- **Code history, no failure** ("when did X appear / change", "посмотри через
+  git") → never `git log` / `blame` / `-S` / `show`; print:
+  `git log refused — git history is already in the index signals; answering via semantic_search(query=<X>, rerank="bugHunt"): ageDays / commitCount / taskIds.`
+- **bug-hunt answer already in hand** (probe rows, labels) → no bug-hunt re-run,
+  no step 0, no symptom question; continue in bug-hunt's Routing. Row with
+  `treeState` = index's pre-edit copy, still the uncommitted suspect; next call
+  `find_symbol(path=<cwd>, symbol=<symbolId>)` for current code — never a
+  re-probe.
 
 ## Iron Rule
 
@@ -40,11 +64,14 @@ Step 2: $bug-hunt invoked FIRST, before any read — symptom="<observed failure 
 
 Never bug-hunt as post-hoc validation.
 
-**User insists on a file bug-hunt marked healthy** → do NOT re-run bug-hunt, do
-NOT silently promote the file. Surface the verdict ("bug-hunt: <file> healthy,
-bugFixRate <X>") + "you are overriding a calibrated prior". User still insists →
-note the override in the hypothesis block, proceed with `$systematic-debugging`
-on that file.
+**User insists / "check there" on a file bug-hunt marked healthy (SKIP)** → do
+NOT re-run bug-hunt, do NOT drill it (no `find_symbol` / outline / Read of that
+file, now or in Step 4). Print both:
+`<file>: healthy, old, not fresh, no probe hit — neither suspect class, skipping`
+
+- `you are overriding a calibrated prior — override noted, file stays undrilled until new evidence (stack frame, trace step) ties it to the symptom`.
+  Still insists → override note in the hypothesis block; note ≠ new evidence,
+  SKIP holds in the inner cycle.
 
 **Order — state all three, subagents included** (you ARE the subagent → run
 bug-hunt here, never spawn one): (1) `$bug-hunt` with framed symptom → (2) Step
@@ -134,10 +161,12 @@ Step 4: $dino-brainstorming — it prints: area "<named area>" → pathPattern="
 ```
 
 No symptom text (vague "something's off", no error, no failing behaviour, no
-hypothesis — that one gets the Iron Rule question), no check-first row matched →
-no bug-hunt, no search; the plan prints these two lines and invokes the skill
-NOW — asking the user for a symptom without invoking it = workflow skipped (its
-Phase 1 is where the symptom gets gathered):
+hypothesis — that one gets the Iron Rule question), no check-first row matched,
+not a symbol body / callers ask (→ `find_symbol` + `get_callers`, no question)
+nor a code-history ask (→ `semantic_search(query=<X>, rerank="bugHunt")`, never
+`git log` / `blame` / `-S`) → no bug-hunt, no search; the plan prints these two
+lines and invokes the skill NOW — asking the user for a symptom without invoking
+it = workflow skipped (its Phase 1 is where the symptom gets gathered):
 
 ```
 symptom not framed — bug-hunt skipped
@@ -268,8 +297,10 @@ Handoff:
 
 > "Before forming hypotheses, note these bug-hunt priors: …<block>… Start
 > hypothesis space with prime suspects; escalate to secondary only if primes
-> rule out. Root cause confirmed → report as Cause / Fix / Prevention block
-> (wrapper Step 5), Prevention driven by suspect overlay signals.
+> rule out. SKIP rows stay undrilled — a user override note is not new evidence;
+> drill one only when a stack frame / trace step ties it to the symptom. Root
+> cause confirmed → report as Cause / Fix / Prevention block (wrapper Step 5),
+> Prevention driven by suspect overlay signals.
 >
 > Chaining rule reminder: when you (the inner skill) would next invoke
 > `$test-driven-development` or `$verification-before-completion` (or any
@@ -282,8 +313,10 @@ not replaces.
 **Follow-up searches in cycle** (callers, definition, where X happens — also
 asked as "which tools, how do you state the choice"): pick tool from
 `tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE line per
-call, printed right before it — N calls → N lines, also for a `find_symbol` on a
-symbol whose name the user gave:
+call, printed in the answer right before it — N calls → N lines, also for a
+`find_symbol` on a symbol whose name the user gave, also in a plan with no call
+run. Prose stating the choice ("I'll fetch it with find_symbol") ≠ the line —
+the line is the stated choice. Template, slots filled:
 
 ```
 consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>
@@ -325,14 +358,14 @@ no other query, no custom re-rank.
 
 **Signal → Prevention** (every fired row = ≥1 Prevention line citing it):
 
-| Overlay signal (label)                                                                                          | Prevention it demands                                                                                |
-| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `bugFixRate` `critical` / `concerning`                                                                          | Regression test locking the now-fixed invariant BY NAME — this zone re-breaks; test is the lock      |
-| `blameDominantAuthorPct` `silo` / `deep-silo`                                                                   | Knowledge transfer, not only patch: owner reviews fix / pairing on area; record invariant where read |
-| `churnVolatility` `erratic`                                                                                     | Freeze surface: extract interface / narrow contract so next change stops fanning out                 |
-| file `fanIn` `popular`/`hub`, chunk `fanIn` `frequent`/`central`, `transitiveImpact` `systemic`, high `imports` | Defensive validation at coupling point + integration test through call chain (entry → fixed symbol)  |
-| `ageDays` `recent` (chunk)                                                                                      | Review introducing commit(s) (`taskIds`) — same change may have planted siblings; name the commit    |
-| no label fired / signals absent                                                                                 | Prevention from mechanism only (assertion / type / test) — say `no overlay signal fired`             |
+| Overlay signal (label)                                                                                          | Prevention it demands                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `bugFixRate` `critical` / `concerning`                                                                          | Regression test locking the now-fixed invariant BY NAME — this zone re-breaks; test is the lock                         |
+| `blameDominantAuthorPct` `silo` / `deep-silo`                                                                   | Knowledge transfer, not only patch: owner reviews fix / pairing on area; record invariant where read                    |
+| `churnVolatility` `erratic`                                                                                     | Freeze surface: extract interface / narrow contract so next change stops fanning out                                    |
+| file `fanIn` `popular`/`hub`, chunk `fanIn` `frequent`/`central`, `transitiveImpact` `systemic`, high `imports` | TWO bullets: (1) defensive validation at coupling point; (2) integration test through call chain (entry → fixed symbol) |
+| `ageDays` `recent` (chunk)                                                                                      | Review introducing commit(s) (`taskIds`) — same change may have planted siblings; name the commit                       |
+| no label fired / signals absent                                                                                 | Prevention from mechanism only (assertion / type / test) — say `no overlay signal fired`                                |
 
 Rules:
 
@@ -341,6 +374,11 @@ Rules:
 - **Every line cites source** — Cause `signals:` + each Prevention bullet names
   `<level>.<signal>=<label>` or `mechanism`. Uncited → rewrite.
 - **Regression test always present** — one bullet: test file + assertion.
+- **Coupling row fired** (`hub` / `popular` / `central` / `systemic` / high
+  `imports`) → two separate bullets, both citing it; integration test alone =
+  FAIL:
+  `- defensive validation at <coupling-point symbol> (<file>:<line>): reject <bad input / state> before it fans out to dependents — because <level>.fanIn=<label>`
+  `- integration test <test file>: drives <entry> → <fixed symbol>, asserts <invariant> — because <level>.fanIn=<label>`
 - Concrete + actionable. "Be careful", "add more tests", "monitor" = invalid.
 
 ## Red Flags — STOP and restart from Step 2

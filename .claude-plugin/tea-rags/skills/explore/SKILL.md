@@ -313,8 +313,11 @@ Three calls, axis = filter param (never `language` as axis proxy):
 
 1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
 2. tests — `testFile: "only"` (expected behavior)
-3. docs — `documentation: "only"` (hypothesis; conflict → answer gives the code
-   value + names the drifted doc)
+3. docs — `documentation: "only"` (hypothesis, never sole evidence). Doc claim
+   (number, limit, default) → verify in source (`documentation:"exclude"` +
+   `find_symbol`), then answer carries this line, copied:
+   `Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
+   (match → `Doc matches code at <file:line>.`)
 
 Point question about tests ("is X tested?", "tests covering `<file>`") → ONE
 call, no split, no Glob:

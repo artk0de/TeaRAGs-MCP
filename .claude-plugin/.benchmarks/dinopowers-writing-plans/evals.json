@@ -31,7 +31,7 @@
     {
       "id": "eval-1",
       "category": "core-rule",
-      "prompt": "Напиши план рефакторинга: надо вынести типы из src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts в отдельный файл и обновить src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts + src/core/domains/ingest/pipeline/chunker/base.ts.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Напиши план рефакторинга: надо вынести типы из src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts в отдельный файл и обновить src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts + src/core/domains/ingest/pipeline/chunker/base.ts.",
       "expected": {
         "mustCall": [
           "ONE mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), metaOnly=true, brace-expanded pathPattern over 3 files",
@@ -73,7 +73,7 @@
     {
       "id": "eval-4",
       "category": "tool-selection",
-      "prompt": "Распиши план изменения src/core/domains/explore/rerank/reranker.ts и src/core/contracts/rerank.ts — нужен impact analysis.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Распиши план изменения src/core/domains/explore/rerank/reranker.ts и src/core/contracts/rerank.ts — нужен impact analysis.",
       "expected": {
         "mustCall": [
           "mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
@@ -140,7 +140,7 @@
       "id": "eval-8",
       "category": "ordering",
       "subagent": "plan-executor",
-      "prompt": "[subagent: plan-executor] Execute plan step: 'Draft sub-plan for splitting TreeSitterChunker#chunk — files: tree-sitter-chunker.ts, markdown-chunker.ts, base.ts.'",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] [subagent: plan-executor] Execute plan step: 'Draft sub-plan for splitting TreeSitterChunker#chunk — files: tree-sitter-chunker.ts, markdown-chunker.ts, base.ts.'",
       "expected": {
         "ordering": [
           "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) FIRST (one call, brace-expanded)",
@@ -178,7 +178,7 @@
       "id": "eval-11",
       "category": "subagent-routing",
       "subagent": "explore",
-      "prompt": "[subagent: explore] Draft a plan to add a new DTO: src/core/api/public/dto/signal-overlay.ts + update src/core/api/public/dto/index.ts and src/core/domains/explore/types.ts.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] [subagent: explore] Draft a plan to add a new DTO: src/core/api/public/dto/signal-overlay.ts + update src/core/api/public/dto/index.ts and src/core/domains/explore/types.ts.",
       "expected": {
         "mustCall": [
           "ONE semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) and brace-expanded pathPattern FIRST",

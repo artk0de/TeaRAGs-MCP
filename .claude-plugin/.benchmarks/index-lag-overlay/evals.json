@@ -37,8 +37,8 @@
   "eval_cases": [
     {
       "id": "E1",
-      "context": "main, own checkout, dinopowers:brainstorming",
-      "prompt": "MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] on first answers; read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
+      "context": "main, own checkout, dinopowers:brainstorming, first tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
+      "prompt": "read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
       "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol / hybrid_search metaOnly; NOT Bash cat/grep, rg, Read",
       "audit_finding": "A1,A2,A3,A4",
       "results": {
@@ -121,8 +121,8 @@
     },
     {
       "id": "E7",
-      "context": "main, dinopowers:test-driven-development Step 2",
-      "prompt": "test conventions with MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
+      "context": "main, dinopowers:test-driven-development Step 2, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
+      "prompt": "test conventions",
       "expected": "incremental + ask --force + tests-as-context / semantic_search test chunks; NOT ls/cat specs",
       "audit_finding": "A1,A4",
       "results": {
@@ -135,8 +135,8 @@
     },
     {
       "id": "E8",
-      "context": "subagent: task-agent",
-      "prompt": "MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]; body of oauth_redirect? + callers",
+      "context": "subagent: task-agent, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
+      "prompt": "body of oauth_redirect? + callers",
       "expected": "find_symbol + get_callers/hybrid_search; never reindex; drift remedy to parent",
       "audit_finding": "A2,A4",
       "results": {
@@ -177,8 +177,8 @@
     },
     {
       "id": "E11",
-      "context": "control",
-      "prompt": "DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"], changedFiles 0 — run --force?",
+      "context": "control, prime shows DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"], changedFiles 0",
+      "prompt": "run --force?",
       "expected": "no; ask consent, keep working",
       "audit_finding": "control",
       "results": {
