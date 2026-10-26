@@ -38,9 +38,9 @@ options: [
 Confirmed → re-run `$SCRIPTS/install-node.sh <chosenManager>` (manager now
 available → installs Node).
 
-**"Direct install"** → platform instructions from `reference.md` "Direct
-Node.js Install" table. Confirmed → re-run detect-environment.sh for new paths,
-verify version >= 24.
+**"Direct install"** → platform instructions from `reference.md` "Direct Node.js
+Install" table. Confirmed → re-run detect-environment.sh for new paths, verify
+version >= 24.
 
 **"Already installed"** → re-run detect-environment.sh, verify version >= 24.
 

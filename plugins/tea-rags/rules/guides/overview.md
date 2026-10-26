@@ -21,6 +21,7 @@ result or none: a plain list of records): one row per result, cell i belongs to 
 `payload.relativePath`, `rankingOverlay.chunk.bugFixRate.label`; null = absent. Text tools
 (graph, review_changes, …) are compact JSON where every array of 2+ records is the same
 table. Read "the symbolId of result 3" as column `payload.symbolId` of row 3.
+Search rows: `imports` = count (includeImports=true → lists); all-null columns omitted; floats at 2 significant digits.
 
 ## Observability hooks
 - get_index_status → `infraHealth`: qdrant url/status/optimizer, embedding

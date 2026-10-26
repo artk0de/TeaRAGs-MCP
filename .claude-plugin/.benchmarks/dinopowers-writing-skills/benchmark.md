@@ -104,24 +104,43 @@ contract).
 - Last recorded rate: 12/12 (100%)
 - Delta: 0pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
 - Result: 2/12 PASS (17%) over graded cases (N/A excluded: 0).
 - Claude T12 for comparison: 12/12 (100%).
 - CODEX-ONLY (harness regression candidates):
-  - `eval-1` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-2` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-3` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-4` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-6` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-11` — no semantic_search pathPattern='**/SKILL.md' pattern-discovery step before $writing-skills (wrapper body not applied; eval-1 reports the skill read blocked) [skill not read / model behaviour]
-  - `eval-5` — empty-index edge: proposes hybrid_search fallback, no 'no SKILL.md corpus indexed' report [model behaviour]
-  - `eval-7` — complies partially: refuses skip but uses hybrid_search instead of semantic_search [model behaviour]
-  - `eval-8` — complies with the wrong-tool request (hybrid_search) [model behaviour]
-  - `eval-12` — complies with rerank=techDebt for skill discovery [model behaviour]
+  - `eval-1` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-2` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-3` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-4` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-6` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-11` — no semantic_search pathPattern='\*\*/SKILL.md' pattern-discovery
+    step before $writing-skills (wrapper body not applied; eval-1 reports the
+    skill read blocked) [skill not read / model behaviour]
+  - `eval-5` — empty-index edge: proposes hybrid_search fallback, no 'no
+    SKILL.md corpus indexed' report [model behaviour]
+  - `eval-7` — complies partially: refuses skip but uses hybrid_search instead
+    of semantic_search [model behaviour]
+  - `eval-8` — complies with the wrong-tool request (hybrid_search) [model
+    behaviour]
+  - `eval-12` — complies with rerank=techDebt for skill discovery [model
+    behaviour]
 - Both-fail count: 0.
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
@@ -132,11 +151,14 @@ contract).
 - Delta: +0pp
 - FAIL:
   - none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
+  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
+  (plan-only)
 - Result: 12/12 PASS (100%) over 12 graded cases (N/A 0)
 - Codex T14 for comparison: 2/12 (17%)
 - Claude T22 for comparison: 12/12 (100%)

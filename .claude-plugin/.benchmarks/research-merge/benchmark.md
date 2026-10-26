@@ -110,15 +110,22 @@ skill boundary collisions and reduced total line count by 36%.
 - Result: 15/15 PASS (100%)
 - Last recorded rate: 100% (15/15 after_fix)
 - FAIL list: none
-- Notes: Cases 2/3 (ownership / recent changes) were planned as direct semantic_search/rank_chunks rerank=ownership|recent without invoking tea-rags:explore (graded PASS on behaviour: right preset, no git blame/log); the eval expected the explore flow. Delta 0pp.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Notes: Cases 2/3 (ownership / recent changes) were planned as direct
+  semantic_search/rank_chunks rerank=ownership|recent without invoking
+  tea-rags:explore (graded PASS on behaviour: right preset, no git blame/log);
+  the eval expected the explore flow. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace,
+  real hooks (plan-only)
 - Result: 14/15 PASS (93%) over graded cases (N/A excluded: 0)
 - Claude T12 rate for comparison: 15/15 (100%)
-- CODEX-ONLY: case 9 (routes 'research error-handling patterns before adding an error type' to EXEMPLAR/proven pattern search instead of PRE-GEN flow with find_symbol deep trace - model routing behaviour)
+- CODEX-ONLY: case 9 (routes 'research error-handling patterns before adding an
+  error type' to EXEMPLAR/proven pattern search instead of PRE-GEN flow with
+  find_symbol deep trace - model routing behaviour)
 - Both-fail count: 0
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
@@ -127,21 +134,36 @@ skill boundary collisions and reduced total line count by 36%.
 - Result: 13/15 PASS (87%) over scored cases (superseded: 0)
 - Task 12 rate: 100%
 - Delta: -13pp
-- FAIL list: 2 (ownership question answered via semantic_search rerank=ownership, not rank_chunks; explain-pattern.md ownership recipe not read); 15 (post-brainstorming 'implement' routed to data-driven-generation only; explore PRE-GEN before implementation is conditional ('if DDG finds none'), not planned (borderline -> FAIL))
-- Notes: Cases 1 (no risk-assessment delegation) graded on intent: pre-gen-pattern.md no longer delegates.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- FAIL list: 2 (ownership question answered via semantic_search
+  rerank=ownership, not rank_chunks; explain-pattern.md ownership recipe not
+  read); 15 (post-brainstorming 'implement' routed to data-driven-generation
+  only; explore PRE-GEN before implementation is conditional ('if DDG finds
+  none'), not planned (borderline -> FAIL))
+- Notes: Cases 1 (no risk-assessment delegation) graded on intent:
+  pre-gen-pattern.md no longer delegates.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags
+  0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block),
+  AGENTS.md = core.
 - Result: 10/15 PASS (67%) over graded cases (N/A excluded: 0).
 - Codex T14: 14/15 (93%). Claude T22: 13/15 (87%).
 - FAIL list:
-  - `1` — FAIL (stale?); new: PRE-GEN route correct but no risk-assessment delegation and no metaOnly=true DISCOVER; Claude T22 noted pre-gen-pattern.md no longer delegates, graded PASS on intent
-  - `2` — FAIL; new: Routes to TRACE and uses semantic_search rerank=ownership, not rank_chunks ownership (EXPLAIN recipe not read). Claude T22 FAIL
-  - `4` — FAIL; new: "before I modify" classed as EXPLAIN, not PRE-GEN. Claude T22 PASS
-  - `8` — FAIL; new: PRE-GEN route correct, Russian handled, but DISCOVER search not metaOnly=true. Claude T22 PASS
-  - `9` — FAIL; still (T14 FAIL): EXEMPLAR route instead of PRE-GEN with find_symbol on 1-2 base error classes. Claude T22 PASS
+  - `1` — FAIL (stale?); new: PRE-GEN route correct but no risk-assessment
+    delegation and no metaOnly=true DISCOVER; Claude T22 noted
+    pre-gen-pattern.md no longer delegates, graded PASS on intent
+  - `2` — FAIL; new: Routes to TRACE and uses semantic_search rerank=ownership,
+    not rank_chunks ownership (EXPLAIN recipe not read). Claude T22 FAIL
+  - `4` — FAIL; new: "before I modify" classed as EXPLAIN, not PRE-GEN. Claude
+    T22 PASS
+  - `8` — FAIL; new: PRE-GEN route correct, Russian handled, but DISCOVER search
+    not metaOnly=true. Claude T22 PASS
+  - `9` — FAIL; still (T14 FAIL): EXEMPLAR route instead of PRE-GEN with
+    find_symbol on 1-2 base error classes. Claude T22 PASS
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
@@ -150,53 +172,85 @@ skill boundary collisions and reduced total line count by 36%.
 - Baseline (round 1): 13/15 (87%)
 - Delta: +0pp (case 2 fixed: rank_chunks rerank=ownership; case 3 newly failing)
 - FAIL list:
-  - 3 — rank_chunks rerank=codeReview with pathPattern but no `maxAgeDays=14`; explore SKILL.md "## Change intent" omits the window (it lives only in references/explain-pattern.md, which the subject did not open for this case)
-  - 15 — DDG named as the entry, but TDD planned as a separate dinopowers:test-driven-development phase "per CLAUDE.md"; no DDG Step 6a RED via tea-rags:test-first before production edits. The SessionStart routing table lists DDG and the TDD wrapper as peer rows with nothing saying DDG owns RED/GREEN (Step 6); the real user CLAUDE.md TDD mandate also leaked in (harness limitation).
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - 3 — rank_chunks rerank=codeReview with pathPattern but no `maxAgeDays=14`;
+    explore SKILL.md "## Change intent" omits the window (it lives only in
+    references/explain-pattern.md, which the subject did not open for this case)
+  - 15 — DDG named as the entry, but TDD planned as a separate
+    dinopowers:test-driven-development phase "per CLAUDE.md"; no DDG Step 6a RED
+    via tea-rags:test-first before production edits. The SessionStart routing
+    table lists DDG and the TDD wrapper as peer rows with nothing saying DDG
+    owns RED/GREEN (Step 6); the real user CLAUDE.md TDD mandate also leaked in
+    (harness limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 4/15 PASS (26.7%) (N/A excluded: 0).
 - Round-1 Codex: 10/15 (66.7%). Delta: -40.0 pp.
 - FAIL list:
-  - `1` — generic $explore research; PRE-GEN not named, DISCOVER not metaOnly, no PG-2 find_symbol rerank=techDebt risk signals
+  - `1` — generic $explore research; PRE-GEN not named, DISCOVER not metaOnly,
+    no PG-2 find_symbol rerank=techDebt risk signals
   - `2` — semantic_search rerank=ownership, not rank_chunks ownership
   - `3` — semantic_search rerank=recent, not rank_chunks codeReview
-  - `4` — 'before I modify' not classified PRE-GEN; Explore-style hook-flow explanation
+  - `4` — 'before I modify' not classified PRE-GEN; Explore-style hook-flow
+    explanation
   - `7` — routes to $dino-brainstorming instead of explore PRE-GEN
   - `8` — Explore route, PRE-GEN not named, DISCOVER not metaOnly=true
-  - `9` — not PRE-GEN; find_symbol on examples AND their callers (traces call chains), not limited to 1-2 base error classes
-  - `11` — DDG runs its own semantic_search; never detects missing area context nor auto-invokes explore PRE-GEN
-  - `12` — routes to $dino-executing-plans + DDG cascade, not self-contained explore PRE-GEN
-  - `13` — explore + risk-assessment; 'before I change' not detected as PRE-GEN (skill: risks of one named change -> PRE-GEN PG-2)
-  - `15` — DDG entry, but no explore PRE-GEN prerequisite and no Step 6a RED via test-first before production edit
+  - `9` — not PRE-GEN; find_symbol on examples AND their callers (traces call
+    chains), not limited to 1-2 base error classes
+  - `11` — DDG runs its own semantic_search; never detects missing area context
+    nor auto-invokes explore PRE-GEN
+  - `12` — routes to $dino-executing-plans + DDG cascade, not self-contained
+    explore PRE-GEN
+  - `13` — explore + risk-assessment; 'before I change' not detected as PRE-GEN
+    (skill: risks of one named change -> PRE-GEN PG-2)
+  - `15` — DDG entry, but no explore PRE-GEN prerequisite and no Step 6a RED via
+    test-first before production edit
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no
+  per-case length cap)
 - Result: 15/15 PASS (100%) over scored cases (superseded: 0)
 - Baseline (round 2): 13/15 (87%)
-- Delta: +13pp (case 3 fixed: rank_chunks codeReview now carries maxAgeDays=14; case 15 fixed: DDG is the entry, explore PRE-GEN on "area context missing", Step 6a RED via tea-rags:test-first before 6b GREEN, no separate TDD phase)
+- Delta: +13pp (case 3 fixed: rank_chunks codeReview now carries maxAgeDays=14;
+  case 15 fixed: DDG is the entry, explore PRE-GEN on "area context missing",
+  Step 6a RED via tea-rags:test-first before 6b GREEN, no separate TDD phase)
 - FAIL list: none
-- Notes: case 14 (subagent, no skill access) graded PASS on the expected_output's "use MCP tools directly" branch: subject named the missing skill access, applied the SubagentStart rules directly and reported to the parent; it did not separately suggest that the parent inject context.
-- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+- Notes: case 14 (subagent, no skill access) graded PASS on the
+  expected_output's "use MCP tools directly" branch: subject named the missing
+  skill access, applied the SubagentStart rules directly and reported to the
+  parent; it did not separately suggest that the parent inject context.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12
+  / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 12/15 PASS (80.0%) (N/A excluded: 0).
 - Round-2 Codex: 4/15 (26.7%). Delta: +53.3 pp.
 - FAIL list:
-  - `8` — PRE-GEN + metaOnly OK, but "Keep the query in Russian" — no translation to English
-  - `11` — "don't restart or replace it with $explore" — DDG runs own semantic_search; no missing-context detection / explore PRE-GEN auto-invoke
-  - `15` — DDG entry + test-first before impl, but no explore PRE-GEN context step and no recorded RED gate before production edit
+  - `8` — PRE-GEN + metaOnly OK, but "Keep the query in Russian" — no
+    translation to English
+  - `11` — "don't restart or replace it with $explore" — DDG runs own
+    semantic_search; no missing-context detection / explore PRE-GEN auto-invoke
+  - `15` — DDG entry + test-first before impl, but no explore PRE-GEN context
+    step and no recorded RED gate before production edit
 
 ## 2026-10-23 — Codex re-run round 4 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
 - Result: 13/15 PASS (86.7%) (N/A excluded: 0).
 - Round-3 Codex: 12/15 (80.0%). Delta: +6.7 pp.
 - FAIL list:
-  - `8` — Russian query used as primary — not translated to English (English only "if corpus primarily English")
-  - `15` — explore -> DDG strategy/template OK, but Step 6a RED via tea-rags:test-first / "no production edit before recorded RED" not stated
+  - `8` — Russian query used as primary — not translated to English (English
+    only "if corpus primarily English")
+  - `15` — explore -> DDG strategy/template OK, but Step 6a RED via
+    tea-rags:test-first / "no production edit before recorded RED" not stated

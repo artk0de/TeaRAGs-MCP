@@ -26,10 +26,7 @@ describe("release regenerates the generated packages", () => {
   it("runs npm run gen:plugins in the exec prepare step, after the changelog", () => {
     const { prepareCmd } = pluginConfig("@semantic-release/exec") as { prepareCmd: string };
 
-    expect(prepareCmd.split(" && ").slice(0, 2)).toEqual([
-      "bash scripts/prepare-changelog.sh",
-      "npm run gen:plugins",
-    ]);
+    expect(prepareCmd.split(" && ").slice(0, 2)).toEqual(["bash scripts/prepare-changelog.sh", "npm run gen:plugins"]);
   });
 
   it("commits every generated path with the release", () => {

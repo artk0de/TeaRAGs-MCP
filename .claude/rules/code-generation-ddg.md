@@ -29,12 +29,12 @@ still runs before the commit and its findings are repaired.
 - DDG Step 7 (VERIFY) is a gate, not optional. `review_changes` runs before
   every commit and acts on the findings: introduced architecture findings are
   repaired (the per-family procedure lives in
-  `plugins/tea-rags/repair/<family>.md`, loaded only for a family that
-  has a finding), pre-existing ones are repaired only when cheap, false
-  positives are accepted only with evidence (a detector flag or a cited rule)
-  plus a filed detector bead. A PARTIAL review is not a pass. After two repair
-  rounds with introduced findings left, stop and ask the user — never commit
-  around them. The hand-back quotes the gate line
+  `plugins/tea-rags/repair/<family>.md`, loaded only for a family that has a
+  finding), pre-existing ones are repaired only when cheap, false positives are
+  accepted only with evidence (a detector flag or a cited rule) plus a filed
+  detector bead. A PARTIAL review is not a pass. After two repair rounds with
+  introduced findings left, stop and ask the user — never commit around them.
+  The hand-back quotes the gate line
   (`GATE review_changes: introduced=0, partial=false`); no gate line, task not
   done.
 - Inside this repo, run `review_changes` (and the pre-write

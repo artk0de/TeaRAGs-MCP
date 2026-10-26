@@ -52,26 +52,38 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - Subject model: sonnet
 - Result: 11/12 PASS (92%)
 - Last recorded rate: 100% (12/12 after-fix, 2026-10-21; opus arm)
-- FAIL list: C12 - subject searched with path alone and used the raw collection only as a fallback; expected collection first (project from marker). Cause: core.md addressing paragraph has no collection row; it lives only in guides/freshness.md:20, not read.
-- Notes: Artifact mapped to core.md addressing paragraph + guides/freshness.md. Delta -8pp. Subject was sonnet (original used opus).
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- FAIL list: C12 - subject searched with path alone and used the raw collection
+  only as a fallback; expected collection first (project from marker). Cause:
+  core.md addressing paragraph has no collection row; it lives only in
+  guides/freshness.md:20, not read.
+- Notes: Artifact mapped to core.md addressing paragraph + guides/freshness.md.
+  Delta -8pp. Subject was sonnet (original used opus).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace,
+  real hooks (plan-only)
 - Result: 10/12 PASS (83%) over graded cases (N/A excluded: 0)
 - Claude T12 rate for comparison: 11/12 (92%)
-- CODEX-ONLY: C9 (index_codebase told to omit path for unregistered repo; core 'project only' over-generalised - model behaviour), C10 (asks user for path instead of project-only addressing - model behaviour)
+- CODEX-ONLY: C9 (index_codebase told to omit path for unregistered repo; core
+  'project only' over-generalised - model behaviour), C10 (asks user for path
+  instead of project-only addressing - model behaviour)
 - Both-fail count: 0
 
 ## 2026-10-23 — Cursor run (Task 15)
 
-- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no superpowers, no subagentStart injection.
-- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins
+  from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no
+  superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45
+  parts.
 - Result: 11/12 PASS (92%) over graded cases (N/A excluded: 0).
 - Claude T12 for comparison: 11/12 (92%).
 - Codex T14 for comparison: 10/12 (83%).
-- FAIL: C10 (asks user for path instead of project-only addressing; vs-claude, Codex also failed).
+- FAIL: C10 (asks user for path instead of project-only addressing; vs-claude,
+  Codex also failed).
 - CURSOR-ONLY: none.
 - Both-fail count (all): 0.
 
@@ -82,28 +94,36 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - Task 12 rate: 11/12 (92%)
 - Delta: +8pp
 - FAIL list: none - notes: (C12 now collection-first; fixed)
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
+  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
+  (plan-only)
 - Result: 11/12 PASS (92%) over 12 graded cases (N/A 0)
 - Codex T14 for comparison: 10/12 (83%)
 - Claude T22 for comparison: 12/12 (100%)
 - FAIL list:
-  - ` C10 ` — FAIL ( still; Claude T22 PASS ) asks caller for repo path instead of project-only addressing (model behaviour) 
+  - `C10` — FAIL ( still; Claude T22 PASS ) asks caller for repo path instead of
+    project-only addressing (model behaviour)
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; full cases.md scenarios given to the subject)
+- Subject model: sonnet (plan-only simulation, blind; full cases.md scenarios
+  given to the subject)
 - Result: 12/12 PASS (100%) over 12 scored cases (superseded: 0)
 - Baseline (round 1): 12/12 (100%)
 - Delta: +0pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 12/12 PASS (100%) (N/A excluded: 0).
 - Round-1 Codex: 11/12 (91.7%). Delta: +8.3 pp.
 - FAIL list: none.

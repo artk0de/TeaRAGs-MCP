@@ -240,164 +240,294 @@ boundary against regression rather than measuring a delta.
 - Last recorded with-skill rate: 100%
 - Delta: -7pp
 - FAIL:
-  - `eval-6` — delegates to extract-project-patterns, never states the exact custom weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05} | STALE
-  - `eval-11` — no identifier verification (find_symbol per identifier + ripgrep imports, 0 results = hallucination); uses Step 7 VERIFY/gate instead | STALE
-  - `eval-12` — primary path is rerank=blastRadius preset; exact custom {imports:0.5,churn:0.3,ownership:0.2} only as codegraph-off fallback | STALE
-  - `eval-14` — does not skip TEMPLATE/STYLE for greenfield; runs extract-project-patterns on the nonexistent dir (cascading to L2/L3) | STALE
-  - `naming-review-before-commit` — plan never says to report review.findings grouped by verdict with relPath:line plus review.conforming/novel counts (only the gate line and ad-hoc per-name notes); everything else met | STALE
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - `eval-6` — delegates to extract-project-patterns, never states the exact
+    custom weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15,
+    ownership:-0.05} | STALE
+  - `eval-11` — no identifier verification (find_symbol per identifier + ripgrep
+    imports, 0 results = hallucination); uses Step 7 VERIFY/gate instead | STALE
+  - `eval-12` — primary path is rerank=blastRadius preset; exact custom
+    {imports:0.5,churn:0.3,ownership:0.2} only as codegraph-off fallback | STALE
+  - `eval-14` — does not skip TEMPLATE/STYLE for greenfield; runs
+    extract-project-patterns on the nonexistent dir (cascading to L2/L3) | STALE
+  - `naming-review-before-commit` — plan never says to report review.findings
+    grouped by verdict with relPath:line plus review.conforming/novel counts
+    (only the gate line and ad-hoc per-name notes); everything else met | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root
+  marketplace, real hooks (SessionStart digest + dinopowers routing,
+  SubagentStart block), AGENTS.md = core
 - Result: 42/67 PASS (63%) over 67 graded cases (N/A: 0)
 - Claude T12 for comparison: 62/67 (93%)
 - Both-fail: 5 (eval-6, eval-11, eval-12, eval-14, naming-review-before-commit)
 - CODEX-ONLY (20):
-  - `eval-4` — CONSERVATIVE hard rule (legacy+low) not applied; reasons labels insufficient, no strategy selected
-  - `eval-5` — no autonomous-judgment decision, no justification by axes, no user question; defers strategy
-  - `eval-15` — no scan of project strategy-* skills / ## When sections; lists only built-in strategies
-  - `naming-type-misfit` — get_naming_lexicon call omits types[TaxAutomationDocument] and finder rename (find_tax_automation_document!); only local rename
-  - `naming-camelcase-language` — picks graphDbClient instead of dominant TAIL param name `client`
-  - `naming-modify-scope` — no Step 7 VERIFY, no strategy/blame skip stated, lexicon call without types/anchors; adds a clarifying question
-  - `verify-symbol-risk` — no find_symbol rerank=criticalPath on called symbols, no defensive-call/test-pin check, no N-th-way find_similar; uses get_callers
-  - `verify-central-modified` — get_callers present but no tests-at-risk for the MODIFY
-  - `naming-type-draft` — class draft never passed as {name,kind:type,path,extends}; names the class from neighbours, no MISFIT suggestion
-  - `step7-fix-remedy-applied` — routes to verification wrapper; no repair/leakingAbstraction.md load, no sections list, no targeted tests step
-  - `step7-fix-preexisting-remedy` — skips the cheap pre-existing fix although a remedy is present (explicit mustNotDo)
-  - `step7-fix-preexisting-report` — no bead suggestion for the pre-existing finding
-  - `step7-fix-round-reverted` — stacks a cycle repair on the regressed round instead of reverting round 1
-  - `step7-fix-cohesion-own-vs-preexisting` — no repair/splitCandidates.md, does not move own cluster A, no bead for cluster B
-  - `step7-fix-stacked-base-unevidenced-acceptance` — reviews against "the supplied base" instead of re-basing on git merge-base HEAD main
-  - `tdd-red-before-code` — test-first not invoked; does not state running tests to record red for the right reason
-  - `tdd-refactor-baseline` — moves helper first; no GREEN baseline of tests-at-risk before the move
-  - `tdd-bugfix-repro-first` — no green baseline run of existing formatDuration tests before the repro
-  - `prewrite-sim-new-file-new-component` — plans a pre-write structure/dependency simulation for a new file (should skip, rely on Step 7 gate)
-  - `prewrite-sim-move-files` — moves files blind, no get_architecture_report move hypothesis beforehand
+  - `eval-4` — CONSERVATIVE hard rule (legacy+low) not applied; reasons labels
+    insufficient, no strategy selected
+  - `eval-5` — no autonomous-judgment decision, no justification by axes, no
+    user question; defers strategy
+  - `eval-15` — no scan of project strategy-\* skills / ## When sections; lists
+    only built-in strategies
+  - `naming-type-misfit` — get_naming_lexicon call omits
+    types[TaxAutomationDocument] and finder rename
+    (find_tax_automation_document!); only local rename
+  - `naming-camelcase-language` — picks graphDbClient instead of dominant TAIL
+    param name `client`
+  - `naming-modify-scope` — no Step 7 VERIFY, no strategy/blame skip stated,
+    lexicon call without types/anchors; adds a clarifying question
+  - `verify-symbol-risk` — no find_symbol rerank=criticalPath on called symbols,
+    no defensive-call/test-pin check, no N-th-way find_similar; uses get_callers
+  - `verify-central-modified` — get_callers present but no tests-at-risk for the
+    MODIFY
+  - `naming-type-draft` — class draft never passed as
+    {name,kind:type,path,extends}; names the class from neighbours, no MISFIT
+    suggestion
+  - `step7-fix-remedy-applied` — routes to verification wrapper; no
+    repair/leakingAbstraction.md load, no sections list, no targeted tests step
+  - `step7-fix-preexisting-remedy` — skips the cheap pre-existing fix although a
+    remedy is present (explicit mustNotDo)
+  - `step7-fix-preexisting-report` — no bead suggestion for the pre-existing
+    finding
+  - `step7-fix-round-reverted` — stacks a cycle repair on the regressed round
+    instead of reverting round 1
+  - `step7-fix-cohesion-own-vs-preexisting` — no repair/splitCandidates.md, does
+    not move own cluster A, no bead for cluster B
+  - `step7-fix-stacked-base-unevidenced-acceptance` — reviews against "the
+    supplied base" instead of re-basing on git merge-base HEAD main
+  - `tdd-red-before-code` — test-first not invoked; does not state running tests
+    to record red for the right reason
+  - `tdd-refactor-baseline` — moves helper first; no GREEN baseline of
+    tests-at-risk before the move
+  - `tdd-bugfix-repro-first` — no green baseline run of existing formatDuration
+    tests before the repro
+  - `prewrite-sim-new-file-new-component` — plans a pre-write
+    structure/dependency simulation for a new file (should skip, rely on Step 7
+    gate)
+  - `prewrite-sim-move-files` — moves files blind, no get_architecture_report
+    move hypothesis beforehand
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
 
 - Subject model: sonnet (plan-only simulation, blind)
-- Result: 62/62 PASS (100%) over 62 scored cases (5 superseded excluded: eval-6, eval-11, eval-12, eval-13, eval-14; subject run as 2 halves)
+- Result: 62/62 PASS (100%) over 62 scored cases (5 superseded excluded: eval-6,
+  eval-11, eval-12, eval-13, eval-14; subject run as 2 halves)
 - Task 12 rate: 62/67 (93%)
 - Delta: +7pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
-- Result: 56/62 PASS (90%) over 62 graded cases (5 superseded excluded, N/A 0); parts p1 22/25, p2 24/25, p3 10/12
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
+  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
+  (plan-only)
+- Result: 56/62 PASS (90%) over 62 graded cases (5 superseded excluded, N/A 0);
+  parts p1 22/25, p2 24/25, p3 10/12
 - Codex T14 for comparison: 42/67 (63%)
 - Claude T22 for comparison: 62/62 (100%)
 - FAIL list:
-  - ` naming-type-misfit ` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon with types/anchors/drafts planned, but never names the local tax_automation_document nor the finder find_tax_automation_document!; says "model vocabulary / name that describes the lookup" 
-  - ` naming-camelcase-language ` — FAIL ( still; Claude T22 PASS ) picks graphDb instead of dominant TAIL param name `client` 
-  - ` verify-central-modified ` — FAIL ( still; Claude T22 PASS ) get_callers yes, but tests-at-risk for the MODIFY not run (only "baseline pins") 
-  - ` step7-fix-round-reverted ` — FAIL ( still; Claude T22 PASS ) keeps round 1 and stacks a cycles repair on top ("prior SDP fix successful") instead of reverting the whole round 
-  - ` tdd-refactor-baseline ` — FAIL ( still; Claude T22 PASS ) no GREEN baseline (tests-at-risk pins + helper tests) before the move; only architecture simulation, tests re-checked after 
-  - ` tdd-bugfix-repro-first ` — FAIL ( still; Claude T22 PASS ) no green baseline run and no reproduction test failing on formatDuration(0)==="0s" before patching; goes bug-hunt -> minimal fix 
+  - `naming-type-misfit` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon
+    with types/anchors/drafts planned, but never names the local
+    tax_automation_document nor the finder find_tax_automation_document!; says
+    "model vocabulary / name that describes the lookup"
+  - `naming-camelcase-language` — FAIL ( still; Claude T22 PASS ) picks graphDb
+    instead of dominant TAIL param name `client`
+  - `verify-central-modified` — FAIL ( still; Claude T22 PASS ) get_callers yes,
+    but tests-at-risk for the MODIFY not run (only "baseline pins")
+  - `step7-fix-round-reverted` — FAIL ( still; Claude T22 PASS ) keeps round 1
+    and stacks a cycles repair on top ("prior SDP fix successful") instead of
+    reverting the whole round
+  - `tdd-refactor-baseline` — FAIL ( still; Claude T22 PASS ) no GREEN baseline
+    (tests-at-risk pins + helper tests) before the move; only architecture
+    simulation, tests re-checked after
+  - `tdd-bugfix-repro-first` — FAIL ( still; Claude T22 PASS ) no green baseline
+    run and no reproduction test failing on formatDuration(0)==="0s" before
+    patching; goes bug-hunt -> minimal fix
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; graded strict-literal); run as 3 sequential subjects (21/21/20 cases)
-- Result: 58/62 PASS (94%) over 62 scored cases (5 superseded excluded: eval-6, eval-11, eval-12, eval-13, eval-14)
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal);
+  run as 3 sequential subjects (21/21/20 cases)
+- Result: 58/62 PASS (94%) over 62 scored cases (5 superseded excluded: eval-6,
+  eval-11, eval-12, eval-13, eval-14)
 - Baseline (round 1, Task 22): 62/62 (100%)
 - Delta: -6pp
 - FAIL list:
-  - `eval-9` — answer follows references/step-5-style.md (`silo` → "match dominant patterns closely, owner should review"; "match exactly" is the `deep-silo` row); expected demands "match EXACTLY" for silo — eval is stale vs the STYLE table
-  - `step7-fix-seeded-sdp-barrel` — Step 7 finding + remedy/repair stated, but no explicit re-run of review_changes ("finding gone, no new finding"); only "regress -> revert" implies it
-  - `step7-fix-seeded-layering-back-edge` — same: remedy/repair per repair/layeringBackEdge.md stated, re-run of review_changes not stated
-  - `step7-fix-seeded-hub-cut` — same: remedy/repair per repair/hubLike.md stated, re-run of review_changes not stated
-- Note: the three seeded FAILs are compression in the answers (references/step-7-verify.md §fix-at-write round loop states "Re-run the same review_changes + targeted tests"); the subject prompt capped answers at 3-10 lines per case.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - `eval-9` — answer follows references/step-5-style.md (`silo` → "match
+    dominant patterns closely, owner should review"; "match exactly" is the
+    `deep-silo` row); expected demands "match EXACTLY" for silo — eval is stale
+    vs the STYLE table
+  - `step7-fix-seeded-sdp-barrel` — Step 7 finding + remedy/repair stated, but
+    no explicit re-run of review_changes ("finding gone, no new finding"); only
+    "regress -> revert" implies it
+  - `step7-fix-seeded-layering-back-edge` — same: remedy/repair per
+    repair/layeringBackEdge.md stated, re-run of review_changes not stated
+  - `step7-fix-seeded-hub-cut` — same: remedy/repair per repair/hubLike.md
+    stated, re-run of review_changes not stated
+- Note: the three seeded FAILs are compression in the answers
+  (references/step-7-verify.md §fix-at-write round loop states "Re-run the same
+  review_changes + targeted tests"); the subject prompt capped answers at 3-10
+  lines per case.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
-- Result: 41/62 PASS (66.1%) (N/A excluded: 0). Parts: p1 21/25, p2 11/25, p3 9/12.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 41/62 PASS (66.1%) (N/A excluded: 0). Parts: p1 21/25, p2 11/25, p3
+  9/12.
 - Round-1 Codex: 56/62 (90.3%). Delta: -24.2 pp.
 - FAIL list:
   - `eval-2` — DEFENSIVE picked, strategies/defensive.md never loaded.
-  - `eval-9` — silo → "match closely" (follows current step-5-style.md; expectation "match exactly" is stale).
-  - `naming-codegraph-off` — no split of holders' symbolIds/paths into recurring words.
-  - `naming-type-draft` — MISFIT → take suggestion never stated; hedges toward keeping the draft.
-  - `session-reuse-edited` — reuse of other unedited in-context files not stated.
-  - `step7-fix-remedy-applied` — re-run with only incompleteChange+architecture sections.
-  - `step7-fix-preexisting-remedy` — refuses to apply the remedy of a preExisting+remedy finding.
-  - `step7-fix-preexisting-report` — no bead suggestion, commit-allowed not stated.
-  - `step7-fix-escalate-after-two` — stops but does not ask the user with fix / accept / bead options.
-  - `step7-fix-flap` — no before/after metric + threshold + edge report for the user to decide.
-  - `step7-fix-cohesion-own-vs-preexisting` — own cluster A move not committed; cluster B no bead.
+  - `eval-9` — silo → "match closely" (follows current step-5-style.md;
+    expectation "match exactly" is stale).
+  - `naming-codegraph-off` — no split of holders' symbolIds/paths into recurring
+    words.
+  - `naming-type-draft` — MISFIT → take suggestion never stated; hedges toward
+    keeping the draft.
+  - `session-reuse-edited` — reuse of other unedited in-context files not
+    stated.
+  - `step7-fix-remedy-applied` — re-run with only incompleteChange+architecture
+    sections.
+  - `step7-fix-preexisting-remedy` — refuses to apply the remedy of a
+    preExisting+remedy finding.
+  - `step7-fix-preexisting-report` — no bead suggestion, commit-allowed not
+    stated.
+  - `step7-fix-escalate-after-two` — stops but does not ask the user with fix /
+    accept / bead options.
+  - `step7-fix-flap` — no before/after metric + threshold + edge report for the
+    user to decide.
+  - `step7-fix-cohesion-own-vs-preexisting` — own cluster A move not committed;
+    cluster B no bead.
   - `step7-fix-cochange-verdict` — plugin.json not accepted as version manifest.
   - `step7-fix-seeded-sdp-barrel` — no post-repair review_changes re-run.
-  - `step7-fix-seeded-layering-back-edge` — no post-repair review_changes re-run.
-  - `step7-fix-seeded-hub-cut` — no hubLike repair, no re-run, no before/after escalation.
-  - `step7-fix-stacked-base-unevidenced-acceptance` — base not `git merge-base HEAD main`; stack-below findings not dropped.
+  - `step7-fix-seeded-layering-back-edge` — no post-repair review_changes
+    re-run.
+  - `step7-fix-seeded-hub-cut` — no hubLike repair, no re-run, no before/after
+    escalation.
+  - `step7-fix-stacked-base-unevidenced-acceptance` — base not
+    `git merge-base HEAD main`; stack-below findings not dropped.
   - `step7-confirm-looks-false-but-real` — edge-in-diff confirmation skipped.
   - `tdd-red-before-code` — RED via dino-TDD; tea-rags:test-first never invoked.
-  - `tdd-modify-baseline-then-red` — new red test + pin edited after the change; no PIN-UPDATED with spec line.
+  - `tdd-modify-baseline-then-red` — new red test + pin edited after the change;
+    no PIN-UPDATED with spec line.
   - `gate-partial-not-pass` — no `files` batch re-runs until every file judged.
-  - `prewrite-sim-move-files` — re-simulation not driven by the repair file `## Ops recipe`.
+  - `prewrite-sim-move-files` — re-simulation not driven by the repair file
+    `## Ops recipe`.
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json); run as 3 sequential subjects (21/21/20 cases)
-- Result: 62/62 PASS (100%) over 62 scored cases (5 superseded excluded: eval-6, eval-11, eval-12, eval-13, eval-14)
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap;
+  graded strict-literal against the current evals.json); run as 3 sequential
+  subjects (21/21/20 cases)
+- Result: 62/62 PASS (100%) over 62 scored cases (5 superseded excluded: eval-6,
+  eval-11, eval-12, eval-13, eval-14)
 - Baseline (round 2, Task 22): 94% (58/62)
 - Delta: +6pp
 - FAIL list: none
-- Note: eval-9 passes against the re-aligned expectation (silo → match closely); the three step7-fix-seeded-* cases now state the re-run of the same review_changes + targeted tests each round ("target gone, no new finding"; regression → revert the whole round).
-- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+- Note: eval-9 passes against the re-aligned expectation (silo → match closely);
+  the three step7-fix-seeded-\* cases now state the re-run of the same
+  review_changes + targeted tests each round ("target gone, no new finding";
+  regression → revert the whole round).
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live
+  hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 40/62 PASS (64.5%) (N/A excluded: 0).
 - Round-2 Codex: 41/62 (66.1%). Delta: -1.6 pp.
 - FAIL list:
-  - `eval-5` — Autonomous Judgment invoked but no strategy actually chosen ("choose the closest strategy") — no STANDARD/STABILIZATION decision
-  - `eval-9` — silo -> "seek another example ... rather than copying the dominant author's style" (opposite of match closely); no owner review flag
-  - `eval-10` — shared -> "no reason to avoid adopting the pattern"; never says follow project conventions / do not copy one author
-  - `eval-15` — scans strategy-* + ## When, but never states custom conditions run before hard rules
-  - `naming-type-misfit` — one call w/ drafts + types and tax_automation_document OK, but language ruby not stated and finder find_tax_automation_document! not named
-  - `naming-concept-new-term` — lexicon call by draft type name only — no concept description, no language ruby
-  - `naming-concept-backedge` — hits failure mode: refuses Reminder#deliver reuse, writes a new organizer-named sibling service
-  - `naming-new-term-justified` — keeps token-bucket term but no "NEW_TERM <term> — why" output line
-  - `naming-free-dominant-role` — FREE read as role naming, but picks "best of db/conn/store" — db from byType kinds.param not chosen
-  - `naming-codegraph-off` — concept semantic_search but no language/L2 pathPattern/production/limit 30/metaOnly; no split of holders into words, no template-type naming
-  - `verify-symbol-risk` — criticalPath metaOnly + defensive pin check + find_similar OK, but no "≤ 5, most central first" ordering
-  - `naming-review-before-commit` — no verbatim GATE line, no explicit meta -> fileSignals rename, no NEW_TERM MAX_ROWS/ROW_CAP decision
-  - `naming-type-draft` — type draft w/ path + extends OK, but hedges instead of taking the MISFIT suggestion (RubyConstReceiverStrategy)
-  - `session-reuse-unedited` — mustNot hit: re-runs find_symbol(symbol="Reranker") on reranker.ts to "confirm the container"
-  - `session-reuse-edited` — re-fetches Reranker#rerank, but reuse of other unedited files not stated; adds conditional reindex
-  - `step7-fix-remedy-applied` — assumes "remedy is already applied"; no must-fix classification, no leakingAbstraction.md load, no verbatim retarget
-  - `step7-fix-preexisting-report` — report line + bead OK, but "commit is allowed" not stated
-  - `step7-fix-cochange-verdict` — inspects both partners but plugin.json not named as version-manifest known noise (no-edit) per silentCoupling.md
-  - `step7-fix-seeded-layering-back-edge` — pre-emptively avoids the edge; Step 7 surfacing + post-repair "finding gone, none new" not stated ("re-review if needed")
-  - `step7-fix-seeded-hub-cut` — no hubLike remedy/repair commitment, no before/after metric + escalate fallback
-  - `gate-partial-not-pass` — treats as partial + files batches, but gate line partial=true until covered not stated
-  - `gate-preexisting-split` — repairs (2), cycle report-only, but gate line introduced=1 -> 0 after repair not stated
+  - `eval-5` — Autonomous Judgment invoked but no strategy actually chosen
+    ("choose the closest strategy") — no STANDARD/STABILIZATION decision
+  - `eval-9` — silo -> "seek another example ... rather than copying the
+    dominant author's style" (opposite of match closely); no owner review flag
+  - `eval-10` — shared -> "no reason to avoid adopting the pattern"; never says
+    follow project conventions / do not copy one author
+  - `eval-15` — scans strategy-\* + ## When, but never states custom conditions
+    run before hard rules
+  - `naming-type-misfit` — one call w/ drafts + types and
+    tax_automation_document OK, but language ruby not stated and finder
+    find_tax_automation_document! not named
+  - `naming-concept-new-term` — lexicon call by draft type name only — no
+    concept description, no language ruby
+  - `naming-concept-backedge` — hits failure mode: refuses Reminder#deliver
+    reuse, writes a new organizer-named sibling service
+  - `naming-new-term-justified` — keeps token-bucket term but no "NEW_TERM
+    <term> — why" output line
+  - `naming-free-dominant-role` — FREE read as role naming, but picks "best of
+    db/conn/store" — db from byType kinds.param not chosen
+  - `naming-codegraph-off` — concept semantic_search but no language/L2
+    pathPattern/production/limit 30/metaOnly; no split of holders into words, no
+    template-type naming
+  - `verify-symbol-risk` — criticalPath metaOnly + defensive pin check +
+    find_similar OK, but no "≤ 5, most central first" ordering
+  - `naming-review-before-commit` — no verbatim GATE line, no explicit meta ->
+    fileSignals rename, no NEW_TERM MAX_ROWS/ROW_CAP decision
+  - `naming-type-draft` — type draft w/ path + extends OK, but hedges instead of
+    taking the MISFIT suggestion (RubyConstReceiverStrategy)
+  - `session-reuse-unedited` — mustNot hit: re-runs
+    find_symbol(symbol="Reranker") on reranker.ts to "confirm the container"
+  - `session-reuse-edited` — re-fetches Reranker#rerank, but reuse of other
+    unedited files not stated; adds conditional reindex
+  - `step7-fix-remedy-applied` — assumes "remedy is already applied"; no
+    must-fix classification, no leakingAbstraction.md load, no verbatim retarget
+  - `step7-fix-preexisting-report` — report line + bead OK, but "commit is
+    allowed" not stated
+  - `step7-fix-cochange-verdict` — inspects both partners but plugin.json not
+    named as version-manifest known noise (no-edit) per silentCoupling.md
+  - `step7-fix-seeded-layering-back-edge` — pre-emptively avoids the edge; Step
+    7 surfacing + post-repair "finding gone, none new" not stated ("re-review if
+    needed")
+  - `step7-fix-seeded-hub-cut` — no hubLike remedy/repair commitment, no
+    before/after metric + escalate fallback
+  - `gate-partial-not-pass` — treats as partial + files batches, but gate line
+    partial=true until covered not stated
+  - `gate-preexisting-split` — repairs (2), cycle report-only, but gate line
+    introduced=1 -> 0 after repair not stated
 
 ## 2026-10-23 — Codex re-run round 4 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
 - Result: 46/62 PASS (74.2%) (N/A excluded: 0).
 - Round-3 Codex: 40/62 (64.5%). Delta: +9.7 pp.
 - FAIL list:
-  - `eval-1` — no /tea-rags:explore first on src/adapters/qdrant/ — goes straight to find_symbol probe + strategy (regression vs R3)
-  - `eval-3` — rejects STABILIZATION claiming hard rule needs "extreme" — SKILL.md:125 says "high"+ + erratic (regression vs R3)
+  - `eval-1` — no /tea-rags:explore first on src/adapters/qdrant/ — goes
+    straight to find_symbol probe + strategy (regression vs R3)
+  - `eval-3` — rejects STABILIZATION claiming hard rule needs "extreme" —
+    SKILL.md:125 says "high"+ + erratic (regression vs R3)
   - `eval-5` — autonomous judgment invoked but no strategy actually chosen
-  - `eval-15` — scans strategy-* + ## When, never states custom conditions run before hard rules
-  - `naming-concept-new-term` — language "typescript" for a Ruby project (context says Ruby); Organizer adoption only conditional
-  - `naming-new-term-justified` — keeps new term but no "NEW_TERM <term> — why" output line
-  - `verify-symbol-risk` — uses supplied Gateway#charge risk but never runs find_symbol(criticalPath) on the other called symbol Ledger#post
-  - `session-reuse-unedited` — says reuse in-context copy, then still plans find_symbol(symbol="Reranker") re-probe
-  - `step7-fix-remedy-applied` — misreads the remedy as already applied; no must-fix class, no leakingAbstraction.md, remedy never applied
-  - `step7-fix-cochange-verdict` — plugin.json not identified as version-manifest known noise per repair/silentCoupling.md
-  - `step7-fix-seeded-hub-cut` — repair + escalation, but no before/after metric report on the fallback
-  - `tdd-red-before-code` — routes via dino-tdd/test-driven-development, never invokes $test-first; red-for-the-right-reason not stated (regression vs R3)
-  - `tdd-spec-test-verbatim` — keeps test verbatim but no red run before implementing applyFloor (tests run after implementation) (regression vs R3)
-  - `gate-partial-not-pass` — treats as partial + files batches, but gate line partial=true until covered not stated
-  - `gate-preexisting-split` — repairs (2), cycle report-only, but no leakingAbstraction.md/facade retarget and no introduced=1 -> 0 gate line
-  - `prewrite-sim-move-files` — no get_architecture_report restructure move{files,toComponent} before moving (regression vs R3)
+  - `eval-15` — scans strategy-\* + ## When, never states custom conditions run
+    before hard rules
+  - `naming-concept-new-term` — language "typescript" for a Ruby project
+    (context says Ruby); Organizer adoption only conditional
+  - `naming-new-term-justified` — keeps new term but no "NEW_TERM <term> — why"
+    output line
+  - `verify-symbol-risk` — uses supplied Gateway#charge risk but never runs
+    find_symbol(criticalPath) on the other called symbol Ledger#post
+  - `session-reuse-unedited` — says reuse in-context copy, then still plans
+    find_symbol(symbol="Reranker") re-probe
+  - `step7-fix-remedy-applied` — misreads the remedy as already applied; no
+    must-fix class, no leakingAbstraction.md, remedy never applied
+  - `step7-fix-cochange-verdict` — plugin.json not identified as
+    version-manifest known noise per repair/silentCoupling.md
+  - `step7-fix-seeded-hub-cut` — repair + escalation, but no before/after metric
+    report on the fallback
+  - `tdd-red-before-code` — routes via dino-tdd/test-driven-development, never
+    invokes $test-first; red-for-the-right-reason not stated (regression vs R3)
+  - `tdd-spec-test-verbatim` — keeps test verbatim but no red run before
+    implementing applyFloor (tests run after implementation) (regression vs R3)
+  - `gate-partial-not-pass` — treats as partial + files batches, but gate line
+    partial=true until covered not stated
+  - `gate-preexisting-split` — repairs (2), cycle report-only, but no
+    leakingAbstraction.md/facade retarget and no introduced=1 -> 0 gate line
+  - `prewrite-sim-move-files` — no get_architecture_report restructure
+    move{files,toComponent} before moving (regression vs R3)

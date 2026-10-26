@@ -115,27 +115,34 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 - Last recorded rate: 13/13 (100%)
 - Delta: 0pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace,
+  real hooks (plan-only)
 - Result: 12/13 PASS (92%) over graded cases (N/A excluded: 0)
 - Claude T12 rate for comparison: 13/13 (100%)
-- CODEX-ONLY: eval-11 (scopes risk-assessment to last commit as asked instead of refusing and scanning the full branch - model behaviour, wrong-scope pressure)
+- CODEX-ONLY: eval-11 (scopes risk-assessment to last commit as asked instead of
+  refusing and scanning the full branch - model behaviour, wrong-scope pressure)
 - Both-fail count: 0
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
 
 - Subject model: sonnet (plan-only)
-- Result: 13/13 PASS (100%) over 13 scored cases (superseded 0; sub-suite files in evals/ not scored)
+- Result: 13/13 PASS (100%) over 13 scored cases (superseded 0; sub-suite files
+  in evals/ not scored)
 - Task 12 rate: 13/13 (100%); delta 0pp
 - FAIL: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 +
+  dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks
+  (plan-only)
 - Result: 13/13 PASS (100%) (N/A: 0)
 - Codex T14 rate: 92% (12/13)
 - Claude T22 rate: 100% (13/13)
@@ -143,43 +150,55 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and
+  literally against current evals.json)
 - Result: 13/13 PASS (100%) over scored cases (superseded: 0)
 - Round 1 (Task 22) rate: 13/13 (100%)
 - Delta: +0pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 12/13 PASS (92%) (N/A excluded: 0).
 - Round-1 Codex: 13/13 (100%). Delta: -8 pp.
 - FAIL list:
-  - `eval-8` — re-runs the scan instead; no "address-critical-first" recommendation, Critical list not surfaced
+  - `eval-8` — re-runs the scan instead; no "address-critical-first"
+    recommendation, Critical list not surfaced
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live
+  hook output
 - Result: 13/13 PASS (100%) over scored cases (superseded: 0)
 - Round 2 rate: 100% — delta: +0 pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 10/13 PASS (76.9%) (N/A excluded: 0).
 - Round-2 Codex: 12/13 (92.3%). Delta: -15.4 pp.
 - FAIL list:
-  - `eval-6` — docs-only skip stated, but no TRIVIAL-SCOPE verdict and no direct finishing-a-development-branch invocation.
-  - `eval-7` — unindexed note + tests/human review, but no finishing-a-development-branch invocation carrying the note.
-  - `eval-12` — subagent refuses the wrapper (misreads risk-assessment "no subagents" / no-reindex); neither risk-assessment nor finishing runs.
+  - `eval-6` — docs-only skip stated, but no TRIVIAL-SCOPE verdict and no direct
+    finishing-a-development-branch invocation.
+  - `eval-7` — unindexed note + tests/human review, but no
+    finishing-a-development-branch invocation carrying the note.
+  - `eval-12` — subagent refuses the wrapper (misreads risk-assessment "no
+    subagents" / no-reindex); neither risk-assessment nor finishing runs.
 
 ## 2026-10-23 — Codex re-run round 4 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
 - Result: 13/13 PASS (100.0%) (N/A excluded: 0).
 - Round-3 Codex: 10/13 (76.9%). Delta: +23.1 pp.
 - FAIL list: none.
@@ -187,8 +206,10 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 ## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live
+  hook output
 - Result: 13/13 PASS (100%) over scored cases (superseded: 0)
 - Round 3 rate: 100% — delta: +0 pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).

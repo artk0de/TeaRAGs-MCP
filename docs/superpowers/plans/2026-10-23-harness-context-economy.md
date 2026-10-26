@@ -966,10 +966,10 @@ test script.
 - [x] **Step 7 (added): Live eval in Cursor** — Cursor CLI installed after all;
       plugins copied from `harness/cursor` to `~/.cursor/plugins/local/`, eval
       prompts of Task 14 run headless (`agent -p --model auto`). The free plan
-      allows only `auto` and stopped the run after 7 of 45 parts: 100/104
-      (96%), no Cursor-only failure. sessionStart timeout raised to 60 s (prime
-      cold start). Results: `## 2026-10-23 — Cursor run (Task 15)` in each
-      suite's `benchmark.md`.
+      allows only `auto` and stopped the run after 7 of 45 parts: 100/104 (96%),
+      no Cursor-only failure. sessionStart timeout raised to 60 s (prime cold
+      start). Results: `## 2026-10-23 — Cursor run (Task 15)` in each suite's
+      `benchmark.md`.
 
 ---
 
@@ -1203,8 +1203,8 @@ paragraph).
 ### Task 22: Evals to 100% on Claude and Codex
 
 Inventory of every Claude T12 / Codex T14 FAIL (159 rows, cause class + fix
-locus): skill-not-loaded 64 (Codex only; closed by the Codex core's
-"open SKILL.md before planning" line), rule-wording 41, stale-expectation 39,
+locus): skill-not-loaded 64 (Codex only; closed by the Codex core's "open
+SKILL.md before planning" line), rule-wording 41, stale-expectation 39,
 model-behaviour 14, routing-ambiguity 11, user-override-deference 5,
 tool-description 2.
 

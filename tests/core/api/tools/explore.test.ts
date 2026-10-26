@@ -5,6 +5,7 @@ import type { App, SchemaBuilder } from "../../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../../src/core/api/public/dto/explore.js";
 import { registerSearchTools } from "../../../../src/core/api/tools/explore.js";
 import { TYPED_FILTER_PARAM_NAMES } from "../../../../src/core/api/tools/schemas.js";
+import { recordsOf } from "../../../helpers/column-table.js";
 
 type CapturedTool = {
   name: string;
@@ -473,5 +474,127 @@ describe("registerSearchTools — next", () => {
     };
 
     expect(result.structuredContent.next).toEqual(next);
+  });
+});
+
+// bd tea-rags-mcp-e6es3: a row carries the import COUNT, not the import list;
+// numbers go out at 2 significant digits. Presentation only — ranking untouched.
+describe("registerSearchTools — compact result rows", () => {
+  const imports = ["./a.js", "./b.js", "zod"];
+  const rankedRows = () => [
+    {
+      id: "a",
+      score: 0.912345,
+      payload: { relativePath: "src/a.ts", imports, codegraph: { symbols: { chunk: { pageRank: 0.0000522414 } } } },
+      rankingOverlay: { preset: "hotspots", file: { imports, commitCount: { value: 12, label: "high" } } },
+    },
+    {
+      id: "b",
+      score: 0.4,
+      payload: { relativePath: "src/b.ts", imports: ["./c.js"], startLine: 10, endLine: 42 },
+      rankingOverlay: { preset: "hotspots", file: { imports: ["./c.js"], commitCount: { value: 2, label: "low" } } },
+    },
+  ];
+  const hybridHarness = () => {
+    const harness = makeHarness({
+      hybridSearch: vi.fn().mockImplementation(async () => ({ results: rankedRows(), driftWarning: null })),
+    });
+    return { ...harness, tool: harness.captured.find((t) => t.name === "hybrid_search")! };
+  };
+  type CompactRecord = {
+    id: string;
+    score: number;
+    payload: Record<string, unknown>;
+    rankingOverlay: { file: Record<string, unknown> };
+  };
+  const recordsFrom = async (tool: CapturedTool, args: Record<string, unknown>): Promise<CompactRecord[]> => {
+    const result = (await tool.handler({ path: "/x", query: "q", ...args }, {})) as {
+      structuredContent: { results: Parameters<typeof recordsOf>[0] };
+    };
+    return recordsOf(result.structuredContent.results) as unknown as CompactRecord[];
+  };
+
+  it("emits the payload imports and the overlay file imports as their count by default", async () => {
+    const { tool } = hybridHarness();
+    const [a, b] = await recordsFrom(tool, {});
+
+    expect(a.payload.imports).toBe(3);
+    expect(b.payload.imports).toBe(1);
+    expect(a.rankingOverlay.file.imports).toBe(3);
+  });
+
+  it("keeps the overlay label of a labelled imports entry while its value becomes the count", async () => {
+    const { captured } = makeHarness({
+      findSymbol: vi.fn().mockResolvedValue({
+        results: [
+          { id: "a", score: 1, rankingOverlay: { preset: "x", chunk: { imports: { value: imports, label: "many" } } } },
+        ],
+      }),
+    });
+    const tool = captured.find((t) => t.name === "find_symbol")!;
+    const result = (await tool.handler({ path: "/x", symbol: "A" }, {})) as {
+      structuredContent: { results: { rankingOverlay: { chunk: Record<string, unknown> } }[] };
+    };
+
+    expect(result.structuredContent.results[0].rankingOverlay.chunk.imports).toEqual({ value: 3, label: "many" });
+  });
+
+  it("includeImports=true restores the import lists, and is not forwarded to the App", async () => {
+    const { tool, app } = hybridHarness();
+    const [a] = await recordsFrom(tool, { includeImports: true });
+
+    expect(a.payload.imports).toEqual(imports);
+    expect(a.rankingOverlay.file.imports).toEqual(imports);
+    const call = (app.hybridSearch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect("includeImports" in call).toBe(false);
+  });
+
+  it("every payload-bearing search tool accepts includeImports", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.inputSchema).toHaveProperty("includeImports");
+    }
+  });
+
+  it("ranks identically with and without includeImports: same order, same scores", async () => {
+    const { tool } = hybridHarness();
+    const lean = await recordsFrom(tool, {});
+    const full = await recordsFrom(tool, { includeImports: true });
+
+    expect(lean.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(lean.map((r) => [r.id, r.score])).toEqual(full.map((r) => [r.id, r.score]));
+    expect(lean.map((r) => r.payload.imports)).not.toEqual(full.map((r) => r.payload.imports));
+  });
+
+  it("rounds non-integer numbers to 2 significant digits and passes integers through", async () => {
+    const { tool } = hybridHarness();
+    const [a, b] = await recordsFrom(tool, {});
+
+    expect(a.score).toBe(0.91);
+    expect((a.payload.codegraph as { symbols: { chunk: { pageRank: number } } }).symbols.chunk.pageRank).toBe(0.000052);
+    expect(b.score).toBe(0.4);
+    expect([b.payload.startLine, b.payload.endLine]).toEqual([10, 42]);
+    expect(a.rankingOverlay.file.commitCount).toEqual({ value: 12, label: "high" });
+    expect(a.id).toBe("a");
+  });
+
+  it("drops a column that is null in every row, e.g. the overlay of a non-reranked call", async () => {
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({
+        results: [
+          { id: "a", score: 0.5, payload: { relativePath: "src/a.ts" }, rankingOverlay: undefined },
+          { id: "b", score: 0.25, payload: { relativePath: "src/b.ts" }, rankingOverlay: undefined },
+        ],
+      }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search")!;
+    const result = (await tool.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: { results: { columns: string[] } };
+    };
+
+    expect(result.structuredContent.results.columns).toEqual(["id", "score", "payload.relativePath"]);
   });
 });

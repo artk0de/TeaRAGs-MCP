@@ -13,7 +13,8 @@ unless a case says otherwise. Codegraph is on. Embedding is available.
 
 ---
 
-Definitions for cases that name them (each evals.json prompt carries its own copy):
+Definitions for cases that name them (each evals.json prompt carries its own
+copy):
 
 ```
 MARKER-COLD = "workingTree":{"tree":"/work/acme","indexedCommit":"cbb76f5","treeCommit":"d569ae8",

@@ -119,19 +119,26 @@ No iteration needed.
 ## 2026-10-23 — harness-context-economy re-run (Task 12)
 
 - Subject model: sonnet
-- Result: 14/14 PASS (100%) (graded on intent: skill now prescribes A/B/C/D/E block incl. get_naming_lexicon, older evals say '3 semantic_search'; subject followed current SKILL.md)
+- Result: 14/14 PASS (100%) (graded on intent: skill now prescribes A/B/C/D/E
+  block incl. get_naming_lexicon, older evals say '3 semantic_search'; subject
+  followed current SKILL.md)
 - Last recorded rate: 13/13 (100%) 2026-04-20
 - Delta: 0pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
 - Result: 13/14 PASS (93%) over graded cases (N/A excluded: 0).
 - Claude T12 for comparison: 14/14 (100%).
 - CODEX-ONLY (harness regression candidates):
-  - `eval-14` — no Project vocabulary (concept.terms) in enrichment block and no names[] hand-off; get_naming_lexicon called without concept=<intent> and with a language-capability hedge [model behaviour]
+  - `eval-14` — no Project vocabulary (concept.terms) in enrichment block and no
+    names[] hand-off; get_naming_lexicon called without concept=<intent> and
+    with a language-capability hedge [model behaviour]
 - Both-fail count: 0.
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
@@ -142,57 +149,96 @@ No iteration needed.
 - Delta: +0pp
 - FAIL:
   - none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
+  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
+  (plan-only)
 - Result: 12/14 PASS (86%) over 14 graded cases (N/A 0)
 - Codex T14 for comparison: 13/14 (93%)
 - Claude T22 for comparison: 14/14 (100%)
 - FAIL list:
-  - ` eval-10 ` — FAIL (stale?) ( new; Claude T22 PASS ) enrichment metaOnly=true ok, but content follow-up routed to find_symbol instead of a SEPARATE semantic_search metaOnly=false; expectation conflicts with core "find_symbol after search" rule 
-  - ` eval-14 ` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon(concept) planned but not stated as same parallel block A-D, no concept.terms -> "Project vocabulary" in the block, no names[] hand-off for new symbols 
+  - `eval-10` — FAIL (stale?) ( new; Claude T22 PASS ) enrichment metaOnly=true
+    ok, but content follow-up routed to find_symbol instead of a SEPARATE
+    semantic_search metaOnly=false; expectation conflicts with core "find_symbol
+    after search" rule
+  - `eval-14` — FAIL ( still; Claude T22 PASS ) get_naming_lexicon(concept)
+    planned but not stated as same parallel block A-D, no concept.terms ->
+    "Project vocabulary" in the block, no names[] hand-off for new symbols
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and
+  literally against current evals.json)
 - Result: 14/14 PASS (100%) over scored cases (superseded: 0)
 - Round 1 (Task 22) rate: 14/14 (100%)
 - Delta: +0pp
 - FAIL list: none
-- Notes: eval-12 answered the line count via find_symbol outline (not the listed Read / wc -l) — wrapper not triggered, which is the MUST; graded PASS. eval-6 ran A–E (codegraph on) instead of "3 calls" — superset, PASS.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Notes: eval-12 answered the line count via find_symbol outline (not the listed
+  Read / wc -l) — wrapper not triggered, which is the MUST; graded PASS. eval-6
+  ran A–E (codegraph on) instead of "3 calls" — superset, PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 6/14 PASS (43%) (N/A excluded: 0).
 - Round-1 Codex: 12/14 (86%). Delta: -43 pp.
 - FAIL list:
-  - `eval-1` — A-C only; D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-2` — presets A-C + metaOnly ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-3` — parallel A-C stated, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-4` — semantic_search A-C, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-7` — order enrichment->brainstorming ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-8` — Iron Rule kept under pressure, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-11` — subagent enrichment-first ok, but D/E (architecturalHub + get_naming_lexicon) absent and codegraph state never determined (no "backbone not assessed" note) although codegraph is on
-  - `eval-14` — D/E "added" after the 3-call block (same parallel block not stated); no concept.terms -> "Project vocabulary" line
+  - `eval-1` — A-C only; D/E (architecturalHub + get_naming_lexicon) absent and
+    codegraph state never determined (no "backbone not assessed" note) although
+    codegraph is on
+  - `eval-2` — presets A-C + metaOnly ok, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-3` — parallel A-C stated, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-4` — semantic_search A-C, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-7` — order enrichment->brainstorming ok, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-8` — Iron Rule kept under pressure, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-11` — subagent enrichment-first ok, but D/E (architecturalHub +
+    get_naming_lexicon) absent and codegraph state never determined (no
+    "backbone not assessed" note) although codegraph is on
+  - `eval-14` — D/E "added" after the 3-call block (same parallel block not
+    stated); no concept.terms -> "Project vocabulary" line
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live
+  hook output
 - Result: 13/14 PASS (93%) over scored cases (superseded: 0)
 - Round 2 rate: 100% — delta: -7 pp
 - FAIL list:
-  - eval-9: FAIL — refuses hybrid_search and keeps semantic_search+presets, but never states the required rationale "risk presets are tied to semantic_search" (gives the BM25 query-token-overlap reason instead) | eval stale: dinopowers/skills/brainstorming/SKILL.md "Do NOT substitute" table says hybrid_search has the "Same rerank" (presets are not tied to semantic_search); the rationale it gives is the BM25 leg, so the expected rationale contradicts the skill
-- Notes: eval-9 FAIL is an eval-stale case: expected rationale 'risk presets are tied to semantic_search' contradicts SKILL.md 'Do NOT substitute' table (hybrid_search has the same rerank; skill's reason is the BM25 leg).
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - eval-9: FAIL — refuses hybrid_search and keeps semantic_search+presets, but
+    never states the required rationale "risk presets are tied to
+    semantic_search" (gives the BM25 query-token-overlap reason instead) | eval
+    stale: dinopowers/skills/brainstorming/SKILL.md "Do NOT substitute" table
+    says hybrid_search has the "Same rerank" (presets are not tied to
+    semantic_search); the rationale it gives is the BM25 leg, so the expected
+    rationale contradicts the skill
+- Notes: eval-9 FAIL is an eval-stale case: expected rationale 'risk presets are
+  tied to semantic_search' contradicts SKILL.md 'Do NOT substitute' table
+  (hybrid_search has the same rerank; skill's reason is the BM25 leg).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 14/14 PASS (100%) (N/A excluded: 0).
 - Round-2 Codex: 6/14 (43%). Delta: +57.1 pp.
 - FAIL list: none.
@@ -200,8 +246,10 @@ No iteration needed.
 ## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live
+  hook output
 - Result: 14/14 PASS (100%) over scored cases (superseded: 0)
 - Round 3 rate: 93% — delta: +7 pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).

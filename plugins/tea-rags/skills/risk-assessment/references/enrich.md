@@ -42,10 +42,10 @@ path into the test root (`src/core/foo/bar.ts` → `tests/core/foo/bar.test.ts`)
 Miss = genuinely absent. Use this when the layout mirrors predictably; fall back
 to stratified `hybrid_search` when it does not.
 
-**3. Structural amplifier + cycles (codegraph axis).** ONLY when graph tools registered
-(`## Codegraph resolve` above). Tools absent — skip, note structural risk not assessed (never claim "no cycles" /
-"no hubs"). See `tea-rags://guide/navigation` "Graph navigation" for
-off-routing.
+**3. Structural amplifier + cycles (codegraph axis).** ONLY when graph tools
+registered (`## Codegraph resolve` above). Tools absent — skip, note structural
+risk not assessed (never claim "no cycles" / "no hubs"). See
+`tea-rags://guide/navigation` "Graph navigation" for off-routing.
 
 - **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
   `rerank="architecturalHub"` scoped to same `pathPattern`, same
@@ -118,10 +118,10 @@ Member counts ALWAYS from outline (exact), file mass ALWAYS from overlay.
 **6. Risk classification** — from overlay labels + tier + test coverage.
 
 **BEFORE picking a class, consult pair diagnostics.** Single overlay signals
-ambiguous. `../../../rules/references/signal-interpretation.md` gives pair/triple
-rules that disambiguate patterns (god module vs bug attractor, healthy owner vs
-toxic silo, active development vs coupling, legacy minefield vs proven stable).
-Read whenever overlay shows more than one strong signal.
+ambiguous. `../../../rules/references/signal-interpretation.md` gives
+pair/triple rules that disambiguate patterns (god module vs bug attractor,
+healthy owner vs toxic silo, active development vs coupling, legacy minefield vs
+proven stable). Read whenever overlay shows more than one strong signal.
 
 **Key disambiguators** (always check before classifying):
 
@@ -154,5 +154,5 @@ method inside. Overlay shows both → chunk-level locates exact problem:
 See `../../../rules/references/signal-interpretation.md` § "Method-level (chunk)
 pair diagnostics" for the full table.
 
-See [references/classification-tiers.md](./classification-tiers.md)
-for the full 13-tier table.
+See [references/classification-tiers.md](./classification-tiers.md) for the full
+13-tier table.

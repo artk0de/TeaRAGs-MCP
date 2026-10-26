@@ -355,6 +355,22 @@ function fieldsField() {
           "Omitted → lean default per mode. " +
           "Paths: tea-rags://schema/signals.",
       ),
+    ...includeImportsField(),
+  };
+}
+
+/**
+ * `imports` goes out as a COUNT by default (bd tea-rags-mcp-e6es3) — the list
+ * was ~38% of a reranked answer. Rides with `fields` because it shapes the
+ * same payload; applied by `compactSearchResults` in the MCP formatter.
+ */
+function includeImportsField() {
+  return {
+    includeImports: coerceBoolean()
+      .optional()
+      .describe(
+        "imports = count by default; true → full lists. Import edges exact: get_callees / get_callers(relativePath).",
+      ),
   };
 }
 

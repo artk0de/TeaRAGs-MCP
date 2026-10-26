@@ -10,8 +10,8 @@ Run: `claude mcp get tea-rags`
   Restart your Claude Code session to activate the MCP server. After restart,
   run `/tea-rags:index` to index your codebase."
 
-- Not connected → AskUserQuestion: "MCP server not yet connected. This
-  usually resolves after restarting the session. Restart Claude Code and run
+- Not connected → AskUserQuestion: "MCP server not yet connected. This usually
+  resolves after restarting the session. Restart Claude Code and run
   `/tea-rags-setup:install` again to verify."
 
 Mark all steps completed in progress.

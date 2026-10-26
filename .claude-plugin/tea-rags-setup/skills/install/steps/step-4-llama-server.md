@@ -21,6 +21,7 @@ skill runs printed lines via Bash after ONE consent (step 5).
    `brew install llama.cpp` (hasBrew=false → "Install Homebrew first:
    https://brew.sh", re-ask). Other path → user gives it.
 2. **Model.** AskUserQuestion:
+
    ```
    question: "Embedding model for llama-server?"
    options: [
@@ -42,6 +43,7 @@ skill runs printed lines via Bash after ONE consent (step 5).
    - `command` reads model window from GGUF header: per slot = min(8192,
      context_length); prints `# Warning: ... context window` line when < 8192
      (CodeRankEmbed: 2048). Expected, not error.
+
 3. **Instance count.** Default 2 (M3 Pro: ×1 82, ×2 93.5, ×3 92 texts/s — third
    adds nothing). AskUserQuestion confirm or other N.
 4. **Ports — USER decides.** Propose N consecutive ports from 8080. Per

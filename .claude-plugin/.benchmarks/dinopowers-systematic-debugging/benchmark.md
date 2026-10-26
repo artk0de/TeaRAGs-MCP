@@ -142,16 +142,24 @@ No iteration needed.
 - Result: 16/17 PASS (94%)
 - Last recorded rate: 15/15 (100%)
 - Delta: -6pp (case set grew 15->17)
-- FAIL list: eval-10: prompt has no observable symptom ('think bug is in DI, check composition.ts then bug-hunt'); subject refuses the order but defers bug-hunt and asks for a symptom instead of invoking bug-hunt first (eval expects bug-hunt first; SKILL.md no-symptom rule pulls the other way)
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- FAIL list: eval-10: prompt has no observable symptom ('think bug is in DI,
+  check composition.ts then bug-hunt'); subject refuses the order but defers
+  bug-hunt and asks for a symptom instead of invoking bug-hunt first (eval
+  expects bug-hunt first; SKILL.md no-symptom rule pulls the other way)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
 - Result: 16/17 PASS (94%) over graded cases (N/A excluded: 0).
 - Claude T12 for comparison: 16/17 (94%).
 - CODEX-ONLY (harness regression candidates):
-  - `eval-11` — re-runs bug-hunt on app.ts and hedges 'healthy is not conclusive' instead of surfacing the healthy verdict / calibrated-prior override notice [model behaviour]
+  - `eval-11` — re-runs bug-hunt on app.ts and hedges 'healthy is not
+    conclusive' instead of surfacing the healthy verdict / calibrated-prior
+    override notice [model behaviour]
 - Both-fail count: 0.
 
 ## 2026-10-23 — evals-to-100 re-run (Task 22)
@@ -161,50 +169,73 @@ No iteration needed.
 - Task 12 rate: 16/17 (94%)
 - Delta: +6pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags
+  0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block),
+  AGENTS.md = core.
 - Result: 15/17 PASS (88%) over graded cases (N/A excluded: 0).
 - Codex T14: 16/17 (94%). Claude T22: 17/17 (100%).
 - FAIL list:
-  - `eval-6` — FAIL; new: Plans to run bug-hunt probes again on a 0-suspect case, hedges instead of stating "no bug-prone zones ... likely recently-added untracked code or external dependency" and invoking systematic-debugging without suspect block. Claude T22 PASS
-  - `eval-16` — FAIL; new: Cause sentence names StatsCache#load, not stats-cache.ts:<line> (file:line only in Fix). Claude T22 PASS
+  - `eval-6` — FAIL; new: Plans to run bug-hunt probes again on a 0-suspect
+    case, hedges instead of stating "no bug-prone zones ... likely
+    recently-added untracked code or external dependency" and invoking
+    systematic-debugging without suspect block. Claude T22 PASS
+  - `eval-16` — FAIL; new: Cause sentence names StatsCache#load, not
+    stats-cache.ts:<line> (file:line only in Fix). Claude T22 PASS
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and
+  literally against current evals.json)
 - Result: 16/17 PASS (94%) over scored cases (superseded: 0)
 - Round 1 (Task 22) rate: 17/17 (100%)
 - Delta: -6pp
 - FAIL list:
-  - eval-15 — find_similar(positiveIds=[chunk id]) planned correctly, but the MUST "Report any matches" is not stated (answer drifts into Step 5 report / DDG fix instead of reporting sibling occurrences).
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - eval-15 — find_similar(positiveIds=[chunk id]) planned correctly, but the
+    MUST "Report any matches" is not stated (answer drifts into Step 5 report /
+    DDG fix instead of reporting sibling occurrences).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 15/17 PASS (88.2%) (N/A excluded: 0).
 - Round-1 Codex: 15/17 (88.2%). Delta: ±0.0 pp.
 - FAIL list:
-  - `eval-7` — no Step 3 hypothesis-block extraction between bug-hunt and systematic-debugging
-  - `eval-12` — systematic-debugging invoked without the hypothesis block ("hand off" only)
+  - `eval-7` — no Step 3 hypothesis-block extraction between bug-hunt and
+    systematic-debugging
+  - `eval-12` — systematic-debugging invoked without the hypothesis block ("hand
+    off" only)
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live
+  hook output
 - Result: 16/17 PASS (94%) over scored cases (superseded: 0)
 - Round 2 rate: 94% — delta: +0 pp
 - FAIL list:
-  - eval-15: FAIL — find_similar is seeded from a chunk id it fetches again through find_symbol (outline + symbol lookup); it never says to reuse the chunk id from the bug-hunt result
-- Notes: eval-15 still FAIL but for a new reason (round 2: no 'report matches'; round 3: seeds find_similar from a chunk id re-resolved via find_symbol instead of the bug-hunt result id). Partly eval ambiguity: the prompt carries only file:line, no chunk id.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - eval-15: FAIL — find_similar is seeded from a chunk id it fetches again
+    through find_symbol (outline + symbol lookup); it never says to reuse the
+    chunk id from the bug-hunt result
+- Notes: eval-15 still FAIL but for a new reason (round 2: no 'report matches';
+  round 3: seeds find_similar from a chunk id re-resolved via find_symbol
+  instead of the bug-hunt result id). Partly eval ambiguity: the prompt carries
+  only file:line, no chunk id.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 17/17 PASS (100%) (N/A excluded: 0).
 - Round-2 Codex: 15/17 (88.2%). Delta: +11.8 pp.
 - FAIL list: none.
@@ -212,8 +243,10 @@ No iteration needed.
 ## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
 
 - Subject model: sonnet (lane C; graded by opus, strict/literal)
-- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live
+  hook output
 - Result: 17/17 PASS (100%) over scored cases (superseded: 0)
 - Round 3 rate: 94% — delta: +6 pp
 - FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).

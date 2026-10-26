@@ -32,7 +32,8 @@ const SearchResultPayloadSchema = z
   .describe(
     "Chunk payload: relativePath, startLine, endLine, language, chunkType, symbolId, name, content " +
       "(omitted when metaOnly=true), trajectory signals under git.{file,chunk}.* / codegraph.*, " +
-      "plus find_symbol's chunkCount / mergedChunkIds. Raw values only — labels live on rankingOverlay.",
+      "plus find_symbol's chunkCount / mergedChunkIds. Raw values only — labels live on rankingOverlay. " +
+      "imports = count unless includeImports=true; floats at 2 significant digits.",
   );
 
 /** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
@@ -55,7 +56,7 @@ export const ColumnTableSchema = z
   })
   .describe(
     "One row per result; cell i belongs to columns[i]. Dotted column = payload path " +
-      "(payload.relativePath, rankingOverlay.chunk.bugFixRate.label). null = absent. " +
+      "(payload.relativePath, rankingOverlay.chunk.bugFixRate.label). null = absent; a column null in every row is omitted. " +
       "Columns: id, score, payload.* (raw values; content omitted when metaOnly), " +
       "rankingOverlay.{file,chunk}.* (labels), treeState (modified|deleted: index copy of a file your tree changed, may be stale).",
   );

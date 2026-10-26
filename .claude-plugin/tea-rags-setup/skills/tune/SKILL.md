@@ -43,9 +43,9 @@ only when real external URL.
 ### 1a. Embedded Qdrant: do NOT pass --qdrant-url (CRITICAL for the install wizard)
 
 Install wizard runs tune at step 6, BEFORE MCP configured (step 8): no
-`mcp__tea-rags__*` tools, embedded daemon not started (`setup-qdrant.sh
-embedded` only downloaded binary), daemon binds RANDOM port — hard-coded
-`--qdrant-url http://localhost:6333` fails.
+`mcp__tea-rags__*` tools, embedded daemon not started
+(`setup-qdrant.sh embedded` only downloaded binary), daemon binds RANDOM port —
+hard-coded `--qdrant-url http://localhost:6333` fails.
 
 Omit `--qdrant-url`; `tea-rags tune` cascades itself:
 
@@ -154,12 +154,12 @@ Delete `tuned_environment_variables.env` after parsing.
 
 `tea-rags tune` CLI accepts only `ollama|onnx` — NEVER pass `llama-server`.
 Instead sweep server-side `-np` (`--slots`) on RUNNING instances. tea-rags
-spawns nothing; operator restarts each instance — never restart them yourself
-on GPU host.
+spawns nothing; operator restarts each instance — never restart them yourself on
+GPU host.
 
 Client batch size + concurrency = runtime tuner (hill-climb, persisted per
-endpoint). Do NOT tune or write `EMBEDDING_BATCH_SIZE` /
-`EMBEDDING_CONCURRENCY` / `EMBEDDING_TUNE_MIN_BATCH_SIZE` — pin caps climb.
+endpoint). Do NOT tune or write `EMBEDDING_BATCH_SIZE` / `EMBEDDING_CONCURRENCY`
+/ `EMBEDDING_TUNE_MIN_BATCH_SIZE` — pin caps climb.
 
 ### L1. Inputs
 
@@ -168,8 +168,9 @@ Progress: `llamaServer` (`os`, `advertise`, `builds[]` of `{bin, devices}`),
 peer must answer `curl -sf <url>/health`.
 
 Local Mac branch: `llamaServer.local` (`bin`, `model`, `gguf`, `ports[]`) →
-re-print per port `command --os macos --host 127.0.0.1 --port <p> --bin <bin>
---model <gguf>`; peers = `127.0.0.1:<p>`.
+re-print per port
+`command --os macos --host 127.0.0.1 --port <p> --bin <bin> --model <gguf>`;
+peers = `127.0.0.1:<p>`.
 
 ### L2. Sweep `-np` 1 → 2 → 4 → 8
 
@@ -193,8 +194,8 @@ Typical optimum = 4 (`--slots` default).
 `command` again w/ `--slots <best>` + `--autostart` → hand FULL sheet (autostart
 entry must carry new `-np`). Save
 `$SCRIPTS/progress.sh set llamaServer.slots <best>`, mark `steps.tune`
-completed. Non-embedding keys: run nothing, `reference.md` "Tune Defaults"
-minus three embedding keys above.
+completed. Non-embedding keys: run nothing, `reference.md` "Tune Defaults" minus
+three embedding keys above.
 
 ### L4. Context invariant
 

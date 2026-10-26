@@ -15,8 +15,8 @@ options: [
 Git enabled → AskUserQuestion (history engine). Recommendation from
 `analyze-project.sh` output:
 
-- `fileCount > 10000` OR `loc > 1000000` OR `commitCount > 20000` →
-  **es-git** Recommended (large project / monorepo)
+- `fileCount > 10000` OR `loc > 1000000` OR `commitCount > 20000` → **es-git**
+  Recommended (large project / monorepo)
 - else → **git** Recommended (small project, short history)
 - metric missing → its clause false
 

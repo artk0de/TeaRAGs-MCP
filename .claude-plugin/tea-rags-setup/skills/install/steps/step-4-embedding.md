@@ -70,6 +70,7 @@ recommended up to ~100k LOC, indexing may be slow. Continue anyway?" ONNX w/ GPU
     - **Linux**: unreachable (script auto-installs via curl).
 
     Install method shown → AskUserQuestion:
+
     ```
     question: "Install Ollama, restart terminal, launch it, then confirm."
     options: [
@@ -77,12 +78,14 @@ recommended up to ~100k LOC, indexing may be slow. Continue anyway?" ONNX w/ GPU
       { label: "Problem", description: "Something went wrong" }
     ]
     ```
+
   - Windows AND gpu.vendor "amd" AND gpu.architecture "RDNA2"/"RDNA3" → before
     install AskUserQuestion, note: "For GPU acceleration with AMD {gpu.model},
     install AMD Radeon PRO driver first:
     https://www.amd.com/en/support/professional-graphics Then install Ollama."
   - Confirmed → `ollama --version`; fails → remind restart terminal, retry.
   - Verified → re-run install-ollama.sh to pull model.
+
 - llama-server → `steps/step-4-llama-server.md`, return here to mark completed.
 - llama-server (this Mac) → `steps/step-4-llama-server.md` §4L-local, return
   here to mark completed.

@@ -13,8 +13,8 @@
 - qdrantMode "embedded" → do NOT check port 6333 (random port), do NOT wake
   daemon via MCP tool (MCP not configured yet). Only verify binary:
   `test -x "$HOME/.tea-rags/qdrant/bin/qdrant"`. `tune` skill lets
-  `tea-rags tune` spawn daemon itself (`tune` section 1a — NO `--qdrant-url`
-  for embedded).
+  `tea-rags tune` spawn daemon itself (`tune` section 1a — NO `--qdrant-url` for
+  embedded).
 
 Invoke `/tea-rags-setup:tune` — runs `tea-rags tune` w/ step-4 provider, saves
 results to progress, shows summary (reads `embeddingProvider` + `qdrantMode`

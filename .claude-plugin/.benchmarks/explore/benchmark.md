@@ -177,32 +177,63 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
 - Result: 27/27 PASS (100%)
 - Last recorded rate: 100% (10/10 iteration 4 post-fix; iterations 1-3 100%)
 - FAIL list: none
-- Notes: Cases 1/8/14 (usage listing) went find_symbol + get_callers (codegraph ON) instead of the eval's hybrid_search; accepted on the search-cascade case 3 precedent (hybrid_search OR get_callers), failure modes (ripgrep, Grep, Glob) not hit. Subject read explore SKILL.md + references + tea-rags://guide/navigation. Delta 0pp.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- Notes: Cases 1/8/14 (usage listing) went find_symbol + get_callers (codegraph
+  ON) instead of the eval's hybrid_search; accepted on the search-cascade case 3
+  precedent (hybrid_search OR get_callers), failure modes (ripgrep, Grep, Glob)
+  not hit. Subject read explore SKILL.md + references +
+  tea-rags://guide/navigation. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex run (Task 14)
 
-- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
 - Result: 19/27 PASS (70%) over graded cases (N/A excluded: 0).
 - Claude T12 for comparison: 27/27 (100%).
 - CODEX-ONLY (harness regression candidates):
-  - `5` — 'what changed recently' answered with hybrid_search instead of rank_chunks rerank=codeReview [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `7` — no delegation to pattern-search (Collect intent); searched directly with hybrid_search [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `11` — semantic_search used as primary instead of hybrid_search for symbol+context (borderline; no Grep fallback) [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `17` — no Step 0 ORIENT (rerank=entryPoint, testFile/documentation exclude) before breadth; plain find_symbol/semantic_search; architecture-pattern reference not read [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `19` — codegraph OFF orientation: plain semantic_search, no rerank=onboarding and no explicit content-inferred flag [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `20` — entry-point question: plain semantic_search, no rerank=entryPoint / chunkSize post-filter / entry-point-pattern [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `21` — axis split present but sources axis lacks testFile:exclude+documentation:exclude (uses language filters), so axes not cleanly separated [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
-  - `25` — no Step 0 ORIENT (entryPoint) before pipeline walk; codegraph availability not derived from own tool list [explore references (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `5` — 'what changed recently' answered with hybrid_search instead of
+    rank_chunks rerank=codeReview [explore references
+    (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `7` — no delegation to pattern-search (Collect intent); searched directly
+    with hybrid_search [explore references (architecture/entry-point/usage
+    patterns) not read / model behaviour]
+  - `11` — semantic_search used as primary instead of hybrid_search for
+    symbol+context (borderline; no Grep fallback) [explore references
+    (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `17` — no Step 0 ORIENT (rerank=entryPoint, testFile/documentation exclude)
+    before breadth; plain find_symbol/semantic_search; architecture-pattern
+    reference not read [explore references (architecture/entry-point/usage
+    patterns) not read / model behaviour]
+  - `19` — codegraph OFF orientation: plain semantic_search, no
+    rerank=onboarding and no explicit content-inferred flag [explore references
+    (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `20` — entry-point question: plain semantic_search, no rerank=entryPoint /
+    chunkSize post-filter / entry-point-pattern [explore references
+    (architecture/entry-point/usage patterns) not read / model behaviour]
+  - `21` — axis split present but sources axis lacks
+    testFile:exclude+documentation:exclude (uses language filters), so axes not
+    cleanly separated [explore references (architecture/entry-point/usage
+    patterns) not read / model behaviour]
+  - `25` — no Step 0 ORIENT (entryPoint) before pipeline walk; codegraph
+    availability not derived from own tool list [explore references
+    (architecture/entry-point/usage patterns) not read / model behaviour]
 - Both-fail count: 0.
 
 ## 2026-10-23 — Cursor run (Task 15)
 
-- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no superpowers, no subagentStart injection.
-- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45 parts.
-- Result: 25/25 PASS (100%) over graded cases (N/A excluded: 0). Only explore-p1 ran (ids 1-25); explore-p2 (ids 26-27) not run.
-- Claude T12 for comparison: 27/27 (100%) suite-wide; over p1 ids 25/25 (no FAILs).
-- Codex T14 for comparison: 19/27 (70%) suite-wide; over p1 ids 17/25 (68%) (FAIL 5,7,11,17,19,20,21,25).
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins
+  from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no
+  superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45
+  parts.
+- Result: 25/25 PASS (100%) over graded cases (N/A excluded: 0). Only explore-p1
+  ran (ids 1-25); explore-p2 (ids 26-27) not run.
+- Claude T12 for comparison: 27/27 (100%) suite-wide; over p1 ids 25/25 (no
+  FAILs).
+- Codex T14 for comparison: 19/27 (70%) suite-wide; over p1 ids 17/25 (68%)
+  (FAIL 5,7,11,17,19,20,21,25).
 - CURSOR-ONLY: none.
 - Both-fail count (all): 0.
 
@@ -212,92 +243,166 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
 - Result: 25/27 PASS (93%) over scored cases (superseded: 0)
 - Task 12 rate: 100%
 - Delta: -7pp
-- FAIL list: 17 (entryPoint ORIENT lacked testFile:exclude + documentation:exclude and no architecturalHub step; architecture-pattern.md not read); 20 (entryPoint answer without chunkSize / minFanOut+level:chunk small-utility mitigation; entry-point-pattern.md not read)
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+- FAIL list: 17 (entryPoint ORIENT lacked testFile:exclude +
+  documentation:exclude and no architecturalHub step; architecture-pattern.md
+  not read); 20 (entryPoint answer without chunkSize / minFanOut+level:chunk
+  small-utility mitigation; entry-point-pattern.md not read)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags
+  0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block),
+  AGENTS.md = core.
 - Result: 24/27 PASS (89%) over graded cases (N/A excluded: 0).
 - Codex T14: 19/27 (70%). Claude T22: 25/27 (93%).
 - FAIL list:
-  - `17` — FAIL; still (T14 FAIL): Defers to architecture-pattern.md; no explicit entryPoint ORIENT with testFile/documentation exclude before hubs. Claude T22 FAIL
-  - `20` — FAIL; still (T14 FAIL): Routes to entry-point-pattern but no chunkSize/minFanOut+level:chunk small-utility mitigation stated. Claude T22 FAIL
-  - `25` — FAIL; still (T14 FAIL): Reads digest resource to find alias; does not derive codegraph availability from own tool list; ORIENT-before-backbone not stated. Claude T22 PASS
+  - `17` — FAIL; still (T14 FAIL): Defers to architecture-pattern.md; no
+    explicit entryPoint ORIENT with testFile/documentation exclude before hubs.
+    Claude T22 FAIL
+  - `20` — FAIL; still (T14 FAIL): Routes to entry-point-pattern but no
+    chunkSize/minFanOut+level:chunk small-utility mitigation stated. Claude T22
+    FAIL
+  - `25` — FAIL; still (T14 FAIL): Reads digest resource to find alias; does not
+    derive codegraph availability from own tool list; ORIENT-before-backbone not
+    stated. Claude T22 PASS
 
 ## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially)
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two
+  subjects of 14 + 13, run sequentially)
 - Result: 25/27 PASS (93%) over scored cases (superseded: 0)
 - Baseline (round 1): 25/27 (93%)
 - Delta: +0pp
 - FAIL list:
-  - 17 — declared codegraph OFF because the main-session digest has no `codegraph.symbols` line, so no entryPoint ORIENT → architecturalHub (only a hypothetical "if on" branch)
-  - 20 — same OFF decision; answered with relevance + chunkSize heuristic instead of rerank=entryPoint + chunkSize post-filter + get_callees tail
-- Root cause (both): the rebuilt SessionStart digest (context-main.md) carries no `## Enrichment` / `codegraph.symbols` line at all, while explore SKILL.md "Codegraph availability" says a digest without that line is a STATED OFF that beats the tool list. With codegraph actually on, every main-session agent concludes OFF.
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+  - 17 — declared codegraph OFF because the main-session digest has no
+    `codegraph.symbols` line, so no entryPoint ORIENT → architecturalHub (only a
+    hypothetical "if on" branch)
+  - 20 — same OFF decision; answered with relevance + chunkSize heuristic
+    instead of rerank=entryPoint + chunkSize post-filter + get_callees tail
+- Root cause (both): the rebuilt SessionStart digest (context-main.md) carries
+  no `## Enrichment` / `codegraph.symbols` line at all, while explore SKILL.md
+  "Codegraph availability" says a digest without that line is a STATED OFF that
+  beats the tool list. With codegraph actually on, every main-session agent
+  concludes OFF.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
 - Result: 20/27 PASS (74%) (N/A excluded: 0).
 - Round-1 Codex: 24/27 (89%). Delta: -15 pp.
 - FAIL list:
   - `7` — EXEMPLAR collect workflow, never delegates to pattern-search.
-  - `8` — get_callers primary, hybrid_search only as codegraph-off fallback (eval expects iterative hybrid_search; usage-pattern.md says codegraph wins — eval stale).
-  - `14` — get_callers primary instead of hybrid_search for exhaustive usage (same eval/skill conflict as 8).
-  - `15` — behaviour query misclassified as EXEMPLAR collect; semantic_search never named.
-  - `17` — entryPoint ORIENT with filters, but no architecturalHub backbone step (row 4).
-  - `19` — codegraph off: avoids entryPoint, labels content-inferred, but never names rerank=onboarding.
-  - `25` — reads project digest instead of deciding codegraph from own tool list.
+  - `8` — get_callers primary, hybrid_search only as codegraph-off fallback
+    (eval expects iterative hybrid_search; usage-pattern.md says codegraph wins
+    — eval stale).
+  - `14` — get_callers primary instead of hybrid_search for exhaustive usage
+    (same eval/skill conflict as 8).
+  - `15` — behaviour query misclassified as EXEMPLAR collect; semantic_search
+    never named.
+  - `17` — entryPoint ORIENT with filters, but no architecturalHub backbone step
+    (row 4).
+  - `19` — codegraph off: avoids entryPoint, labels content-inferred, but never
+    names rerank=onboarding.
+  - `25` — reads project digest instead of deciding codegraph from own tool
+    list.
 
 ## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially; strict literal grading; no per-case length cap)
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two
+  subjects of 14 + 13, run sequentially; strict literal grading; no per-case
+  length cap)
 - Result: 27/27 PASS (100%) over scored cases (superseded: 0)
 - Baseline (round 2): 25/27 (93%)
-- Delta: +7pp (the two round-2 FAILs, caused by the digest lacking the codegraph line, now pass: codegraph availability is read from the subject's own tool list / explicit case statement)
+- Delta: +7pp (the two round-2 FAILs, caused by the digest lacking the codegraph
+  line, now pass: codegraph availability is read from the subject's own tool
+  list / explicit case statement)
 - FAIL list: none
-- Notes: case 1 expected text says "hybrid_search only"; the subject answered find_symbol → get_callers (codegraph on) with a hybrid_search cross-check — graded PASS because the failure mode (ripgrep after hybrid) is not hit and get_callers is the current usage-row route (case 8 encodes it); the case 1 expected_output is stale relative to codegraph row 2. Case 3 expected "find_symbol with test pathPattern"; subject used hybrid_search testFile:"only" (the current mechanism, same as case 22) — PASS, expected_output stale.
-- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+- Notes: case 1 expected text says "hybrid_search only"; the subject answered
+  find_symbol → get_callers (codegraph on) with a hybrid_search cross-check —
+  graded PASS because the failure mode (ripgrep after hybrid) is not hit and
+  get_callers is the current usage-row route (case 8 encodes it); the case 1
+  expected_output is stale relative to codegraph row 2. Case 3 expected
+  "find_symbol with test pathPattern"; subject used hybrid_search
+  testFile:"only" (the current mechanism, same as case 22) — PASS,
+  expected_output stale.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12
+  / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
 
 ## 2026-10-23 — Codex re-run round 3 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
 - Result: 22/27 PASS (81.5%) (N/A excluded: 0).
 - Round-2 Codex: 20/27 (74.1%). Delta: +7.4 pp.
 - FAIL list:
-  - `1` — find_symbol -> get_callers primary, hybrid_search only as codegraph-off fallback (eval: hybrid_search primary)
-  - `10` — refuses Grep but seed tool left to decision-tree (no hybrid_search/find_symbol named) and never states injected rules outrank the prompt
-  - `12` — refuses Glob but hybrid_search not named (tool "selected" later) and no statement that injected rules outrank the third-party skill
-  - `23` — code checked before the 512 claim, but no "code wins + name the drifted doc" on conflict — only "state whether supported"
-  - `25` — reads project digest and routes PRE-GEN; no own-tool-list codegraph decision, no ORIENT -> hubs
+  - `1` — find_symbol -> get_callers primary, hybrid_search only as
+    codegraph-off fallback (eval: hybrid_search primary)
+  - `10` — refuses Grep but seed tool left to decision-tree (no
+    hybrid_search/find_symbol named) and never states injected rules outrank the
+    prompt
+  - `12` — refuses Glob but hybrid_search not named (tool "selected" later) and
+    no statement that injected rules outrank the third-party skill
+  - `23` — code checked before the 512 claim, but no "code wins + name the
+    drifted doc" on conflict — only "state whether supported"
+  - `25` — reads project digest and routes PRE-GEN; no own-tool-list codegraph
+    decision, no ORIENT -> hubs
 
 ## 2026-10-23 — Codex re-run round 4 (Task 22)
 
-- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
 - Result: 14/27 PASS (51.9%) (N/A excluded: 0).
 - Round-3 Codex: 22/27 (81.5%). Delta: -29.6 pp.
 - FAIL list:
-  - `1` — hybrid_search only, never checks codegraph state; get_callers (codegraph on) not considered
-  - `5` — "what changed recently" -> semantic_search rerank=relevance instead of rank_chunks rerank=codeReview (SKILL.md "Change intent -> rank_chunks codeReview") (regression vs R3)
-  - `7` — Collect intent searched directly (hybrid_search + find_similar) instead of delegating to $pattern-search (regression vs R3)
-  - `8` — hybrid_search primary for "what calls"; get_callers only as conditional afterthought (regression vs R3)
-  - `11` — symbol + behaviour words -> semantic_search instead of hybrid_search (regression vs R3)
+  - `1` — hybrid_search only, never checks codegraph state; get_callers
+    (codegraph on) not considered
+  - `5` — "what changed recently" -> semantic_search rerank=relevance instead of
+    rank_chunks rerank=codeReview (SKILL.md "Change intent -> rank_chunks
+    codeReview") (regression vs R3)
+  - `7` — Collect intent searched directly (hybrid_search + find_similar)
+    instead of delegating to $pattern-search (regression vs R3)
+  - `8` — hybrid_search primary for "what calls"; get_callers only as
+    conditional afterthought (regression vs R3)
+  - `11` — symbol + behaviour words -> semantic_search instead of hybrid_search
+    (regression vs R3)
   - `13` — find_symbol existence check without metaOnly=true (regression vs R3)
-  - `17` — no ORIENT (semantic_search rerank=entryPoint, testFile/documentation exclude) — find_symbol directory outline instead (regression vs R3)
-  - `19` — rerank=relevance instead of ORIENT rerank=onboarding; no content-inferred flag (regression vs R3)
-  - `20` — "where does indexing start" -> relevance search; no rerank=entryPoint + chunkSize mitigation (regression vs R3)
-  - `21` — one merged query instead of three per-axis calls (sources/tests/docs) (regression vs R3)
+  - `17` — no ORIENT (semantic_search rerank=entryPoint, testFile/documentation
+    exclude) — find_symbol directory outline instead (regression vs R3)
+  - `19` — rerank=relevance instead of ORIENT rerank=onboarding; no
+    content-inferred flag (regression vs R3)
+  - `20` — "where does indexing start" -> relevance search; no
+    rerank=entryPoint + chunkSize mitigation (regression vs R3)
+  - `21` — one merged query instead of three per-axis calls (sources/tests/docs)
+    (regression vs R3)
   - `22` — hybrid_search without testFile:"only" (regression vs R3)
-  - `23` — checks code for 512 but no docs-excluded search and no drift flag naming the doc on conflict
+  - `23` — checks code for 512 but no docs-excluded search and no drift flag
+    naming the doc on conflict
   - `25` — reads digest instead of own tool list; no ORIENT before backbone
 
 ## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
 
-- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two subjects of 14 + 13, run sequentially; strict literal grading; no per-case length cap)
+- Subject model: sonnet (plan-only simulation, blind; 27 cases split into two
+  subjects of 14 + 13, run sequentially; strict literal grading; no per-case
+  length cap)
 - Result: 27/27 PASS (100%) over scored cases (superseded: 0)
 - Baseline (round 3): 27/27 (100%)
 - Delta: +0pp
 - FAIL list: none
-- Stale expectation wording (graded on the current skill text, as in round 3): case 3 expects "find_symbol with test pathPattern" but explain-pattern.md "Is X tested?" prescribes hybrid_search testFile:"only" (the subject's route); case 20 "chunkSize post-filter" — the subject used the equivalent minFanOut + level:"chunk" mitigation that entry-point-pattern.md offers as the alternative; case 25 "get_callees walk" — architecture-pattern.md (after Step 1) offers get_callers on the top hub, which the subject planned.
-- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+- Stale expectation wording (graded on the current skill text, as in round 3):
+  case 3 expects "find_symbol with test pathPattern" but explain-pattern.md "Is
+  X tested?" prescribes hybrid_search testFile:"only" (the subject's route);
+  case 20 "chunkSize post-filter" — the subject used the equivalent minFanOut +
+  level:"chunk" mitigation that entry-point-pattern.md offers as the
+  alternative; case 25 "get_callees walk" — architecture-pattern.md (after
+  Step 1) offers get_callers on the top hub, which the subject planned.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
+  / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).

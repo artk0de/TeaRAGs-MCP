@@ -99,9 +99,8 @@
 ## Boundaries
 
 - **The command surface is consumed by a shell hook and by plugin skills outside
-  the TypeScript build.**
-  `plugins/tea-rags/scripts/cleanup-worktree-clone.sh` (a
-  PostToolUse(Bash) backstop) reads `.path` and `.worktreeName` off
+  the TypeScript build.** `plugins/tea-rags/scripts/cleanup-worktree-clone.sh`
+  (a PostToolUse(Bash) backstop) reads `.path` and `.worktreeName` off
   `tea-rags worktree list --json` — `WorktreeInfo`
   (`contracts/types/worktree.ts`, built by `toWorktreeInfo` in
   `api/internal/ops/worktree-ops.ts`) — and calls

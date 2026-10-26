@@ -245,8 +245,8 @@ describe("renderCodexHarness", () => {
   it("SessionStart hands core and the prime digest to the session; core alone without the CLI", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
-    const command: string = hooks.SessionStart[0].hooks[0].command;
-    expect(command).toBe("${PLUGIN_ROOT}/scripts/session-start.sh");
+    const { command } = hooks.SessionStart[0].hooks[0];
+    expect(command).toBe(`\${PLUGIN_ROOT}/scripts/session-start.sh`);
 
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
     const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));

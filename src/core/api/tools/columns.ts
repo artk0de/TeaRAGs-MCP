@@ -16,7 +16,11 @@ function flattenInto(record: Record<string, unknown>, prefix: string, cells: Map
   }
 }
 
-/** Nested objects → dotted columns (`payload.git.file.commitCount`); arrays stay cell values; absent → null. */
+/**
+ * Nested objects → dotted columns (`payload.git.file.commitCount`); arrays stay cell values; absent → null.
+ * A column null in EVERY row is omitted (bd tea-rags-mcp-e6es3): null already means absent, so it is pure
+ * header cost — e.g. the `rankingOverlay: undefined` every non-reranked row carries.
+ */
 export function toColumns(records: readonly object[]): ColumnTable {
   const flat = records.map((record) => {
     const cells = new Map<string, unknown>();
@@ -26,8 +30,8 @@ export function toColumns(records: readonly object[]): ColumnTable {
   const columns: string[] = [];
   const seen = new Set<string>();
   for (const row of flat) {
-    for (const key of row.keys()) {
-      if (!seen.has(key)) {
+    for (const [key, cell] of row) {
+      if (cell !== null && cell !== undefined && !seen.has(key)) {
         seen.add(key);
         columns.push(key);
       }
