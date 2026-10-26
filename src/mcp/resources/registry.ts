@@ -92,7 +92,9 @@ Default false; rank_chunks default true (analytics — false to include code).
 
 ### find_symbol
 - symbol: Class#method (instance), Class.method (static), fn (top-level), Class → class + members.
-  symbol XOR relativePath. pathPattern applies to symbol mode only.
+  symbol XOR relativePath XOR symbols. pathPattern applies to symbol/symbols modes only.
+- symbols: 1-20 addresses one call → rows keyed request, misses in missing, lean payload (fields/rerank → full).
+- relativePath dir → files + top-level symbols + subdirs; unknown path → empty.suggestions.
 
 ### Codegraph tools
 - get_callers includeAmbiguous: ambiguous dispatch sites whose member matches target — call MAY reach
@@ -241,10 +243,12 @@ parameter examples per tool.
 - Drill from outline/TOC → symbol="<id copied from an outline line>" (one member / doc section)
 - Existence check → symbol="myFunc", metaOnly=true (no content)
 - With signals → symbol="Reranker#score", rerank="hotspots" (ranking overlay)
+- Batch drill → symbols=["Reranker#rerank","Reranker.create"] (N bodies, one call)
 
 **By file path (relativePath param, mutually exclusive with symbol):**
 - File outline → relativePath="src/reranker.ts" (code structure with hierarchy)
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
+- Directory → relativePath="src/explore/" (files + top-level symbols, subdirs w/ counts)
 - From search result → find_symbol(symbol: parentSymbolId) → class outline or doc TOC (doc parent = doc path)
 
 ## rank_chunks Examples (batch analytics, not online search)

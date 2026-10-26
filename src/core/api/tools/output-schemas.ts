@@ -148,4 +148,26 @@ export const SearchResultOutputSchema = {
         "build skew, daemon down, lock held). Names error code + remedy; results may miss collapsed symbols. " +
         "Surface to user.",
     ),
+  empty: z
+    .object({ reason: z.string(), message: z.string(), suggestions: z.array(z.string()).optional() })
+    .optional()
+    .describe("Empty results only: why (reason code) + up to 5 alternatives to try next."),
+  missing: z
+    .array(
+      z.object({ request: z.string(), message: z.string(), treeState: z.enum(["modified", "deleted"]).optional() }),
+    )
+    .optional()
+    .describe("find_symbol symbols only: addresses nothing answered; ambiguous → qualify with Class# or pathPattern."),
+  directory: z
+    .object({
+      kind: z.literal("directory"),
+      dir: z.string(),
+      subdirs: z.array(z.object({ dir: z.string(), fileCount: z.number() })),
+      total: z.number(),
+      truncated: z.boolean(),
+    })
+    .optional()
+    .describe(
+      "find_symbol directory path: results = its files (relativePath, language, symbols); subdirs one level down.",
+    ),
 };

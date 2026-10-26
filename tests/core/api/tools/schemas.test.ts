@@ -372,3 +372,14 @@ describe("typed filter exposure follows the registered filter params", () => {
     expect("minFanIn" in parsed).toBe(false);
   });
 });
+
+describe("FindSymbolSchema — symbols batch (N1)", () => {
+  const parse = (input: unknown) => z.object(createSearchSchemas(mockSchemaBuilder).FindSymbolSchema).safeParse(input);
+
+  it("accepts 1..20 addresses and rejects none or 21", () => {
+    expect(parse({ symbols: ["Foo#bar"] }).success).toBe(true);
+    expect(parse({ symbols: Array.from({ length: 20 }, (_, i) => `s${i}`) }).success).toBe(true);
+    expect(parse({ symbols: [] }).success).toBe(false);
+    expect(parse({ symbols: Array.from({ length: 21 }, (_, i) => `s${i}`) }).success).toBe(false);
+  });
+});

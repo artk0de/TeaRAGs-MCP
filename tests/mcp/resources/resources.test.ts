@@ -240,6 +240,12 @@ describe("Resource builders", () => {
       expect(md).toContain("Reranker#rerank");
     });
 
+    it("documents the find_symbol batch drill and directory modes (N1, N2)", () => {
+      const md = buildSearchGuide();
+      expect(md).toContain('symbols=["Reranker#rerank","Reranker.create"]');
+      expect(md).toContain("Directory → relativePath=");
+    });
+
     // bd tea-rags-mcp-89k7k — the portable routing guide for non-Claude clients:
     // the naming examples keep the lexicon surface, and the diff review routes
     // to review_changes, the tool that owns it now.

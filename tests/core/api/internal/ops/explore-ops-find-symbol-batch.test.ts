@@ -1,0 +1,201 @@
+/**
+ * find_symbol batch drill (N1) and directory outline (N2) through the facade:
+ * input exclusivity, the lean batch payload and its overrides, the miss list,
+ * ONE working-tree marker for the whole batch, and the directory / unknown-path
+ * answers reaching the response.
+ */
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ExploreFacade } from "../../../../../src/core/api/internal/facades/explore-facade.js";
+import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
+import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
+import type { WorkingTreeView } from "../../../../../src/core/domains/explore/working-tree/index.js";
+import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
+import { codeRow, fakeWorkingTreeView } from "../../../domains/explore/__fixtures__/working-tree-view.js";
+
+const tokens = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/** A word-tokenized text index: every condition's tokens must be in the field's. */
+function qdrantHolding(rows: ScrollChunk[]) {
+  const scrollFiltered = vi.fn(async (_c: string, filter: { must: any[] }) =>
+    rows.filter((row) =>
+      filter.must.every(({ key, match }) => {
+        const raw = row.payload[key];
+        const value = typeof raw === "string" ? raw : "";
+        if (match.text !== undefined) {
+          const have = new Set(tokens(value));
+          return tokens(match.text).every((t) => have.has(t));
+        }
+        return value === match.value;
+      }),
+    ),
+  );
+  return {
+    collectionExists: vi.fn().mockResolvedValue(true),
+    scrollFiltered,
+    getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: true, pointsCount: 0 }),
+    getPoint: vi.fn().mockResolvedValue(null),
+    ensurePayloadIndex: vi.fn().mockResolvedValue(undefined),
+  } as any;
+}
+
+const reranker = {
+  hasCollectionStatsFor: vi.fn().mockReturnValue(false),
+  setCollectionStats: vi.fn(),
+  getCollectionStats: vi.fn().mockReturnValue(undefined),
+  getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
+  getFullPreset: vi.fn().mockReturnValue(undefined),
+  getDescriptors: vi.fn().mockReturnValue([]),
+  rerank: vi.fn((results: any[]) => results),
+} as any;
+
+const registry = {
+  buildFilter: vi.fn().mockReturnValue(undefined),
+  buildMergedFilter: vi.fn().mockImplementation((_typed: any, raw?: any) => raw),
+  getAllFilters: vi.fn().mockReturnValue([]),
+  getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+  getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+} as any;
+
+const INDEX = [
+  codeRow("m1", {
+    symbolId: "Foo#bar",
+    name: "bar",
+    parentSymbolId: "Foo",
+    relativePath: "src/lib/foo.ts",
+    content: "bar body",
+    git: { file: { commitCount: 3 } },
+  }),
+  codeRow("f1", { symbolId: "helper", name: "helper", relativePath: "src/lib/h.ts", content: "helper body" }),
+];
+
+describe("ExploreFacade.findSymbol batch and directory modes", () => {
+  let registryDir: string;
+  let collectionRegistry: CollectionRegistry;
+
+  beforeEach(() => {
+    registryDir = mkdtempSync(join(tmpdir(), "find-symbol-batch-"));
+    collectionRegistry = new CollectionRegistry(registryDir);
+  });
+
+  afterEach(() => {
+    rmSync(registryDir, { recursive: true, force: true });
+  });
+
+  const facade = (view?: WorkingTreeView) =>
+    new ExploreFacade({
+      qdrant: qdrantHolding(INDEX),
+      embeddings: { embed: vi.fn() } as any,
+      reranker,
+      registry,
+      collectionRegistry,
+      driftReporter: {
+        checkAndConsume: vi.fn().mockResolvedValue(null),
+        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
+      } as any,
+      payloadSignals: [],
+      essentialKeys: [],
+      ...(view ? { workingTreeOverlay: { view: vi.fn().mockResolvedValue(view) } } : {}),
+    });
+
+  describe("input", () => {
+    it.each([
+      ["symbol", { symbols: ["helper"], symbol: "helper" }],
+      ["relativePath", { symbols: ["helper"], relativePath: "src/lib/h.ts" }],
+      ["21 addresses", { symbols: Array.from({ length: 21 }, (_, i) => `s${i}`) }],
+      ["no address", { symbols: [] }],
+    ])("rejects symbols with %s", async (_case, extra) => {
+      await expect(facade().findSymbol({ collection: "code_x", ...extra })).rejects.toBeInstanceOf(
+        InvalidParameterError,
+      );
+    });
+  });
+
+  describe("batch", () => {
+    it("answers lean rows with the request column and lists misses", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbols: ["Foo.bar", "helper", "Nope#x"] });
+
+      expect(response.results.map((r) => r.payload)).toEqual([
+        {
+          request: "Foo.bar",
+          resolvedAs: "Foo#bar",
+          symbolId: "Foo#bar",
+          relativePath: "src/lib/foo.ts",
+          startLine: 1,
+          endLine: 3,
+          content: "bar body",
+        },
+        {
+          request: "helper",
+          symbolId: "helper",
+          relativePath: "src/lib/h.ts",
+          startLine: 1,
+          endLine: 3,
+          content: "helper body",
+        },
+      ]);
+      expect(response.missing).toEqual([{ request: "Nope#x", message: expect.any(String) }]);
+    });
+
+    it("keeps exactly the explicit fields, plus the request", async () => {
+      const response = await facade().findSymbol({
+        collection: "code_x",
+        symbols: ["helper"],
+        fields: ["relativePath"],
+      });
+
+      expect(response.results.map((r) => r.payload)).toEqual([{ request: "helper", relativePath: "src/lib/h.ts" }]);
+    });
+
+    it("restores the full payload under rerank", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbols: ["Foo#bar"], rerank: "relevance" });
+
+      expect(response.results[0].payload).toMatchObject({ request: "Foo#bar", git: { file: { commitCount: 3 } } });
+    });
+
+    it("carries ONE working-tree marker for the batch, with the floors every address claimed", async () => {
+      const view = fakeWorkingTreeView({
+        changed: ["src/lib/h.ts"],
+        rows: [codeRow("t1", { symbolId: "helper", name: "helper", relativePath: "src/lib/h.ts", content: "tree" })],
+      });
+
+      const response = await facade(view).findSymbol({ collection: "code_x", symbols: ["helper", "Foo#bar"] });
+
+      expect(response.results.map((r) => r.payload?.content)).toEqual(["tree", "bar body"]);
+      expect(response.workingTree?.floors).toContain("chunks");
+      expect(response.results.every((r) => !("workingTree" in (r.payload ?? {})))).toBe(true);
+    });
+  });
+
+  describe("directory", () => {
+    it("answers a directory path with file rows and the directory frame", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/" });
+
+      expect(response.results.map((r) => r.payload?.relativePath)).toEqual(["src/lib/foo.ts", "src/lib/h.ts"]);
+      expect(response.directory).toEqual({
+        kind: "directory",
+        dir: "src/lib",
+        subdirs: [],
+        total: 2,
+        truncated: false,
+      });
+      expect(response.empty).toBeUndefined();
+    });
+
+    it("explains an unknown path with the nearest indexed paths", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/nope/h.ts" });
+
+      expect(response.results).toEqual([]);
+      expect(response.empty).toMatchObject({ reason: "unknownPath", suggestions: ["src/lib/h.ts", "src/lib/foo.ts"] });
+    });
+  });
+});

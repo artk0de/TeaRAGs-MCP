@@ -37,6 +37,9 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
       ...(response.workingTree && { workingTree: response.workingTree }),
       ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
+      ...(response.empty && { empty: response.empty }),
+      ...(response.missing && { missing: response.missing }),
+      ...(response.directory && { directory: response.directory }),
     },
     // A degraded ranking is said in text too: a reader of the text channel
     // would otherwise take a BM25-only answer for a hybrid one.
@@ -121,7 +124,9 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
       "symbol mode: function/method → merged full body; class/module → OUTLINE only " +
       "(member symbolIds, no bodies, tests excluded); doc:<hash> → full section content. " +
-      "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
+      "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids); " +
+      "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
+      "symbols mode: 1-20 addresses one call, rows keyed by `request`, misses in `missing`, lean payload. " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +
       "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +
