@@ -37,6 +37,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
       ...(response.workingTree && { workingTree: response.workingTree }),
       ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
+      ...(response.next && { next: response.next }),
     },
     // A degraded ranking is said in text too: a reader of the text channel
     // would otherwise take a BM25-only answer for a hybrid one.
@@ -51,7 +52,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "semantic_search",
     title: "Semantic Search",
     description:
-      "Analytical search. Return structured JSON, full metadata. " +
+      "Analytical search. Return structured JSON; signals via rerank or fields. " +
       "Agentic workflows: analytics, reports, downstream processing.\n\n" +
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",

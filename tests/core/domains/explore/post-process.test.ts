@@ -600,3 +600,97 @@ describe("applyEssentialSignals", () => {
     expect(out.payload).not.toHaveProperty("preset");
   });
 });
+
+// ---------------------------------------------------------------------------
+// filterMetaOnly — signature (agent turn economy N4, bd tea-rags-mcp-r4rl1)
+//
+// A metaOnly row loses its body, so the first code line is kept as `signature`
+// — taken HERE, before the content is gone.
+// ---------------------------------------------------------------------------
+
+describe("filterMetaOnly signature", () => {
+  const signatureOf = (payload: Record<string, unknown>): unknown =>
+    filterMetaOnly([{ score: 1, payload }], [], [])[0].signature;
+
+  it("takes the first code line of a multi-line header, past its doc comment", () => {
+    const content = [
+      "",
+      "/**",
+      " * Resolve one symbol.",
+      " */",
+      "export async function resolveSymbol(",
+      "  collection: string,",
+      "  symbolId: string,",
+      "): Promise<void> {}",
+    ].join("\n");
+
+    expect(signatureOf({ relativePath: "src/a.ts", language: "typescript", content })).toBe(
+      "export async function resolveSymbol(",
+    );
+  });
+
+  it("skips the container headers the chunker prefixes on a member chunk", () => {
+    // Body chunks open with the enclosing hierarchy, then the container header
+    // (TreeSitterChunker#composeBodyChunkContent); the member's own line follows.
+    const content = [
+      "export namespace Outer {",
+      "class ExploreOps {",
+      "/** Build it. */",
+      "private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {",
+      "  return x;",
+      "}",
+    ].join("\n");
+
+    expect(
+      signatureOf({ relativePath: "src/a.ts", language: "typescript", parentSymbolId: "Outer.ExploreOps", content }),
+    ).toBe("private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {");
+  });
+
+  it("keeps a nested class's own header — only the parents' headers are prefix", () => {
+    const content = "class Outer {\nclass Inner {\n  run() {}\n}";
+
+    expect(signatureOf({ relativePath: "src/a.ts", language: "typescript", parentSymbolId: "Outer", content })).toBe(
+      "class Inner {",
+    );
+  });
+
+  it("keeps the header of a class-body chunk whose parent is the class itself", () => {
+    const content = "export class SymbolSearchStrategy extends BaseExploreStrategy {\n  readonly type = 1;";
+
+    expect(
+      signatureOf({
+        relativePath: "src/a.ts",
+        language: "typescript",
+        symbolId: "SymbolSearchStrategy",
+        parentSymbolId: "SymbolSearchStrategy",
+        content,
+      }),
+    ).toBe("export class SymbolSearchStrategy extends BaseExploreStrategy {");
+  });
+
+  it("skips line comments of hash-comment languages", () => {
+    const content = "# Public: run it.\n# Returns nothing.\ndef call(record)\n  record.save\nend";
+
+    expect(signatureOf({ relativePath: "app/a.rb", language: "ruby", content })).toBe("def call(record)");
+  });
+
+  it("takes a doc chunk's heading line as is", () => {
+    const content = "\n## Installation\n\nRun npm install.";
+
+    expect(signatureOf({ relativePath: "README.md", language: "markdown", isDocumentation: true, content })).toBe(
+      "## Installation",
+    );
+  });
+
+  it("caps the signature at 160 chars", () => {
+    const content = `export const LONG = "${"x".repeat(300)}";`;
+    const signature = signatureOf({ relativePath: "src/a.ts", language: "typescript", content });
+
+    expect(typeof signature).toBe("string");
+    expect((signature as string).length).toBe(160);
+  });
+
+  it("adds no signature when the row carries no content", () => {
+    expect(signatureOf({ relativePath: "src/a.ts", language: "typescript" })).toBeUndefined();
+  });
+});

@@ -61,15 +61,23 @@
   reads chunk signals for alpha-blending and `language`/`chunkType` for overlay
   labels — stripping first silently changes ranking; and an undeclared flat key
   is dropped from file hits by design.
-- **A metaOnly payload is raw; its labels live only on `rankingOverlay`.**
-  `post-process.ts#filterMetaOnly` and `post-process.ts#applyEssentialSignals`
-  select fields and never write an overlay value into the payload, and
-  `BaseExploreStrategy#applyMetaOnly` carries the hit's `rankingOverlay`
-  through. Why: the overlay is keyed by bare field name while one preset's
-  `overlayMask` spans trajectories, so every merge into the payload either
-  misplaced a key (bd tea-rags-mcp-rtjrn put `imports` and `fanIn` under
-  `git.*`) or turned a stored number into `{value, label}` at a path filters and
-  `fields` address as raw.
+- **A metaOnly payload is never labelled, and by default it is a locator; its
+  labels live only on `rankingOverlay`.** `post-process.ts#filterMetaOnly` and
+  `post-process.ts#applyEssentialSignals` select fields and never write an
+  overlay value into the payload, and `BaseExploreStrategy#applyMetaOnly`
+  carries the hit's `rankingOverlay` through. Why: the overlay is keyed by bare
+  field name while one preset's `overlayMask` spans trajectories, so every merge
+  into the payload either misplaced a key (bd tea-rags-mcp-rtjrn put `imports`
+  and `fanIn` under `git.*`) or turned a stored number into `{value, label}` at
+  a path filters and `fields` address as raw. With `fields` absent,
+  `payload-projection.ts#projectSearchResultPayloads` then narrows the answer
+  per call mode (bd tea-rags-mcp-r4rl1): metaOnly → locator (raw `git.*` /
+  `codegraph.*` dropped, reranked or not), content → locator + `content` +
+  `navigation`, reranked content → whole payload. It runs LAST in
+  `ExploreOps#executeExplore`, so a strategy, reranker or the working-tree
+  substitution always reads the full payload. The locator's `signature` is
+  derived by `filterMetaOnly` — the only step that still holds the body. Raw
+  signals are reached through `fields` (`["git"]` copies the subtree).
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has

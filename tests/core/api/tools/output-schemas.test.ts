@@ -337,6 +337,23 @@ describe("SearchResultOutputSchema — dense leg unavailable", () => {
   });
 });
 
+// N5 (bd tea-rags-mcp-r4rl1): ready-made expansion calls on a search answer.
+describe("SearchResultOutputSchema — next expansion hints", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates next calls with their tree address", () => {
+    const next = [
+      {
+        tool: "find_co_changed",
+        args: { project: "tea-rags", path: "/repo/wt", files: ["src/a.ts"] },
+        why: "files usually edited together with the top results",
+      },
+    ];
+
+    expect(schema.parse({ results: EMPTY_TABLE, next }).next).toEqual(next);
+  });
+});
+
 describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 

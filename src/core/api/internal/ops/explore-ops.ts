@@ -77,6 +77,7 @@ import {
 import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
+import { buildSearchExpansionCalls } from "./search-expansion-calls.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -203,6 +204,11 @@ interface ExploreFinalizeOptions {
    * on the answer, with the floors the strategy's reads claimed on it (D8).
    */
   workingTreeView?: Promise<WorkingTreeView>;
+  /**
+   * Attach `next` expansion hints (N5, bd tea-rags-mcp-r4rl1). Read from the
+   * strategy's rows BEFORE projection — `fields` may drop `relativePath`.
+   */
+  expansionHints?: boolean;
 }
 
 export class ExploreOps {
@@ -508,9 +514,15 @@ export class ExploreOps {
         ...(r.treeState ? { treeState: r.treeState } : {}),
       })),
       finalize.fields,
+      // N4: `fields` absent → the call mode's default projection; the LAST
+      // payload step, after every reader of the full payload ran.
+      { metaOnly: ctx.metaOnly === true, reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance" },
     );
+    const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
+    const next = finalize.expansionHints ? buildSearchExpansionCalls(results, workingTree) : [];
     return {
       results: projection.results,
+      ...(next.length > 0 ? { next } : {}),
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
       ...(confidence ? { confidence } : {}),
@@ -518,7 +530,7 @@ export class ExploreOps {
       ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
       // Read AFTER the strategy ran: reading the delta rows is what records
       // `unparsed` on the marker.
-      ...(workingTreeView ? { workingTree: finalizeWorkingTreeMarker(workingTreeView) } : {}),
+      ...(workingTree ? { workingTree } : {}),
     };
   }
 
@@ -553,6 +565,8 @@ export class ExploreOps {
       presetFilterNotice,
       fields: request.fields,
       workingTreeView,
+      // Gate: codegraph wired — the same signal find_symbol's codegraphWarning reads.
+      expansionHints: this.chunkResolver !== undefined,
     });
     return denseUnavailable ? { ...response, denseUnavailable } : response;
   }

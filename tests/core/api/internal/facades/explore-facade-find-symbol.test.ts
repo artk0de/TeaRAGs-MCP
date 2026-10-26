@@ -283,9 +283,12 @@ describe("ExploreFacade.findSymbol", () => {
       },
     ]);
 
+    // chunkCount is outside the content-mode default projection (N4, bd
+    // tea-rags-mcp-r4rl1) — asked for through `fields`.
     const result = await facade.findSymbol({
       relativePath: "src/utils.ts",
       collection: "test_collection",
+      fields: ["relativePath", "chunkCount"],
     });
 
     expect(result.results).toHaveLength(1);

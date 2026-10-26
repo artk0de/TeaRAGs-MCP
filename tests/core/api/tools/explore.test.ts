@@ -401,3 +401,20 @@ describe("registerSearchTools — denseUnavailable", () => {
     expect(result.content).toEqual([]);
   });
 });
+
+// N5 (bd tea-rags-mcp-r4rl1): the answer's ready-made next calls reach the client.
+describe("registerSearchTools — next", () => {
+  it("hybrid_search passes next through to structuredContent", async () => {
+    const next = [{ tool: "get_callers", args: { path: "/x", relativePath: "src/a.ts" }, why: "importers" }];
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, next }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect(result.structuredContent.next).toEqual(next);
+  });
+});
