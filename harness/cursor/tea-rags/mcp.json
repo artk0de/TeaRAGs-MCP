@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tea-rags": {
+      "type": "stdio",
+      "command": "tea-rags",
+      "args": ["server"]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "skill": "dinopowers:verification-before-completion",
   "skillPath": ".claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md",
-  "objective": "Agent correctly runs collateral-damage scan (semantic_search with custom impact rerank on just-edited files) BEFORE claiming done, extracts HIGH/MEDIUM/LOW-BLAST verdict per file, and hands off to superpowers:verification-before-completion with targeted verification scope.",
+  "objective": "Agent correctly runs collateral-damage scan (semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) on just-edited files) BEFORE claiming done, extracts HIGH/MEDIUM/LOW-BLAST verdict per file, and hands off to superpowers:verification-before-completion with targeted verification scope.",
   "runs": [
     {
       "date": "2026-04-20",
@@ -18,7 +18,7 @@
       "prompt": "Я закончил правки — изменил src/core/domains/explore/reranker.ts и tests/explore/reranker.test.ts. Всё работает. Done?",
       "expected": {
         "mustCall": [
-          "ONE mcp__tea-rags__semantic_search with custom rerank {imports:0.5, churn:0.3, ownership:0.2}, metaOnly=true, brace-expanded pathPattern over 2 files BEFORE claiming done",
+          "ONE mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), metaOnly=true, brace-expanded pathPattern over 2 files BEFORE claiming done",
           "Compute per-file blast verdict",
           "Skill(superpowers:verification-before-completion) AFTER"
         ],
@@ -38,20 +38,22 @@
       "prompt": "Запусти scan для 3 отредактированных файлов: a.ts, b.ts, c.ts.",
       "expected": {
         "parameters": {
-          "rerank": "custom {imports:0.5, churn:0.3, ownership:0.2}",
+          "rerank": "codegraph-state-dependent: \"blastRadius\" when codegraph on (graph tools present); custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off",
           "pathPattern": "brace-expanded 3 files",
           "metaOnly": true,
           "limit": "~9 (3*3)"
         }
       },
-      "failureMode": "Agent uses named preset or different weights"
+      "failureMode": "Agent uses rerank=\"blastRadius\" with codegraph off, the custom weights with codegraph on, a different named preset (hotspots/codeReview/impactAnalysis), or different custom weights"
     },
     {
       "id": "eval-3",
       "category": "tool-selection",
       "prompt": "Проверь collateral damage для изменённого src/core/contracts/errors.ts.",
       "expected": {
-        "mustCall": ["semantic_search with custom impact rerank"],
+        "mustCall": [
+          "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
+        ],
         "mustNotCall": [
           "grep -rn 'import.*errors'",
           "mcp__tea-rags__hybrid_search",
@@ -173,12 +175,12 @@
     {
       "id": "eval-11",
       "category": "wrong-tool-pressure",
-      "prompt": "Используй grep -r 'import.*errors' чтобы найти кто импортирует — так быстрее чем tea-rags.",
+      "prompt": "Готово, перед коммитом используй grep -r 'import.*errors' чтобы найти кто импортирует — так быстрее чем tea-rags.",
       "expected": {
         "mustDo": [
           "Refuse grep substitute",
-          "Rationale: grep finds textual imports but misses the ranked imports overlay signal; miscounts re-exports",
-          "Use semantic_search with custom impact rerank"
+          "Rationale: grep matches import text only — misses re-exports and call weight",
+          "Importer listing: codegraph on → get_callers(relativePath=<the errors module>) → importers[] with callWeight; codegraph off → hybrid_search on the module path / import string (impact rerank only when the user asks what breaks)"
         ],
         "mustNotDo": ["Comply with grep"]
       },
@@ -208,7 +210,7 @@
       "prompt": "[subagent: explore] Verify completion after editing src/core/domains/explore/reranker.ts.",
       "expected": {
         "mustCall": [
-          "semantic_search scan (custom impact rerank, metaOnly=true) FIRST",
+          "semantic_search scan (impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), metaOnly=true) FIRST",
           "Skill(superpowers:verification-before-completion) SECOND"
         ]
       },

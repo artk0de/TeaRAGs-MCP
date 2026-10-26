@@ -1,36 +1,67 @@
 ---
 name: risk-assessment
 description:
-  Assess project/domain health — scan risk zones across dimensions (bugs,
-  hotspots, tech debt). Use when asked evaluate risks, find problematic areas,
-  assess code health, identify zones needing attention — NOT for specific bug
-  symptoms (use bug-hunt instead)
+  Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
+  debt) into tiers. Use to evaluate risks, assess code health, find zones
+  needing attention — NOT one-preset asks like bug-prone areas
+  (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something's
+  off in X" (dinopowers:systematic-debugging), NOT refactoring candidates
+  ("what to refactor in X", "cleanup X" → explore). Answer: phases 0–5,
+  Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
+  Output: line
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
 # Risk Assessment
 
+!`tea-rags resource "tea-rags://project/{alias}/metrics?section=labelMap,resolve" --path "$PWD" || true`
+
+**Not this skill — check first:** user feels something is wrong / off in an area
+and names no risk dimension (risk, health, debt, hotspots) → stop here, route to
+dinopowers:systematic-debugging (unframed symptom: bug-hunt skipped there). No
+scan.
+
+**Answer contract — reports AND plan-only answers.** Copy the skeleton below:
+plan-only → its numbered steps first, one line per phase, never merged or moved
+to a preamble; then the Phase 5 tables themselves (format: Phase 5), headings +
+header rows, `[planned; not run]` in cells not gathered yet. Prose, a column
+list or `Output:` alone is NOT the map. Hand-off only when the prompt mentions
+generation ("before implementing" / "generate"): resolved scope + per-symbol
+overlay labels, no extra block or scan. `Output:` = last line, verbatim:
+
+```
+0. SCOPE (Phase 0): "<word> <process noun>" → ONE semantic_search(query=<phrase>, pathPattern="**/<word>/**") → hits: pathPattern="**/<word>/**" kept; location test: pass → pathPattern; concept → ONE semantic_search → prefixes; whole project → none
+1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
+   stop per preset: gradient drop > 2× avg gap | < 3 new files | page 3 (offset 20)
+1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
+2. MERGE — negativeIds dedup, never manual filtering
+3. EXPAND — healthy-demoted candidates
+4. ENRICH — tiers, fix cost, signal pairs
+5. OUTPUT:
+## Critical
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+## High
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+## Structural risks   (codegraph active)
+## Summary
+Hand-off: pathPattern + per-symbol File:Line + labels
+Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary
+```
+
+No `## Label maps` above → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap,resolve`
+(ReadMcpResourceTool). `## Codegraph resolve` present = codegraph active.
+
 ## Phase Order (MANDATORY — do not skip any phase)
 
-🛑 STOP — read all phases before scanning.
-
-1. Phase 1 — SCAN with primary preset
-2. Phase 1b — STRUCTURAL scan (**MUST run in the same parallel block —
-   structural debt is git-blind, a big quiet method never reaches Phase 1**)
-3. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
-   found enough hits — single-preset risk maps are biased**)
-4. Phase 3 — MERGE results with negativeIds dedup (**MUST use negativeIds, NEVER
-   manual filtering**)
-5. Phase 4 — CLASSIFY into severity tiers, score fix cost
-6. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
-   reports are misleading**)
+🛑 STOP — read all phases before scanning. Order = the numbered steps of the
+skeleton at the top. Phase 1b MUST run in the same parallel block — structural
+debt is git-blind, a big quiet method never reaches Phase 1. Stratified scan
+MUST run even when Phase 1 found enough hits — single-preset risk maps are
+biased. Report signal pairs — single-signal reports mislead.
 
 ## Top Anti-patterns (read before scanning)
 
-- **Using bug-hunt for risk assessment.** bug-hunt finds ONE root cause. This
-  skill scans the risk surface.
-- **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
-  of slots. Always run stratified second scan with `!**/dominant/**`.
 - **Scanning tests and docs as risk.** Dimension presets pick a risk profile,
   not a code population — tests are often half the corpus and churn hardest.
   Every Phase 1/1b call carries `testFile: "exclude"` +
@@ -38,45 +69,42 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 - **One batched hybrid_search for test coverage.** BM25 collapses onto the
   domain with the biggest test files; every other candidate returns empty and
   gets reported "untested". Stratify by domain — see Phase 4 step 2.
-- **Classifying from a single signal.** "High churn" alone implies no class.
-  Check companion signals (`imports`, `bugFixRate`, `ageDays`, `blockPenalty`)
-  before picking a label. See `../../rules/references/signal-interpretation.md`.
-- **Folding structural debt into overlap tiers.** Size is not risk. Structural
-  hits get their own section, annotated with risk, never a tier slot.
+- **Extra scan for a named dimension.** "hotspots and ownership in X" = the same
+  5 presets (4 codegraph off), scoped. Ownership / bus factor surfaces via
+  `dangerous` (single-owner) + overlay `blameContributorCount` — never a
+  standalone `ownership` call.
+- **Annotating a structural violation instead of escalating** (Critical or High
+  candidate) — Phase 4 step 3 prints the escalation line.
 
 Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
-Multi-dimensional risk scan via rank_chunks × 5 rerank presets (4 when codegraph
-off — criticalPath is codegraph-gated), cross-referenced by overlap count, plus
-a git-independent structural axis (2 presets) reported separately.
-Semantic/hybrid search resolves intent-based scopes.
-
 ## Rules
 
-**Addressing:** every call passes `project=<alias>` +
-`path=<your working directory>` — search-cascade "Addressing the Codebase".
+**Addressing:** every call passes `path=<your working directory>` +
+`project=<alias>`; alias unknown / "not registered" → `path` alone, never ask. A
+failed metrics / label-map read never stops the run: Phase 0 still resolves
+`pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+`index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
+awaited; print `--force not run; reads continue`; then keep working); subagent /
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
-1. **Execute YOURSELF** — no subagents.
+1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
-4. **Search results contain code when metaOnly=false.** Evaluate from search
-   results BEFORE any Read or navigation.
-5. **Depth → `find_symbol`, never Read** (search-cascade After-Search
-   Navigation): full body `symbol=<symbolId>`, file outline `relativePath`,
-   neighbour `navigation.prev/nextSymbolId`. Partial `Read` only for non-symbol
-   text (config, data). Never read full files. Row with `treeState` = pre-edit
-   index copy, lines stale → `find_symbol` for current code (search-cascade
-   "Addressing the Codebase").
+3. **No built-in Search/Grep for code discovery** — tea-rags tools only.
+4. **Search results contain code when metaOnly=false.** Evaluate them BEFORE any
+   Read or navigation.
+5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
+   After-Search Navigation): full body `symbol=<symbolId>`, file outline
+   `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only
+   for non-symbol text (config, data). Never read full files.
 6. **Minimize tool calls — but never batch across a ranking boundary.** Batch
    what shares a ranking space: all rank_chunks in one message (separate calls),
    all Critical UUIDs into one find_similar (vector math, order-free). Do NOT
@@ -112,16 +140,28 @@ $ARGUMENTS describes...
 │   → pathPattern = none
 │   → scopeType = "broad"
 │
-├─ Domain/directory ("ingest domain", "explore/", "adapters")
-│   → pathPattern = "**/ingest/**"
+├─ "<word> <process noun>" — last word pipeline, flow, lifecycle, handling,
+│   processing, logic, workflow, a word before it ("<dir> pipeline") — checked
+│   BEFORE the location test; the area word is never dropped:
+│   → ONE semantic_search(query=<whole phrase>, pathPattern="**/<word>/**",
+│     language = primary, limit = 10)
+│   → hits → pathPattern = "**/<word>/**" on every scan call, scopeType =
+│     "domain"; the phrase stays the query only
+│   → 0 hits → <word> is no directory → Concept below, unscoped
+│
+├─ LOCATION TEST passes — the phrase holds one of: a path ("explore/",
+│   "src/x"); a name + container word (domain, module, package, directory,
+│   layer, area); one component's agent-noun name ("the chunker", "the parser")
+│   → pathPattern = "**/<name>/**" (noun → stem dir: "chunker" → "**/chunk*/**")
 │   → scopeType = "domain"
 │
-└─ Intent/concept ("enrichment pipeline", "error handling")
+└─ Concept (process noun alone, or test fails) — a process, behaviour or topic;
+    never guess a directory from its nouns
     → ONE search call (concept/behavior → semantic_search,
       named symbol + context → hybrid_search):
       query = extracted concept, language = primary, limit = 10
     → extract directory prefixes from result relativePaths:
-      - Shared prefix → "**/enrichment/**"
+      - Shared prefix → "**/<dir>/**"
       - 2-3 clusters → "{**/dir1/**,**/dir2/**}"
       - Scattered → no pathPattern (scan everything)
     → scopeType = "intent"
@@ -152,11 +192,11 @@ exclusions — do NOT add `production` to the CSV, see Scan population), so an N
 hit now also means "in the central population". Empty = no hubs in scope = valid
 clean answer.
 
-**Codegraph transparency:** when codegraph active (prime `## Enrichment` lists
-`codegraph.symbols`), `bugHunt`, `techDebt` and `dangerous` already absorb
-structural signals via reranker override (`bugHunt` gains method-level pageRank)
-— no parameter change, risk map sharpens automatically. Explicit structural axis
-(blast-radius hubs + cycles) added in Phase 4, not here.
+**Codegraph transparency:** when codegraph active (`## Codegraph resolve`
+above), `bugHunt`, `techDebt` and `dangerous` already absorb structural signals
+via reranker override (`bugHunt` gains method-level pageRank) — no parameter
+change, risk map sharpens automatically. Explicit structural axis (blast-radius
+hubs + cycles) added in Phase 4, not here.
 
 Parameters per call:
 
@@ -180,11 +220,8 @@ Omit the two exclusions and test + doc chunks compete for the 10 slots on equal
 footing — on a typical index tests alone are ~half the corpus, and test churn
 outranks production churn because tests change with every feature.
 
-**Do NOT substitute `filter: { presets: "production,<dimension>" }`.** That
-preset also drops `chunkType: "block"`, which kills barrel files, config objects
-and top-level constant blocks — legitimate candidates (a barrel re-export with
-`fanIn: 11` is a hub). Explicit `testFile` + `documentation` exclude the same
-tests and docs without the block casualty.
+**Do NOT substitute `filter: { presets: "production,<dimension>" }`** — drops
+block chunks (barrels, config); why: references/anti-patterns.md.
 
 **Empty dimension result = clean.** Filter preset narrows to that dimension's
 problem population (`godMethods` = oversized methods only) → zero results = "no
@@ -257,10 +294,10 @@ own OUTPUT section, annotated with risk and fix cost.
 
 Degradation:
 
-- **Codegraph off** (prime `## Enrichment` lacks `codegraph.symbols`) →
-  `decomposition` resolves the size-only static variant. Note "god-method lens
-  unavailable — codegraph off". `godModule` resolves the mass-only static
-  variant, still valid.
+- **Codegraph off** (request says so, or prime / `metrics?section=registry` says
+  off — an unseen graph tool alone is not off) → `decomposition` resolves the
+  size-only static variant. Note "god-method lens unavailable — codegraph off".
+  `godModule` resolves the mass-only static variant, still valid.
 
 ## Phase 2: MERGE
 
@@ -292,16 +329,8 @@ critical risks found. Codebase appears healthy by multi-signal analysis."
 **Negative contrast (healthy-demoted as negativeIds):**
 
 Phase 2 MERGE produces healthy-demoted candidates: high preset overlap but
-healthy bugFixRate. Structurally similar to Critical candidates but
-well-maintained — exact opposite of antipatterns. Use as negative examples to
-sharpen find_similar toward risky code:
-
-```
-find_similar vector direction:
-  positive = Critical candidates (buggy, churny, oversized)
-  negative = healthy-demoted from MERGE (active but clean)
-  → result space shifts AWAY from "active development" TOWARD "antipattern"
-```
+healthy bugFixRate — active but clean. Negative examples sharpen find_similar
+toward risky code.
 
 Collect negativeIds from ALL healthy-demoted candidates in Phase 2 (any tier).
 No healthy-demoted candidates → skip negativeIds.
@@ -330,8 +359,6 @@ Domain/intent scopes: Pass 1 only (same pathPattern as Phase 0). Total: 1 call.
 
 Label results as "Related risk" (pass 1) or "Cross-domain risk" (pass 2).
 
-Scope rules embedded in two-pass description above.
-
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
 concerning+, OR churnVolatility erratic+, OR `blameContributorCount = 1` —
 single live-line owner). Healthy overlay → ignore.
@@ -340,160 +367,19 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 
 ## Phase 4: ENRICH
 
-For **Critical and High** candidates (typically 5-10 chunks):
+**MANDATORY: read [references/enrich.md](./references/enrich.md) before Phase
+4** — Critical + High candidates (5–10 chunks), six steps in order:
 
-**1. Code review** — Content in results (metaOnly=false). Surrounding context →
-`find_symbol` (Rule 5), not Read.
-
-**2. Test coverage check — stratified, NEVER one batched call.**
-
-Candidates come from different domains. Joining every symbol name into one
-`hybrid_search` makes BM25 score them as a single bag of terms, so the domain
-owning the largest test files takes every slot and every other candidate returns
-empty. Empty then reads as "untested" — a fabricated finding, and the most
-damaging output this skill can produce, because it looks like a real result.
-
-Procedure — one call per domain cluster, reusing the Phase 1 stratification:
-
-```text
-1. Group Critical/High candidates by relativePath directory prefix
-   (same grouping as the Phase 1 dominant-domain count).
-2. Per cluster: hybrid_search
-     query      = that cluster's symbol names only
-     testFile   = "only"
-     metaOnly   = true
-     limit      = 15
-3. Verdict per candidate comes ONLY from its own cluster's call.
-```
-
-Typically 2-3 calls, not 1. That is the correct cost — a wrong "untested"
-verdict costs the operator far more than two extra scroll queries.
-
-- Symbol present → note test path (do NOT read test content)
-- Symbol absent **from its own cluster's call** → "untested risk zone"
-- Symbol absent from a call another domain dominated → **no verdict**, re-query
-
-**Exact alternative (preferred when the test path convention is known).**
-`find_symbol({relativePath: "<mirrored test path>", metaOnly: true})` is an
-exact lookup — no BM25, no crowding, no stratification needed. Mirror the source
-path into the test root (`src/core/foo/bar.ts` → `tests/core/foo/bar.test.ts`).
-Miss = genuinely absent. Use this when the layout mirrors predictably; fall back
-to stratified `hybrid_search` when it does not.
-
-**3. Structural amplifier + cycles (codegraph axis).** ONLY when prime shows
-`codegraph.symbols` under `## Enrichment`. Line absent → graph tools not
-registered — skip, note structural risk not assessed (never claim "no cycles" /
-"no hubs"). See search-cascade "Graph navigation" for off-routing.
-
-- **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
-  `rerank="architecturalHub"` scoped to same `pathPattern`, same
-  `testFile`/`documentation` exclusions as Phase 1. Cross-reference resulting
-  `isHub=true` / high-`fanIn` files with Critical/High candidates by
-  `relativePath`. Risk candidate ALSO a hub = **blast-radius hub** — escalate
-  (tag Risk Type, sort to top of its tier): change there ripples across many
-  dependents. Amplifier on already-identified risk, NOT a 5th MERGE preset —
-  clean high-fanIn hub with healthy git signals is backbone, not risk.
-- **Structural-violation amplifier (`get_architecture_report`).** Run once with
-  `pathPattern` = same scope. Candidate inside a component with an SDP,
-  mainSequence or hubLike violation (match on the component's files, same
-  overlap rule as blast-radius hubs) = **structural-violation** — escalate (tag
-  Risk Type, sort to top of its tier). Component flagged `compositionRoot`,
-  `entryPoint` or `foundationTerminal` does NOT escalate: the position is its
-  job (triage data). Violation `tier` orders escalation: critical (change
-  cascades into wide reach) > active (edge co-changes beyond chance) >
-  structural-only; untiered (mainSequence, hubLike) ranks as structural. A
-  violation alone, without an identified risk candidate, is
-  `architecture-diagnostics` territory — not a risk row. Zero judged = "not
-  judged", never "clean".
-- **Cycles (`find_cycles`).** Run `find_cycles scope=file pathPattern=<scope>`.
-  Circular dependencies = structural risk churn presets cannot see. Noise guard:
-  > 20 cycles unscoped → narrow by subdomain. Empty result with codegraph ON =
-  > valid "no cycles (DAG)". Surface findings in OUTPUT Structural risks
-  > section.
-
-**4. Fix-cost classifier** — every Critical/High risk candidate AND every Phase
-1b structural candidate. Scored from overlay signals already fetched — zero
-extra calls.
-
-| Input                   | 0                | 1         | 2        |
-| ----------------------- | ---------------- | --------- | -------- |
-| `chunk.fanIn`           | unused / typical | frequent  | central  |
-| `file.transitiveImpact` | local            | regional  | systemic |
-| `chunk.pageRank`        | peripheral       | important | critical |
-| tests (step 2 result)   | present          | absent    | —        |
-
-Sum → 0-2 `cheap`, 3-4 `moderate`, 5+ `expensive`.
-
-Structural violation present → read `../../repair/<family>.md`
-(`stableDependencies`, `mainSequence`, `hubLike`; only families found, never the
-directory). A violation whose repair file has a `remedy`-style cheap path (edge
-edits only: retarget an import or restore one facade export) → `cheap`
-regardless of the sum; no cheap path (`## No remedy` ends in split / move) → at
-least `moderate`. Tests and the overlay inputs still decide the rest.
-
-Missing tests feeds BOTH risk (defect likelihood) AND cost (refactor safety).
-Intentional: one input, two different quantities.
-
-Codegraph off → those rows score 0; mark the estimate partial, never claim
-`cheap` from missing signals.
-
-**5. God-class attribution** — for `godModule` hits.
-
-1. File mass from `godModule` overlay: `rankingOverlay.file.moduleLines` +
-   `rankingOverlay.file.moduleMethodCount`, value + label. Overlay has NO
-   per-class numbers — file-level result, no chunk bucket.
-2. Per hit, cap 5: `find_symbol({relativePath})` → outline. Per-class member
-   count = distinct member symbolIds under class, `#partN` folded. Spans from
-   `startLine` / `endLine`.
-3. Verdict:
-   - One class holds most of file's callables → **god class**. Report class
-     symbol + its outline member count.
-   - Callables spread top-level, no dominant class → **god module**. Report
-     file + `moduleMethodCount` + `moduleLines`.
-
-Member counts ALWAYS from outline (exact), file mass ALWAYS from overlay.
-
-**6. Risk classification** — from overlay labels + tier + test coverage.
-
-**BEFORE picking a class, consult pair diagnostics.** Single overlay signals
-ambiguous. `../../rules/references/signal-interpretation.md` gives pair/triple
-rules that disambiguate patterns (god module vs bug attractor, healthy owner vs
-toxic silo, active development vs coupling, legacy minefield vs proven stable).
-Read whenever overlay shows more than one strong signal.
-
-**Key disambiguators** (always check before classifying):
-
-- `imports` (fan-in, file-level) separates coupling (high) from bug attractor
-  (low). **Codegraph on → prefer real `fanIn` / `isHub` / `transitiveImpact`
-  signals over `imports` proxy** — they measure call/import edges, not raw
-  import-line count. See signal-interpretation "Structural signals" +
-  blast-radius-hub / cyclic-coupling patterns.
-- `bugFixRate` separates healthy (stable) from fragile (unstable)
-- `ageDays` inverts churn meaning (old+churn = minefield, young+churn = feature)
-- `blameDominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
-- `recentDominantAuthorPct` = activity concentration (who's committing lately),
-  NOT who owns live code — only `blame*` speaks to ownership
-- path heuristic (`dto/`, `schema/`, `generated/`) flags boilerplate churn
-
-**File × chunk refinement.** File-level signals point to which file. Chunk-level
-signals (`chunk.bugFixRate`, `chunk.ageDays`, `chunk.relativeChurn`,
-`chunk.blameContributorCount`, `chunk.recentContributorCount`) point to which
-method inside. Overlay shows both → chunk-level locates exact problem:
-
-- Coupling point → find chunk with highest `chunk.recentContributorCount`
-  (recently-touched-by-many — overloaded API)
-- Knowledge silo zoom-in → find chunk with `chunk.blameContributorCount = 1`
-  (single live-line owner of a method inside a shared file)
-- Legacy minefield → find chunk with highest
-  `chunk.bugFixRate + chunk.relativeChurn`
-- Bug attractor → find chunk with highest `chunk.bugFixRate`
-- Fossil vs active legacy → `chunk.ageDays` inside old file
-
-See `../../rules/references/signal-interpretation.md` § "Method-level (chunk)
-pair diagnostics" for the full table.
-
-See [references/classification-tiers.md](./references/classification-tiers.md)
-for the full 13-tier table.
+1. Code review — content from results; context → `find_symbol`, never Read.
+2. Test coverage — **stratified, one `hybrid_search` per domain cluster, NEVER
+   one batched call** (batched BM25 fabricates "untested"); exact mirrored-path
+   `find_symbol` preferred.
+3. Structural amplifier + cycles — only with graph tools; else "not assessed".
+   Critical OR High candidate in a component with an SDP / mainSequence /
+   hubLike violation → open `../../repair/<family>.md` of that family only and
+   print
+   `structural-violation <candidate> — <component> <family>: escalated, Risk Type tagged, top of its tier; fix cost per repair/<family>.md`.
+4. Fix-cost classifier. 5. God-class attribution. 6. Risk classification.
 
 ## Phase 5: OUTPUT
 
@@ -525,7 +411,7 @@ Count only. "Show medium risks" to expand.
 ## Structural risks (codegraph axis)
 
 Only when codegraph is active. Omit the whole section (or state "structural risk
-not assessed — codegraph off") when prime has no `codegraph.symbols`.
+not assessed — codegraph off") when codegraph is off by that test.
 
 - **Blast-radius hubs** — Critical/High candidates that are also `isHub` /
   high-`fanIn`: `symbol() file.ts:line — fanIn:N, blast-radius`.
@@ -561,5 +447,5 @@ back to the risk map; the intersection (structural debt AND risk tier) is the
 `unverified` when coverage was not established for it. Never print `none` for a
 candidate whose only query was one another domain dominated.
 
-**Label mapping:** Use labelMap from `get_index_metrics` (session start). Show
-raw value + label: `bugFix:58% concerning`.
+**Label mapping:** bands from `## Label maps` above. Show raw value + label:
+`bugFix:58% concerning`.

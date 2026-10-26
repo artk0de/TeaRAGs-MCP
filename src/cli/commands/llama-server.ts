@@ -14,7 +14,12 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
-import { downloadVerifiedGguf, resolveOllamaRegistryGguf } from "../../core/api/public/index.js";
+import {
+  downloadVerifiedGguf,
+  readGgufContextLength,
+  resolveOllamaRegistryGguf,
+  type OllamaRegistryGgufSource,
+} from "../../core/api/public/index.js";
 import {
   formatLlamaServerCommandSheet,
   renderLlamaServerCommands,
@@ -89,6 +94,9 @@ export interface LlamaServerCommandDeps {
   out: (line: string) => void;
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
+  home: string;
+  /** `<arch>.context_length` of a GGUF on THIS machine; `undefined` when the file is absent or unreadable. */
+  readGgufContextLength: (path: string) => Promise<number | undefined>;
 }
 
 function llamaServerOsOf(platform: NodeJS.Platform): LlamaServerTargetOs {
@@ -106,12 +114,26 @@ function defaultRemoteModelPath(os: LlamaServerTargetOs, fileName: string): stri
   return os === "windows" ? `C:\\llama-models\\${fileName}` : `~/llama-models/${fileName}`;
 }
 
-/** Print the operator sheet. Spawns nothing; the only I/O is the registry manifest read. */
+/**
+ * Where the model's GGUF would sit on THIS machine: the given path (`~/` expanded),
+ * or the file `fetch-model` writes for a registry reference.
+ */
+function localGgufCandidate(
+  model: string,
+  gguf: OllamaRegistryGgufSource | undefined,
+  deps: LlamaServerCommandDeps,
+): string {
+  if (gguf !== undefined) return join(defaultGgufDir(deps.env, deps.home), gguf.fileName);
+  return model.startsWith("~/") ? join(deps.home, model.slice(2)) : model;
+}
+
+/** Print the operator sheet. Spawns nothing; I/O = the registry manifest read and a local GGUF header read. */
 export async function runLlamaServerCommand(args: LlamaServerCommandArgs, deps: LlamaServerCommandDeps): Promise<void> {
   const localOs = llamaServerOsOf(deps.platform);
   const os = args.os ?? localOs;
   const model = args.model ?? deps.env.EMBEDDING_MODEL ?? DEFAULT_GGUF_MODEL_REFERENCE;
   const gguf = isGgufPath(model) ? undefined : await resolveOllamaRegistryGguf(model, { fetch: deps.fetch });
+  const modelContextLength = await deps.readGgufContextLength(localGgufCandidate(model, gguf, deps));
   const sheet = renderLlamaServerCommands({
     os,
     bin: args.bin,
@@ -125,6 +147,7 @@ export async function runLlamaServerCommand(args: LlamaServerCommandArgs, deps: 
     autostart: args.autostart ?? false,
     gguf,
     localOs,
+    modelContextLength,
   });
   deps.out(formatLlamaServerCommandSheet(sheet).trimEnd());
 }
@@ -135,6 +158,8 @@ function productionCommandDeps(): LlamaServerCommandDeps {
     out: (line) => process.stdout.write(`${line}\n`),
     env: process.env,
     platform: process.platform,
+    home: homedir(),
+    readGgufContextLength,
   };
 }
 

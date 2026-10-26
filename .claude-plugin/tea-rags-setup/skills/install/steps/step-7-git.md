@@ -1,9 +1,8 @@
 # Step 7: Analyze Project (git recommendations)
 
-The analyze-project.sh was already run in Step 4b for LOC. Use its full output
-for git recommendations now.
+analyze-project.sh already ran in Step 4b — use its full output here.
 
-If `isGitRepo` is true → AskUserQuestion:
+`isGitRepo` true → AskUserQuestion:
 
 ```
 question: "Enable git analytics? Provides authorship, churn, and bug-fix rate signals for code search."
@@ -13,13 +12,13 @@ options: [
 ]
 ```
 
-If git enabled → AskUserQuestion (git history engine). Compute the
-recommendation from the `analyze-project.sh` output first:
+Git enabled → AskUserQuestion (history engine). Recommendation from
+`analyze-project.sh` output:
 
 - `fileCount > 10000` OR `loc > 1000000` OR `commitCount > 20000` →
-  **es-git** is Recommended (large project / monorepo)
-- otherwise → **git** is Recommended (small project, short history)
-- a metric missing from the analyze output → treat its clause as false
+  **es-git** Recommended (large project / monorepo)
+- else → **git** Recommended (small project, short history)
+- metric missing → its clause false
 
 ```
 question: "Git history engine? es-git reads history in-process (no per-operation git process spawn); git uses the system git binary."
@@ -29,26 +28,24 @@ options: [
 ]
 ```
 
-Append " (Recommended)" to the label selected by the rule above.
+Append " (Recommended)" to label picked by rule.
 
-If `es-git` chosen → install and verify the binding immediately:
+`es-git` chosen → install + verify binding immediately:
 
 ```bash
 npm install -g es-git
 node -e "require('es-git')" && echo "es-git OK"
 ```
 
-On install/verify failure: show the error, AskUserQuestion whether to retry
-after fixing the toolchain or to fall back to `git`. Never continue with a
-broken `es-git` selection — at runtime tea-rags fail-louds on any git
-operation when the selected binding cannot load (escape hatch:
+Install/verify fails → show error, AskUserQuestion: retry after fixing
+toolchain, or fall back to `git`. Never continue w/ broken `es-git` — runtime
+fails loud on any git op when binding can't load (escape hatch:
 `GIT_ADAPTER=git`).
 
-Save the choice to progress as `gitAdapter` (`"git"` or `"es-git"`) — write it
-explicitly for BOTH choices; the value is pinned per-project in the MCP env
-block (step 8) and captured into the project registry at first indexing.
+Save progress `gitAdapter` (`"git"` / `"es-git"`) — explicitly for BOTH; pinned
+per-project in MCP env (step 8), captured into registry at first indexing.
 
-If git enabled AND `hasFrequentCommits` is true → AskUserQuestion:
+Git enabled AND `hasFrequentCommits` true → AskUserQuestion:
 
 ```
 question: "Enable squash-aware sessions? Detected frequent commits from {topAuthor} (median {avgGapMinutes}min gap). Groups rapid commits into logical sessions for cleaner analytics."

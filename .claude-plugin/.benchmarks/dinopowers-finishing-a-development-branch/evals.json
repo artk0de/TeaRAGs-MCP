@@ -62,7 +62,7 @@
         "mustNotCall": [
           "dinopowers:verification-before-completion wrapper (different lens)",
           "git diff by eye",
-          "hybrid_search"
+          "hybrid_search on the branch name / as a substitute for risk-assessment"
         ]
       }
     },
@@ -141,7 +141,7 @@
     {
       "id": "eval-11",
       "category": "wrong-scope-pressure",
-      "prompt": "Просто проверь последний коммит — там только критичное.",
+      "prompt": "Ветка готова к merge — просто проверь последний коммит, там только критичное.",
       "expected": {
         "mustDo": ["Refuse last-commit-only scope", "Scan full branch diff"],
         "mustNotDo": ["Scope to HEAD only"]

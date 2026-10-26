@@ -393,3 +393,88 @@ outline ids are valid `find_similar` positives, and whether `rankingOverlay`
 labels survive on tree-served rows. The last two depend on server behaviour this
 wave does not define, so documenting them would mean inventing facts. They are
 listed in the `iteration-*/arm-*.md` answers.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%)
+- Last recorded rate: 100% (16/16 skill-only arm, final)
+- FAIL list: none
+- Notes: Subject invoked the matching tea-rags/dinopowers SKILL.md per case (read from the worktree) plus context-main.md. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 15/16 PASS (94%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 16/16 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `S14` — treats carried workingTree.tree='/work/acme' as usable though cwd is the linked worktree .../feat-x (wrong tree); should discard rows and re-call with path=cwd, no project [model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 16/16 PASS (100%) over scored cases. 0 superseded.
+- Task 12 rate: 100% (16/16)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 12/16 PASS (75%) (N/A: 0)
+- Codex T14 rate: 94% (15/16)
+- Claude T22 rate: 100% (16/16)
+- FAIL list: 
+  - `S4` — treeState:modified row not read as pre-edit index copy — new
+  - `S12` — same, rows' staleness / not-evidence-of-correct-edit not stated — new
+  - `S13` — 'Review my branch' routed to $dino-requesting-code-review not mr-review — new
+  - `S14` — carried tree=/work/acme treated as usable for cwd .../feat-x — still
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal against assertions A1/A2 + expected)
+- Result: 16/16 PASS (100%) over scored cases. 0 superseded.
+- Baseline (round 1, Task 22): 16/16 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Note: S8 expected text says "no project"; the subject passes project=acme + path=<cwd> as the current core addressing rule requires. Graded on A1 (path = cwd, no project-only call) — the "no project" wording is stale vs core (S14 already accepts project per core addressing).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 13/16 PASS (81%) (N/A excluded: 0).
+- Round-1 Codex: 12/16 (75%). Delta: +6 pp.
+- FAIL list:
+  - `S3` — bug-hunt searches not stated with path=cwd; no parallel historical/fresh/uncommitted bugHunt probes (A1).
+  - `S4` — treeState row not read as pre-edit index copy (text/lines stale), still the uncommitted suspect (A2).
+  - `S12` — rows not called pre-edit copies (fanIn/churn valid, text/lines stale, not proof of correctness) (A2).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json) against assertions A1/A2 + expected
+- Result: 16/16 PASS (100%) over 16 scored cases (superseded 0)
+- Baseline (round 2, Task 22): 100% (16/16)
+- Delta: +0pp
+- FAIL list: none
+- Note: S8 expected text still says "no project"; the subject passes project=acme + path=<cwd> per core addressing — graded on A1 (stale wording, as in round 2).
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-2 Codex: 13/16 (81.2%). Delta: +12.5 pp.
+- FAIL list:
+  - `S12` — no reindex + path=cwd ok, but A2 missing: rows not called pre-edit index copies (fanIn/churn valid, text/lines stale, not evidence the edit is correct)
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-3 Codex: 15/16 (93.8%). Delta: ±0.0 pp.
+- FAIL list:
+  - `S12` — path=<cwd> + no reindex OK, but A2 missing: rows not called pre-edit copies whose dependents' fanIn/churn stay valid and that are no evidence the edit is correct

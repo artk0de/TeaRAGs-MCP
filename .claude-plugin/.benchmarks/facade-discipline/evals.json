@@ -86,7 +86,7 @@
       "id": "eval-1",
       "category": "new-search-tool",
       "prompt": "I need a new MCP tool `find_callers` that, given a symbol name, returns all chunks where that symbol is called. It uses a scroll over the collection with filter by a specific payload field and needs reranking by recency. Where does this go in src/core/api/internal/facades/explore-facade.ts and what files do I touch?",
-      "expectedPlacement": "New strategy in domains/explore/strategies/, register via createExploreStrategy, facade method ≤15 line dispatcher",
+      "expectedPlacement": "New strategy in domains/explore/strategies/, registered via createExploreStrategy or instantiated per-request in the Ops method (registration step stated), facade method ≤15 line dispatcher",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
@@ -125,22 +125,22 @@
     {
       "id": "eval-5",
       "category": "control-keep-in-facade",
-      "prompt": "clearIndex(path) currently resolves the collection name, invalidates the model guard cache, then delegates to status.clearIndex(path). Four lines, all dispatch. Someone suggested extracting it to an ops class for consistency. Should I?",
-      "expectedPlacement": "Keep as-is in facade — pure dispatch, fits size budget, no business logic",
+      "prompt": "IngestFacade#clearIndex(path) is one line: `return this.indexingOps.clear(path)`; IndexingOps#clear resolves the collection name, invalidates the model guard cache, then calls status.clearIndex(path). Someone suggested extracting clearIndex into a new ops class for consistency. Should I?",
+      "expectedPlacement": "No: resolve collection + model-guard (cache) handling are Ops pipeline steps and already live in the existing ingest Ops method (IndexingOps#clear); IngestFacade#clearIndex is a one-line delegate, as the rule requires. Do NOT invent a new Ops class purely for symmetry; a facade method that is only validate + delegate stays as-is",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
-      "failureMode": "agent extracts to ops class for symmetry, adding indirection without benefit"
+      "failureMode": "agent moves resolve/guard pipeline work back into the facade, OR creates a brand-new ops class for symmetry instead of using the existing Ops"
     },
     {
       "id": "eval-6",
       "category": "validation-extraction",
       "prompt": "I'm adding a new tool find_by_task_id with three mutually-exclusive parameters (taskId, taskIds, taskPattern) and cross-field rules (taskPattern requires minAgeDays). Validation is about 12 lines. Where does it live?",
-      "expectedPlacement": "Named validator function in api/errors.ts or alongside typed errors; facade calls it first line. >5 lines triggers extraction per rule",
+      "expectedPlacement": "Named exported validateFindByTaskIdRequest function at the bottom of the same facade file (e.g. explore-facade.ts), throwing typed InputValidationError subclasses; facade calls it first line. >~5 lines triggers extraction per rule. NOT api/errors.ts (error classes only), NOT a new validators/ directory (only at 5+ validators)",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "FAIL",
-      "failureMode": "agent inlines validation OR places validator in non-canonical location"
+      "failureMode": "agent inlines validation OR places validator in api/errors.ts / a premature validators/ directory instead of the bottom of the facade file"
     },
     {
       "id": "eval-7",
@@ -195,8 +195,8 @@
     {
       "id": "eval-12",
       "category": "edge-code-review",
-      "prompt": "Here's a diff someone submitted for review. They added a new method findByPath to ExploreFacade: [40 lines with inline must filter + scroll + Map grouping + CodeChunkGrouper.groupFile]. Is this ready to merge?",
-      "expectedPlacement": "Not ready — flag inline filter building (use registry.buildMergedFilter), flag Map grouping in facade (extract to query), flag driftWarning: null (should call this.checkDrift(path))",
+      "prompt": "Here's a diff someone submitted for review. They added a new method findByPath to ExploreFacade: [40 lines with inline must filter + scroll + Map grouping + CodeChunkGrouper.groupFile, ending in `return { results, driftWarning: null }`]. Is this ready to merge?",
+      "expectedPlacement": "Not ready — method body 40 lines > 20 (facade doing work inline); flag inline filter building (filter merge = Ops via registry.buildMergedFilter, Qdrant filter shapes = strategy/query); flag Map grouping in facade (aggregation → query); flag hard-coded driftWarning: null (attaching the drift warning is Ops pipeline work — checkDrift lives in Ops, facade must delegate to it, not hard-code null nor add a private checkDrift)",
       "withRule": "PASS",
       "withoutRulePrimary": "PASS",
       "withoutRuleStrict": "PASS",
@@ -241,10 +241,10 @@
       "id": "eval-16",
       "category": "file-budget-context",
       "prompt": "ExploreFacade is currently 460 lines with 7 public search methods, each method ≤ 20 lines (all dispatchers). A reviewer flags the file as 'over the 250-line budget'. Response?",
-      "expectedPlacement": "No change — file is fine. Method body ≤20 is the primary check and all 7 pass. File total ≤350 allowed for 5–7 public methods per the size-budget clause. Push back on reviewer by citing the clause.",
+      "expectedPlacement": "Do not split. Method body ≤ 20 is the primary check and all 7 pass (and Check 1: no private async pipeline methods on the facade). File total is informational, not a hard gate — push back on the rigid 250-line budget citing the clause. But 460 lines is well over the 200-line smoke alarm: audit the file for synchronous helpers to move to Ops (ctx builders, filter merges disguised as validators) rather than declaring it fine as-is.",
       "withRule": "PASS",
       "withoutRuleStrict": "PASS",
-      "failureMode": "agent proposes splitting facade into SearchFacade + NavigationFacade to satisfy rigid 250-line budget"
+      "failureMode": "agent proposes splitting facade into SearchFacade + NavigationFacade to satisfy rigid 250-line budget, OR ignores the 200-line smoke alarm entirely, OR cites a non-existent '≤350 lines for 5–7 methods' clause"
     },
     {
       "id": "eval-17",

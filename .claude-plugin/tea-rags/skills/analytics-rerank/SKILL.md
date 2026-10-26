@@ -1,20 +1,18 @@
 ---
 name: analytics-rerank
 description:
-  Pick a tea-rags rerank preset, build a `{custom: {...}}` weight set, or
-  compose an analytics-driven search (ownership, tech-debt, hotspots,
-  code-review, security-audit, fragile-silo). Covers the rerank decision tree
-  (documentation auto-preset vs explicit preset vs custom weights), the
-  preset catalog pointer (`tea-rags://schema/presets`), the weight-key catalog
-  pointer (`tea-rags://schema/signals`), and concrete recipe combinations
-  (e.g. Fragile Silo: `{ bugFix: 0.45, knowledgeSilo: 0.3, similarity: 0.15,
-  churn: -0.1 }`). Invoke when the agent recognizes intent like "rank by
-  ownership", "find tech debt", "hotspot scan", "code review of recent
-  changes", "security audit of auth code", "code that looks stable but breaks
-  a lot", "custom weights for impact analysis". NOT for general project
-  health scanning that needs cross-preset overlap — use
-  `tea-rags:risk-assessment`. NOT for debug-driven root-cause investigation
-  — use `tea-rags:bug-hunt`. NOT for filter shape construction — use
+  Pick tea-rags rerank preset, build `{custom: {...}}` weight set, or compose
+  analytics-driven search (ownership, tech-debt, hotspots, code-review,
+  security-audit, fragile-silo). Covers rerank decision tree (documentation
+  auto-preset vs explicit preset vs custom weights), preset catalog pointer
+  (`tea-rags://guide/presets`), weight-key catalog pointer
+  (`tea-rags://guide/signals`), recipes (e.g. Fragile Silo: `{ bugFix: 0.45,
+  knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 }`). Invoke on intent like
+  "rank by ownership", "find tech debt", "hotspot scan", "code review of recent
+  changes", "security audit of auth code", "code that looks stable but breaks a
+  lot", "custom weights for impact analysis". NOT for project health scan
+  needing cross-preset overlap — use `tea-rags:risk-assessment`. NOT for debug
+  root-cause — use `tea-rags:bug-hunt`. NOT for filter shape — use
   `tea-rags:filter-building`.
 user-invocable: false
 ---
@@ -23,6 +21,10 @@ user-invocable: false
 
 Rerank reorders search results by git + structural signals. Deep-dive: pick
 preset, build custom weight set, apply recipe for a specific analytics question.
+
+**Overlay labels → implementation-strategy questions belong to
+`tea-rags:data-driven-generation` Step 1, not here.** Do not route them here or
+read rerank catalogs unless the user asks how to rank search results.
 
 ## Rerank decision tree
 
@@ -42,13 +44,15 @@ Documentation search? (language: "markdown" OR documentation: "only")
 │
 └─ No → continue to preset selection
 
-Existing preset fits the analytics question?
-├─ Yes → use it. Read tea-rags://schema/presets for the full catalog with
+Existing preset fits the analytics question?  (cheat sheet below)
+├─ Yes → use it — even when you could hand-compose its signals. Preset =
+│         curated weights; custom never replaces a matching preset. Read tea-rags://guide/presets for the full catalog with
 │         weights and tools each preset is registered on.
 │
-└─ No → build custom weights. Read tea-rags://schema/signals for the
-         canonical weight-key catalog (it is generated from the live
-         registry; never invent weight key names from memory).
+└─ No → a recipe below (Custom weight recipes) matches the ask → copy its
+         keys + numbers verbatim. No recipe matches → build custom weights:
+         read tea-rags://guide/signals for the canonical weight-key catalog
+         (generated from the live registry; never invent key names).
 ```
 
 ## Catalogs — always read on demand
@@ -57,46 +61,68 @@ Canonical sources, generated from live registry of THIS build. Memorized
 training-data lists WILL drift.
 
 ```
-ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/presets")
-ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/signals")
-ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/signal-labels")
+ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/presets")
+ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/signals")
+ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/signal-labels")
 ```
 
-`schema/presets` = full preset list with weights + tools. `schema/signals` =
-every weight key for `{custom: {...}}` mode. `schema/signal-labels` = how
-numeric overlay values map to labels (`healthy` / `concerning` / `critical`,
-etc.) per signal.
+`guide/presets` = full preset list with weights + tools. `guide/signals` = every
+weight key for `{custom: {...}}` mode. `guide/signal-labels` = how numeric
+overlay values map to labels (`healthy` / `concerning` / `critical`, etc.) per
+signal.
 
 ## Preset cheat sheet (when each is the right pick)
 
-Catalog has full list; this is routing tier.
+Catalog has full list; this is routing tier — it beats the catalog and the guide
+resources. Ask words pick the row, a path word never does. First: "looks stable
+/ rarely touched but breaks a lot" → recipe **Fragile Silo**, even in a
+security-sensitive path — that path → `pathPattern: "**/<dir>/**"` beside the
+recipe, never `securityAudit`. Then most specific row wins: security-sensitive
+path (auth, crypto, payments, permissions, sessions) + legacy / old / untouched
+/ bug-fix ask → `securityAudit` (`techDebt` row = legacy WITHOUT a security
+path). Recipe rows (custom) are exact weight sets below — copy keys + numbers,
+never re-derive them from `guide/signals`.
 
-| Question                                                 | Preset                                                                                    |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| "Where are the bug-prone areas in domain X?"             | `hotspots`                                                                                |
-| "Old + churny + bug-fixed legacy in domain X?"           | `techDebt`                                                                                |
-| "Single-author silos / bus factor in domain X?"          | `ownership`                                                                               |
-| "Review the recent changes in this area"                 | `codeReview` (with `maxAgeDays: 7`)                                                       |
-| "Old code in security-sensitive paths"                   | `securityAudit` (with `filter: { presets: "securityPaths" }`)                             |
-| "Recently modified, sprint-review style"                 | `recent`                                                                                  |
-| "Stable, low-bug template code"                          | `proven` / `stable`                                                                       |
-| "Refactor candidates by size+volatility+bug-fix history" | `refactoring`                                                                             |
-| "Bug-prone + volatile + high blast radius"               | `dangerous`                                                                               |
-| "Find candidates to decompose"                           | `decomposition`                                                                           |
-| "Blast radius before a change (real call edges)"         | `blastRadius` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` |
-| "Structural backbone — high-fan-in hubs"                 | `architecturalHub` (codegraph)                                                            |
-| "Entry points / flow drivers of a scope"                 | `entryPoint` (codegraph)                                                                  |
+**Area binding (every row):** ask names an area ("in <area>", "in the <area>
+module / pipeline / service / domain") → the call carries
+`pathPattern: "**/<area>/**"` (area word, container noun dropped); ask writes a
+slash path (`lib/crypto/`) → `pathPattern: "lib/crypto/**"` as written, never
+braces. Never omit it on the guess that the word may not be a dir name;
+`pathPattern` is scope, not the hard `filter` the inventory rule below forbids.
+Plan line, copied:
+`semantic_search(query=<ask>, rerank=<row>, pathPattern="**/<area>/**")`.
+
+| Question                                                                        | Preset                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Where are the bug-prone areas in domain X?"                                    | `hotspots` + `pathPattern` — one call, not a risk-assessment scan                                                                                                                                                                                                                                                                                                     |
+| "Looks stable / rarely touched but breaks a lot"                                | recipe **Fragile Silo** (custom, below) — even in a security-sensitive path (path → `pathPattern`); never `securityAudit`, not `stable`, not bug-hunt                                                                                                                                                                                                                 |
+| "Who is (actively) driving / working on X lately?"                              | recipe **Active driver** (custom, below) — not `recent`, not `ownership`                                                                                                                                                                                                                                                                                              |
+| "Tech debt / old + churny + bug-fixed legacy in X?" (non-security path)         | `techDebt` + `pathPattern: "**/<X>/**"`                                                                                                                                                                                                                                                                                                                               |
+| "Single-author silos / bus factor in domain X?"                                 | `ownership`                                                                                                                                                                                                                                                                                                                                                           |
+| "Review the recent changes in this area"                                        | `codeReview` (with `maxAgeDays: 7`)                                                                                                                                                                                                                                                                                                                                   |
+| "Old / untouched / legacy code (± bug-fix history) in security-sensitive paths" | `securityAudit` — dir path written with a trailing slash or a prefix (`lib/crypto/`) → that path verbatim, `pathPattern: "lib/crypto/**"`, never split into braces; bare alternative dir words (`<word>/<word> paths`, no trailing slash) → `pathPattern: "**/{<word>,<word>}/**"`; no filter preset either way; no dir word → `filter: { presets: "securityPaths" }` |
+| "Recently modified, sprint-review style" (what changed, not who)                | `recent`                                                                                                                                                                                                                                                                                                                                                              |
+| "Stable, low-bug template / reference implementation of X"                      | `proven` (preset; never custom weights)                                                                                                                                                                                                                                                                                                                               |
+| "Refactor candidates by size+volatility+bug-fix history"                        | `refactoring`                                                                                                                                                                                                                                                                                                                                                         |
+| "Bug-prone + volatile + high blast radius"                                      | `dangerous`                                                                                                                                                                                                                                                                                                                                                           |
+| "Find candidates to decompose"                                                  | `decomposition`                                                                                                                                                                                                                                                                                                                                                       |
+| "Blast radius before a change (real call edges)"                                | `blastRadius` + `metaOnly: true` (codegraph on) — else custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` + `metaOnly: true`; both calls carry `metaOnly`                                                                                                                                                                                                          |
+| "Structural backbone — high-fan-in hubs"                                        | `architecturalHub` (codegraph)                                                                                                                                                                                                                                                                                                                                        |
+| "Entry points / flow drivers of a scope"                                        | `entryPoint` (codegraph)                                                                                                                                                                                                                                                                                                                                              |
 
 **Codegraph composites** (`blastRadius` / `architecturalHub` / `entryPoint`)
 rank on real call/import edges (`fanIn`, `isHub`, `fanOutPerLine`). Meaningful
-only when prime `## Enrichment` lists `codegraph.symbols`; codegraph off → they
+only when graph tools are registered (codegraph on); codegraph off → they
 degrade to similarity — fall back to `imports`-proxy custom weights, say
-centrality is approximate. See search-cascade "Graph navigation".
+centrality is approximate. Blast-radius plan line, copied:
+`semantic_search(query=<ask>, rerank="blastRadius", metaOnly=true)`. See
+`tea-rags://guide/navigation` "Graph navigation".
 
 ## Custom weight recipes
 
-No preset fits exactly → combine weight keys from `tea-rags://schema/signals`.
-Format:
+Ask matches a recipe below → copy its keys + numbers verbatim, never rebuilt
+from the catalog. No preset and no recipe fits → combine weight keys from
+`tea-rags://guide/signals`. Format:
 
 ```jsonc
 { "rerank": { "custom": { "<weightKey>": <number>, ... } } }
@@ -149,7 +175,8 @@ AND it keeps changing"). `ownership` surfaces single-owner high-impact files —
 knowledge silo with reach.
 
 **Prefer the `blastRadius` preset when codegraph is on:** ranks on real `fanIn`
-(actual call/import edges) + churn + bugFix, not the raw `imports`-line proxy.
+(actual call/import edges) + churn + bugFix, not the raw `imports`-line proxy —
+`{ "rerank": "blastRadius", "metaOnly": true }`, `metaOnly` on this call too.
 Use this custom recipe only as the codegraph-off fallback (result then
 approximate — import-proxy, not edge truth).
 
@@ -172,34 +199,30 @@ Different from `ownership`. `recentActivityConcentration` = commit-window based
 review routing / "who's driving this area in the current sprint", not authority
 questions.
 
-### Security-sensitive legacy
+### Security-sensitive legacy → preset, not custom
+
+`securityAudit` already combines `age` + `pathRisk` + `bugFix` + `ownership`
+(`pathRisk` = structural signal for auth / crypto / … paths). Never hand-compose
+it. Age threshold stated by user ("untouched > 1 year") → time filter via
+filter-building (`modifiedBefore: <today − 365d>` — file-level, query-time; raw
+`git.file.ageDays` lags):
 
 ```jsonc
 {
-  "rerank": {
-    "custom": {
-      "age": 0.3,
-      "pathRisk": 0.3,
-      "bugFix": 0.2,
-      "ownership": 0.1,
-      "volatility": 0.1,
-    },
-  },
-  "pathPattern": "**/auth/**",
+  "rerank": "securityAudit",
+  "pathPattern": "**/<dir>/**", // ask wrote a slash path (`lib/crypto/`) → "lib/crypto/**" verbatim, no braces
+  "modifiedBefore": "<ISO date, today − 365 days>",
 }
 ```
-
-`pathRisk` = structural signal flagging security-sensitive paths (auth, crypto,
-etc.). Combined with age + bug-fix history, surfaces "old code in a critical
-path that still gets bug-fixed" — prime audit target.
 
 ## Reading the overlay back
 
 Every reranked result (metaOnly too) carries
 `rankingOverlay.{file,chunk}.<field>` — `{value,label}` for labelled signals
 (table columns `<field>.value` / `<field>.label` when 2+ results). Labels live
-only there; payload = raw. Read `references/runtime-introspection.md` for the
-structure, `references/signal-interpretation.md` for pair diagnostics
+only there; payload = raw. Read
+`../../rules/references/runtime-introspection.md` for the structure,
+`../../rules/references/signal-interpretation.md` for pair diagnostics
 disambiguating single-signal ambiguity (god module vs bug attractor, healthy
 owner vs toxic silo, legacy minefield vs proven stable).
 
@@ -219,7 +242,7 @@ available; git/codegraph presets require those trajectories to be registered.
 
 | Analytics question                       | Rerank preset   | Filter preset      |
 | ---------------------------------------- | --------------- | ------------------ |
-| Old code in security paths               | `securityAudit` | `securityPaths`    |
+| Old code in security paths, no dir word  | `securityAudit` | `securityPaths`    |
 | Fragile silo (silent, low-churn)         | custom (below)  | `fragileSilo`      |
 | Bug-prone + volatile + high blast radius | `dangerous`     | `panicZone`        |
 | Recently active legacy                   | `techDebt`      | `freshLegacyEdits` |
@@ -228,21 +251,20 @@ available; git/codegraph presets require those trajectories to be registered.
 **Inventory-vs-query narrowing rule.** A HARD specific filter belongs to
 query-absent inventory mode (the query is empty and you want a specific slice of
 the codebase). When a natural-language query is present, rank broadly — don't
-also hard-filter — so recall is not lost. Hygiene presets (`production`,
-`coreLogic`) are safe in either mode and are the defaults applied automatically
-by those rerank presets.
+also hard-filter (`filter` presets / raw) — so recall is not lost. The ask's
+area `pathPattern` is not a hard filter: it stays. Hygiene presets
+(`production`, `coreLogic`) are safe in either mode and are the defaults applied
+automatically by those rerank presets.
 
-Full catalog: read `tea-rags://schema/filters` (generated from the live
+Full catalog: read `tea-rags://guide/filters` (generated from the live
 registry). Do not memorize from training data — read on demand.
 
 ## Project calibration
 
-Thresholds vary by codebase. `commitCount` of 8 is "high" in one project,
-"typical" in another. Call
-`get_index_metrics(path: "<your working directory>")`, read
-`signals[language][signalKey][scope].labelMap` for THIS project's
-percentile-based thresholds before phrasing a filter or weight in absolute
-numbers. See `references/runtime-introspection.md` for the calibration recipe.
+Thresholds per codebase: `commitCount` 8 = "high" in one project, "typical" in
+another. Before phrasing filter / weight in absolute numbers → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
+(ReadMcpResourceTool) — THIS project's percentile bands, source + test.
 
 ## When this skill does NOT apply
 

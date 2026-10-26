@@ -98,3 +98,81 @@ preset hint correctly without help.
 - Future regression checks should re-run the with-rule subagent against this
   `evals.json` after any SKILL.md text change and assert ≥ 100% (or document the
   regression).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 6/8 PASS (75%)
+- Last recorded with-skill rate: 100%
+- Delta: -25pp
+- FAIL:
+  - `Eval-4-triple-fail-diagnostic` — adds relax-to-production re-calls, so more than two find_similar calls total | STALE
+  - `Eval-5-shallow-l1-skip-l2` — runs L2 instead of skipping it when L1 has 2 segments; follows a "<=1" rule not "<=2" | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core
+- Result: 6/8 PASS (75%) over 8 graded cases (N/A: 0)
+- Claude T12 for comparison: 6/8 (75%)
+- Both-fail: 2 (Eval-4-triple-fail-diagnostic, Eval-5-shallow-l1-skip-l2)
+- CODEX-ONLY (0):
+  - none
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 8/8 PASS (100%) over scored cases. 0 superseded. Both T12 FAILs (Eval-4, Eval-5) now PASS.
+- Task 12 rate: 75% (6/8)
+- Delta: +25pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 1/8 PASS (12.5%) (N/A: 0)
+- Codex T14 rate: 75% (6/8)
+- Claude T22 rate: 100% (8/8)
+- FAIL list: 
+  - `Eval-2`,`Eval-3` — L2 glob never derived (new)
+  - `Eval-4` — 1-segment L1 not recognised, no production relax / diagnostics (still)
+  - `Eval-5` — wrongly skips L1 instead of L1->L2=**/chunker/**->L3 (still)
+  - `Eval-6` — no semantic_search switch named, L2 skip missed (new)
+  - `Eval-7` — contract {templates:[],locality:'none',diagnostics:['no input']} not returned (new)
+  - `Eval-8` — L2 not skipped for 1-semantic-segment L1 (new)
+  - cause: plan from prompt only, skill rules (L2 derivation/skip/contract) not applied
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strict-literal)
+- Result: 8/8 PASS (100%) over scored cases. 0 superseded.
+- Baseline (round 1, Task 22): 8/8 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 6/8 PASS (75.0%) (N/A excluded: 0).
+- Round-1 Codex: 1/8 (12.5%). Delta: +62.5 pp.
+- FAIL list:
+  - `Eval-2-l1-starved-l2-hit` — miscounts semantic tail [explore,strategies,new-feature] as 1 segment, skips L2 instead of **/domains/explore/**, ends at L3
+  - `Eval-4-triple-fail-diagnostic` — L2 skip + per-level production relax correct, but omits diagnostic 'no battle-tested reference found; widened to production code'
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap; graded strict-literal against the current evals.json)
+- Result: 8/8 PASS (100%) over 8 scored cases (superseded 0)
+- Baseline (round 2, Task 22): 100% (8/8)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 8/8 PASS (100.0%) (N/A excluded: 0).
+- Round-2 Codex: 6/8 (75.0%). Delta: +25.0 pp.
+- FAIL list: none.

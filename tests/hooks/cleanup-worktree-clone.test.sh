@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-HOOK="$ROOT/.claude-plugin/tea-rags/scripts/cleanup-worktree-clone.sh"
+HOOK="$ROOT/plugins/tea-rags/scripts/cleanup-worktree-clone.sh"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 

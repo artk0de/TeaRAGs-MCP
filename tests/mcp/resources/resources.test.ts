@@ -97,9 +97,16 @@ describe("Resource builders", () => {
   describe("buildOverview", () => {
     it("lists all schema resource URIs", () => {
       const md = buildOverview();
-      expect(md).toContain("tea-rags://schema/presets");
-      expect(md).toContain("tea-rags://schema/signals");
-      expect(md).toContain("tea-rags://schema/filters");
+      expect(md).toContain("tea-rags://guide/presets");
+      expect(md).toContain("tea-rags://guide/signals");
+      expect(md).toContain("tea-rags://guide/filters");
+    });
+
+    it("points label thresholds at the project metrics resource and uses no schema alias", () => {
+      const md = buildOverview();
+      expect(md).toContain("tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap");
+      expect(md).not.toContain("tea-rags://schema/");
+      expect(md).not.toMatch(/get_index_metrics returns per-language/);
     });
 
     it("lists all tools in quick reference", () => {
@@ -114,8 +121,8 @@ describe("Resource builders", () => {
     it("lists guide resource URIs in Guides section", () => {
       const md = buildOverview();
       expect(md).toContain("## Guides");
-      expect(md).toContain("tea-rags://schema/search-guide");
-      expect(md).toContain("tea-rags://schema/indexing-guide");
+      expect(md).toContain("tea-rags://guide/search-examples");
+      expect(md).toContain("tea-rags://guide/indexing");
     });
 
     it("explains the column-table response shape once", () => {
@@ -293,7 +300,9 @@ describe("Resource builders", () => {
     it("contains header and how-it-works section", () => {
       const md = buildSignalLabelsGuide(mockPayloadSignals);
       expect(md).toContain("# Signal Labels");
-      expect(md).toContain("get_index_metrics");
+      expect(md).toContain("tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap");
+      expect(md).not.toContain("get_index_metrics");
+      expect(md).not.toContain("tea-rags://schema/");
       expect(md).toContain("ranking overlay");
     });
 
@@ -376,10 +385,12 @@ describe("Resource builders", () => {
       expect(md).toContain("must_not");
     });
 
-    it("contains threshold guidance referencing get_index_metrics", () => {
+    it("contains threshold guidance referencing the project metrics resource", () => {
       const md = buildFiltersDoc(gitPayloadSignalDescriptors);
-      expect(md).toContain("get_index_metrics");
-      expect(md).toContain("signal-labels");
+      expect(md).toContain("tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap");
+      expect(md).not.toContain("get_index_metrics");
+      expect(md).not.toContain("tea-rags://schema/");
+      expect(md).toContain("tea-rags://guide/signal-labels");
     });
 
     it("contains available fields with level prefix", () => {

@@ -2,6 +2,5 @@
 
 Run: `$SCRIPTS/progress.sh get`
 
-- If progress file exists → find first step with `status != "completed"` →
-  resume from there
-- If no progress file → run `$SCRIPTS/progress.sh init` → start from Step 1
+- Progress file exists → resume from first step with `status != "completed"`
+- None → `$SCRIPTS/progress.sh init` → Step 1

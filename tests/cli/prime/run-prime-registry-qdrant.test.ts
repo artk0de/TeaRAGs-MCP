@@ -11,18 +11,13 @@ import { createPathCollectionResolver } from "../../../src/core/api/index.js";
 import type { CollectionEntry } from "../../../src/core/contracts/types/registry.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
-const { pingMock, createAppContextMock, parseAppConfigMock } = vi.hoisted(() => ({
+const { pingMock, parseAppConfigMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
-  createAppContextMock: vi.fn(),
   parseAppConfigMock: vi.fn(),
 }));
 
 vi.mock("../../../src/cli/prime/qdrant-ping.js", () => ({
   pingQdrant: pingMock,
-}));
-
-vi.mock("../../../src/bootstrap/factory.js", () => ({
-  createAppContext: createAppContextMock,
 }));
 
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
@@ -34,6 +29,7 @@ vi.mock("../../../src/bootstrap/config/index.js", () => ({
 const LIVE_DAEMON_PORT = 52545;
 const LIVE_DAEMON_URL = `http://127.0.0.1:${LIVE_DAEMON_PORT}`;
 
+const openSession = vi.fn();
 const writeMock = vi.fn();
 const stdoutOriginal = process.stdout.write.bind(process.stdout);
 
@@ -63,10 +59,10 @@ describe("runPrime — registry qdrant backend resolution", () => {
     writeFileSync(join(dataDir, "qdrant", "daemon.port"), String(LIVE_DAEMON_PORT));
     writeMock.mockClear();
     pingMock.mockReset();
+    openSession.mockReset();
     // Cold on purpose: the assertion is WHICH address prime probed, and a
     // cold answer ends runPrime before any bootstrap has to be stubbed.
     pingMock.mockResolvedValue(false);
-    createAppContextMock.mockReset();
     parseAppConfigMock.mockReset();
     parseAppConfigMock.mockReturnValue({ embedding: {} });
     process.stdout.write = writeMock;
@@ -102,7 +98,12 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("re-resolves the live daemon for a pre-sentinel entry pinning a frozen ephemeral port", async () => {
     register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      project: "marketplace",
+      createPathCollectionResolver,
+      openSession,
+    });
 
     expect(pingMock).toHaveBeenCalledTimes(1);
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
@@ -111,7 +112,12 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("re-resolves the live daemon for the embedded sentinel", async () => {
     register({ qdrantUrl: "embedded", qdrantEmbedded: true, teaRagsVersion: "1.44.2" });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      project: "marketplace",
+      createPathCollectionResolver,
+      openSession,
+    });
 
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
   });
@@ -119,7 +125,12 @@ describe("runPrime — registry qdrant backend resolution", () => {
   it("pings the recorded address of an external Qdrant", async () => {
     register({ qdrantUrl: "http://qdrant.internal:6333", teaRagsVersion: "1.28.0" });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      project: "marketplace",
+      createPathCollectionResolver,
+      openSession,
+    });
 
     expect(pingMock).toHaveBeenCalledWith("http://qdrant.internal:6333");
   });
@@ -128,7 +139,12 @@ describe("runPrime — registry qdrant backend resolution", () => {
     // 1.33.0-era contradiction: flag says embedded, address says external.
     register({ qdrantUrl: "http://qdrant.internal:6333", qdrantEmbedded: true, teaRagsVersion: "1.33.0" });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), project: "marketplace", createPathCollectionResolver });
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      project: "marketplace",
+      createPathCollectionResolver,
+      openSession,
+    });
 
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
     expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain("warm-up pending");

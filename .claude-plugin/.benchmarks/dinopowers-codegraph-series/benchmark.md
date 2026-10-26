@@ -51,3 +51,12 @@ Plugin bump: dinopowers 0.17.6 → **0.18.0** (feat). (tea-rags side carried by
   weaker-model robustness.
 - Gated D5 presets (changeRisk for DP2/DP5, couplingComplexity for DP1) excluded
   — blocked on C-AST `tea-rags-mcp-wtkz` (OPEN).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 9/10 PASS (90%) (case prompts reconstructed from iteration-1/with_rule_fixed.md since the suite stores no prompts; ENV-A/B stated in each prompt)
+- Last recorded rate: 10/10 (100%) self-check
+- Delta: -10pp
+- FAIL list: case 9 (requesting-code-review, ENV-B): subject used rerank 'blastRadius'; benchmark expects custom {imports,churn,ownership} NOT blastRadius. Current requesting-code-review/SKILL.md line 62 now prescribes blastRadius when codegraph is on, so the benchmark expectation is stale rather than a harness regression
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

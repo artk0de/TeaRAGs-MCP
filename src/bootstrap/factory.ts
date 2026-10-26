@@ -134,7 +134,7 @@ import type { WorkingTree } from "../core/contracts/types/working-tree.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
-import { registerAllResources } from "../mcp/resources/index.js";
+import { AGENT_CONTEXT_CORE, registerAllResources, serverInstructions } from "../mcp/resources/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 import {
@@ -2476,10 +2476,12 @@ export function createConfiguredServer(
   promptsConfig: PromptsConfig | null,
   options: ConfiguredServerOptions = {},
 ): McpServer {
-  const server = new McpServer({
-    name: pkg.name,
-    version: pkg.version,
-  });
+  // Empty core (rules not generated) -> no `instructions` field at all;
+  // an oversized core is cut to a head + pointer to tea-rags://guide/core.
+  const server = new McpServer(
+    { name: pkg.name, version: pkg.version },
+    { instructions: serverInstructions(AGENT_CONTEXT_CORE) },
+  );
 
   registerAllTools(server, {
     app: ctx.app,

@@ -3,68 +3,110 @@ name: writing-plans
 description:
   Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
-  reflects real impact+risk. Triggers on "write a plan", "draft implementation
-  plan", "напиши план", "распиши задачи по файлам", "plan the refactor". NOT for
-  plans with no named files or code area to enrich. Wraps
-  superpowers:writing-plans with per-file tea-rags signal enrichment.
+  reflects real impact+risk. Triggers on "write a plan", "draft a plan", "draft
+  implementation plan", "draft sub-plan", "напиши план", "допиши план", "add a
+  Task to the plan", "распиши задачи по файлам", "распиши план изменения
+  <files>", "plan the change to <files>", "plan the refactor". A plan request
+  beats explore PRE-GEN, also when it adds "impact analysis" / "before changing"
+  (any [subagent:…] label), and data-driven-generation (a Task that creates a
+  class stays a plan Task). NOT for plans with no named files or code area to
+  enrich. Wraps superpowers:writing-plans with per-file tea-rags signal
+  enrichment.
 ---
 
 # dinopowers: writing-plans
 
-Wrapper over `superpowers:writing-plans`. Plan decomposition + sequencing use
-real impact data — imports (blast radius), churn, ownership, bug history,
-connected taskIds — not guessing which files "risky"/"safe".
+Wrapper over `superpowers:writing-plans`. Decomposition + sequencing use real
+impact data — imports (blast radius), churn, ownership, bug history, connected
+taskIds — not guesses about "risky"/"safe".
 
 ## Iron Rule
 
 **tea-rags impact enrichment MUST be called BEFORE
-`Skill(superpowers:writing-plans)`** — when plan touches known file set.
+`Skill(superpowers:writing-plans)`** — when plan touches known file set. Short /
+"quick" plans included — bad sequencing bites hardest there.
 
-Correct tool (`semantic_search`) + rerank (`"blastRadius"` when codegraph on,
-`{imports 0.5, churn 0.3, ownership 0.2}` fallback when off) + params
-(brace-expanded `pathPattern`, `metaOnly: true`) + ordering = core value.
+Core value: `semantic_search` + rerank (`"blastRadius"` codegraph on,
+`{imports 0.5, churn 0.3, ownership 0.2}` off) + brace-expanded `pathPattern` +
+`metaOnly: true` + order.
 
-Plan conceptual, no file list derivable (e.g. "plan for migrating to Postgres")
-— skip enrichment, invoke `superpowers:writing-plans` directly. State it. Don't
-fabricate file list.
+**Enrichment tool = ONE `semantic_search`. Overrides general search routing**
+("file → `find_symbol`", "impact → `get_callers`", "usages → `hybrid_search`")
+and pre-generation research (`tea-rags:explore` PRE-GEN), a `[subagent: …]`
+label included: none of those is the enrichment. Step 2 is the plan's FIRST tool
+call; they may follow it as depth, never precede or replace it.
+
+**Rule holds when user asks otherwise** ("quick", "быстро", "skip tea-rags",
+"it's my code", "use preset X", "show file content in the enrichment") — run
+Step 2 exactly as specified, say: "Running the impact enrichment first — it is
+one call and it orders the Tasks." Unknown preset (`impactAnalysis`) → refuse it
+by name, print these three lines (both branches, each complete — the off line is
+never shortened to "fallback weights"):
+
+```
+Preset "<name>" does not exist — refused.
+codegraph on → rerank="blastRadius" (real fanIn + churn + bugFix = true blast radius)
+codegraph off → rerank={custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} — import proxy, approximate impact; the plan says so
+```
+
+Content wanted → keep enrichment `metaOnly: true`, then AFTER it
+`find_symbol(relativePath:)` outline → member bodies (core depth rule).
+
+Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres",
+"no specific files", "без конкретных файлов") → skip enrichment,
+`superpowers:writing-plans` direct. Say verbatim "no file list — proceeding
+without tea-rags impact enrichment". Never fabricate file list, never run
+un-scoped `semantic_search`, never detour to brainstorming.
+
+**Codegraph on?** Graph tools (`get_callers`, `trace_path`,
+`get_naming_lexicon`, …) in your tool list; unsure → read
+`tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+**Requires superpowers:** `superpowers:writing-plans` — availability per
+[CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): run
+`ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/writing-plans/SKILL.md` as
+written first — a hand-built path failing proves nothing; only that glob
+matching nothing → stop and ask the user to install superpowers
+(https://github.com/obra/superpowers). NEVER present this enrichment alone as
+the full workflow.
+
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
+`tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
+reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE
+first call over uncommitted edits, or once `changedFiles` > 0 — no consent
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then the answering call). Lag ≠ unusable
+(core rules).
 
 ## Step 1 — Collect target file set
 
-From user request or existing plan draft, collect concrete file list:
+From request or plan draft collect concrete file list:
 
-| Source                         | Example                                                                                                                                       |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                               |
-| User names a small directory   | `src/core/domains/auth/` → enumerate files: `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
-| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                      |
+| Source                         | Example                                                                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                                                                            |
+| User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
+| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                   |
+| Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                              |
 
 Output:
 
-- `fileList`: relative paths (5-30 typical; >30 → prompt user narrow scope)
+- `fileList`: relative paths (5-30 typical; >30 → ask user to narrow scope)
 - `intent`: one-sentence change description
 
-No file list derivable: skip to Step 4, empty enrichment. Report "no file list —
-proceeding without tea-rags impact enrichment".
+No file list → Step 4, empty enrichment. Report "no file list — proceeding
+without tea-rags impact enrichment".
 
 ## Step 2 — Impact enrichment call
 
-Issue ONE `mcp__tea-rags__semantic_search` call:
+ONE `mcp__tea-rags__semantic_search`:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{file1,file2,file3,...}"   ← brace expansion over fileList
@@ -73,59 +115,79 @@ limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
 ```
 
-**Codegraph gating for `rerank`:** prime `## Enrichment` lists
-`codegraph.symbols` → use `"blastRadius"` (real `fanIn` + churn + bugFix — true
-blast radius). Line absent → `fanIn` gone, fall back to
+Describing the call (plan-only / subagent report) → print this line, slots
+filled, never "the specified calls" or "scoped to the files":
+
+```
+Step 2 (first tool call — explore PRE-GEN / find_symbol / get_callers only after it): semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true)
+```
+
+**Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
+bugFix = true blast radius); off → `fanIn` gone →
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
-approximate). **impact analysis** idiom from `tea-rags:data-driven-generation`
-IMPACT step, documented in `tea-rags-analytics.md`. Do NOT substitute the tool.
+approximate). Same **impact analysis** idiom as
+`tea-rags:data-driven-generation` IMPACT step; presets →
+`tea-rags://guide/presets`. Don't invent other weights.
 
 Do NOT substitute:
 
-| Wrong tool                                                      | Why wrong                                                                                                                                |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Separate calls per file                                         | Wasteful — brace expansion does it in one call                                                                                           |
-| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` does not exist; these miss the blast-radius dimension. `"blastRadius"` IS the correct named preset when codegraph is on |
-| `mcp__tea-rags__hybrid_search`                                  | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                                     |
-| `mcp__tea-rags__find_similar`                                   | Gives symbol analogs, not file impact                                                                                                    |
-| `mcp__tea-rags__find_symbol`                                    | Per-symbol, not per-file signal aggregation                                                                                              |
-| Built-in `Glob` or `git blame` for signals                      | Loses imports + ownership + bugFixRate overlay                                                                                           |
+| Wrong tool                                                      | Why wrong                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Separate calls per file                                         | Brace expansion + `limit: N*3` = one call                                                                    |
+| Named preset `"hotspots"` / `"codeReview"` / `"impactAnalysis"` | `impactAnalysis` doesn't exist; `codeReview` lacks imports weight. `"blastRadius"` correct when codegraph on |
+| `mcp__tea-rags__hybrid_search`                                  | BM25 leg re-ranks by token overlap — want semantic + signals                                                 |
+| `mcp__tea-rags__find_similar`                                   | Symbol analogs, not file impact                                                                              |
+| `mcp__tea-rags__find_symbol`                                    | Per-symbol, not per-file aggregation                                                                         |
+| Built-in `Glob` or `git blame` for signals                      | Loses imports + ownership + bugFixRate overlay                                                               |
 
 Do NOT pass:
 
-- `metaOnly: false` — content not needed for impact analysis; bloats payload
-- Wrong rerank for codegraph state — `"blastRadius"` when codegraph on,
-  `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off. Both match
-  `tea-rags:data-driven-generation` IMPACT step; don't invent other weights
-- `filter` on `git.ageDays` / `git.commitCount` — weights already encode these;
-  extra filters hide signal
+- `metaOnly: false` — content not needed; bloats payload
+- `filter` on `git.ageDays` / `git.commitCount` — weights encode these; filters
+  hide signal
 
-Results empty (all files new, not in git): report "file set not indexed — area
-is new; impact enrichment unavailable", skip to Step 4 without block. Don't
-fabricate signals.
+Empty results (all files new) → report "file set not indexed — area is new;
+impact enrichment unavailable", Step 4 WITHOUT block: no Step 3 table, no
+`— (new)` rows, no retry with another rerank. Never fabricate signals.
+Plan-only, every named file new (dir not in git yet) → the Step 2 call is still
+issued (never skipped); print it, then the outcome, not a table:
+
+```
+semantic_search (Step 2 params, pathPattern=<named files>) → 0 results expected → "file set not indexed — area is new"; superpowers:writing-plans invoked WITHOUT enrichment block
+```
+
+Answer's `workingTree.tree` ≠ your cwd → wrong tree, rows unusable: re-issue
+THIS Step 2 `semantic_search` (same params) with `path=<cwd>` — not
+`find_symbol`; `find_symbol` is for a `treeState` row of the right tree.
 
 ## Step 3 — Aggregate per file
 
-Cross-reference returned chunks by `relativePath` (primary key — see
-`tea-rags:risk-assessment` Phase 2: MERGE). Per unique file in `fileList`:
+MUST output: (a) ONE row per file with exactly these columns, named:
+`dominantAuthor` (blame\*/recent\* per table below), `commitCount`, `ageDays`,
+`bugFixRate`, `taskIds` — "impact row" without the five names = incomplete; (b)
+**Coordinated change candidates** — every taskId shared by ≥2 files, listed with
+its files (none shared → write "none"). Both always, even when user only asks
+for "impact data" — and when only describing the plan, name the five columns
+verbatim ("one impact row per file" alone = incomplete).
 
-Extract raw from `payload.git.file.*`, labels from `rankingOverlay.file.*`.
-metaOnly keeps git essential fields only (commitCount, ageDays, taskIds,
-blame\*); `recent*` / `bugFixRate` come from the overlay when the rerank
-surfaces them, else absent — do not fabricate:
+Group chunks by `relativePath` (primary key — `tea-rags:risk-assessment` Phase
+2: MERGE); plans care about files, not chunks. Per file in `fileList`: raw from
+`payload.git.file.*`, labels from `rankingOverlay.file.*`. metaOnly keeps git
+essentials only (commitCount, ageDays, taskIds, blame\*); `recent*` /
+`bugFixRate` come from overlay when rerank surfaces them, else absent — never
+fabricate:
 
 - `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner, silo
-  indicator (from `git blame HEAD` — current state, not commit history)
+  indicator (`git blame HEAD` — current state)
 - `recentDominantAuthor` + `recentDominantAuthorPct` — recent committer
-  (commit-based, review-routing of recently-touched code)
+  (commit-based, review routing)
 - `commitCount` — churn proxy
 - `ageDays` — recency
 - `bugFixRate` — historical quality
-- `taskIds` — connected tickets (coordinated-change signal)
+- `taskIds` — connected tickets (coordinated change)
 
-MUST pick right column or downstream rerank presets misroute reviewers.
-
-**Signal-column selection (MUST decide BEFORE filling the enrichment block):**
+**Signal-column selection (MUST decide BEFORE filling block — wrong column
+misroutes reviewers downstream):**
 
 | Decision context                   | Column to use     |
 | ---------------------------------- | ----------------- |
@@ -133,15 +195,15 @@ MUST pick right column or downstream rerank presets misroute reviewers.
 | Recent activity / review routing   | `recent*`         |
 | Both contexts present in same Task | List both columns |
 
-Diverge when long-time owner stops contributing — `blame*` still says they own,
-`recent*` highlights newer committers.
+Diverge when long-time owner stops contributing — `blame*` still says owner,
+`recent*` shows newer committers.
 
-Compose enrichment block:
+Enrichment block:
 
 ```
 ### tea-rags impact enrichment (rerank: blastRadius | imports+churn+ownership)
 
-| File | Owner | Churn | Age | Bugs | Tasks |
+| File | dominantAuthor | commitCount | ageDays | bugFixRate | taskIds |
 |---|---|---|---|---|---|
 | src/a.ts | Alice (82%) | 23 commits | 142d | 35% | #123, #145 |
 | src/b.ts | shared | 3 commits | 612d | 0% | — |
@@ -155,24 +217,31 @@ Compose enrichment block:
 - ...
 ```
 
-Cap table at fileList size. File no git data (new file, not committed): row
-shows `— (new)`. Do NOT drop row silently.
+Cap table at fileList size. File without git data (new) while others have data →
+row `— (new)`; ALL files without data → no table (Step 2 empty rule). NEVER drop
+row silently.
 
 ## Step 3.5 — Per-Task proven-template enrichment (code-generation Tasks)
 
-Per Task in plan draft (or unit you'll decompose into a Task) where
-title/description mentions code generation/modification — heuristic keywords:
-"implement", "add", "write", "extend", "refactor", "modify" combined with
-"function", "method", "class", "helper", "module" — invoke
+A plan Task that creates a class / function (e.g. "extend the plan: Task N adds
+a new helper class") is plan authoring, not code generation now: run THIS step
+here, items 2 + 5 included. Never reroute it to
+`tea-rags:data-driven-generation` or `tea-rags:explore` PRE-GEN — those run per
+Task later, inside `dinopowers:executing-plans`.
+
+Per Task in draft (or unit to become a Task) whose title/description mentions
+code gen/modification — keywords "implement", "add", "create", "new", "write",
+"extend", "refactor", "modify" + "function", "method", "class", "helper",
+"module" (a Task creating a named class / function always qualifies) — invoke
 `tea-rags:extract-project-patterns`:
 
-1. Derive `pathPatternL1` from Task's Affected Files (deepest common ancestor as
-   `**/<dir>/**` glob).
+1. `pathPatternL1` = deepest common ancestor of Task's Affected Files as
+   `**/<dir>/**` glob.
 2. Invoke `tea-rags:extract-project-patterns` with:
    - `pathPatternL1` from step 1
    - `behaviorQuery` = Task title
    - `limit` = 5
-3. Attach result to Task body under `**Proven templates**` subsection:
+3. Attach result to Task body under `**Proven templates**`:
 
    ```
    **Proven templates** (extract-project-patterns, locality: L1|L2|L3|none)
@@ -182,38 +251,41 @@ title/description mentions code generation/modification — heuristic keywords:
      - locality L2/L3 → review technique only
    ```
 
-4. If `locality = "none"`, attach diagnostic verbatim so plan reader knows Task
-   has no proven precedent in project.
+4. `locality = "none"` → attach diagnostic verbatim (no proven precedent).
 5. New symbol names the Task fixes (codegraph on) →
-   `get_naming_lexicon(names, concept+language, pathPattern=pathPatternL1)`
-   before they enter the plan: `MISFIT` → the plan uses `suggestion`; `NEW_TERM`
-   → a `topTerms` / `concept.terms` word if it means the same, else the Task
-   carries a one-line justification. Reading: `tea-rags:data-driven-generation`
-   Step 5 "Naming (lexicon)".
-6. New cross-component imports the Task adds (codegraph on) → ONE
+   `get_naming_lexicon(names=[{name, kind}], concept="<Task intent>", language="<file's>", pathPattern=pathPatternL1)`
+   — write every argument out, never `…` — before they enter plan; then write
+   this verdict handling into the Task verbatim (your answer shows it too — the
+   line itself, never a pointer to a style reference instead of it):
+
+   ```
+   Naming: MISFIT → plan uses the lexicon suggestion; NEW_TERM → project term (topTerms / concept.terms) if same meaning, else one-line justification in the Task
+   ```
+
+6. New cross-component imports (codegraph on) → ONE
    `get_architecture_report(plannedEdges: [{source, target}])` per plan, all
    Tasks' edges: `MISFIT` → Task routes via `expectedPath` (established
    direction / `transit`); `NEW_PATTERN` / `UNJUDGED` → keep, Task notes it.
-7. Restructuring plan (Tasks move files between components, split or merge
+7. Restructuring plan (Tasks move files between components, split / merge
    components; codegraph on) → per such Task ONE
    `get_architecture_report(restructure: [<that Task's ops>])` —
    `move {files, toComponent}` / `split {component, groups}` /
-   `merge {components}`, names as the report spells them. Task carries the
-   simulated delta: `net`, resolved / introduced counts per `byFamily`,
-   introduced subjects verbatim. `net ≥ 0` or introduced critical/active → Task
-   states why it still ships, or plan drops it. Delta is joint: never one call
-   for several Tasks. Reading: `tea-rags:architecture-diagnostics` Phase 3i.
+   `merge {components}`, names as report spells them. Task carries simulated
+   delta: `net`, resolved / introduced counts per `byFamily`, introduced
+   subjects verbatim. `net ≥ 0` or introduced critical/active → Task states why
+   it still ships, or plan drops it. Delta joint: never one call for several
+   Tasks. Reading: `tea-rags:architecture-diagnostics` Phase 3i.
 
-Runs BEFORE Step 4 so per-Task enrichment visible to superpowers:writing-plans
-authoring cycle, surfaces in final plan document.
+Runs BEFORE Step 4 → per-Task enrichment visible to inner authoring cycle +
+final plan.
 
-**Skip clause:** no Task classified code-generation/code-modification → skip
-entirely. Pure-config/pure-test plans have no template need.
+**Skip clause:** no code-gen/modification Task → skip. Pure-config / pure-test
+plans need no templates.
 
 ## Step 4 — Invoke superpowers:writing-plans
 
-Invoke `Skill` tool with `superpowers:writing-plans`. Prepend Step 3 enrichment
-block as context. Phrase handoff as:
+Invoke `Skill` tool with `superpowers:writing-plans`. Prepend Step 3 block.
+Handoff:
 
 > "Before decomposing, note these impact signals per affected file: …<block>…
 > Use them to: (1) order Tasks so shared-taskId files change together, (2)
@@ -224,41 +296,33 @@ block as context. Phrase handoff as:
 > `superpowers:executing-plans` (or any other wrapped `superpowers:Y`), invoke
 > the `dinopowers:Y` wrapper instead — see the Chaining rule section above."
 
-Let `superpowers:writing-plans` run its standard RED-GREEN-REFACTOR plan
-authoring cycle — wrapper doesn't replace it, only grounds it.
+Inner skill runs its plan authoring cycle — wrapper grounds, not replaces.
 
 ## Reading back the plan
 
-Plan/spec/brief = doc-chunk source. Re-consult draft via
-`find_symbol(relativePath: "<plan>.md")` heading TOC → drill section via
-`doc:<hash>`. NEVER wholesale re-Read. Edited plan file → hashes moved → main
-checkout: incremental reindex (`mcp__tea-rags__index_codebase`) before next TOC
-read; linked worktree: none — `find_symbol` reads the TOC from the tree.
+Plan/spec/brief = doc chunks. Re-consult via
+`find_symbol(relativePath: "<plan>.md")` heading TOC → drill `doc:<hash>`. NEVER
+wholesale re-Read. Edited plan → hashes moved → main checkout: incremental
+`mcp__tea-rags__index_codebase` before next TOC read; linked worktree: none —
+`find_symbol` reads TOC from tree.
 
 ## Red Flags — STOP and restart from Step 2
 
-- "I already know which files are risky in this plan" → run Step 2 anyway;
-  memory stale
-- "The plan is short, skip impact analysis" → fileList ≥2 entries, run Step 2
-- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
-  `## Enrichment` lists `codegraph.symbols`, else
-  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
-- One call per file (sequential) → reissue as ONE call, brace-expanded
-  pathPattern
+- "I already know which files are risky" → run Step 2; memory stale
+- "Plan short, skip impact analysis" / user says skip → fileList ≥1 → run Step 2
+- `find_symbol` / `get_callers` / `hybrid_search` used as the enrichment →
+  restart with ONE Step 2 `semantic_search`
+- Plan request routed to `explore` PRE-GEN / `data-driven-generation` → back
+  here: Step 2 first call, Step 3.5 per-Task (Naming line verbatim)
+- Shared taskIds not surfaced as coordinated-change candidates → add them
+- Rerank wrong for codegraph state (incl. `codeReview` / `impactAnalysis`) →
+  redo: on → `"blastRadius"`, off → `{imports: 0.5, churn: 0.3, ownership: 0.2}`
+  (tea-rags analytics-rerank)
+- One call per file → reissue as ONE brace-expanded call
 - `metaOnly: false` → restart with `metaOnly: true`
-- Called `superpowers:writing-plans` first, tea-rags after for "documentation" →
-  wrong order, restart
-- Let `superpowers:writing-plans` chain into raw `superpowers:executing-plans`
-  (or any wrapped `superpowers:Y`) without redirecting to `dinopowers:Y` →
-  intercept, invoke wrapper instead (see Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                        | Reality                                                                               |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Use `rerank: "codeReview"` as proxy for impact | `codeReview` lacks imports weight — wrong lens for plan sequencing                    |
-| Use `rerank: "impactAnalysis"`                 | Preset does not exist. `"blastRadius"` (codegraph on) or custom weights (off).        |
-| Issue N calls for N files                      | Brace expansion + `limit: N*3` returns all in one call                                |
-| Drop files with empty git data from the table  | Silently hides "new file" status; plans must acknowledge new files                    |
-| Collapse aggregation into chunk-level output   | Plans care about files, not chunks. Aggregate by `relativePath`.                      |
-| Skip enrichment for "quick plans"              | "Quick" is when enrichment matters most — bad sequencing bites hardest on short plans |
+- Chunk-level output instead of per-file aggregation → aggregate by
+  `relativePath`
+- `superpowers:writing-plans` first, tea-rags after "for documentation" → wrong
+  order, restart
+- Inner skill chained raw `superpowers:executing-plans` (or any wrapped
+  `superpowers:Y`) → intercept, invoke `dinopowers:Y` (Chaining rule)

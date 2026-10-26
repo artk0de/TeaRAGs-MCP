@@ -1,7 +1,7 @@
 ---
 paths:
-  - ".claude-plugin/**/SKILL.md"
-  - ".claude-plugin/**/rules/**/*.md"
+  - "plugins/**/SKILL.md"
+  - "plugins/**/rules/**/*.md"
   - "src/mcp/tools/**"
   - "src/mcp/resources/**"
   - "src/cli/prime/**"
@@ -18,9 +18,9 @@ a defect.
 
 | Surface                             | Where                                       | Level   |
 | ----------------------------------- | ------------------------------------------- | ------- |
-| Skill description (frontmatter)     | `.claude-plugin/**/SKILL.md`                | `full`  |
-| Skill body                          | `.claude-plugin/**/SKILL.md`                | `ultra` |
-| Search-cascade rules                | `.claude-plugin/tea-rags/rules/**/*.md`     | `ultra` |
+| Skill description (frontmatter)     | `plugins/**/SKILL.md`                | `full`  |
+| Skill body                          | `plugins/**/SKILL.md`                | `ultra` |
+| Search-cascade rules                | `plugins/tea-rags/rules/**/*.md`     | `ultra` |
 | MCP tool description                | `src/mcp/tools/**` (+ generated Zod schema) | `full`  |
 | MCP resource description + doc body | `src/mcp/resources/**`                      | `ultra` |
 | prime digest prose                  | `src/cli/prime/**`                          | `full`  |

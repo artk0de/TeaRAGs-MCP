@@ -78,3 +78,38 @@ problem. With-rule is at the 100% target; no iteration needed.
 - `evals.json` — 11 cases + per-case results.
 - `workspace/iteration-1/grades.txt` — raw grading.
 - `workspace/skill-snapshot/install/` — frozen skill copy at eval time.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 11/11 PASS (100%)
+- Last recorded with-skill rate: 100%
+- Delta: +0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: N/A — all 11 cases not graded: tea-rags-setup is not shipped to Codex (answers confirm: 'skill not available'). Graded 0 (N/A 11).
+- Claude T12 for comparison: 11/11 (100%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 11/11 PASS (100%) over 11 scored cases (0 superseded); case 5 stale (skill now has Steps 9/10/11, subject listed 9,10,11, register-before-verify satisfied)
+- Task 12 rate: 11/11 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: N/A - all 11 cases not graded: tea-rags-setup is not shipped to Codex (answers lack the Step 8/9/10 commands and say "read the setup wizard reference"). Graded 0 (N/A 11).
+- Codex T14 for comparison: N/A (11)
+- Claude T22 for comparison: 11/11 (100%)
+- FAIL list:
+  - none

@@ -1,49 +1,44 @@
 # EXPLAIN Pattern
 
-Sub-patterns for human-explanation intents in the explore flow. Structure the
-EXPLAIN step by what was asked.
+Structure EXPLAIN step by what was asked.
 
 - **"How does X work?"** → flow: entry → processing → output. Key files + roles.
 - **"Architecture of X?"** → components, responsibilities, connections,
   boundaries.
-- **"Where is X used?"** → hybrid_search (BM25 = full recall for exact symbol
-  names, dense = semantic context). Paginate with offset until all usages found
-  (see `references/pagination.md`).
+- **"Where is X used?"** → hybrid_search (BM25 = full recall on exact names,
+  dense = context). Paginate with offset until all usages found
+  (`tea-rags://guide/pagination`).
 - **"How is X different from Y?"** → contrastive decomposition:
-  1. ONE hybrid_search for the shared concept (e.g., "preloading" for
-     lazy_preload vs includes) — BM25 catches both names, semantic catches
-     context
-  2. Scan results for X-only, Y-only, and both groups by file path
-  3. Present as three groups: only-X, only-Y, both Do NOT run two separate
-     semantic searches — close concepts produce 80%+ overlap.
-- **"What changed recently in X?"** → rank_chunks with `rerank="codeReview"` +
-  pathPattern for X + `maxAgeDays=14`. Shows recent changes ranked by review
-  relevance (recency, burstActivity, chunkChurn).
-- **"Who owns X?" / "Who knows about X?"** → rank_chunks with
-  `rerank="ownership"` + pathPattern. Overlay shows `blameDominantAuthor`,
-  `blameDominantAuthorPct`, `blameAuthors[]` (live-line ownership from
-  `git blame HEAD`). Report ownership distribution.
-- **"Who recently committed to X?"** → rank_chunks with
-  `rerank="recentActivityConcentration"` + pathPattern. Overlay shows
+  1. ONE hybrid_search for shared concept (e.g. "preloading" for lazy_preload vs
+     includes) — BM25 catches both names, dense catches context
+  2. Split results into X-only, Y-only, both by file path
+  3. Present three groups. Do NOT run two separate semantic searches — close
+     concepts overlap 80%+.
+- **"What changed recently in X?"** → rank_chunks `rerank="codeReview"` +
+  pathPattern + `maxAgeDays=14` (recency, burstActivity, chunkChurn).
+- **"Who owns X?" / "Who knows about X?"** → rank_chunks `rerank="ownership"` +
+  pathPattern. Overlay: `blameDominantAuthor`, `blameDominantAuthorPct`,
+  `blameAuthors[]` (live-line ownership, `git blame HEAD`). Report distribution.
+- **"Who recently committed to X?"** → rank_chunks
+  `rerank="recentActivityConcentration"` + pathPattern. Overlay:
   `recentDominantAuthor`, `recentDominantAuthorPct`, `recentAuthors[]`
-  (commit-based, useful for finding who's mentally loaded in for fast review).
-  Different from ownership: a long-time owner who stopped contributing still
-  shows in `blame*` but not in `recent*`.
-- **"Is X tested?" / "Show tests for X"** → hybrid_search for X name with
+  (commit-based — who's loaded in for fast review). Differs from ownership:
+  owner who stopped contributing shows in `blame*`, not `recent*`.
+- **"Is X tested?" / "Show tests for X"** → hybrid_search X with
   `testFile: "only"` — typed filter, convention-agnostic, no test-dir discovery
-  needed (built-in Glob prohibited for code discovery — search-cascade).
-  `metaOnly=true` for existence check, `metaOnly=false` for test content. Zero
-  hits → find_symbol X `metaOnly=true` to split "exists but untested" from
-  "wrong name" before concluding.
+  (Glob prohibited — `tea-rags://guide/decision-tree`). `metaOnly=true` =
+  existence, `metaOnly=false` = test content. Zero hits → find_symbol X
+  `metaOnly=true` to split "exists but untested" from "wrong name".
 
 ## Evidence discipline (broad EXPLAIN)
 
-- Explanation built from SOURCES axis first (behavior truth). Tests = executable
-  spec — cite for "should do". Docs = intent/hypothesis — cite for "why", NEVER
-  as sole evidence of behavior.
-- Behavioral claim taken from a doc chunk → verify via find_symbol /
-  hybrid_search BEFORE it enters the answer. Conflict → code wins, flag drift
-  ("docs say X, code does Y"). Full rule: `rules/references/axis-splitting.md` +
-  search-cascade Principles.
+- Build from SOURCES axis first (behavior truth). Tests = executable spec → cite
+  for "should do". Docs = intent/hypothesis → cite for "why", NEVER sole
+  evidence of behavior.
+- Behavioral claim from doc chunk → verify via a `documentation:"exclude"`
+  search + `find_symbol` BEFORE it enters answer. Conflict → code wins; answer
+  states the code value and names the drifted doc: "`<doc path>` says X, code
+  does Y at `file:line`". Full rule:
+  `../../../rules/references/axis-splitting.md`.
 
-Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.
+Citations `file:line`. Quote 3-5 lines, don't dump functions.

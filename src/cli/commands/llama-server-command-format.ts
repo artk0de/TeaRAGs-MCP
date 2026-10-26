@@ -26,7 +26,7 @@ export interface LlamaServerCommandOptions {
   host: string;
   /** Port of the first launch line; each further device takes the next port. */
   port: number;
-  /** Parallel sequences per server (`-np`); the context grows by 8192 per slot. */
+  /** Parallel sequences per server (`-np`); the context grows by the per-slot window per slot. */
   slots: number;
   /** GGUF path on the target host, in that OS's path syntax. */
   modelPath: string;
@@ -38,6 +38,8 @@ export interface LlamaServerCommandOptions {
   gguf?: OllamaRegistryGgufSource;
   /** The OS tea-rags itself runs on — named in the local-fallback hint. */
   localOs?: LlamaServerTargetOs;
+  /** The model's trained context window, when its GGUF was readable here; caps the per-slot window. */
+  modelContextLength?: number;
 }
 
 export interface LlamaServerCommandSection {
@@ -51,8 +53,12 @@ export interface LlamaServerCommandSheet {
   clientEnv: Record<string, string>;
 }
 
-/** Context tokens each llama-server slot gets. */
-const CONTEXT_PER_SLOT = 8192;
+/** Context tokens each llama-server slot gets at most; a model with a smaller window gets its window. */
+const MAX_CONTEXT_PER_SLOT = 8192;
+
+function contextPerSlot(o: LlamaServerCommandOptions): number {
+  return Math.min(MAX_CONTEXT_PER_SLOT, o.modelContextLength ?? MAX_CONTEXT_PER_SLOT);
+}
 
 // ── quoting ──────────────────────────────────────────────────────────────
 
@@ -131,6 +137,7 @@ interface LlamaServerLaunch {
 
 function buildLaunches(o: LlamaServerCommandOptions): LlamaServerLaunch[] {
   const devices: (string | undefined)[] = o.devices.length > 0 ? o.devices : [undefined];
+  const window = contextPerSlot(o);
   return devices.map((device, i) => {
     const port = o.port + i;
     const argv = [
@@ -145,11 +152,11 @@ function buildLaunches(o: LlamaServerCommandOptions): LlamaServerLaunch[] {
       "-np",
       String(o.slots),
       "-c",
-      String(o.slots * CONTEXT_PER_SLOT),
+      String(o.slots * window),
       "-b",
-      String(CONTEXT_PER_SLOT),
+      String(window),
       "-ub",
-      String(CONTEXT_PER_SLOT),
+      String(window),
       ...(device === undefined ? [] : ["--device", device]),
       "--host",
       o.host,
@@ -198,6 +205,12 @@ function downloadSection(o: LlamaServerCommandOptions, gguf: OllamaRegistryGgufS
 
 function launchSection(o: LlamaServerCommandOptions, launches: LlamaServerLaunch[]): LlamaServerCommandSection {
   const lines = launches.map((l) => shellCommand(o.os, l.argv));
+  const window = contextPerSlot(o);
+  if (window < MAX_CONTEXT_PER_SLOT) {
+    lines.push(
+      `# Warning: the model's context window is ${window} tokens, below ${MAX_CONTEXT_PER_SLOT} — each slot gets ${window}, so chunks must fit ${window} tokens.`,
+    );
+  }
   if (o.devices.length === 0) {
     lines.push(
       `# Pick GPUs: run ${shellCommand(o.os, [o.bin, "--list-devices"])}, then re-run this command with --device <id> per GPU (one port each).`,
@@ -334,6 +347,8 @@ function macosAutostart(launches: LlamaServerLaunch[]): string[] {
       "</dict>",
       "</plist>",
       "EOF",
+      // bootstrap fails on a label already loaded; booting it out first lets a re-run replace the agent.
+      `launchctl bootout gui/$(id -u)/${label} 2>/dev/null || true`,
       `launchctl bootstrap gui/$(id -u) ${plist}`,
     );
   }

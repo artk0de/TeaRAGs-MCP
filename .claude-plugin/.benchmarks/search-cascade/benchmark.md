@@ -780,3 +780,88 @@ E6 rewritten (outline carries no test lines → `hybrid_search`
 `testFile: "only"`), E11 new (subagent asks for the specs of a method). Known
 limitation: `find_symbol("<Top>.<scope>")` on an oversized split scope still
 merges every part — the epic's target.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 12/12 PASS (100%)
+- Last recorded rate: 100% (10/10 after_fix, 2026-06-19; later sub-suites 100%)
+- FAIL list: none
+- Notes: Artifact mapped to rules/core.md + rules/guides/{decision-tree,navigation}.md. Case 11 passed on tool choice but omitted names[]; case 12 used review_changes(naming) per guides/decision-tree.md (never hand-list a diff's names) rather than the eval's get_naming_lexicon(changes); both graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 11/12 PASS (92%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 12/12 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `12` — hand-lists names[] to get_naming_lexicon after plain review_changes (no sections:[naming]/changes form) [model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only)
+- Result: 11/12 PASS (92%) over 12 scored cases (superseded 0; evals/ sub-suite files not scored)
+- Task 12 rate: 12/12 (100%); delta -8pp
+- FAIL:
+  - `11` — get_naming_lexicon called without names/types, plus hybrid_search cross-check on TaxAutomationDocument (listed in not-routes); T12 passed this on tool choice only
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 11/12 PASS (92%) (N/A: 0)
+- Codex T14 rate: 92% (11/12)
+- Claude T22 rate: 92% (11/12)
+- FAIL list: 
+  - `12` — review_changes then hand-listed names[] to get_naming_lexicon — still
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 11/12 PASS (92%) over 12 scored cases (superseded: 0)
+- Baseline (round 1): 11/12 (92%)
+- Delta: +0pp (case 11 fixed: get_naming_lexicon with names[], no cross-check; case 12 newly failing)
+- FAIL list:
+  - 12 — review_changes(changes:{}, sections:["naming"]) correct, but plans a follow-up get_naming_lexicon(names[]) "if a finding needs a deeper verdict" — the not-route (lexicon after review_changes). guides/decision-tree.md naming branch (l.100-101) routes diff names to review_changes but never says its findings are the whole answer / no lexicon follow-up.
+- Notes: cases 3 and 7 graded on the primary route (hybrid_search / semantic_search); the optional find_symbol definition lookup (3) and post-hit find_symbol drill (7) are the cascade's depth step, not the forbidden route.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 11/12 PASS (92%) (N/A excluded: 0).
+- Round-1 Codex: 11/12 (92%). Delta: ±0 pp.
+- FAIL list:
+  - `12` — review_changes then hand-listed names[] into get_naming_lexicon (mustNot); naming section verdicts not used as the answer.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 9/12 PASS (75%) over scored cases (superseded: 0)
+- Baseline (round 2): 11/12 (92%)
+- Delta: -17pp (regressions: 7, 11; 12 still failing)
+- FAIL list:
+  - 7 — semantic_search is the primary route, but the plan adds an optional second-angle `hybrid_search(query="confidence dampening rerank")` — a not-route for this case. The core "Breadth → re-run semantic_search / hybrid_search with a NEW query" wording licenses it.
+  - 11 — get_naming_lexicon called without `names`/`types` (vague "scoped if parameters allow"), then a hybrid_search cross-check (not-route). The rebuilt core routing table (rules/core.md "Routing") has no naming row, so the subject never reached guides/decision-tree.md's naming branch (l.104: get_naming_lexicon with names/types).
+  - 12 — review_changes(changes:{}, sections:["naming"]) correct, but then "supplement with get_naming_lexicon" + find_symbol/hybrid_search — the not-route. decision-tree.md l.110 says review.findings are the answer with no lexicon follow-up, but the core routing row "diff review → review_changes" says nothing about naming, and the subject did not open the decision-tree guide.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12 / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 12/12 PASS (100.0%) (N/A excluded: 0).
+- Round-2 Codex: 11/12 (91.7%). Delta: +8.3 pp.
+- FAIL list: none.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no per-case length cap)
+- Result: 11/12 PASS (92%) over scored cases (superseded: 0)
+- Baseline (round 3): 9/12 (75%)
+- Delta: +17pp (7 and 12 fixed; 11 still failing)
+- FAIL list:
+  - 11 — get_naming_lexicon is the route, but called with "query/term `row` + domain, following the tool's own parameter schema" — `names` / `types` never stated (MUST in expected); a conditional hybrid_search follow-up when the lexicon is thin. The core Routing row ("a name's fit → get_naming_lexicon") names the tool but not its `names[]`/`types` inputs; that shape lives only in guides/decision-tree.md / search-examples.md, which the core does not send this case to.
+- Notes: case 3 adds an optional find_symbol(metaOnly) to locate the definition and exclude it from the usage tally — not the usage route, graded PASS; conditional-on-empty fallbacks (cases 1, 2, 8, 10) graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13 / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text present in subject context but declared void (limitation).

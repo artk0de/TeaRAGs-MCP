@@ -1,13 +1,15 @@
 ---
 name: explore
 description:
-  Developer explore, understand, explain, investigate code — "how does X work",
-  "show me the architecture of Y", "what does Z do", "where is X used", "find
-  all X", "antipatterns in X", "best example of X". Also pre-generation
-  investigation — "before I code/change/modify/refactor X", "what should I know
-  before touching X", "research before coding", "context for changing X", "risks
-  before refactoring X". NOT for active bugs (use bug-hunt), NOT for standalone
-  code health scan without specific area (use risk-assessment)
+  Explore, understand, explain, investigate code — "how does X work", "show me
+  the architecture of Y", "what does Z do", "where is X used", "find all X",
+  "antipatterns in X", "best example of X", "files matching <Name>" (not Glob).
+  Also pre-generation investigation — "before I code/change/modify/refactor X",
+  "what should I know before touching X", "research before coding", "context for
+  changing X", "risks before refactoring X". NOT for active bugs, a bug already
+  found in a file, named suspects or search hits carrying bugFixRate labels (use
+  bug-hunt), NOT for writing a plan (use writing-plans), NOT for standalone code
+  health scan without specific area (use risk-assessment)
 argument-hint: [what to explore — feature, module, or question]
 ---
 
@@ -15,149 +17,256 @@ argument-hint: [what to explore — feature, module, or question]
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-| User intent contains                                | Strategy | Skip if                                                          |
-| --------------------------------------------------- | -------- | ---------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                                            |
-| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct                         |
-| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                           |
-| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → hybrid_search (ripgrep only for literal text) |
+Checked first, before this table: structure phrasing ("organized", "end to end",
+"structure", "architecture", "backbone", "walk me through") → codegraph row 4
+below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
+used" / "callers of X" → decide codegraph first (plan line below); on →
+`Strategy: codegraph row 2` (`get_callers`), never TRACE-only `hybrid_search`.
+Off (or off branch of an unknown state) → TRACE loop, copied, ≥ 2 calls:
+`hybrid_search(query="<X>", metaOnly=true)` → per caller hit
+`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
+fail.
 
-🛑 If unsure, ask user. NEVER assume strategy from partial signals.
+| User intent contains                                                                                         | Strategy | Skip if                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt; structure phrasing → codegraph row 4 |
+| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct           |
+| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | plan request ("draft a plan to add X") → writing-plans; mid-refactor → executing-plans       |
+| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)                         |
+
+**State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
+risk / change / ownership / codegraph row) + the matched phrase — routing on
+surface keywords without this line = wrong.
+
+**Doc claim in hand** (prompt or a doc chunk states a number / limit / default),
+any strategy → verify in source (`documentation:"exclude"` + `find_symbol`)
+before the answer repeats it; the plan prints both outcome lines, copied:
+`On conflict: Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
+`On match: Doc matches code at <file:line>.`
+
+**PRE-GEN wins** over EXPLAIN / EXEMPLAR words when a pre-change signal is
+present: "understand X before I modify it", "research the error patterns — I
+need to add a new error type", "about to refactor X, research first", plan step
+"Research X before implementing Y" = PRE-GEN, not EXPLAIN / EXEMPLAR /
+brainstorming / executing-plans; output self-contained, never auto-invokes DDG.
+"How does X work + risks before I change it" → PRE-GEN subsumes both.
+
+**TRACE vs EXEMPLAR:** usages of ONE named symbol (who calls / imports / where
+used) = TRACE (codegraph on → codegraph row 2). Every implementation / instance
+/ variant of a kind ("find all implementations of Provider", "every subclass of
+X") = EXEMPLAR Collect → opening line `Strategy: EXEMPLAR Collect — "<phrase>"`
+(intent word included), delegate pattern-search; never search it yourself.
+Behaviour words without all/every ("search for retry logic and error recovery")
+= BREADTH `semantic_search`, not EXEMPLAR.
+
+🛑 Unsure → ask user. NEVER assume strategy from partial signals.
+
+## Plan intent → writing-plans
+
+Request to author a plan ("write/draft a plan", "draft a plan to add X", "plan
+the change to <files>", "add a Task to the plan") → hand off to
+`dinopowers:writing-plans`; its ONE impact `semantic_search` is the first call.
+Holds with "add X" / "before changing" / "impact analysis" and a
+`[subagent: explore]` label. Checked before every section below — never PRE-GEN,
+never `find_symbol` outlines first. A plan STEP "Research X before implementing
+Y" stays PRE-GEN.
 
 ## Risk intent → delegate to risk-assessment
 
-If $ARGUMENTS contains risk-assessment signals ("risk surface", "risk zones",
-"code health", "assess risks", "problematic areas") → delegate
-`risk-assessment/SKILL.md`. Runs BEFORE intent table — risk intent overrides
-EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords.
+$ARGUMENTS has risk signals over an AREA ("risk surface", "risk zones", "risky
+areas", "code health", "assess risks", "problematic areas", "risks before
+refactoring/changing <module>") → delegate `risk-assessment/SKILL.md` WITH the
+resolved `pathPattern` (Scope extraction below) — it then skips its Phase 0.
+Checked FIRST — overrides EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords, "before I
+refactor" included. Risks of ONE named symbol / change ("risks before I change
+the scoring") → PRE-GEN PG-2 signals.
 
-## Codegraph intent (edge truth) → checked BEFORE the content-matching table
+## Change intent → rank_chunks codeReview
 
-Graph-shape questions answered from real call/import edges (codegraph DuckDB),
-which content matching cannot derive. When $ARGUMENTS matches row below, route
-to that sub-pattern — checks run AFTER risk-assessment but **BEFORE** the
-EXPLAIN/TRACE/PRE-GEN/EXEMPLAR table (edge truth beats content matching for
-graph shape). Evaluate top-to-bottom; first match wins.
+"what changed recently", "recent changes in X", "what's new in X" →
+`rank_chunks rerank="codeReview" pathPattern=<scope> maxAgeDays=14` (no query —
+ranks by recency signals; window always set). Never `git log` / `git diff`,
+never a text query. Checked right after risk intent.
 
-| Priority | Intent contains                                                                  | Sub-pattern                                                                |
-| -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                       | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
-| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow"        | [references/usage-pattern.md](./references/usage-pattern.md)               |
-| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"  | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
-| 4        | "архитектура", "structure", "backbone", "что центральное", "how X is organized"  | [references/architecture-pattern.md](./references/architecture-pattern.md) |
-| 5        | "как в проекте называют X", "what does the project call X", "is this name right" | `get_naming_lexicon` — see below                                           |
+## Ownership intent → rank_chunks ownership
 
-**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)` —
-concept for "what do we call X", `types` for "how are values of T named",
-`names[]` for a verdict. Answer = dominant shape + top names / terms with their
-holders; reading and codegraph-off fallback:
-`../data-driven-generation/SKILL.md` Step 5 "Naming (lexicon)".
+"who owns X", "who knows X", "bus factor of X" →
+`rank_chunks rerank="ownership" pathPattern=<scope>` (no query — live-line
+blame); "who recently committed to X" → `rerank="recentActivityConcentration"`.
+Never `semantic_search` for it. Details: `references/explain-pattern.md`.
 
-**Match on intent phrasing, not symbol substrings.** Classify by request's verb
-frame, NOT by characters inside symbol name. "what does X call?" / "who calls
-X?" always USAGE (row 2) even when X named `findCycles` / `CycleDetector` — word
-"cycle" inside target symbol does NOT make it CYCLE (row 1) request. Row 1 fires
-only on graph-shape phrasing about the loop itself ("circular dependency",
-"dependency loop", "cycles in <scope>").
+## Codegraph intent (edge truth) → checked BEFORE content-matching table
 
-**Codegraph availability:** sub-patterns need codegraph index. Prime digest
-lists `codegraph.symbols` under `## Enrichment` when active; when that line
-absent, graph tools (`get_callers` / `get_callees` / `find_cycles`) **not
-registered** — absent from tool list, not returning empty. Check prime first. No
-prime available (subagent context) → presence of `get_callers` in YOUR tool list
-IS the availability signal. Codegraph off → fall back to content-matching table
-below — TRACE covers usage, EXPLAIN covers architecture — never read absent tool
-as positive fact. Each sub-pattern states own fallback.
+Graph-shape questions answered from real call/import edges — content matching
+can't derive them. Order: risk → change → ownership → this table →
+EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 
-## Pattern-search keyword groups (used by EXEMPLAR routing)
+| Priority | Intent contains                                                                                                                                   | Sub-pattern                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                                                                                        | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
+| 2        | "кто использует/вызывает X", "where is X used", "who uses X", "callers of X", "callees of X", "trace flow", "how does X reach Y" (→ `trace_path`) | [references/usage-pattern.md](./references/usage-pattern.md)               |
+| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"                                                                   | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "end to end", "walk me through"                                           | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                                                  | `get_naming_lexicon` — see below                                           |
 
-| Strategy        | Keywords (any match)                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever |
-| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module       |
-| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose       |
-| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example    |
+**Rows 1–4: open the row's reference with its own read command BEFORE planning
+(MANDATORY)** — naming it without opening it is a fail; the calls carry filters
+the row name does not show. Plan line 1 = codegraph state + its source (below).
+Plan/answer NAMES the calls below — "follow the reference's workflow" is not a
+plan.
 
-**Exception:** If EXPLAIN reference (sub-pattern table) has specific pattern for
-this intent (e.g., "What calls X?" with "all call sites"), EXPLAIN pattern wins
-over keyword classification. EXPLAIN more specific than generic Collect.
+- **Row 1** (cycles, codegraph on): empty `find_cycles` IS the answer — say "no
+  cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
+- **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
+  even when the user typed `Class#method`; call 2 = `get_callers` /
+  `get_callees symbolId=<that id>`; "every / all callers" / "where is X used" →
+  call 3 = `hybrid_search metaOnly:true` on the name (adds recall, never
+  replaces 2). "How does X reach Y": endpoints named as symbols → `find_symbol`
+  each, then `trace_path`; endpoints described in words ("OAuth callback",
+  "sign-in") → call 1 = `semantic_search` for that behaviour, call 2 =
+  `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
+  `find_symbol symbol=`.
 
-## Strategy references
+- **Rows 3 + 4, call 1 = ORIENT:**
+  `semantic_search rerank="entryPoint" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
+  WITH small-utility mitigation, stated in answer: `minFanOut` + `level:"chunk"`
+  (`minFanOut` alone = file import count) or drop tiny-`chunkSize` rows.
+- **Row 3** ("where X starts"): ORIENT result IS the answer → `get_callees` from
+  top entry.
+- **Row 4** (structure / organized / walk me through / end to end), codegraph on
+  — plan, copied, all four calls: `1 ORIENT semantic_search rerank="entryPoint"`
+  → `2 semantic_search rerank="architecturalHub"` (same filters) →
+  `3 get_callees symbolId=<top entry id>` walked through the hubs →
+  `4 find_symbol` depth. Sources only — no tests / docs axis searches. Hubs
+  before entries = wrong order; a plan without call 3 = wrong.
 
-- Strategy: see
-  [references/explain-pattern.md](./references/explain-pattern.md).
-- Strategy: see [references/trace-pattern.md](./references/trace-pattern.md).
-- Strategy: see
-  [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
-- Strategy: see
-  [references/exemplar-pattern.md](./references/exemplar-pattern.md).
-- Codegraph: see [references/cycle-pattern.md](./references/cycle-pattern.md).
-- Codegraph: see [references/usage-pattern.md](./references/usage-pattern.md).
-- Codegraph: see
-  [references/entry-point-pattern.md](./references/entry-point-pattern.md).
-- Codegraph: see
-  [references/architecture-pattern.md](./references/architecture-pattern.md).
+**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)`.
+Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a
+good name", even with "or what do we call it") →
+`names:[{name: "<name>", kind, type?: "<T>"}]` — its verdict + alternatives
+answer both halves; never `concept`. No candidate name, a type `<T>` named ("how
+is a variable / value of `<T>` named", "как называть переменную с `<T>`") →
+copied: `get_naming_lexicon(types:["<T>"])` — never `concept:"<T>"`. `concept`
+only for "what do we call X" (X = idea, not a type). Names in a diff ("do my
+uncommitted names fit?") →
+`review_changes(changes:{} | {base}, sections:["naming"])` — its findings ARE
+the answer; no `get_naming_lexicon` follow-up, never hand-list the diff's names
+into `names[]`. Answer = dominant shape + top names/terms with holders;
+reading + codegraph-off fallback: `../data-driven-generation/SKILL.md` Step 5
+"Naming (lexicon)".
+
+**Match intent phrasing, not symbol substrings.** Classify by verb frame, NOT
+characters in symbol name. "what does X call?" / "who calls X?" = USAGE (row 2)
+even when X = `findCycles` / `CycleDetector`. Row 1 only on phrasing about the
+loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
+
+**Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
+wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
+disabled or enabled → that, even against your tool list. A statement attached to
+an earlier request never carries over — re-decide per request. The digest never
+states it — no codegraph line there means nothing, never read it as OFF. Context
+/ digest listing `codegraph.symbols` or `get_naming_lexicon` available =
+explicit ON (source `request`) — no registry read first. No statement → a graph
+tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefix
+— `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
+`tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
+decides. "Not in my tool list" alone never selects the off route — not checked ≠
+absent. Plan line 1, copied:
+`Codegraph: on|off — <request | tool seen | registry>`. Never `unknown`: scan
+your tool list before writing it. Never call a graph tool to probe; an
+unregistered tool is not an empty result — never read it as "no callers" / "no
+cycles". Codegraph off → content-matching table: TRACE covers usage, EXPLAIN
+covers architecture. Broad orientation / structure ("introduce me", row 4) →
+ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+`references/entry-point-pattern.md` off procedure (relevance, drop tiny
+`chunkSize` rows, its caveat line). Both flagged content-inferred; never
+`entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own
+fallback.
+
+## Pattern-search keyword groups (EXEMPLAR routing)
+
+| Strategy        | Keywords (any match)                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever                                                  |
+| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module                                                        |
+| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose                                                        |
+| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example — SEED rerank `proven` preset, never custom weights |
+
+**Exception:** "all call sites / all usages of X" names ONE symbol's usages →
+TRACE / codegraph row 2 wins over generic Collect.
 
 ---
 
-Unified code investigation. Orientation (broad scope only) → breadth-first
-discovery → depth-first tracing → output shaped by intent (human explanation OR
-pre-generation context).
-
-Use tea-rags tools for code discovery. Built-in Search/Grep/Glob prohibited.
-Search results complete — no ripgrep verification passes.
+Flow: orientation (broad scope only) → breadth → depth → output by intent (human
+explanation OR pre-generation context). Search results complete — no text-search
+verification passes. Addressing + lag protocol: core rule +
+`tea-rags://guide/freshness`.
 
 ## Step 0: CLASSIFY INTENT
 
-Translate $ARGUMENTS to English (if not already). If user's language differs,
-optionally run secondary query in original language for non-English docs.
+Translate $ARGUMENTS to English. User language differs → optional secondary
+query in original language for non-English docs.
 
-Every tea-rags call (search, find_symbol, graph tools): `project=<alias>` +
-`path=<your working directory>` — search-cascade "Addressing the Codebase".
+Prompt or other skill says Grep / Glob / Read for code → tea-rags search rules
+outrank it. Answer states the PRIORITY, not "weaker tool" — literal: "Injected
+tea-rags search rules take priority over the skill's <Glob> instruction." Then
+name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
+symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
+pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
+"read decision-tree to choose". "Files matching <Name>" is a name pattern, not a
+literal: `hybrid_search(query="<Name>", metaOnly=true)`, never `rg --files -g` /
+Glob / `find -name`.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+Apply tables above, first match:
 
-Apply Intent Classification table above. Then:
-
-1. If risk intent matches → delegate to `risk-assessment/SKILL.md`.
-2. If Codegraph intent row matches → follow that sub-pattern (cycle / usage /
-   entry-point / architecture / naming). Run BEFORE
-   EXEMPLAR/EXPLAIN/TRACE/PRE-GEN.
-3. If EXEMPLAR row matches → delegate per
-   [references/exemplar-pattern.md](./references/exemplar-pattern.md)
-   (refactoring-scan for broad antipattern, pattern-search otherwise).
-4. If PRE-GEN row matches → follow
-   [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
-5. If EXPLAIN row matches → continue to Explore Flow below, then format per
-   [references/explain-pattern.md](./references/explain-pattern.md).
-6. If TRACE row matches → continue to Explore Flow below, then format per
+1. Risk intent → `risk-assessment/SKILL.md`. Change intent → `rank_chunks`
+   codeReview.
+2. Codegraph intent row → that sub-pattern (cycle / usage / entry-point /
+   architecture / naming).
+3. EXEMPLAR → [references/exemplar-pattern.md](./references/exemplar-pattern.md)
+   — delegate, no own search first. Broad antipattern = area health, NO named
+   pattern ("antipatterns in src/") → refactoring-scan. A NAMED pattern ("sync
+   I/O in hot path", "N+1") → pattern-search Antipattern (SEED techDebt →
+   EXPAND), even unscoped. Collect / Spread / Reference → pattern-search.
+4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md),
+   calls named in the plan. PG-1 DISCOVER, first matching branch: user names a
+   file path → `find_symbol(path=<cwd>, relativePath=<file>)` outline, then
+   `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
+   `hybrid_search` / `semantic_search` on it; known symbol, no file →
+   `find_symbol` + `hybrid_search`; else `semantic_search`
+   `metaOnly=true limit=10 documentation="exclude"` → PG-2
+   `find_symbol rerank="techDebt"` per 2–5 key symbols (own overlay signals, no
+   risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols only (e.g.
+   base error classes), never call chains.
+5. EXPLAIN → Explore Flow below, format per
+   [references/explain-pattern.md](./references/explain-pattern.md). Named
+   component ("the <name> adapter") → Scope extraction probe FIRST, then
+   `semantic_search(query=<behaviour>, pathPattern="**/<name>/**")` — the
+   component word in query text alone is NOT scope. Skip ORIENT ≠ skip probe.
+6. TRACE → Explore Flow below, format per
    [references/trace-pattern.md](./references/trace-pattern.md).
 
 ### Scope extraction
 
 Extract `pathPattern` from $ARGUMENTS:
 
-**Explicit markers** — `in/inside/within/under/from <X>` → `**/<X>/**`
+**Explicit markers** — `in/inside/within/under/from <X>` → `**/<X>/**`. Named
+component ("the <name> adapter", "<dir> pipeline") = scope too → directory probe
+below. Scope found → EVERY breadth call carries that `pathPattern`.
 
-**Directory matching** — if word looks like directory name:
+**Directory matching** — word looks like directory name:
 
-1. Probe with a tea-rags search, `pathPattern` `**/<word>/**` and
-   `**/<word>s/**` (plural), `metaOnly: true`, `limit: 3`
-2. One match → use as pathPattern. Multiple → pick deepest or ask. Zero → no
-   pathPattern.
+1. Probe tea-rags search, `pathPattern` `**/<word>/**` and `**/<word>s/**`,
+   `metaOnly: true`, `limit: 3`
+2. One match → pathPattern. Multiple → deepest or ask. Zero → none.
 
-Do NOT hardcode aliases — the probe result is the source of truth.
+No hardcoded aliases — probe result = source of truth.
 
-### Direct-input intents (no BREADTH needed)
+### Direct-input intents (no BREADTH)
 
-If user provides **code snippet or chunk** (not a question) → skip BREADTH, go
-straight to find_similar with code as input. Then EXPLAIN similarities.
+User gives **code snippet or chunk** (not question) → skip BREADTH →
+find_similar with code as input → EXPLAIN similarities.
 
 ## Explore Flow (human understanding)
 
@@ -171,69 +280,76 @@ straight to find_similar with code as input. Then EXPLAIN similarities.
 
 ### 1. ORIENT (broad scope ONLY)
 
-**Gate by request target.** Target = system / domain / directory ("introduce me
-to the project", "full picture of X", "walk me through domain Y") → ORIENT
-first. Target = named symbol / narrow question ("what does Reranker#rerank do",
-"where is X used") → SKIP, go straight to BREADTH.
+**Gate by target.** System / domain / directory ("introduce me to the project",
+"full picture of X", "walk me through domain Y") → ORIENT first. Named symbol /
+narrow question ("what does Reranker#rerank do", "where is X used") → SKIP to
+BREADTH (Scope extraction still runs; its pathPattern rides on BREADTH).
 
-Architecture/structure phrasing ("how is X organized", "architecture of X")
-never reaches here — codegraph intent row 4 catches it first;
-architecture-pattern.md Step 0 runs the SAME orientation, so nothing is lost.
+Architecture phrasing never reaches here — codegraph row 4 catches it;
+architecture-pattern.md Step 0 runs same orientation.
 
-Entry points give the flow skeleton every broad exploration needs — see them
-BEFORE breadth search, so BREADTH results land on a map, not in a void.
+Entry points = flow skeleton; see them BEFORE breadth so results land on a map.
 
-- **Codegraph on** (prime `## Enrichment` lists `codegraph.symbols`):
+- **Codegraph on** (graph tools in tool list):
   `semantic_search rerank="entryPoint" pathPattern=<scope> limit=5` —
   graph-confirmed composition roots (fanOutPerLine↑, fanIn↓). Overlay shows
   `fanIn` / `fanOut` / `imports`.
 - **Codegraph off**:
   `semantic_search rerank="onboarding" pathPattern=<scope> limit=5` — stable +
-  documented + mature files as starting ground. FLAG results content-inferred,
-  NOT graph-confirmed entry points.
-- Small / flat scope (no clear driver) → say ranking degraded, don't present a
-  utility as "the entry point" (same honesty rule as entry-point-pattern.md).
+  documented + mature files. FLAG as content-inferred, NOT graph-confirmed.
+- Small / flat scope (no clear driver) → say ranking degraded; never present
+  utility as "the entry point".
 
-ORIENT output = orientation for BREADTH, not the answer. Explicit "entry point"
-INTENT ("where does X start") stays with the codegraph intent table row 3 →
-entry-point-pattern.md, not here.
+ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
+("where does X start") → codegraph row 3, not here.
 
 ### 2. BREADTH
 
-Search with query=$ARGUMENTS. Tool selection: behavior/intent → semantic_search;
-known symbol + need DEFINITION → find_symbol (instant, no embedding); known /
-bare symbol name + need USAGES → hybrid_search.
+query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
+DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
+name + behaviour words ("where hybrid_search handles BM25 scoring") →
+hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
+Known path / symbol → `find_symbol` (outline → body); rationale, copied:
+`'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
+Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
+first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).
+Subagent: drift / reindex is a note to the parent, never a plan step in place of
+these calls.
 
-**Broad scope → split axes** per `rules/references/axis-splitting.md` (sources
-FIRST via `testFile: "exclude", documentation: "exclude"`; tests axis for
-expected behavior; docs axis for intent — docs = hypothesis, behavioral claims
-verified by code). Point questions: no split, axis implied.
+**Broad scope → split axes** per `../../rules/references/axis-splitting.md`.
+Three calls, axis = filter param (never `language` as axis proxy):
 
-Filter presets (`filter:{presets}`) are available but explore does NOT set them
-by default — understanding and navigation require breadth; no specific filter.
+1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
+2. tests — `testFile: "only"` (expected behavior)
+3. docs — `documentation: "only"` (hypothesis, never sole evidence). Doc claim
+   (number, limit, default) → verify in source (`documentation:"exclude"` +
+   `find_symbol`), then answer carries this line, copied:
+   `Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
+   (match → `Doc matches code at <file:line>.`)
 
-Scan results: files, modules, patterns. Note domain boundaries.
+Point question about tests ("is X tested?", "tests covering `<file>`") → ONE
+call, no split, no Glob:
+`hybrid_search(query="<module name + exported symbol names of X>", testFile:"only", metaOnly:true)`
+— names, never a sentence; not `semantic_search`. Other point questions: no
+split.
+
+No `filter:{presets}` by default — understanding needs breadth.
+
+Scan results: files, modules, patterns, domain boundaries.
 
 ### 3. PICK + EXPLORE
 
-For each interesting result:
+Per interesting result:
 
 - **"Same thing elsewhere?"** → find_similar (code or chunk ID)
-- **"What is this symbol?"** → find_symbol (returns full definition, no Read
-  needed). Fallback: hybrid_search if 0 results.
-- **"Need surrounding context"** → `find_symbol` — `relativePath` outline, then
-  drill the neighbour id (`navigation.prev/nextSymbolId`); never Read.
+- **"What is this symbol?"** → find_symbol (full definition). 0 results →
+  hybrid_search.
+- **"Surrounding context"** → `find_symbol` `relativePath` outline → drill
+  neighbour id (`navigation.prev/nextSymbolId`); never Read.
 
-Repeat as needed. Fewer deep dives > many shallow ones.
+Fewer deep dives > many shallow.
 
-### 4. EXPLAIN / TRACE / PRE-GEN
+### 4. FORMAT
 
-Format answer per strategy reference selected in Step 0:
-
-- EXPLAIN intents →
-  [references/explain-pattern.md](./references/explain-pattern.md)
-- TRACE intents → [references/trace-pattern.md](./references/trace-pattern.md)
-- PRE-GEN intents →
-  [references/pre-gen-pattern.md](./references/pre-gen-pattern.md)
-- EXEMPLAR intents →
-  [references/exemplar-pattern.md](./references/exemplar-pattern.md)
+Answer per strategy reference picked in Step 0 (explain / trace / pre-gen /
+exemplar pattern).

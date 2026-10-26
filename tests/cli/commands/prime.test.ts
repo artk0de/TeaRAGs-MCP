@@ -6,7 +6,7 @@ vi.mock("../../../src/cli/prime/run-prime.js", () => ({
   runPrime: vi.fn().mockResolvedValue(undefined),
 }));
 
-type PrimeHandler = (args: { path?: string; project?: string }) => Promise<void>;
+type PrimeHandler = (args: { path?: string; project?: string; full?: boolean }) => Promise<void>;
 
 describe("primeCommand", () => {
   it("declares the 'prime [path]' command shape (optional path; --project alternative)", () => {
@@ -14,7 +14,7 @@ describe("primeCommand", () => {
     expect(primeCommand.describe).toBeTruthy();
   });
 
-  it("registers positional 'path' and --project option through the yargs builder", () => {
+  it("registers positional 'path', --project and --full options through the yargs builder", () => {
     // Drive builder() so its option-declaration statements execute.
     const positionalCaptured: { name: string; opts: Record<string, unknown> }[] = [];
     const optionCaptured: { name: string; opts: Record<string, unknown> }[] = [];
@@ -36,18 +36,20 @@ describe("primeCommand", () => {
     expect(positionalCaptured).toHaveLength(1);
     expect(positionalCaptured[0].name).toBe("path");
     expect(positionalCaptured[0].opts.type).toBe("string");
-    expect(optionCaptured).toHaveLength(1);
+    expect(optionCaptured).toHaveLength(2);
     expect(optionCaptured[0].name).toBe("project");
     expect(optionCaptured[0].opts.type).toBe("string");
+    expect(optionCaptured[1].name).toBe("full");
+    expect(optionCaptured[1].opts.type).toBe("boolean");
   });
 
-  it("forwards path and project to runPrime when the handler runs", async () => {
+  it("forwards path, project, --full and the session opener to runPrime when the handler runs", async () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
     const { runPrime } = await import("../../../src/cli/prime/run-prime.js");
     const runPrimeMock = vi.mocked(runPrime);
     runPrimeMock.mockClear();
 
-    await (primeCommand.handler as PrimeHandler)({ path: "/projects/demo" });
+    await (primeCommand.handler as PrimeHandler)({ path: "/projects/demo", full: true });
 
     expect(runPrimeMock).toHaveBeenCalledOnce();
     // The command is the composition actor: it also passes the shared
@@ -56,8 +58,10 @@ describe("primeCommand", () => {
     expect(runPrimeMock).toHaveBeenCalledWith({
       path: "/projects/demo",
       project: undefined,
+      full: true,
       createPathCollectionResolver: expect.any(Function),
       registryRuntime: expect.anything(),
+      openSession: expect.any(Function),
     });
     exitSpy.mockRestore();
   });

@@ -55,7 +55,7 @@ CASE 8 (brainstorming [ENV-A]):
 - what I TELL THE USER: 3-lens enrichment block, and explicitly **"structural backbone was NOT assessed"** (codegraph off; do NOT substitute a similarity-ranked list as "the hubs"). Hotspots/silos/tech-debt drive the brainstorm; structural-hub blast radius is flagged as unknown.
 
 CASE 9 (requesting-code-review [ENV-B]):
-- enrichment rerank/tool: ONE `semantic_search`, custom `rerank: { imports: 0.5, churn: 0.3, ownership: 0.2 }` (this skill uses custom weights for the ownership/churn/taskIds bundle, NOT `blastRadius`), brace-expanded `pathPattern` over diff files (AppConfig + 3 services), `metaOnly: true`. Plus **Step 2.5 reviewer-hub**: `find_symbol` to resolve changed symbol ids → `get_callers` for the affected callers. Plus Step 3a tests-at-risk.
+- enrichment rerank/tool: ONE `semantic_search`, `rerank: "blastRadius"` (codegraph is on in ENV-B; the custom `{ imports: 0.5, churn: 0.3, ownership: 0.2 }` bundle is the codegraph-off fallback — re-aligned 2026-10-23 to requesting-code-review Step 2), brace-expanded `pathPattern` over diff files (AppConfig + 3 services), `metaOnly: true`. Plus **Step 2.5 reviewer-hub**: `find_symbol` to resolve changed symbol ids → `get_callers` for the affected callers. Plus Step 3a tests-at-risk.
 - codegraph available? yes — `get_callers` registered; Step 2.5 runs.
 - what I TELL THE USER: reviewer-context bundle (per-file owner/contributors/churn/taskIds/bugFixRate) PLUS an **"Affected callers / suggested reviewers"** line — callers of the changed AppConfig/service symbols and their blameDominantAuthors looped in as stakeholders. Caller-impact computed (not "not assessed").
 
@@ -78,7 +78,7 @@ CASE 10 (finishing-a-development-branch [ENV-B]):
 | 6 | A | custom-weight scan | "import-proxy approximate" | PASS |
 | 7 | B | hotspots+ownership+techDebt + architecturalHub (Call D) | backbone assessed | PASS |
 | 8 | A | hotspots+ownership+techDebt only | "structural backbone NOT assessed", no fake hubs | PASS |
-| 9 | B | custom ownership bundle + get_callers reviewer-hub | caller-impact computed | PASS |
+| 9 | B | blastRadius bundle + get_callers reviewer-hub | caller-impact computed | PASS |
 | 10 | B | risk-assessment + structural axis + find_cycles | cycles actively assessed (not "no cycles") | PASS |
 
 All 10 cases route correctly under the fixed codegraph-presence/fallback rule:

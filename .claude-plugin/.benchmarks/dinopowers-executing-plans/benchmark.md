@@ -225,3 +225,97 @@ execution eval) supersedes `evals/explicit-worktree-lifecycle-evals.json`;
 `../dinopowers-executing-plans-v2/evals.json` gained E11-E13 (MODIFY routing +
 trivial-text control). **Not yet measured** — no with/without-rule run; X1 is
 user-gated (live incremental index on a clone).
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%) (intent-graded; same stale rerank text: evals say custom weights, SKILL.md prescribes 'blastRadius')
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 15/16 PASS (94%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 16/16 (100%)
+- CODEX-ONLY: eval-12 (treats user's 'skip UNSAFE' as the override, proceeds without surfacing block/recommendations or waiting - model behaviour)
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: Intent-graded as in T12 (SKILL.md prescribes rerank 'blastRadius', evals say custom weights); eval-16 get_naming_lexicon called with kind 'variable' (eval says 'local') - noted, not failed.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 14/16 PASS (88%) over graded cases (N/A excluded: 0).
+- Codex T14: 15/16 (94%). Claude T22: 16/16 (100%).
+- Notes: Note: rerank graded on intent (blastRadius when codegraph on, else custom imports/churn/ownership) as in Claude T22.
+- FAIL list:
+  - `eval-7` — FAIL; new: Declines to compute CAUTION from imports top12%/bugFixRate 32%; defers to "full guard result"; no "Proceed with Task 2?" gate stated as verdict. Claude T22 PASS
+  - `eval-8` — FAIL; new: Declines to compute SAFE from imports=2/bugFix 0%; hedges on 5 commits/shared ownership instead of proceeding. Claude T22 PASS
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 14/16 PASS (88%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 16/16 (100%)
+- Delta: -12pp (stricter literal grading; eval-16 was a noted deviation in round 1)
+- FAIL list:
+  - eval-15 — content request answered with find_symbol outlines/bodies; expected MUST "SEPARATE semantic_search with metaOnly=false AFTER guard verdict" not stated (guard itself stayed metaOnly=true).
+  - eval-16 — get_naming_lexicon called with kind "variable"; expected names=[{name: envelope, kind: local}].
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 13/16 PASS (81%) (N/A excluded: 0).
+- Round-1 Codex: 14/16 (88%). Delta: -6 pp.
+- FAIL list:
+  - `eval-6` — UNSAFE justified by imports top 2% alone; bugFixRate 45% conjunct of the UNSAFE row not stated
+  - `eval-9` — guard->verdict->gate stated, but no chain into $executing-plans after the gate (stops at DDG)
+  - `eval-16` — refactor-only + names[] lexicon check stated, but no "MISFIT -> use suggestion" handling
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Round 2 rate: 88% — delta: +12 pp
+- FAIL list: none
+- Notes: round-2 FAILs eval-15 (content via separate find_symbol after verdict) and eval-16 (lexicon kind local) fixed.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 14/16 PASS (87.5%) (N/A excluded: 0).
+- Round-2 Codex: 13/16 (81.3%). Delta: +6.3 pp.
+- FAIL list:
+  - `eval-4` — guard correct, but the plan also calls hybrid_search (low-resolve caller cross-check in the DDG MODIFY step), which mustNotCall lists.
+  - `eval-6` — UNSAFE derived correctly (labelMap, both halves, pause), but no split / owner review / tests-first recommendation.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 16/16 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 100% — delta: +0 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 15/16 PASS (93.8%) (N/A excluded: 0).
+- Round-3 Codex: 14/16 (87.5%). Delta: +6.2 pp.
+- FAIL list:
+  - `eval-10` — skips the guard on "не парься" by misapplying the trivial-edit exception to a 2-line Task change (regression vs R3)

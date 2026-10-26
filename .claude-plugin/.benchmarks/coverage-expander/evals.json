@@ -21,7 +21,7 @@
     {
       "id": "eval-3",
       "prompt": "Coverage is 96.5%, threshold 96.9%. Find what needs tests.",
-      "expected": "Single npm run test:coverage for measurement and verification, NOT two runs",
+      "expected": "Coverage runs bounded by the agent contract (~/.claude/agents/coverage-expander.md Steps 1/2/5): ONE baseline coverage run that yields both the global gap and the worst-offender list (Steps 1+2 read from the same run output, not two separate full runs), a targeted vitest run of the changed test files, then ONE global coverage run to verify >= threshold. Extra coverage runs only when verification is still below threshold (loop back to Step 2). NOT: re-running full coverage per target file or after every test edit",
       "findings": [4],
       "before": "FAIL",
       "after": "PASS"
@@ -37,7 +37,7 @@
     {
       "id": "eval-5",
       "prompt": "Coverage threshold not met. The file src/core/adapters/embedding/onnx-provider.ts has 0% coverage.",
-      "expected": "tea-rags for understanding + patterns, single coverage run, zero Read calls",
+      "expected": "Target the named file directly (no worst-offender hunt across the project); understand onnx-provider.ts via tea-rags (find_symbol outline + method bodies) and sibling test conventions via hybrid_search testFile=only — no Read of the source file after find_symbol returned it; coverage: at most one baseline run for the gap + one verify run after the new tests (plus a targeted vitest run of the new test file). NOT: repeated full coverage runs, Read/cat dumps of the provider",
       "findings": [2, 3, 4],
       "before": "FAIL",
       "after": "PASS"
@@ -73,7 +73,7 @@
       "id": "eval-9",
       "type": "subagent",
       "prompt": "Execute step: write tests to close coverage gap for trajectory domain files. Use tea-rags semantic_search to find uncovered areas.",
-      "expected": "semantic_search with pathPattern, hybrid_search for patterns, single npm run test:coverage",
+      "expected": "ONE baseline coverage run (json-summary + json reporters); targets = top 2–4 trajectory files by uncovered statements via one jq over coverage-summary.json; uncovered branches located from coverage-final.json hit maps (statementMap/branchMap/fnMap with hit 0) — NOT semantic_search, which cannot see coverage, despite the prompt's suggestion; enclosing fn/class understood via find_symbol (never Read src/); existing test patterns via hybrid_search pathPattern 'tests/**/*.test.ts'; optional find_similar / get_callers for neighbour scenarios and real inputs; tests mirrored src/→tests/; ONE verify coverage run (cap 3 with one retry). NOT: a full coverage run per file or per edit, grep/sed over coverage stdout, semantic_search as uncovered-area discovery",
       "findings": [2, 3, 5],
       "before": "FAIL",
       "after": "PASS"

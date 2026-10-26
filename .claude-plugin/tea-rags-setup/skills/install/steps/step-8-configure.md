@@ -12,12 +12,12 @@ options: [
 ]
 ```
 
-Save scope choice to progress (`mcpScope: "user"` or `"project"`).
+Save progress `mcpScope: "user"` / `"project"`.
 
 ## 8a-check: Existing config
 
-Before assembling, run `claude mcp get tea-rags`. If tea-rags is already
-configured → AskUserQuestion:
+Before assembling: `claude mcp get tea-rags`. Already configured →
+AskUserQuestion:
 
 ```
 question: "tea-rags MCP server is already configured. Replace with new settings?"
@@ -27,18 +27,17 @@ options: [
 ]
 ```
 
-If "Keep" → skip to Step 9. If "Replace" → run `claude mcp remove tea-rags`
-first, then continue.
+"Keep" → Step 9. "Replace" → `claude mcp remove tea-rags` first, continue.
 
 ## 8b: Assemble env vars
 
-From progress, include ALL env vars listed in `reference.md` "All Env Vars for
-MCP Configuration" table. Omit any key that is null or missing.
+From progress, ALL env vars in `reference.md` "All Env Vars for MCP
+Configuration" table. Omit null / missing keys (except `GIT_ADAPTER` — always).
 
 ## 8c: Dispatch MCP integrator agent
 
-Use the Agent tool to dispatch
-`${CLAUDE_PLUGIN_ROOT}/agents/mcp-server-integrator.md` with a prompt like:
+Agent tool → `${CLAUDE_PLUGIN_ROOT}/agents/mcp-server-integrator.md`, prompt
+like:
 
 ```
 Agent tool:
@@ -54,6 +53,7 @@ Agent tool:
       EMBEDDING_BASE_URL=<embeddingBaseUrl — llama-server only>
       EMBEDDING_FALLBACK_URL=<embeddingFallbackUrl — llama-server, if set>
       EMBEDDING_API_KEY=<embeddingApiKey — llama-server, if set>
+      EMBEDDING_MODEL=<embeddingModel — llama-server, if set>
       QDRANT_URL=<value or omit if embedded>
       <all tuneValues keys>=<values>
       TRAJECTORY_GIT_ENABLED=<value>
@@ -65,12 +65,10 @@ Agent tool:
     Report the full verification output.
 ```
 
-The agent handles: building the correct `claude mcp add` command, executing it,
-and verifying via `claude mcp get` that the server shows as connected.
+Agent builds + runs `claude mcp add`, verifies connected via `claude mcp get`.
 
-**If the agent fails** (e.g. permission denied, config locked, `claude` not in
-PATH) → fall back to manual configuration. Show the user the full
-`claude mcp add` command and AskUserQuestion:
+**Agent fails** (permission denied, config locked, `claude` not in PATH) →
+manual: show full `claude mcp add` command, AskUserQuestion:
 
 ```
 question: "Automatic MCP configuration failed. Run this command manually, then confirm."

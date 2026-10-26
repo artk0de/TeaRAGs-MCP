@@ -96,7 +96,7 @@ describe("tracked text files", () => {
     for (const path of [
       "src/core/domains/ingest/errors/ingest-errors.ts",
       ".husky/pre-commit",
-      ".claude-plugin/tea-rags/rules/search-cascade.md",
+      "plugins/tea-rags/rules/core.md",
       "package.json",
       ".claude-plugin/tea-rags/scripts/inject-rules.sh",
     ]) {

@@ -112,3 +112,41 @@ gap (typed sugar is canonical, level=file is mandatory for time fields).
   params), not tool correctness. Phase 8 integration eval not run — would catch
   cases where the typed sugar is rejected by tea-rags despite being
   shape-correct.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 23/26 PASS (88%)
+- Last recorded with-skill rate: 100%
+- Delta: -12pp
+- FAIL:
+  - `E9` — did not read tea-rags://schema/filters resource first; asserted syntax from memory ("guide already read") | REAL
+  - `E10` — composed the custom rerank weights itself instead of delegating to tea-rags:analytics-rerank | REAL
+  - `T10` — expected literal absolute pathPattern '/Users/me/proj/src/payments/**'; answer uses project-relative 'src/payments/**' (substance correct and consistent with E12, expectation contradicts E12) | STALE
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 14/14 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 12/14 on E-cases (suite benchmark: 23/26 incl. analytics T-cases; fails E9, E10)
+- CODEX-ONLY: none
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 26/26 PASS (100%) over 26 scored cases (0 superseded)
+- Task 12 rate: 23/26 (88%)
+- Delta: +12pp
+- FAIL list: none - notes: (E9 read tea-rags://guide/filters first; E10 delegated to analytics-rerank; T10 project-relative pathPattern accepted)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 14/14 PASS (100%) over 14 graded cases (N/A 0)
+- Codex T14 for comparison: 14/14 (100%)
+- Claude T22 for comparison: 26/26 (100%, incl. analytics T-cases)
+- FAIL list:
+  - none

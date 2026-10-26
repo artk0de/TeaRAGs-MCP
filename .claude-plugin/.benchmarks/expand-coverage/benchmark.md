@@ -113,3 +113,37 @@ asks back or reads src), not independently graded.
 Phase-2/4 evals graded INSTRUCTION QUALITY (tool-selection plans), not live tool
 execution — one subagent per run, all 14 cases in one prompt, blind to
 `expected`. Grading done by the parent against `evals.json`.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 15/15 PASS (100%)
+- Last recorded with-skill rate: 100%
+- Delta: +0pp
+- FAIL: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: not graded - 15/15 cases N/A (subject skill expand-coverage is not shipped to Codex)
+- Claude T12 rate for comparison: 15/15 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 15/15 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: not graded (all 15 cases N/A (expand-coverage not shipped to Codex)) over graded cases (N/A excluded: 15).
+- Codex T14: N/A (15/15 N/A). Claude T22: 15/15 (100%).
+- N/A: all 15 cases N/A (expand-coverage not shipped to Codex)
+- FAIL list: none

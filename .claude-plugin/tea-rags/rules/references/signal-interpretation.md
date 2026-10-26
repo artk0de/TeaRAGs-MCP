@@ -1,82 +1,69 @@
 # Signal Interpretation
 
-Read tea-rags ranking overlay architecturally. Single signals ambiguous —
-combinations reveal meaning.
+Read ranking overlay architecturally. Single signal ambiguous — combos reveal
+meaning.
 
 ## Core thesis
 
 **A signal is a gradient, not a diagnosis.**
 
-One high signal → _something happening_ — never _what_. Churn alone ≠ "active
-development". Age alone ≠ "legacy". Ownership alone ≠ "silo". Architectural
-meaning emerges only from pairs/triples.
-
-Reranker gives ranking; this file gives interpretation layer. Consult before
-concluding anything from overlay.
+One high signal → _something happening_, never _what_. Churn alone ≠ "active
+development"; age alone ≠ "legacy"; ownership alone ≠ "silo". Meaning only from
+pairs/triples. Reranker = ranking; this file = interpretation. Consult before
+concluding from overlay.
 
 ## Signal reference
 
+Catalog + definitions: weight keys → `tea-rags://guide/signals`; labels +
+resolution → `tea-rags://guide/signal-labels`; this project's bands →
+`tea-rags://project/<alias>/metrics?section=labelMap&language=<lang>`. Below:
+interpretation notes only.
+
 ### Git signals (payload.git.file._ / payload.git.chunk._)
 
-Two ownership signal families coexist — answer different questions:
+Two ownership families — different questions:
 
 | Family    | Source                             | Question it answers                        |
 | --------- | ---------------------------------- | ------------------------------------------ |
 | `recent*` | Commit history (configured window) | _Who has been committing here lately?_     |
 | `blame*`  | `git blame HEAD` (current code)    | _Who owns the lines that exist right now?_ |
 
-| Signal                                  | Family   | What it measures                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `relativeChurn`                         |          | churn normalized by file size                                                                                                                                                                                                                                                                                                                                           |
-| `commitCount`                           |          | raw lifetime commit count                                                                                                                                                                                                                                                                                                                                               |
-| `chunkChurn`                            |          | chunk's share of file churn                                                                                                                                                                                                                                                                                                                                             |
-| `burstActivity`                         |          | recent concentrated change bursts                                                                                                                                                                                                                                                                                                                                       |
-| `bugFixRate`                            |          | share of commits tagged as fixes                                                                                                                                                                                                                                                                                                                                        |
-| `ageDays`                               |          | CANONICAL: overlay value, `age`/`recency` rerank and ageDays presets = query-time `now − lastModifiedAt` — never stale. Enrichment-time stamp remains ONLY in the raw payload key `git.{file,chunk}.ageDays` (raw-filter escape hatch; frozen at enrichment, `0` = < 1 day then, not "no data" — absent = no data). Chunk stamp absent where chunk walk found no commit |
-| `recentDominantAuthor`                  | `recent` | top recent committer (string, file-level)                                                                                                                                                                                                                                                                                                                               |
-| `recentDominantAuthorPct`               | `recent` | top recent committer's share of recent commits. Label `solo` = exactly one recent committer (100% by construction, NOT a bus-factor finding — use `blameDominantAuthorPct` for ownership); band labels grade only multi-committer files                                                                                                                                 |
-| `recentAuthors`                         | `recent` | recent committer set (top-N, capped)                                                                                                                                                                                                                                                                                                                                    |
-| `recentContributorCount`                | `recent` | distinct recent committers (file or chunk)                                                                                                                                                                                                                                                                                                                              |
-| `blameDominantAuthor`                   | `blame`  | top live-line owner (string, file-level)                                                                                                                                                                                                                                                                                                                                |
-| `blameDominantAuthorPct`                | `blame`  | top live-line owner's share of current lines                                                                                                                                                                                                                                                                                                                            |
-| `blameAuthors`                          | `blame`  | live-line author set (top-N, capped)                                                                                                                                                                                                                                                                                                                                    |
-| `blameContributorCount`                 | `blame`  | distinct live-line owners (file or chunk)                                                                                                                                                                                                                                                                                                                               |
-| `knowledgeSilo` (derived)               | `blame`  | derived from `blame*`: 1 owner=1.0, 2=0.5, 3+=0 (silo = sole owner of the live code, NOT sole recent committer)                                                                                                                                                                                                                                                         |
-| `ownership` (derived)                   | `blame`  | derived from `blameDominantAuthorPct + blameAuthors`. "Who owns this code right now?" — used by `rerank: "ownership"`.                                                                                                                                                                                                                                                  |
-| `recentActivityConcentration` (derived) | `recent` | derived from `recentDominantAuthorPct + recentAuthors`. "Is recent activity dominated by one person?" — used by `rerank: "recentActivityConcentration"`.                                                                                                                                                                                                                |
-| `blockPenalty`                          |          | **data-quality penalty** for block chunks without chunk-level git data (NOT a boilerplate/DTO indicator — reflects alpha confidence, not repetition)                                                                                                                                                                                                                    |
+- `ageDays` — CANONICAL = overlay value, `age`/`recency` rerank, ageDays
+  presets: query-time `now − lastModifiedAt`, never stale. Raw payload key
+  `git.{file,chunk}.ageDays` = enrichment-time stamp (raw-filter escape hatch;
+  frozen; `0` = < 1 day then, not "no data"; absent = no data). Chunk stamp
+  absent where chunk walk found no commit.
+- `recentDominantAuthorPct` label `solo` = exactly one recent committer (100% by
+  construction) — NOT bus-factor finding; ownership → `blameDominantAuthorPct`.
+  Band labels grade multi-committer files only.
+- `recentDominantAuthor` / `blameDominantAuthor` (string) and `recentAuthors` /
+  `blameAuthors` (top-N list) = file-level only.
+- `knowledgeSilo` (derived, `blame`): 1 owner=1.0, 2=0.5, 3+=0 — silo = sole
+  owner of LIVE code, NOT sole recent committer.
+- `ownership` (derived, `blame`) → `rerank: "ownership"`;
+  `recentActivityConcentration` (derived, `recent`) → same-name rerank.
+- `blockPenalty` = **data-quality penalty** for block chunks lacking chunk git
+  data (alpha confidence) — NOT boilerplate/DTO indicator.
 
-### Structural signals (from static trajectory)
+### Structural signals
 
-| Signal          | What it measures                                                  |
-| --------------- | ----------------------------------------------------------------- |
-| `imports`       | fan-in PROXY — how many files import this (raw import-line count) |
-| `pathRisk`      | path-based risk (e.g., `adapters/`, `legacy/`)                    |
-| `chunkSize`     | chunk line count                                                  |
-| `documentation` | doc density                                                       |
-
-`imports` = critical disambiguator for churn-based patterns. Without it, god
-module and bug attractor look identical.
+- `imports` = fan-in PROXY (raw import-line count) — critical disambiguator for
+  churn patterns; without it god module ≡ bug attractor.
+- `pathRisk` = path-based risk (`adapters/`, `legacy/`, …).
 
 #### Codegraph signals (only when codegraph is active)
 
-Present ONLY when prime `## Enrichment` lists `codegraph.symbols`; absent
-otherwise. Real call/import-edge measures, **supersede `imports` proxy** where
-both exist — `imports` counts import lines, `fanIn` counts actual graph edges.
+Present only with codegraph on (graph tools — `get_callers`, `trace_path`, … —
+in tool list; unsure → `tea-rags://project/<alias>/metrics?section=registry`
+shows `codegraph on|off`). Real edges **supersede `imports` proxy** — `imports`
+counts import lines, `fanIn` counts graph edges. Keys: `fanIn` / `fanOut`
+(file/chunk), `isHub`, `instability` (`fanOut / (fanIn + fanOut)`),
+`connectionCount` (`fanIn + fanOut`, confidence support for `instability`),
+`transitiveImpact` (systemic blast radius beyond 1 hop), `pageRank` (chunk),
+cycle membership (SCC via `find_cycles`, file/chunk).
 
-| Signal             | Scope      | What it measures                                          |
-| ------------------ | ---------- | --------------------------------------------------------- |
-| `fanIn`            | file/chunk | incoming edges — who depends on this (true blast radius)  |
-| `fanOut`           | file/chunk | outgoing edges — how much this drives                     |
-| `isHub`            | file       | high-fan-in backbone flag (the structural centre)         |
-| `instability`      | file       | `fanOut / (fanIn + fanOut)` — efferent coupling (Martin)  |
-| `connectionCount`  | file       | `fanIn + fanOut` — total coupling / confidence support    |
-| `transitiveImpact` | file       | reachable dependents — systemic blast radius beyond 1 hop |
-| `pageRank`         | chunk      | global centrality of a method in the call graph           |
-| cycle membership   | file/chunk | member of an SCC (`find_cycles`) — circular coupling      |
-
-Codegraph off → fall back to `imports` proxy, say structural centrality is
-approximate (see search-cascade "Graph navigation").
+Codegraph off → fall back to `imports` proxy, say structural centrality
+approximate (`tea-rags://guide/navigation` "Graph navigation").
 
 ## When to use `recent*` vs `blame*` (ownership-pair selection)
 
@@ -172,9 +159,8 @@ matching → reinforced silo; diverging → handoff or active rewrite.
 | age ↑   | churn ≈ 0 + imports ≈ 0              | **Dead / dormant code**    |
 | age ↓   | churn ↑ + `recentContributorCount` ↑ | **Emerging coupling zone** |
 
-**Disambiguation rule for high age:** age inverts meaning on churn. Old
-
-- low churn = don't touch; old + high churn = must rewrite.
+**Disambiguation rule for high age:** age inverts meaning on churn. Old + low
+churn = don't touch; old + high churn = must rewrite.
 
 ## Method-level (chunk) pair diagnostics
 
@@ -224,9 +210,8 @@ File-level → pattern; chunk-level refines WHERE work is:
 - **Coupling point** (file): find method with high
   `chunk.recentContributorCount` — overloaded API entry point where many recent
   committers meet.
-- **Legacy minefield** (file): find method with highest `chunk.bugFixRate
-  - chunk.relativeChurn` — the actual minefield; rest of file may be rewritable
-    piecemeal.
+- **Legacy minefield** (file): method with highest `chunk.bugFixRate` +
+  `chunk.relativeChurn` = actual minefield; rest of file rewritable piecemeal.
 - **Toxic silo** (file): check `chunk.blameContributorCount` — every method
   `= 1` → full silo; one method with diffuse blame authorship (≥ 2 live-line
   owners) inside an otherwise siloed file → that method is public API, ownership
@@ -255,9 +240,8 @@ File-level → pattern; chunk-level refines WHERE work is:
 `churn ↑ + fanIn ↑ / isHub (or imports ↑ proxy) + recentContributorCount ↑ + blameContributorCount ↑`
 **What it is:** Central file imported by many, edited by many (recent activity
 AND surviving authorship distributed) — any change passes through. Not a quality
-problem per se — architectural coupling problem. Example:
-`adapters/qdrant-client.ts` (65 commits over project life). **Codegraph:** real
-`fanIn` / `isHub` confirms centre far more precisely than `imports` proxy; high
+problem per se — architectural coupling problem. **Codegraph:** real `fanIn` /
+`isHub` confirms centre far more precisely than `imports` proxy; high
 `instability` (fanOut-dominated) → coupling SOURCE, high fanIn → coupling SINK.
 **Remediation:** decouple or stabilize interface; freeze signature.
 
@@ -304,13 +288,11 @@ transfer, or splitting ownership.
 **Signature:**
 `blameDominantAuthorPct silo+ + bugFixRate concerning+ + churn typical/low + ageDays typical/recent`
 
-**What it is:** Stable-looking, low-churn module owned by single author whose
-commit history is dominated by bug fixes. Distinct from Toxic silo (requires
-high churn or legacy age) and Fragile legacy (requires high age). Doesn't look
-like a hotspot — not touched recently — but every historical commit was a
-regression fix. Often a domain-edge component (calculation, invariant
-enforcement, data conversion) where each defect is subtle and the silo owner
-alone knows the invariants.
+**What it is:** Stable-looking low-churn module, single owner, history dominated
+by bug fixes. ≠ Toxic silo (needs high churn or legacy age), ≠ Fragile legacy
+(needs high age). Not a hotspot — calm — yet every past commit = regression fix.
+Often domain-edge component (calculation, invariant enforcement, data
+conversion): subtle defects, only owner knows invariants.
 
 **Remediation:**
 
@@ -321,16 +303,14 @@ alone knows the invariants.
 
 **Disambiguators:**
 
-- **Confidence-clamped label suppresses small-N matches automatically.**
-  `bugFixRate` overlay label capped by SAME-scope `commitCount` (file label ←
-  `git.file.commitCount`, chunk label ← `git.chunk.commitCount`) against
-  ADAPTIVE cut-offs = this collection's p10 / p25 of that `commitCount`, read
-  from collection stats at query time. Below p10 → at most `healthy`; below p25
-  → at most `concerning`. Fixed `5` / `10` = cold-start fallbacks only (index
-  lacks the percentile) — never assume them. Clamp only lowers a label, never
-  raises; raw `value` unclamped. Noise-only file (e.g. 2 fix commits of 3) below
-  p10 → `healthy` → out of Fragile silo. Correct: real risk tier needs
-  structural evidence, not small-N noise.
+- **Confidence clamp suppresses small-N automatically.** `bugFixRate` overlay
+  label capped by SAME-scope `commitCount` (file label ← `git.file.commitCount`,
+  chunk ← `git.chunk.commitCount`) vs ADAPTIVE cut-offs = collection p10 / p25
+  of that `commitCount`, read at query time. Below p10 → max `healthy`; below
+  p25 → max `concerning`. Fixed `5` / `10` = cold-start fallbacks only (index
+  lacks percentile) — never assume. Clamp only lowers, never raises; raw `value`
+  unclamped. Noise file (2 fixes of 3 commits) below p10 → `healthy` → not
+  Fragile silo. Correct: risk tier needs structural evidence, not small-N noise.
 - **Edge band `commitCount` p10..p25.** Raw `bugFixRate` ≥ critical threshold
   clamped to `concerning`, which DOES match. Mark such classifications "moderate
   confidence" in risk reports.
@@ -414,7 +394,7 @@ module but bugFixRate stays healthy — code is mostly mechanical.
 
 ## Interpretation anti-patterns
 
-Agents consistently make these mistakes reading overlay:
+Common overlay misreads:
 
 1. **"high churn = active development"** — wrong. Could be coupling, attractor,
    boilerplate, legacy thrash, or real development. Check `imports`, `ageDays`,
@@ -436,32 +416,25 @@ Agents consistently make these mistakes reading overlay:
    it.
 7. **Concluding from one signal.** Only one strong signal, rest typical/missing
    → insufficient evidence. Say so instead of guessing a class.
-8. **"label severity = signal severity"** — incomplete when signal declares a
-   `stats.confidence` block. Any signal whose descriptor names a `support`
-   sibling (`bugFixRate → commitCount`, `instability → connectionCount`) is a
-   ratio/aggregate whose reliability depends on that sibling. When `support` is
-   low, label and raw value mean **less** than identical values with high
-   support — small-sample noise looks like structural signal.
+8. **"label severity = signal severity"** — incomplete when signal declares
+   `stats.confidence`. Signal naming a `support` sibling
+   (`bugFixRate → commitCount`, `instability → connectionCount`) = ratio whose
+   reliability depends on sibling. Low `support` → label + raw value mean
+   **less** — small-sample noise mimics structure.
 
-   Concrete: `commitCount=3` with 2 fix commits → `bugFixRate = 67%`, looks
-   identical to `200/300 = 67%`. First is noise; second is structural. Overlay's
-   label is auto-clamped to less-severe bin when `support` is below descriptor's
-   threshold (clamping in reranker overlay path), but reading raw `value`
-   directly → apply this rule yourself.
+   `commitCount=3`, 2 fixes → `bugFixRate = 67%` ≡ `200/300 = 67%`. First noise,
+   second structural. Overlay label auto-clamped to less-severe bin below
+   threshold; reading raw `value` → apply rule yourself.
 
    **How to read confidence-aware signals:**
-   - **Always pair the signal's label with its `support` sibling's label.** If
-     `support` is `low` or below stated thresholds → treat value/label as
-     suggestive only. Use to _ask_ "worth a closer look?", not to conclude.
-   - **`support` typical+ → trust the label.** Structural fix left label as-is —
-     sample large enough.
-   - **Discoverability:** per-signal `confidence` block published via
-     index-metrics resource — `support` field name + threshold rules
-     introspectable. Don't guess; look up.
+   - **Always pair label with `support` sibling's label.** `support` `low` →
+     suggestive only: _ask_ "worth closer look?", never conclude.
+   - **`support` typical+ → trust label.**
+   - Support thresholds = collection p10 / p25 of sibling (see Fragile silo
+     disambiguators) — never assume fixed numbers.
 
-   Examples of confidence-aware signals (set will grow): `bugFixRate` (support
-   `commitCount`). Full authoritative set = union of raw signal descriptors
-   carrying `stats.confidence`.
+   Confidence-aware set = raw descriptors carrying `stats.confidence` (e.g.
+   `bugFixRate`).
 
 ## Custom rerank weights for architectural queries
 
@@ -545,21 +518,17 @@ previously-siloed module. Useful for routing mentorship/review pairings.
 
 ## Limitations
 
-1. **Line drift.** `bugFixRate` at chunk level approximate — git blame drifts
-   across renames/reformats. Use file-level bugFixRate for exact numbers;
-   chunk-level for relative ranking.
-2. **Alpha-blending masks layers.** Derived signals blend file and chunk
-   (`effective = alpha*chunk + (1-alpha)*file`). Architectural analysis
-   sometimes needs raw `payload.git.file.*` WITHOUT blending — e.g., fan-in as
-   file property, not chunk-mixed. Request `metaOnly=false`, read raw payload
-   directly.
-3. **Overlay masking.** Each preset curates a signal subset via `overlayMask`.
-   `imports` absent from overlay → preset chose not to surface it, NOT that file
-   has no imports. Switch preset or use custom rerank with explicit weight keys
-   (weighted signals appear in overlay automatically).
-4. **Single-snapshot bias.** All signals reflect a single index build. Rapidly
-   evolving files (feature branches) may show churn from merged history, not
-   live activity.
+1. **Line drift.** Chunk `bugFixRate` approximate — blame drifts across
+   renames/reformats. Exact numbers → file level; chunk → relative ranking.
+2. **Alpha-blending masks layers.** Derived signals blend
+   (`effective = alpha*chunk + (1-alpha)*file`). Need raw `payload.git.file.*`
+   unblended (e.g. fan-in as file property) → `metaOnly=false`, read raw
+   payload.
+3. **Overlay masking.** Preset curates subset via `overlayMask`. `imports`
+   absent → preset didn't surface it, NOT zero imports. Switch preset or custom
+   rerank (weighted signals appear in overlay automatically).
+4. **Single-snapshot bias.** Signals = one index build. Fast-moving files
+   (feature branches) may show merged-history churn, not live activity.
 
 ## Workflow
 

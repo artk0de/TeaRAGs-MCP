@@ -170,3 +170,106 @@ believe the index is auto-fresh after a commit. T2 (the only baseline FAIL)
 shows the baseline, lacking the skill, thinks the index just lags after GREEN —
 unaware of the explicit per-task reindex mechanism. The prior
 `worktree-auto-reindex-evals.json` is SUPERSEDED.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; evals say testFile='only', current SKILL.md uses chunkType 'test' + tests-as-context; eval-6 skips the search because the prompt states no tests exist)
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 13/15 PASS (87%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 15/15 (100%)
+- CODEX-ONLY: eval-4 (complies with metaOnly=true instead of refusing - model behaviour, user-instruction deference), eval-10 (skips pattern search because user said so - model behaviour, Iron Rule not applied)
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 100%
+- Delta: +0pp
+- FAIL list: none
+- Notes: Intent-graded as in T12 (chunkType test/test_setup via tests-as-context instead of testFile='only'; eval-6 skips search per SKILL.md first-test exception).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 6/15 PASS (40%) over graded cases (N/A excluded: 0).
+- Codex T14: 13/15 (87%). Claude T22: 15/15 (100%).
+- Notes: If stale-flagged cases are counted as intent-PASS (Claude T22 convention) rate is 14/15 (93%).
+- FAIL list:
+  - `eval-1` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-2` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-5` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-6` — FAIL (stale?); new (T14 PASS): Skips search for first-test project per SKILL.md first-test exception; frozen expectation wants testFile=only search first then fallback note (Claude T22 graded PASS on SKILL.md exception).
+  - `eval-7` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-9` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-11` — FAIL; new (T14 PASS): Complies with rerank=hotspots (test-flakiness recipe, metaOnly=true) while correcting the premise; expected refuse hotspots and use proven.
+  - `eval-12` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+  - `eval-15` — FAIL (stale?); new (T14 PASS): Frozen expectation says semantic_search testFile=only; current wrapper uses chunkType test/test_setup via tests-as-context with testFile=only as disclosed fallback (Claude T22 graded on intent: PASS).
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 14/15 PASS (93%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 15/15 (100%)
+- Delta: -7pp
+- FAIL list:
+  - eval-7 — cross-language (Ruby hook, TS tests): searches the broader TS corpus and notes the language mismatch, but does not state the MUST "if corpus returns 0: fall back with explicit note" (Step 3 "Both queries 0 results" fallback not carried into the edge case).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 14/15 PASS (93.3%) (N/A excluded: 0).
+- Round-1 Codex: 6/15 (40.0%). Delta: +53.3 pp.
+- FAIL list:
+  - `eval-7` — search scoped to the Ruby dir instead of the broader corpus; no "cross-language — TS conventions may not apply to Ruby" note
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Round 2 rate: 93% — delta: -6 pp
+- FAIL list:
+  - eval-12: FAIL — answer replaces Step 4 with a text draft for the parent ("Step 4 cannot write files") and never states invoking Skill(superpowers:test-driven-development) SECOND
+  - eval-15: FAIL — answer rejects find_similar but omits that find_similar is acceptable as a supplementary call AFTER the primary search with the impl file's symbolId
+- Notes: Round-2 FAIL eval-7 (cross-language fallback note) now PASS. New FAILs eval-12 (read-only explore subagent drops the superpowers TDD chain) and eval-15 (supplementary find_similar allowance not stated).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 11/15 PASS (73.3%) (N/A excluded: 0).
+- Round-2 Codex: 14/15 (93.3%). Delta: -20.0 pp.
+- FAIL list:
+  - `eval-4` — complies with metaOnly=true (declares the wrapper not needed) instead of refusing.
+  - `eval-7` — whole-corpus search + cross-language note, but no "0 results → fallback note" outcome.
+  - `eval-8` — delegates to extract-project-patterns / re-search; no 4–6 bullet cap, no per-convention source citation.
+  - `eval-9` — search then write test; "extract pattern block" step missing from the order.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 87% — delta: +13 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 11/15 (73.3%). Delta: +13.3 pp.
+- FAIL list:
+  - `eval-4` — complies with metaOnly=true ("return metadata only") instead of refusing — pattern search needs bodies
+  - `eval-8` — routes to extract-project-patterns/find_similar re-search instead of 4-6 cited convention bullets (cap 6)

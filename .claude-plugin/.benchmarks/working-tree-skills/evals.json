@@ -101,7 +101,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "How does WorkingTreeDelta decide which files count as changed? Explain the flow.",
       "expected": "find_symbol/hybrid_search/semantic_search with path=/work/acme/.claude/worktrees/feat-x",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F6-adjacent (no addressing in skill)",
       "results": {
         "A": {
@@ -127,7 +127,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Before I modify ChunkCache#evict, what should I know about it and its neighbours?",
       "expected": "hybrid_search / find_symbol path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F4",
       "results": {
         "A": {
@@ -154,7 +154,7 @@
       "cwd": "/work/acme/.claude/worktrees/fix-rerank",
       "prompt": "tests/reranker.test.ts fails with 'expected 0.42 to be 0.5' since my last edit. git status: ' M src/core/domains/explore/rerank/reranker.ts'",
       "expected": "parallel historical/fresh/uncommitted searches with path=<cwd>, rerank=bugHunt; NO index_codebase first",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F5",
       "results": {
         "A": {
@@ -180,9 +180,9 @@
       "id": "S4",
       "skill": "tea-rags:bug-hunt (result)",
       "cwd": "/work/acme/.claude/worktrees/fix-rerank",
-      "prompt": "Search answer workingTree{tree=cwd, changedFiles:1, floors{chunks,sparse}}; top row reranker.ts Reranker#score 40-88 treeState:modified, bugFixRate healthy.",
+      "prompt": "Inside tea-rags:bug-hunt for a test failing since my uncommitted edit to reranker.ts, the search answer: workingTree{tree=cwd, changedFiles:1, floors{chunks,sparse}}; top row reranker.ts Reranker#score 40-88 treeState:modified, bugFixRate healthy.",
       "expected": "row = pre-edit index copy (text/lines stale), still the uncommitted suspect; next find_symbol(path=<cwd>, symbol=Reranker#score)",
-      "assertions": ["A2"],
+      "assertions": ["A2: result reading: workingTree.tree ≠ cwd → re-call with path=cwd; treeState row = index's pre-edit copy (text/lines stale), current code via find_symbol path=cwd"],
       "audit_finding": "F6",
       "results": {
         "A": {
@@ -209,7 +209,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Add a method isExpired(now) to class ChunkCache in .../chunk-cache.ts.",
       "expected": "find_symbol(path=<cwd>, symbol=ChunkCache#isExpired, metaOnly) or explore pre-gen with path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F6-adjacent (no addressing in skill)",
       "results": {
         "A": {
@@ -235,7 +235,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Assess risk zones in src/core/domains/explore before I start this branch's refactor.",
       "expected": "rank_chunks x N with path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F4",
       "results": {
         "A": {
@@ -262,7 +262,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "[invoked by dinopowers:executing-plans Task 2] behaviorQuery='persistent cache with time-based retention', target src/core/domains/explore/working-tree/.",
       "expected": "semantic_search path=<cwd>, rerank=proven, L1 pathPattern",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F1 (inherited from executing-plans clone-alias rule)",
       "results": {
         "A": {
@@ -287,8 +287,8 @@
       "skill": "dinopowers:brainstorming",
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Let's brainstorm how to make the working-tree chunk cache survive process restarts.",
-      "expected": "parallel semantic_search block with path=<cwd>, no project",
-      "assertions": ["A1"],
+      "expected": "parallel semantic_search block with path=<cwd> (+ project=<alias> per core addressing)",
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F1",
       "results": {
         "A": {
@@ -315,7 +315,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Write the implementation plan. Affected files: chunk-cache.ts, working-tree-delta.ts.",
       "expected": "semantic_search blastRadius path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F1",
       "results": {
         "A": {
@@ -342,7 +342,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Execute the plan (ONE task, edits chunk-cache.ts). Start the task.",
       "expected": "Step 2 guard semantic_search path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F1",
       "results": {
         "A": {
@@ -369,7 +369,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Write the failing test first for ChunkCache#isExpired.",
       "expected": "tests-as-context fixture-lookup semantic_search path=<cwd>",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F1, F2",
       "results": {
         "A": {
@@ -396,7 +396,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Edited chunk-cache.ts + working-tree-delta.ts (uncommitted). All done. Scan answer: workingTree{tree=cwd, changedFiles:2}; both edited-file rows treeState:modified.",
       "expected": "scan with path=<cwd>, no index_codebase first; rows = pre-edit index copies — fanIn/churn of dependents valid, text/lines stale, not evidence the edit is correct",
-      "assertions": ["A1", "A2"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree", "A2: result reading: workingTree.tree ≠ cwd → re-call with path=cwd; treeState row = index's pre-edit copy (text/lines stale), current code via find_symbol path=cwd"],
       "audit_finding": "F1, F5, F6",
       "results": {
         "A": {
@@ -423,7 +423,7 @@
       "cwd": "/work/acme/.claude/worktrees/feat-x",
       "prompt": "Review my branch.",
       "expected": "no STOP on unmatched alias; MAP find_symbol(path=<cwd>, relativePath=...)",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "F3",
       "results": {
         "A": {
@@ -449,9 +449,9 @@
       "id": "S14",
       "skill": "dinopowers:writing-plans (result)",
       "cwd": "/work/acme/.claude/worktrees/feat-x",
-      "prompt": "Step 2 answer carried workingTree{tree:'/work/acme', changedFiles:0}. Usable for Affected Files? Next call?",
-      "expected": "wrong tree → rows unusable; re-call with path=<cwd>, no project",
-      "assertions": ["A2"],
+      "prompt": "cwd /work/acme/.claude/worktrees/feat-x (linked worktree). Step 2 answer carried workingTree{tree:'/work/acme', changedFiles:0}. Usable for Affected Files? Next call?",
+      "expected": "wrong tree (/work/acme ≠ cwd) → rows unusable; re-call with path=<cwd> (+ project=<alias>, per core addressing)",
+      "assertions": ["A2: result reading: workingTree.tree ≠ cwd → re-call with path=cwd; treeState row = index's pre-edit copy (text/lines stale), current code via find_symbol path=cwd"],
       "audit_finding": "F1, F6",
       "results": {
         "A": {
@@ -477,7 +477,7 @@
       "cwd": "/work/acme",
       "prompt": "Let's brainstorm how to make the reranker's adaptive bounds cheaper.",
       "expected": "path=/work/acme or project=acme (equivalent in the main checkout)",
-      "assertions": ["A1 (relaxed: project=acme allowed)"],
+      "assertions": ["A1 (relaxed: project=acme allowed): first tea-rags call carries path=/work/acme or project=acme (equivalent in the main checkout); no index_codebase before the search"],
       "audit_finding": "control",
       "results": {
         "A": {
@@ -502,7 +502,7 @@
       "cwd": "/work/acme",
       "prompt": "Assess code health of src/core/domains/ingest.",
       "expected": "rank_chunks path=/work/acme",
-      "assertions": ["A1"],
+      "assertions": ["A1: first tea-rags call carries path = the case's working directory; no project-only call; no index_codebase before the search in a linked worktree"],
       "audit_finding": "control",
       "results": {
         "A": {

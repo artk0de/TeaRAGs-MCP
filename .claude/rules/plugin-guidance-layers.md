@@ -1,6 +1,6 @@
 ---
 paths:
-  - ".claude-plugin/**"
+  - "plugins/**"
   - "src/mcp/resources/**"
   - "src/mcp/tools/**"
   - "src/cli/prime/**"
@@ -16,36 +16,38 @@ bolt onto first file you open.
 
 ## The four layers
 
-| Layer               | Owns (kind of fact)                                                                                                                                      | Lives in                                                                                                    | Delivered to agent            |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| **tea-rags prime**  | **Live runtime STATE** — index status, staleness, schema drift, infra health, this project's signal thresholds / labelMap, polyglot set, package version | `src/cli/prime/format.ts` (digest builder) — emitted by `tea-rags prime`                                    | SessionStart hook, once       |
-| **MCP tool schema** | **Call CONTRACT** — params, enums, defaults, addressing, pagination shape, per-tool description                                                          | `src/mcp/tools/**` (handler descriptions) + `src/core/api/internal/infra/schema-builder.ts` (generated Zod) | at tool-call time             |
-| **MCP resources**   | **Exhaustive static REFERENCE** — full preset list, full signal catalog, filter operators, indexing options, signal-label maps                           | `src/mcp/resources/registry.ts` (→ `tea-rags://schema/*`), generated from the live registry                 | on demand (`ReadMcpResource`) |
-| **search cascade**  | **Agent SELECTION POLICY** — which tool for which intent, prohibited patterns, navigation routes, fallback chains, reindex triggers                      | `.claude-plugin/tea-rags/rules/*.md` (injected by `scripts/inject-rules.sh`)                                | SessionStart hook, once       |
+| Layer                  | Owns (kind of fact)                                                                                                       | Lives in                                                                                                              | Delivered to agent                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **prime / digest**     | **Live runtime STATE** — index status, staleness, drift, infra health, thresholds / labelMap, polyglot set, version       | `src/cli/prime/**` → `tea-rags prime`; `tea-rags://project/<alias>/digest` + `/metrics`                               | SessionStart hook; resource on demand                                |
+| **MCP tool schema**    | **Call CONTRACT** — params, enums, defaults, addressing, pagination shape, per-tool description                           | `src/mcp/tools/**` (handler descriptions) + `src/core/api/internal/infra/schema-builder.ts` (generated Zod)           | at tool-call time                                                    |
+| **resources + guides** | **REFERENCE + on-demand POLICY** — preset / signal / filter catalogs; navigation, decision tree, freshness, degraded mode | `src/mcp/resources/registry.ts` (builders) + `plugins/tea-rags/rules/guides/*.md` → `tea-rags://guide/<topic>` | on demand (`ReadMcpResource` / `tea-rags resource <uri>`)            |
+| **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `plugins/tea-rags/rules/core.md` (≤ 3,700 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
+
+Guides and core are compiled into `src/mcp/resources/generated/agent-context.ts`
+by `npm run gen:agent-context` (drift test fails otherwise).
+`tea-rags://schema/*` = deprecated unlisted alias template, one release.
 
 ## Placement decision — new knowledge of kind K → layer L
 
-| If the new knowledge is...                                                    | It belongs to...   | Add it in...                                                                                               |
-| ----------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| A current numeric/state fact about an index or infra                          | **prime**          | `src/cli/prime/format.ts` — never hard-code state into a cascade rule                                      |
-| What a tool accepts / what one param means                                    | **tool schema**    | the tool's `description` in `src/mcp/tools/**` (schema is generated)                                       |
-| The complete enumeration of presets / signals / filters / index opts          | **MCP resources**  | the relevant `tea-rags://schema/*` content behind `src/mcp/resources/`                                     |
-| When/which tool to reach for, what NOT to do, how to recover, when to reindex | **search cascade** | a `.claude-plugin/tea-rags/rules/*.md` file (new file → wire into `inject-rules.sh` + bump plugin version) |
+| If the new knowledge is...                                           | It belongs to...   | Add it in...                                                                                 |
+| -------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| A current numeric/state fact about an index or infra                 | **prime / digest** | `src/cli/prime/**` / `src/mcp/resources/project/**` — never hard-code state into a rule      |
+| What a tool accepts / what one param means                           | **tool schema**    | the tool's `description` in `src/mcp/tools/**` (schema is generated)                         |
+| The complete enumeration of presets / signals / filters / index opts | **resources**      | the builder behind `tea-rags://guide/*` in `src/mcp/resources/`                              |
+| Situational policy: how to navigate, recover, reindex, pick a tool   | **guide**          | `plugins/tea-rags/rules/guides/<topic>.md` + a trigger line in `core.md` if new topic |
+| A rule every turn needs regardless of situation                      | **core**           | `plugins/tea-rags/rules/core.md` — only if it fits the 3,700-char budget              |
 
-## Delivery budget — the cascade arrives in parts
+After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
+`npm run gen:harness-cursor`; bump plugin version (new file → minor).
 
-A hook's stdout stops reaching the model past roughly 16KB: the harness writes
-it to a file and shows a 2KB preview instead, with no error. The corpus is
-larger than that, so `inject-rules.sh` emits it as `--part N --parts M`, one
-hook command per part, each under `--max-bytes` (10000 by default) and packed on
-`## ` boundaries.
+## Delivery budget — core is one part
 
-**Growing the corpus is therefore a two-file change.** After adding or extending
-a rule file, run `scripts/inject-rules.sh --count`; if it exceeds the number of
-`--part` commands declared in `plugin.json`, add the missing ones and raise
-`--parts` on all of them. The last declared part prints which rules had no slot,
-so the overflow surfaces in context rather than vanishing — but it is still lost
-guidance until the slot exists.
+Core doubles as server `instructions` (≤ 4,096 chars, first 512 self-contained:
+addressing first) and Cursor's `tea-rags-core.mdc` (≤ 4,096 incl. ~330 chars of
+wrapper) → `core.md` ≤ 3,700 chars, injected as `--part 1 --parts 1`
+(`tests/hooks/agent-context-budgets.test.sh`). Grow a guide, not the core. Hook
+stdout past ~16KB reaches the model as a 2KB preview; the splitter in
+`inject-rules.sh` stays as a guard.
 
 ## Precedence — why placement matters (don't duplicate across layers)
 
@@ -54,34 +56,34 @@ view. Wrong layer = drift.
 
 - **State vs everything** — any _current_ number (chunk count, "stale 2d ago",
   drift fields, threshold cutoff) → **prime only**. Changes every reindex; copy
-  in cascade rule goes stale immediately. Cascade rule may say "read threshold
-  from prime", never "threshold is 8".
-- **Resources vs cascade** — both describe tool routing
-  (`tea-rags://schema/search-guide` ↔ cascade Decision Tree). Resources =
-  **exhaustive** reference (generated from live registry → preset/signal/filter
-  **names** authoritative there); cascade = **opinionated short path**. New
-  heuristic → cascade; new preset/signal/filter → registry so resource
-  regenerates.
+  in a rule goes stale immediately. A rule may say "read threshold from prime",
+  never "threshold is 8".
+- **Builder resources vs guides/core** — both describe tool routing
+  (`tea-rags://guide/search-examples` ↔ `guide/decision-tree`). Builder
+  resources = **exhaustive** reference (generated from live registry →
+  preset/signal/filter **names** authoritative there); guides/core =
+  **opinionated short path**. New heuristic → guide; new preset/signal/filter →
+  registry so resource regenerates.
 - **Resources vs schema** — schema = what one tool accepts _now_; resources =
   catalog across tools. Wiring call → schema is binding; discovering what exists
   → resources is the map.
-- **Cascade vs prime** — cascade = policy (stable across sessions), prime =
-  state (per session). Cascade tells agent _what to do when_ prime reports a
-  condition — e.g. `index-freshness.md` keys reindex triggers off prime's stale
-  / schema-drift banners.
+- **Policy vs prime** — core/guides = policy (stable across sessions), prime =
+  state (per session). Policy tells agent _what to do when_ prime reports a
+  condition — e.g. `tea-rags://guide/freshness` keys reindex triggers off
+  prime's stale / schema-drift banners.
 
 ## Concrete example
 
 Reindex-behavior knowledge ("stale index → `index_codebase` incremental; schema
-drift → `force_reindex` with consent") = **selection policy**, so placed on
-**search cascade** layer at `.claude-plugin/tea-rags/rules/index-freshness.md` —
-keyed off **prime** layer's banners, not duplicating prime's live numbers. That
-is the routing this rule prescribes.
+drift → `force_reindex` with consent") = **situational policy**, so placed in
+guide `plugins/tea-rags/rules/guides/freshness.md`
+(`tea-rags://guide/freshness`) — keyed off **prime** layer's banners, not
+duplicating prime's live numbers. That is the routing this rule prescribes.
 
 ## Cross-reference
 
 - How consuming agent READS resource catalog + infra diagnosis:
-  `.claude-plugin/tea-rags/rules/references/runtime-introspection.md`
+  `plugins/tea-rags/rules/references/runtime-introspection.md`
 - Where to add code components (DI wiring): `.claude/rules/wiring.md`
-- Plugin version bump on `.claude-plugin/**` edits:
+- Plugin version bump on `plugins/**` edits:
   `.claude/rules/plugin-versioning.md`

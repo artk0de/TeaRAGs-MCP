@@ -19,7 +19,7 @@ enrichment first.
 | `dinopowers:requesting-code-review`         | `superpowers:requesting-code-review`         | composing a review request                               |
 | `dinopowers:receiving-code-review`          | `superpowers:receiving-code-review`          | reacting to review feedback on a symbol                  |
 | `dinopowers:finishing-a-development-branch` | `superpowers:finishing-a-development-branch` | branch finalization                                      |
-| `dinopowers:writing-skills`                 | `superpowers:writing-skills`                 | authoring a SKILL.md inside `.claude-plugin/dinopowers/` |
+| `dinopowers:writing-skills`                 | `superpowers:writing-skills`                 | authoring a SKILL.md inside `plugins/dinopowers/` |
 
 ## Why this exists
 

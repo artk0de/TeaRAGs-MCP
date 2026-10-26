@@ -2,9 +2,10 @@
 name: tests-as-context
 user-invocable: false
 description:
-  Agentic-only enrichment skill — surfaces DSL test chunks (chunkType "test"
-  for leaf-scope scenarios, chunkType "test_setup" for fixtures) as context
-  for review, verification, refactoring, debugging, TDD pattern extraction.
+  Agentic-only — surfaces DSL test chunks (chunkType "test" scenarios,
+  "test_setup" fixtures) as context for review, verification, refactoring,
+  debugging; a user asking for test patterns / conventions wants the dinopowers
+  TDD wrapper, not this recipe.
   Five recipes: tests-at-risk (scenarios under threat for edited source),
   fixture-lookup (reuse existing setup before drafting new),
   regression-archaeology (when was the test for X added), test-flakiness
@@ -40,53 +41,33 @@ skills.
 5. **`proven` → `level: "chunk"`** — `proven` is file-level
    (`signalLevel: "file"`) → without it DSL chunks regroup per file. Test-scoped
    calls need no `filter`: server skips a preset's production default when
-   `chunkType` / `testFile` select tests (rule: `tea-rags://schema/overview` →
+   `chunkType` / `testFile` select tests (rule: `tea-rags://guide/overview` →
    `### filter`). Server predating that rule returns 0 → add `filter: {}`.
 6. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
    blocks consumed by other skills, not surfaced to user.
 
 ## Step 0 — Preflight
 
-Read prime digest from session context. Locate `## Signal thresholds — <lang>`
-section.
+!`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds" --path "$PWD" || true`
 
-Test corpus **present** if ≥1 `git.chunk.*` row of that table has numbers (or
-`=src`) in its `test ≥` cell, e.g.
+No `## Signal thresholds — <lang>` table above → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
+(ReadMcpResourceTool). Resource unreadable → ONE probe instead:
+`semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`
+— ≥1 row = present, 0 = absent. Test corpus **present** if ≥1 `git.chunk.*` row
+has numbers (or `=src`) in `test ≥`, e.g.
 
 ```
 | signal | bands | source ≥ | test ≥ |
 | git.chunk.commitCount | low/typical/high/extreme | 2 / 3 / 7 | 1 / 2 / 4 |
 ```
 
-Test corpus **absent** if every `git.chunk.*` row shows `—` in `test ≥`, or the
-table has no `git.chunk.*` row at all.
+**Absent** if every `git.chunk.*` row shows `—` in `test ≥`, or no `git.chunk.*`
+row.
 
-**Addressing (every recipe below):** `project: <alias>` +
-`path: <your working directory>` — search-cascade "Addressing the Codebase".
-
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
-
-**Prime digest not in context (fresh subagent / cold session):** issue ONE cheap
-probe call to determine DSL availability without scanning digest:
-
-```
-mcp__tea-rags__semantic_search:
-  project:  <alias>
-  path:     <your working directory>
-  query:    "test"
-  filter:   { must: [{ key: "chunkType", match: { value: "test" } }] }
-  limit:    1
-  metaOnly: true
-```
-
-Empty result → DSL test chunks absent. Non-empty → present, proceed to Step 1.
-Probe bounded (limit=1, metaOnly=true), runs only when prime digest missing.
+**Addressing (every recipe):** `project: <alias>` +
+`path: <your working directory>`. Lag (`changedFiles` / `pendingFiles` / drift)
+never licenses `cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 If absent — return verdict, stop:
 
@@ -99,12 +80,15 @@ SKIP — no test chunks indexed for <project>. Possible reasons:
       see src/core/domains/language/<lang>/chunking/)
  (b) .contextignore excludes test directories
  (c) project has no tests
-Caller should fall back to language-neutral guidance without
-test-context enrichment.
+Caller fallback: file-level search (below), disclosed.
 ```
 
-Caller decides how to degrade (often: emit generic placeholder line in its
-output bundle, proceed without test data).
+**SKIP ≠ skip the lookup.** Caller degrades to ONE file-level call —
+`semantic_search` `testFile: "only"` + recipe's rerank (`fixture-lookup` →
+`rerank: "proven"`), no `chunkType` (Iron Rule 4) — and states it: "file-level
+fallback — DSL test chunks unavailable for this language". Silent fallback or
+dropping the pattern search = wrong. Caller with no search step (review bundle
+line) → emits its "unavailable (no DSL test chunks indexed)" line instead.
 
 ## Step 1 — Recipe routing
 
@@ -245,7 +229,7 @@ or unstable fixture infra (flaky setup).
 
 **Caller inputs:**
 
-- `intent`: scope description ("payments tests", "ingest pipeline test setup")
+- `intent`: scope description ("payments tests", "<dir> pipeline test setup")
 - `target`: `"scenarios"` | `"infra"` — selects chunkType
 - `subjectPath` (optional): pathPattern scope
 
@@ -322,9 +306,19 @@ full describe-it path in `parentSymbolId` / `symbolId`.
 
 ## Step 2 — Output to caller
 
-Return recipe's formatted output. Caller (dinopowers wrapper, search-cascade
-direct user, another tea-rags skill) embeds block in its own format — review
-bundle line, verification ladder annotation, debug context paragraph.
+Every recipe ends in exactly one of three outcomes; every caller handles all
+three:
+
+| Outcome   | When                                 | Caller emits                                                                         |
+| --------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
+| SKIP      | Step 0 preflight: no DSL test chunks | "unavailable (no DSL test chunks indexed)" or disclosed file-level fallback (Step 0) |
+| non-empty | search returned scopes               | recipe bundle (`tests-at-risk` → "Scenarios under risk:" list)                       |
+| empty     | preflight passed, no semantic match  | recipe's empty line — not SKIP                                                       |
+
+Return recipe's formatted output. Caller (dinopowers wrapper,
+`tea-rags://guide/decision-tree` direct user, another tea-rags skill) embeds
+block in its own format — review bundle line, verification ladder annotation,
+debug context paragraph.
 
 This skill never invokes another `Skill(...)`. Leaf in call chain.
 

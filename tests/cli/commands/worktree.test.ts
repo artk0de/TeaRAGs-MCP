@@ -520,7 +520,7 @@ describe("runWorktreeRemove (via yargs builder)", () => {
 // removals it is asked for (bd tea-rags-mcp-ghk1f: the hook read `.path`, the
 // CLI never emitted it, and the backstop silently removed nothing).
 describe("worktree list --json feeds the cleanup-worktree-clone.sh backstop", () => {
-  const HOOK = resolve(__dirname, "../../../.claude-plugin/tea-rags/scripts/cleanup-worktree-clone.sh");
+  const HOOK = resolve(__dirname, "../../../plugins/tea-rags/scripts/cleanup-worktree-clone.sh");
   let dir: string;
 
   beforeEach(() => {

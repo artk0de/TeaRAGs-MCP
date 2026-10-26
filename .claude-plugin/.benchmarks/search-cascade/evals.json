@@ -34,8 +34,8 @@
       "id": 3,
       "audit_finding": "usages routing",
       "prompt": "Where is computeCollectionStats used across the whole repo?",
-      "expected": "hybrid_search OR get_callers",
-      "not": ["semantic_search", "find_symbol"],
+      "expected": "get_callers (after find_symbol id resolution) + hybrid_search metaOnly, or hybrid_search alone",
+      "not": ["semantic_search"],
       "after_fix": "PASS",
       "before_fix": "PASS",
       "no_rule": "PASS"
@@ -75,7 +75,7 @@
       "audit_finding": "control — intent",
       "prompt": "How does confidence dampening work when reranking? Explain the mechanism.",
       "expected": "semantic_search",
-      "not": ["hybrid_search", "find_symbol"],
+      "not": ["hybrid_search as the PRIMARY search", "find_symbol as the PRIMARY search (a find_symbol depth step on a result's symbolId is allowed)"],
       "after_fix": "PASS",
       "before_fix": "PASS",
       "no_rule": "FAIL (hybrid_search)"
@@ -113,7 +113,7 @@
     {
       "id": 11,
       "audit_finding": "naming intent routing",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available).",
+      "context": "Graph tools incl. get_naming_lexicon are in your tool list (codegraph on).",
       "prompt": "Is `row` a good name for a TaxAutomationDocument local here, or what does this project call it?",
       "expected": "get_naming_lexicon(names / types)",
       "not": ["semantic_search", "hybrid_search", "ripgrep"]
@@ -121,11 +121,11 @@
     {
       "id": 12,
       "audit_finding": "naming review of a diff",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Uncommitted changes add several locals, a class and a constant across 4 files.",
+      "context": "Graph tools incl. get_naming_lexicon are in your tool list (codegraph on). Uncommitted changes add several locals, a class and a constant across 4 files.",
       "prompt": "Check whether the names in my uncommitted changes fit the project's vocabulary.",
-      "expected": "get_naming_lexicon(changes)",
+      "expected": "review_changes(changes: {}) — naming section (default sections, or sections: [\"naming\"]); its verdicts are the answer",
       "not": [
-        "get_naming_lexicon(names[] hand-listed from the diff)",
+        "get_naming_lexicon(names[] hand-listed from the diff), before or after review_changes",
         "semantic_search",
         "hybrid_search",
         "ripgrep"

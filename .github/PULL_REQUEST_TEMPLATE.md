@@ -54,7 +54,7 @@ what you measured.
       statements 96.2 (`npm run test:coverage`)
 - [ ] Docs under `website/docs/` updated if behavior, configuration, or an MCP
       tool changed
-- [ ] `plugin.json` version bumped if anything under `.claude-plugin/` changed
+- [ ] `plugin.json` version bumped if anything under `plugins/<name>/` changed
       (the pre-commit hook enforces this)
 - [ ] `CHANGELOG.md` left alone — release notes are generated from commit
       subjects, so write subjects that read like release notes

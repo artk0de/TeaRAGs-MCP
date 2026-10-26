@@ -121,3 +121,59 @@ skill adds value in **three failure modes**:
   correct names. Not run in this iteration.
 - **No multi-turn simulation** — single-prompt eval; conversational drift not
   measured.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
+- Result: 10/12 PASS (83%)
+- Last recorded with-skill rate: 100%
+- Delta: -17pp
+- FAIL:
+  - `T7` — Plan uses preset blastRadius as primary; custom {imports:0.5,churn:0.3,ownership:0.2} only as graph-absent fallback | STALE
+  - `T12` — Uses custom {age,bugFix,similarity,churn} weights instead of rerank 'securityAudit' (pathPattern and ageDays>=365 filter were fine) | REAL
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 10/12 PASS (83%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 10/12 (83%)
+- CODEX-ONLY: none
+- Both-fail count: 2
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 12/12 PASS (100%) over scored cases
+- Task 12 rate: 10/12 (83%)
+- Delta: +17pp
+- FAIL:
+  - none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks (plan-only)
+- Result: 8/12 PASS (67%) over 12 graded cases (N/A 0)
+- Codex T14 for comparison: 10/12 (83%)
+- Claude T22 for comparison: 12/12 (100%)
+- FAIL list:
+  - ` T1 ` — FAIL ( new (T14 PASS); Claude T22 PASS ) "bug-prone areas" routed to full risk-assessment multi-preset scan instead of single rerank hotspots + pathPattern (EXPECTED_NOT: risk-assessment for single-preset) - model/skill-trigger 
+  - ` T6 ` — FAIL ( new; Claude T22 PASS ) no Fragile Silo recipe; only "custom rerank rewarding stability and bug-fix", no exact keys {bugFix .45, knowledgeSilo .3, similarity .15, churn -.1} 
+  - ` T9 ` — FAIL ( new; Claude T22 PASS ) uses preset rerank "recent" instead of custom {recentActivityConcentration .5, burstActivity .3, similarity .2} 
+  - ` T12 ` — FAIL ( still; Claude T22 PASS ) rerank techDebt (+bugHunt follow-up) instead of securityAudit + pathPattern + modifiedBefore (modifiedBefore ok) 
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading)
+- Result: 12/12 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 12/12 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/12 PASS (100%) (N/A excluded: 0).
+- Round-1 Codex: 8/12 (66.7%). Delta: +33.3 pp.
+- FAIL list: none.

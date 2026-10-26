@@ -90,3 +90,36 @@ optimize-skill cycles.
 - `writing-skills` SKILL.md previously lacked a Step 4 handoff blockquote; this
   fix added one with the redirect phrasing. Worth a future pass to harmonize its
   handoff format with the other 9 wrappers.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 8/8 PASS (100%)
+- Last recorded rate: no pass-rate recorded (structural grep check 10/10 PASS)
+- Delta: n/a
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace, real hooks (plan-only)
+- Result: 8/8 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 8/8 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 8/8 PASS (100%) over scored cases (superseded: 0)
+- Task 12 rate: 8/8 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block), AGENTS.md = core.
+- Result: 8/8 PASS (100%) over graded cases (N/A excluded: 0).
+- Codex T14: 8/8 (100%). Claude T22: 8/8 (100%).
+- FAIL list: none

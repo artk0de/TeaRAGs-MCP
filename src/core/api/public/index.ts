@@ -253,6 +253,7 @@ export {
   resolveOllamaRegistryGguf,
   type OllamaRegistryGgufSource,
 } from "../../adapters/embeddings/ollama-registry/gguf-source.js";
+export { readGgufContextLength } from "../../adapters/embeddings/llama-server/gguf-metadata.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
 // The one definition of "chunk points only" — every CLI chunk count passes it
 // to countPoints so it agrees with get_index_status (bd tea-rags-mcp-39xca.16).

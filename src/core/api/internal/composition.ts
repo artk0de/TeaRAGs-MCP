@@ -48,6 +48,8 @@ import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/index.js";
 import {
   LanguageFactory,
+  nativeLanguageCapabilities,
+  renderLanguageCapabilityGuide,
   resolveChunkSetBumpScopes,
   resolveLanguageCapabilities,
   resolveLanguageCodeVersions,
@@ -589,3 +591,11 @@ export function emptyReviewChangesResult(request: ReviewChangesRequest): ReviewC
  * which already owned that domain edge.
  */
 export { resolveLanguageCapabilities };
+
+/**
+ * Language-capability guide over the native descriptors — surfaced for
+ * `App.renderLanguageCapabilityGuide` on the same terms as the resolver above.
+ */
+export function languageCapabilityGuide(): string {
+  return renderLanguageCapabilityGuide(nativeLanguageCapabilities());
+}

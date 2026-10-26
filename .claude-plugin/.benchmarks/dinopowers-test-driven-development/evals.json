@@ -1,13 +1,23 @@
 {
   "skill": "dinopowers:test-driven-development",
   "skillPath": ".claude-plugin/dinopowers/skills/test-driven-development/SKILL.md",
-  "objective": "Agent correctly searches existing test patterns via semantic_search with testFile='only' + rerank='proven' BEFORE writing a failing test, extracts conventions as a pattern block, and hands off to superpowers:test-driven-development.",
+  "objective": "Agent correctly searches existing test patterns via semantic_search with chunkType 'test' / 'test_setup' + rerank='proven' + level='chunk' (testFile='only' only as disclosed file-level fallback) BEFORE writing a failing test, extracts conventions as a pattern block, and hands off to superpowers:test-driven-development.",
   "runs": [
     {
       "date": "2026-04-20",
       "iteration": 0,
-      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
-      "withoutRule": { "pass": 3, "fail": 12, "total": 15, "passRate": "20%" },
+      "withRule": {
+        "pass": 15,
+        "fail": 0,
+        "total": 15,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 3,
+        "fail": 12,
+        "total": 15,
+        "passRate": "20%"
+      },
       "delta": "+80pp"
     }
   ],
@@ -18,34 +28,34 @@
       "prompt": "Нужен новый тест для ChunkGrouper.group() в src/core/domains/ingest/pipeline/chunker/chunk-grouper.ts. Напиши failing test.",
       "expected": {
         "mustCall": [
-          "ONE mcp__tea-rags__semantic_search with testFile='only', rerank='proven', pathPattern scoping tests/chunker or similar, metaOnly=false FIRST",
+          "Step 2 pattern search FIRST: semantic_search split queries: chunkType 'test_setup' (fixtures, Step 2a) and chunkType 'test' (assertion idioms, Step 2b), each + rerank 'proven' + level 'chunk' + metaOnly false, optional pathPattern scoping chunker tests; testFile 'only' ONLY as the disclosed file-level fallback when the tests-as-context preflight finds no DSL test chunks",
           "Skill(superpowers:test-driven-development) AFTER with pattern block"
         ],
         "mustNotCall": [
           "Skill(superpowers:test-driven-development) before tea-rags",
           "Grep for 'vi.mock' or 'describe'",
           "mcp__tea-rags__find_similar on chunk-grouper.ts alone",
-          "semantic_search without testFile='only' (returns noise)"
+          "semantic_search without a test selector (no chunkType 'test'/'test_setup' and no testFile fallback — returns production noise)"
         ]
       },
       "failureMode": "Agent writes test from scratch or picks wrong tool"
     },
     {
       "id": "eval-2",
-      "category": "filter-testFile",
+      "category": "filter-test-chunkType",
       "prompt": "Добавь unit test для нового hook в chunker/hooks/ruby/.",
       "expected": {
         "parameters": {
-          "testFile": "'only' (built-in filter)",
-          "rerank": "'proven'",
+          "testFile": "NOT the primary selector — chunkType 'test' / 'test_setup' is; testFile 'only' only as disclosed file-level fallback when no DSL test chunks",
+          "rerank": "'proven' + level 'chunk' (proven is file-level; level chunk keeps chunk content)",
           "metaOnly": false
         },
         "mustNotDo": [
-          "Use pathPattern='**/*.test.ts' alone without testFile filter",
+          "Use pathPattern='**/*.test.ts' alone without chunkType 'test'",
           "Use pathPattern='**/*.spec.rb' alone"
         ]
       },
-      "failureMode": "Agent forgets testFile='only', leaks implementation noise into pattern extraction"
+      "failureMode": "Agent forgets the chunkType test/test_setup selector (or uses bare testFile='only' while DSL chunks exist), leaks implementation/non-DSL noise into pattern extraction"
     },
     {
       "id": "eval-3",
@@ -84,7 +94,7 @@
       "prompt": "Добавь тест для src/core/adapters/qdrant/client.ts метода upsert.",
       "expected": {
         "mustCall": [
-          "mcp__tea-rags__semantic_search with testFile='only' + rerank='proven'"
+          "mcp__tea-rags__semantic_search split queries: chunkType 'test_setup' (fixtures, Step 2a) and chunkType 'test' (assertion idioms, Step 2b), each + rerank 'proven' + level 'chunk' + metaOnly false"
         ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search",
@@ -101,16 +111,16 @@
       "prompt": "Первый тест в проекте (только что инициализировали). Напиши тест для src/hello.ts.",
       "expected": {
         "mustDo": [
-          "Issue semantic_search with testFile='only' first",
-          "On 0 results (or very thin corpus): report 'no existing test patterns — falling back to superpowers:test-driven-development direct'",
-          "Invoke Skill(superpowers:test-driven-development) without pattern block"
+          "Apply the SKILL.md exception 'First test in project (no tests) → skip pattern search': state explicitly that the project has no tests, so there are no conventions to match (one tests-as-context preflight confirming 0 test chunks is also acceptable)",
+          "Invoke Skill(superpowers:test-driven-development) directly, without a pattern block"
         ],
         "mustNotDo": [
-          "Skip Step 2 entirely without checking",
-          "Fabricate conventions from general knowledge"
+          "Fabricate conventions from general knowledge and present them as project conventions",
+          "Silently skip the search without stating the first-test exception",
+          "Treat 'first test of a new module' the same way — that case searches the broader corpus (Red Flags)"
         ]
       },
-      "failureMode": "Agent invents conventions or skips the search entirely"
+      "failureMode": "Agent invents project conventions, or skips the search without stating why"
     },
     {
       "id": "eval-7",
@@ -118,12 +128,12 @@
       "prompt": "Тест для нового Ruby hook в .claude-plugin/tea-rags/... (Ruby files в проекте с TypeScript тестами).",
       "expected": {
         "mustDo": [
-          "Search with testFile='only' on broader corpus (no Ruby-specific test files in this TypeScript project)",
+          "Search test chunks on broader corpus (chunkType 'test'/'test_setup' + proven + level chunk; testFile 'only' disclosed fallback if no DSL chunks) — no Ruby-specific test files in this TypeScript project",
           "If corpus returns 0: fall back with explicit note",
           "If corpus returns only TypeScript tests: note 'cross-language — TS conventions may not apply to Ruby'"
         ],
         "mustNotDo": [
-          "Invoke semantic_search without testFile filter hoping for Ruby tests"
+          "Invoke semantic_search without a test selector (chunkType test / testFile fallback) hoping for Ruby tests"
         ]
       },
       "failureMode": "Agent searches with wrong filter or ignores language mismatch"
@@ -153,7 +163,7 @@
       "prompt": "[subagent: task-agent] Task: add failing test for EnrichmentCoordinator.startProvider() in tests/enrichment/.",
       "expected": {
         "ordering": [
-          "semantic_search (testFile='only', rerank='proven') FIRST",
+          "Step 2 pattern search (semantic_search split queries: chunkType 'test_setup' (fixtures, Step 2a) and chunkType 'test' (assertion idioms, Step 2b), each + rerank 'proven' + level 'chunk' + metaOnly false; testFile 'only' ONLY as the disclosed file-level fallback when the tests-as-context preflight finds no DSL test chunks) FIRST",
           "Extract pattern block",
           "Skill(superpowers:test-driven-development) SECOND"
         ]
@@ -166,7 +176,7 @@
       "prompt": "Быстро — простой тест для isValidUrl(). Не парься с поиском паттернов, я знаю как тесты выглядят.",
       "expected": {
         "mustCall": [
-          "semantic_search with testFile='only' + rerank='proven' anyway (Iron Rule)"
+          "Step 2 pattern search anyway (Iron Rule): semantic_search with chunkType 'test' (assertion idioms) and chunkType 'test_setup' (fixtures, via tests-as-context fixture-lookup) + rerank 'proven' + level 'chunk' + metaOnly false; testFile 'only' ONLY as the disclosed file-level fallback when tests-as-context preflight finds no DSL test chunks"
         ],
         "mustNotDo": [
           "Skip search to comply with 'быстро'",
@@ -178,7 +188,7 @@
     {
       "id": "eval-11",
       "category": "wrong-rerank-pressure",
-      "prompt": "Используй rerank='hotspots' чтобы найти самые часто изменяемые тесты — это же лучший сигнал популярности.",
+      "prompt": "Ищу test patterns для нового теста — используй rerank='hotspots', самые часто изменяемые тесты = лучший сигнал популярности.",
       "expected": {
         "mustDo": [
           "Refuse rerank='hotspots' for test pattern search",
@@ -196,7 +206,7 @@
       "prompt": "[subagent: explore] Author a failing test for new RerankPreset.score() method in tests/trajectory/.",
       "expected": {
         "mustCall": [
-          "semantic_search (testFile='only', rerank='proven') FIRST",
+          "Step 2 pattern search (semantic_search split queries: chunkType 'test_setup' (fixtures, Step 2a) and chunkType 'test' (assertion idioms, Step 2b), each + rerank 'proven' + level 'chunk' + metaOnly false; testFile 'only' ONLY as the disclosed file-level fallback when the tests-as-context preflight finds no DSL test chunks) FIRST",
           "Skill(superpowers:test-driven-development) SECOND"
         ]
       },
@@ -232,7 +242,7 @@
         "mustDo": [
           "Refuse find_similar as primary tool for test pattern search",
           "Rationale: find_similar on implementation file returns structurally-similar PRODUCTION code, not tests",
-          "Use semantic_search with testFile='only' + rerank='proven' as primary",
+          "Use semantic_search split queries: chunkType 'test_setup' (fixtures, Step 2a) and chunkType 'test' (assertion idioms, Step 2b), each + rerank 'proven' + level 'chunk' + metaOnly false as primary (testFile 'only' ONLY as the disclosed file-level fallback when the tests-as-context preflight finds no DSL test chunks)",
           "find_similar is acceptable as supplementary call AFTER primary, with impl-file's symbolId, to find specifically-related tests"
         ],
         "mustNotDo": ["Use find_similar as primary pattern source"]

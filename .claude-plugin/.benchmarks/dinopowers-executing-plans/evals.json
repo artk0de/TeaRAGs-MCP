@@ -1,7 +1,7 @@
 {
   "skill": "dinopowers:executing-plans",
   "skillPath": ".claude-plugin/dinopowers/skills/executing-plans/SKILL.md",
-  "objective": "Agent correctly runs a pre-touch git-signal guard BEFORE each plan Task's edits, computes SAFE/CAUTION/UNSAFE verdict, and gates execution accordingly. Core metric: correct tool (semantic_search + custom impact rerank), correct per-Task scope (not per-plan), correct verdict semantics (no silent downgrade).",
+  "objective": "Agent correctly runs a pre-touch git-signal guard BEFORE each plan Task's edits, computes SAFE/CAUTION/UNSAFE verdict, and gates execution accordingly. Core metric: correct tool (semantic_search + impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)), correct per-Task scope (not per-plan), correct verdict semantics (no silent downgrade).",
   "runs": [
     {
       "date": "2026-04-20",
@@ -36,7 +36,7 @@
       "prompt": "Start executing plan. Task 1 modifies src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts and src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts.",
       "expected": {
         "mustCall": [
-          "ONE mcp__tea-rags__semantic_search with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, metaOnly=true, brace-expanded pathPattern over 2 Task files BEFORE any Edit/Write",
+          "ONE mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off), metaOnly=true, brace-expanded pathPattern over 2 Task files BEFORE any Edit/Write",
           "Compute per-file verdict + aggregate Task verdict",
           "Gate Task invocation on verdict"
         ],
@@ -68,27 +68,29 @@
     },
     {
       "id": "eval-3",
-      "category": "parameters-custom-rerank",
+      "category": "parameters-impact-rerank",
       "prompt": "Task 2 modifies 3 files. Run the guard.",
       "expected": {
         "parameters": {
-          "rerank": "custom {imports: 0.5, churn: 0.3, ownership: 0.2} — matches writing-plans idiom",
+          "rerank": "codegraph-state-dependent: \"blastRadius\" when codegraph on (graph tools present); custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off — matches writing-plans idiom",
           "pathPattern": "brace expansion over 3 files",
           "metaOnly": true,
           "limit": "~9 (3 files * 3 chunks)"
         }
       },
-      "failureMode": "Agent uses named preset or different weights"
+      "failureMode": "Agent uses rerank=\"blastRadius\" with codegraph off, the custom weights with codegraph on, a different named preset (hotspots/codeReview/impactAnalysis), or different custom weights"
     },
     {
       "id": "eval-4",
       "category": "tool-selection",
       "prompt": "Task 3 is about to modify src/core/domains/explore/reranker.ts. Check impact before edit.",
       "expected": {
-        "mustCall": ["mcp__tea-rags__semantic_search with custom rerank"],
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
+        ],
         "mustNotCall": [
           "mcp__tree-sitter__modification_guard",
-          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__hybrid_search as the impact-guard substitute (core-prescribed cross-check after an empty get_callers is allowed)",
           "mcp__tea-rags__find_similar",
           "mcp__tea-rags__find_symbol alone",
           "Read + git blame"
@@ -118,7 +120,8 @@
       "prompt": "Guard for Task 5 returned: src/core/contracts/errors.ts has imports=89 (top 2% in result set), bugFixRate=45%. Proceed?",
       "expected": {
         "mustDo": [
-          "Compute verdict: UNSAFE (imports top 5% AND bugFixRate >= 40%)",
+          "Resolve the bare bugFixRate=45% to its label via the project labelMap (tea-rags://project/<alias>/metrics?section=labelMap; concerning >= p75, critical >= p95) before the verdict — no fixed percent cut",
+          "Compute verdict: UNSAFE when that label is concerning/critical (imports top 5% AND bugFixRate label concerning+); name both halves",
           "Pause execution — do NOT invoke superpowers:executing-plans",
           "Surface block + recommend split/review/tests-first"
         ],
@@ -136,7 +139,7 @@
       "prompt": "Guard for Task 2 returned: src/a.ts has imports=40 (top 12%), bugFixRate=32%. Task 2 verdict?",
       "expected": {
         "mustDo": [
-          "Compute verdict: CAUTION (imports top 15% OR bugFixRate >= 30%)",
+          "Compute verdict: CAUTION (stated blast rank top 12% hits the top-15% row; one trigger suffices — no magic bugFixRate threshold, labels are adaptive)",
           "Ask user 'Proceed with Task 2?' and wait for explicit confirmation",
           "Only after confirmation: invoke superpowers:executing-plans"
         ],
@@ -198,7 +201,7 @@
         "mustDo": [
           "Refuse tree-sitter's modification_guard as substitute",
           "Rationale: tree-sitter gives structural safety; this wrapper needs git-signal blast radius",
-          "Use semantic_search with custom impact rerank"
+          "Use semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off)"
         ],
         "mustNotDo": ["Comply with tree-sitter guard instead of tea-rags"]
       },
@@ -248,7 +251,7 @@
       "expected": {
         "mustDo": [
           "Keep metaOnly=true on guard call",
-          "If user wants content, issue SEPARATE semantic_search with metaOnly=false AFTER guard verdict",
+          "If user wants content: SEPARATE call AFTER the guard verdict — find_symbol(relativePath:) outline then member bodies (core: depth after search → find_symbol); never flip the guard to metaOnly=false",
           "Verdict computation uses guard results, not content"
         ],
         "mustNotDo": [

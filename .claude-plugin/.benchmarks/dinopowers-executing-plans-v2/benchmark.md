@@ -100,3 +100,100 @@ trivial). Phase 4 verification: **10/10 PASS, +70pp from before-fix.**
 - `workspace/iteration-1/` — placeholder (subagent outputs captured inline in
   this conversation; no per-iteration directories needed for tool-selection-only
   eval)
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/13 PASS (100%)
+- Last recorded rate: 10/10 (100%) iteration 1
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags 0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace, real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 12/13 PASS (92%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 13/13 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `E9` — autonomous task-agent treated as non-plan: no $dino-executing-plans, no pre-touch guard, no $dino-test-driven-development (MUST_INCLUDE); only DDG [model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline = FAIL)
+- Result: 13/13 PASS (100%) over scored cases. 0 superseded.
+- Task 12 rate: 100% (13/13)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks (plan-only)
+- Result: 13/13 PASS (100%) (N/A: 0)
+- Codex T14 rate: 92% (12/13)
+- Claude T22 rate: 100% (13/13)
+- FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and literally against current evals.json)
+- Result: 12/13 PASS (92%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 13/13 (100%)
+- Delta: -8pp
+- FAIL list:
+  - E6 — typo fix: subject skipped the wrapper entirely (SKILL.md Step 5 "Trivial" row: "Skip Step 5 AND skip wrapper entirely — direct Edit"); expected list's first step is Skill(dinopowers:executing-plans). Eval/skill conflict — E13 (same class) expects no wrapper.
+- Notes: E1 expected text still says "custom rerank" for the guard; subject skipped the guard (new file, SAFE) so not exercised.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11 / dinopowers 0.24.4.
+- Result: 12/13 PASS (92%) (N/A excluded: 0).
+- Round-1 Codex: 13/13 (100%). Delta: -8 pp.
+- FAIL list:
+  - `E11` — DDG MODIFY + tests-at-risk + callers stated, but Step 4.5 template-lookup skip (MODIFY skips TEMPLATE) not stated
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live hook output
+- Result: 8/13 PASS (62%) over scored cases (superseded: 0)
+- Round 2 rate: 92% — delta: -30 pp
+- FAIL list:
+  - E2: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation (only walks its Steps 1-5 implicitly); guard/DDG/chain otherwise correct
+  - E4: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; rest (guard SAFE new file, DDG, TDD, chain) correct
+  - E5: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; guard semantic_search, DDG skip, chain otherwise correct
+  - E7: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation; guard, no-DDG, import check, delete otherwise correct
+  - E10: FAIL — answer never states the Skill(dinopowers:executing-plans) invocation triggered by 'выполни план' (expected item 1); guard semantic_search + DDG present
+- Notes: All 5 FAILs are the same omission: answers walk wrapper Steps 1-5 without stating the Skill(dinopowers:executing-plans) call (round-2 answers stated it 9x) - likely subject variance, but the skill's Mandatory Step Order starts at Step 2.0 with no explicit 'invoke wrapper' step. Round-2 FAIL E6 (typo -> wrapper) now PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12 / dinopowers 0.24.5.
+- Result: 9/13 PASS (69.2%) (N/A excluded: 0).
+- Round-2 Codex: 12/13 (92.3%). Delta: -23.1 pp.
+- FAIL list:
+  - `E6` — typo Task runs the pre-touch guard and chains executing-plans instead of the Trivial-row skip + direct Edit.
+  - `E9` — tests via $test-first; required dinopowers:test-driven-development absent.
+  - `E11` — DDG MODIFY + tests-at-risk, but no get_callers on Paginator#nextOffset and no "Step 4.5 skipped — MODIFY skips TEMPLATE".
+  - `E12` — DDG MODIFY, but callers of shouldRetry never surfaced.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live hook output
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 62% — delta: +38 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13 / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past ~10k tokens loses its middle".
+- Result: 12/13 PASS (92.3%) (N/A excluded: 0).
+- Round-3 Codex: 9/13 (69.2%). Delta: +23.1 pp.
+- FAIL list:
+  - `E9` — DDG named but tea-rags:test-first (DDG 6a) never named — "RED" only

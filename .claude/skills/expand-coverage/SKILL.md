@@ -49,7 +49,7 @@ new code, corner-case discovery fails silently.
 
 - Target local main alias (`list_projects`/prime). Never a stale worktree clone.
 - `index_codebase` incremental, `project: <main-alias>` — silent, no consent
-  (see `.claude-plugin/tea-rags/rules/index-freshness.md`).
+  (see `tea-rags://guide/freshness`).
 - Skip ONLY if prime shows index fresh AND no `src/` written this session.
 
 ## Step 1: Baseline (ONE coverage run)
@@ -69,6 +69,10 @@ npm run test:coverage -- --run \
 
 ## Step 2: Pick targets (JSON, no grep)
 
+Caller named the file(s) ("cover `onnx-provider.ts`, 0%") → those ARE the
+targets; skip the ranking below. Rank only when no file is named, or the gap is
+still open after Step 5.
+
 One `jq` over summary (NEVER a grep pipeline):
 
 ```bash
@@ -84,7 +88,9 @@ Top 2–4 below-threshold files by `impact` (uncovered statements).
 
 ## Step 3: Locate uncovered branches, understand them (tea-rags only)
 
-Find the EXACT untested behavior — never guess from the whole file.
+Find the EXACT untested behavior — never guess from the whole file. Uncovered
+areas come ONLY from `coverage-final.json` hit maps — never `semantic_search`
+(it cannot see coverage), even when the prompt asks for it; say so in one line.
 
 1. **Uncovered map** — `Read` `coverage/coverage-final.json`, find target by
    path. `statementMap`+`s`, `branchMap`+`b`, `fnMap`+`f` with hit `0` → exact
@@ -108,6 +114,8 @@ report it, do NOT fabricate a test.
 - Mirror `src/`→`tests/` EXACT (rule 5). Existing file → `Edit` append.
 - Reuse Step-3 mocks/helpers.
 - `import { describe, expect, it, vi, beforeEach } from "vitest"`.
+- Targeted run of the changed test files (`npx vitest run <test files>`) — all
+  green before Step 5. Not a coverage run; does not count toward the cap.
 
 **Good**: `"should propagate ConnectionRefused through the ingest pipeline"`
 **Bad**: `"should execute line 142"`

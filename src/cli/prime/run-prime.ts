@@ -10,7 +10,7 @@ import {
 } from "../../bootstrap/auto-update/trigger.js";
 import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../bootstrap/auto-update/updater-log.js";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
-import { createAppContext } from "../../bootstrap/factory.js";
+import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
 import {
   isQdrantColdError,
   TeaRagsError,
@@ -25,7 +25,7 @@ import { PackageJsonVersionSource } from "../update-check/version-source.js";
 import { formatPrime } from "./format.js";
 import { discoverQdrantUrl } from "./qdrant-discovery.js";
 import { pingQdrant } from "./qdrant-ping.js";
-import type { PrimeData, PrimeFailureReason } from "./types.js";
+import type { PrimeFailureReason } from "./types.js";
 
 function buildUpdateService(): UpdateCheckService {
   return new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
@@ -169,6 +169,15 @@ export async function runPrime(input: {
    * leaf constructs no api runtime itself.
    */
   registryRuntime: PrimeRegistryRuntime;
+  /**
+   * Opens the in-process MCP session the digest is read through, injected by
+   * the `prime` command — this leaf constructs no server itself.
+   */
+  openSession: () => Promise<InProcessToolSession>;
+  /** `--full`: append the metrics resource (thresholds, labelMap, resolve) after the digest. */
+  full?: boolean;
+  /** Test seam — production checks npm through buildUpdateService. */
+  updateService?: Pick<UpdateCheckService, "checkForUpdate">;
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
   autoUpdateTrigger?: { maybeSpawn: (collectionName: string) => AutoUpdateTriggerOutcome };
 }): Promise<void> {
@@ -252,87 +261,63 @@ export async function runPrime(input: {
     return;
   }
 
+  if (!registryEntry) {
+    process.stdout.write(formatPrime({ kind: "not-registered", path }));
+    return;
+  }
+  const alias = registryEntry.name ?? registryEntry.collectionName;
+
+  // Started before the server opens so the npm round-trip overlaps bootstrap;
+  // a rejected check just drops the update notice.
+  const updateRequest = (input.updateService ?? buildUpdateService())
+    .checkForUpdate({ allowNetwork: true, timeoutMs: 1500, preferCache: true })
+    .catch(() => null);
+
   // Bootstrap reads Qdrant too (version check, alias reconcile). A rejection
-  // here escaped runPrime, and the command's unconditional exit(0) left the
-  // digest empty — the same hidden error as a failed status read.
-  let ctx: Awaited<ReturnType<typeof createAppContext>>;
+  // here must still print the error — never an empty digest.
+  let session: InProcessToolSession;
   try {
-    ctx = await createAppContext(config);
+    session = await input.openSession();
   } catch (error) {
     process.stdout.write(formatPrime(statusFailure(path, error)));
     return;
   }
-  const updateService = (ctx as { updateService?: UpdateCheckService }).updateService ?? buildUpdateService();
 
   try {
-    const statusRequest = ctx.app.getIndexStatus(path);
-    // The memory report addresses the collection the status resolved, so it
-    // chains on status and still overlaps the reads below. A report that cannot
-    // be read settles rejected or null — the digest just drops the section.
-    const memoryRequest = statusRequest.then(async (resolved) =>
-      resolved.status === "indexed" && resolved.collectionName
-        ? ctx.app.getCollectionMemory(resolved.collectionName)
-        : null,
-    );
-    const [status, metricsResult, drift, update, memory] = await Promise.allSettled([
-      statusRequest,
-      ctx.app.getIndexMetrics(path),
-      // Inspection, like get_index_status — the digest must read the same way
-      // every time it is rendered, and the once-per-session warning belongs to
-      // the search path. (This process is short-lived, so consuming would cost
-      // nothing here in practice; it is stated anyway so the call site and the
-      // contract agree.)
-      ctx.app.checkIndexDrift({ path, consume: false }),
-      updateService.checkForUpdate({
-        allowNetwork: true,
-        timeoutMs: 1500,
-        preferCache: true,
-      }),
-      memoryRequest,
+    const [digest, metrics] = await Promise.all([
+      readText(session, `tea-rags://project/${alias}/digest`),
+      input.full === true ? readText(session, `tea-rags://project/${alias}/metrics`) : undefined,
     ]);
 
-    if (status.status !== "fulfilled") {
-      process.stdout.write(formatPrime(statusFailure(path, status.reason)));
-      return;
-    }
+    // Auto-update trigger (hpg2): the eligible-path spawn is detached fire-and-forget.
+    const autoUpdateOutcome = (
+      input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir(), input.registryRuntime)
+    ).maybeSpawn(registryEntry.collectionName);
 
-    // Auto-update trigger (hpg2): verdict computed BEFORE render so the
-    // digest reflects it; the eligible-path spawn is detached fire-and-forget.
-    const autoUpdateOutcome = registryEntry
-      ? (
-          input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir(), input.registryRuntime)
-        ).maybeSpawn(registryEntry.collectionName)
-      : null;
-
-    const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
-    const data: PrimeData = {
-      path,
-      projectName: registryEntry?.name ?? null,
-      registry: registryEntry,
-      status: status.value,
-      metrics,
-      // App method, not the retired barrel re-export (bd tea-rags-mcp-89k7k.9)
-      // — Uniform Access through the wired App prime already holds.
-      languageCapabilities: ctx.app.resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
-      // What the last Rust resolve pass's driver did, as the codegraph run persisted it (bd s3i8m).
-      rustcDriver: status.value.rustcDriver ?? null,
-      drift: drift.status === "fulfilled" ? drift.value : null,
-      update: update.status === "fulfilled" ? update.value : null,
-      memory: memory.status === "fulfilled" ? memory.value : null,
-      autoUpdateOutcome,
-      ...(registryEntry
-        ? { autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), registryEntry.name ?? registryEntry.collectionName) }
-        : {}),
-    };
-    // DEBUG decides how much of the codegraph resolve tally the digest shows —
-    // taken from the parsed config, the same flag the runtime debug state uses.
-    process.stdout.write(formatPrime(data, new Date(), { debug: config.debug }));
+    process.stdout.write(
+      formatPrime({
+        digest,
+        ...(metrics !== undefined ? { metrics } : {}),
+        registry: registryEntry,
+        update: await updateRequest,
+        autoUpdateOutcome,
+        autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
+      }),
+    );
+  } catch (error) {
+    process.stdout.write(formatPrime(statusFailure(path, error)));
   } finally {
-    // Best-effort teardown (synchronous, fire-and-forget by design — see
-    // factory.ts). The guaranteed reap is process.exit(0) in the prime command
-    // handler: it terminates the process so the OS releases the DuckDB file
-    // lock and undici keep-alive sockets that previously kept prime alive and
-    // hung the SessionStart hook until timeout.
-    void ctx.cleanup?.();
+    // Best-effort teardown, not awaited: the guaranteed reap is process.exit(0)
+    // in the prime command handler, which releases the DuckDB file lock and
+    // keep-alive sockets that otherwise hang the SessionStart hook.
+    void session.close().catch(() => undefined);
   }
+}
+
+/** The text of a `text/markdown` resource; a binary-only answer reads as empty. */
+async function readText(session: InProcessToolSession, uri: string): Promise<string> {
+  const { contents } = await session.readResource(uri);
+  return contents
+    .map((content) => ("text" in content && typeof content.text === "string" ? content.text : ""))
+    .join("");
 }

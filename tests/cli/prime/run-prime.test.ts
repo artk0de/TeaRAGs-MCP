@@ -3,20 +3,57 @@ import type * as NodeFs from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveRegistryEnvCodeDefaults } from "../../../src/bootstrap/config/registry-env-code-defaults.js";
-import { primeRegistryRuntime } from "../../../src/cli/prime/registry-runtime.js";
-import { runPrime } from "../../../src/cli/prime/run-prime.js";
+import type { InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
+import { runPrime, type PrimeRegistryRuntime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
-import { createPathCollectionResolver } from "../../../src/core/api/index.js";
-import { QdrantUnavailableError, TeaRagsError } from "../../../src/core/api/public/index.js";
-import { resolveLanguageCapabilities } from "../../../src/core/domains/language/capability/resolve.js";
-import { LanguageFactory } from "../../../src/core/domains/language/factory.js";
+import { QdrantUnavailableError, TeaRagsError, type CollectionEntry } from "../../../src/core/api/public/index.js";
 
-const { pingMock, createAppContextMock } = vi.hoisted(() => ({
+const { pingMock, buildCheckForUpdateMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
-  createAppContextMock: vi.fn(),
+  buildCheckForUpdateMock: vi.fn(),
 }));
+
+const DIGEST = "# tea-rags digest — proj\nbody\n";
+
+const entry: CollectionEntry = {
+  collectionName: "code_proj",
+  path: "/some/project",
+  name: "proj",
+  embeddingModel: "m",
+  embeddingDimensions: 384,
+  qdrantUrl: "http://localhost:6333",
+  indexedAt: "2026-10-23T00:00:00.000Z",
+  teaRagsVersion: "1.0.0",
+  chunksCount: 10,
+};
+
+function registryRuntime(found: CollectionEntry | null = entry): PrimeRegistryRuntime {
+  return {
+    openRegistry: () => ({ findByName: () => found, get: () => found }) as never,
+    createFreshness: () => ({}) as never,
+    externalQdrantUrlOf: () => "http://localhost:6333",
+    replayEntryEnv: () => undefined,
+  };
+}
+
+const resolver = (() => async () => "code_proj") as never;
+const noSpawn = { maybeSpawn: () => "disabled" as const };
+
+function fakeSession(
+  readResource: InProcessToolSession["readResource"] = async (uri: string) => ({
+    contents: [{ uri, mimeType: "text/markdown", text: DIGEST }],
+  }),
+): InProcessToolSession & { close: ReturnType<typeof vi.fn> } {
+  return {
+    listTools: vi.fn(),
+    callTool: vi.fn(),
+    listResources: vi.fn(),
+    listResourceTemplates: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+    readResource: vi.fn(readResource),
+  };
+}
 
 function stubUpdateService(): UpdateCheckService {
   return { checkForUpdate: vi.fn().mockResolvedValue(unavailable("timeout")) } as unknown as UpdateCheckService;
@@ -27,12 +64,16 @@ const stdoutOriginal = process.stdout.write.bind(process.stdout);
 beforeEach(() => {
   writeMock.mockClear();
   pingMock.mockReset();
-  createAppContextMock.mockReset();
+  buildCheckForUpdateMock.mockReset();
   process.stdout.write = writeMock;
 });
 afterEach(() => {
   process.stdout.write = stdoutOriginal;
 });
+
+function output(): string {
+  return writeMock.mock.calls.map((c) => String(c[0])).join("");
+}
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof NodeFs>("node:fs");
@@ -43,201 +84,90 @@ vi.mock("../../../src/cli/prime/qdrant-ping.js", () => ({
   pingQdrant: pingMock,
 }));
 
-vi.mock("../../../src/bootstrap/factory.js", () => ({
-  createAppContext: createAppContextMock,
-}));
-
 vi.mock("../../../src/bootstrap/config/index.js", () => ({
   parseAppConfig: () => ({}),
-  getZodConfig: () => ({ deprecations: [] }),
-  resolveRegistryEnvCodeDefaults,
 }));
 
+vi.mock("../../../src/cli/update-check/check-service.js", () => ({
+  UpdateCheckService: class {
+    checkForUpdate = buildCheckForUpdateMock;
+  },
+}));
+
+async function run(extra: Partial<Parameters<typeof runPrime>[0]> & { session?: InProcessToolSession }) {
+  const { session, ...rest } = extra;
+  return runPrime({
+    path: "/some/project",
+    createPathCollectionResolver: resolver,
+    registryRuntime: registryRuntime(),
+    openSession: async () => session ?? fakeSession(),
+    updateService: stubUpdateService(),
+    autoUpdateTrigger: noSpawn,
+    ...rest,
+  });
+}
+
 describe("runPrime — happy path", () => {
-  it("calls all three App methods and writes formatted digest to stdout", async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    pingMock.mockResolvedValue(true);
-    const cleanupMock = vi.fn();
-    const getStatusMock = vi.fn().mockResolvedValue({
-      isIndexed: true,
-      status: "indexed",
-      collectionName: "c",
-      chunksCount: 100,
-    });
-    const getMetricsMock = vi.fn().mockResolvedValue({
-      collection: "c",
-      totalChunks: 100,
-      totalFiles: 10,
-      distributions: { language: { typescript: 100 } },
-      signals: {},
-    });
-    const checkDriftMock = vi.fn().mockResolvedValue(null);
-
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: getStatusMock,
-        getIndexMetrics: getMetricsMock,
-        checkIndexDrift: checkDriftMock,
-      },
-      cleanup: cleanupMock,
-      updateService: stubUpdateService(),
-    });
-
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
-
-    expect(getStatusMock).toHaveBeenCalledWith("/some/project");
-    expect(getMetricsMock).toHaveBeenCalledWith("/some/project");
-    // Non-consuming: the digest is an inspection, and the once-per-session
-    // warning belongs to the search path (bd tea-rags-mcp-p0phi).
-    expect(checkDriftMock).toHaveBeenCalledWith({ path: "/some/project", consume: false });
-    expect(writeMock).toHaveBeenCalledTimes(1);
-    expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime — /some/project");
-    expect(cleanupMock).toHaveBeenCalled();
-  });
-
-  it("calls ctx.cleanup in the finally block for best-effort teardown", async () => {
+  it("calls session.close in the finally block for best-effort teardown", async () => {
     // The guaranteed process reap lives in the prime command handler
-    // (process.exit(0)); cleanup here is best-effort, fire-and-forget by design.
+    // (process.exit(0)); close here is best-effort, fire-and-forget by design.
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const cleanupMock = vi.fn();
+    const session = fakeSession();
 
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName: "c",
-          chunksCount: 100,
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "c",
-          totalChunks: 100,
-          totalFiles: 10,
-          distributions: { language: { typescript: 100 } },
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: cleanupMock,
-      updateService: stubUpdateService(),
-    });
+    await run({ session });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
-
-    expect(cleanupMock).toHaveBeenCalledOnce();
-  });
-
-  // bd tea-rags-mcp-xip6g — the digest's tier lines come from the shipped
-  // descriptors, so the expectation is read from the same source rather than
-  // hard-coded: a tier moving in a `<lang>/capability.ts` must not break this.
-  it("renders language-capability tiers read from LanguageFactory.capabilities()", async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    pingMock.mockResolvedValue(true);
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName: "c",
-          chunksCount: 100,
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "c",
-          totalChunks: 100,
-          totalFiles: 10,
-          distributions: { language: { typescript: 100 } },
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      updateService: stubUpdateService(),
-    });
-
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
-
-    const ts = new LanguageFactory().capabilities().get("typescript");
-    expect(ts).toBeDefined();
-    const codegraph = ts?.codegraph.tier;
-    if (typeof codegraph !== "string") throw new Error("typescript codegraph tier is expected to be a single tier");
-    expect(writeMock.mock.calls[0][0]).toContain(
-      `typescript: ast ${ts?.ast.tier} · tests ${ts?.tests.tier} · codegraph ${codegraph}`,
-    );
+    expect(session.close).toHaveBeenCalledOnce();
   });
 });
 
 describe("runPrime — failure paths", () => {
-  it("does NOT call createAppContext when path is missing", async () => {
+  it("does NOT open a session when path is missing", async () => {
     vi.mocked(existsSync).mockReturnValue(false);
-    createAppContextMock.mockClear();
     pingMock.mockClear();
+    const openSession = vi.fn();
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/missing/dir", createPathCollectionResolver });
+    await run({ openSession });
 
-    expect(createAppContextMock).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     expect(pingMock).not.toHaveBeenCalled();
     expect(writeMock).toHaveBeenCalledTimes(1);
-    expect(writeMock.mock.calls[0][0]).toContain("Path not found: /missing/dir");
+    expect(writeMock.mock.calls[0][0]).toContain("Path not found: /some/project");
   });
 
-  it("does NOT call createAppContext when Qdrant ping fails", async () => {
+  it("does NOT open a session when Qdrant ping fails", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(false);
-    createAppContextMock.mockClear();
+    const openSession = vi.fn();
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ openSession });
 
-    expect(createAppContextMock).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
   });
 
-  it("emits qdrant-cold placeholder + cleans up when getIndexStatus rejects after bootstrap", async () => {
+  it("emits qdrant-cold placeholder + cleans up when the digest read rejects after bootstrap", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const cleanupMock = vi.fn();
-    const getStatusMock = vi
-      .fn()
-      .mockRejectedValue(new QdrantUnavailableError("http://localhost:6333", new Error("connection refused")));
-    const getMetricsMock = vi.fn().mockResolvedValue({});
-    const checkDriftMock = vi.fn().mockResolvedValue(null);
-
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: getStatusMock,
-        getIndexMetrics: getMetricsMock,
-        checkIndexDrift: checkDriftMock,
-      },
-      cleanup: cleanupMock,
-      updateService: stubUpdateService(),
+    const session = fakeSession(async () => {
+      throw new QdrantUnavailableError("http://localhost:6333", new Error("connection refused"));
     });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ session });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
-    expect(cleanupMock).toHaveBeenCalled();
+    expect(session.close).toHaveBeenCalled();
   });
 });
 
 // bd tea-rags-mcp-zqg1i: only a genuinely cold / unreachable Qdrant renders
 // the warm-up placeholder; any other status failure shows the real error.
 describe("runPrime — status failure that is not a cold Qdrant", () => {
-  function contextRejecting(error: unknown, cleanup = vi.fn()) {
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockRejectedValue(error),
-        getIndexMetrics: vi.fn().mockResolvedValue({}),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup,
-      updateService: stubUpdateService(),
+  function sessionRejecting(error: unknown) {
+    return fakeSession(async () => {
+      throw error;
     });
   }
 
@@ -250,16 +180,15 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
   it("renders a typed error's message, code and hint instead of 'warm-up pending'", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const cleanupMock = vi.fn();
-    contextRejecting(new LockedCollectionError(), cleanupMock);
+    const session = sessionRejecting(new LockedCollectionError());
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ session });
 
-    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
+    const out = output();
     expect(out).not.toContain("warm-up pending");
     expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
     expect(out).toContain("Retry shortly");
-    expect(cleanupMock).toHaveBeenCalled();
+    expect(session.close).toHaveBeenCalled();
   });
 
   // Bootstrap is the other status read that can fail after the ping: a
@@ -267,32 +196,36 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
   it("renders a bootstrap failure instead of printing nothing", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    createAppContextMock.mockRejectedValue(new LockedCollectionError());
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({
+      openSession: async () => {
+        throw new LockedCollectionError();
+      },
+    });
 
-    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
-    expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
+    expect(output()).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
   });
 
   it("keeps the warm-up placeholder when bootstrap finds Qdrant cold", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    createAppContextMock.mockRejectedValue(new QdrantUnavailableError("http://localhost:6333"));
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({
+      openSession: async () => {
+        throw new QdrantUnavailableError("http://localhost:6333");
+      },
+    });
 
-    expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain("warm-up pending");
+    expect(output()).toContain("warm-up pending");
   });
 
   it("renders an untyped error's message instead of 'warm-up pending'", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    contextRejecting(new TypeError("Cannot read properties of undefined (reading 'points')"));
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ session: sessionRejecting(new TypeError("Cannot read properties of undefined (reading 'points')")) });
 
-    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
+    const out = output();
     expect(out).not.toContain("warm-up pending");
     expect(out).toContain("Cannot read properties of undefined (reading 'points')");
   });
@@ -304,67 +237,25 @@ describe("runPrime — cwd fallback", () => {
     // prime the current working directory instead of erroring "no path provided".
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const getStatusMock = vi.fn().mockResolvedValue({
-      isIndexed: true,
-      status: "indexed",
-      collectionName: "c",
-      chunksCount: 100,
-    });
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: getStatusMock,
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "c",
-          totalChunks: 100,
-          totalFiles: 10,
-          distributions: { language: { typescript: 100 } },
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      updateService: stubUpdateService(),
+    const resolvePath = vi.fn(async () => "code_proj");
+
+    await run({
+      path: undefined,
+      registryRuntime: registryRuntime(null),
+      createPathCollectionResolver: (() => resolvePath) as never,
     });
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), createPathCollectionResolver });
-
-    expect(getStatusMock).toHaveBeenCalledWith(process.cwd());
+    expect(resolvePath).toHaveBeenCalledWith(process.cwd());
   });
 });
 
 describe("runPrime — update-check integration", () => {
-  function buildFullCtx(checkForUpdate: ReturnType<typeof vi.fn>) {
-    return {
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName: "c",
-          chunksCount: 100,
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "c",
-          totalChunks: 100,
-          totalFiles: 10,
-          distributions: { language: { typescript: 100 } },
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      updateService: { checkForUpdate } as unknown as UpdateCheckService,
-    };
-  }
-
   it("includes the update section in stdout when available", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const ctx = buildFullCtx(vi.fn().mockResolvedValue(available("1.0.0", "1.1.0")));
-    createAppContextMock.mockResolvedValue(ctx);
+    const updateService = { checkForUpdate: vi.fn().mockResolvedValue(available("1.0.0", "1.1.0")) };
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ updateService });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("## tea-rags package");
@@ -373,10 +264,9 @@ describe("runPrime — update-check integration", () => {
   it("omits the update section when up-to-date", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const ctx = buildFullCtx(vi.fn().mockResolvedValue(upToDate("1.0.0")));
-    createAppContextMock.mockResolvedValue(ctx);
+    const updateService = { checkForUpdate: vi.fn().mockResolvedValue(upToDate("1.0.0")) };
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ updateService });
 
     expect(writeMock.mock.calls[0][0]).not.toContain("## tea-rags package");
   });
@@ -384,25 +274,22 @@ describe("runPrime — update-check integration", () => {
   it("does not stall the digest if checkForUpdate rejects (rejections still resolve allSettled)", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const ctx = buildFullCtx(vi.fn().mockRejectedValue(new Error("boom")));
-    createAppContextMock.mockResolvedValue(ctx);
+    const updateService = { checkForUpdate: vi.fn().mockRejectedValue(new Error("boom")) };
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ updateService });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
-    expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime");
+    expect(writeMock.mock.calls[0][0]).toContain("# tea-rags digest");
   });
 
   it("calls checkForUpdate with allowNetwork=true, timeoutMs=1500, preferCache=true", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
-    const checkForUpdateMock = vi.fn().mockResolvedValue(upToDate("1.0.0"));
-    const ctx = buildFullCtx(checkForUpdateMock);
-    createAppContextMock.mockResolvedValue(ctx);
+    const updateService = { checkForUpdate: vi.fn().mockResolvedValue(upToDate("1.0.0")) };
 
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
+    await run({ updateService });
 
-    expect(checkForUpdateMock).toHaveBeenCalledWith({
+    expect(updateService.checkForUpdate).toHaveBeenCalledWith({
       allowNetwork: true,
       timeoutMs: 1500,
       preferCache: true,
@@ -411,48 +298,16 @@ describe("runPrime — update-check integration", () => {
 });
 
 describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
-  it("falls through to buildUpdateService when ctx has no updateService injected", async () => {
-    // This covers the `buildUpdateService()` factory (line 17 of run-prime.ts).
-    // The ctx returned by createAppContext lacks an `updateService` field, so
-    // the `?? buildUpdateService()` branch is taken. We mock check-service to
-    // avoid real npm network calls.
+  it("falls through to buildUpdateService when no updateService is injected", async () => {
+    // Covers the `?? buildUpdateService()` branch of run-prime.ts; the
+    // check-service module is mocked above to avoid real npm network calls.
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
+    buildCheckForUpdateMock.mockResolvedValue(unavailable("timeout"));
 
-    const checkForUpdateMock = vi.fn().mockResolvedValue({ kind: "unavailable", reason: "timeout" });
-    // Temporarily stub UpdateCheckService at the module level.
-    vi.doMock("../../../src/cli/update-check/check-service.js", () => ({
-      UpdateCheckService: class {
-        checkForUpdate = checkForUpdateMock;
-      },
-    }));
+    await run({ updateService: undefined });
 
-    createAppContextMock.mockResolvedValue({
-      app: {
-        resolveLanguageCapabilities,
-        getIndexStatus: vi.fn().mockResolvedValue({
-          isIndexed: true,
-          status: "indexed",
-          collectionName: "c",
-          chunksCount: 10,
-        }),
-        getIndexMetrics: vi.fn().mockResolvedValue({
-          collection: "c",
-          totalChunks: 10,
-          totalFiles: 2,
-          distributions: { language: { typescript: 10 } },
-          signals: {},
-        }),
-        checkIndexDrift: vi.fn().mockResolvedValue(null),
-      },
-      cleanup: vi.fn(),
-      // No updateService — forces buildUpdateService() to be called.
-    });
-
-    await runPrime({ registryRuntime: primeRegistryRuntime(), path: "/some/project", createPathCollectionResolver });
-
-    // The test passes if runPrime completes without error.
-    // buildUpdateService() was invoked on the ?? branch.
+    expect(buildCheckForUpdateMock).toHaveBeenCalledOnce();
     expect(writeMock).toHaveBeenCalled();
   });
 });

@@ -120,3 +120,12 @@ the file, well within 4.7's reliable read window.
   compare to prior baseline
 - Sync dinopowers/tea-rags marketplace copies
   (`~/.claude/plugins/marketplaces/`) so runtime sees the new descriptions
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: n/a
+- Result: no runnable cases
+- Last recorded rate: n/a (benchmark.md states no formal eval was run; no evals.json)
+- FAIL list: n/a
+- Notes: Suite has no cases to run; skipped. Delta n/a.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook text present in subject context but declared void (limitation).

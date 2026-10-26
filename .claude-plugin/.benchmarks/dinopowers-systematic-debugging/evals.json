@@ -246,7 +246,7 @@
       "prompt": "bug-hunt нашёл root cause: строка в chunker/tree-sitter-chunker.ts:142 — неправильно считается offset. Есть ли такой же баг в других местах?",
       "expected": {
         "mustDo": [
-          "Invoke mcp__tea-rags__find_similar with the chunk ID from bug-hunt result",
+          "Invoke mcp__tea-rags__find_similar seeded from the root-cause chunk ID (reuse the bug-hunt result id when held; prompt gives only file:line → one find_symbol to get that id is acceptable)",
           "Look for copy-paste occurrences of the same bug pattern",
           "Report any matches"
         ],

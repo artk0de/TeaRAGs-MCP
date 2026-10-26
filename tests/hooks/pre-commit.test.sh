@@ -61,6 +61,7 @@ fresh_repo() {
   # The hook runs this repo-relative script first; outside a merge it is a no-op.
   mkdir -p "$REPO/scripts/git"
   cp "$ROOT/scripts/git/repin-on-merge.sh" "$REPO/scripts/git/repin-on-merge.sh"
+  cp "$ROOT/scripts/git/merge-generated.sh" "$REPO/scripts/git/merge-generated.sh"
 }
 
 stage() { mkdir -p "$REPO/$(dirname "$1")"; printf '%s\n' "${2:-x}" > "$REPO/$1"; git -C "$REPO" add -- "$1"; }

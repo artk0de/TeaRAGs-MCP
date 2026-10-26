@@ -42,7 +42,7 @@
       "category": "preflight-skip",
       "audit_finding": "DSL absence handling",
       "prompt": "[subagent: task-agent] Я работаю в Ruby проекте через tea-rags. Prime digest показывает: всем git.chunk.* signals для Ruby стоит 'test: —' (прочерк). User просит surface tests-at-risk для измененных моделей. Что делаешь?",
-      "expected": "Step 0 preflight detects no DSL test chunks. Returns SKIP verdict with explicit reason (DSL TS-only currently). Does NOT silently fall back to testFile:only without disclosure. Does NOT generate fake test list.",
+      "expected": "Step 0 preflight detects no DSL test chunks. Returns SKIP verdict with the explicit reason block (no test chunks indexed; possible reasons: language without AST test chunking / .contextignore excludes tests / no tests) and a disclosed fallback. Does NOT silently fall back to testFile:only without disclosure. Does NOT generate fake test list.",
       "failure_mode": "Agent silently uses testFile:only fallback (loses granularity claim), or fabricates a 'no tests found' result without preflight"
     },
     {
@@ -98,7 +98,7 @@
       "category": "agentic-only-discipline",
       "audit_finding": "user-invocable: false enforcement",
       "prompt": "[subagent: user-facing] User в Claude Code набирает в чате: 'найди мне тесты, которые покрывают src/foo.ts'. Должен ли agent предложить /tests-as-context?",
-      "expected": "No — tests-as-context is user-invocable: false. Agent invokes appropriate user-facing skill (dinopowers:requesting-code-review or tea-rags:explore) which internally uses tests-as-context as enrichment. Slash-command surface stays clean.",
+      "expected": "No — tests-as-context is user-invocable: false (agentic-only building block consumed by dinopowers wrappers). The request is a point question about tests → handled through the user-facing tea-rags:explore route (or directly per the navigation guide): ONE hybrid_search with testFile: \"only\" and query = foo.ts's module / exported symbol names, no axis split, no Glob/Grep; findings reported to the user. Never suggest /tests-as-context or /dinopowers:requesting-code-review (wrong intent — no review request). Slash-command surface stays clean.",
       "failure_mode": "Agent surfaces tests-as-context as slash command suggestion, breaking the agentic-only contract"
     },
     {
@@ -106,8 +106,8 @@
       "category": "preflight-fallback",
       "audit_finding": "F2 fix — cold subagent without prime digest",
       "prompt": "[subagent: task-agent] Fresh subagent invoked by parent wrapper. Prime digest NOT in context. Caller wants tests-at-risk recipe. Что делаешь до запуска recipe call?",
-      "expected": "Step 0 falls through to probe call: semantic_search with filter must: chunkType=test, limit=1, metaOnly=true. Non-empty result → DSL present, proceed. Empty → SKIP verdict.",
-      "failure_mode": "Agent assumes DSL present and issues full recipe call, OR assumes absent and SKIPs without probe"
+      "expected": "Step 0 preflight without the digest: first read tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds (ReadMcpResourceTool) — test corpus present if >= 1 git.chunk.* row has numbers in the test >= column, absent if every git.chunk.* row shows —. ONLY if that resource is unreadable → ONE probe: semantic_search(chunkType: \"test\", language: <lang>, limit: 1, metaOnly: true) — >= 1 row = present, proceed to the recipe; 0 = SKIP verdict. Both with project + path addressing.",
+      "failure_mode": "Agent assumes DSL present and issues full recipe call, OR assumes absent and SKIPs without the thresholds read / probe, OR probes before trying the thresholds resource"
     },
     {
       "id": "T12",

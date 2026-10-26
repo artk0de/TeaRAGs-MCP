@@ -1,50 +1,62 @@
 # USAGE Pattern
 
-Caller / callee intents answered with `get_callers` / `get_callees` edge truth
-(actual call edges from the codegraph DuckDB) instead of content matching.
-Higher precision than `hybrid_search` for "who calls X" — no false hits on
-comments, strings, or same-named-but-unrelated symbols.
+**Codegraph off** (stated, or registry says off — SKILL.md "Codegraph
+availability") → `find_symbol` + iterative `hybrid_search` name-match (no edge
+truth — say so). Callers, copied, ≥ 2 calls:
+`hybrid_search(query="<X>", metaOnly=true)` → per caller hit
+`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels
+(`trace-pattern.md`). One call = fail. Path A→B = manual chain, "no static path
+tool". Never call/plan `get_callers` / `get_callees` / `trace_path`.
 
-## Step 1 — resolve the exact symbolId (MANDATORY)
+Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
+call edges), not content matching — no false hits on comments, strings,
+same-named symbols. "Every / all callers of X" (exhaustive) → Step 2's
+`get_callers`, THEN `hybrid_search metaOnly:true query=<name>` — it adds, never
+replaces: graph = resolved edges, hybrid = recall for calls the graph did not
+resolve. Report both, edges first.
 
-`get_callers` / `get_callees` match on an exact symbol id and fail silently
-(empty result) on a wrong one. Always resolve first:
+## Step 1 — resolve exact symbolId (MANDATORY)
 
-`find_symbol symbol=<name>` → pick the exact id. Convention: `Class#method`
-(instance), `Class.method` (static), `functionName` (top-level). A bare
-`find_symbol symbol=Foo` returns the class and all members — choose the precise
-member before calling get_callers/get_callees.
+`get_callers` / `get_callees` match exact id; wrong id → silent empty. Always
+resolve first: `find_symbol symbol=<name>` → pick exact id (`Class#method`
+instance, `Class.method` static, `functionName` top-level). Bare
+`find_symbol symbol=Foo` returns class + all members — choose precise member.
 
 ## Step 2 — route by direction
 
 - **"Who uses X?" / "who calls X?" / "callers of X"** →
-  `get_callers symbolId=<id>`. Returns the invoking symbols with
-  `call_expression` preview + `file:line`.
+  `get_callers symbolId=<id>` → invoking symbols + `call_expression` preview +
+  `file:line`.
 - **"What does X call?" / "callees of X" / "what does X use"** →
-  `get_callees symbolId=<id>`. Returns invoked symbols + `file:line`.
-- **"Who imports this file?" / "what does this file depend on?"** — the target
-  is a FILE, not a symbol: skip Step 1 and pass `relativePath=<path>`
-  (repo-relative) instead of `symbolId`. `get_callers` returns `importers[]`,
-  `get_callees` returns `imports[]`; each entry carries `importText` and
-  `callWeight` (resolved calls crossing the import, heaviest first; 0 = type /
-  constant / re-export only). An unknown path returns an empty list plus a
-  `message` — fix the path, don't report "nothing imports it".
+  `get_callees symbolId=<id>` → invoked symbols + `file:line`.
+- **"Who imports this file?" / "what does this file depend on?"** — target =
+  FILE: skip Step 1, pass `relativePath=<path>` (repo-relative) instead of
+  `symbolId`. `get_callers` → `importers[]`, `get_callees` → `imports[]`; each
+  with `importText` + `callWeight` (resolved calls across import, heaviest
+  first; 0 = type / constant / re-export only). Unknown path → empty list +
+  `message` — fix path, never report "nothing imports it". Codegraph off →
+  `hybrid_search metaOnly:true` on the module path / import string. User offers
+  `grep` / `rg` for importers → refuse, answer starts with this line:
 
-## Step 3 — multi-hop trace ("trace flow X → Y")
+  ```
+  Not grep: it matches import text only — misses re-exports and call weight. Importers via <get_callers(relativePath=<module>) | hybrid_search on the module path (codegraph off)>.
+  ```
 
-Iterative `get_callees` walk from X, **depth cap 3**, with a cycle guard (track
-visited symbol ids; never re-expand one). Stop on the first hop whose callee
-matches Y, or when depth is exhausted. Present the path:
-`X → A.run() → B.help() → Y`. If Y is never reached within depth 3, say so and
-show the frontier explored — do NOT silently widen the depth.
+## Step 3 — multi-hop (how X reaches Y)
+
+"How does a webhook reach the job queue?" asks for the full chain: endpoint
+symbol names known → `find_symbol` each; endpoints described in words →
+`semantic_search` for them, ids from its hits (a phrase is never a
+`find_symbol symbol=`). Then `trace_path from=<X> to=<Y>` — all paths, one call
+(per core routing "how does X reach Y / A→B"). `namesakes` in answer /
+`paths: []` with `namesakes` → disambiguate via `fromPath` / `toPath` (exact
+relativePath from prior result), not absence of path. Model hops carry `p`; path
+`minP` = weakest link — say so. Present `X → A.run() → B.help() → Y`. Genuinely
+no path → say so; never pad with content-search guesses.
 
 ## Output
 
-Caller/callee list with the `call_expression` preview and `file:line` refs.
-Quote the call site, don't dump the whole calling function.
+Caller/callee list with `call_expression` preview + `file:line`. Quote call
+site, don't dump calling function.
 
-This pattern WINS over the TRACE pattern for usage queries when codegraph is
-available — TRACE's `hybrid_search` / `imports[]` route is the fallback when the
-project has no codegraph index (prime shows no `codegraph.symbols`, so
-`get_callers` / `get_callees` are not registered, not returning empty). Check
-prime first; don't call an absent tool to discover it is missing.
+Codegraph on → this pattern WINS over TRACE for usage.

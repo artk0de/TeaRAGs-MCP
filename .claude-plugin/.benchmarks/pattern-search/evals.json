@@ -169,7 +169,7 @@
       "prompt": "После SEED перед EXPAND — что?",
       "expected": {
         "mustDo": [
-          "Post-search-validation (Rule 0): no-match detection + disambiguation"
+          "Post-search validation on the SEED results before EXPAND (tea-rags://guide/pagination, routed from core \"after any search\"): Disambiguation — top-10 split across 2+ unrelated directory groups, none > 70% → ask which area, re-SEED with pathPattern; No-Match Detection — score spread / lexical overlap / path clustering, 2 of 3 → warn, 3 of 3 → report no match instead of expanding noise"
         ]
       }
     }

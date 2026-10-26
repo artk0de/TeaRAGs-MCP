@@ -52,6 +52,9 @@ function fakeSession(onCall?: (args: Record<string, unknown>) => void): FakeSess
       onCall?.(args);
       return { content: [{ type: "text", text: `echo:${JSON.stringify(args)}` }] };
     },
+    readResource: async () => Promise.reject(new Error("call never reads resources")),
+    listResources: async () => [],
+    listResourceTemplates: async () => [],
     close: async () => {
       session.closed = true;
     },
