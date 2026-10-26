@@ -17,6 +17,7 @@ import {
 } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
+import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { createSearchSchemas } from "./schemas.js";
 
 type RerankParam = string | { custom: Record<string, number | undefined> } | undefined;
@@ -35,7 +36,34 @@ interface SearchToolDef {
    * first, whose deferred schema costs it a whole turn.
    */
   alwaysLoad?: true;
+  /** Rows the response budget guard trims (bd tea-rags-mcp-c01gm): always the `results` table. */
+  responseRows: ResponseRowsPolicy;
 }
+
+const SEARCH_NARROWING = ["limit", "pathPattern", "fields", "metaOnly"] as const;
+
+/** A ranked search: the omitted tail is the next `offset`. */
+const PAGED_SEARCH_ROWS: ResponseRowsPolicy = {
+  rows: ["results"],
+  continuation: offsetContinuation(),
+  narrowing: SEARCH_NARROWING,
+};
+
+/**
+ * find_symbol: a `symbols` batch continues with the addresses whose rows were
+ * cut (offset does not page a batch); every other mode pages by `offset`.
+ */
+const FIND_SYMBOL_ROWS: ResponseRowsPolicy = {
+  rows: ["results"],
+  continuation: (args, cut) => {
+    if (!Array.isArray(args.symbols)) return offsetContinuation()(args, cut);
+    const requestColumn = cut.columns?.indexOf("request") ?? -1;
+    if (requestColumn < 0) return undefined;
+    const symbols = [...new Set(cut.omittedRows.map((row) => (row as unknown[])[requestColumn]))];
+    return { ...args, symbols };
+  },
+  narrowing: SEARCH_NARROWING,
+};
 
 /** Claude Code's per-tool `_meta` key exempting a tool from deferred loading. */
 const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
@@ -80,6 +108,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "SemanticSearchSchema",
+    responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, { rerank, ...rest }) =>
       app.semanticSearch({
         ...rest,
@@ -96,6 +125,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "HybridSearchSchema",
+    responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, { rerank, ...rest }) =>
       app.hybridSearch({
         ...rest,
@@ -113,6 +143,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "RankChunksSchema",
+    responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, { rerank, ...rest }) =>
       app.rankChunks({
         ...rest,
@@ -133,6 +164,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "outlier / novelty / refactor-candidate detection.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
+    responseRows: { rows: ["results"], narrowing: SEARCH_NARROWING },
     invoke: async (app, { rerank, ...rest }) =>
       app.findSimilar({
         ...rest,
@@ -162,6 +194,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "definition — no second semantic_search needed.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSymbolSchema",
+    responseRows: FIND_SYMBOL_ROWS,
     invoke: async (app, { rerank, ...rest }) =>
       app.findSymbol({
         ...rest,
@@ -188,6 +221,7 @@ export function registerSearchTools(
         outputSchema: SearchResultOutputSchema,
         annotations: { readOnlyHint: true },
         ...(tool.alwaysLoad && { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
+        responseRows: tool.responseRows,
       },
       async (request: unknown) => {
         // `includeImports` shapes the answer, not the search: the App never sees it.

@@ -14,6 +14,7 @@ import type { ServerNotification, ServerRequest, ToolAnnotations } from "@modelc
 
 import { TeaRagsError, UnknownError } from "../../public/index.js";
 import type { McpToolResult } from "../format.js";
+import { enforceResponseBudget, type ResponseRowsPolicy } from "../response-budget.js";
 
 type McpExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -135,6 +136,28 @@ interface SafeToolConfig<
   outputSchema?: OutputArgs;
   annotations?: ToolAnnotations;
   _meta?: Record<string, unknown>;
+  /** Row declaration the response budget guard trims by; absent = answer passes unguarded. Never reaches the SDK. */
+  responseRows?: ResponseRowsPolicy;
+}
+
+type McpHandler = (args: unknown, extra: McpExtra) => Promise<McpToolResult>;
+
+/**
+ * Split the SDK config from the tool's response budget declaration and put the
+ * guard (bd tea-rags-mcp-c01gm) around the handler — inside the error
+ * middleware, so an error answer is never trimmed.
+ */
+function withResponseBudget<C extends { responseRows?: ResponseRowsPolicy }>(
+  name: string,
+  config: C,
+  handler: McpHandler,
+): { sdkConfig: Omit<C, "responseRows">; handler: McpHandler } {
+  const { responseRows, ...sdkConfig } = config;
+  if (!responseRows) return { sdkConfig, handler };
+  return {
+    sdkConfig,
+    handler: async (args, extra) => enforceResponseBudget(await handler(args, extra), name, args, responseRows),
+  };
 }
 
 /**
@@ -155,8 +178,9 @@ export function registerToolSafe<
   config: SafeToolConfig<InputArgs, OutputArgs>,
   handler: ToolCallback<InputArgs>,
 ): void {
-  const wrapped = errorHandlerMiddleware(handler as (...args: [unknown, McpExtra]) => Promise<McpToolResult>);
-  server.registerTool(name, config, wrapped as unknown as ToolCallback<InputArgs>);
+  const guarded = withResponseBudget(name, config, handler as McpHandler);
+  const wrapped = errorHandlerMiddleware(guarded.handler);
+  server.registerTool(name, guarded.sdkConfig, wrapped as unknown as ToolCallback<InputArgs>);
 }
 
 /** Signature of the register function returned by createRegisterTool. */
@@ -176,10 +200,8 @@ export function createRegisterTool(healthProbes?: HealthProbes) {
     config: SafeToolConfig<InputArgs, OutputArgs>,
     handler: ToolCallback<InputArgs>,
   ): void => {
-    const wrapped = errorHandlerMiddleware(
-      handler as (...args: [unknown, McpExtra]) => Promise<McpToolResult>,
-      healthProbes,
-    );
-    server.registerTool(name, config, wrapped as unknown as ToolCallback<InputArgs>);
+    const guarded = withResponseBudget(name, config, handler as McpHandler);
+    const wrapped = errorHandlerMiddleware(guarded.handler, healthProbes);
+    server.registerTool(name, guarded.sdkConfig, wrapped as unknown as ToolCallback<InputArgs>);
   };
 }
