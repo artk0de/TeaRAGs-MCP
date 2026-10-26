@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../public/dto/explore.js";
 import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
+import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
 import {
   appendAutoUpdateHint,
   compactWorkingTreeMarker,
@@ -39,11 +40,15 @@ interface SearchToolDef {
 /** Claude Code's per-tool `_meta` key exempting a tool from deferred loading. */
 const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 
-/** Format ExploreResponse as structuredContent for outputSchema-enabled tools. */
-function formatStructuredResult(response: ExploreResponse): McpToolResult {
+/**
+ * Format ExploreResponse as structuredContent for outputSchema-enabled tools.
+ * Rows are compacted (imports counted, floats at 2 significant digits) before
+ * they are tabulated — after the App ranked them, so order and scores hold.
+ */
+function formatStructuredResult(response: ExploreResponse, compaction: SearchResultCompaction): McpToolResult {
   return {
     structuredContent: {
-      results: tabulateRecords(response.results),
+      results: tabulateRecords(compactSearchResults(response.results, compaction)),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.driftWarning && { driftWarning: response.driftWarning }),
@@ -185,7 +190,11 @@ export function registerSearchTools(
         ...(tool.alwaysLoad && { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
       },
       async (request: unknown) => {
-        const result = formatStructuredResult(await tool.invoke(app, request as SearchRequest));
+        // `includeImports` shapes the answer, not the search: the App never sees it.
+        const { includeImports, ...search } = request as SearchRequest;
+        const result = formatStructuredResult(await tool.invoke(app, search), {
+          includeImports: includeImports === true,
+        });
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;
         return appendAutoUpdateHint(result, hint);
       },

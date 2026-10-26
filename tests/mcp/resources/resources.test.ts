@@ -126,6 +126,14 @@ describe("Resource builders", () => {
       expect(md).toContain("null = absent");
     });
 
+    // bd tea-rags-mcp-e6es3: the compaction a search row passes through is stated once, here.
+    it("states search-row compaction: imports count, includeImports, all-null columns, 2 significant digits", () => {
+      const md = buildOverview();
+      expect(md).toContain("`imports` = count (includeImports=true → lists)");
+      expect(md).toContain("all-null columns omitted");
+      expect(md).toContain("floats at 2 significant digits");
+    });
+
     it("says a single search result comes as a plain record, not a table", () => {
       expect(buildOverview()).toMatch(/one\s+result or none: a plain list of records/);
     });

@@ -36,6 +36,23 @@ describe("toColumns", () => {
     });
   });
 
+  // bd tea-rags-mcp-e6es3: null = absent, so a column absent from every row is
+  // pure header cost — it goes; a column some row fills stays.
+  it("omits a column whose every row is null or absent, and keeps a mixed one", () => {
+    const table = toColumns([
+      { id: "a", rankingOverlay: undefined, symbolId: "A#run", note: null },
+      { id: "b", rankingOverlay: undefined, note: null },
+    ]);
+
+    expect(table).toEqual({
+      columns: ["id", "symbolId"],
+      rows: [
+        ["a", "A#run"],
+        ["b", null],
+      ],
+    });
+  });
+
   it("keeps arrays as cell values and leaves objects inside arrays unflattened", () => {
     const table = toColumns([{ taskIds: ["T-1"], headingPath: [{ depth: 2, text: "Intro" }] }]);
 
