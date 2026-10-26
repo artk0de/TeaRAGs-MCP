@@ -17,6 +17,9 @@ import type { SymbolSearchStrategy } from "./strategies/symbol.js";
 import type { ExploreContext, ExploreResult } from "./strategies/types.js";
 import { relativePathOf } from "./working-tree/index.js";
 
+/** The next step an unknown address calls for — shared by a batch miss and a single-symbol `empty`. */
+export const UNKNOWN_SYMBOL_HINT = "retry a partial address (Class or bare name), or hybrid_search";
+
 /** Matches one address may answer with; more is a miss asking to qualify it. */
 const MAX_MATCHES_PER_ADDRESS = 5;
 
@@ -108,7 +111,7 @@ export class SymbolBatchDrill {
     }
     return {
       request: address,
-      message: "unknown symbol — retry a partial address (Class or bare name), or hybrid_search",
+      message: `unknown symbol — ${UNKNOWN_SYMBOL_HINT}`,
     };
   }
 }
@@ -125,7 +128,7 @@ function firstWarning(answers: readonly AddressAnswer[]): { codegraphWarning?: s
 }
 
 /** `Foo.bar` ↔ `Foo#bar` on the last separator; undefined for a bare name or a `::` tail. */
-function swapSeparator(address: string): string | undefined {
+export function swapSeparator(address: string): string | undefined {
   const match = /^(.+)([#.])([^#.:]+)$/.exec(address);
   if (!match) return undefined;
   const [, owner, separator, member] = match;

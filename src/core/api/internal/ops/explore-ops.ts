@@ -44,6 +44,7 @@ import {
   IndexMetricsQuery,
   SimilarSearchStrategy,
   SymbolBatchDrill,
+  SymbolMissExplainer,
   SymbolSearchStrategy,
   UnknownFilterPresetError,
   type BaseExploreStrategy,
@@ -410,13 +411,34 @@ export class ExploreOps {
     // A directory path is answered by its listing (N2), an unknown path by the
     // nearest indexed paths (N6 `unknownPath`).
     const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
-    const empty = strategy instanceof FileOutlineStrategy ? strategy.emptyAnswer : undefined;
+    const empty =
+      strategy instanceof FileOutlineStrategy
+        ? strategy.emptyAnswer
+        : response.results.length === 0 && request.symbol
+          ? await this.explainSymbolMiss(request, request.symbol, ctx, workingTreeView)
+          : undefined;
     return {
       ...response,
       ...(codegraphWarning ? { codegraphWarning } : {}),
       ...(directory ? { directory } : {}),
       ...(empty ? { empty } : {}),
     };
+  }
+
+  /** N6 `unknownSymbol`: why a single `symbol` answered nothing; a failed diagnosis leaves the answer unexplained. */
+  private async explainSymbolMiss(
+    request: FindSymbolRequest,
+    symbol: string,
+    ctx: ExploreContext,
+    pendingView: Promise<WorkingTreeView | undefined> | undefined,
+  ): Promise<EmptyAnswerExplanation | undefined> {
+    try {
+      const view = await pendingView;
+      const explainer = new SymbolMissExplainer((candidate) => this.buildSymbolSearchStrategy(request, candidate));
+      return await explainer.explain(symbol, view ? { ...ctx, workingTreeView: view } : ctx);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
