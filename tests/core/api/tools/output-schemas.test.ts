@@ -372,3 +372,28 @@ describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () 
     expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
   });
 });
+
+describe("SearchResultOutputSchema — find_symbol batch, directory and empty answers (N1, N2)", () => {
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("validates the miss list, the directory frame and the empty-answer explanation", () => {
+    const missing = [
+      { request: "Nope#x", message: "unknown symbol" },
+      { request: "gone", message: "deleted", treeState: "deleted" },
+    ];
+    const directory = {
+      kind: "directory",
+      dir: "src/a",
+      subdirs: [{ dir: "src/a/b", fileCount: 2 }],
+      total: 3,
+      truncated: false,
+    };
+    const empty = { reason: "unknownPath", message: "No indexed file", suggestions: ["src/a/x.ts"] };
+
+    expect(schema.parse({ results: EMPTY_TABLE, missing, directory, empty })).toMatchObject({
+      missing,
+      directory,
+      empty,
+    });
+  });
+});

@@ -146,7 +146,22 @@ export class ExploreFacade {
 // Synchronous input validators — the only logic allowed in a facade file.
 // ---------------------------------------------------------------------------
 
+/** Addresses one find_symbol batch may carry. */
+const MAX_BATCH_SYMBOLS = 20;
+
 function validateFindSymbolRequest(request: FindSymbolRequest): void {
+  if (request.symbols !== undefined) {
+    if (request.symbol || request.relativePath) {
+      throw new InvalidParameterError("symbols", "symbols is mutually exclusive with symbol and relativePath");
+    }
+    if (request.symbols.length === 0 || request.symbols.length > MAX_BATCH_SYMBOLS) {
+      throw new InvalidParameterError(
+        "symbols",
+        `takes 1..${MAX_BATCH_SYMBOLS} addresses, got ${request.symbols.length}`,
+      );
+    }
+    return;
+  }
   if (request.symbol && request.relativePath) {
     throw new InvalidParameterError("symbol", "symbol and relativePath are mutually exclusive");
   }

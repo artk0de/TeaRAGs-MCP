@@ -2,10 +2,12 @@
  * Explore domain DTOs — search request/response types.
  */
 
+import type { DirectoryOutline } from "../../../contracts/types/directory-outline.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
 import type { SuggestedToolCall } from "../../../contracts/types/suggested-tool-call.js";
+import type { SymbolBatchMiss } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { SearchConfidence } from "../../../domains/explore/index.js";
@@ -171,9 +173,17 @@ export interface FindSimilarRequest extends CollectionRef {
  * When relativePath is provided instead of symbol, returns file-level outline.
  */
 export interface FindSymbolRequest extends CollectionRef {
-  /** Symbol name to find. Mutually exclusive with relativePath. */
+  /** Symbol name to find. Mutually exclusive with relativePath and symbols. */
   symbol?: string;
-  /** File path for file-level lookup. Mutually exclusive with symbol. */
+  /**
+   * 1..20 addresses answered in one call (batch drill), each exactly as a
+   * single `symbol` would be. Mutually exclusive with symbol and relativePath.
+   */
+  symbols?: string[];
+  /**
+   * File path for file-level lookup; a directory path lists that directory.
+   * Mutually exclusive with symbol and symbols.
+   */
   relativePath?: string;
   language?: string;
   pathPattern?: string;
@@ -285,6 +295,21 @@ export interface ExploreResponse {
    * answer.
    */
   empty?: EmptyAnswerExplanation;
+  /**
+   * find_symbol `symbols` batch only: the addresses no symbol answered. Kept
+   * beside `results`, not in it — a miss has no id, payload or score, so as a
+   * row it would put empty columns in every answered row's table. Absent
+   * outside batch mode.
+   */
+  missing?: SymbolBatchMiss[];
+  /**
+   * find_symbol only, when `relativePath` names a directory of indexed files:
+   * what the `results` rows (one per file: relativePath, language, top-level
+   * symbols) are a listing of, and the subdirectories one level down. The
+   * files stay `results` so the usual table, `treeState` stamping and
+   * working-tree marker apply to them unchanged.
+   */
+  directory?: DirectoryOutline;
   /**
    * Ready-to-run expansion calls from the top result files (N5): co-change
    * partners and importers. Present on hybrid_search / semantic_search when

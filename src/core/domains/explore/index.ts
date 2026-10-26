@@ -29,6 +29,7 @@ export type { RerankPreset } from "./rerank/presets/index.js";
 export { CodeChunkGrouper, DocChunkGrouper } from "./chunk-grouping/index.js";
 export type { ScrollChunk } from "./chunk-grouping/index.js";
 export { IndexMetricsQuery } from "./queries/index-metrics.js";
+export { SymbolBatchDrill, type SymbolBatchAnswer, type SymbolBatchRow } from "./symbol-batch.js";
 export {
   createExploreStrategy,
   HybridSearchStrategy,

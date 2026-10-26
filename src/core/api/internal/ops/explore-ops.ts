@@ -42,6 +42,7 @@ import {
   FileOutlineStrategy,
   IndexMetricsQuery,
   SimilarSearchStrategy,
+  SymbolBatchDrill,
   SymbolSearchStrategy,
   UnknownFilterPresetError,
   type BaseExploreStrategy,
@@ -393,8 +394,9 @@ export class ExploreOps {
       request.project,
       { nameOnly: true },
     );
-    const strategy = this.buildFindSymbolStrategy(request);
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
+    if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, path, workingTreeView);
+    const strategy = this.buildFindSymbolStrategy(request);
     const response = await this.executeExplore(strategy, ctx, path, {
       fields: request.fields,
       workingTreeView,
@@ -403,7 +405,60 @@ export class ExploreOps {
     // codegraph hop (codegraph unavailable from this process) — attach it so the
     // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
     const codegraphWarning = strategy instanceof SymbolSearchStrategy ? strategy.codegraphWarning : undefined;
-    return codegraphWarning ? { ...response, codegraphWarning } : response;
+    // A directory path is answered by its listing (N2), an unknown path by the
+    // nearest indexed paths (N6 `unknownPath`).
+    const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
+    const empty = strategy instanceof FileOutlineStrategy ? strategy.emptyAnswer : undefined;
+    return {
+      ...response,
+      ...(codegraphWarning ? { codegraphWarning } : {}),
+      ...(directory ? { directory } : {}),
+      ...(empty ? { empty } : {}),
+    };
+  }
+
+  /**
+   * find_symbol `symbols` (N1): every address through its own symbol strategy
+   * on the SAME context — one working-tree view, so one marker carries the
+   * floors all of them claimed. Rows carry the lean payload unless `fields` or
+   * `rerank` asks for more; the request (and a separator swap) rides each row.
+   */
+  private async findSymbolBatch(
+    request: FindSymbolRequest,
+    symbols: readonly string[],
+    ctx: ExploreContext,
+    path: string | undefined,
+    pendingView: Promise<WorkingTreeView | undefined> | undefined,
+  ): Promise<ExploreResponse> {
+    await this.ensureStats(ctx.collectionName);
+    const workingTreeView = await pendingView;
+    const drill = new SymbolBatchDrill((symbol) => this.buildSymbolSearchStrategy(request, symbol));
+    const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const driftWarning = await this.checkDrift(path, ctx.collectionName);
+    const leanFields = request.metaOnly ? BATCH_LEAN_FIELDS.filter((f) => f !== "content") : BATCH_LEAN_FIELDS;
+    const fields = request.fields ?? (request.rerank ? undefined : leanFields);
+    const projection = projectSearchResultPayloads(
+      answer.rows.map(({ result }) => ({
+        id: result.id ?? "",
+        score: result.score,
+        payload: result.payload ? stripInternalFields(result.payload) : result.payload,
+        rankingOverlay: result.rankingOverlay,
+        ...(result.treeState ? { treeState: result.treeState } : {}),
+      })),
+      fields,
+    );
+    const results = projection.results.map((row, i) => {
+      const { request: address, resolvedAs } = answer.rows[i];
+      return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...row.payload } };
+    });
+    return {
+      results,
+      driftWarning,
+      missing: answer.missing,
+      ...(request.fields && projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
+      ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
+      ...(workingTreeView ? { workingTree: finalizeWorkingTreeMarker(workingTreeView) } : {}),
+    };
   }
 
   /**
@@ -673,17 +728,18 @@ export class ExploreOps {
         this.visibilityResolver,
       );
     }
+    return this.buildSymbolSearchStrategy(request, request.symbol as string);
+  }
+
+  /** The symbol-mode strategy for one address — single `symbol` and every batch address alike. */
+  private buildSymbolSearchStrategy(request: FindSymbolRequest, symbol: string): SymbolSearchStrategy {
     return new SymbolSearchStrategy(
       this.qdrant,
       this.reranker,
       this.payloadSignals,
       this.essentialKeys,
       this.registry,
-      {
-        symbol: request.symbol as string,
-        language: request.language,
-        pathPattern: request.pathPattern,
-      },
+      { symbol, language: request.language, pathPattern: request.pathPattern },
       this.chunkResolver,
       this.visibilityResolver,
     );
@@ -1164,3 +1220,6 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
 function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
   return { ...view.marker, floors: [...view.marker.floors] };
 }
+
+/** The payload a find_symbol batch row carries unless `fields` or `rerank` asks for more (N1). */
+const BATCH_LEAN_FIELDS = ["symbolId", "relativePath", "startLine", "endLine", "content"];

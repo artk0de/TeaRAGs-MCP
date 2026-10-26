@@ -457,7 +457,20 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
       .describe(
         "Symbol or symbolId: Class#method (instance), Class.method (static), fn. Partial ok. Excludes relativePath.",
       ),
-    relativePath: z.string().optional().describe("File path → outline (code) or heading TOC (docs). Excludes symbol."),
+    symbols: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "1-20 addresses, one call, each as `symbol`. Rows carry request; misses → missing. Lean payload unless fields/rerank. Excludes symbol, relativePath.",
+      ),
+    relativePath: z
+      .string()
+      .optional()
+      .describe(
+        "File → outline (code) or heading TOC (docs). Directory → its files + top-level symbols, subdirs. Excludes symbol.",
+      ),
     ...collectionPathFields(),
     language: z
       .string()
