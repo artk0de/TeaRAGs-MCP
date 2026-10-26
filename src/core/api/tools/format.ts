@@ -12,9 +12,74 @@ export interface McpToolResult {
   isError?: boolean;
 }
 
-/** Compact JSON; every array of two or more records goes out as a ColumnTable. */
+/**
+ * Compact JSON; every array of two or more records goes out as a ColumnTable,
+ * and a clean `workingTree` marker goes out compact.
+ */
 export function formatMcpResponse(data: unknown): McpToolResult {
-  return { content: [{ type: "text", text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(data))) }] };
+  return {
+    content: [
+      { type: "text", text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(withCompactWorkingTree(data)))) },
+    ],
+  };
+}
+
+/**
+ * The marker of a clean answer on the MCP output (bd tea-rags-mcp-45kbu): the
+ * tree, its alias, and `changedFiles: 0` — the agent rules read that zero as
+ * "measured clean", so it stays explicit.
+ */
+export interface CompactWorkingTreeMarker {
+  tree: string;
+  project?: string;
+  changedFiles: 0;
+}
+
+/**
+ * True when the answer's tree matches its index and no layer fell back: no
+ * changed or deleted file, and none of the qualifiers that tell the reader to
+ * act is present.
+ */
+function isCleanWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
+  return (
+    marker.changedFiles === 0 &&
+    marker.deletedFiles === 0 &&
+    marker.degraded === undefined &&
+    marker.pendingFiles === undefined &&
+    marker.indexOnlyFiles === undefined &&
+    marker.unparsed === undefined &&
+    marker.treeGraphUnavailable === undefined &&
+    marker.denseUnavailable === undefined &&
+    marker.gitUnavailable === undefined
+  );
+}
+
+/**
+ * The marker as the MCP output carries it: compact when clean, else the full
+ * marker unchanged. The domain marker is never mutated — internal consumers
+ * keep every field; only the wire form is shortened.
+ */
+export function compactWorkingTreeMarker(marker: WorkingTreeMarker): WorkingTreeMarker | CompactWorkingTreeMarker {
+  if (!isCleanWorkingTreeMarker(marker)) return marker;
+  return { tree: marker.tree, ...(marker.project !== undefined && { project: marker.project }), changedFiles: 0 };
+}
+
+/** A top-level `workingTree` marker of an answer DTO, compacted; anything else as is. */
+function withCompactWorkingTree(data: unknown): unknown {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return data;
+  const { workingTree } = data as { workingTree?: unknown };
+  if (!isWorkingTreeMarker(workingTree)) return data;
+  return { ...data, workingTree: compactWorkingTreeMarker(workingTree) };
+}
+
+function isWorkingTreeMarker(value: unknown): value is WorkingTreeMarker {
+  if (typeof value !== "object" || value === null) return false;
+  const marker = value as Partial<WorkingTreeMarker>;
+  return (
+    typeof marker.tree === "string" &&
+    typeof marker.changedFiles === "number" &&
+    typeof marker.deletedFiles === "number"
+  );
 }
 
 export function formatMcpText(text: string): McpToolResult {
@@ -135,6 +200,8 @@ export function appendDriftWarning(result: McpToolResult, warning: string | null
  * the text-output tools; structured tools carry the object itself.
  */
 export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
+  const project = marker.project ? ` · project ${marker.project}` : "";
+  if (isCleanWorkingTreeMarker(marker)) return `workingTree: ${marker.tree}${project} · changed 0`;
   const sha = (commit: string | null): string => (commit ? commit.slice(0, 7) : "none");
   const floors = marker.floors.length > 0 ? marker.floors.join(",") : "none";
   const treeGraph = marker.treeGraphUnavailable ? ` · tree graph unavailable: ${marker.treeGraphUnavailable}` : "";
@@ -145,7 +212,6 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
     ...(marker.pendingFiles ? [`${marker.pendingFiles} pending`] : []),
   ];
   const changedFromIndex = fromIndex.length > 0 ? ` (${fromIndex.join(", ")})` : "";
-  const project = marker.project ? ` · project ${marker.project}` : "";
   const line =
     `workingTree: ${marker.tree}${project} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
     ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}${git}`;

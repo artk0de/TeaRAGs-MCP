@@ -17,7 +17,8 @@ describe("search_code — workingTree line", () => {
     deletedFiles: 0,
     floors: [],
   };
-  const line = "workingTree: /repo/wt · index @0123456 · tree @0123456 · changed 0 · deleted 0 · floors none";
+  // Clean tree → compact line (bd tea-rags-mcp-45kbu); a changed tree keeps the full line.
+  const line = "workingTree: /repo/wt · changed 0";
 
   const invoke = async (response: ExploreResponse): Promise<string> => {
     let handler: ((args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>) | undefined;

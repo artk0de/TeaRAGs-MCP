@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
+import { compactWorkingTreeMarker } from "../../../../src/core/api/tools/format.js";
 import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
 import { CodeChunkGrouper } from "../../../../src/core/domains/explore/chunk-grouping/code.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
@@ -258,6 +259,27 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
 
     expect(schema.parse({ results: EMPTY_TABLE, workingTree: measured }).workingTree).toEqual(measured);
     expect(schema.parse({ results: EMPTY_TABLE, workingTree: degraded }).workingTree).toEqual(degraded);
+  });
+
+  // bd tea-rags-mcp-45kbu: a clean answer's marker is compacted at the MCP
+  // boundary; the schema the SDK validates against must accept that form.
+  it("validates the compact marker of a clean answer", () => {
+    const compact = compactWorkingTreeMarker({
+      tree: "/repo/wt",
+      indexedCommit: "a".repeat(40),
+      treeCommit: "a".repeat(40),
+      indexedDirty: false,
+      changedFiles: 0,
+      deletedFiles: 0,
+      floors: [],
+      project: "p",
+    });
+
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compact }).workingTree).toEqual({
+      tree: "/repo/wt",
+      project: "p",
+      changedFiles: 0,
+    });
   });
 });
 

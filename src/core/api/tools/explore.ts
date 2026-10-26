@@ -7,7 +7,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../public/dto/explore.js";
 import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
-import { appendAutoUpdateHint, formatDenseUnavailable, sanitizeRerank, type McpToolResult } from "./format.js";
+import {
+  appendAutoUpdateHint,
+  compactWorkingTreeMarker,
+  formatDenseUnavailable,
+  sanitizeRerank,
+  type McpToolResult,
+} from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
 import { createSearchSchemas } from "./schemas.js";
@@ -22,7 +28,16 @@ interface SearchToolDef {
   description: string;
   schemaKey: keyof SearchSchemas;
   invoke: (app: App, request: SearchRequest) => Promise<ExploreResponse>;
+  /**
+   * Ask Claude Code to load this tool's schema upfront instead of deferring it
+   * behind ToolSearch (bd tea-rags-mcp-45kbu) — for the tools an agent calls
+   * first, whose deferred schema costs it a whole turn.
+   */
+  alwaysLoad?: true;
 }
+
+/** Claude Code's per-tool `_meta` key exempting a tool from deferred loading. */
+const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 
 /** Format ExploreResponse as structuredContent for outputSchema-enabled tools. */
 function formatStructuredResult(response: ExploreResponse): McpToolResult {
@@ -35,7 +50,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
       ...(response.presetFilterNotice && { presetFilterNotice: response.presetFilterNotice }),
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
-      ...(response.workingTree && { workingTree: response.workingTree }),
+      ...(response.workingTree && { workingTree: compactWorkingTreeMarker(response.workingTree) }),
       ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
       ...(response.next && { next: response.next }),
       ...(response.empty && { empty: response.empty }),
@@ -69,6 +84,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
   {
     name: "hybrid_search",
     title: "Hybrid Search",
+    alwaysLoad: true,
     description:
       "Semantic + BM25 keyword search. Use when query has exact symbols, identifiers, " +
       "or markers (TODO, FIXME, specific names). Collection must be created enableHybrid=true.\n\n" +
@@ -121,6 +137,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
   {
     name: "find_symbol",
     title: "Find Symbol",
+    alwaysLoad: true,
     description:
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
       "symbol mode: function/method → merged full body; class/module → OUTLINE only " +
@@ -164,6 +181,7 @@ export function registerSearchTools(
         inputSchema: searchSchemas[tool.schemaKey],
         outputSchema: SearchResultOutputSchema,
         annotations: { readOnlyHint: true },
+        ...(tool.alwaysLoad && { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
       },
       async (request: unknown) => {
         const result = formatStructuredResult(await tool.invoke(app, request as SearchRequest));
