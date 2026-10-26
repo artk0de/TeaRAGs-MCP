@@ -22,9 +22,9 @@ Addressing + lag rules: core rules (always on). Wrappers follow, never restate.
   `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`); main session in
   the alias's own checkout → incremental `index_codebase(project=)` NOW, no
-  consent. Drift `Run:` with `--force` adds ask the user: run <Run: line>?`
-  beside that incremental call — never instead of it; reads continue in
-  tea-rags.
+  consent. Drift `Run:` with `--force` adds ONE line ask the user: run <Run:
+  line>? — --force not run; reads continue meanwhile` beside that incremental
+  call — never instead of it, never "won't proceed".
 - **Lag ≠ unusable** — never licence for Bash `cat`/`sed`/`grep`/`rg` or `Read`
   over code (→ guide/freshness "Lag never licenses leaving tea-rags").
 - **No worktree clone** — overlay reads any delta; `pendingFiles` /

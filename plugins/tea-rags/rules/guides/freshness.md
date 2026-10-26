@@ -76,12 +76,13 @@ report to the parent. Main session: (2) linked worktree → no reindex; own
 checkout behind (`changedFiles` > 0, stale banner, unindexed edits, or the
 session already knows the index is behind) → incremental `index_codebase` first,
 no consent, even when no marker is in hand. (3) Drift `Run:` with `--force*`,
-any `changedFiles` (0 included) → its own question
-`AskUserQuestion: run <Run: line>?` (never folded into another question, never
-awaited); print `--force not run; reads continue`, then the next read. Asked
-"run --force?" → answer no, not without consent; ask; keep working. A loaded
-skill's steps run in their order — lag never moves a `find_symbol` ahead of a
-skill's first step. Full protocol: "Lag never licenses leaving tea-rags" below.
+any `changedFiles` (0 included) → its own question ONE line
+`AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`
+(never folded into another question, never awaited, never "won't proceed"), then
+the next read. Asked "run --force?" → answer no, not without consent; ask; keep
+working. A loaded skill's steps run in their order — lag never moves a
+`find_symbol` ahead of a skill's first step. Full protocol: "Lag never licenses
+leaving tea-rags" below.
 
 **`treeState: "modified" | "deleted"`** on a row = index copy of a file your
 tree changed or deleted, served only when no tree floor covered it (e.g.
