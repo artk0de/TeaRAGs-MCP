@@ -6,7 +6,10 @@
  * dwarf the findings. This view groups violations per detector (each group
  * tabulates with only its own columns), caps every evidence array, lifts a
  * group-wide drill-down hint out of the rows, reduces the explained pairs to a
- * count, and answers one `next` call per group whose evidence it cut.
+ * count, and answers one `next` call per group whose evidence it cut. The
+ * summary's blocks and the root causes get the same cap (bd
+ * tea-rags-mcp-q1g6s.1); the `detectors` selector scopes the detector-owned
+ * summary blocks and root causes with the groups.
  *
  * Pure: the internal {@link GetArchitectureReportResponse} is never mutated —
  * review_changes, restructure and the violation delta read it flat.
@@ -16,6 +19,7 @@ import type { SuggestedToolCall } from "../../../../contracts/types/suggested-to
 import type { WorkingTreeMarker } from "../../../../contracts/types/working-tree.js";
 import { toolCallAddressFromWorkingTree } from "../../../../domains/explore/index.js";
 import {
+  ARCHITECTURE_REPORT_DETECTORS,
   ARCHITECTURE_REPORT_EVIDENCE_LIMIT,
   type ArchitectureReportDetector,
   type ArchitectureReportEvidenceLimit,
@@ -42,6 +46,10 @@ const ADDRESS_KEYS = new Set(["project", "collection", "path"]);
 const VIEW_KEYS = new Set(["evidenceLimit", "detectors", "includeExplainedPairs"]);
 /** Evidence objects that are a ready call's arguments — cutting one would make the call lie. */
 const CALL_ARGUMENT_KEYS = new Set(["drillDown"]);
+/** Summary blocks a detector owns — scoped by `detectors`, drilled through it; the rest are graph-wide. */
+const DETECTOR_KEYS: ReadonlySet<string> = new Set(ARCHITECTURE_REPORT_DETECTORS);
+/** Summary blocks kept whole: `impactTiers.notApplicable.detectors` is a detector set, not evidence. */
+const WHOLE_SUMMARY_KEYS = new Set(["impactTiers"]);
 
 export function architectureReportViewOf(
   request: GetArchitectureReportRequest,
@@ -65,14 +73,16 @@ export function presentArchitectureReport(
   view: ArchitectureReportView,
   marker: WorkingTreeMarker | undefined,
 ): GetArchitectureReportToolResponse {
-  const { violations, summary, ...rest } = report;
+  const { violations, summary, rootCauses, ...rest } = report;
   const limit = view.evidenceLimit === "all" ? undefined : view.evidenceLimit;
+  const selected = (detector: string): boolean =>
+    !view.detectors || view.detectors.includes(detector as ArchitectureReportDetector);
   const groups: Partial<Record<ArchitectureReportDetector, ArchitectureViolation[]>> = {};
   const hints: Partial<Record<ArchitectureReportDetector, string>> = {};
-  const trimmedDetectors: ArchitectureReportDetector[] = [];
+  const trimmedDetectors = new Set<ArchitectureReportDetector>();
 
   for (const [detector, rows] of groupByDetector(violations)) {
-    if (view.detectors && !view.detectors.includes(detector)) continue;
+    if (!selected(detector)) continue;
     let trimmed = false;
     const presented = rows.map((violation) => {
       const { detector: _key, ...row } = violation as ArchitectureViolation & Record<string, unknown>;
@@ -87,22 +97,58 @@ export function presentArchitectureReport(
       presented.forEach(dropDrillDownHint);
     }
     groups[detector] = presented as unknown as ArchitectureViolation[];
-    if (trimmed) trimmedDetectors.push(detector);
+    if (trimmed) trimmedDetectors.add(detector);
   }
 
+  const presentedRootCauses = rootCauses
+    .filter((rootCause) => selected(rootCause.detector))
+    .map((rootCause) => {
+      if (limit === undefined) return rootCause;
+      const cut = trimEvidence(rootCause, limit, true);
+      if (cut.trimmed) trimmedDetectors.add(rootCause.detector);
+      return cut.value as typeof rootCause;
+    });
+
   const { explainedPairs, ...silentCoupling } = summary.silentCoupling;
-  const next = trimmedDetectors.map((detector) => drillDownCall(detector, view, marker));
+  const blocks: Record<string, unknown> = {
+    ...summary,
+    silentCoupling: {
+      ...silentCoupling,
+      // The total, not the limit-capped list's length (bd tea-rags-mcp-jur12).
+      explainedPairCount: silentCoupling.excluded.explainedBySharedNeighbour,
+    },
+  };
+  const presentedSummary: Record<string, unknown> = {};
+  const trimmedSummaryKeys: string[] = [];
+  for (const [key, block] of Object.entries(blocks)) {
+    const ownedByDetector = DETECTOR_KEYS.has(key);
+    if (ownedByDetector && !selected(key)) continue;
+    if (limit === undefined || WHOLE_SUMMARY_KEYS.has(key)) {
+      presentedSummary[key] = block;
+      continue;
+    }
+    const cut = trimEvidence(block, limit, false);
+    presentedSummary[key] = cut.value;
+    if (!cut.trimmed) continue;
+    if (ownedByDetector) trimmedDetectors.add(key as ArchitectureReportDetector);
+    else trimmedSummaryKeys.push(key);
+  }
+  // The opt-in list rides whole: the caller asked for it, and it is capped at `limit` upstream.
+  if (view.includeExplainedPairs && explainedPairs && presentedSummary.silentCoupling) {
+    presentedSummary.silentCoupling = { ...presentedSummary.silentCoupling, explainedPairs };
+  }
+
+  const next = [...trimmedDetectors].map((detector) =>
+    drillDownCall(view, marker, `the ${detector} group with every evidence entry`, detector),
+  );
+  // Graph-wide summary blocks belong to no detector, so their drill-down is the unscoped call.
+  if (trimmedSummaryKeys.length > 0) {
+    next.push(drillDownCall(view, marker, `summary ${trimmedSummaryKeys.join(", ")} with every entry`));
+  }
   return {
     ...rest,
-    summary: {
-      ...summary,
-      silentCoupling: {
-        ...silentCoupling,
-        // The total, not the limit-capped list's length (bd tea-rags-mcp-jur12).
-        explainedPairCount: silentCoupling.excluded.explainedBySharedNeighbour,
-        ...(view.includeExplainedPairs && explainedPairs ? { explainedPairs } : {}),
-      },
-    },
+    rootCauses: presentedRootCauses,
+    summary: presentedSummary as unknown as GetArchitectureReportToolResponse["summary"],
     violations: groups,
     ...(Object.keys(hints).length > 0 ? { violationDrillDownHints: hints } : {}),
     ...(limit !== undefined && next.length > 0 ? { evidenceTrimmed: { limit } } : {}),
@@ -189,10 +235,12 @@ function dropDrillDownHint(row: Record<string, unknown>): void {
   row.evidence = { ...(row.evidence as Record<string, unknown>), drillDown };
 }
 
+/** The same call with `evidenceLimit: "all"`, narrowed to `detector` when one owns the cut part. */
 function drillDownCall(
-  detector: ArchitectureReportDetector,
   view: ArchitectureReportView,
   marker: WorkingTreeMarker | undefined,
+  why: string,
+  detector?: ArchitectureReportDetector,
 ): SuggestedToolCall {
   return {
     tool: "get_architecture_report",
@@ -200,9 +248,9 @@ function drillDownCall(
       ...toolCallAddressFromWorkingTree(marker),
       ...view.judgingArgs,
       ...(view.reportId !== undefined ? { reportId: view.reportId } : {}),
-      detectors: [detector],
+      ...(detector !== undefined ? { detectors: [detector] } : {}),
       evidenceLimit: "all",
     },
-    why: `the ${detector} group with every evidence entry`,
+    why,
   };
 }

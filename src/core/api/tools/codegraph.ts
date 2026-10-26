@@ -214,13 +214,13 @@ const GetArchitectureReportInputShape = {
     .union([z.number().int().positive().max(500), z.literal("all")])
     .optional()
     .describe(
-      `Max entries per violation evidence array (default ${ARCHITECTURE_REPORT_EVIDENCE_LIMIT}); "all" = untrimmed. Trimmed group -> next call restores it.`,
+      `Max entries per evidence list, summary included (default ${ARCHITECTURE_REPORT_EVIDENCE_LIMIT}); "all" = untrimmed. Trimmed part -> next call restores it.`,
     ),
   detectors: z
     .array(z.enum(ARCHITECTURE_REPORT_DETECTORS))
     .min(1)
     .optional()
-    .describe("Return only these detectors' violation groups. Summary keeps all totals."),
+    .describe("Return only these detectors' violation groups, root causes and summary blocks; graph-wide blocks stay."),
   includeExplainedPairs: z
     .boolean()
     .optional()
