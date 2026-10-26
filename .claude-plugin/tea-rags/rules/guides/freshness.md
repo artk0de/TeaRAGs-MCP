@@ -22,6 +22,12 @@ decision.
   alias's registered path → linked worktree: overlay only, never
   `index_codebase` of the alias. Print
   `linked worktree (<which test>) — no reindex`. None holds → own checkout.
+- **Answer from another tree.** An answer whose `workingTree.tree` is not your
+  working directory read that other checkout, not your code — `changedFiles: 0`
+  included. Print
+  `answer read <tree>, not <your working directory> — rows unusable`, then
+  re-call the same tool with `project` + `path=<your working directory>`; "no
+  reindex" never ends this case.
 - **`collection="<qdrant-name>"`** — only when you hold a raw collection name
   and no alias (e.g. `list_collections`): first call `collection` alone; every
   later call `project=<workingTree.project of that answer>` + `path`, no
@@ -92,17 +98,19 @@ read yet. `pendingFiles` row → re-call later; `indexOnlyFiles` file → `Read`
 tea-rags search reads payloads written at index time. Index lags working tree →
 results silently stale. Before first tea-rags search/explore of turn, check
 conditions below (signals from **prime** digest layer); reindex when one fires.
+Subagent: no row fires — never `index_codebase`, never `AskUserQuestion`; the
+row's trigger and its `Run:` line go into the report to the parent.
 
-| Trigger (signal in prime / session)                                                                                                                | Action                                                                                                                                                                                                                                             | User confirmation          |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout**           | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                              | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
-| Same two rows in a **linked worktree** (working directory under `.claude/worktrees/`, `.git` a file, or not the alias's checkout path)             | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
-| Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                              | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
-| Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                      | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
-| **Alias's own checkout** answer with `workingTree.changedFiles` > 0 (HEAD moved, branch switch, pull) — **also when Drift `Run:` needs `--force`** | `index_codebase` (incremental) NOW — closes content lag, not drift; ask for the `Run:` line separately, keep working in tea-rags meanwhile. Subagent: report to parent, never reindex                                                              | no — reindex silently      |
-| Prime `## Drift` seen from a **linked worktree**                                                                                                   | Drift compares the shared INDEX with the alias's own checkout and the running build — never your tree (your delta = `workingTree.changedFiles`). Run the `Run:` line exactly as printed (`--project <alias>`), never re-aimed at `path=<worktree>` | per the two rows above     |
+| Trigger (signal in prime / session)                                                                                                                              | Action                                                                                                                                                                                                                                             | User confirmation          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                                            | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
+| Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout**                         | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
+| Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                                            | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
+| Same two rows in a **linked worktree** (working directory under `.claude/worktrees/`, `.git` a file, or not the alias's checkout path)                           | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
+| Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                                            | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
+| Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                                    | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
+| Main session, **alias's own checkout** answer with `workingTree.changedFiles` > 0 (HEAD moved, branch switch, pull) — **also when Drift `Run:` needs `--force`** | Subagent: never reindex, report to parent. Main: `index_codebase` (incremental) NOW — closes content lag, not drift; ask for the `Run:` line separately, keep working in tea-rags meanwhile                                                        | no — reindex silently      |
+| Prime `## Drift` seen from a **linked worktree**                                                                                                                 | Drift compares the shared INDEX with the alias's own checkout and the running build — never your tree (your delta = `workingTree.changedFiles`). Run the `Run:` line exactly as printed (`--project <alias>`), never re-aimed at `path=<worktree>` | per the two rows above     |
 
 ## Linked worktree — overlay, not reindex
 
@@ -129,9 +137,9 @@ and tree, never "index unusable". Thousands of changed files included.
 - Row without `treeState` from an unchanged file → row current. Use it.
 - Row with `treeState` / file in `pendingFiles` → `find_symbol` (re-call; reads
   tree once warm). `indexOnlyFiles` only → `Read`.
-- `floors: []` on first calls = overlay warming, not failure. Own checkout →
-  incremental `index_codebase` now (table above); linked worktree → keep
-  calling, later calls read more.
+- `floors: []` on first calls = overlay warming, not failure. Subagent or linked
+  worktree → no reindex, keep calling, later calls read more; main session in
+  the own checkout → incremental `index_codebase` now (table above).
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
   changed-file edges, in order: `find_symbol` on the caller in the changed file,
   then `hybrid_search` (`metaOnly`). No graph retry. No grep.

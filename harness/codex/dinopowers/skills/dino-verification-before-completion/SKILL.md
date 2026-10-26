@@ -83,11 +83,12 @@ read.
 
 **Requires superpowers for the inner step:** `$verification-before-completion` —
 availability per [CHAINING.md](../../CHAINING.md) "Missing superpowers" steps
-1–3. Not in the skills list ≠ unavailable (the list is truncated): read
-`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/verification-before-completion/SKILL.md`
-first. Only a failed read → still run the collateral-damage scan (Iron Rule),
-then stop before claiming "done", say the inner step could not run, ask the user
-to install superpowers (https://github.com/obra/superpowers). The missing skill
+1–3. Not in the skills list ≠ unavailable (the list is truncated): run
+`ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/verification-before-completion/SKILL.md`
+as written first — a hand-built path failing proves nothing. Only that glob
+matching nothing → still run the collateral-damage scan (Iron Rule), then stop
+before claiming "done", say the inner step could not run, ask the user to
+install superpowers (https://github.com/obra/superpowers). The missing skill
 blocks only the inner step and the completion claim, never the scan; NEVER
 present the scan alone as the full workflow.
 

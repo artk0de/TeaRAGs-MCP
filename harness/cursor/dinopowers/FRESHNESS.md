@@ -13,11 +13,14 @@ Addressing + lag rules: core rules (always on). Wrappers follow, never restate.
 - **Address index + tree** — every read call `project=<alias>` +
   `path=<your working directory>`; linked worktree → own tree vs repo index, no
   clone, no reindex. `index_codebase`: `project` only.
-- **Uncommitted / session edits** — alias's own checkout → incremental
-  `index_codebase` first (`changedFiles` > 0 → NOW, no consent); linked worktree
-  / subagent → never reindex (overlay serves tree; `treeState` row = pre-edit
-  copy → `find_symbol`; subagent reports drift to parent). Drift `--force` → ask
-  once, keep working in tea-rags.
+- **Index behind** (uncommitted / session edits, HEAD moved, any
+  `changedFiles` > 0), first match: subagent → never reindex, never ask (drift,
+  `--force` go into the report to the parent); linked worktree → never reindex
+  (overlay serves tree; `treeState` row = pre-edit copy → `find_symbol`); main
+  session in the alias's own checkout → incremental `index_codebase(project=)`
+  NOW, no consent. Drift `Run:` with `--force` adds ask the user: run <Run:
+  line>?` beside that incremental call — never instead of it; reads continue in
+  tea-rags.
 - **Lag ≠ unusable** — never licence for Bash `cat`/`sed`/`grep`/`rg` or `Read`
   over code (→ guide/freshness "Lag never licenses leaving tea-rags").
 - **No worktree clone** — overlay reads any delta; `pendingFiles` /

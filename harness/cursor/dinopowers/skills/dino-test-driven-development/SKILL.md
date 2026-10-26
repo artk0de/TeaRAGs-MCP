@@ -89,9 +89,10 @@ read.
 
 **Requires superpowers:** `/test-driven-development` — availability per
 [CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
-skills list ≠ unavailable (the list is truncated): read
-`$CODEX_HOME/plugins/cache/*/superpowers/*/skills/test-driven-development/SKILL.md`
-first; only a failed read → stop and ask the user to install superpowers
+skills list ≠ unavailable (the list is truncated): run
+`ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/test-driven-development/SKILL.md`
+as written first — a hand-built path failing proves nothing; only that glob
+matching nothing → stop and ask the user to install superpowers
 (https://github.com/obra/superpowers). NEVER present this enrichment alone as
 the full workflow.
 

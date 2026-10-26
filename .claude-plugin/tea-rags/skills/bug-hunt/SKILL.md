@@ -145,12 +145,14 @@ A plan names these calls; "later" / "not in this run" never drops one.
    probes a/b/c.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
-   first, never `get_callers`; the plan prints three lines, frame ids filled:
+   first, never `get_callers`; the plan prints these four lines verbatim, frame
+   ids filled — the triage line is its own line, never folded into the call:
 
    ```
    find_symbol(path=<cwd>, symbol=<entry frame>) → <entry id>
    find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
-   trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt") — two-class triage of EVERY step's dangerOverlay: step ageDays recent = fresh suspect even at bugFixRate healthy and behind an old dangerRanking[0]
+   trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt")
+   two-class triage of EVERY step's dangerOverlay: step ageDays recent = fresh suspect even at bugFixRate healthy and behind an old dangerRanking[0]
    ```
 
    Only the failure site known ("<symbol> gets undefined — where from?") → one
@@ -165,7 +167,11 @@ A plan names these calls; "later" / "not in this run" never drops one.
    Codegraph off + stack trace → probe b (fresh) gets
    `pathPattern="{<frame path 1>,<frame path 2>,…}"` + `modifiedAfter` +
    `rerank="bugHunt"` (a: no pathPattern; c: step-0 paths); say "no static path
-   tool".
+   tool". Off is decided, not checked, when THIS request or the session digest
+   says so (enrichment lists git only / no `codegraph.symbols`, "codegraph
+   off"): print
+   `codegraph off (source: <request|digest>) — no static path tool available` as
+   a statement, never "if codegraph is off" / "check the registry".
 
 !`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds,resolve" --path "$PWD" || true`
 

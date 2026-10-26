@@ -1,5 +1,11 @@
 # Degraded — embedding / infra unavailable
 
+**Outage evidence = tea-rags' own state only:** an error returned by a tea-rags
+call, or a LIVE `get_index_status`. Error text inside the user's report (stack
+trace, log line, "connection refused" from their app's database or vector-store
+client) is the user's symptom, even when it names Qdrant or an embedding
+provider — debug it in the normal flow, no STOP, no question.
+
 **Prime digest is a point-in-time SNAPSHOT, not live state.** Its
 `embedding: unavailable` line reflects infra health at session start, goes stale
 the moment ollama returns. NEVER treat stale digest as licence to fall back to
@@ -29,8 +35,8 @@ explicit answer. Do NOT silently downgrade to text search / Read for code
 discovery — text search loses recall the user didn't agree to trade. See
 `rules/references/runtime-introspection.md` for `infraHealth` diagnosis.
 
-**Qdrant down** (`[QDRANT_UNAVAILABLE]`, vector-store connection error) — same
-protocol: STOP, `AskUserQuestion` to start Qdrant per the error's `Hint`
-(`docker-compose up`), WAIT for the explicit answer, then retry a LIVE
-`get_index_status`. Never run the Hint yourself unasked, never index anyway,
-never fall back to text search — every tea-rags read needs Qdrant.
+**Qdrant down** (`[QDRANT_UNAVAILABLE]`, vector-store connection error from a
+tea-rags call) — same protocol: STOP, `AskUserQuestion` to start Qdrant per the
+error's `Hint` (`docker-compose up`), WAIT for the explicit answer, then retry a
+LIVE `get_index_status`. Never run the Hint yourself unasked, never index
+anyway, never fall back to text search — every tea-rags read needs Qdrant.
