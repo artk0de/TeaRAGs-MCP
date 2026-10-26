@@ -222,4 +222,42 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       expect(response.empty).toMatchObject({ reason: "unknownPath", suggestions: ["src/lib/h.ts", "src/lib/foo.ts"] });
     });
   });
+
+  describe("single symbol miss (N6)", () => {
+    it("an unknown symbol answers empty.unknownSymbol with a message", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbol: "NoSuchThingAtAll" });
+
+      expect(response.results).toEqual([]);
+      expect(response.empty).toMatchObject({
+        reason: "unknownSymbol",
+        message: expect.stringContaining("NoSuchThingAtAll"),
+      });
+    });
+
+    it("the wrong separator suggests the swapped id", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbol: "Foo.bar" });
+
+      expect(response.empty).toMatchObject({ reason: "unknownSymbol", suggestions: ["Foo#bar"] });
+    });
+
+    it("a #partN id of an existing parent suggests the parent", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbol: "Foo#bar#part2" });
+
+      expect(response.empty).toMatchObject({ reason: "unknownSymbol", suggestions: ["Foo#bar"] });
+    });
+
+    it("a found symbol carries no empty block", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbol: "helper" });
+
+      expect(response.results.length).toBeGreaterThan(0);
+      expect(response.empty).toBeUndefined();
+    });
+
+    it("a batch miss stays in missing[] and adds no empty block", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbols: ["Nope#x"] });
+
+      expect(response.missing).toHaveLength(1);
+      expect(response.empty).toBeUndefined();
+    });
+  });
 });

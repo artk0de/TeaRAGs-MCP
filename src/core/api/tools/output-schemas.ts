@@ -162,7 +162,8 @@ export const SearchResultOutputSchema = {
     .describe(
       "Empty results only — why + ≤5 alternatives. hybrid_search / semantic_search: pathPatternMatchesNothing " +
         "(suggestions = nearest existing prefix), filteredOut (what to drop, filter: {}), noMatch. find_symbol: " +
-        "unknownSymbol, ambiguous, unknownPath (suggestions = nearest paths). Act on it; empty with reason ≠ grep needed.",
+        "unknownSymbol (single symbol; suggestions = the real id: other #/. separator, #partN parent, same short name; " +
+        "batch misses stay in missing[]), unknownPath (suggestions = nearest paths). Act on it; empty with reason ≠ grep needed.",
     ),
   missing: z
     .array(
