@@ -197,6 +197,24 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       expect(response.results.every((r) => Array.isArray(r.payload?.symbols))).toBe(true);
     });
 
+    // bd tea-rags-mcp-03yel: the file row's `kind` must survive the default
+    // content projection (N4), or the caller cannot tell text from outline.
+    it("answers a small file with its full text through the default payload projection", async () => {
+      const text = "export function helper() {}\n";
+      const view = fakeWorkingTreeView({ files: { "src/lib/h.ts": text } });
+
+      const response = await facade(view).findSymbol({ collection: "code_x", relativePath: "src/lib/h.ts" });
+
+      expect(response.results).toHaveLength(1);
+      expect(response.results[0].payload).toMatchObject({
+        kind: "file",
+        relativePath: "src/lib/h.ts",
+        content: text,
+        startLine: 1,
+        endLine: 1,
+      });
+    });
+
     it("explains an unknown path with the nearest indexed paths", async () => {
       const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/nope/h.ts" });
 

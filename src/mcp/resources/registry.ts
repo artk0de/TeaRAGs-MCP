@@ -126,7 +126,7 @@ export function buildOverview(): string {
 - hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — batch analytics by signals (metaOnly default true; offline scoring, not online search)
 - find_similar — find code similar to examples; negative-only inputs + strategy="best_score" → anti-pattern detection
-- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding);
+- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (small file → full text; no embedding);
   pass a rerank preset for a single-call diagnostic (definition + rankingOverlay)
 
 ## Response shape
@@ -246,7 +246,7 @@ parameter examples per tool.
 - Batch drill → symbols=["Reranker#rerank","Reranker.create"] (N bodies, one call)
 
 **By file path (relativePath param, mutually exclusive with symbol):**
-- File outline → relativePath="src/reranker.ts" (code structure with hierarchy)
+- File outline → relativePath="src/reranker.ts" (code structure with hierarchy; small file ≤150 lines → full text, kind:"file")
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
 - Directory → relativePath="src/explore/" (files + top-level symbols, subdirs w/ counts)
 - From search result → find_symbol(symbol: parentSymbolId) → class outline or doc TOC (doc parent = doc path)
@@ -369,7 +369,7 @@ the point where results stop matching the intent — reformulate the query inste
   drill a member with find_symbol(symbol: "PaymentService#charge").
 - Method with risk overlay →
   find_symbol(symbol: "PaymentService#charge", rerank: "hotspots")
-- File-scoped outline → find_symbol(relativePath: "src/payments/service.ts")
+- File-scoped outline → find_symbol(relativePath: "src/payments/service.ts") (small file → its full text)
 - Doc-TOC mode → find_symbol(relativePath: "docs/api.md") returns heading
   list with doc:<hash> ids; second find_symbol(symbol: "doc:<hash>") returns
   that section. Works on any markdown corpus, not just code.

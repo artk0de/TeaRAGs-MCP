@@ -102,6 +102,7 @@ import {
   TrajectoryVersionDriftMonitor,
   WorkerPoolEnrichmentExecutor,
   WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeContentHashes,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
   WorkingTreeGraphCache,
@@ -1729,6 +1730,10 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     1,
     zodConfig.ingest.tune.chunkerPoolSize ?? resolveDomainEnvCodeDefaults().chunkerPoolSize,
   );
+  // One content-hash memo for the tree's files: the chunk layer hashes the
+  // delta through it, and a view's `readTreeFile` (a small file's find_symbol
+  // text, bd tea-rags-mcp-03yel) reads through it and seeds it.
+  const workingTreeContentHashes = new WorkingTreeContentHashes();
   const workingTreeChunkLayer = createWorkingTreeChunkLayer({
     createPool: (chunkerConfig) => new ChunkerPool(workingTreeChunkerPoolSize, chunkerConfig),
     chunkFile: async (pool, file) => buildFileChunkPoints(pool, file, workingTreePayloadBuilder),
@@ -1736,6 +1741,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     store: workingTreeChunkStore,
     chunkerBuildId: pkg.version,
     concurrency: workingTreeChunkerPoolSize,
+    contentHashes: workingTreeContentHashes,
   });
   // One delta warm queue per process over the layer: every view chunks through
   // it (one batch in flight, live before background), waits at most
@@ -1809,6 +1815,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
       layer: workingTreeChunkLayer,
       resolveChunkerConfig: resolveWorkingTreeChunkerConfig,
     },
+    treeFiles: workingTreeContentHashes,
     // WTO-7: a non-empty delta warms the tree graph at view time; graph tools
     // and the delta rows' codegraph signals read it through the view.
     treeGraph: workingTreeGraphCache,

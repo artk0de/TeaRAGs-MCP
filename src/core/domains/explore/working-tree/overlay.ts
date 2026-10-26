@@ -10,7 +10,7 @@
  */
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { findGitToplevel, readRepoGitState } from "../../../adapters/vcs/index.js";
 import type { CollectionEntry, RegistryGitState } from "../../../contracts/types/registry.js";
@@ -31,6 +31,7 @@ import {
 import type { ChunkerConfig } from "../../../types.js";
 import type { ScrollChunk } from "../chunk-grouping/types.js";
 import type { WorkingTreeChunkLayer, WorkingTreeChunkLayerRead } from "./chunk-layer.js";
+import type { WorkingTreeContentHashes } from "./content-hashes.js";
 import { WORKING_TREE_REINDEX_REMEDY, type WorkingTreeDelta, type WorkingTreeDeltaReader } from "./delta.js";
 import type { WorkingTreeDenseVectorReader, WorkingTreeDenseVectorSource } from "./dense-floor.js";
 import { relativePathOf } from "./substitute.js";
@@ -70,6 +71,14 @@ export interface WorkingTreeView {
    * read or parse land in `marker.unparsed` when the returned promise resolves.
    */
   readDeltaChunks?: () => Promise<readonly ScrollChunk[]>;
+  /**
+   * The text of one file as this tree has it — the tree's version of a changed
+   * file, the checkout's of an untouched one (bd tea-rags-mcp-03yel: a small
+   * file's find_symbol answer). Undefined for a file the tree deleted, a path
+   * that is not a readable regular file, or one that leaves the tree. Absent on
+   * a degraded view and when no tree file source is wired.
+   */
+  readTreeFile?: (relativePath: string) => Promise<string | undefined>;
   /**
    * `rows` with the trajectory payload ingest would have given them
    * (`WORKING_TREE_SIGNAL_PAYLOAD_KEYS`, WTO-6/7): every row that is one of
@@ -202,6 +211,12 @@ export interface WorkingTreeOverlayDeps {
   admitsToDelta?: (relativePath: string) => boolean;
   /** Absent → views carry no `readDeltaChunks`. */
   deltaChunks?: WorkingTreeDeltaChunkSource;
+  /**
+   * Where a view reads a tree file's text (`readTreeFile`) — the composition
+   * root passes the chunk layer's own content hashes, so the read seeds the
+   * memo the delta hashes with. Absent → views carry no `readTreeFile`.
+   */
+  treeFiles?: Pick<WorkingTreeContentHashes, "readContent">;
   /** The tree-graph cache (WTO-7). Absent → views carry no `readTreeGraph` and nothing is warmed. */
   treeGraph?: WorkingTreeGraphSource;
   /**
@@ -363,6 +378,9 @@ export class WorkingTreeOverlay {
       remainingWaitMs,
     };
     if (readTreeGraph) view.readTreeGraph = readTreeGraph;
+    if (this.deps.treeFiles && tree.root !== "") {
+      view.readTreeFile = treeFileReader(this.deps.treeFiles, tree.root, view.deletedPaths);
+    }
     const { touchedBasePoints } = this.deps;
     if (touched > 0 && touchedBasePoints) {
       const { indexStamp } = measured;
@@ -561,6 +579,25 @@ async function isBaseCheckout(tree: WorkingTree): Promise<boolean> {
   const real = async (path: string): Promise<string> => fs.realpath(path).catch(() => resolve(path));
   const [treeReal, baseReal] = await Promise.all([real(tree.root), real(baseRoot)]);
   return treeReal === baseReal;
+}
+
+/**
+ * A view's `readTreeFile`: the UTF-8 text of `relativePath` under `root`.
+ * A deleted file, or a path that resolves outside `root`, reads nothing —
+ * the answer then falls back to what the index holds.
+ */
+function treeFileReader(
+  files: Pick<WorkingTreeContentHashes, "readContent">,
+  root: string,
+  deleted: ReadonlySet<string>,
+): (relativePath: string) => Promise<string | undefined> {
+  const resolvedRoot = resolve(root);
+  return async (relativePath) => {
+    if (deleted.has(relativePath)) return undefined;
+    const absolutePath = resolve(resolvedRoot, relativePath);
+    if (!absolutePath.startsWith(`${resolvedRoot}${sep}`)) return undefined;
+    return (await files.readContent(absolutePath))?.content.toString("utf8");
+  };
 }
 
 /** The tree-graph request for a measured delta: every re-read and deleted file, warm or not. */
