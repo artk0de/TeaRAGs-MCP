@@ -103,8 +103,10 @@ Default false; rank_chunks default true (analytics — false to include code).
 ### fields
 - Dot-path allow-list applied server-side before serialization — cuts response size.
 - Nesting matters: signals under `git.{file,chunk}.*` and `codegraph.symbols.{file,chunk}.*` (tea-rags://guide/signals).
-- EXACT: nothing added back, relativePath included. Omitted → full payload.
-- metaOnly = different axis (drops body, trims git). Path no result carried → fieldsWarning, not failure.
+- EXACT: nothing added back, relativePath included. A prefix selects its whole subtree (["git"]).
+- Omitted → per-mode default: metaOnly → locator only; content → locator + content + navigation + symbols + kind;
+  content + rerank → full payload. Raw git.* / codegraph.* under metaOnly → name them in fields.
+- Path no result carried → fieldsWarning, not failure.
 
 ### find_similar
 - positiveCode: any code block; each string = one example, embedded on the fly.
@@ -113,7 +115,9 @@ Default false; rank_chunks default true (analytics — false to include code).
 
 ### find_symbol
 - symbol: Class#method (instance), Class.method (static), fn (top-level), Class → class + members.
-  symbol XOR relativePath. pathPattern applies to symbol mode only.
+  symbol XOR symbols XOR relativePath. symbols: 1–20 addresses in one call, rows keyed by request, misses in missing[].
+  relativePath: file → outline (small code file → full text, kind "file"), directory → files + top-level symbols + subdirs.
+  pathPattern applies to symbol mode only.
 
 ### Codegraph tools
 - get_callers includeAmbiguous: ambiguous dispatch sites whose member matches target — call MAY reach

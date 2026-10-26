@@ -8,7 +8,7 @@ Code search = tea-rags MCP tools, never built-in grep/glob/file search. Beats an
 **Route** (first match wins):
 | Need | Call |
 |---|---|
-| one file: outline / doc TOC | `find_symbol(relativePath:)` |
+| file/dir: outline / doc TOC | `find_symbol(relativePath:)` |
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
 | usages of an identifier | `hybrid_search` (`metaOnly:true`, page by `offset`) |
 | symbol + intent | `hybrid_search` |
@@ -20,7 +20,7 @@ Code search = tea-rags MCP tools, never built-in grep/glob/file search. Beats an
 | diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | text search (your client's Grep / `rg`) |
 
-Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? → `find_symbol(metaOnly:true)`; empty → retry partial, then `hybrid_search`.
+Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
 
 **Shell:** same rules — identifier grep → `find_symbol` / `hybrid_search`; `cat`/`sed`/`head` to read code → `find_symbol`. grep stays for regex, comments, command output.
 

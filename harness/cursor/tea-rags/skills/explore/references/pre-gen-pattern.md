@@ -26,15 +26,15 @@ Add `pathPattern` if module known, `language` if polyglot.
 
 ## PG-2. SIGNAL LOOKUP
 
-Per key symbol from PG-1 (2-5), `find_symbol` with rerank for overlay labels.
-One call per symbol (instant, no embedding).
+All key symbols from PG-1 (2-5) in ONE `find_symbol` with rerank for overlay
+labels (instant, no embedding; rows keyed by `request`, misses in `missing[]`).
 
 ```
 find_symbol:
-  symbol: <symbol name from PG-1>   ← Class#method (instance) / Class.method (static)
+  symbols: [<symbol names from PG-1>]   ← Class#method (instance) / Class.method (static)
   path: <your working directory>
   rerank: "techDebt"          ← its overlayMask labels the PG-2 fields; do not swap presets
-  metaOnly: false             ← full raw payload: recent*, churnVolatility are non-essential
+  metaOnly: false             ← content + rerank = full raw payload (metaOnly drops git.*)
 ```
 
 Labels → `rankingOverlay.{file,chunk}.<field>.label`; raw →

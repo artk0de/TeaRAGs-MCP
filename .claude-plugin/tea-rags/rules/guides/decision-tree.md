@@ -19,8 +19,9 @@ never for code discovery.
 
 Recent models load tool **names** only; full schema fetched on demand
 (`ToolSearch`) AFTER you pick a tool. Pick EXACT tool from decision tree below
-first, then fetch only that one — wrong pick costs a wasted fetch.
-Fully-qualified fetch names:
+first, then fetch only that one — wrong pick costs a wasted fetch. In Claude
+Code `find_symbol` and `hybrid_search` are always loaded — call them directly,
+no `ToolSearch` first. Fully-qualified fetch names:
 
 - Every tea-rags tool is **`mcp__tea-rags__<name>`** — e.g.
   `mcp__tea-rags__find_symbol`, `mcp__tea-rags__hybrid_search`,
@@ -62,8 +63,9 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 │   SKILL.md, state its Step 0 strategy first. Decisive calls:
 │   ├─ pre-change ("before I modify/refactor X", "research X first", plan step
 │   │   "Research X before implementing Y", risks of ONE named change) → PRE-GEN:
-│   │   semantic_search metaOnly=true limit=10 → find_symbol rerank="techDebt" per
-│   │   2–5 key symbols → find_symbol on 1–2 base symbols, never call chains.
+│   │   semantic_search metaOnly=true limit=10 → ONE find_symbol(symbols=[2–5
+│   │   key symbols], rerank="techDebt") → find_symbol on 1–2 base symbols,
+│   │   never call chains.
 │   │   Self-contained — not brainstorming / executing-plans / DDG / risk-assessment
 │   ├─ "what changed recently in X" → rank_chunks rerank="codeReview" maxAgeDays=14
 │   └─ "who owns / knows X" → rank_chunks rerank="ownership" (never semantic_search)
@@ -94,8 +96,10 @@ Has query?
    │     metaOnly=true for existence checks. (modes: guide `navigation` "find_symbol")
    │     Fallback when the symbolId is a guess / fuzzy: hybrid_search.
    │
-   ├─ Need file structure or a doc's TOC? → find_symbol(relativePath:)
-   │     .md path → heading TOC; src path → file outline. NOT Read.
+   ├─ Need file structure, a doc's TOC or a directory's contents?
+   │     → find_symbol(relativePath:)
+   │     .md path → heading TOC; src path → file outline (small file → full
+   │     text); directory → files + top-level symbols + subdirs. NOT Read, NOT ls.
    │
    ├─ Exact identifier — need all USAGES / matches? ("where is X used")
    │   → hybrid_search (BM25 full recall for exact names; paginate via offset)
@@ -182,6 +186,13 @@ working directory as `path`; the hook supplies the repository's `project` alias
   or addressable outline (class / doc)
 - **Grep / Read a saved find_symbol dump or an outline** — lines are ids; drill
   `find_symbol(symbol: <id>)` instead
+- **One `find_symbol` call per id** — 2+ known ids (outline members, hits) → ONE
+  `find_symbol(symbols: [<ids>])`; misses come back in `missing[]`
+- **`ls` / glob / `find` to list a directory** —
+  `find_symbol(relativePath: "<dir>")` returns its files with their top-level
+  symbols
+- **Empty answer read as "absent"** — act on `empty.reason` (guide `pagination`
+  "Empty answers") before concluding anything
 - **Conclusions from one `#partN` chunk** — fetch the whole symbol first
   (`find_symbol(symbol: parentSymbolId)`); parts of one symbol count as ONE hit
 - **Multiple semantic_search for same area** — one call, navigate from results
@@ -228,6 +239,7 @@ working directory as `path`; the hook supplies the repository's `project` alias
 | ----------------------------- | --------------------------------- | ------------------------------------------------- |
 | Symbol definition             | find_symbol(symbol:)              | hybrid_search → text search                       |
 | File structure                | find_symbol(relativePath:)        | Read (whole file)                                 |
+| Directory contents            | find_symbol(relativePath: <dir>)  | `empty.reason` unknownPath → a `suggestions` path |
 | Doc TOC                       | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)               |
 | All usages                    | hybrid_search + offset pagination | text search (only if hybrid unavailable)          |
 | Behavioral discovery          | semantic_search                   | hybrid_search                                     |

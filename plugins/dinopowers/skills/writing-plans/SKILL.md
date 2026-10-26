@@ -93,12 +93,12 @@ first call over uncommitted edits, or once `changedFiles` > 0 — no consent
 
 From request or plan draft collect concrete file list:
 
-| Source                         | Example                                                                                                                                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                                                                            |
-| User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `semantic_search` `pathPattern: "<dir>/**"`, `level: "file"`, `metaOnly: true` (one row per file) |
-| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                   |
-| Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                              |
+| Source                         | Example                                                                                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User names files explicitly    | "update `a.ts`, `b.ts`, `c.ts`"                                                                                                                                                                              |
+| User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `find_symbol(relativePath: "<dir>")` — its files + top-level symbols; the one call before Step 2; never `ls` / glob |
+| Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                                     |
+| Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                                                |
 
 Output:
 
@@ -120,13 +120,14 @@ pathPattern: "{file1,file2,file3,...}"   ← brace expansion over fileList
 rerank:      "blastRadius"               ← codegraph on; see OFF fallback below
 limit:       <fileList.length * 3>       ← aim for ~3 chunks per file
 metaOnly:    true
+fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw git.* (taskIds, blame*)
 ```
 
 Describing the call (plan-only / subagent report) → print this line, slots
 filled, never "the specified calls" or "scoped to the files":
 
 ```
-Step 2 (first tool call — explore PRE-GEN / find_symbol / get_callers only after it): semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true)
+Step 2 (first tool call — explore PRE-GEN / find_symbol / get_callers only after it): semantic_search(path=<your working directory>, pathPattern="{<file1>,<file2>}", rerank=<"blastRadius" (codegraph on) | {custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} (codegraph off — import proxy, approximate impact)>, metaOnly=true, fields=["relativePath", "imports", "git"])
 ```
 
 **Codegraph gating for `rerank`:** on → `"blastRadius"` (real `fanIn`, churn,
@@ -179,10 +180,10 @@ verbatim ("one impact row per file" alone = incomplete).
 
 Group chunks by `relativePath` (primary key — `tea-rags:risk-assessment` Phase
 2: MERGE); plans care about files, not chunks. Per file in `fileList`: raw from
-`payload.git.file.*`, labels from `rankingOverlay.file.*`. metaOnly keeps git
-essentials only (commitCount, ageDays, taskIds, blame\*); `recent*` /
-`bugFixRate` come from overlay when rerank surfaces them, else absent — never
-fabricate:
+`payload.git.file.*` (there only because Step 2 names `"git"` in `fields` — a
+`metaOnly` payload without it is locator-only), labels from
+`rankingOverlay.file.*`. A field the index lacks (`recent*` / `bugFixRate` on a
+young file) is absent — never fabricate:
 
 - `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner, silo
   indicator (`git blame HEAD` — current state)

@@ -5,10 +5,10 @@ Read before finishing any search. Routing + invariants: `tea-rags://guide/core`.
 ## Principles
 
 **Chunk is the source of truth — for languages with full AST chunking.** Results
-carry code, metadata, git signals. Don't re-read files to "verify" or
-"understand"; `find_symbol` returns full method body / class outline (ids to
-drill) — no `Read`. Holds where `tea-rags://guide/language-capability` rates
-**AST = full** (native: ts/js/python/go/java/rust/ruby/ bash). For **AST =
+carry code + metadata (git signals ride a `rerank`). Don't re-read files to
+"verify" or "understand"; `find_symbol` returns full method body / class outline
+(ids to drill) — no `Read`. Holds where `tea-rags://guide/language-capability`
+rates **AST = full** (native: ts/js/python/go/java/rust/ruby/ bash). For **AST =
 none** (sql/jsonc/json + any non-native on CharacterChunker) a chunk may split a
 symbol mid-body — there `Read` is legit fallback for exact code; markdown is
 **partial** (section-level, fine for docs). `Read` always allowed to MODIFY —
@@ -19,8 +19,10 @@ never _needed_ to gather code for a full-AST language.
 at the cap. One part lacks the rest of the body: branches, loop tails, returns,
 calls. BEFORE interpreting it — ranking it, judging risk, quoting behavior,
 editing — call `find_symbol(symbol: result.parentSymbolId)` once: merges every
-part into the whole method. Several parts of one symbol in one result set = one
-symbol, one fetch; count it once in any tally or overlap across presets.
+part into the whole method. A `metaOnly` row carries no `parentSymbolId`: the
+parent id is the `symbolId` with `#partN` cut off. Several parts of one symbol
+in one result set = one symbol, one fetch; count it once in any tally or overlap
+across presets.
 
 **Code is evidence, docs are hypothesis.** Doc chunks (`.md`, `isDocumentation`)
 carry intent + navigation (why / what-for) — NOT behavior truth. Behavioral
@@ -56,6 +58,9 @@ null = absent. Shape: `tea-rags://guide/overview` `## Response shape`.
 | Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |
 | Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → OUTLINE: member ids, NO bodies, tests excluded → drill member                                        |
 | Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |
+| 2+ ids in hand (outline lines, hits)        | Their bodies / sections                 | ONE `find_symbol(symbols: [<id1>, <id2>, ...])` (≤ 20) — rows keyed by `request`, misses in `missing[]`; never one call per id            |
+| A directory path                            | Its files, their top-level symbols      | `find_symbol(relativePath: "<dir>")` — `directory` frame with subdirs; NOT `ls`, NOT a glob listing                                       |
+| Answer carries `next`                       | Co-change / importers of the top hit    | the `next[i]` call verbatim — `project` + `path` already set; its `why` names what it adds                                                |
 | Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |
 | Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |
 | Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |
@@ -79,16 +84,18 @@ language; input contract for `find_symbol(symbol:)`):**
   methods on them still use `#`/`.` (`Acme::User#save`).
 - Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results
 
-The `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:
-`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may
-surface spurious drift warning) — empty result = WRONG-SEPARATOR signal, not a
-stale index. Irrelevant for `hybrid_search`'s `symbolId` (partial substring
-match — pass a bare name). When unsure instance vs static, pass a **partial
-match** to `find_symbol` (`Class` alone, or bare `method`) and read the real
-separator off `result.symbolId`; never downgrade an empty `find_symbol` to text
-search. Producer-side source of truth (how separator chosen per language at
-index time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`
-in `primitives/ids/symbolid/classify.ts`).
+The `#`/`.` separator matters for EXACT lookup only. `find_symbol` and
+`get_callers` retry a wrong separator through a `#`↔`.` swap: the row's
+`symbolId` (`get_callers`: `resolvedSymbolId`) is the real id — carry it into
+every later call. Still empty → `empty.reason` names the next step
+(`tea-rags://guide/pagination` "Empty answers"), not a stale index. Irrelevant
+for `hybrid_search`'s `symbolId` (partial substring match — pass a bare name).
+When unsure instance vs static, pass a **partial match** to `find_symbol`
+(`Class` alone, or bare `method`) and read the real separator off
+`result.symbolId`; never downgrade an empty `find_symbol` to text search.
+Producer-side source of truth (how separator chosen per language at index time):
+`.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR` in
+`primitives/ids/symbolid/classify.ts`).
 
 ### find_symbol — the navigation workhorse (two addressing modes)
 
@@ -97,33 +104,41 @@ follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
-| You have…                        | Pass                              | You get                                        |
-| -------------------------------- | --------------------------------- | ---------------------------------------------- |
-| Instance method                  | `symbol: "Class#method"`          | merged full method body                        |
-| Static method / top-level fn     | `symbol: "Class.method"` / `"fn"` | merged full definition                         |
-| **Class or module name**         | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded |
-| Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)        |
-| Doc section (hash from a result) | `symbol: "doc:<hash>"`            | full section content (split parts merged)      |
-| Test scope id                    | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                |
+| You have…                        | Pass                              | You get                                                   |
+| -------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| Instance method                  | `symbol: "Class#method"`          | merged full method body                                   |
+| Static method / top-level fn     | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
+| **Class or module name**         | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
+| Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
+| Doc section (hash from a result) | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
+| Test scope id                    | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
+| 2+ addresses of any kind above   | `symbols: ["<id1>", "<id2>"]`     | one row per hit keyed by `request`; misses in `missing[]` |
 
-**Mode B — `relativePath:` (you have a file path) — USE THIS MORE.** With no
-symbol, just a path, find_symbol returns a synthetic outline of the whole file.
-Agents under-use it; it is the correct route, not `Read`, not `semantic_search`:
+**Mode B — `relativePath:` (you have a file or directory path) — USE THIS
+MORE.** With no symbol, just a path. Agents under-use it; it is the correct
+route, not `Read`, not `ls` / a glob listing, not `semantic_search`:
 
 - **`relativePath: "docs/file.md"` → the doc's heading TOC** (one hash per
   heading). THE way to map a markdown doc before reading it. Whenever a task
   touches a `.md` doc and you lack a `doc:<hash>`, start here.
 - **`relativePath: "src/foo.ts"` → file structure**: every class/method/function
-  outline in that file. Use instead of `Read` to answer "what's in this file".
+  outline in that file. Use instead of `Read` to answer "what's in this file". A
+  small code file answers with its full text (`kind: "file"`) — that IS the
+  read, no `Read` after it.
+- **`relativePath: "src/foo/"` (a directory) → its files, each with its
+  top-level symbols, plus the subdirs** (`directory` frame). Use instead of `ls`
+  / glob to answer "what's in this directory"; drill a file next.
+- Unknown path → `empty.reason: "unknownPath"` + nearest `suggestions` — retry
+  with one of them.
 
 **Outline / TOC = map, not content — read chapters by address.** Every line of
 class outline, file outline, doc TOC carries id (`Class#method`, `Class.method`,
-`doc:<hash>`). Content needed → `find_symbol(symbol: <that id verbatim>)`, one
-call per chapter, parallel for several. Never answer from outline as if it held
-bodies. Never `Read` file or grep saved tool-output dump to find a member — ids
-already in hand. Member line may end in declared visibility —
-`Class#helper (private)` (see "Declared visibility" below); suffix not part of
-id — drop before drilling.
+`doc:<hash>`). Content needed → `find_symbol(symbol: <that id verbatim>)`;
+several chapters → ONE `find_symbol(symbols: [<ids verbatim>])`, never one call
+per chapter. Never answer from outline as if it held bodies. Never `Read` file
+or grep saved tool-output dump to find a member — ids already in hand. Member
+line may end in declared visibility — `Class#helper (private)` (see "Declared
+visibility" below); suffix not part of id — drop before drilling.
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
@@ -139,11 +154,13 @@ escalate only if needed:
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
    Default for impact & dependency questions; instant, no traversal. Pass
    `symbolId` for call edges — resolve it with `find_symbol` first, even a typed
-   `Class#method` (a wrong id returns a silent empty) — OR `relativePath`
-   (repo-relative file, no `symbolId`) for FILE scope: `get_callers` →
-   `importers[]` (files importing it), `get_callees` → `imports[]` (files it
-   imports), each with `importText` + `callWeight`, heaviest first. Unknown path
-   → empty list + `message`, not a fact about the file.
+   `Class#method` (an unknown id answers `empty.reason: "unknownSymbol"` +
+   `suggestions`) — OR `relativePath` (repo-relative file, no `symbolId`) for
+   FILE scope: `get_callers` → `importers[]` (files importing it), `get_callees`
+   → `imports[]` (files it imports), each with `importText` + `callWeight`,
+   heaviest first. These are THE import-edge reads: a search row's `imports` is
+   a count (`includeImports: true` returns the raw lists). Unknown path →
+   `empty.reason: "unknownFile"` + `message`, not a fact about the file.
 2. **`find_cycles`** — detect circular dependency chains. Codegraph on + empty
    result IS the answer: "no cycles in <scope> → DAG" — no other tool to
    confirm.
@@ -197,6 +214,6 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
   `Read`. The chunk already names the symbol/path you need.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
 - Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
-  bodies → `find_symbol(symbol: <member id>)` per member.
+  bodies → ONE `find_symbol(symbols: [<member ids>])` for all members needed.
 - Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph off;
   `get_callers` (exact, graph) when codegraph on.

@@ -526,8 +526,9 @@ previously-siloed module. Useful for routing mentorship/review pairings.
    renames/reformats. Exact numbers → file level; chunk → relative ranking.
 2. **Alpha-blending masks layers.** Derived signals blend
    (`effective = alpha*chunk + (1-alpha)*file`). Need raw `payload.git.file.*`
-   unblended (e.g. fan-in as file property) → `metaOnly=false`, read raw
-   payload.
+   unblended (e.g. fan-in as file property) → `metaOnly=false` with the rerank
+   (full payload), or `metaOnly=true` +
+   `fields: ["relativePath", "git", "codegraph"]`; read raw payload.
 3. **Overlay masking.** Preset curates subset via `overlayMask`. `imports`
    absent → preset didn't surface it, NOT zero imports. Switch preset or custom
    rerank (weighted signals appear in overlay automatically).

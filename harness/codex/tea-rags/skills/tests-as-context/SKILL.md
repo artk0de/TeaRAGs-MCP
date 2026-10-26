@@ -195,6 +195,7 @@ semantic_search:
   rerank:      { custom: { similarity: 0.2, age: 0.8 } }
   limit:       8
   metaOnly:    true                   ← need metadata (taskIds, ageDays)
+  fields:      ["relativePath", "startLine", "symbolId", "git"]   ← metaOnly alone drops raw git.*
 ```
 
 Custom rerank, heavy age weight, surfaces oldest semantic matches. Caller sorts
@@ -233,6 +234,7 @@ semantic_search:
   rerank:      "hotspots"
   limit:       10
   metaOnly:    true
+  fields:      ["relativePath", "startLine", "symbolId", "git"]   ← owner name is raw git.*
 ```
 
 `"hotspots"` preset captures recent churn + ownership concentration +
@@ -272,6 +274,7 @@ semantic_search:
   chunkType:   "test"
   limit:       50
   metaOnly:    true
+  fields:      ["relativePath", "startLine", "symbolId", "parentSymbolId"]   ← metaOnly alone drops parentSymbolId
 ```
 
 Why `semantic_search` not `find_symbol`: `find_symbol(relativePath:)` returns a

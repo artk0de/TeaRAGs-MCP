@@ -64,7 +64,8 @@ you or a tool). State both halves: "re-fetch <edited symbol>; reuse in-context
 `rankingOverlay.file.<signal>` / `rankingOverlay.chunk.<signal>`, each
 `{ value: N, label: "high" }` — result table (2+ rows): columns
 `rankingOverlay.chunk.<signal>.value` / `.label`. Only preset's `overlayMask`
-fields labelled — pick preset by labels needed; raw `payload.git.*` unlabelled.
+fields labelled — pick preset by labels needed; raw `payload.git.*` unlabelled,
+and absent from a metaOnly payload unless `fields` names it (`["git"]`).
 Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
 (ReadMcpResourceTool).
@@ -202,7 +203,10 @@ verify architectural fit before adopting verbatim; `none` → no template,
 generate from scratch, tell user to scrutinize result.
 
 **Template imports = pre-approved REUSE vocabulary** — proven in context, Step 4
-gate passes them automatically.
+gate passes them automatically. The list:
+`get_callees(relativePath: <template file>)` (codegraph on) or the template's
+own import lines — a search row's `imports` is only a count
+(`includeImports: true` returns the list).
 
 ### Step 3: PLACEMENT — CREATE (EXTEND: fixed = container)
 
@@ -361,4 +365,6 @@ Blast radius of generated change:
 - **MODIFY: `get_callers` on modified symbol MANDATORY** — changed behaviour
   propagates through real call edges; import proxy insufficient.
 
-Warn on high-impact modules. Flag shared taskIds → coordinated change.
+Warn on high-impact modules. Flag shared taskIds → coordinated change: taskIds
+are raw `git.*`, which metaOnly drops — both calls above carry
+`fields: ["relativePath", "imports", "git"]`.

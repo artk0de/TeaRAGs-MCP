@@ -27,9 +27,12 @@ tests-as-context preflight.
 ```text
 per changed symbol (cap 10):
   get_callers symbolId=<id> limit=15
-  find_symbol symbol=<id> rerank="blastRadius" metaOnly=true
+once for all of them:
+  find_symbol symbols=[<id1>, <id2>, ...] rerank="blastRadius" metaOnly=true
+              fields=["relativePath", "symbolId", "codegraph"]
   <id>: Class#method = instance method, Class.method = static — take it
-        from the Phase 2 outline line, never retype it
+        from the Phase 2 outline line, never retype it; rows keyed by
+        `request`, misses in `missing[]`
 edges: no codegraph floor + changedFiles > 0 → callers in changed files are
        the index's (`tea-rags://guide/freshness` "Addressing the Codebase")
 overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,

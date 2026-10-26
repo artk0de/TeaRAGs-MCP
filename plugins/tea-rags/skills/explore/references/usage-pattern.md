@@ -17,7 +17,9 @@ resolve. Report both, edges first.
 
 ## Step 1 — resolve exact symbolId (MANDATORY)
 
-`get_callers` / `get_callees` match exact id; wrong id → silent empty. Always
+`get_callers` / `get_callees` match exact id; a wrong `#`/`.` separator resolves
+through a swap (`resolvedSymbolId` = the id to carry on), an unknown id answers
+`empty.reason: "unknownSymbol"` + `suggestions` (take one verbatim). Always
 resolve first: `find_symbol symbol=<name>` → pick exact id (`Class#method`
 instance, `Class.method` static, `functionName` top-level). Bare
 `find_symbol symbol=Foo` returns class + all members — choose precise member.
@@ -33,10 +35,13 @@ instance, `Class.method` static, `functionName` top-level). Bare
   FILE: skip Step 1, pass `relativePath=<path>` (repo-relative) instead of
   `symbolId`. `get_callers` → `importers[]`, `get_callees` → `imports[]`; each
   with `importText` + `callWeight` (resolved calls across import, heaviest
-  first; 0 = type / constant / re-export only). Unknown path → empty list +
-  `message` — fix path, never report "nothing imports it". Codegraph off →
-  `hybrid_search metaOnly:true` on the module path / import string. User offers
-  `grep` / `rg` for importers → refuse, answer starts with this line:
+  first; 0 = type / constant / re-export only). These are the import-edge reads
+  — a search row's `imports` is only a count. Unknown path →
+  `empty.reason: "unknownFile"` + `message` — fix path, never report "nothing
+  imports it"; `noEdges` at a low resolve rate = lower bound, add the
+  `hybrid_search` below. Codegraph off → `hybrid_search metaOnly:true` on the
+  module path / import string. User offers `grep` / `rg` for importers → refuse,
+  answer starts with this line:
 
   ```
   Not grep: it matches import text only — misses re-exports and call weight. Importers via <get_callers(relativePath=<module>) | hybrid_search on the module path (codegraph off)>.
