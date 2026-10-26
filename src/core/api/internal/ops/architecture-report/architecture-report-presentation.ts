@@ -167,18 +167,26 @@ function drillDownOf(row: Record<string, unknown>): Record<string, unknown> | un
   return drillDown !== null && typeof drillDown === "object" ? (drillDown as Record<string, unknown>) : undefined;
 }
 
-/** The hint every row of the group carries, identical; undefined when any row lacks it or differs. */
+/**
+ * The hint every drill-down of the group carries, identical; undefined when a
+ * drill-down lacks it or they differ. Rows with no drill-down at all (a
+ * silent-coupling pair beside the grouped findings) do not veto the hoist.
+ */
 function sharedDrillDownHint(rows: readonly Record<string, unknown>[]): string | undefined {
-  const hints = rows.map((row) => drillDownOf(row)?.hint);
+  const hints = rows.flatMap((row) => {
+    const drillDown = drillDownOf(row);
+    return drillDown ? [drillDown.hint] : [];
+  });
   const [first] = hints;
   return typeof first === "string" && hints.every((hint) => hint === first) ? first : undefined;
 }
 
 /** Rows are the view's own copies (spread above), so the drill-down object is copied before the hint goes. */
 function dropDrillDownHint(row: Record<string, unknown>): void {
-  const evidence = row.evidence as Record<string, unknown>;
-  const { hint: _hint, ...drillDown } = drillDownOf(row) ?? {};
-  row.evidence = { ...evidence, drillDown };
+  const found = drillDownOf(row);
+  if (!found) return;
+  const { hint: _hint, ...drillDown } = found;
+  row.evidence = { ...(row.evidence as Record<string, unknown>), drillDown };
 }
 
 function drillDownCall(

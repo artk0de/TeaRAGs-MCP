@@ -88,7 +88,7 @@ export interface GetArchitectureReportToolResponse extends Omit<
    * sibling `<key>Count` holding the full length when the row had none.
    */
   violations: Partial<Record<ArchitectureReportDetector, ArchitectureViolation[]>>;
-  /** A group's `evidence.drillDown.hint` when every row carried the same one — lifted out of the rows. */
+  /** A group's `evidence.drillDown.hint` when every drill-down carried the same one — lifted out of the rows. */
   violationDrillDownHints?: Partial<Record<ArchitectureReportDetector, string>>;
   /** Present when any evidence array was cut. */
   evidenceTrimmed?: { limit: number };

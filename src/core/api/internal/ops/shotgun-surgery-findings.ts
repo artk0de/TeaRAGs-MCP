@@ -18,7 +18,7 @@ import type {
   ShotgunSurgeryArchitectureViolation,
   ShotgunSurgeryReportSummary,
 } from "../../public/dto/architecture.js";
-import { FIND_CO_CHANGED_LIMIT_MAX } from "./silent-coupling-group-findings/index.js";
+import { FIND_CO_CHANGED_LIMIT_MAX, findCoChangedDrillDown } from "./silent-coupling-group-findings/index.js";
 
 /** The shotgun-surgery run: the detector's report, or why there is none. */
 export type ShotgunSurgeryRun =
@@ -118,7 +118,6 @@ export function shotgunSurgeryViolations(run: ShotgunSurgeryRun, limit: number):
 }
 
 function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgeryArchitectureViolation {
-  const drillLimit = FIND_CO_CHANGED_LIMIT_MAX;
   return {
     detector: "shotgunSurgery",
     components: spread.components,
@@ -147,14 +146,11 @@ function toShotgunSurgeryViolation(spread: ShotgunSurgerySpread): ShotgunSurgery
             })),
           }
         : {}),
-      drillDown: {
-        tool: "find_co_changed",
-        files: spread.exemplarFiles,
-        limit: drillLimit,
-        hint:
-          `call find_co_changed(files: ${JSON.stringify(spread.exemplarFiles)}, limit: ${drillLimit}) ` +
-          "to list the file-level partners behind this spread",
-      },
+      drillDown: findCoChangedDrillDown(
+        spread.exemplarFiles,
+        FIND_CO_CHANGED_LIMIT_MAX,
+        "to list the file-level partners behind this spread",
+      ),
     },
   };
 }
