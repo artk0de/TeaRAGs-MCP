@@ -264,14 +264,15 @@ export class ArchitectureReportOps {
     readDeclaredTestDependencies?: DeclaredTestDependencyLookup,
     readTreeFileText?: TreeFileTextLookup,
   ): Promise<GetArchitectureReportResponse> {
-    const facts = await readArchitectureGraphFacts(
-      graphDb,
-      request,
+    const judgement = await this.buildJudgement(graphDb, request, {
+      readImportSpecifiers,
+      readFileCommitCounts,
+      readFileMaintenanceSignals,
       readIndexedFileImports,
       readDeclaredTestDependencies,
       readTreeFileText,
-    );
-    return this.judge(facts, request, { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals });
+    });
+    return this.shapeResponse(judgement, request);
   }
 
   /**
@@ -287,6 +288,47 @@ export class ArchitectureReportOps {
     request: ArchitectureReportScope,
     lookups: ArchitectureReportHistoryLookups = {},
   ): Promise<GetArchitectureReportResponse> {
+    return this.shapeResponse(await this.judgeRuns(facts, request, lookups), request);
+  }
+
+  /**
+   * {@link ArchitectureReportOps#build} up to the judgement: read the graph
+   * facts and run every detector, without shaping — the snapshot
+   * `get_architecture_report` holds for its paging calls (bd
+   * tea-rags-mcp-00309).
+   */
+  async buildJudgement(
+    graphDb: ArchitectureReportGraphDb,
+    request: ArchitectureReportScope,
+    lookups: ArchitectureReportHistoryLookups & {
+      readIndexedFileImports?: IndexedFileImportLookup;
+      readDeclaredTestDependencies?: DeclaredTestDependencyLookup;
+      readTreeFileText?: TreeFileTextLookup;
+    } = {},
+  ): Promise<ArchitectureReportJudgement> {
+    const { readIndexedFileImports, readDeclaredTestDependencies, readTreeFileText, ...history } = lookups;
+    const facts = await readArchitectureGraphFacts(
+      graphDb,
+      request,
+      readIndexedFileImports,
+      readDeclaredTestDependencies,
+      readTreeFileText,
+    );
+    return this.judgeRuns(facts, request, history);
+  }
+
+  /**
+   * The expensive half of {@link ArchitectureReportOps#judge}: every detector
+   * over the scoped graph plus the maintenance-cost model. Independent of the
+   * view params (`limit`, `offset`), so one judgement serves every page
+   * {@link ArchitectureReportOps#shapeResponse} cuts from it. The cost model
+   * is read when the UNPAGED view lists a finding — a superset of any page's.
+   */
+  async judgeRuns(
+    facts: ArchitectureGraphFacts,
+    request: ArchitectureReportScope,
+    lookups: ArchitectureReportHistoryLookups = {},
+  ): Promise<ArchitectureReportJudgement> {
     const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = lookups;
     const maintenanceSignals = readFileMaintenanceSignals ? readOnce(readFileMaintenanceSignals) : undefined;
     const commitCounts = maintenanceSignals
@@ -301,12 +343,12 @@ export class ArchitectureReportOps {
       commitCounts,
       lookups.cochangeSignificance,
     );
-    const view = this.projectFindings(runs, request);
+    const unpaged = this.projectFindings(runs, { ...request, offset: 0 });
     const costModel =
-      maintenanceSignals && hasArchitectureFindings(view, runs)
+      maintenanceSignals && hasArchitectureFindings(unpaged, runs)
         ? new FileMaintenanceCostModel(await maintenanceSignals())
         : undefined;
-    return this.shapeResponse(scope, runs, view, request, costModel);
+    return { scope, runs, costModel };
   }
 
   /**
@@ -461,14 +503,20 @@ export class ArchitectureReportOps {
     };
   }
 
-  /** The response: per-detector summaries, the capped root causes and violations, and the views the request asked for. */
-  private shapeResponse(
-    scope: ScopedArchitectureGraph,
-    runs: ArchitectureDetectorRuns,
-    view: ArchitectureFindingsView,
+  /**
+   * The cheap half of {@link ArchitectureReportOps#judge}, pure and in memory:
+   * page the judgement's findings and shape the response — per-detector
+   * summaries, the capped root causes and violations, and the views the
+   * request asked for. A page that lists no finding ranks without the cost
+   * model, exactly as an unsplit judge would have skipped its read.
+   */
+  shapeResponse(
+    judgement: ArchitectureReportJudgement,
     request: ArchitectureReportScope,
-    costModel?: FileMaintenanceCostModel,
   ): GetArchitectureReportResponse {
+    const { scope, runs } = judgement;
+    const view = this.projectFindings(runs, request);
+    const costModel = hasArchitectureFindings(view, runs) ? judgement.costModel : undefined;
     const { production, whole } = scope;
     const { findings, limit, offset, domainKnot } = view;
     const carrierIndex = new ComponentEdgeCarrierIndex(runs.components.componentOf, runs.components.dependencies);
@@ -476,7 +524,7 @@ export class ArchitectureReportOps {
     const violations = rankArchitectureViolationsByMaintenanceCost(
       runs,
       findings,
-      limit,
+      { limit, offset: runs.knotLookup ? 0 : offset },
       costModel,
       carrierIndex,
       tierModel,
@@ -641,6 +689,18 @@ interface ArchitectureDetectorRuns {
  * the whole knot whose keep costs price the page's cut edges (bd
  * tea-rags-mcp-r8hme.40).
  */
+/**
+ * One report's judgement before shaping (bd tea-rags-mcp-00309): the scoped
+ * graph, every detector run, and the maintenance-cost model when one was read.
+ * Independent of `limit` / `offset`; {@link ArchitectureReportOps#shapeResponse}
+ * cuts any page from it in memory.
+ */
+export interface ArchitectureReportJudgement {
+  scope: ScopedArchitectureGraph;
+  runs: ArchitectureDetectorRuns;
+  costModel: FileMaintenanceCostModel | undefined;
+}
+
 interface ArchitectureFindingsView {
   limit: number;
   offset: number;
@@ -791,7 +851,7 @@ function runArchitectureLayering(
 function rankArchitectureViolationsByMaintenanceCost(
   runs: ArchitectureDetectorRuns,
   findings: ArchitectureDetectorReports,
-  limit: number,
+  page: { limit: number; offset: number },
   costModel: FileMaintenanceCostModel | undefined,
   carrierIndex: ComponentEdgeCarrierIndex,
   tierModel: ArchitectureViolationImpactTierModel | undefined,
@@ -840,7 +900,7 @@ function rankArchitectureViolationsByMaintenanceCost(
     ...(runs.norms ? [family(normsViolations(runs.norms, UNCAPPED))] : []),
   ];
   return rankFamiliesByMaintenanceCost(families, costModel).flatMap((ranked) =>
-    [...ranked].sort((a, b) => impactTierOrder(a) - impactTierOrder(b)).slice(0, limit),
+    [...ranked].sort((a, b) => impactTierOrder(a) - impactTierOrder(b)).slice(page.offset, page.offset + page.limit),
   );
 }
 

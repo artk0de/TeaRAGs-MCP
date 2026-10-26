@@ -28,7 +28,12 @@ export type EmptyAnswerReason =
   /** The file has no commit history in the co-change window. */
   | "noHistory"
   /** Nothing matched and no narrower reason applies. */
-  | "noMatch";
+  | "noMatch"
+  /**
+   * A paging call's `reportId` names no held report the current tree and
+   * scope still match — evicted, expired, or judged before the tree moved.
+   */
+  | "reportStale";
 
 export interface EmptyAnswerExplanation {
   reason: EmptyAnswerReason;

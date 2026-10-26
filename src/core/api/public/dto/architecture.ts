@@ -89,8 +89,23 @@ export interface GetArchitectureReportRequest {
    * `summary` stays whole-project.
    */
   knotOf?: string;
-  /** Page start for the `knotOf` view (default 0). */
+  /**
+   * Page start (default 0): skips that many violations per detector, after
+   * ranking — pair it with `reportId` to page one judgement. In knot mode it
+   * pages the `knotOf` view instead (findings ride the first page only).
+   */
   offset?: number;
+  /**
+   * A previous answer's `reportId` (bd tea-rags-mcp-00309): serve this call
+   * from that held judgement — no detector run, no graph read — with this
+   * call's view params (`limit`, `offset`). Held in memory by the MCP server
+   * (8 reports, ~10 min); a one-process CLI `call` never holds one. A held
+   * report the tree, scope or clock no longer matches answers
+   * `empty.reason: "reportStale"` — re-call without `reportId`. The tree
+   * check compares the working-tree marker's counts, so re-editing an
+   * already-changed file goes unnoticed until the report expires.
+   */
+  reportId?: string;
   /**
    * Planned-edges MODE (bd tea-rags-mcp-xb669.2): judge each edge a writer is
    * about to add against the indexed graph's dependency norms, BEFORE it is

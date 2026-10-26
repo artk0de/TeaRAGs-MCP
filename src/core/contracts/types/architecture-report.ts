@@ -22,6 +22,7 @@
 
 import type { EdgeOrigin } from "./codegraph-residual.js";
 import type { ChangeReasonsUnavailable, CochangeBurstWindowMethod, ModuleChangeReasons, RelPath } from "./codegraph.js";
+import type { EmptyAnswerExplanation } from "./empty-answer.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
 
 /** How the layer map view picks its nodes (bd tea-rags-mcp-r8hme.26). */
@@ -2075,6 +2076,18 @@ export interface GetArchitectureReportResponse {
    * WTO-7) — the same marker the other graph tools carry.
    */
   workingTree?: WorkingTreeMarker;
+  /**
+   * The held judgement this answer was cut from (bd tea-rags-mcp-00309) —
+   * pass it back with `offset` / `limit` to page without re-running the
+   * detectors. Absent on a stale answer and when no graph was judged.
+   */
+  reportId?: string;
+  /**
+   * Set only when the request's `reportId` named no report the current tree
+   * still matches (`reason: "reportStale"`); the report fields are then empty
+   * — a fresh judgement is never mixed into old pages.
+   */
+  empty?: EmptyAnswerExplanation;
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
   summary: ArchitectureReportSummary;

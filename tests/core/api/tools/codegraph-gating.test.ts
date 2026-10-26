@@ -301,6 +301,7 @@ describe("get_architecture_report", () => {
         "pathPattern",
         "plannedEdges",
         "project",
+        "reportId",
         "restructure",
         "restructurePlan",
       ].sort(),
