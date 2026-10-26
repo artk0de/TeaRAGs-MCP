@@ -47,10 +47,10 @@ function formatMember(symbolId: string): string {
  * it is not — an unknown level is never rendered as public (bd
  * tea-rags-mcp-sqqkz).
  */
-function visibilitySuffix(chunk: ScrollChunk, visibilityOf: MemberVisibilityLookup | undefined): string {
-  const symbolId = chunk.payload.symbolId as string | undefined;
+function visibilitySuffix(row: ScrollChunk, visibilityOf: MemberVisibilityLookup | undefined): string {
+  const symbolId = outlineIdOf(row);
   if (visibilityOf === undefined || symbolId === undefined) return "";
-  const level = visibilityOf((chunk.payload.relativePath as string | undefined) ?? "", symbolId);
+  const level = visibilityOf((row.payload.relativePath as string | undefined) ?? "", symbolId);
   return level === undefined ? "" : ` (${level})`;
 }
 
@@ -63,9 +63,9 @@ function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibili
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const chunk of sortedMembers) {
-    const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
+    const symbolId = outlineIdOf(chunk) ?? "";
     for (const id of addressesOf(chunk)) {
-      if (seen.has(id)) continue;
+      if (id === "" || seen.has(id)) continue;
       seen.add(id);
       lines.push(`  ${formatMember(id)}${id === symbolId ? visibilitySuffix(chunk, visibilityOf) : ""}`);
     }
@@ -83,7 +83,16 @@ function addressesOf(chunk: ScrollChunk): string[] {
   if (Array.isArray(members) && members.length > 0) {
     return members.filter((id): id is string => typeof id === "string");
   }
-  return [(chunk.payload.symbolId as string | undefined) ?? ""];
+  return [outlineIdOf(chunk) ?? ""];
+}
+
+/**
+ * The id an outline line names for a chunk: a `#partN` window stands for its
+ * symbol (`Foo#bar#part2` → `Foo#bar`), so the windows of one oversized method
+ * draw ONE drillable line — `find_symbol` merges the parts on that id.
+ */
+function outlineIdOf(row: ScrollChunk): string | undefined {
+  return splitFragmentBase(row.payload) ?? (row.payload.symbolId as string | undefined);
 }
 
 /** A DSL test chunk — an example, or a scope's setup. */
@@ -274,6 +283,15 @@ export const CodeChunkGrouper = {
     const scopeLines = testScopeLines(roots);
     const scopeIds = drawnScopeIds(roots);
     const lines: string[] = [relativePath];
+    // An unnamed block chunk (top-level statements between declarations) has
+    // no address, and the windows of one split symbol share one: neither draws
+    // a line of its own.
+    const drawn = new Set<string>();
+    const draw = (indent: string, label: string, row: ScrollChunk): void => {
+      if (label === "" || drawn.has(label)) return;
+      drawn.add(label);
+      lines.push(`${indent}${label}${visibilitySuffix(row, visibilityOf)}`);
+    };
     for (const root of roots) {
       if (isTestExampleChunk(root)) {
         lines.push(...(scopeLines.get(root) ?? []));
@@ -291,15 +309,11 @@ export const CodeChunkGrouper = {
         }
       }
       const name = root.payload.name as string | undefined;
-      const symbolId = root.payload.symbolId as string | undefined;
-      const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");
-      lines.push(`  ${label}${visibilitySuffix(root, visibilityOf)}`);
+      const symbolId = outlineIdOf(root);
+      draw("  ", (root.payload.parentSymbolId ? (symbolId ?? name) : (name ?? symbolId)) ?? "", root);
       const children = name ? childrenByParent.get(name) : undefined;
       if (children) {
-        for (const child of children) {
-          const childId = (child.payload.symbolId as string | undefined) ?? "";
-          lines.push(`    ${childId}${visibilitySuffix(child, visibilityOf)}`);
-        }
+        for (const child of children) draw("    ", outlineIdOf(child) ?? "", child);
       }
     }
 

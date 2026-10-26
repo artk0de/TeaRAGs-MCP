@@ -528,4 +528,52 @@ describe("CodeChunkGrouper", () => {
       expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank\n  Reranker#score");
     });
   });
+
+  describe("outline lines are addresses (agent turn economy N2 grouper fixes)", () => {
+    const row = (id: string, startLine: number, payload: Record<string, unknown>): ScrollChunk => ({
+      id,
+      payload: {
+        chunkType: "function",
+        relativePath: "src/sm.ts",
+        language: "typescript",
+        startLine,
+        endLine: startLine + 5,
+        ...payload,
+      },
+    });
+
+    it("draws no blank line for an unnamed block chunk", () => {
+      const result = CodeChunkGrouper.groupFile([
+        row("t", 1, { name: "IndexSchema", symbolId: "IndexSchema", chunkType: "interface" }),
+        row("b-1", 10, { chunkType: "block" }),
+        row("b-2", 20, { chunkType: "block", name: "", symbolId: "" }),
+        row("f", 30, { name: "helper", symbolId: "helper" }),
+      ]);
+
+      expect(result.payload?.content).toBe("src/sm.ts\n  IndexSchema\n  helper");
+    });
+
+    it("collapses the #partN windows of one oversized method into one member line", () => {
+      const method = "SchemaManager#initializeSchema";
+      const result = CodeChunkGrouper.groupFile([
+        row("c", 1, { name: "SchemaManager", symbolId: "SchemaManager", chunkType: "class" }),
+        row("p-1", 10, { name: "initializeSchema", symbolId: `${method}#part1`, parentSymbolId: method }),
+        row("p-2", 40, { name: "initializeSchema", symbolId: `${method}#part2`, parentSymbolId: method }),
+        row("p-3", 70, { name: "initializeSchema", symbolId: `${method}#part3`, parentSymbolId: method }),
+      ]);
+
+      expect(result.payload?.content).toBe(`src/sm.ts\n  SchemaManager\n  ${method}`);
+    });
+
+    it("collapses #partN windows of a class member in a class outline", () => {
+      const method = "WorkingTreeMarker#finalize";
+      const result = CodeChunkGrouper.groupMembers("WorkingTreeMarker", [
+        row("m", 1, { name: "read", symbolId: "WorkingTreeMarker#read", parentSymbolId: "WorkingTreeMarker" }),
+        row("p-1", 10, { name: "finalize", symbolId: `${method}#part1`, parentSymbolId: method }),
+        row("p-2", 40, { name: "finalize", symbolId: `${method}#part2`, parentSymbolId: method }),
+      ]);
+
+      expect(result.payload?.content).toBe(`WorkingTreeMarker\n  WorkingTreeMarker#read\n  ${method}`);
+    });
+  });
 });
