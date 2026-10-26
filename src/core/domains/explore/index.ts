@@ -13,6 +13,7 @@ export type { ScoringWeights, RerankableResult, RerankMode } from "./reranker.js
 export type { RerankerPort, RerankOptions } from "./reranker-port.js";
 export { historyClockRerankOption } from "./history-clock.js";
 export { OrderByFieldResolver, RankModule, type RankOptions } from "./rank-module.js";
+export { toolCallAddressFromWorkingTree } from "./tool-call-address.js";
 export { computeSearchConfidence } from "./confidence.js";
 export type { SearchConfidence, SearchConfidenceInput } from "./confidence.js";
 export {
