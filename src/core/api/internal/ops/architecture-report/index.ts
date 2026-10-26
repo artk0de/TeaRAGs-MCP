@@ -6,6 +6,11 @@
  * reaches these only through this barrel.
  */
 
+export {
+  architectureReportViewOf,
+  presentArchitectureReport,
+  type ArchitectureReportView,
+} from "./architecture-report-presentation.js";
 export { compareCodePoints, round3 } from "./architecture-report-value-format.js";
 export { changeReasonsView } from "./change-reasons-view.js";
 export { normsDto, normsViolations } from "./dependency-norms-findings.js";

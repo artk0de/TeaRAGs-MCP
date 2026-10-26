@@ -75,7 +75,7 @@ describe("GraphFacade#getArchitectureReport", () => {
     const report = await facade.getArchitectureReport({ collection: "code_x" });
 
     expect(readImportSpecifiers).toHaveBeenCalledWith("code_x", ["app/Editor.tsx"]);
-    expect(report.violations.filter((v) => v.detector === "silentCoupling")).toEqual([]);
+    expect(report.violations.silentCoupling).toBeUndefined();
     expect(report.summary.silentCoupling.strongLinkedCount).toBe(1);
   });
 
@@ -154,7 +154,7 @@ describe("GraphFacade#getArchitectureReport", () => {
     const report = await facade.getArchitectureReport({ collection: "code_x" });
 
     expect(readFileMaintenanceSignals).toHaveBeenCalledWith("code_x");
-    expect(report.violations[0]?.maintenanceCost).toMatchObject({
+    expect(report.violations.leakingAbstraction?.[0]?.maintenanceCost).toMatchObject({
       score: 0.5,
       hottestFile: { relPath: "app/a.ts", cost: 1 },
     });
@@ -249,7 +249,7 @@ describe("GraphFacade#getArchitectureReport", () => {
 
     const report = await facade.getArchitectureReport({ collection: "code_x" });
 
-    expect(report.violations).toEqual([]);
+    expect(report.violations).toEqual({});
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
 

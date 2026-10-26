@@ -48,7 +48,7 @@ import { resolvePhysicalCollection, splitMethodSymbol } from "../../../primitive
 import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
-  GetArchitectureReportResponse,
+  GetArchitectureReportToolResponse,
   GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
   GitFileMaintenanceSignals,
@@ -77,6 +77,7 @@ import type {
 } from "../ops/architecture-facts.js";
 import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { architectureReportViewOf, presentArchitectureReport } from "../ops/architecture-report/index.js";
 import {
   ArchitectureRestructureOps,
   type ArchitectureRestructureLookups,
@@ -527,7 +528,7 @@ export class GraphFacade {
     );
   }
 
-  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
+  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportToolResponse> {
     const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
@@ -538,7 +539,7 @@ export class GraphFacade {
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
     const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
-    return this.inRequestWindow(async () =>
+    const report = await this.inRequestWindow(async () =>
       this.withMarkedReadHandle(
         req,
         async (handle) =>
@@ -555,6 +556,8 @@ export class GraphFacade {
         ArchitectureReportOps.empty(req),
       ),
     );
+    // Tool view only (bd tea-rags-mcp-9ah49): every other reader keeps the flat report.
+    return presentArchitectureReport(report, architectureReportViewOf(req), report.workingTree);
   }
 
   /**

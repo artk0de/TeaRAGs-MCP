@@ -223,7 +223,7 @@ describe("createApp", () => {
 
     const report = await app.getArchitectureReport({ project: "p" });
 
-    expect(report.violations).toEqual([]);
+    expect(report.violations).toEqual({});
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
 

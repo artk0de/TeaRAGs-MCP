@@ -235,6 +235,21 @@ describe("get_architecture_report", () => {
     expect(schema.safeParse({ project: "tea-rags", knotOf: "app", offset: 1.5 }).success).toBe(false);
   });
 
+  it("takes the tool-view params evidenceLimit (count or all), detectors and includeExplainedPairs (bd tea-rags-mcp-9ah49)", () => {
+    const { call } = registered();
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny> };
+    const schema = z.object(config.inputSchema);
+
+    expect(schema.safeParse({ project: "tea-rags", evidenceLimit: 5 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", evidenceLimit: "all" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", evidenceLimit: 0 }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", evidenceLimit: "none" }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", detectors: ["shotgunSurgery", "layering"] }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", detectors: ["godClass"] }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", detectors: [] }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", includeExplainedPairs: true }).success).toBe(true);
+  });
+
   it("takes a domain root judged as its own system, and names it in the description (bd tea-rags-mcp-xb669.1)", () => {
     const { call } = registered();
     const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
@@ -291,7 +306,10 @@ describe("get_architecture_report", () => {
       [
         "changeReasons",
         "collection",
+        "detectors",
         "domain",
+        "evidenceLimit",
+        "includeExplainedPairs",
         "knotOf",
         "layerMap",
         "limit",
