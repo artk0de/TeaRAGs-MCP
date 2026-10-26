@@ -167,6 +167,7 @@ export {
   UnknownRestructureComponentError,
   UnknownRestructureEdgeError,
   UnknownRestructureFileError,
+  UnknownRerankSignalError,
 } from "./errors.js";
 export type { InputErrorCode, DocumentMetadataViolation } from "./errors.js";
 

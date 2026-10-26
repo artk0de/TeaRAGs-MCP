@@ -80,11 +80,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "SemanticSearchSchema",
-    invoke: async (app, { rerank, ...rest }) =>
-      app.semanticSearch({
-        ...rest,
-        rerank: sanitizeRerank(rerank as RerankParam),
-      } as SemanticSearchRequest),
+    invoke: async (app, request) => app.semanticSearch(request as unknown as SemanticSearchRequest),
   },
   {
     name: "hybrid_search",
@@ -96,11 +92,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "HybridSearchSchema",
-    invoke: async (app, { rerank, ...rest }) =>
-      app.hybridSearch({
-        ...rest,
-        rerank: sanitizeRerank(rerank as RerankParam),
-      } as HybridSearchRequest),
+    invoke: async (app, request) => app.hybridSearch(request as unknown as HybridSearchRequest),
   },
   {
     name: "rank_chunks",
@@ -113,11 +105,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "RankChunksSchema",
-    invoke: async (app, { rerank, ...rest }) =>
-      app.rankChunks({
-        ...rest,
-        rerank: sanitizeRerank(rerank as RerankParam) as string | { custom: Record<string, number> },
-      }),
+    invoke: async (app, request) => app.rankChunks(request as unknown as Parameters<App["rankChunks"]>[0]),
   },
   {
     name: "find_similar",
@@ -133,11 +121,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "outlier / novelty / refactor-candidate detection.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
-    invoke: async (app, { rerank, ...rest }) =>
-      app.findSimilar({
-        ...rest,
-        rerank: sanitizeRerank(rerank as RerankParam),
-      }),
+    invoke: async (app, request) => app.findSimilar(request),
   },
   {
     name: "find_symbol",
@@ -162,11 +146,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "definition — no second semantic_search needed.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSymbolSchema",
-    invoke: async (app, { rerank, ...rest }) =>
-      app.findSymbol({
-        ...rest,
-        rerank: sanitizeRerank(rerank as RerankParam),
-      }),
+    invoke: async (app, request) => app.findSymbol(request),
   },
 ];
 
@@ -176,6 +156,8 @@ export function registerSearchTools(
 ): void {
   const { app, register: registerToolSafe, autoUpdate } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
+  // Derived from the composition's registry, fixed for the server's life.
+  const customWeightSignals = deps.schemaBuilder.customWeightSignals();
 
   for (const tool of SEARCH_TOOLS) {
     registerToolSafe(
@@ -191,8 +173,9 @@ export function registerSearchTools(
       },
       async (request: unknown) => {
         // `includeImports` shapes the answer, not the search: the App never sees it.
-        const { includeImports, ...search } = request as SearchRequest;
-        const result = formatStructuredResult(await tool.invoke(app, search), {
+        const { includeImports, rerank, ...search } = request as SearchRequest;
+        const sanitized = { ...search, rerank: sanitizeRerank(rerank as RerankParam, customWeightSignals) };
+        const result = formatStructuredResult(await tool.invoke(app, sanitized), {
           includeImports: includeImports === true,
         });
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;

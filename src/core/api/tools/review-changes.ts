@@ -26,58 +26,17 @@ import { collectionPathFields } from "./codegraph.js";
 import { formatMcpResponse, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 
+/**
+ * Call contract only; how to read each section (gates, caps, change block,
+ * flags, norms verdicts) lives in tea-rags://guide/review (bd tea-rags-mcp-0y5oj).
+ */
 const REVIEW_CHANGES_DESCRIPTION =
   "Review one working-tree change: every diff-scoped report in one call, sections keyed by id. " +
-  "naming = verdicts on every declaration the change adds, judged against project vocabulary — the complete list; " +
-  "never hand-list a diff's names into get_naming_lexicon. " +
-  "Reads the change once — every changed file (no cap), untracked included; changes.base (default HEAD) resolved to its " +
-  "merge-base with HEAD = what THIS branch changed; path beside project = linked worktree of the same repo. " +
-  "sections = ALLOWLIST, default all registered; unknown id = error; a section NOT requested is OMITTED from the " +
-  "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
-  "incompleteChange: co-change partners of the diff's files the diff does NOT touch — findings pass the " +
-  "co-change significance gate (Poisson test vs configuration null n_p*n_q*Qs/M^2, BH q=0.05 over every pair " +
-  "touching the diff, history minus the diff's own commits; summary cochangeSignificance + notSignificant), then " +
-  "Wilson strength and the majority-floored Otsu cut over the corpus; partnerKind " +
-  "test-first, generated + version manifests excluded (versionManifestPairs); structurallyLinked ranks above history-only; cap 50; a missing test partner whose source a touched test " +
-  "has as SUBJECT — top scope's leading identifier = a symbol the source declares, and it imports the source, read " +
-  "from the working tree — is a coveredPartners note naming that test, not a finding). cohesion: per changed " +
-  "file, symbol co-change clusters + split candidates; a file with " +
-  "no data = notJudged noCohesionData, never zero (cap 50 reports). architecture: the diff's added edges judged by " +
-  "the boundary detectors (stableDependencies, leakingAbstraction, cycles, mainSequence delta, silentCoupling, " +
-  "facadeContract, layeringBackEdge = added edge from lower inferred level up, evidence levels + closesKnot; " +
-  "parent->own subdir never; hubLike = added edges carry component past get_architecture_report's hub cuts, Ca/Ce " +
-  "before+after, Ce excludes foundation edges); a finding = endpoints (typed by kind, get_architecture_report's endpoint fields) + structured " +
-  "evidence + subject (endpoints as text) + detail + optional remedy (dry-run-verified edge fix: retargetImport [+addExport] | " +
-  "restoreExport; absent = no cheap fix); each family ranked costliest-first before the cap by maintenanceCost (get_architecture_report's " +
-  "shrunken mean over the files the finding names, n0 estimated over this review's findings; <2 measured = 0.5; absent = no git readings); findings cap 100, family-aware — every family keeps >=1 slot; per-family truncated rides each " +
-  "detector row, findingCount stays the family's FULL total, rows reconcile findingCount = listed + truncated + persistingCount. " +
-  "findings = what the change INTRODUCED + any finding carrying a remedy; the rest collapse into change = {introducedCount, " +
-  "nonLocal (introduced violations no listed finding carries = effect away from the diff, e.g. SDP between untouched " +
-  "components — triage like findings), resolved, persisting ({family, subject}, no evidence — not the change's), indexLag?, " +
-  "maybeAlreadyCommitted (index lacks the merge-base: introduced may hold already-committed edits)} — full detector set " +
-  "judged on index vs index+tree edges, keyed by endpoints, renames canonicalized; silentCoupling, shotgunSurgery, norms " +
-  "read git/type history no edge overlay moves, splitCandidates merge verdicts too = persisting by construction. " +
-  "tier (get_architecture_report's impact tier: structural | active | critical) rides findings and change entries — " +
-  "introduced = overlaid run's, else base run's; absent = family untierable or no co-change history; pairs touching " +
-  "the diff judged without the diff's own commits. change.touchedActive ({family, subject, tier}) = persisting " +
-  "active/critical violations the diff touches (finding names it or changed file on a carrying edge) — lifted out " +
-  "of persisting (a lifted finding stays in its row's persistingCount): edit lands on a live cascade. " +
-  "Detector rows also carry exclusions: mainSequence excludedLowConnectionCount (small-N components below the " +
-  "connection floor), mainSequence excludedFlapCount (|ΔD| ≤ 0.02 moves, not findings), mainSequence excludedBelowThresholdCount (rises ending ≤ served distanceThreshold), silentCoupling excluded block (the production taxonomy's counters) — a zero over excluded " +
-  "classes is not a clean pass; silentCoupling pairs sharing an endpoint list as ONE finding (partners[] = every " +
-  "pair, evidence.topPartners = 3 strongest with expected support λ, drillDown = ready find_co_changed call) — its row's " +
-  "findingCount counts pairs, groupedFindingCount the findings (= listed + truncated); foundationTerminal:true on a D-delta finding = every contributing edge ends in " +
-  "an abstract L0 foundation, entryPoint:true = touched component holds a facade nothing imports (an entry) — placement, not defect, " +
-  "preExisting:true on a cycles/leakingAbstraction finding = the index already holds that edge — the diff touches " +
-  "a file on it, did not add it; on layeringBackEdge = another edge already carried the component pair; on hubLike = already a hub before (listed only with a remedy, else in change.persisting). " +
-  "norms: each file edge the change ADDS (absent at merge-base) judged by get_architecture_report's dependency-norm " +
-  "ledgers over the INDEXED graph (change's own edges never precedent): MISFIT = against role pair's established " +
-  "direction, expectedPath = that direction + support; CONFORMS; NEW_PATTERN = pair with no history; UNJUDGED + reason " +
-  "(notIndexed = new file, untypedRole, weakRole + weakSide source|target|both, crossLanguage). exclusionsUnchecked = report exclusion classes not " +
-  "evaluated (no call data on added edges). MISFIT first, cap 100 + truncated; verdictCounts + unjudgedReasonCounts pre-cap; " +
-  "removedEdgeCount count only; test/tooling edges = nonProductionEdgeCount. " +
-  "Envelope: workTree, base, mergeBase, changedFiles, indexLag, notices (an empty diff names the " +
-  "trees and bases it did not look at).";
+  "naming = verdicts on every declaration the change adds — the complete list; never hand-list a diff's " +
+  "names into get_naming_lexicon. Reads every changed file, untracked included; changes.base (default HEAD) " +
+  "→ its merge-base with HEAD = what THIS branch changed; path beside project = linked worktree. " +
+  "sections = allowlist, default all; unknown id = error; not requested = omitted; substrate missing = " +
+  "built:false+reason. Read tea-rags://guide/review to interpret the answer.";
 
 const reviewChangesInputShape = (sectionIds: readonly [ReviewSectionId, ...ReviewSectionId[]]) => ({
   ...collectionPathFields(),

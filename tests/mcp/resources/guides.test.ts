@@ -4,8 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { connectInProcessClient, type InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
 import type { App } from "../../../src/core/api/public/index.js";
-import { renderLanguageCapabilityGuide } from "../../../src/core/domains/language/capability/rule.js";
-import { nativeLanguageCapabilities } from "../../../src/core/domains/language/index.js";
+import { nativeLanguageCapabilities, renderLanguageCapabilityGuide } from "../../../src/core/domains/language/index.js";
 import { AGENT_CONTEXT_CORE, AGENT_CONTEXT_GUIDES } from "../../../src/mcp/resources/generated/agent-context.js";
 import { registerAllResources, renderGuideTemplate } from "../../../src/mcp/resources/index.js";
 
@@ -62,11 +61,15 @@ describe("tea-rags://guide/* resources", () => {
     return session;
   }
 
-  it("lists at most 20 resources and templates together, no per-collection entry", async () => {
+  // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): 20 → 21. The owner-approved
+  // guide/architecture + guide/review add two listed rows (the answer-reading
+  // prose that left two tool descriptions); the per-collection flood this cap
+  // guards against stays excluded below.
+  it("lists at most 21 resources and templates together, no per-collection entry", async () => {
     const s = await connect();
     const resources = await s.listResources();
     const templates = await s.listResourceTemplates();
-    expect(resources.length + templates.length).toBeLessThanOrEqual(20);
+    expect(resources.length + templates.length).toBeLessThanOrEqual(21);
     expect(resources.filter((r) => r.uri.startsWith("qdrant://collection/"))).toEqual([]);
   });
 
@@ -75,6 +78,17 @@ describe("tea-rags://guide/* resources", () => {
     for (const topic of ["navigation", "decision-tree", "freshness", "degraded"]) {
       expect(await textOf(s, `tea-rags://guide/${topic}`)).toMatch(/^# /);
     }
+  });
+
+  // bd tea-rags-mcp-0y5oj: the answer-reading prose of get_architecture_report
+  // and review_changes moved out of their tool descriptions into these guides.
+  it.each([
+    ["architecture", ["Otsu", "maintenanceCost", "critical = active AND", "explainedPairs", "NEW_PATTERN"]],
+    ["review", ["coveredPartners", "maybeAlreadyCommitted", "touchedActive", "nonLocal", "notIndexed"]],
+  ])("serves the %s answer-reading guide with its moved facts", async (topic, anchors) => {
+    const text = await textOf(await connect(), `tea-rags://guide/${topic}`);
+    expect(text).toMatch(/^# /);
+    for (const anchor of anchors) expect(text, anchor).toContain(anchor);
   });
 
   it("registers every builder-backed guide", async () => {

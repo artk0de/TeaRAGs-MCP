@@ -34,12 +34,19 @@ const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "
  * MCP tool as the RECOMMENDED way to address a codebase — see register_project
  * to create an alias.
  */
+/**
+ * `project` hint, one string for every project-aware tool (bd tea-rags-mcp-0y5oj:
+ * 167 chars × 18 tools before). Resolution priority and the alias-alone case
+ * live in tea-rags://guide/overview `## Param reference`.
+ */
+export const PROJECT_ALIAS_HINT = "Alias from list_projects/prime; pass every call.";
+
 export const projectField = () =>
   z
     .string()
     .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
     .optional()
-    .describe("Index alias — pass every call. Alone → registered checkout. Priority: collection>project>path.");
+    .describe(PROJECT_ALIAS_HINT);
 
 /**
  * `path` hint for every read tool addressed by the { collection, project, path }
@@ -47,8 +54,7 @@ export const projectField = () =>
  * the caller stands in and finds the index registered for the same repository.
  * One string for the search and codegraph surfaces alike.
  */
-export const WORKING_TREE_PATH_HINT =
-  "Working tree: your cwd (checkout / worktree). Pass WITH project; needed for worktrees.";
+export const WORKING_TREE_PATH_HINT = "Your working tree (cwd / worktree); pass WITH project.";
 
 /** `path` hint for the project-or-path tools (index status / metrics / clear). */
 const PROJECT_OR_PATH_HINT = "Codebase path. Prefer 'project' when an alias is registered.";
@@ -298,7 +304,12 @@ function typedFilterFields(applied: ReadonlySet<string>): TypedFilterCatalog {
 
 const PATH_PATTERN_HINT = "Glob on file path (picomatch), e.g. '**/workflow/**', 'src/**/*.ts'.";
 
-const RERANK_HINT = "Rerank preset or {custom: weights}. See tea-rags://schema/presets.";
+/**
+ * The custom arm is an open map (bd tea-rags-mcp-0y5oj) — the hint names where
+ * its keys come from; an unknown key is rejected server-side.
+ */
+const RERANK_HINT =
+  "Preset, or {custom: {<signal>: number}}; signals: tea-rags://guide/signals, presets: tea-rags://guide/presets.";
 
 const OFFSET_HINT = "Skip first N results (pagination). Default: 0.";
 
@@ -430,7 +441,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
     ...collectionPathFields(),
     ...typedFilterFields(appliedFilterParams),
     rerank: rankChunksRerankSchema.describe(
-      "REQUIRED rerank preset or {custom: weights}; similarity weight ignored (no vector). See tea-rags://schema/presets.",
+      "REQUIRED preset or {custom: {<signal>: number}} (tea-rags://guide/signals); similarity ignored (no vector).",
     ),
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
@@ -499,7 +510,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
     metaOnly: coerceBoolean().optional().describe(`Existence check. ${META_ONLY_HINT}`),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe("Rerank preset or {custom: weights} — attaches rankingOverlay to the definition."),
+      .describe("Preset or {custom: {<signal>: number}} (tea-rags://guide/signals) — attaches rankingOverlay."),
     ...fieldsField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
     offset: coerceNumber().optional().describe(OFFSET_HINT),

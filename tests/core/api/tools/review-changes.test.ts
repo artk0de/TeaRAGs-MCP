@@ -12,6 +12,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { App } from "../../../../src/core/api/index.js";
 import { registerReviewChangesTool } from "../../../../src/core/api/tools/review-changes.js";
+import { AGENT_CONTEXT_GUIDES } from "../../../../src/mcp/resources/generated/agent-context.js";
+
+const REVIEW_GUIDE = AGENT_CONTEXT_GUIDES.review ?? "";
 
 interface RegisteredTool {
   config: {
@@ -83,7 +86,7 @@ describe("review_changes handler", () => {
 
   // bd tea-rags-mcp-89k7k.1.19.6: the verified repair reaches the agent, and the contract names it.
   it("an architecture finding's remedy survives the formatter and the description names it", async () => {
-    const { handler, app, config } = registered()!;
+    const { handler, app } = registered()!;
     const remedy = {
       kind: "retargetImport",
       sourceRelPath: "src/app/a.ts",
@@ -108,7 +111,9 @@ describe("review_changes handler", () => {
     const result = await handler({ sections: ["architecture"] });
 
     expect(JSON.parse(result.content[0].text).review.sections.architecture.findings[0].remedy).toEqual(remedy);
-    expect(config.description).toContain("remedy");
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/review.
+    expect(REVIEW_GUIDE).toContain("remedy");
   });
 
   it("states up front that the naming section already judges every declaration the change adds", () => {
@@ -118,7 +123,7 @@ describe("review_changes handler", () => {
   });
 
   it("the architecture change block survives the formatter and the description names its contract (bd tea-rags-mcp-89k7k.1.7)", async () => {
-    const { handler, app, config } = registered()!;
+    const { handler, app } = registered()!;
     const change = {
       introducedCount: 1,
       nonLocal: [{ family: "stableDependencies", subject: "src/far -> src/away" }],
@@ -135,12 +140,12 @@ describe("review_changes handler", () => {
 
     expect(JSON.parse(result.content[0].text).review.sections.architecture.change).toEqual(change);
     for (const term of ["introducedCount", "nonLocal", "resolved", "persisting", "maybeAlreadyCommitted"]) {
-      expect(config.description).toContain(term);
+      expect(REVIEW_GUIDE).toContain(term);
     }
   });
 
   it("the impact tiers survive the formatter and the description names touchedActive (bd tea-rags-mcp-r8hme.53)", async () => {
-    const { handler, app, config } = registered()!;
+    const { handler, app } = registered()!;
     const change = {
       introducedCount: 0,
       nonLocal: [],
@@ -158,6 +163,8 @@ describe("review_changes handler", () => {
 
     expect(architecture.change).toEqual(change);
     expect(architecture.findings[0].tier).toBe("active");
-    for (const term of ["touchedActive", "tier", "critical"]) expect(config.description).toContain(term);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/review.
+    for (const term of ["touchedActive", "tier", "critical"]) expect(REVIEW_GUIDE).toContain(term);
   });
 });

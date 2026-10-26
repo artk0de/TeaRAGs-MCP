@@ -38,6 +38,7 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
 
   const schemaBuilder = {
     buildRerankSchema: vi.fn(() => z.any()),
+    customWeightSignals: () => ["similarity"],
     buildFilterSchema: vi.fn(() => z.any()),
     filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
   } as unknown as SchemaBuilder;

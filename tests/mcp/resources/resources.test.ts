@@ -494,6 +494,7 @@ describe("Resource builders", () => {
   describe("advertised params exist in the MCP tool schemas", () => {
     const schemaBuilder = {
       buildRerankSchema: () => z.string(),
+      customWeightSignals: () => ["similarity"],
       buildFilterSchema: () => z.record(z.string(), z.any()),
       filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
     } as unknown as SchemaBuilder;

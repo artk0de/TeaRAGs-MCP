@@ -285,7 +285,7 @@ function markdownTitle(markdown: string, fallback: string): string {
 /**
  * `tea-rags://schema/{name}` — deprecated aliases of the builder-backed guides,
  * readable for one release, not listed: seven extra rows would break the
- * `resources/list` budget of 20.
+ * `resources/list` budget of 21.
  */
 function registerSchemaAliases(server: McpServer, guides: BuilderBackedGuide[]): void {
   const byAlias = new Map(guides.flatMap((guide) => (guide.schemaAlias ? [[guide.schemaAlias, guide] as const] : [])));

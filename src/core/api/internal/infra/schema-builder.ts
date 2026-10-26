@@ -49,15 +49,22 @@ export class SchemaBuilder implements SchemaBuilderPort {
   }
 
   /**
-   * Build Zod schema for custom scoring weights.
-   * Each derived signal becomes an optional numeric field (no descriptions).
+   * Derived-signal names a `rerank: {custom}` weight may key — the one source
+   * the custom-key check (`sanitizeRerank`) validates against.
+   */
+  customWeightSignals(): string[] {
+    return this.reranker.getDescriptorInfo().map((d) => d.name);
+  }
+
+  /**
+   * Build Zod schema for custom scoring weights: an open `{<signal>: number}`
+   * map (bd tea-rags-mcp-0y5oj). Enumerating every derived signal cost ~1.5 KB
+   * per rerank-bearing tool in `tools/list`; the catalog lives in
+   * tea-rags://guide/signals and unknown keys are rejected server-side against
+   * {@link customWeightSignals}.
    */
   buildScoringWeightsSchema(): ScoringWeightsSchema {
-    const shape: Record<string, z.ZodOptional<z.ZodNumber>> = {};
-    for (const d of this.reranker.getDescriptorInfo()) {
-      shape[d.name] = z.number().optional();
-    }
-    return z.object(shape);
+    return z.record(z.string(), z.number());
   }
 
   /**

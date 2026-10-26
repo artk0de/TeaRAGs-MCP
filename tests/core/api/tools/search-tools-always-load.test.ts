@@ -21,6 +21,7 @@ describe("search tools — tools/list _meta", () => {
     const server = new McpServer({ name: "test", version: "0.0.0" });
     const schemaBuilder = {
       buildRerankSchema: vi.fn(() => z.any()),
+      customWeightSignals: () => ["similarity"],
       buildFilterSchema: vi.fn(() => z.any()),
       filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
     } as unknown as SchemaBuilder;

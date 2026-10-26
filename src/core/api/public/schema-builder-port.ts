@@ -10,15 +10,17 @@
  */
 import type { z } from "zod";
 
-/** Zod shape of the `{ custom: weights }` arm of a rerank param. */
-export type ScoringWeightsSchema = z.ZodObject<Record<string, z.ZodOptional<z.ZodNumber>>>;
+/** Zod shape of the `{ custom: weights }` arm of a rerank param: an open `{<signal>: number}` map. */
+export type ScoringWeightsSchema = z.ZodRecord<z.ZodString, z.ZodNumber>;
 
 /** Zod union of a rerank param: preset name | `{ custom: weights }`. */
 export type RerankSchema = z.ZodUnion<[z.ZodTypeAny, z.ZodObject<{ custom: ScoringWeightsSchema }>]>;
 
 export interface SchemaBuilderPort {
-  /** Each derived signal as an optional numeric weight. */
+  /** Open `{<signal>: number}` weight map; keys checked against `customWeightSignals`. */
   buildScoringWeightsSchema: () => ScoringWeightsSchema;
+  /** Derived-signal names a custom rerank weight may key. */
+  customWeightSignals: () => string[];
   /** Preset names a tool accepts, as a literal or enum schema. */
   buildPresetSchema: (tool: string) => z.ZodTypeAny;
   /** The full rerank param: preset enum | `{ custom: weights }`. */

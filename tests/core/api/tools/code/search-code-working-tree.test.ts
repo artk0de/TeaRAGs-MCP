@@ -27,6 +27,7 @@ describe("search_code — workingTree line", () => {
     });
     const schemaBuilder = {
       buildRerankSchema: vi.fn(() => z.any()),
+      customWeightSignals: () => ["similarity"],
       buildFilterSchema: vi.fn(() => z.any()),
       filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
     } as unknown as SchemaBuilder;

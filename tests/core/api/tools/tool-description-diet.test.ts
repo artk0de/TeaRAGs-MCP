@@ -1,0 +1,88 @@
+/**
+ * Tool description diet (bd tea-rags-mcp-0y5oj, T8b): the model-visible schema
+ * carries the CALL contract only. How to read an answer lives in an on-demand
+ * guide the description points at; the `rerank` custom arm names no signal
+ * keys (the catalog is `tea-rags://guide/signals`); the shared `project` /
+ * `path` hints stay one short string each.
+ *
+ * Measured over the REAL tools/list (codegraph ON), the surface an MCP client
+ * receives.
+ */
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { buildToolSurface } from "../../../../scripts/measure-tools-list.js";
+import { UnknownRerankSignalError } from "../../../../src/core/api/public/errors.js";
+import { sanitizeRerank } from "../../../../src/core/api/tools/format.js";
+
+const MAX_INTERPRETING_TOOL_DESCRIPTION = 600;
+const MAX_ADDRESS_HINT = 60;
+
+describe("tool description diet (real tools/list, codegraph ON)", () => {
+  let tools: Tool[];
+  beforeAll(async () => {
+    ({ tools } = await buildToolSurface(true));
+  });
+
+  const tool = (name: string): Tool => {
+    const found = tools.find((t) => t.name === name);
+    if (!found) throw new Error(`${name} not in tools/list`);
+    return found;
+  };
+  const props = (name: string): Record<string, { description?: string; anyOf?: unknown[] }> =>
+    (tool(name).inputSchema as { properties: Record<string, { description?: string }> }).properties;
+
+  it.each([
+    ["get_architecture_report", "tea-rags://guide/architecture"],
+    ["review_changes", "tea-rags://guide/review"],
+  ])("%s description ≤ 600 chars and points at its interpretation guide", (name, guide) => {
+    const { description = "" } = tool(name);
+    expect(description.length).toBeLessThanOrEqual(MAX_INTERPRETING_TOOL_DESCRIPTION);
+    expect(description).toContain(guide);
+  });
+
+  it("rerank custom arm is an open {signal: number} map pointing at the signals guide, not an enumeration", () => {
+    for (const name of ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "find_symbol"]) {
+      const { rerank } = props(name);
+      expect(rerank.description, name).toContain("tea-rags://guide/signals");
+      const custom = (rerank.anyOf as { properties?: { custom?: Record<string, unknown> } }[])
+        .map((arm) => arm.properties?.custom)
+        .find((arm) => arm !== undefined);
+      expect(custom, name).toMatchObject({ type: "object", additionalProperties: { type: "number" } });
+      expect(custom, name).not.toHaveProperty("properties");
+    }
+  });
+
+  it("project and path hints are ≤ 60 chars and still carry their gotcha", () => {
+    const { project, path } = props("semantic_search");
+    expect(project.description?.length).toBeLessThanOrEqual(MAX_ADDRESS_HINT);
+    expect(project.description).toMatch(/list_projects|prime/);
+    expect(path.description?.length).toBeLessThanOrEqual(MAX_ADDRESS_HINT);
+    expect(path.description).toMatch(/working tree|cwd/i);
+  });
+});
+
+describe("sanitizeRerank custom-key validation", () => {
+  const signals = ["similarity", "recency", "churn"];
+
+  it("rejects an unknown custom key with a typed error listing the valid keys", () => {
+    let thrown: unknown;
+    try {
+      sanitizeRerank({ custom: { similarity: 0.5, recencyy: 0.5 } }, signals);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UnknownRerankSignalError);
+    const { message, hint } = thrown as UnknownRerankSignalError;
+    expect(message).toContain("recencyy");
+    for (const signal of signals) expect(hint).toContain(signal);
+  });
+
+  it("passes known keys through and drops undefined weights", () => {
+    expect(sanitizeRerank({ custom: { similarity: 0.5, churn: undefined } }, signals)).toEqual({
+      custom: { similarity: 0.5 },
+    });
+    expect(sanitizeRerank("techDebt", signals)).toBe("techDebt");
+    expect(sanitizeRerank(undefined, signals)).toBeUndefined();
+  });
+});
