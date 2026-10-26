@@ -347,12 +347,9 @@ head = lines[0] if lines[0].startswith("# ") else ""
 body = "\n".join(lines[1:] if head else lines)
 sections = [s.strip("\n") for s in re.split(r"\n(?=## )", "\n" + body) if s.strip()]
 ORDER = ["## Project", "## Status", "## Drift", "## Enrichment", "## Language capability", "## Codegraph resolve"]
-LAST = "## Signal thresholds"
 
 
 def rank(section):
-    if section.startswith(LAST):
-        return len(ORDER) + 1
     return next((i for i, prefix in enumerate(ORDER) if section.startswith(prefix)), len(ORDER))
 
 

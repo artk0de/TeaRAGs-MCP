@@ -176,7 +176,7 @@ A plan names these calls; "later" / "not in this run" never drops one.
    `codegraph off (source: <request|digest>) — no static path tool available` as
    a statement, never "if codegraph is off" / "check the registry".
 
-No `## Signal thresholds` above → read
+No `## Signal thresholds` table in the output above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`
 (FetchMcpResource).
 
@@ -268,7 +268,8 @@ population to recently changed files so it surfaces.
   caveat) → `modifiedAfter` stays default probe.
 - **Window start:** symptom onset if known (last green run, release, date user
   names); else today − N days, N = where `recent` ends: the first number of the
-  `git.file.ageDays` row's `source ≥` cell in `## Signal thresholds`.
+  `git.file.ageDays` row's `source ≥` cell in the metrics resource's
+  `## Signal thresholds`.
 - Committed history only: walk emits committed files → untracked /
   never-committed file carries NO `lastModifiedAt` → outside every time filter.
   Uncommitted edit to committed file → timestamp = last COMMIT → probe misses
