@@ -21,7 +21,7 @@ bolt onto first file you open.
 | **prime / digest**     | **Live runtime STATE** — index status, staleness, drift, infra health, polyglot set, version                              | `src/cli/prime/**` → `tea-rags prime`; `tea-rags://project/<alias>/digest` + `/metrics`                        | SessionStart hook; resource on demand                                |
 | **MCP tool schema**    | **Call CONTRACT** — params, enums, defaults, addressing, pagination shape, per-tool description                           | `src/mcp/tools/**` (handler descriptions) + `src/core/api/internal/infra/schema-builder.ts` (generated Zod)    | at tool-call time                                                    |
 | **resources + guides** | **REFERENCE + on-demand POLICY** — preset / signal / filter catalogs; navigation, decision tree, freshness, degraded mode | `src/mcp/resources/registry.ts` (builders) + `plugins/tea-rags/rules/guides/*.md` → `tea-rags://guide/<topic>` | on demand (`ReadMcpResource` / `tea-rags resource <uri>`)            |
-| **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `plugins/tea-rags/rules/core.md` (≤ 7,000 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
+| **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `plugins/tea-rags/rules/core.md` (≤ 7,400 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
 
 Guides and core are compiled into `src/mcp/resources/generated/agent-context.ts`
 by `npm run gen:agent-context` (drift test fails otherwise).
@@ -35,19 +35,19 @@ by `npm run gen:agent-context` (drift test fails otherwise).
 | What a tool accepts / what one param means                           | **tool schema**    | the tool's `description` in `src/mcp/tools/**` (schema is generated)                    |
 | The complete enumeration of presets / signals / filters / index opts | **resources**      | the builder behind `tea-rags://guide/*` in `src/mcp/resources/`                         |
 | Situational policy: how to navigate, recover, reindex, pick a tool   | **guide**          | `plugins/tea-rags/rules/guides/<topic>.md` + a trigger line in `core.md` if new topic   |
-| A rule every turn needs regardless of situation                      | **core**           | `plugins/tea-rags/rules/core.md` — only if it fits the 7,000-char budget                |
+| A rule every turn needs regardless of situation                      | **core**           | `plugins/tea-rags/rules/core.md` — only if it fits the 7,400-char budget                |
 
 After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 `npm run gen:harness-cursor`; bump plugin version (new file → minor).
 
 ## Delivery budget — core is one part
 
-`core.md` ≤ 7,000 chars, injected as `--part 1 --parts 1`
+`core.md` ≤ 7,400 chars, injected as `--part 1 --parts 1`
 (`tests/hooks/agent-context-budgets.test.sh`). Server `instructions` get a ≤
 4,096 head (first 512 self-contained: addressing first) + a
 `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full
-core (≤ 7,400 incl. wrapper); Codex's hook shares `CODEX_HOOK_CONTEXT_BUDGET`
-(9,100) with the digest. Grow a guide, not the core. Hook stdout past ~16KB
+core (≤ 7,800 incl. wrapper); Codex's hook shares `CODEX_HOOK_CONTEXT_BUDGET`
+(9,500) with the digest. Grow a guide, not the core. Hook stdout past ~16KB
 reaches the model as a 2KB preview; the splitter in `inject-rules.sh` stays as a
 guard.
 

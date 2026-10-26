@@ -59,9 +59,14 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   `find_symbol(symbols: [<ids>])`. After a search, or a file/id already known:
   `find_symbol` next — another search is the "Curiosity search" anti-pattern;
   never re-search/`Read`.
-- Answer has `next` (anchor's callees, callers, co-change) and the task wants
-  which files change / every place → run those calls before any new search;
-  recall = the anchor's neighbours, never a re-query of the same intent.
+- Anchor = the row whose symbol/path names the task's field or behaviour — any
+  row, not row 1, nor the first anchor you drilled; a later answer's row naming
+  it better → it becomes the anchor. Which files change / every place → in
+  order, before any new search: `1. find_symbol(symbol: <anchor id>)`
+  `2. get_callers/get_callees/find_co_changed` on the anchor's file (`next` as
+  given only when its `relativePath` is that file); never a re-query of the same
+  intent. Before answering: every row that named the behaviour is in the answer,
+  or say why it is a false lead.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - Answer has `truncated` → next call = `truncated.next` as given, or narrowed
