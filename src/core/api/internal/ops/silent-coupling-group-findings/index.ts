@@ -11,6 +11,8 @@
 
 export {
   FIND_CO_CHANGED_LIMIT_MAX,
+  findCoChangedDrillDown,
+  renderFindCoChangedCall,
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,

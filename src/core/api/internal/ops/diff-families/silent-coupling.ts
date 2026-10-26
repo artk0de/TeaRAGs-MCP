@@ -4,6 +4,7 @@ import {
 } from "../../../../contracts/types/diff-detector-finding.js";
 import { groupSilentCouplingPairs } from "../../../../domains/trajectory/codegraph/temporal/index.js";
 import {
+  renderFindCoChangedCall,
   SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS,
   silentCouplingGroupDrillDown,
   silentCouplingGroupPartners,
@@ -86,7 +87,7 @@ export const silentCouplingDetector: DiffFamilyDetector = {
           detector: "silentCoupling",
           endpoints,
           evidence: { topPartners: partners.slice(0, SILENT_COUPLING_GROUP_EVIDENCE_PARTNERS) },
-          detail: `${renderDiffFindingSubject(endpoints)} and the diff adds none; drill in: ${drillDown.hint}`,
+          detail: `${renderDiffFindingSubject(endpoints)} and the diff adds none; drill in: ${renderFindCoChangedCall(drillDown)}`,
           partners,
           drillDown,
         });

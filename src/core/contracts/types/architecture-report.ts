@@ -316,7 +316,9 @@ export interface SilentCouplingGroupPartner {
 /**
  * The ready-to-run drill into a grouped silent-coupling finding: the
  * `find_co_changed` call listing that file's co-change partners. `files` and
- * `limit` are the call's params; `hint` spells the call out.
+ * `limit` are the call's params; `hint` is the detector's template naming
+ * those fields (`files: drillDown.files`), never their values, so every row of
+ * a detector shares it (bd tea-rags-mcp-4c129).
  */
 export interface SilentCouplingGroupDrillDown {
   tool: "find_co_changed";

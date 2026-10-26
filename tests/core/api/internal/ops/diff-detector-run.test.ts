@@ -1243,7 +1243,7 @@ describe("silentCoupling", () => {
           tool: "find_co_changed",
           files: ["config/en.yml"],
           limit: 3,
-          hint: 'call find_co_changed(files: ["config/en.yml"], limit: 3) to list this file\'s co-change partners',
+          hint: "call find_co_changed(files: drillDown.files, limit: drillDown.limit) to list this file's co-change partners",
         },
       },
       expect.objectContaining({ subject: "src/b.ts ~ src/z.ts" }),

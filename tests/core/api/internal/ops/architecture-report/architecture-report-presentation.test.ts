@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { silentCouplingArchitectureViolations } from "../../../../../../src/core/api/internal/ops/architecture-report-ops.js";
 import {
   architectureReportViewOf,
   presentArchitectureReport,
@@ -14,6 +15,7 @@ import {
 import type { GetArchitectureReportResponse } from "../../../../../../src/core/api/public/dto/architecture.js";
 import { formatMcpResponse } from "../../../../../../src/core/api/tools/format.js";
 import type { WorkingTreeMarker } from "../../../../../../src/core/contracts/types/working-tree.js";
+import type { SilentCouplingViolation } from "../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 const MARKER: WorkingTreeMarker = {
   tree: "/repo/.claude/worktrees/feature",
@@ -76,6 +78,7 @@ function report(): GetArchitectureReportResponse {
     summary: {
       silentCoupling: {
         violationCount: 7,
+        excluded: { explainedBySharedNeighbour: 5 },
         explainedPairs: [{ detector: "silentCoupling" }, { detector: "silentCoupling" }],
       },
       layering: { levelCount: 4 },
@@ -116,6 +119,44 @@ describe("presentArchitectureReport", () => {
     expect(shotgun.map((v) => v.evidence.drillDown.hint)).toEqual(["hint one", "hint two"]);
   });
 
+  it("hoists the silent-coupling groups' templated hint even beside pair rows that carry no drill-down (bd tea-rags-mcp-4c129)", () => {
+    const pair = (relPathA: string, relPathB: string, support: number, strength: number): SilentCouplingViolation => ({
+      relPathA,
+      relPathB,
+      support,
+      confidenceAB: 0.9,
+      confidenceBA: 0.8,
+      lift: 3,
+      strength,
+      lastCoChangeAt: 1_700_000_000,
+      sampleCommits: ["c1"],
+      structuralVisibility: "one-walked",
+      directoryRelation: "disjoint",
+    });
+    const violations = silentCouplingArchitectureViolations(
+      [
+        pair("app/a.ts", "config/en.yml", 30, 0.71),
+        pair("app/b.ts", "config/en.yml", 20, 0.66),
+        pair("lib/x.ts", "lib/y.ts", 9, 0.64),
+        pair("app/c.ts", "config/ru.yml", 8, 0.6),
+        pair("app/d.ts", "config/ru.yml", 7, 0.58),
+      ],
+      50,
+    );
+    const flat: GetArchitectureReportResponse = { ...report(), violations };
+
+    const view = presentArchitectureReport(flat, architectureReportViewOf(request), MARKER);
+
+    expect(view.violationDrillDownHints?.silentCoupling).toBe(
+      "call find_co_changed(files: drillDown.files, limit: drillDown.limit) to list this file's co-change partners",
+    );
+    const rows = view.violations.silentCoupling as unknown as { evidence: { drillDown?: Record<string, unknown> } }[];
+    const drills = rows.flatMap((row) => (row.evidence.drillDown ? [row.evidence.drillDown] : []));
+    expect(drills.map((drill) => drill.files)).toEqual([["config/en.yml"], ["config/ru.yml"]]);
+    expect(drills.every((drill) => !("hint" in drill))).toBe(true);
+    expect(rows.filter((row) => !row.evidence.drillDown)).toHaveLength(1);
+  });
+
   it("caps evidence arrays at 3 with a sibling count when the row has none; drill-down args stay whole", () => {
     const view = present();
 
@@ -154,13 +195,13 @@ describe("presentArchitectureReport", () => {
     expect(view).not.toHaveProperty("evidenceTrimmed");
   });
 
-  it("reduces the explained pairs to a count by default and lists them on includeExplainedPairs", () => {
+  it("reduces the explained pairs to their TOTAL count, not the limit-capped list's length; lists them on includeExplainedPairs", () => {
     const counted = present().summary.silentCoupling;
-    expect(counted.explainedPairCount).toBe(2);
+    expect(counted.explainedPairCount).toBe(5);
     expect(counted).not.toHaveProperty("explainedPairs");
 
     const listed = present({ includeExplainedPairs: true }).summary.silentCoupling;
-    expect(listed.explainedPairCount).toBe(2);
+    expect(listed.explainedPairCount).toBe(5);
     expect(listed.explainedPairs).toHaveLength(2);
   });
 

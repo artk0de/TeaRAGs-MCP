@@ -66,7 +66,7 @@ export type ArchitectureReportEvidenceLimit = number | "all";
 
 /** `summary.silentCoupling` as the tool returns it: the explained pairs' count, the list only on opt-in. */
 export type PresentedSilentCouplingReportSummary = Omit<SilentCouplingReportSummary, "explainedPairs"> & {
-  /** Pairs the list would hold — capped at `limit`; the uncapped total is `excluded.explainedBySharedNeighbour`. */
+  /** Every explained pair, uncapped — `excluded.explainedBySharedNeighbour`; the opt-in list is capped at `limit`. */
   explainedPairCount: number;
   explainedPairs?: SilentCouplingReportSummary["explainedPairs"];
 };
@@ -88,7 +88,7 @@ export interface GetArchitectureReportToolResponse extends Omit<
    * sibling `<key>Count` holding the full length when the row had none.
    */
   violations: Partial<Record<ArchitectureReportDetector, ArchitectureViolation[]>>;
-  /** A group's `evidence.drillDown.hint` when every row carried the same one — lifted out of the rows. */
+  /** A group's `evidence.drillDown.hint` when every drill-down carried the same one — lifted out of the rows. */
   violationDrillDownHints?: Partial<Record<ArchitectureReportDetector, string>>;
   /** Present when any evidence array was cut. */
   evidenceTrimmed?: { limit: number };

@@ -293,4 +293,35 @@ describe("shotgun surgery retirement stage — counts and the retired bucket (bd
     expect(violation.evidence.nested).toEqual([{ components: ["A", "B", "C"], support: 6, familyEvidence: 5.123 }]);
     expect(summariseShotgunSurgery(nestedRun)).toMatchObject({ violationCount: 1, nestedFindingCount: 1 });
   });
+
+  it("gives every spread one identical drill hint naming drillDown.files, the exemplar files staying on the row (bd tea-rags-mcp-4c129)", () => {
+    const built = run(new Map([[0, 1_760_000_000]]));
+    if (!built.built) throw new Error("expected a built run");
+    const spread = (exemplarFiles: string[]): ShotgunSurgerySpread => ({
+      components: ["A", "B", "C"],
+      componentChanges: [2, 2, 2],
+      support: 2,
+      weightedSupport: 2,
+      expectedSupport: 0.01,
+      strength: 0.5,
+      familyEvidence: 3,
+      islands: [["A"], ["B"], ["C"]],
+      exemplarFiles,
+      carrierFiles: exemplarFiles.map((file) => [file]),
+      sampleCommits: ["c1"],
+      sampleChanges: [["c1"]],
+    });
+    const twoRun = {
+      ...built,
+      report: { ...built.report, findings: [spread(["a.ts", "b.ts", "c.ts"]), spread(["x.ts", "y.ts", "z.ts"])] },
+    };
+
+    const [first, second] = shotgunSurgeryViolations(twoRun, 10).map((v) => v.evidence.drillDown);
+    expect(first.files).toEqual(["a.ts", "b.ts", "c.ts"]);
+    expect(second.files).toEqual(["x.ts", "y.ts", "z.ts"]);
+    expect(second.hint).toBe(first.hint);
+    expect(first.hint).toBe(
+      "call find_co_changed(files: drillDown.files, limit: drillDown.limit) to list the file-level partners behind this spread",
+    );
+  });
 });

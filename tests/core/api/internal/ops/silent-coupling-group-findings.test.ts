@@ -8,6 +8,10 @@
 import { describe, expect, it } from "vitest";
 
 import { silentCouplingArchitectureViolations } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
+import {
+  renderFindCoChangedCall,
+  silentCouplingGroupDrillDown,
+} from "../../../../../src/core/api/internal/ops/silent-coupling-group-findings/index.js";
 import type { SilentCouplingViolation } from "../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
 function violation(
@@ -64,7 +68,7 @@ describe("silentCouplingArchitectureViolations", () => {
             tool: "find_co_changed",
             files: ["config/locales/en.yml"],
             limit: 3,
-            hint: 'call find_co_changed(files: ["config/locales/en.yml"], limit: 3) to list this file\'s co-change partners',
+            hint: "call find_co_changed(files: drillDown.files, limit: drillDown.limit) to list this file's co-change partners",
           },
         },
         partners,
@@ -89,5 +93,38 @@ describe("silentCouplingArchitectureViolations", () => {
     const capped = silentCouplingArchitectureViolations(VIOLATIONS, 1);
     expect(capped).toHaveLength(1);
     expect(capped[0]).toMatchObject({ kind: "group", partnerCount: 3 });
+  });
+});
+
+// bd tea-rags-mcp-4c129: the drill hint is a template naming the row's own
+// fields, so every group of the detector shares it and the tool view hoists it.
+describe("silentCouplingGroupDrillDown — templated hint", () => {
+  const TWO_GROUPS = [
+    ...VIOLATIONS,
+    violation("app/A.ts", "config/locales/ru.yml", 8, 0.6, 2),
+    violation("app/B.ts", "config/locales/ru.yml", 7, 0.58, 2),
+  ];
+
+  it("gives two groups of different files and partner counts one identical hint, the files and limit staying on the row", () => {
+    const groups = silentCouplingArchitectureViolations(TWO_GROUPS, 50).flatMap((finding) =>
+      finding.detector === "silentCoupling" && "kind" in finding ? [finding] : [],
+    );
+
+    expect(groups.map((g) => g.evidence.drillDown.files)).toEqual([
+      ["config/locales/en.yml"],
+      ["config/locales/ru.yml"],
+    ]);
+    expect(groups.map((g) => g.evidence.drillDown.limit)).toEqual([3, 2]);
+    const [first, second] = groups.map((g) => g.evidence.drillDown.hint);
+    expect(second).toBe(first);
+    expect(first).not.toContain("config/locales");
+  });
+
+  it("renders the concrete call for prose that reads one finding alone", () => {
+    const drillDown = silentCouplingGroupDrillDown("config/locales/en.yml", 3);
+
+    expect(renderFindCoChangedCall(drillDown)).toBe(
+      'call find_co_changed(files: ["config/locales/en.yml"], limit: 3) to list this file\'s co-change partners',
+    );
   });
 });
