@@ -118,7 +118,7 @@
     },
     {
       "id": "C12",
-      "prompt": "main session, cwd /work/acme, but this session has no prime digest and no alias (the fixture's alias is not known to you here); you only hold the raw collection name `code_1a2b3c` from list_collections. Search it — addressing of the first call and of any follow-up call?",
+      "prompt": "main session, cwd /work/acme, but this session has no prime digest and no alias (the fixture's alias is not known to you here); you only hold the raw collection name `code_1a2b3c` from list_collections. Search it — addressing of the first call, and of the follow-up call made after that first answer returned (its workingTree marker has project 'acme')?",
       "expected": "collection (then project from marker)",
       "finding": "control",
       "before": "PASS",

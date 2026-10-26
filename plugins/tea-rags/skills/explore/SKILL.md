@@ -56,7 +56,8 @@ brainstorming / executing-plans; output self-contained, never auto-invokes DDG.
 **TRACE vs EXEMPLAR:** usages of ONE named symbol (who calls / imports / where
 used) = TRACE (codegraph on → codegraph row 2). Every implementation / instance
 / variant of a kind ("find all implementations of Provider", "every subclass of
-X") = EXEMPLAR Collect → delegate pattern-search; never search it yourself.
+X") = EXEMPLAR Collect → opening line `Strategy: EXEMPLAR Collect — "<phrase>"`
+(intent word included), delegate pattern-search; never search it yourself.
 Behaviour words without all/every ("search for retry logic and error recovery")
 = BREADTH `semantic_search`, not EXEMPLAR.
 

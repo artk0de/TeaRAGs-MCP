@@ -177,10 +177,12 @@ Per unique `relativePath`: raw values from `payload.git.file.*` + labels from
 - `blameDominantAuthorPct` + adaptive label — silo risk (use label `silo` /
   `deep-silo`, codebase-relative, not magic %)
 
-`treeState` rows (your edited files) = the index's PRE-EDIT copies — say so:
-fanIn + churn of dependents stay valid (unless those dependents were edited too;
-graph edges follow cascade floor rule); row text and lines are stale — never
-evidence the edit is correct. Current code via
+`treeState` rows (your edited files) = the index's PRE-EDIT copies — print per
+file:
+`<file>: treeState modified — pre-edit index copy, text/lines stale, not proof of the edit; dependents' fanIn/churn valid; current code → find_symbol(relativePath: <file>, project=<alias>, path=<cwd>)`.
+Why: fanIn + churn of dependents stay valid (unless those dependents were edited
+too; graph edges follow cascade floor rule); row text and lines are stale —
+never evidence the edit is correct. Current code via
 `find_symbol project=<alias> path=<your working directory>`; linked worktree →
 no reindex (Index freshness above).
 

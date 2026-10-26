@@ -2,11 +2,11 @@
 name: refactoring-planning
 description:
   'Turn architecture diagnosis into an ordered, simulated refactoring plan —
-  findings → restructure ops → restructurePlan order → Tasks for writing-plans.
-  Triggers "plan a refactoring", "plan the architecture fix", "in what order to
-  fix these violations", "refactoring roadmap", "спланируй рефакторинг". NOT
-  diagnosis alone (architecture-diagnostics), NOT one in-file change
-  (data-driven-generation), NOT health scan (risk-assessment).'
+  findings → simulated ops order → Tasks for writing-plans. Triggers "plan a
+  refactoring", "plan the architecture fix", "fix order", "refactoring roadmap",
+  "спланируй рефакторинг". NOT diagnosis alone (architecture-diagnostics), NOT
+  one in-file change (data-driven-generation), NOT health scan
+  (risk-assessment), NOT plans for user-named files (writing-plans).'
 ---
 
 # Refactoring Planning

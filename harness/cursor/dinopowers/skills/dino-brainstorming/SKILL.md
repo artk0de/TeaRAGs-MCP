@@ -143,12 +143,14 @@ not content); E `get_naming_lexicon`:
 | D — Backbone   | `"architecturalHub"`                | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
 | E — Vocabulary | `get_naming_lexicon` (not a search) | **Codegraph only** — words the project already uses for the area; SAME parallel block as A–D                                        |
 
-Call D ONLY when codegraph on = graph tools (`get_callers`, `trace_path`, …) in
-tool list; unsure → read `tea-rags://project/<alias>/metrics?section=registry`
-(`codegraph on|off`). Off → A/B/C only, note backbone not assessed (NEVER pass
-similarity-ranked list off as "the hubs"). → `tea-rags://guide/navigation`
-"Graph navigation" — for the on/off read only; its after-search `find_symbol`
-depth step does not apply to enrichment rows.
+Call D ONLY when codegraph on = context / digest listing `codegraph.symbols` or
+`get_naming_lexicon` available (explicit, no further check), or graph tools
+(`get_callers`, `trace_path`, …) in tool list; unsure → read
+`tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`). Off
+→ A/B/C only, note backbone not assessed (NEVER pass similarity-ranked list off
+as "the hubs"). → `tea-rags://guide/navigation` "Graph navigation" — for the
+on/off read only; its after-search `find_symbol` depth step does not apply to
+enrichment rows.
 
 **Call E — vocabulary (codegraph only, same parallel block — MANDATORY when
 codegraph on; A–D without E = incomplete Step 2):**

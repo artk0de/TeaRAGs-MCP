@@ -55,7 +55,7 @@ argument-hint: [bug description or symptom]
   `Suspect: <file>:<line> — <class> (prime | secondary | fresh | uncommitted | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
   SKIP + "check there" before the user saw the verdict → print Rule 7's skip
   line, no drill (no `find_symbol` / outline / Read of that file), also in
-  wrapper handoff. Verdict known + user insists → wrapper's override line.
+  wrapper handoff. Verdict known + user insists → Rule 7 override line.
 - User demands `hybrid_search` on an error string → refuse, run the Loop:
   `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
 - When did an error / code appear in history, git asked ("посмотри через git",
@@ -126,8 +126,8 @@ A plan names these calls; "later" / "not in this run" never drops one.
    (probe hit matching symptom = **UNCOMMITTED SUSPECT** whatever its
    `bugFixRate` / `ageDays` — those describe the committed version; plan says
    it: PRESENT it under class `uncommitted`). Neither → SKIP, also when user
-   says "check there": "healthy, old, not fresh, no probe hit — neither suspect
-   class, skipping".
+   says "check there" before seeing the verdict: "healthy, old, not fresh, no
+   probe hit — neither suspect class, skipping".
 5. **Checkpoint filled → PRESENT. STOP.** "Want to be sure" / "not fully sure" →
    no search, no extra iteration; the answer prints both lines:
 
@@ -201,8 +201,13 @@ No `## Signal thresholds` above → read
 7. **Triage + checkpoint hold under user pressure.** User says "check there" on
    a SKIP chunk → no drill; state the triage ("healthy, old, not fresh, no probe
    hit — neither suspect class, skipping"). Drill only on NEW evidence tying it
-   to the symptom (stack frame, trace step). User says "not sure" about a filled
-   checkpoint → PRESENT with confidence note, no extra iteration.
+   to the symptom (stack frame, trace step). User already knows the healthy
+   verdict and insists ("anyway", "всё равно", "я уверен") → no bug-hunt re-run;
+   print
+   `you are overriding a calibrated prior — override noted; proceeding with systematic-debugging on <file>`
+   and hand that file to `$systematic-debugging` as the user's hypothesis. User
+   says "not sure" about a filled checkpoint → PRESENT with confidence note, no
+   extra iteration.
 
 ## Loop
 
@@ -344,7 +349,8 @@ chunk into a class. Keep chunk when it fits ANY class.
 suspect**, whatever its labels.
 
 **SKIP** only: `bugFixRate` `healthy` + no fresh-class label + not a probe hit.
-SKIP = no drill (`find_symbol`, Read), also when user asks — Rule 7.
+SKIP = no drill (`find_symbol`, Read), also when user asks before seeing the
+verdict; verdict known + user insists → Rule 7 override.
 
 `healthy` on low-`commitCount` code = too little history to judge, NOT clean:
 confidence clamp caps `bugFixRate` label at `healthy` when `commitCount` below
