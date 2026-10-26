@@ -7,7 +7,7 @@ in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` wit
 its own command first; a plan from memory is not reading it. A skill path you
 did not open with a command in this turn is invalid in a plan — open it first.
 
-**Addressing.** Every read call, planned/next ones included
+**Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +
 `path=<this task's cwd>` (which tree, re-checks too). Alias: prime `## Project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
@@ -26,10 +26,13 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
-  -rn, never tea-rags; phrase/error string: THEN `find_symbol` per hit's symbol.
-  A code name, even called a "pattern"/"glob", is a symbol (→ `hybrid_search`,
-  not `rg --files`). Command output, failing tests, counts →
-  `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
+  -rn, never tea-rags; phrase/error string → plan these three lines, never stop
+  at the hit: `shell grep -rn "<phrase>" (literal)` →
+  `find_symbol(relativePath: <hit file>)` outline →
+  `find_symbol(symbol: <enclosing symbolId>)` body. A code name, even called a
+  "pattern"/"glob", is a symbol (→ `hybrid_search`, not `rg --files`). Command
+  output, failing tests, counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`),
+  no skill
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`
@@ -48,8 +51,8 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 - Never `Read` after `find_symbol` — method = full body; outline
   (class/file/doc) → drill `find_symbol(symbol: <id>)`. After a search, or a
-  file/id already known: `find_symbol` next — another search = "Curiosity
-  search"; never re-search/`Read`.
+  file/id already known: `find_symbol` next — another search is the "Curiosity
+  search" anti-pattern; never re-search/`Read`.
 - `symbolId` ends `#partN` = fragment → `find_symbol(symbol: parentSymbolId)`;
   parts = one hit.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.

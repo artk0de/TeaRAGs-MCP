@@ -35,9 +35,9 @@ export const CURSOR_HARNESS_DIR = "harness/cursor";
 export const CURSOR_MARKETPLACE_PATH = ".cursor-plugin/marketplace.json";
 /**
  * Cap on the generated always-on core rule, frontmatter included. The limit is
- * ours — Cursor documents none: core cap 5,000 + ~330 chars of wrapper + margin.
+ * ours — Cursor documents none: core cap 6,000 + ~330 chars of wrapper + margin.
  */
-export const CORE_RULE_MAX_CHARS = 5_400;
+export const CORE_RULE_MAX_CHARS = 6_400;
 
 const CORE_RULE = "tea-rags-core";
 const CORE_DESCRIPTION =

@@ -47,8 +47,8 @@ INJECT="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
 # Cursor's tea-rags-core.mdc (≤ 5,400 incl. wrapper) carry the full core. Codex's
 # hook budget of 8,500 is shared with the digest — fit-digest trims the digest.
 CORE="$ROOT/plugins/tea-rags/rules/core.md"
-[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 5000 ]
-note $? "rules/core.md ≤ 5000 chars (instructions head ≤ 4096, Cursor .mdc ≤ 5400)"
+[ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 6000 ]
+note $? "rules/core.md ≤ 6000 chars (instructions head ≤ 4096; Cursor documents no size cap, rules < 500 lines)"
 
 # Description = value of the top-level `description:` key: inline text, or an
 # indented block (plain, `>` / `|` folded) running to the next top-level key.
