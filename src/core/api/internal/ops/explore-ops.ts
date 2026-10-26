@@ -25,6 +25,7 @@ import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
@@ -78,6 +79,7 @@ import {
 import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
+import { explainEmptySearch } from "./empty-search-explanation.js";
 import { buildSearchExpansionCalls } from "./search-expansion-calls.js";
 
 export interface ExploreOpsDeps {
@@ -623,7 +625,50 @@ export class ExploreOps {
       // Gate: codegraph wired — the same signal find_symbol's codegraphWarning reads.
       expansionHints: this.chunkResolver !== undefined,
     });
-    return denseUnavailable ? { ...response, denseUnavailable } : response;
+    // N6: the diagnosis counts run ONLY on an empty answer, and a failed
+    // count leaves the explanation out instead of failing the search.
+    const empty =
+      response.results.length === 0
+        ? await this.explainEmpty(collectionName, request, level, presetFilterNotice).catch(() => undefined)
+        : undefined;
+    const explained = empty ? { ...response, empty } : response;
+    return denseUnavailable ? { ...explained, denseUnavailable } : explained;
+  }
+
+  /**
+   * Why an empty semantic / hybrid answer is empty (agent turn economy N6):
+   * which of its narrowing params the index answers to. Counts the INDEX only;
+   * a typed param counts as narrowing when the registry compiles it to a
+   * condition (`testFile: "include"` compiles to none).
+   */
+  private async explainEmpty(
+    collectionName: string,
+    request: SemanticSearchRequest | HybridSearchRequest,
+    level: SignalLevel | undefined,
+    presetFilterNotice: PresetFilterNotice | undefined,
+  ): Promise<EmptyAnswerExplanation> {
+    const params = request as unknown as Record<string, unknown>;
+    const typedParams = this.registry
+      .getAllFilters()
+      .map((descriptor) => descriptor.param)
+      .filter((param) => param !== "pathPattern" && this.registry.buildFilter({ [param]: params[param] }, level));
+    const ownFilter = request.filter !== undefined && Object.keys(request.filter).length > 0;
+    return explainEmptySearch(
+      {
+        count: async (filter) => this.qdrant.countPoints(collectionName, filter),
+        samplePaths: async (filter, limit) =>
+          (await this.qdrant.scrollFiltered(collectionName, filter, limit, limit, ["relativePath"])).map((point) =>
+            typeof point.payload.relativePath === "string" ? point.payload.relativePath : "",
+          ),
+      },
+      {
+        pathPattern: request.pathPattern,
+        pathFilter: (pathPattern) =>
+          this.registry.buildFilter({ pathPattern }, level) as Record<string, unknown> | undefined,
+        narrowingParams: ownFilter ? ["filter", ...typedParams] : typedParams,
+        presetFilterNotice,
+      },
+    );
   }
 
   /**

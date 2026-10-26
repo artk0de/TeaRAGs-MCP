@@ -227,6 +227,16 @@ describe("SearchResultOutputSchema", () => {
   });
 });
 
+// Agent turn economy N6 (bd tea-rags-mcp-wrosj).
+describe("SearchResultOutputSchema — empty answer explanation", () => {
+  const schema = z.object(SearchResultOutputSchema);
+
+  it("keeps the empty-answer reason, message and suggestions", () => {
+    const empty = { reason: "pathPatternMatchesNothing", message: "no file", suggestions: ["src/core/**"] };
+    expect(schema.parse({ results: EMPTY_TABLE, empty }).empty).toEqual(empty);
+  });
+});
+
 describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 

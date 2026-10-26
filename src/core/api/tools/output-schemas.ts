@@ -158,7 +158,11 @@ export const SearchResultOutputSchema = {
   empty: z
     .object({ reason: z.string(), message: z.string(), suggestions: z.array(z.string()).optional() })
     .optional()
-    .describe("Empty results only: why (reason code) + up to 5 alternatives to try next."),
+    .describe(
+      "Empty results only — why + ≤5 alternatives. hybrid_search / semantic_search: pathPatternMatchesNothing " +
+        "(suggestions = nearest existing prefix), filteredOut (what to drop, filter: {}), noMatch. find_symbol: " +
+        "unknownSymbol, ambiguous, unknownPath (suggestions = nearest paths). Act on it; empty with reason ≠ grep needed.",
+    ),
   missing: z
     .array(
       z.object({ request: z.string(), message: z.string(), treeState: z.enum(["modified", "deleted"]).optional() }),

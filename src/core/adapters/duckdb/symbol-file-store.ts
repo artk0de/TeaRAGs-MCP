@@ -137,6 +137,10 @@ export class DuckDbSymbolFileStore implements CodegraphSymbolFileStore {
     return this.symbols.getSymbolVisibilities(symbolIds);
   }
 
+  async lookupSymbolIdsByShortName(shortName: string, limit: number): Promise<SymbolId[]> {
+    return this.symbols.lookupSymbolIdsByShortName(shortName, limit);
+  }
+
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbols.getSymbolLineRangesBulk(relPaths);
   }

@@ -1223,6 +1223,12 @@ export interface CodegraphSymbolFileStore {
    * with no definition is absent. One batched read (bd tea-rags-mcp-sqqkz).
    */
   getSymbolVisibilities: (symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
+  /**
+   * Distinct symbolIds of the `cg_symbols` definitions whose `short_name` is
+   * `shortName`, ordered by symbolId, at most `limit` — the suggestions a graph
+   * tool offers for an id the graph does not hold (agent turn economy N6).
+   */
+  lookupSymbolIdsByShortName: (shortName: string, limit: number) => Promise<SymbolId[]>;
 
   /**
    * Each requested file's persisted symbol ranges (bd tea-rags-mcp-9i2ow) — the

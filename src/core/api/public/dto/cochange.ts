@@ -11,6 +11,7 @@ import type {
   RankedCochangePartner,
   TemporalCochangeBuildMeta,
 } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
 export interface FindCoChangedRequest {
@@ -29,8 +30,11 @@ export interface FindCoChangedRequest {
 /** One co-change partner of the queried file, from the queried file's perspective. */
 export type CoChangedPartner = RankedCochangePartner;
 
-/** One queried file's answer. */
-export type CoChangedFileResult = FileCochangeRanking;
+/**
+ * One queried file's answer. `empty` (N6) is present only on a built graph's
+ * row for a file it holds no co-change history for (`reason: "noHistory"`).
+ */
+export type CoChangedFileResult = FileCochangeRanking & { empty?: EmptyAnswerExplanation };
 
 /**
  * How the graph was built. Bundles are always one per commit, counted once per
@@ -47,6 +51,8 @@ export interface FindCoChangedResult {
   built: boolean;
   provenance?: CoChangeBuildProvenance;
   files: CoChangedFileResult[];
+  /** Present only with `built: false` (`reason: "notBuilt"`, N6); per-file reasons ride on `files[].empty`. */
+  empty?: EmptyAnswerExplanation;
   /** Which tree the answer was read beside (bd tea-rags-mcp-xi2r9) — co-change is the index's history. */
   workingTree?: WorkingTreeMarker;
 }

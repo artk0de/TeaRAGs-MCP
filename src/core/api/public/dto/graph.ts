@@ -16,6 +16,7 @@ import type {
   RelPath,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 
@@ -119,7 +120,7 @@ export interface FileImportResult {
   origin?: "model";
 }
 
-interface FileScopeResponseBase {
+interface FileScopeResponseBase extends EmptyAnswerField {
   /** The file the request named, normalised (a leading `./` stripped). */
   relativePath: RelPath;
   /** Edge count before `limit` was applied. */
@@ -154,7 +155,18 @@ export interface ResolvedSymbolIdField {
   resolvedSymbolId?: SymbolId;
 }
 
-export interface SymbolCallersResponse extends ResolvedSymbolIdField {
+/**
+ * Why a graph answer is empty (agent turn economy N6) — `unknownSymbol` (no
+ * node under either separator; `suggestions` = ids defined under the short
+ * name), `noEdges` (node present, no edges; a lower bound when its language's
+ * resolve rate is low), `unknownFile`. Absent on every non-empty answer and on
+ * a collection with no graph database.
+ */
+export interface EmptyAnswerField {
+  empty?: EmptyAnswerExplanation;
+}
+
+export interface SymbolCallersResponse extends ResolvedSymbolIdField, EmptyAnswerField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -200,7 +212,7 @@ export interface CalleeResult extends DeclaredVisibilityField {
   p?: number;
 }
 
-export interface SymbolCalleesResponse extends ResolvedSymbolIdField {
+export interface SymbolCalleesResponse extends ResolvedSymbolIdField, EmptyAnswerField {
   callees: CalleeResult[];
 }
 

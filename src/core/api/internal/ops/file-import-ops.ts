@@ -11,6 +11,7 @@
  */
 
 import type { FileImportEdge, GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { FileImportersResponse, FileImportResult, FileImportsResponse } from "../../public/dto/graph.js";
 
 type FileImportReader = Pick<GraphDbClient, "getFileImporters" | "getFileImports">;
@@ -30,7 +31,7 @@ export class FileImportOps {
       relativePath,
       limit,
     );
-    return { relativePath, importers: results, total, ...(message ? { message } : {}) };
+    return { relativePath, importers: results, total, ...unknownFileFields(message) };
   }
 
   async imports(graphDb: FileImportReader, relativePath: RelPath, limit: number): Promise<FileImportsResponse> {
@@ -42,7 +43,7 @@ export class FileImportOps {
       relativePath,
       limit,
     );
-    return { relativePath, imports: results, total, ...(message ? { message } : {}) };
+    return { relativePath, imports: results, total, ...unknownFileFields(message) };
   }
 
   /** The answer for a collection with no graph database: nothing indexed, nothing to report. */
@@ -53,6 +54,14 @@ export class FileImportOps {
   static emptyImports(relativePath: RelPath): FileImportsResponse {
     return { relativePath, imports: [], total: 0 };
   }
+}
+
+/**
+ * The unknown-file `message`, kept for compatibility, and the same sentence as
+ * the N6 `empty` explanation every graph tool shares; `{}` on a known file.
+ */
+function unknownFileFields(message: string | undefined): { message?: string; empty?: EmptyAnswerExplanation } {
+  return message ? { message, empty: { reason: "unknownFile", message } } : {};
 }
 
 function shape(

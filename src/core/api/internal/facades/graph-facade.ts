@@ -36,6 +36,7 @@ import type {
   SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
@@ -84,6 +85,7 @@ import { ArchitectureRestructurePlanOps } from "../ops/architecture-restructure-
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
+import { readSymbolEdgesExplained, type SymbolEdgeRead } from "../ops/symbol-edge-explanation.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
@@ -203,13 +205,6 @@ function graphTarget(req: { symbolId?: SymbolId; relativePath?: string }): Graph
   throw new MissingArgumentError(["symbolId or relativePath"]);
 }
 
-/** Edges read for a symbol target, and the definer id they were read under when it was aliased. */
-interface SymbolEdgeRead<E> {
-  edges: E[];
-  queriedSymbolId: SymbolId;
-  resolvedSymbolId?: SymbolId;
-}
-
 /**
  * Read `symbolId`'s edges; when it has none, fall back to the member's definer
  * up the persisted hierarchy (bd tea-rags-mcp-63l69) — a host-class id such as
@@ -229,6 +224,11 @@ async function readSymbolEdges<E>(
   const definer = await resolveInheritedMemberDefiner(graphDb, symbolId).catch(() => null);
   if (definer === null) return { edges: direct, queriedSymbolId: symbolId };
   return { edges: await read(definer), queriedSymbolId: definer, resolvedSymbolId: definer };
+}
+
+/** `{ empty }` when the symbol answer explained itself (N6), `{}` otherwise. */
+function emptyField(read: { empty?: EmptyAnswerExplanation }): { empty?: EmptyAnswerExplanation } {
+  return read.empty === undefined ? {} : { empty: read.empty };
 }
 
 /** `{ resolvedSymbolId }` when the answer was aliased, `{}` otherwise — the field is omitted, never null. */
@@ -414,8 +414,13 @@ export class GraphFacade {
     return this.withMarkedReadHandle(
       req,
       async (handle) => {
-        const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallers(id));
-        const resolved = resolvedField(read);
+        const read = await readSymbolEdgesExplained(
+          handle.graphDb,
+          symbolId,
+          async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallers(target)),
+          "callers",
+        );
+        const resolved = { ...resolvedField(read), ...emptyField(read) };
         const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
         // Declared visibility of the queried symbol and every caller, one
         // batched read (bd tea-rags-mcp-sqqkz); unknown levels leave the field out.
@@ -459,9 +464,14 @@ export class GraphFacade {
     return this.withMarkedReadHandle(
       req,
       async (handle) => {
-        const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallees(id));
+        const read = await readSymbolEdgesExplained(
+          handle.graphDb,
+          symbolId,
+          async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallees(target)),
+          "callees",
+        );
         const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
-        return { ...resolvedField(read), callees: await decorateCallees(handle.graphDb, visible) };
+        return { ...resolvedField(read), callees: await decorateCallees(handle.graphDb, visible), ...emptyField(read) };
       },
       { callees: [] },
     );

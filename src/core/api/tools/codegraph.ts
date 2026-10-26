@@ -59,6 +59,13 @@ const RESOLVED_SYMBOL_ID_CONTRACT =
   "Host-class id with no node of its own (Account.suspended, member defined in an included module or " +
   "superclass) → answered via first definer up hierarchy in MRO order; resolvedSymbolId names the id queried. ";
 
+/** Empty-answer contract shared by get_callers / get_callees (agent turn economy N6). */
+const EMPTY_GRAPH_ANSWER_CONTRACT =
+  "Wrong separator (Foo.bar for instance member) → swapped id answered, named in resolvedSymbolId. " +
+  "Empty answer carries empty {reason, message, suggestions?}: unknownSymbol (no node; suggestions = ids " +
+  "with same short name), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
+  "unknownFile.";
+
 const GetCallersInputShape = {
   ...collectionPathFields(),
   symbolId: z
@@ -428,7 +435,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
       "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      "unknown file → empty importers + message.",
+      `unknown file → empty importers + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callers",
     invoke: async (app, request) => formatMcpResponse(await app.getCallers(request as GetCallersRequest)),
   },
@@ -441,7 +448,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      "unknown file → empty imports + message.",
+      `unknown file → empty imports + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callees",
     invoke: async (app, request) => formatMcpResponse(await app.getCallees(request as GetCalleesRequest)),
   },
@@ -606,7 +613,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "each partner carries support, both directed confidences (pPartnerGivenFile, pFileGivenPartner), lift, " +
       "sample commits, structurallyLinked — an import/method/barrel edge joins the pair, false = silent coupling. " +
       "Provenance echoes head, window and build cuts; partners deleted from the working tree are dropped. " +
-      "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'. " +
+      "built:false = no co-change build yet (run a codegraph enrichment), NEVER read it as 'no partners'; " +
+      "carries empty {reason:notBuilt}. files[].empty {reason:noHistory} = file shares no commit in window. " +
       "Before editing a file, surface silent high-strength partners as change-context.",
     schemaKey: "find_co_changed",
     invoke: async (app, request) => formatMcpResponse(await app.findCoChanged(request as FindCoChangedRequest)),
