@@ -192,7 +192,21 @@ const GetArchitectureReportInputShape = {
     .string()
     .optional()
     .describe("Component path from drillDown: return its knot view and the findings inside it, paged by limit/offset"),
-  offset: z.number().int().min(0).optional().describe("Page start for the knotOf view"),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "Violations skipped per detector, after ranking; with reportId pages one judgement. Knot mode: pages the knotOf view.",
+    ),
+  reportId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Previous answer's reportId: page it without recompute. MCP server memory only (CLI call recomputes); re-editing changed files undetected until TTL.",
+    ),
   plannedEdges: z
     .array(z.object({ source: z.string().min(1), target: z.string().min(1), reference: z.string().optional() }))
     .min(1)
@@ -581,7 +595,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "paths) move structural detectors only; co-change detectors read history and do not respond. One hypothesis " +
       "per call. restructurePlan mode: greedy ordered plan over candidate hypotheses {id,rationale?,ops} (+ report " +
       "split/merge candidates); per round judges prefix+candidate, picks by net critical > active > structural > " +
-      "blast radius; trade-offs (introduce critical/active) never selected.",
+      "blast radius; trade-offs (introduce critical/active) never selected. Paging: an answer's reportId + limit/offset " +
+      "re-cuts the held judgement (8 reports, ~10 min, MCP server memory); evicted, expired, other scope or tree " +
+      "counts moved -> empty.reason reportStale, re-call without reportId.",
     schemaKey: "get_architecture_report",
     invoke: async (app, request) => {
       const req = request as GetArchitectureReportRequest;

@@ -38,7 +38,7 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
-import type { WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { WorkingTree, WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
 import {
   resolveInheritedMemberDefiner,
@@ -76,7 +76,12 @@ import type {
   TreeFileTextLookup,
 } from "../ops/architecture-facts.js";
 import { ArchitecturePlannedEdgeOps } from "../ops/architecture-planned-edge-ops.js";
-import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { ArchitectureReportOps, type ArchitectureReportJudgement } from "../ops/architecture-report-ops.js";
+import {
+  ARCHITECTURE_REPORT_STALE,
+  ArchitectureReportSnapshotCache,
+  architectureReportSnapshotKey,
+} from "../ops/architecture-report-snapshot-cache.js";
 import {
   ArchitectureRestructureOps,
   type ArchitectureRestructureLookups,
@@ -185,6 +190,12 @@ interface GraphAddressing {
   collection?: string;
   project?: string;
   path?: string;
+}
+
+/** One measurement of the addressed tree — the resolved tree and, when an overlay is wired, its view. */
+interface MeasuredWorkingTree {
+  workingTree: WorkingTree;
+  view: Awaited<ReturnType<WorkingTreeOverlay["view"]>> | undefined;
 }
 
 type GraphTarget = { kind: "symbol"; symbolId: SymbolId } | { kind: "file"; relativePath: RelPath };
@@ -297,6 +308,8 @@ function addressedTestSupportLookups(
 
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
+  /** Judged reports a `reportId` paging call reads back (bd tea-rags-mcp-00309). */
+  private readonly reportSnapshots = new ArchitectureReportSnapshotCache();
   private readonly plannedEdges = new ArchitecturePlannedEdgeOps();
   private readonly restructure = new ArchitectureRestructureOps();
   private readonly restructurePlan = new ArchitectureRestructurePlanOps();
@@ -345,8 +358,29 @@ export class GraphFacade {
     fallback: T,
     graph: "tree" | "index" = "tree",
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
+    return this.readMeasuredTree(await this.measureWorkingTree(addr), fn, fallback, graph);
+  }
+
+  /**
+   * The measuring half of {@link withMarkedReadHandle}: resolve the addressed
+   * tree and let the overlay measure it (which also starts its tree-graph
+   * build). Split out so one measurement can serve a caller's own use of the
+   * marker — the report snapshot key (bd tea-rags-mcp-00309) — and the read.
+   */
+  private async measureWorkingTree(addr: GraphAddressing): Promise<MeasuredWorkingTree> {
     const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, addr, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, addr.project);
+    return { workingTree, view };
+  }
+
+  /** The reading half of {@link withMarkedReadHandle}, over a tree already measured. */
+  private async readMeasuredTree<T extends object>(
+    measured: MeasuredWorkingTree,
+    fn: (handle: CollectionGraphHandle) => Promise<T>,
+    fallback: T,
+    graph: "tree" | "index" = "tree",
+  ): Promise<T & { workingTree?: WorkingTreeMarker }> {
+    const { workingTree, view } = measured;
     // `index`: the answer is a property of the INDEX's history, which a working
     // tree adds nothing to — the tree graph is never asked, and the marker
     // claims no floor and names no unavailability (live D9).
@@ -538,23 +572,36 @@ export class GraphFacade {
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
     const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
-    return this.inRequestWindow(async () =>
-      this.withMarkedReadHandle(
-        req,
-        async (handle) =>
-          this.architectureReport.build(
-            handle.graphDb,
-            req,
-            importSpecifiers,
-            fileCommitCounts,
-            maintenanceSignals,
-            indexedFileImports,
-            declaredTestDependencies,
-            treeFileText,
-          ),
-        ArchitectureReportOps.empty(req),
-      ),
-    );
+    return this.inRequestWindow(async () => {
+      // One tree measurement serves the snapshot key and the read (bd tea-rags-mcp-00309).
+      const measured = await this.measureWorkingTree(req);
+      const marker = measured.view?.marker;
+      const snapshotKey = architectureReportSnapshotKey(measured.workingTree.baseIndex.collectionName, marker, req);
+      const markerField = marker ? { workingTree: marker } : {};
+      if (req.reportId !== undefined) {
+        const held = this.reportSnapshots.lookup(req.reportId, snapshotKey);
+        if (!held) return { ...ArchitectureReportOps.empty(req), empty: ARCHITECTURE_REPORT_STALE, ...markerField };
+        return { reportId: req.reportId, ...this.architectureReport.shapeResponse(held, req), ...markerField };
+      }
+      const { judgement, workingTree } = await this.readMeasuredTree<{ judgement?: ArchitectureReportJudgement }>(
+        measured,
+        async (handle) => ({
+          judgement: await this.architectureReport.buildJudgement(handle.graphDb, req, {
+            readImportSpecifiers: importSpecifiers,
+            readFileCommitCounts: fileCommitCounts,
+            readFileMaintenanceSignals: maintenanceSignals,
+            readIndexedFileImports: indexedFileImports,
+            readDeclaredTestDependencies: declaredTestDependencies,
+            readTreeFileText: treeFileText,
+          }),
+        }),
+        {},
+      );
+      const treeField = workingTree ? { workingTree } : {};
+      if (!judgement) return { ...ArchitectureReportOps.empty(req), ...treeField };
+      const reportId = this.reportSnapshots.hold(snapshotKey, judgement);
+      return { reportId, ...this.architectureReport.shapeResponse(judgement, req), ...treeField };
+    });
   }
 
   /**
