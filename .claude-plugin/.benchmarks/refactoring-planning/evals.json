@@ -177,6 +177,24 @@
         ]
       },
       "failureMode": "Plan loses the simulated delta so the executor has nothing to compare against"
+    },
+    {
+      "id": "report-paged-before-candidate-cap",
+      "category": "report",
+      "context": "Codegraph on. get_architecture_report(path: '/work/shop') returned reportId 'r-3', 10 stableDependencies rows (all tier active or structural) and summary.stableDependencies.violationCount 26. summary.impactTiers.stableDependencies reports critical: 4.",
+      "prompt": "Спланируй рефакторинг по этим нарушениям.",
+      "expected": {
+        "mustDo": [
+          "Notices 26 total vs 10 returned (and 4 critical, none of them in the listed rows)",
+          "Pages the same report before drafting candidates: get_architecture_report(path: '/work/shop', reportId: 'r-3', offset: 10, ...) until the critical findings are in hand",
+          "Candidates lead with the critical findings once paged"
+        ],
+        "mustNotDo": [
+          "Draft candidates from the 10 listed rows only and call the plan complete",
+          "Re-run the full report with a bigger limit instead of paging reportId"
+        ]
+      },
+      "failureMode": "Plan built from the first page; critical findings on page 2+ never become candidates"
     }
   ]
 }

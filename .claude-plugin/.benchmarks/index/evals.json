@@ -6,8 +6,18 @@
     {
       "date": "2026-04-21",
       "iteration": 0,
-      "withRule": { "pass": 10, "fail": 0, "total": 10, "passRate": "100%" },
-      "withoutRule": { "pass": 5, "fail": 5, "total": 10, "passRate": "50%" },
+      "withRule": {
+        "pass": 10,
+        "fail": 0,
+        "total": 10,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 5,
+        "fail": 5,
+        "total": 10,
+        "passRate": "50%"
+      },
       "delta": "+50pp"
     }
   ],
@@ -164,6 +174,23 @@
         ]
       },
       "failureMode": "Agent runs wrong reindex mode for schema drift"
+    },
+    {
+      "id": "eval-11",
+      "category": "registration-check-compact-rows",
+      "prompt": "Проиндексируй /Users/me/Dev/shop. (list_projects already answered: projects: [{name: 'shop', path: '/Users/me/Dev/shop', collectionName: 'code_1a2b3c4d', chunksCount: 5120, indexedAt: '2026-10-20T10:00:00Z', codegraphEnabled: true, worktreeOf: null}] — no embedding model or Qdrant URL in the row.)",
+      "expected": {
+        "mustDo": [
+          "Treat the row as registered: path matches and name 'shop' is non-empty",
+          "Incremental mcp__tea-rags__index_codebase with project='shop'"
+        ],
+        "mustNotDo": [
+          "Read the missing embeddingModel / qdrantUrl as a broken or unregistered entry",
+          "Re-register the path or offer a new alias",
+          "forceReindex=true"
+        ]
+      },
+      "failureMode": "Compact list_projects rows mistaken for incomplete registration"
     }
   ]
 }
