@@ -332,12 +332,13 @@ function levelField() {
 }
 
 /**
- * metaOnly hint. The full response contract (raw payload paths, essential git
- * fields, labels only in rankingOverlay) is stated once in
+ * metaOnly hint. The full response contract (default locator payload, raw signals
+ * via fields, labels only in rankingOverlay) is stated once in
  * tea-rags://schema/overview (`META_ONLY_CONTRACT` in the resources registry).
  */
 const META_ONLY_HINT =
-  "Drop content. Payload stays raw; labels only in rankingOverlay. Contract: tea-rags://schema/overview.";
+  "Drop content. Payload = locator (path, symbolId, lines, signature); labels in rankingOverlay; " +
+  "raw signals via fields. Contract: tea-rags://schema/overview.";
 
 /**
  * Shared payload allow-list. Every tool that returns payload-bearing results
@@ -351,6 +352,7 @@ function fieldsField() {
       .optional()
       .describe(
         "Payload dot-path allow-list, e.g. ['relativePath', 'git.file.commitCount']. EXACT: nothing added back. " +
+          "Omitted → lean default per mode. " +
           "Paths: tea-rags://schema/signals.",
       ),
   };

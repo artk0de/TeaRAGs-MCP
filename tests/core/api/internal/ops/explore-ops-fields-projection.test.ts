@@ -212,11 +212,14 @@ describe("ExploreOps — fields projection", () => {
     }
   });
 
-  it("leaves the payload whole when no fields were asked for", async () => {
+  // N4 (bd tea-rags-mcp-r4rl1): no fields → the content-mode default projection,
+  // locator + content + navigation; raw git stays reachable through `fields`.
+  it("applies the content-mode default projection when no fields were asked for", async () => {
     const response = await makeOps().semanticSearch({ collection: COLLECTION, query: "env snapshot" });
 
-    expect(response.results[0]?.payload).toHaveProperty("members");
-    expect(response.results[0]?.payload).toHaveProperty("git");
+    expect(response.results[0]?.payload).toHaveProperty("relativePath");
+    expect(response.results[0]?.payload).not.toHaveProperty("members");
+    expect(response.results[0]?.payload).not.toHaveProperty("git");
     expect(response.fieldsWarning).toBeUndefined();
   });
 

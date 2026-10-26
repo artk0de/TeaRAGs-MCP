@@ -10,7 +10,9 @@
  * `fields` is a list of DOT-PATHS, so it composes with the nested signal
  * namespaces (`git.file.commitCount`, `codegraph.symbols.chunk.pageRank`), and
  * the projected payload keeps the same nesting the caller addressed. Absent →
- * today's behaviour exactly; the param is purely additive.
+ * the call mode's lean default projection (agent turn economy N4, bd
+ * tea-rags-mcp-r4rl1): a row an agent pays for on every later turn carries what
+ * it drills from, not every signal.
  *
  * Two decisions live here:
  *
@@ -44,18 +46,42 @@ const MAX_SUGGESTIONS_PER_PATH = 4;
 const MAX_SUGGESTION_DEPTH = 5;
 
 /**
+ * The call mode that picks the DEFAULT projection when `fields` is absent
+ * (agent turn economy N4, bd tea-rags-mcp-r4rl1). `reranked` = a rerank other
+ * than plain relevance ran, so the caller asked for signals.
+ */
+export interface PayloadProjectionMode {
+  metaOnly: boolean;
+  reranked: boolean;
+}
+
+/**
+ * What a row needs to be drilled: where it is, what it is, its first code line.
+ * `signature` is derived by `filterMetaOnly` before the body is stripped.
+ */
+const LOCATOR_FIELDS = ["relativePath", "symbolId", "startLine", "endLine", "chunkType", "language", "signature"];
+
+/** A content row: the locator plus the body and the prev/next drill ids. */
+const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation"];
+
+/**
  * Narrow every result's payload to `fields`, and report the paths that landed
  * nowhere.
  *
- * An absent, empty, or all-blank `fields` returns the input array by identity —
- * "asked for nothing" means no projection, not empty payloads.
+ * `fields` absent, empty, or all-blank: with a `mode` the default projection of
+ * that mode applies — metaOnly → locator (a reranked row keeps its sibling
+ * `rankingOverlay`), content → locator + `content` + `navigation`, reranked
+ * content → whole payload. Raw `git.*`, `codegraph.*`, `imports` and
+ * `enrichedAt` stay reachable through `fields` (`["git"]` copies the subtree).
+ * Without a `mode` the input array returns by identity.
  */
 export function projectSearchResultPayloads(
   results: SearchResult[],
   fields: readonly string[] | undefined,
+  mode?: PayloadProjectionMode,
 ): PayloadProjectionOutcome {
   const paths = normalizeFieldPaths(fields);
-  if (paths.length === 0) return { results };
+  if (paths.length === 0) return { results: mode ? projectByMode(results, mode) : results };
 
   const matched = new Set<string>();
   const projected = results.map((result) => {
@@ -71,6 +97,21 @@ export function projectSearchResultPayloads(
     unmatched.length > 0 && results.length > 0 ? describeUnmatchedPaths(unmatched, results) : undefined;
 
   return { results: projected, ...(fieldsWarning ? { fieldsWarning } : {}) };
+}
+
+/** The default projection of `mode`; a missing key is simply absent, never warned about. */
+function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): SearchResult[] {
+  if (!mode.metaOnly && mode.reranked) return results;
+  const keys = mode.metaOnly ? LOCATOR_FIELDS : CONTENT_FIELDS;
+  return results.map((result) => {
+    const { payload } = result;
+    if (!payload) return result;
+    const projected: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (key in payload) projected[key] = payload[key];
+    }
+    return { ...result, payload: projected };
+  });
 }
 
 /** Trim, drop blanks, de-duplicate — order of first appearance is kept for the warning. */

@@ -148,4 +148,11 @@ export const SearchResultOutputSchema = {
         "build skew, daemon down, lock held). Names error code + remedy; results may miss collapsed symbols. " +
         "Surface to user.",
     ),
+  next: z
+    .array(z.object({ tool: z.string(), args: z.record(z.string(), z.unknown()), why: z.string() }))
+    .optional()
+    .describe(
+      "hybrid_search / semantic_search, codegraph on: ready calls expanding past the top results " +
+        "(co-changed files, importers). args address the answering tree — run verbatim.",
+    ),
 };

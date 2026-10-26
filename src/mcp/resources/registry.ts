@@ -17,12 +17,11 @@ import {
  * raw fields; BaseExploreStrategy#applyMetaOnly keeps rankingOverlay).
  */
 export const META_ONLY_CONTRACT =
-  "Payload stays RAW, same paths + value forms as without metaOnly: flat signals at root, " +
-  "git trimmed to essential fields (commitCount, ageDays, taskIds, blame*), codegraph.symbols.* whole — " +
-  "never {value,label}. Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when " +
-  "labelled, else raw), present whenever rerank ran; flat structural signals (methodLines, imports) " +
-  "under rankingOverlay.file. Signal outside essential set → read rankingOverlay (if preset surfaces it) " +
-  "or metaOnly=false.";
+  "No fields → payload = locator: relativePath, symbolId, startLine, endLine, chunkType, language, " +
+  "signature (first code line, ≤160 chars). Raw git.* / codegraph.* / imports dropped, rerank or not. " +
+  "Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when labelled, else raw), " +
+  "present whenever rerank ran. Payload never {value,label}. Raw signal → fields with its dot-path " +
+  '(["git"] = whole subtree; paths + value forms same as without metaOnly).';
 
 /**
  * Param reference — the prose that used to ride inline on every tool param
@@ -82,8 +81,9 @@ Default false; rank_chunks default true (analytics — false to include code).
 ### fields
 - Dot-path allow-list applied server-side before serialization — cuts response size.
 - Nesting matters: signals under git.{file,chunk}.* and codegraph.symbols.{file,chunk}.* (tea-rags://schema/signals).
-- EXACT: nothing added back, relativePath included. Omitted → full payload.
-- metaOnly = different axis (drops body, trims git). Path no result carried → fieldsWarning, not failure.
+- EXACT: nothing added back, relativePath included. Prefix = whole subtree (\`["git"]\`).
+- Omitted → default per mode: metaOnly → locator; content → locator + content + navigation;
+  content + rerank → full payload. Path no result carried → fieldsWarning, not failure.
 
 ### find_similar
 - positiveCode: any code block; each string = one example, embedded on the fly.
@@ -120,7 +120,7 @@ export function buildOverview(): string {
 
 ## Tools Quick Reference
 - search_code — quick semantic lookup, human-readable output
-- semantic_search — analytical, structured JSON, full metadata
+- semantic_search — analytical, structured JSON; signals via rerank or fields
 - hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — batch analytics by signals (metaOnly default true; offline scoring, not online search)
 - find_similar — find code similar to examples; negative-only inputs + strategy="best_score" → anti-pattern detection

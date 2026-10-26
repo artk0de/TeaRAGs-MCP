@@ -247,6 +247,57 @@ export function filterMetaOnly(
       meta.codegraph = codegraph;
     }
 
+    // Taken before the body is dropped: the one line a locator row keeps of it
+    // (agent turn economy N4, bd tea-rags-mcp-r4rl1).
+    const signature = r.payload ? chunkSignature(r.payload) : undefined;
+    if (signature !== undefined) meta.signature = signature;
+
     return meta;
   });
+}
+
+/** Longest `signature` a metaOnly row carries. */
+const SIGNATURE_MAX_CHARS = 160;
+
+/**
+ * A comment-only line: `//`, `/*`, a `*` block continuation, or `#` that is not
+ * a Rust attribute (`#[`) or shebang (`#!`). Doc chunks skip this test — their
+ * `#` is a heading.
+ */
+const COMMENT_LINE = /^(?:\/\/|\/\*|\*|#(?![[!]))/;
+
+/**
+ * First non-empty, non-comment line of the chunk body, capped; undefined without
+ * a body. A member chunk opens with its parents' headers
+ * (`TreeSitterChunker#composeBodyChunkContent`): a leading line naming one of
+ * the `parentSymbolId` segments is that prefix, not the member's own line.
+ */
+function chunkSignature(payload: Record<string, unknown>): string | undefined {
+  const { content, parentSymbolId, symbolId } = payload;
+  if (typeof content !== "string") return undefined;
+  const isDoc = payload.isDocumentation === true;
+  // A class-body chunk's parent is the class itself: its header is its own line.
+  const ownName = typeof symbolId === "string" ? symbolIdSegments(symbolId).pop() : undefined;
+  const parents =
+    typeof parentSymbolId === "string" ? symbolIdSegments(parentSymbolId).filter((s) => s !== ownName) : [];
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0 || (!isDoc && COMMENT_LINE.test(line))) continue;
+    if (!isDoc && isParentHeader(line, parents)) continue;
+    return line.slice(0, SIGNATURE_MAX_CHARS);
+  }
+  return undefined;
+}
+
+/** A container declaration line (`class`, `module`, `impl`, …) naming one of the parents. */
+const CONTAINER_KEYWORD = /\b(?:class|module|interface|struct|impl|trait|namespace|object|enum|extension|protocol)\b/;
+
+function symbolIdSegments(symbolId: string): string[] {
+  return symbolId.split(/[#.:]+/).filter(Boolean);
+}
+
+function isParentHeader(line: string, parents: readonly string[]): boolean {
+  if (parents.length === 0 || !CONTAINER_KEYWORD.test(line)) return false;
+  const words = new Set(line.split(/[^\w$]+/));
+  return parents.some((parent) => words.has(parent));
 }

@@ -171,3 +171,133 @@ describe("projectSearchResultPayloads", () => {
     expect(outcome.fieldsWarning).toContain("relativePath.length");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Default projection by call mode (agent turn economy N4, bd tea-rags-mcp-r4rl1)
+//
+// With `fields` absent the payload is narrowed per call mode: a metaOnly row is
+// a locator an agent drills from, a content row is locator + body + navigation.
+// Raw git / codegraph / imports / enrichedAt are what made a row ~1–1.5k chars,
+// so they stay out unless a rerank asked for signals. `fields` stays exact.
+// ---------------------------------------------------------------------------
+
+function makeFullHit(overrides: Partial<SearchResult> = {}): SearchResult {
+  return {
+    id: "h1",
+    score: 0.8,
+    payload: {
+      relativePath: "src/core/domains/explore/strategies/symbol.ts",
+      symbolId: "SymbolSearchStrategy#postProcess",
+      startLine: 380,
+      endLine: 410,
+      chunkType: "function",
+      language: "typescript",
+      signature: "protected override async postProcess(",
+      content: "protected override async postProcess(\n  results: ExploreResult[],\n) {}",
+      navigation: { prevSymbolId: "SymbolSearchStrategy#resolve", nextSymbolId: "SymbolSearchStrategy#match" },
+      imports: ["./base.js", "../reranker.js"],
+      methodLines: 30,
+      git: {
+        file: { commitCount: 12, taskIds: ["tea-rags-mcp-a"], blameDominantAuthor: "x", enrichedAt: "2026-10-01" },
+        chunk: { commitCount: 3, taskIds: ["tea-rags-mcp-b"] },
+      },
+      codegraph: { symbols: { file: { fanIn: 4, enrichedAt: "2026-10-01" } } },
+    },
+    ...overrides,
+  };
+}
+
+const LOCATOR = {
+  relativePath: "src/core/domains/explore/strategies/symbol.ts",
+  symbolId: "SymbolSearchStrategy#postProcess",
+  startLine: 380,
+  endLine: 410,
+  chunkType: "function",
+  language: "typescript",
+  signature: "protected override async postProcess(",
+};
+
+describe("projectSearchResultPayloads — default projection by call mode (N4)", () => {
+  it("narrows a metaOnly row without rerank to the locator", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], undefined, { metaOnly: true, reranked: false });
+
+    expect(outcome.results[0]?.payload).toEqual(LOCATOR);
+    expect(outcome.fieldsWarning).toBeUndefined();
+  });
+
+  it("keeps the rankingOverlay on a reranked metaOnly row and drops the raw git / codegraph", () => {
+    const overlay = { preset: "hotspots", chunk: { commitCount: { value: 3, label: "typical" } } };
+    const outcome = projectSearchResultPayloads([makeFullHit({ rankingOverlay: overlay })], undefined, {
+      metaOnly: true,
+      reranked: true,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual(LOCATOR);
+    expect(outcome.results[0]?.rankingOverlay).toEqual(overlay);
+  });
+
+  it("gives a content row locator + content + navigation, without imports / git / codegraph / enrichedAt", () => {
+    const hit = makeFullHit();
+    const outcome = projectSearchResultPayloads([hit], undefined, { metaOnly: false, reranked: false });
+    const payload = outcome.results[0]?.payload ?? {};
+
+    expect(payload.content).toBe(hit.payload?.content);
+    expect(payload.navigation).toEqual(hit.payload?.navigation);
+    expect(payload.relativePath).toBe(LOCATOR.relativePath);
+    expect(payload.symbolId).toBe(LOCATOR.symbolId);
+    expect(payload).not.toHaveProperty("imports");
+    expect(payload).not.toHaveProperty("git");
+    expect(payload).not.toHaveProperty("codegraph");
+    expect(payload).not.toHaveProperty("methodLines");
+  });
+
+  it("leaves a reranked content row's payload whole — the signals were asked for", () => {
+    const hit = makeFullHit({ rankingOverlay: { preset: "techDebt" } });
+    const outcome = projectSearchResultPayloads([hit], undefined, { metaOnly: false, reranked: true });
+
+    expect(outcome.results[0]?.payload).toEqual(hit.payload);
+  });
+
+  it("keeps an outline row's content — the outline text is the answer", () => {
+    const outline = makeFullHit({
+      payload: {
+        relativePath: "src/a.ts",
+        language: "typescript",
+        content: "src/a.ts\n  Foo\n  Foo#bar",
+        chunkCount: 2,
+      },
+    });
+    const outcome = projectSearchResultPayloads([outline], undefined, { metaOnly: false, reranked: false });
+
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: "src/a.ts",
+      language: "typescript",
+      content: "src/a.ts\n  Foo\n  Foo#bar",
+    });
+  });
+
+  it("keeps treeState on the row through the default projection", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit({ treeState: "modified" })], undefined, {
+      metaOnly: true,
+      reranked: false,
+    });
+
+    expect(outcome.results[0]?.treeState).toBe("modified");
+  });
+
+  it("applies `fields` exactly when given — the default projection never adds back", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], ["git.file.commitCount"], {
+      metaOnly: true,
+      reranked: false,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual({ git: { file: { commitCount: 12 } } });
+  });
+
+  it('projects the whole git subtree for fields: ["git"], so the old answer stays reachable', () => {
+    const hit = makeFullHit();
+    const outcome = projectSearchResultPayloads([hit], ["git"], { metaOnly: true, reranked: false });
+
+    expect(outcome.results[0]?.payload).toEqual({ git: hit.payload?.git });
+  });
+});
