@@ -99,6 +99,6 @@ subagent-routing, and control cases.
 
 ## Versioning
 
-Every commit that modifies `.claude-plugin/dinopowers/` bumps `plugin.json`
-version per the project's plugin-versioning rule — minor bump for new
-skills/rules, patch for text-only changes.
+Every commit that modifies `plugins/dinopowers/` bumps `plugin.json` version per
+the project's plugin-versioning rule — minor bump for new skills/rules, patch
+for text-only changes.

@@ -11,17 +11,15 @@ options: [
 ]
 ```
 
-Run: `$SCRIPTS/setup-qdrant.sh <mode> <platform>` (use `"linux"` for WSL)
+Run: `$SCRIPTS/setup-qdrant.sh <mode> <platform>` (`"linux"` for WSL)
 
 **Interpret result:**
 
-- `already_done` or `installed` → save qdrantMode and url to progress
-- exit code 2 (Docker not found) → AskUserQuestion: "Docker is required but not
-  installed. Install Docker Desktop and respond when done." After confirm →
-  re-run.
-- exit code 1 with stderr "daemon is not running" → AskUserQuestion: "Docker is
-  installed but not running. Start Docker Desktop and confirm." After confirm →
-  re-run.
+- `already_done` / `installed` → save qdrantMode + url to progress
+- exit 2 (Docker not found) → AskUserQuestion: "Docker is required but not
+  installed. Install Docker Desktop and respond when done." Confirmed → re-run.
+- exit 1, stderr "daemon is not running" → AskUserQuestion: "Docker is installed
+  but not running. Start Docker Desktop and confirm." Confirmed → re-run.
 - other exit code 1 → show stderr, AskUserQuestion:
   ```
   question: "Qdrant setup failed. Choose an alternative."

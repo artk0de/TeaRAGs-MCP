@@ -1,35 +1,31 @@
 # Runtime Introspection
 
-Tea-rags exposes live registry of presets, signals, filters, infra state via MCP
-resources + tool responses. Agents do NOT guess preset names, signal keys,
-filter syntax — fetch truth at runtime.
+Read when: search returned `driftWarning`; custom rerank, weight keys unknown;
+embedding/qdrant unreachable → health report; `rankingOverlay` to interpret.
+Base contract (infraHealth / driftWarning / presetFilterNotice / overlay) →
+`tea-rags://guide/overview` "Observability hooks". Here: details only.
 
-Read this file when: search returned `driftWarning`; building custom rerank but
-don't know weight keys; embedding/qdrant unreachable + want health report;
-result has `rankingOverlay` to interpret.
+## Resources
 
-## MCP Resources Catalog
+Read resource `<uri>` (MCP resource read; no resource tool →
+`tea-rags resource "<uri>" --path "$PWD"`). Generated from live registry = THIS
+build. Never invent preset name, signal key, filter operator — read resource.
 
-Read via `ReadMcpResourceTool(server: "tea-rags", uri: "<uri>")`. Generated from
-live registry — always reflect THIS build, no stale refs.
+| URI                                              | When to read                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `tea-rags://guide/overview`                      | first time in session; resource catalog, response shape, params                         |
+| `tea-rags://guide/presets`                       | before picking rerank preset — signals per preset                                       |
+| `tea-rags://guide/signals`                       | before `{custom: {...}}` rerank — ONLY canonical weight-key list                        |
+| `tea-rags://guide/filters`                       | before raw `filter:` — operators, fields, named `{presets}`                             |
+| `tea-rags://guide/signal-labels`                 | before reading `value/label` pairs — label resolution algorithm                         |
+| `tea-rags://guide/search-examples`               | concrete param examples per tool, pagination                                            |
+| `tea-rags://guide/indexing`                      | `index_codebase` options, git metadata                                                  |
+| `tea-rags://project/<alias>/digest`              | status, `## Drift`, language capability; `## Infra` when unhealthy                      |
+| `tea-rags://project/<alias>/metrics?section=<s>` | `thresholds` / `labelMap` / `capability` / `resolve` / `registry` (+`&language=<lang>`) |
 
-| URI                                | When to read                                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `tea-rags://schema/overview`       | First time in a session; catalog of resources + destructive tools warning                           |
-| `tea-rags://schema/presets`        | Before picking a rerank preset — full preset list with signals + tools each preset is registered on |
-| `tea-rags://schema/signals`        | Before building a `{custom: {...}}` rerank — full weight-key catalog (the ONLY canonical list)      |
-| `tea-rags://schema/filters`        | Before writing a raw `filter:` block — operators, payload keys, file vs chunk level                 |
-| `tea-rags://schema/signal-labels`  | Before interpreting `value/label` pairs in ranking overlay — explains label resolution algorithm    |
-| `tea-rags://schema/search-guide`   | Need concrete parameter examples per tool                                                           |
-| `tea-rags://schema/indexing-guide` | Indexing options, git metadata switches                                                             |
+## get_index_status — infraHealth
 
-Never invent preset name, signal key, filter operator. Read the resource —
-cheap + authoritative.
-
-## get_index_status — Infra Health
-
-`get_index_status(project: "<alias>")` returns standard index metadata PLUS
-`infraHealth` block:
+`get_index_status(project: "<alias>")` → index metadata + `infraHealth`:
 
 ```jsonc
 {
@@ -53,89 +49,60 @@ cheap + authoritative.
 
 FIRST debug step when:
 
-- Semantic call fails with connection/timeout error
-- Prime digest shows `embedding: unavailable` or `qdrant: red`
-- Indexing run finished but searches return empty/stale results
-- Trajectory's enrichment looks incomplete
+- semantic call fails, connection/timeout error
+- digest carries `## Infra` (emitted only when unhealthy: qdrant `red`,
+  embedding endpoint `unavailable`) — digest = snapshot; confirm live here
+- index run finished, searches empty/stale
+- trajectory enrichment looks incomplete
 
-**Failed optimizer.** Optimizer reads `error: <message>` → the Infra block (and
-the prime `## Infra` section) carries a ready
-`Run: tea-rags qdrant recover --project <alias>` line. The command re-applies
-the collection's CURRENT optimizer config (no value changes; Qdrant 1.18
-recreates the optimizer and clears the error) and verifies the error is gone —
-no daemon restart, no reindex. It writes to Qdrant, so relay it to the user
-rather than running it unasked. Still failing afterwards → the error persists
-with a live cause (disk, memory, segment); check the Qdrant log.
+**Failed optimizer.** Optimizer `error: <message>` → Infra block (and digest
+`## Infra`) carries ready `Run: tea-rags qdrant recover --project <alias>` line.
+Re-applies collection's CURRENT optimizer config (no value change; Qdrant 1.18
+recreates optimizer, clears error), verifies — no daemon restart, no reindex.
+Writes to Qdrant → relay to user, never run unasked. Still failing → live cause
+(disk, memory, segment); check Qdrant log.
 
-Pair with "Embedding Unavailable" rule in `search-cascade.md`: if
-`embedding.reachable === false`, ask user to start embedding backend via
-`AskUserQuestion` before downgrading search strategy.
+`embedding.reachable === false` → `tea-rags://guide/degraded`: ask user to start
+embedding backend before downgrading search strategy.
 
-## get_index_metrics — Per-Project Calibration
+## Project calibration
 
-`get_index_metrics(project: "<alias>")` returns per-language × per-scope
-(`source` / `test`) percentile labelMaps for every numeric signal, plus current
-distribution.
+Same `commitCount` = "high" in one project, "typical" in another. Thresholds per
+language × scope (`source` / `test`): read
+`tea-rags://project/<alias>/metrics?section=labelMap&language=<lang>` (band
+table: `section=thresholds`). Use when:
 
-Why: `commitCount` of 8 is "high" in one project, "typical" in another. labelMap
-tells THIS project's thresholds. Use when:
+- user asks "what counts as old / churn-heavy / silo'd here?" — read, don't
+  guess
+- custom filter `minCommitCount` / `maxAgeDays` needs meaningful threshold (e.g.
+  `>= labelMap.high`)
+- overlay `value/label` surprises — verify bucket for that language scope
 
-- User asks "what counts as old / churn-heavy / silo'd in this codebase?" — read
-  labelMap, don't guess
-- Building custom filter with `minCommitCount` / `maxAgeDays` + want meaningful
-  threshold (e.g. `>= labelMap.high`)
-- Rerank result's `value/label` pair surprises you — verify which bucket the
-  value falls in for this language scope
+## driftWarning — details
 
-Returned shape (abbreviated):
+Hint, not error. Fires when index stamp ≠ running build (payload keys, language
+versions, indexing env, indexed commit).
 
-```jsonc
-{
-  "signals": {
-    "typescript": {
-      "git.file.commitCount": {
-        "source": {
-          "labelMap": { "low": 1, "typical": 3, "high": 8, "extreme": 20 },
-        },
-        "test": {
-          "labelMap": { "low": 1, "typical": 2, "high": 5, "extreme": 12 },
-        },
-      },
-    },
-  },
-}
-```
+- Surface to user. Lists moved axes + ONE `Run:` line = cheapest repair
+  (`--force-enrichments <scope>` enrichment-owned drift; `--force` only when
+  chunk set moved; plain incremental when only HEAD moved).
+- NEVER auto-run `--force-enrichments` / `--force` — user decides (large repo =
+  long reindex). `--force` → `tea-rags:force-reindex`. Plain incremental `Run:`
+  (only HEAD moved) runs without asking, like stale banner.
+- Enable-flag rows (`CODEGRAPH_ENABLED` / `TRAJECTORY_GIT_ENABLED`) describe
+  process READING index — each surface answers for own process. Digest
+  re-applies `CODEGRAPH_ENABLED` from registry → row never appears there,
+  absence says nothing about server. Codegraph flag → `get_index_status` /
+  `driftWarning` (server answers for itself) or `metrics?section=registry`.
+- Same report without consuming: digest `## Drift` + `get_index_status`.
+  `driftWarning` spent once per collection per DISTINCT REPORT per server
+  session; re-armed after each index run.
+- tea-rags self-test only: full reset via `force_reindex` (project CLAUDE.md MCP
+  testing section).
 
-## driftWarning — Index Drift Detection
+## rankingOverlay — why ranked here
 
-Every search response can include top-level `driftWarning` field when a stamp
-the index carries no longer matches what the running build would produce —
-payload keys, language versions, indexing env, indexed commit. Treat as hint,
-not error:
-
-- Surface report to user when it appears — it lists the axes that moved and ends
-  with ONE `Run:` line, already the cheapest command repairing all of them
-  (`--force-enrichments <scope>` for enrichment-owned drift, `--force` only when
-  the chunk set moved, plain incremental when only HEAD moved)
-- Do NOT run `--force-enrichments` / `--force` automatically — user's decision
-  (large codebases = long reindex). See `tea-rags:force-reindex` skill when the
-  line says `--force`. A plain incremental `Run:` line (only HEAD moved) runs
-  without asking, like the stale banner
-- Enable-flag rows (`CODEGRAPH_ENABLED` / `TRAJECTORY_GIT_ENABLED`) describe the
-  process READING the index, so each surface answers for its own process.
-  `prime` re-applies `CODEGRAPH_ENABLED` from the registry before building its
-  composition — that row can never appear in prime, and its absence there says
-  nothing about the server. Read the codegraph flag from `get_index_status` /
-  `driftWarning`, which the MCP server answers for itself
-- Same report, without consuming it: prime's `## Drift` section and
-  `get_index_status`. `driftWarning` is spent once per collection per DISTINCT
-  REPORT per server session, and re-armed after each index run
-- tea-rags self-test only: full reset via `force_reindex` is documented path
-  (see project CLAUDE.md MCP testing section)
-
-## rankingOverlay — Why This Result Was Ranked Here
-
-Every reranked search result carries `rankingOverlay` — metaOnly included:
+Every reranked result carries `rankingOverlay`, metaOnly included:
 
 ```jsonc
 {
@@ -152,23 +119,18 @@ Every reranked search result carries `rankingOverlay` — metaOnly included:
 ```
 
 - Keys = preset `overlayMask` fields (custom weights → each weight's source
-  fields), bare field name, grouped by level. Flat structural signals sit under
-  the level they describe: file-wide ones (`imports`, `moduleLines`) under
-  `file`, per-method ones (`methodLines`, `methodDensity`) under `chunk`. A
-  `level: "file"` result carries no `chunk` block.
-- `{value,label}` when signal has labels (resolved via `signal-labels`
-  resource), else raw value. In a result table (2+ results) the pair is two
-  columns: `rankingOverlay.chunk.<field>.value` / `.label`.
-- Labels live ONLY here. Payload = raw values at filter-key paths, metaOnly or
-  not. Contract owner: `tea-rags://schema/overview` → `### metaOnly`.
+  fields), bare name, grouped by level. Flat structural: file-wide (`imports`,
+  `moduleLines`) under `file`, per-method (`methodLines`, `methodDensity`) under
+  `chunk`. `level: "file"` result → no `chunk` block.
+- `{value,label}` when labelled (→ `tea-rags://guide/signal-labels`), else raw.
+  Result table (2+ results): two columns `rankingOverlay.chunk.<field>.value` /
+  `.label`.
+- Labels ONLY here. Payload = raw values at filter-key paths, metaOnly or not.
+  Contract owner: `tea-rags://guide/overview` → `### metaOnly`.
 
-Use overlay to:
+Use overlay to: answer "why this result?" without re-search; detect pattern
+combos (`signal-interpretation.md`: god module vs bug attractor, healthy owner
+vs toxic silo, …); spot confidence-clamped small-N labels
+(`signal-interpretation.md` → "Interpretation anti-patterns" #8).
 
-- Answer "why this result?" without re-running search
-- Detect pattern combinations from `references/signal-interpretation.md` (god
-  module vs bug attractor, healthy owner vs toxic silo, etc.)
-- Spot confidence-clamped labels (small-N) — see `signal-interpretation.md` →
-  "Interpretation anti-patterns" #8
-
-Never re-rank single result by Read'ing its file. Overlay is the explanation
-layer.
+Never re-rank single result by reading its file. Overlay = explanation layer.

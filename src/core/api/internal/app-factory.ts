@@ -48,6 +48,7 @@ import {
   emptyCochangeResult,
   emptyOntologyReport,
   emptyReviewChangesResult,
+  languageCapabilityGuide,
   resolveLanguageCapabilities as resolveDomainLanguageCapabilities,
   unjudgedPlannedArchitectureEdges,
   unplannedArchitectureRestructure,
@@ -307,6 +308,7 @@ export function createApp(deps: AppDeps): App {
     // the implementations — the registry is caller-supplied (bd
     // tea-rags-mcp-nkstp).
     resolveLanguageCapabilities: (languages) => resolveDomainLanguageCapabilities(languages),
+    renderLanguageCapabilityGuide: () => languageCapabilityGuide(),
     isCollectionBuildInFlight: async (qdrant, collection, options) =>
       ops.projectRegistry.isCollectionBuildInFlight(qdrant, collection, options),
     resolveBaseIndexEntry: (registry, path) => resolveBaseIndexEntryImpl(registry, path),

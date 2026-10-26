@@ -11,40 +11,42 @@ description:
 
 # dinopowers: requesting-code-review
 
-Wrapper over `superpowers:requesting-code-review`. Review request arrives at
-reviewer with git-context bundle — who owns each file, churn levels, connected
-tickets — reviewers pair-match by expertise, trace coordinated changes
-immediately instead of re-excavating context.
+Wrapper over `superpowers:requesting-code-review`. Request reaches reviewer with
+git-context bundle — file owners, churn, connected tickets — reviewers
+pair-match by expertise, trace coordinated changes without re-excavating.
 
 ## Iron Rule
 
 **tea-rags git-bundle query MUST run on `git diff --name-only` BEFORE composing
-the review request** — whenever ≥1 file changed.
+review request** — whenever ≥1 file changed.
 
-Correct tool (`semantic_search`) + impact rerank (`blastRadius` / custom
-fallback) (`imports: 0.5, churn: 0.3, ownership: 0.2`) + parameters
-(brace-expanded `pathPattern` over diff files, `metaOnly: true`) + bundle format
-(per-file ownership/churn/taskIds, NOT blast-radius verdict) = core value.
+Value = right tool (`semantic_search`) + impact rerank (`blastRadius` / custom
+fallback `imports: 0.5, churn: 0.3, ownership: 0.2`) + params (brace-expanded
+`pathPattern` over diff files, `metaOnly: true`) + bundle format (per-file
+ownership/churn/taskIds, NOT blast-radius verdict).
 
-Diff empty: skip wrapper, invoke `superpowers:requesting-code-review` directly.
-Don't fabricate.
+Diff empty → skip wrapper, invoke `superpowers:requesting-code-review` directly.
+Never fabricate.
 
-**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass wrapper.
+**Chaining rule:** [CHAINING.md](../../CHAINING.md) — every onward
+`superpowers:Y` → `dinopowers:Y`. NEVER bypass wrapper.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+**Requires superpowers:** `superpowers:requesting-code-review` — availability
+per [CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): run
+`ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/requesting-code-review/SKILL.md`
+as written first — a hand-built path failing proves nothing; only that glob
+matching nothing → stop and ask the user to install superpowers
+(https://github.com/obra/superpowers). NEVER present this enrichment alone as
+the full workflow.
+
+**Freshness:** [FRESHNESS.md](../../FRESHNESS.md) (owner
+`tea-rags://guide/freshness`). Lag ≠ unusable — never Bash `cat`/`grep`/`Read`
+over code; `treeState` row → `find_symbol`.
 
 ## Step 1 — Collect diff file list
 
-From `git diff --name-only <base>...HEAD` (branch diff) or `git diff --staged`
+`git diff --name-only <base>...HEAD` (branch) or `git diff --staged`
 (pre-commit):
 
 | Source                | Example                               |
@@ -53,21 +55,16 @@ From `git diff --name-only <base>...HEAD` (branch diff) or `git diff --staged`
 | Uncommitted + staged  | `git diff --name-only HEAD`           |
 | Specific commit range | `git diff <sha1>..<sha2> --name-only` |
 
-Output:
-
-- `diffFiles`: files changed in review scope (M/A, exclude pure D)
-- `intent`: one-sentence description of what diff accomplishes
-
-Pure deletions (D only): skip wrapper — reviewers need code-in-diff for context.
-Empty diff: skip.
+Output: `diffFiles` (M/A, exclude pure D) + `intent` (one sentence, what diff
+does). Pure deletions only / empty diff → skip wrapper (reviewers need
+code-in-diff).
 
 ## Step 2 — Git-bundle query
 
-Issue ONE `mcp__tea-rags__semantic_search` — SAME idiom as
-`dinopowers:writing-plans`:
+ONE `mcp__tea-rags__semantic_search` — same idiom as `dinopowers:writing-plans`:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: "{diffFile1,diffFile2,...}"   ← brace expansion
@@ -87,68 +84,84 @@ Do NOT substitute:
 
 Do NOT pass:
 
-- `metaOnly: false` — bundle inputs are signals; content already in PR diff
-- Different weights — must match project idiom
-- `filter` narrowing — pathPattern already scopes
+- `metaOnly: false` — bundle = signals; content already in PR diff
+- different weights — must match project idiom
+- `filter` narrowing — pathPattern scopes already
 
-Empty results (files too new to index): skip bundle, invoke
+Empty results (files too new) → skip bundle, invoke
 `superpowers:requesting-code-review` with note "diff files not yet indexed — no
-git-context available". Don't fabricate.
+git-context available". Never fabricate.
 
 ## Step 2.5 — Reviewer-hub awareness (codegraph only)
 
-When codegraph active (prime `## Enrichment` lists `codegraph.symbols`), for
-changed symbols diff touches run `get_callers symbolId=<id>` (resolve exact id
-with `find_symbol` first). Callers = code depending on change — their
-`blameDominantAuthor`s are stakeholders to loop into review. Add "Affected
+Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list; unsure
+→ read `tea-rags://project/<alias>/metrics?section=registry`. On → per changed
+symbol `get_callers symbolId=<id>` (exact id via `find_symbol` first). Callers
+depend on change → their `blameDominantAuthor`s = stakeholders. Add "Affected
 callers / suggested reviewers" line to bundle.
 
-Skip when codegraph off (graph tools not registered) — ownership bundle from
-Step 2/3 still stands; note caller-impact not computed. Never invent caller
-lists.
+Off → skip; Step 2/3 ownership bundle stands; note caller-impact not computed.
+NEVER invent caller lists.
 
 ## Step 2.6 — Naming pre-check (codegraph only)
 
 `review_changes(changes={ base: <Step 1 base> }, sections: ["naming"])` — ONE
-call reviews every name the diff's added lines declare (values, types,
-constants); do not hand-list them into `names[]`. Base = the target branch for a
-branch diff (`main`); the tool reads it at its merge-base with HEAD, so a target
-that moved on adds nothing. Omit it for uncommitted work (default `HEAD`).
-Settle naming before a reviewer spends a comment on it: `MISFIT` → rename to
-`suggestion` before sending (or list it under risk flags with the holder) — a
-type MISFIT with `role.evidence: "directory"` only when the type belongs to
-`role.examples`' family, else keep the name; `COLLISION` → rename, or justify
-against the `existing` declaration; `NEW_TERM` → one-line justification in the
-bundle, or take an offered alternative. Worktree branch → pass `path=<worktree>`
-(alias alone reads the main checkout). Answer lives under `review` {workTree,
-base, mergeBase, changedFiles, checked, conforming, novel, findings, notJudged,
-truncated?}; findings flat `{relPath, line, name, kind, type?, verdict, …}`.
-Bundle line: findings grouped by verdict with `relPath:line`, plus conforming
-and novel counts (`novel` = nothing to compare against, no action). A finding
-with `genericName` = generic name → rename or justify. Reading:
-`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+call reviews every name diff's added lines declare (values, types, constants);
+never hand-list into `names[]`. Base = target branch for branch diff (`main`);
+read at merge-base with HEAD (target moving on adds nothing). Uncommitted work →
+omit (default `HEAD`). Worktree branch → pass `path=<worktree>` (alias alone
+reads main checkout).
+
+Findings already quoted in the task / context = what this call returns — still
+list the `review_changes` call in your sequence, then act on them.
+
+Settle naming before reviewer spends comment:
+
+- `MISFIT` → rename to `suggestion` before sending (or list under risk flags
+  with holder). Type MISFIT with `role.evidence: "directory"` → rename only when
+  type belongs to `role.examples`' family, else keep name
+- `COLLISION` → rename, or justify against `existing` declaration
+- `NEW_TERM` → one-line justification in bundle, or take offered alternative
+- finding with `genericName` → rename or justify
+
+Answer under `review` {workTree, base, mergeBase, changedFiles, checked,
+conforming, novel, findings, notJudged, truncated?}; findings flat
+`{relPath, line, name, kind, type?, verdict, …}`. Your answer prints this line,
+filled from the findings you hold (plan-only too), every finding with
+`relPath:line` AND the action taken on it (pick one side of each `|`), both
+counts always. Echoing a finding with no action = MISFIT left for the reviewer:
+
+`Naming: MISFIT <name> (<relPath:line>) → renamed to <suggestion> before sending | kept, risk flag for <holder>; COLLISION <name> (<relPath:line>) vs <existing> → renamed | justified: <why>; NEW_TERM <name> (<relPath:line>) — <justification>; conforming <N>, novel <M>`
+
+Path or count not in the prompt → write `<relPath:line from review>` /
+`novel <from review>`, never drop the slot (`novel` = nothing to compare, no
+action). Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
 
-Aggregate by `relativePath`. Per unique file extract — raw essentials (`blame*`,
-`commitCount`, `ageDays`, `taskIds`) from payload `git.file.*`; `recent*` /
-`bugFixRate` + every label from `rankingOverlay.file.*` when the rerank surfaces
-them, else absent (metaOnly payload never carries them):
+Aggregate by `relativePath`. Per file — raw essentials (`blame*`, `commitCount`,
+`ageDays`, `taskIds`) from payload `git.file.*`; `recent*` / `bugFixRate` +
+labels from `rankingOverlay.file.*` when rerank surfaces them, else absent
+(metaOnly payload never carries them):
 
-- `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner (must
-  approve based on current code state)
+- `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner (approves
+  on current code)
 - `recentDominantAuthor` + `recentDominantAuthorPct` — recent committer
   (mentally loaded, fastest turnaround)
 - `blameContributorCount` (live owners), `recentContributorCount` (recent
   committers)
 - `commitCount` + `ageDays`
-- `taskIds` (connected tickets)
+- `taskIds` (connected tickets — highest-value signal, never omit)
 - `bugFixRate` (risk signal)
 
-Pick reviewers by `blame*` (authority); prioritize fast turnaround by `recent*`
-(cache locality).
+Reviewers by `blame*`; fast turnaround by `recent*`.
 
-Compose bundle (goes INTO review request, not a verdict):
+Bundle goes INTO request, not a verdict. Metadata only — no raw diff, no raw git
+log. **Four sections, ALWAYS all four, named as below** (no data for one → write
+"none", never drop it): (1) per-file table with ALL five columns — File, Owner,
+Contributors, Commits (age), Related tickets (taskIds; none → "—", never drop
+the column), (2) suggested reviewers, (3) coordinated change context (taskIds),
+(4) risk flags for reviewer attention (bugFixRate / churn / silo per file):
 
 ```
 ### Reviewer context bundle
@@ -169,10 +182,13 @@ Compose bundle (goes INTO review request, not a verdict):
 **Risk flags for reviewer attention:**
 - `src/a.ts` has bugFixRate=35% (high) — scrutinize new logic
 - `src/e.ts` has been touched 47 times in 90 days — stability concern
+- `<name>` (<relPath:line>) kept despite naming MISFIT → `<suggestion>` — <holder> decides (only when not renamed)
+
+**Naming (Step 2.6, codegraph on):** <the Step 2.6 `Naming:` line, verbatim>
 ```
 
-If bundle exceeds 20 lines: truncate per-file table to top 10 by `imports`
-score, note "N more files omitted".
+Bundle > 20 lines → per-file table top 10 by `imports`, note "N more files
+omitted". Thin data → empty bundle beats fabricated ownership.
 
 ## Step 3a — Tests at risk (scenarios under threat)
 
@@ -184,18 +200,15 @@ affectedFiles: <diffFiles from Step 1>
 intent: <intent from Step 1>
 ```
 
-Recipe internally queries DSL leaf test chunks semantically bound to change.
-Output = ranked list of scenarios at risk.
+Recipe → ranked DSL leaf test chunks bound to change. Add to bundle one of:
 
-Add to bundle one of:
-
-- If recipe returned SKIP (no DSL test chunks indexed):
+- SKIP (no DSL test chunks indexed):
 
   ```
   **Scenarios under risk:** unavailable (no DSL test chunks indexed)
   ```
 
-- If recipe returned a non-empty list:
+- Non-empty list:
 
   ```
   **Scenarios under risk:**
@@ -203,17 +216,16 @@ Add to bundle one of:
   - <file>:<line> — <describe-it path>
   ```
 
-  Cap at top 8 scenarios; note "N more omitted" if truncated. Reviewers see
-  contract surface affected by diff, not just metadata.
+  Cap top 8; "N more omitted" if truncated.
 
-- If recipe returned empty result (preflight passed but no semantic match):
+- Empty (preflight passed, no semantic match):
   ```
   **Scenarios under risk:** no obvious test bindings found — reviewer should
   verify whether new behavior needs new tests
   ```
 
-Do NOT name specific test runners here. Phrasing stays generic; actual command
-left to reviewer / CI / pre-commit hook.
+NEVER name test runners — generic phrasing; command left to reviewer / CI /
+pre-commit hook.
 
 ## Step 4 — Invoke superpowers:requesting-code-review
 
@@ -228,34 +240,21 @@ context. Phrase handoff as:
 > `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
-Let `superpowers:requesting-code-review` run its standard review-composition
-cycle. Wrapper enriches request, doesn't replace review process.
+`superpowers:requesting-code-review` runs standard cycle — wrapper enriches,
+never replaces.
 
-## Red Flags — STOP and restart from Step 2
+## Red Flags — STOP, restart from Step 2
 
-- "Reviewer knows the codebase, they don't need a bundle" → bundle is for
-  PAIR-MATCHING, not education. Run Step 2.
-- "Diff is small, skip the bundle" → small diffs to high-churn files still
-  benefit from ownership context
-- Substituted git blame/log → redo with semantic_search + Step 2 rerank
-- Wrong rerank for codegraph state → redo: `"blastRadius"` when prime
-  `## Enrichment` lists `codegraph.symbols`, else
-  `{imports: 0.5, churn: 0.3, ownership: 0.2}` (tea-rags analytics-rerank)
-- Composed request before Step 2 → revert, restart
-- Pasted raw diff into bundle → bundle is METADATA (ownership/churn/tickets),
-  not code
-- Let `superpowers:requesting-code-review` chain into raw
-  `superpowers:verification-before-completion` without redirecting to
-  `dinopowers:verification-before-completion` → intercept, invoke wrapper
-  instead (see Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                                         | Reality                                                                              |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Use `rerank: "ownership"` alone                                 | Returns ownership-dominant rank but misses `imports`, `churn`, `taskIds` in one call |
-| Use `rerank: "codeReview"` preset because "this is code review" | codeReview is for finding reviewable code, not building reviewer context             |
-| Paste full git log per file into bundle                         | Bundle is structured metadata, not raw history                                       |
-| Skip `taskIds` in bundle                                        | Connected tickets are the highest-value signal for reviewers — don't omit            |
-| Include files with `D` status in bundle                         | Pure deletions don't need reviewer-context; show them in diff, not bundle            |
-| Fabricate dominant author when data is thin                     | Empty bundle > fake bundle; reviewers distrust fabricated ownership                  |
+- "Reviewer knows codebase, no bundle" → bundle = PAIR-MATCHING, not education
+- "Diff small, skip bundle" → small diff to high-churn file still needs
+  ownership context
+- git blame/log substituted → redo with semantic_search + Step 2 rerank
+- Wrong rerank for codegraph state → redo: `"blastRadius"` when codegraph on
+  (graph tools present), else `{imports: 0.5, churn: 0.3, ownership: 0.2}`
+  (tea-rags analytics-rerank). `"ownership"` alone misses imports/churn/taskIds;
+  `"codeReview"` finds reviewable code, not reviewer context
+- Request composed before Step 2 → revert, restart
+- Raw diff / full git log in bundle → METADATA only
+- `D`-status files in bundle → drop; show in diff
+- Inner cycle chains raw `superpowers:verification-before-completion` →
+  intercept, invoke `dinopowers:verification-before-completion`

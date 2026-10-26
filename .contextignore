@@ -7,7 +7,14 @@ build/**
 docs/**
 .claude/**
 .claude-plugin/**/*.sh
+# Generated from plugins/** by `npm run gen:plugins` — the sources are indexed.
+.claude-plugin/tea-rags/**
+.claude-plugin/dinopowers/**
+.claude-plugin/tea-rags-setup/**
+harness/**
 .claude-plugin/**/*.ps1
+plugins/**/*.sh
+plugins/**/*.ps1
 .github/**
 .husky/**
 .beads/**

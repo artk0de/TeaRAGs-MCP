@@ -4,69 +4,73 @@
 
 Resolution order:
 
-1. Check progress file for existing `projectPath` (resume case) — if set and the
-   directory still exists, use it
-2. Skill argument (if `/tea-rags-setup:install /path/to/project` was invoked)
-3. Current working directory (cwd) — use if it looks like a project (has
-   package.json, .git, src/, Makefile, Cargo.toml, go.mod, etc.)
-4. Only if cwd is not a project (e.g. home dir, `/tmp`) → AskUserQuestion:
+1. Progress `projectPath` (resume) — set + dir exists → use
+2. Skill argument (`/tea-rags-setup:install /path/to/project`)
+3. cwd if it looks like a project (package.json, .git, src/, Makefile,
+   Cargo.toml, go.mod, etc.)
+4. cwd not a project (home dir, `/tmp`) → AskUserQuestion:
    ```
    question: "Current directory doesn't look like a project. Specify the project path."
    ```
-   **Validate the path exists** before proceeding. If it doesn't → show error,
-   re-ask.
+   **Validate path exists**; missing → show error, re-ask.
 
 Save projectPath to progress.
 
 ## 4b: Estimate project size
 
-Run `$SCRIPTS/analyze-project.sh <projectPath>` and extract `locEstimate`. Save
-to progress as `projectLocEstimate`.
+`$SCRIPTS/analyze-project.sh <projectPath>` → `locEstimate` → progress
+`projectLocEstimate`.
 
 ## 4c: Build recommendation
 
-Use GPU info from progress and locEstimate. Look up the recommendation in
-`reference.md` "Embedding Provider Recommendation" table.
+GPU info (progress) + locEstimate → `reference.md` "Embedding Provider
+Recommendation" table.
 
 llama-server gate: `projectLocEstimate` ≥ 3M lines → AskUserQuestion "Is there a
 GPU host (this machine or a LAN box) to serve embeddings?". Yes → recommend
-llama-server (~2× Ollama texts/s, one server per GPU). Otherwise recommend per
-table — Ollama stays default.
+llama-server (~2× Ollama texts/s, one server per GPU). Else per table — Ollama
+default.
+
+Apple Silicon (`platform` darwin + `arch` arm64, Metal): also offer
+"llama-server (this Mac)" — NO ≥3M gate, NO GPU-host question. Two local
+instances ≈ 1.7× Ollama texts/s (M3 Pro). GPU-host gate above unchanged.
 
 ## 4d: Ask user
 
-Build option descriptions dynamically from `reference.md` ONNX/Ollama
-description tables based on platform/GPU.
+Option descriptions from `reference.md` ONNX/Ollama description tables per
+platform/GPU.
 
 ```
 question: "Choose embedding provider. {recommendation_reason}"
 options: [
   { label: "Ollama", description: "{ollama_description}" },
   { label: "ONNX", description: "{onnx_description}" },
-  { label: "llama-server", description: "{llama_server_description}" }
+  { label: "llama-server", description: "{llama_server_description}" },
+  { label: "llama-server (this Mac)", description: "{llama_server_local_description}" }
 ]
 ```
 
-Offer the llama-server option only when the ≥3M + GPU host gate passed, or when
-the user asks for it.
+llama-server option only when ≥3M + GPU host gate passed, or user asks.
+"llama-server (this Mac)" option only on Apple Silicon (darwin + arm64).
 
-If project > 100k LOC and user picks ONNX on CPU-only config → warn: "Project is
-~{N}k LOC. ONNX on CPU recommended up to ~100k LOC, indexing may be slow.
-Continue anyway?" No warning needed for ONNX with GPU (DirectML/CUDA handles
-large projects).
+Project > 100k LOC + ONNX on CPU-only → warn: "Project is ~{N}k LOC. ONNX on CPU
+recommended up to ~100k LOC, indexing may be slow. Continue anyway?" ONNX w/ GPU
+(DirectML/CUDA) → no warning.
 
 ## 4e: Install
 
-- If Ollama chosen → run `$SCRIPTS/install-ollama.sh <platform> '<gpu_json>'`
-  (use `"linux"` for WSL platform)
-  - If `manual_required` with method `app` → install instructions by platform:
-    - **macOS**: should not reach here (script auto-installs via curl, same as
-      Linux). If it does fail, suggest `! brew install --cask ollama` (if
-      hasBrew=true), otherwise "Download from https://ollama.com/download"
-    - **Windows**: if hasWinget → suggest `! winget install Ollama.Ollama`,
-      otherwise "Download from https://ollama.com/download"
-    - **Linux**: should not reach here (script auto-installs via curl) After
-      showing install method, AskUserQuestion:
+- Ollama → `$SCRIPTS/install-ollama.sh <platform> '<gpu_json>'` (`"linux"` for
+  WSL)
+  - `manual_required` w/ method `app` → install instructions per platform:
+    - **macOS**: normally unreachable (script auto-installs via curl). Fails →
+      `! brew install --cask ollama` (hasBrew=true), else "Download from
+      https://ollama.com/download"
+    - **Windows**: hasWinget → `! winget install Ollama.Ollama`, else "Download
+      from https://ollama.com/download"
+    - **Linux**: unreachable (script auto-installs via curl).
+
+    Install method shown → AskUserQuestion:
+
     ```
     question: "Install Ollama, restart terminal, launch it, then confirm."
     options: [
@@ -74,17 +78,17 @@ large projects).
       { label: "Problem", description: "Something went wrong" }
     ]
     ```
-  - If platform is Windows AND gpu.vendor is "amd" AND gpu.architecture is
-    "RDNA2" or "RDNA3" → before the standard install AskUserQuestion, show
-    additional note: "For GPU acceleration with AMD {gpu.model}, install AMD
-    Radeon PRO driver first:
-    https://www.amd.com/en/support/professional-graphics Then install Ollama."
-  - After user confirms → verify: run `ollama --version`. If fails → remind to
-    restart terminal and retry.
-  - After Ollama verified → re-run install-ollama.sh to pull model.
-- If llama-server chosen → follow `steps/step-4-llama-server.md`, then return
-  here to mark step completed.
-- If ONNX chosen → nothing to install. Save `embeddingProvider: "onnx"` to
-  progress.
 
-Save `embeddingProvider` and mark step completed.
+  - Windows AND gpu.vendor "amd" AND gpu.architecture "RDNA2"/"RDNA3" → before
+    install AskUserQuestion, note: "For GPU acceleration with AMD {gpu.model},
+    install AMD Radeon PRO driver first:
+    https://www.amd.com/en/support/professional-graphics Then install Ollama."
+  - Confirmed → `ollama --version`; fails → remind restart terminal, retry.
+  - Verified → re-run install-ollama.sh to pull model.
+
+- llama-server → `steps/step-4-llama-server.md`, return here to mark completed.
+- llama-server (this Mac) → `steps/step-4-llama-server.md` §4L-local, return
+  here to mark completed.
+- ONNX → nothing to install; progress `embeddingProvider: "onnx"`.
+
+Save `embeddingProvider`, mark step completed.

@@ -1,6 +1,7 @@
 # Search Use Cases
 
-By agent task. Each maps to Decision Tree branch in `search-cascade.md`.
+By agent task. Each maps to Decision Tree branch in
+`tea-rags://guide/decision-tree`.
 
 ## Discovery (don't know the naming)
 
@@ -45,8 +46,8 @@ entry in `signal-interpretation.md` for remediation.
 | Symbol exists?            | find_symbol     | metaOnly=true, 0 results = doesn't exist          |
 | Symbol has tests?         | find_symbol     | symbol + pathPattern for test dirs, metaOnly=true |
 | Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"         |
-| Bare symbol name          | find_symbol     | "batch_create" → direct lookup by symbolId        |
-| TODO/FIXME markers        | ripgrep MCP     | Exact string match, not hybrid                    |
+| Bare symbol name          | find_symbol     | "order_import" → direct lookup by symbolId        |
+| TODO/FIXME markers        | text search     | Exact string match, not hybrid                    |
 
 ## Code context for generation
 
@@ -73,55 +74,29 @@ diverged from a deprecated pattern, or code escaping a stylistic norm.
 
 ## Project calibration (per-project thresholds)
 
-Picking a meaningful threshold for `minCommitCount`, `minAgeDays`, `maxAgeDays`?
-Don't guess. Call `get_index_metrics(project: "<alias>")`, read
-`signals[language][signalKey][scope].labelMap` — actual percentile-based label
-boundaries for THIS codebase.
+`minCommitCount` / `minAgeDays` / `maxAgeDays` threshold → never guess, never
+copy another project's numbers. Read
+`tea-rags://project/<alias>/metrics?section=labelMap&language=<lang>` — this
+codebase's percentile label boundaries, `source` + `test` scope. Details:
+`runtime-introspection.md` "Project calibration".
 
-| Question                              | Field to read                                              |
-| ------------------------------------- | ---------------------------------------------------------- |
-| What counts as `high` churn here?     | `signals[lang]["git.file.commitCount"]["source"].labelMap` |
-| What counts as `legacy` age here?     | `signals[lang]["git.file.ageDays"]["source"].labelMap`     |
-| Test scope vs source scope thresholds | Same key with `scope: "test"` instead of `"source"`        |
+## Filters
 
-Phrase filters in the codebase's own distribution, not fixed numbers from
-another project. Full schema + `get_index_status.infraHealth` health probe:
-`references/runtime-introspection.md`.
-
-## Sugar filters
-
-Full typed-sugar field catalog + which time filters honor `level`
-(`minAgeDays`/`maxAgeDays` yes, `modifiedAfter`/`Before` never) + what
-`level: "file"` does to result granularity: **`tea-rags:filter-building`**.
-Invoke that skill whenever search needs a SCOPE (language, time window, author,
-testFile, taskId, `minCommitCount`, doc/code split, etc.).
-
-## Named filter presets (`filter: { presets }`)
-
-The `filter` param accepts a named-presets shorthand in addition to a raw Qdrant
-filter (mutually exclusive in one object): `filter: { presets: "name" }` or
-`{ presets: "a,b,c" }` (CSV, AND-merged). Named presets are curated adaptive
-filter bundles whose thresholds resolve from collection percentiles at query
-time (cold-start fallbacks until reindex), so they port across repositories. A
-`{presets}` filter AND-composes with typed sugar params (language, minAgeDays…).
-
-Catalog (gated by registered trajectories):
-
-| Group             | Presets                                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| always            | `production` (¬test/¬doc/¬block), `coreLogic` (function/class, ¬test), `securityPaths` (auth/crypto/secret/token/… paths) |
-| require git       | `freshLegacyEdits`, `fragileSilo`, `panicZone`, `godMethods`, `battleTested`, `abandonedHotspots`                         |
-| require codegraph | `hubs`, `deadCandidates`, `unstableCore`                                                                                  |
-
-**Inventory vs query rule.** Hard specific presets (panicZone,
-abandonedHotspots, …) suit query-absent inventory scans where an empty result is
-a valid answer (see `tea-rags:risk-assessment`); query-driven triage stays broad
-(no hard specific filter) to preserve recall (`tea-rags:bug-hunt`,
-`tea-rags:explore`). Hygiene presets (`production`/`coreLogic`) are safe in any
-mode and are the default population of the risk/structural rerank presets — so
-`rerank:"techDebt"` already excludes tests/docs/block; `filter: {}` clears that
-default. Full catalog + syntax: `tea-rags://schema/filters`; selection guidance:
-`tea-rags:analytics-rerank` and `tea-rags:filter-building`.
+- Typed sugar fields, which time filters honor `level`
+  (`minAgeDays`/`maxAgeDays` yes, `modifiedAfter`/`Before` never),
+  `level: "file"` granularity → **`tea-rags:filter-building`**. Invoke whenever
+  search needs SCOPE (language, time window, author, testFile, taskId,
+  `minCommitCount`, doc/code split).
+- Named presets `filter: { presets: "a,b" }` — catalog, syntax, gating →
+  `tea-rags://guide/filters` "Named filter presets".
+- **Inventory vs query rule.** Hard specific presets (panicZone,
+  abandonedHotspots, …) → query-absent inventory scans, empty result valid
+  (`tea-rags:risk-assessment`). Query-driven triage stays broad, no hard
+  specific filter → recall (`tea-rags:bug-hunt`, `tea-rags:explore`). Hygiene
+  presets (`production`/`coreLogic`) safe any mode + default population of
+  risk/structural rerank presets → `rerank:"techDebt"` already excludes
+  tests/docs/block; `filter: {}` clears default. Selection:
+  `tea-rags:analytics-rerank`, `tea-rags:filter-building`.
 
 ## Tests as context
 
@@ -141,15 +116,16 @@ chunks are indexed.
 | Living spec / scenario TOC for a module           | `find_symbol(relativePath:)` + raw filter `chunkType: "test"`                    | `tea-rags:tests-as-context` / `spec-extraction`        |
 | Find the test for a specific symbol               | `find_symbol(symbol:)` + filter `chunkType: "test"`                              | direct call, no recipe                                 |
 
-Preflight: DSL test chunks absent if no `git.chunk.*` signal in prime digest
-shows a `test:` threshold row. Then fall back to file-level `testFile: "only"`
-with explicit "DSL test chunks unavailable" note. Which languages have a DSL
-test scope chunker: **`language-compatibility.md`** (GENERATED — Tests code
-chunking `high` = DSL scope preserved; `medium` / `low` / `none` = no DSL
-chunks). Never restate per-language support here.
+Preflight: DSL test chunks exist only where language `tests` tier = `high` —
+SessionStart digest `## Language capability` (or
+`tea-rags://project/<alias>/metrics?section=capability`; tier meaning →
+`tea-rags://guide/language-capability`). Else fall back to file-level
+`testFile: "only"` + note "DSL test chunks unavailable". Never restate
+per-language support here.
 
-## External tools (complement tea-rags)
+## Outside tea-rags
 
-- **Call-sites, imports, exact patterns** → ripgrep MCP (not tea-rags)
-- **File structure (methods, classes)** → tree-sitter
-- **Read specific lines** → Read with offset + limit (not whole file)
+Literal text only (TODO/FIXME, phrase, regex, import-path string) → text search
+(your client's Grep / `rg`). File structure / call-sites / usages stay on
+tea-rags (`find_symbol`, `hybrid_search`, graph tools) — routing:
+`tea-rags://guide/decision-tree`.

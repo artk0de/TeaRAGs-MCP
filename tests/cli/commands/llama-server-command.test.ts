@@ -26,6 +26,10 @@ function registryFetch() {
   });
 }
 
+async function noLocalGguf(): Promise<number | undefined> {
+  return undefined;
+}
+
 function expectNoChildProcess(): void {
   expect(vi.mocked(childProcess.spawn)).not.toHaveBeenCalled();
   expect(vi.mocked(childProcess.exec)).not.toHaveBeenCalled();
@@ -126,7 +130,14 @@ describe("llama-server command", () => {
 
     await runLlamaServerCommand(
       { bin: "/b/llama-server", os: "macos" },
-      { fetch: fetchImpl as unknown as typeof fetch, out: (l) => out.push(l), env: {}, platform: "darwin" },
+      {
+        fetch: fetchImpl as unknown as typeof fetch,
+        out: (l) => out.push(l),
+        env: {},
+        platform: "darwin",
+        home: "/home/u",
+        readGgufContextLength: noLocalGguf,
+      },
     );
     await runLlamaServerCommand(
       { bin: "/b/llama-server" },
@@ -135,6 +146,8 @@ describe("llama-server command", () => {
         out: (l) => out.push(l),
         env: { EMBEDDING_MODEL: "someone/custom:v2" },
         platform: "linux",
+        home: "/home/u",
+        readGgufContextLength: noLocalGguf,
       },
     );
 
@@ -151,9 +164,77 @@ describe("llama-server command", () => {
     const out: string[] = [];
     await runLlamaServerCommand(
       { bin: "C:\\l\\llama-server.exe", model: "C:\\m\\x.gguf" },
-      { fetch: vi.fn<typeof fetch>(), out: (l) => out.push(l), env: {}, platform: "win32" },
+      {
+        fetch: vi.fn<typeof fetch>(),
+        out: (l) => out.push(l),
+        env: {},
+        platform: "win32",
+        home: "C:\\Users\\u",
+        readGgufContextLength: noLocalGguf,
+      },
     );
     expect(out.join("\n")).toContain("netsh advfirewall");
+  });
+
+  it("sizes the slots from the context length of a GGUF path present on this machine", async () => {
+    const out: string[] = [];
+    const reader = vi.fn(async () => 2048);
+    await runLlamaServerCommand(
+      {
+        bin: "/opt/homebrew/bin/llama-server",
+        os: "macos",
+        host: "127.0.0.1",
+        port: 8080,
+        slots: 4,
+        model: "~/m/CodeRankEmbed-Q8_0.gguf",
+      },
+      {
+        fetch: vi.fn<typeof fetch>(),
+        out: (l) => out.push(l),
+        env: {},
+        platform: "darwin",
+        home: "/Users/u",
+        readGgufContextLength: reader,
+      },
+    );
+    expect(reader).toHaveBeenCalledWith("/Users/u/m/CodeRankEmbed-Q8_0.gguf");
+    expect(out.join("\n")).toContain("-np 4 -c 8192 -b 2048 -ub 2048");
+    expect(out.join("\n")).toContain("context window is 2048 tokens");
+  });
+
+  it("reads the context length of an Ollama reference already fetched into the gguf dir", async () => {
+    const reader = vi.fn(async () => 2048);
+    const out: string[] = [];
+    await runLlamaServerCommand(
+      { bin: "/b/llama-server", os: "macos", model: "nomic-embed-text" },
+      {
+        fetch: registryFetch() as unknown as typeof fetch,
+        out: (l) => out.push(l),
+        env: { TEA_RAGS_DATA_DIR: "/data/tea" },
+        platform: "darwin",
+        home: "/Users/u",
+        readGgufContextLength: reader,
+      },
+    );
+    expect(reader).toHaveBeenCalledWith(`/data/tea/models/gguf/nomic-embed-text@latest-${SHA.slice(0, 12)}.gguf`);
+    expect(out.join("\n")).toContain("-b 2048 -ub 2048");
+  });
+
+  it("keeps 8192 per slot and prints no warning when no local GGUF is readable", async () => {
+    const out: string[] = [];
+    await runLlamaServerCommand(
+      { bin: "/opt/llama/llama-server", os: "linux", model: "/remote/models/x.gguf", slots: 2 },
+      {
+        fetch: vi.fn<typeof fetch>(),
+        out: (l) => out.push(l),
+        env: {},
+        platform: "darwin",
+        home: "/Users/u",
+        readGgufContextLength: noLocalGguf,
+      },
+    );
+    expect(out.join("\n")).toContain("-np 2 -c 16384 -b 8192 -ub 8192");
+    expect(out.join("\n")).not.toContain("Warning");
   });
 
   it("rejects an unknown --os", async () => {

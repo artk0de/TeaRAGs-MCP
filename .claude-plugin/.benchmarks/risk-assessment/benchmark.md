@@ -193,3 +193,174 @@ may not surface disambiguator signals (`imports`, `blockPenalty`, `authors`),
 forcing agent to run multiple presets OR build custom rerank every time to see
 them. This is a trajectory/git preset change (not a skill change) and tracked as
 separate work.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 14/14 PASS (100%)
+- Last recorded rate: 100% (after fix; latest dated results section)
+- FAIL list: none
+- Notes: Several evals.json expectations are stale (e.g. 3 presets vs the
+  skill's current 5-preset scan + structural pair); graded on intent: routed to
+  tea-rags:risk-assessment, correct Phase 0 scoping, rank_chunks scan, SDP
+  escalation for case 13, no escalation for compositionRoot in case 14. Delta
+  0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 9/14 PASS (64%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 14/14 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `6` — Phase 5 machine-readable context (pathPattern, riskFiles,
+    overlayLabels) not planned [model behaviour]
+  - `7` — adds a 4th rerank=ownership rank_chunks call instead of reading
+    ownership from overlay [model behaviour]
+  - `9` — no machine-readable output for generation handoff (Phase 5 context)
+    planned [model behaviour]
+  - `12` — no structured context output for the plan executor (Phase 5) planned
+    [model behaviour]
+  - `13` — no Phase 4 structural-violation escalation/tagging of the overlapping
+    candidate; 'keep separate' instead; no repair/stableDependencies read [model
+    behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline =
+  FAIL)
+- Result: 14/14 PASS (100%) over scored cases. 0 superseded. Graded on intent
+  (evals.json expectations partially stale, e.g. 3 presets).
+- Task 12 rate: 100% (14/14)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 +
+  dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks
+  (plan-only)
+- Result: 11/14 PASS (79%) (N/A: 0); cases 1,3 graded on intent (3-preset
+  expectation stale vs 5+2 scans)
+- Codex T14 rate: 64% (9/14)
+- Claude T22 rate: 100% (14/14)
+- FAIL list:
+  - `4` — 'risky areas before refactor' routed to $dino-brainstorming + 3
+    searches, risk-assessment not run with pathPattern — new
+  - `7` — adds 4th explicit rank_chunks rerank=ownership — still
+  - `13` — structural-violation overlap annotated, not escalated/tagged/sorted,
+    no repair/stableDependencies.md read — new
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading
+  against the current evals.json)
+- Result: 13/14 PASS (93%) over scored cases (superseded: 0)
+- Baseline (round 1): 14/14 (100%; round 1 graded on intent)
+- Delta: -7pp
+- FAIL list:
+  - 4 — "Find risky areas before I refactor the trajectory module": went
+    straight to risk-assessment and resolved `**/trajectory/**` in its own Phase
+    0; expected says explore PRE-GEN PG-2 delegates to risk-assessment WITH
+    pathPattern and risk-assessment skips Phase 0. The expectation is
+    stale/inconsistent: research-merge eval 1 states pre-gen-pattern.md no
+    longer delegates to risk-assessment, while explore's Risk-intent route
+    (resolve scope, then delegate so risk-assessment skips Phase 0) is not
+    mentioned in risk-assessment SKILL.md. Resulting pathPattern identical.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 9/14 PASS (64%) (N/A excluded: 0).
+- Round-1 Codex: 11/14 (79%). Delta: -14 pp.
+- FAIL list:
+  - `3` — stratified two-pass scan present, pagination stop conditions not
+    stated.
+  - `4` — risk-assessment invoked directly with its own Phase 0; no explore
+    delegation WITH pathPattern / Phase-0 skip.
+  - `6` — 'file-focused risk list' instead of the Phase 5 risk map (tiers,
+    File:Line, Risk Type, Key Signals labels, Tests, Summary).
+  - `9` — no Phase 5 risk map and no DDG handoff (pathPattern + per-symbol
+    overlay labels).
+  - `12` — output not the Phase 5 risk map format.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading
+  against the current evals.json; no per-case length cap)
+- Result: 13/14 PASS (93%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/14 (93%)
+- Delta: +0pp (case 4 fixed — direct invocation with Phase 0 resolving
+  **/trajectory/** now matches the re-aligned expectation; case 6 newly failing)
+- FAIL list:
+  - 6 — "riskiest files data-driven-generation should be careful with": full
+    flow + Phase 5 map correct, but appends a separate "hand-off block
+    (pathPattern per Critical/High cluster + per-symbol overlay labels, PRE-GEN
+    PG-4 shape)" — the expectation's explicit failure mode (an invented extra
+    block beyond the Phase 5 map). Cause: risk-assessment SKILL.md Steps item 6
+    (l.35-37) "Generation caller ... → hand off `pathPattern` + per-symbol
+    overlay labels from the map (PRE-GEN PG-4 shape)" — contradicts eval 6 and
+    is endorsed by eval 9; either the SKILL line or eval 6 must change.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12
+  / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
+- Result: 9/14 PASS (64.3%) (N/A excluded: 0).
+- Round-2 Codex: 9/14 (64.3%). Delta: ±0.0 pp.
+- FAIL list:
+  - `4` — direct risk-assessment w/ **/trajectory/** OK, but also runs explore
+    PRE-GEN route (eval: not PRE-GEN)
+  - `6` — "risky files and symbols with paired signals" — no Phase 5 risk map
+    (Critical/High tables, File:Line, Risk Type, Key Signals labels, Tests,
+    Summary)
+  - `9` — risk intent + reranker scope + DDG handoff OK, but Phase 5 risk map
+    with File:Line + label signals not stated
+  - `12` — pathPattern on scan calls OK, output "risk map and structural debt" —
+    not the Phase 5 format (tiers, File:Line, Key Signals, Tests, Summary)
+  - `14` — hedges: "only a matching Critical/High candidate would be elevated"
+    while the High candidate sits in the flagged component; never states
+    compositionRoot excludes escalation / no structural-violation tag
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading
+  against the current evals.json; no per-case length cap)
+- Result: 14/14 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 13/14 (93%)
+- Delta: +7pp (case 6 fixed — "the scoped map IS the hand-off (pathPattern,
+  File:Line, labels); no extra block, no extra scan")
+- FAIL list: none
+- Notes: case 10 routed straight to risk-assessment (not via explore), as in
+  round 3 — graded PASS (failure mode pattern-search not hit).
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
+  / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
+- Result: 11/14 PASS (78.6%) (N/A excluded: 0).
+- Round-3 Codex: 9/14 (64.3%). Delta: +14.3 pp.
+- FAIL list:
+  - `6` — no Phase 5 risk map (Critical/High tables, File:Line, Risk Type, Key
+    Signals labels, Tests column, Summary); hands DDG a pathPattern block the
+    contract excludes
+  - `9` — risk-assessment scoped OK, but Phase 5 map with File:Line + labels and
+    the DDG handoff (pathPattern + per-symbol labels) not stated
+  - `12` — pathPattern on every scan OK, output only "fragile areas" — not the
+    Phase 5 risk map format

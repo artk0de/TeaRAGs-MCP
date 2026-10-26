@@ -102,6 +102,5 @@ invariant below broken in production. Workflow for editing a schema:
 - [ ] `tools/list` bytes before → after in the commit body
 - [ ] record arrays in a tool answer go through `tabulateRecords` /
       `formatMcpResponse`; schema = `ColumnTable | Item[]`
-- [ ] `.claude-plugin/**` touched → plugin version bumped
-      (`plugin-versioning.md`); rule corpus grew → `inject-rules.sh --count` vs
-      declared `--parts`
+- [ ] `plugins/**` touched → plugin version bumped (`plugin-versioning.md`);
+      rule corpus grew → `inject-rules.sh --count` vs declared `--parts`

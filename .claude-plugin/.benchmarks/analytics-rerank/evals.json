@@ -86,7 +86,7 @@
       "id": "T7",
       "audit_finding": "custom recipe — impact analysis",
       "prompt": "Files that everyone imports — high blast radius before I refactor.",
-      "expected": "custom: { imports: 0.5, churn: 0.3, ownership: 0.2 }",
+      "expected": "rerank: 'blastRadius' (codegraph on — ranks on real fanIn/transitiveImpact) with metaOnly; custom { imports: 0.5, churn: 0.3, ownership: 0.2 } ONLY as the codegraph-off fallback, saying the result is an imports proxy",
       "result": {
         "with_rule": "PASS",
         "without_rule": "PASS",
@@ -147,7 +147,7 @@
       "id": "T12",
       "audit_finding": "subagent — preset + filter composition",
       "prompt": "[subagent: task-agent] In /Users/me/proj/, find legacy code in src/auth/ that hasn't been touched in over a year and has high bug-fix history.",
-      "expected": "rerank: 'securityAudit' (combines age + pathRisk + bugFix + ownership) + pathPattern: 'src/auth/**' + raw filter on git.ageDays >= 365",
+      "expected": "rerank: 'securityAudit' (combines age + pathRisk + bugFix + ownership) + pathPattern: 'src/auth/**' + typed sugar modifiedBefore: <ISO date, today − 365 days> (file-level, query-time). NOT a raw git.ageDays / git.file.ageDays range filter (enrichment-time stamp, lags) and NOT hand-composed custom weights",
       "result": {
         "with_rule": "PASS",
         "without_rule": "FAIL",

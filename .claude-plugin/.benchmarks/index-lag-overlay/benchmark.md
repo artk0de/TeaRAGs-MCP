@@ -84,3 +84,158 @@ These came from the incident case study and need code changes, not rule text.
 - The `workingTree` marker could carry an explicit "overlay serving" hint.
 - Auto-update was not configured for taxdome (`tea-rags auto-update status`
   reports `disabled`). That is why lag accumulated across a branch switch.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 11/15 PASS (73%)
+- Last recorded rate: 100% (15/15 full-rules after, 2026-10-21)
+- FAIL list: E1 (no incremental index_codebase on own checkout, no
+  AskUserQuestion for --force), E7 (same), E15 (stale banner: skipped
+  incremental index_codebase), E13 (user said just read the file by hand;
+  subject refused and used find_symbol instead of Read/user override)
+- Notes: Artifact mapped to core.md + guides/freshness.md. Root cause: core.md
+  line ~57 says only 'Subagent: never reindex'; the own-checkout
+  incremental-without-consent rule (guides/freshness.md:58,83,135) did not reach
+  the subject's plan. Delta -27pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 15/15 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 11/15 (73%).
+- CODEX-ONLY: none.
+- Both-fail count: 0.
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI 2026.10.22, model auto (free plan), plan-only, plugins
+  from harness/cursor (tea-rags + dinopowers), sessionStart hook digest; no
+  superpowers, no subagentStart injection.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45
+  parts.
+- Result: 15/15 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 11/15 (73%).
+- Codex T14 for comparison: 15/15 (100%).
+- CURSOR-ONLY: none.
+- Both-fail count (all): 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet
+- Result: 14/15 PASS (93%) over scored cases (superseded: 0)
+- Task 12 rate: 73%
+- Delta: +20pp
+- FAIL list: E1 (plans a direct Read of the ticket-named files instead of
+  find_symbol/hybrid_search (failure mode: leaving tea-rags for disk reads under
+  index lag))
+- Notes: T12 fails E1/E7/E13/E15 fixed except E1 (new failure mode).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only, plugins (tea-rags
+  0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block),
+  AGENTS.md = core.
+- Result: 11/15 PASS (73%) over graded cases (N/A excluded: 0).
+- Codex T14: 15/15 (100%). Claude T22: 14/15 (93%).
+- Notes: Cause: plans honour the eval "no index tools" constraint rather than
+  naming the incremental refresh; possible harness artifact.
+- FAIL list:
+  - `E1` — FAIL; new: No incremental index_codebase on own checkout (asks
+    consent only for --force); find_symbol/hybrid ok. Claude T22 FAIL (different
+    mode)
+  - `E6` — FAIL; new: Own checkout MARKER-COLD: find_symbol only, no incremental
+    index_codebase.
+  - `E7` — FAIL; new: No incremental index_codebase before test-convention
+    search (declares no indexing); no explicit tests-as-context chunk search
+    named.
+  - `E14` — FAIL; new: Own checkout: no incremental index_codebase ("do not
+    reindex in hypothetical read-only flow"); find_symbol + hybrid re-check
+    correct.
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; full cases.md scenarios
+  given to the subject)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 14/15 (93%)
+- Delta: +7pp
+- FAIL list: none (E1 fixed: incremental on own checkout, ticket files read via
+  find_symbol relativePath, callers via hybrid_search, --force asked separately)
+- Notes: round 1 gave the subject one-line case summaries; round 2 gave the
+  suite's cases.md (no expectations inside), the scenario text the suite was
+  authored with.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 11/15 PASS (73.3%) (N/A excluded: 0).
+- Round-1 Codex: 11/15 (73.3%). Delta: ±0.0 pp.
+- FAIL list:
+  - `E1` — incremental index_codebase only hedged ("may still be appropriate"),
+    not planned.
+  - `E6` — own checkout MARKER-COLD: find_symbol only, no incremental
+    index_codebase.
+  - `E9` — no trace_path for the callback→sign-in chain (semantic_search +
+    find_symbol only).
+  - `E14` — no incremental index_codebase on own checkout (floors [], changed
+    files).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; the cases.md shared
+  fixture preamble (MARKER-COLD / DRIFT-FORCE, no expectations) given verbatim;
+  strict literal grading; no per-case length cap)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 15/15 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12
+  / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
+- Result: 9/15 PASS (60.0%) (N/A excluded: 0).
+- Round-2 Codex: 11/15 (73.3%). Delta: -13.3 pp.
+- FAIL list:
+  - `E1` — incremental index_codebase only mentioned in reasoning, first action
+    is find_symbol; no AskUserQuestion for the --force drift (just "would not
+    run it")
+  - `E7` — no incremental index_codebase action, no --force consent question, no
+    tests-as-context / test-chunk semantic_search (find_symbol + hybrid_search
+    only)
+  - `E8` — find_symbol + get_callers, no reindex, but drift remedy not reported
+    to parent (only "parent owns freshness")
+  - `E9` — find_symbol + get_callers + hybrid; no semantic_search/explore, no
+    trace_path, no drift report to parent
+  - `E14` — hybrid_search re-check only; explicitly "no reindex" on own checkout
+    with changed file; no find_symbol re-check
+  - `E15` — own checkout changedFiles 12: explicitly skips incremental
+    index_codebase ("does not trigger reindex"); find_symbol only, no
+    semantic_search/explore
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 9/15 (60.0%). Delta: +26.7 pp.
+- FAIL list:
+  - `E14` — hybrid_search + find_symbol re-check, but no incremental
+    index_codebase on own checkout with a changed file
+  - `E15` — incremental OK, but the read is left vague ("the relevant tea-rags
+    read") — no semantic_search / $explore for "explain retry logic"

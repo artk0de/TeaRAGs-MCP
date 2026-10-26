@@ -17,6 +17,7 @@ export {
   languageTestFileConventions,
   nativeLanguageCapabilities,
 } from "./capability/native.js";
+export { renderLanguageCapabilityGuide } from "./capability/rule.js";
 export { resolveLanguageCapabilities } from "./capability/resolve.js";
 export { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "./capability/versions.js";
 export { GrammarPackageNotInstalledError, LanguageError, UnsupportedLanguageError } from "./errors.js";

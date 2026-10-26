@@ -205,7 +205,7 @@
       "prompt": "После первого preset search — что делать перед вторым?",
       "expected": {
         "mustDo": [
-          "Run post-search-validation checks (no-match detection + disambiguation) per MANDATORY RULE 0"
+          "Run post-search validation on the first preset's results before the next preset (tea-rags://guide/pagination, routed from core \"after any search\"): Disambiguation (2+ unrelated directory groups, none > 70% → ask / scope with pathPattern) and No-Match Detection (score spread, lexical overlap, path clustering)"
         ],
         "mustNotDo": ["Skip validation, proceed directly to next preset"]
       },

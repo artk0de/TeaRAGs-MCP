@@ -7,10 +7,10 @@
 # `additionalContext` composes instead — every hook's context is added.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-TR_HOOK="$ROOT/.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh"
-DP_HOOK="$ROOT/.claude-plugin/dinopowers/scripts/inject-wrapper-routing.sh"
-TR_PLUGIN="$ROOT/.claude-plugin/tea-rags/.claude-plugin/plugin.json"
-DP_PLUGIN="$ROOT/.claude-plugin/dinopowers/.claude-plugin/plugin.json"
+TR_HOOK="$ROOT/plugins/tea-rags/scripts/enforce-tearags-search.sh"
+DP_HOOK="$ROOT/plugins/dinopowers/scripts/inject-wrapper-routing.sh"
+TR_PLUGIN="$ROOT/plugins/tea-rags/.claude-plugin/plugin.json"
+DP_PLUGIN="$ROOT/plugins/dinopowers/.claude-plugin/plugin.json"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 

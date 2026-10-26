@@ -7,7 +7,7 @@
     "tea-rags": "build/cli/index.js"
   },
   "scripts": {
-    "prebuild": "tsx scripts/prebuild-worker-sweep.ts",
+    "prebuild": "tsx scripts/prebuild-worker-sweep.ts && npm run -s gen:agent-context",
     "build": "tsc && tsx scripts/copy-build-assets.ts && chmod +x build/cli/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",
@@ -20,7 +20,12 @@
     "type-check": "tsc --noEmit",
     "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "type-check:tests": "tsc -p tsconfig.tests.json",
+    "gen:harness-codex": "tsx scripts/gen-harness-codex.ts",
+    "gen:harness-cursor": "tsx scripts/gen-harness-cursor.ts",
     "gen:lang-compat": "tsx scripts/gen-language-compatibility.ts",
+    "gen:agent-context": "tsx scripts/gen-agent-context.ts",
+    "gen:plugins": "tsx scripts/gen-plugins.ts",
+    "gen:harness-claude": "tsx scripts/gen-harness-claude.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
     "postinstall": "node scripts/postinstall.js",

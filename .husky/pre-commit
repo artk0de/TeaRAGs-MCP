@@ -10,6 +10,9 @@ fi
 # and stage them, before the test run below reads them. No-op otherwise.
 # `git rebase` picks skip this hook — see scripts/git/repin-on-merge.sh.
 sh scripts/git/repin-on-merge.sh || exit 1
+# Same commit: regenerate the plugin packages from the merged plugins/** sources
+# and stage them (scripts/git/merge-generated.sh). No-op outside a merge.
+sh scripts/git/merge-generated.sh || exit 1
 
 # Format and lint staged .ts/.js files
 if ! npx lint-staged 2>&1; then
@@ -48,7 +51,8 @@ fi
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # ─── Plugin versioning check ───────────────────────────────────────────────
-# If .claude-plugin/ files changed, plugin.json must be bumped too.
+# If plugins/<name>/ source files changed, its plugin.json must be bumped too.
+# .claude-plugin/<name>/ and harness/** are generated from plugins/ and own no version.
 # Skip on merge commits: the version bump must live in the merged branch
 # (each branch is self-contained), not as a separate commit on the merge target.
 GIT_DIR_FOR_MERGE_CHECK=$(git rev-parse --git-dir)
@@ -56,10 +60,10 @@ if [ -f "$GIT_DIR_FOR_MERGE_CHECK/MERGE_HEAD" ]; then
   echo "⏭️  Merge commit — skipping plugin version check (bump must be in the merged branch)"
 else
   # Every plugin, derived from the manifests on disk rather than a hard-coded
-  # list: a directory under .claude-plugin/ is a plugin iff it carries one, which
-  # both picks up dinopowers (a hard-coded pair left it unenforced) and keeps
-  # .claude-plugin/.benchmarks/ out of it. Same rule as .claude/hooks/check-plugin-version.sh.
-  for plugin_json in .claude-plugin/*/.claude-plugin/plugin.json; do
+  # list: a directory under plugins/ is a plugin iff it carries one, which
+  # picks up dinopowers (a hard-coded pair left it unenforced).
+  # Same rule as .claude/hooks/check-plugin-version.sh.
+  for plugin_json in plugins/*/.claude-plugin/plugin.json; do
     [ -f "$plugin_json" ] || continue
     plugin_dir=$(dirname "$(dirname "$plugin_json")")
     plugin_name=$(basename "$plugin_dir")

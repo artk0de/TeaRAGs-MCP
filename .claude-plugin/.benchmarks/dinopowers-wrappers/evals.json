@@ -12,7 +12,7 @@
       "id": 2,
       "audit_finding": "C,D",
       "prompt": "Implement a fix for the off-by-one bug in src/core/domains/explore/reranker.ts line 142 — write a failing test first",
-      "expected": "Skill(dinopowers:test-driven-development). NOT Skill(superpowers:test-driven-development). Project has tests/ dir → wrapper applies.",
+      "expected": "Skill(tea-rags:data-driven-generation) — a production-code fix outside a plan; DDG owns the RED/GREEN cycle (test-first). NOT Skill(dinopowers:test-driven-development), NOT Skill(superpowers:test-driven-development).",
       "category": "audit"
     },
     {
@@ -68,7 +68,7 @@
       "id": 10,
       "audit_finding": "subagent-routing",
       "prompt": "[subagent: explore] Investigate src/core/domains/trajectory/git/ — find the brainstorm risk areas before I refactor",
-      "expected": "Skill(dinopowers:brainstorming). Subagent context — must still pick wrapper.",
+      "expected": "Pre-refactor investigation of an area: Skill(tea-rags:risk-assessment) or Skill(tea-rags:explore) (pre-generation) scoped to src/core/domains/trajectory/git/**. Subagent context — still routes through a skill. NOT Skill(dinopowers:brainstorming).",
       "category": "subagent"
     },
     {

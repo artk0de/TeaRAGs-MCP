@@ -138,7 +138,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "bash scripts/prepare-changelog.sh"
+        "prepareCmd": "bash scripts/prepare-changelog.sh && npm run gen:plugins && git status --short -- .claude-plugin .agents .cursor-plugin harness src/mcp/resources/generated"
       }
     ],
     [
@@ -156,7 +156,12 @@
           "package.json",
           "package-lock.json",
           "CHANGELOG.md",
-          "website/docs/changelog.md"
+          "website/docs/changelog.md",
+          ".claude-plugin/**",
+          ".agents/**",
+          ".cursor-plugin/**",
+          "harness/**",
+          "src/mcp/resources/generated/**"
         ],
         "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
       }

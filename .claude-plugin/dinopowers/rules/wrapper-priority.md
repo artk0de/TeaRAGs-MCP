@@ -8,18 +8,18 @@ enrichment first.
 
 ## Mapping (always prefer left over right when intent matches)
 
-| dinopowers wrapper                          | replaces                                     | when                                                     |
-| ------------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
-| `dinopowers:brainstorming`                  | `superpowers:brainstorming`                  | feature design, refactor, "let's discuss X"              |
-| `dinopowers:writing-plans`                  | `superpowers:writing-plans`                  | authoring an implementation plan                         |
-| `dinopowers:executing-plans`                | `superpowers:executing-plans`                | executing a multi-file plan                              |
-| `dinopowers:systematic-debugging`           | `superpowers:systematic-debugging`           | any bug / error / test failure                           |
-| `dinopowers:test-driven-development`        | `superpowers:test-driven-development`        | TDD in a project with existing tests                     |
-| `dinopowers:verification-before-completion` | `superpowers:verification-before-completion` | pre-commit / pre-PR check                                |
-| `dinopowers:requesting-code-review`         | `superpowers:requesting-code-review`         | composing a review request                               |
-| `dinopowers:receiving-code-review`          | `superpowers:receiving-code-review`          | reacting to review feedback on a symbol                  |
-| `dinopowers:finishing-a-development-branch` | `superpowers:finishing-a-development-branch` | branch finalization                                      |
-| `dinopowers:writing-skills`                 | `superpowers:writing-skills`                 | authoring a SKILL.md inside `.claude-plugin/dinopowers/` |
+| dinopowers wrapper                          | replaces                                     | when                                              |
+| ------------------------------------------- | -------------------------------------------- | ------------------------------------------------- |
+| `dinopowers:brainstorming`                  | `superpowers:brainstorming`                  | feature design, refactor, "let's discuss X"       |
+| `dinopowers:writing-plans`                  | `superpowers:writing-plans`                  | authoring an implementation plan                  |
+| `dinopowers:executing-plans`                | `superpowers:executing-plans`                | executing a multi-file plan                       |
+| `dinopowers:systematic-debugging`           | `superpowers:systematic-debugging`           | any bug / error / test failure                    |
+| `dinopowers:test-driven-development`        | `superpowers:test-driven-development`        | TDD in a project with existing tests              |
+| `dinopowers:verification-before-completion` | `superpowers:verification-before-completion` | pre-commit / pre-PR check                         |
+| `dinopowers:requesting-code-review`         | `superpowers:requesting-code-review`         | composing a review request                        |
+| `dinopowers:receiving-code-review`          | `superpowers:receiving-code-review`          | reacting to review feedback on a symbol           |
+| `dinopowers:finishing-a-development-branch` | `superpowers:finishing-a-development-branch` | branch finalization                               |
+| `dinopowers:writing-skills`                 | `superpowers:writing-skills`                 | authoring a SKILL.md inside `plugins/dinopowers/` |
 
 ## Why this exists
 

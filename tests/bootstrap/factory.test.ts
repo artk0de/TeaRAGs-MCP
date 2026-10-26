@@ -202,6 +202,8 @@ vi.mock("../../src/core/api/tools/index.js", () => ({
 }));
 vi.mock("../../src/mcp/resources/index.js", () => ({
   registerAllResources: vi.fn(),
+  AGENT_CONTEXT_CORE: "",
+  serverInstructions: (core: string) => core || undefined,
 }));
 vi.mock("../../src/mcp/prompts/register.js", () => ({
   registerAllPrompts: vi.fn(),

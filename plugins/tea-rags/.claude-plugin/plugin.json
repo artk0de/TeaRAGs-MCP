@@ -1,0 +1,54 @@
+{
+  "name": "tea-rags",
+  "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
+  "version": "0.46.61",
+  "author": {
+    "name": "artk0de"
+  },
+  "keywords": ["code-generation", "git-signals", "strategies", "search"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 1"
+          },
+          {
+            "type": "command",
+            "command": "tea-rags prime \"$CLAUDE_PROJECT_DIR\"",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-fresh.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-worktree-clone.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/enforce-tearags-search.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

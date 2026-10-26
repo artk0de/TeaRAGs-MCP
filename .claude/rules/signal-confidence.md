@@ -366,14 +366,13 @@ throws if not — caught at first use, not descriptor load (no Zod in
 - Plan:
   `docs/superpowers/plans/2026-05-14-hotspot-signal-interpretation-impl.md`
 - Anti-pattern for agents reading confidence-aware overlays:
-  `.claude-plugin/tea-rags/rules/references/signal-interpretation.md` →
-  "Interpretation anti-patterns" #8
+  `plugins/tea-rags/rules/references/signal-interpretation.md` → "Interpretation
+  anti-patterns" #8
 - Pattern entry triggered by confidence-clamped labels:
-  `.claude-plugin/tea-rags/rules/references/signal-interpretation.md` →
-  "Architectural patterns catalog" → "Fragile silo"
+  `plugins/tea-rags/rules/references/signal-interpretation.md` → "Architectural
+  patterns catalog" → "Fragile silo"
 - Custom rerank recipe inheriting unified dampening:
-  `.claude-plugin/tea-rags/rules/references/use-cases.md` → "Fragile Silo
-  discovery"
+  `plugins/tea-rags/rules/references/use-cases.md` → "Fragile Silo discovery"
 - Domain layer rule (why no Zod in contracts/):
   `.claude/rules/domain-boundaries.md`
 - Validation entry point: `validateSignalDependencies` in

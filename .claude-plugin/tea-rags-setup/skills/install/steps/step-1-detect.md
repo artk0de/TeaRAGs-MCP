@@ -2,7 +2,7 @@
 
 Run: `$SCRIPTS/detect-environment.sh`
 
-Parse JSON result. Save all fields to progress:
+Parse JSON, save all fields to progress:
 
 ```
 $SCRIPTS/progress.sh set platform "<platform>"
@@ -20,13 +20,11 @@ $SCRIPTS/progress.sh set hasRust <true|false>
 $SCRIPTS/progress.sh set steps.detect '{"status":"completed","at":"<now>"}'
 ```
 
-**WSL note:** detect-environment.sh reports `platform: "wsl"` for Windows
-Subsystem for Linux. Save this to progress as-is. When passing platform to
-scripts (install-ollama.sh, setup-qdrant.sh), use `"linux"` — WSL behaves as
-Linux for installation purposes. Use the `"wsl"` value only for recommendation
-logic (GPU, embedding provider descriptions).
+**WSL:** detect-environment.sh reports `platform: "wsl"` — save as-is. Pass
+`"linux"` to scripts (install-ollama.sh, setup-qdrant.sh); `"wsl"` only for
+recommendation logic (GPU, embedding provider descriptions).
 
-If `nodePath` is null → Node.js is not installed, Step 2 will handle it.
+`nodePath` null → Node.js not installed, Step 2 handles it.
 
 **Rust detection:** `hasRust` is `true` when `Cargo.toml` exists at the root of
 the project (the skill's `[project path]` argument, else the current directory).

@@ -21,13 +21,16 @@
 | windows  | none            | any   | ONNX (CPU)                             |
 | any      | GPU host exists | ≥3M   | llama-server (one server per GPU)      |
 
-The `≥3M` row overrides the rows above when the user confirms a GPU host (this
-machine or LAN). No GPU host → table rows above; Ollama stays default.
+`≥3M` row overrides rows above when user confirms GPU host (this machine or
+LAN). No GPU host → rows above; Ollama default.
 
 ## llama-server Description
 
 - Any → "Separate llama-server per GPU, run by you on the GPU host (tea-rags
   prints the commands). ~2× Ollama throughput. Local llama-server as fallback."
+- darwin + arm64 (this Mac) → "Two llama-server instances on this Mac (Metal),
+  started at login. ~1.7× Ollama throughput. The wizard starts them after your
+  OK."
 
 ## ONNX Description by Platform + GPU
 
@@ -119,9 +122,8 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 }
 ```
 
-No `EMBEDDING_CONCURRENCY` fallback: unset, the runtime tuner climbs embedding
-concurrency from 1 up to an implicit ceiling of 8. Any written value — even `1`
-— becomes the climb's hard ceiling.
+No `EMBEDDING_CONCURRENCY` fallback: unset → runtime tuner climbs concurrency 1
+→ implicit ceiling 8. Any written value (even `1`) = hard ceiling.
 
 ## All Env Vars for MCP Configuration
 
@@ -131,6 +133,7 @@ concurrency from 1 up to an implicit ceiling of 8. Any written value — even `1
 | `EMBEDDING_BASE_URL`                   | step 4L (llama-server)    |
 | `EMBEDDING_FALLBACK_URL`               | step 4L (if local tier)   |
 | `EMBEDDING_API_KEY`                    | step 4L (if `--api-key`)  |
+| `EMBEDDING_MODEL`                      | step 4L-local (non-jina)  |
 | `QDRANT_URL`                           | step 5 (omit if embedded) |
 | `EMBEDDING_BATCH_SIZE`                 | tuneValues                |
 | `EMBEDDING_CONCURRENCY`                | tuneValues                |
@@ -151,10 +154,8 @@ concurrency from 1 up to an implicit ceiling of 8. Any written value — even `1
 | `GIT_ADAPTER`                          | step 7 (always, explicit) |
 
 llama-server: omit `EMBEDDING_BATCH_SIZE`, `EMBEDDING_CONCURRENCY`,
-`EMBEDDING_TUNE_MIN_BATCH_SIZE` — runtime tuner owns them;
-`EMBEDDING_CONCURRENCY` is a hard cap on its concurrency climb (unset = implicit
-ceiling 8), a low pin starves the GPU slots.
+`EMBEDDING_TUNE_MIN_BATCH_SIZE` — runtime tuner owns them; low
+`EMBEDDING_CONCURRENCY` pin starves GPU slots.
 
-Omit any key that is null or missing — except `GIT_ADAPTER`, which is always
-written explicitly (the adapter choice is pinned per-project; ambient env must
-not silently flip it).
+Omit null / missing keys — except `GIT_ADAPTER`, always written explicitly
+(pinned per-project; ambient env must not flip it).

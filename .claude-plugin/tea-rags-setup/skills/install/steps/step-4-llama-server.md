@@ -8,6 +8,84 @@ Topology: PEERS = remote llama-server per GPU (`EMBEDDING_BASE_URL`, comma
 list). FALLBACK = local llama-server on this machine (`EMBEDDING_FALLBACK_URL`).
 Ollama NEVER fallback for llama-server — may not serve same model.
 
+User picked "llama-server (this Mac)" → §4L-local only, skip 4L-a…4L-d.
+
+## 4L-local: this Mac = embedding server
+
+Apple Silicon (darwin + arm64, Metal). Local instances ARE the server: no GPU
+host, no `EMBEDDING_FALLBACK_URL`, Ollama never fallback. CLI still only PRINTS;
+skill runs printed lines via Bash after ONE consent (step 5).
+
+1. **Binary.** Default `/opt/homebrew/bin/llama-server`; check `test -x`.
+   Missing → AskUserQuestion "Install llama.cpp via Homebrew?" → yes →
+   `brew install llama.cpp` (hasBrew=false → "Install Homebrew first:
+   https://brew.sh", re-ask). Other path → user gives it.
+2. **Model.** AskUserQuestion:
+
+   ```
+   question: "Embedding model for llama-server?"
+   options: [
+     { label: "jina v2 code (default)", description: "unclemusclez/jina-embeddings-v2-base-code:latest — tea-rags default, 8192-token window" },
+     { label: "CodeRankEmbed", description: "nomic-ai/CodeRankEmbed — +0.06 to +0.19 MRR over jina, 2048-token window, not in the Ollama library" },
+     { label: "Other Ollama ref", description: "Any Ollama library ref, e.g. namespace/name:tag" }
+   ]
+   ```
+
+   - jina → `tea-rags llama-server fetch-model`. Other ref →
+     `tea-rags llama-server fetch-model <ref>`. LAST printed line = GGUF path.
+   - CodeRankEmbed → no Ollama ref, `fetch-model` can't get it. User downloads
+     Q8_0 GGUF from https://huggingface.co/handwoven8588/CodeRankEmbed-GGUF into
+     `~/.tea-rags/models/gguf/` (or converts `nomic-ai/CodeRankEmbed` with
+     llama.cpp `convert_hf_to_gguf.py`), gives path. File name MUST contain
+     `CodeRankEmbed` — served-model check retires endpoint otherwise.
+   - Save `embeddingModel`: CodeRankEmbed → `nomic-ai/CodeRankEmbed`; other ref
+     → `<ref>`; jina → omit (default).
+   - `command` reads model window from GGUF header: per slot = min(8192,
+     context_length); prints `# Warning: ... context window` line when < 8192
+     (CodeRankEmbed: 2048). Expected, not error.
+
+3. **Instance count.** Default 2 (M3 Pro: ×1 82, ×2 93.5, ×3 92 texts/s — third
+   adds nothing). AskUserQuestion confirm or other N.
+4. **Ports — USER decides.** Propose N consecutive ports from 8080. Per
+   candidate: `lsof -nP -iTCP:<p> -sTCP:LISTEN` — output = busy → skip to next
+   free port, never propose busy one. Stay near 8080; never jump silently to
+   unfamiliar range. AskUserQuestion: "Use ports <p1>, <p2>?" → options "Use
+   these" / "Enter my own list". Own list → re-check each with `lsof`, busy →
+   say so, re-ask.
+5. **Print, consent, start.** Per port:
+   ```bash
+   tea-rags llama-server command --os macos --host 127.0.0.1 --port <p> \
+     --bin <bin> --model <gguf> --autostart
+   ```
+   Show ALL sheets. ONE AskUserQuestion for whole batch: "Run these lines now?
+   They write a LaunchAgent per port and start llama-server at login." → yes →
+   run via Bash each sheet's §"Start at boot" lines (`mkdir`, plist heredoc,
+   `launchctl bootout … || true`, `launchctl bootstrap`) — port by port.
+   Instance N+1 starts ONLY after instance N healthy: poll
+   `curl -sf http://127.0.0.1:<p>/health` every 2 s, max 30 tries. Never healthy
+   → stop, show `tail -n 40 ~/.tea-rags/logs/llama-server-<p>.log`,
+   AskUserQuestion retry / abort. No → hand sheets to user, wait "Done", then
+   same health checks. Remind sheet's BTM line: System Settings > General >
+   Login Items > Allow in the Background → enable `llama-server`, else no start
+   at login. Check: `sfltool dumpbtm | grep -A3 llama-server`. Re-run safe:
+   `bootout` before `bootstrap` replaces loaded agent.
+6. **Result.** `EMBEDDING_BASE_URL=<p1>,<p2>` (bare ports = localhost). NO
+   `EMBEDDING_FALLBACK_URL`.
+   ```bash
+   $SCRIPTS/progress.sh set embeddingProvider "llama-server"
+   $SCRIPTS/progress.sh set embeddingBaseUrl "8080,8081"
+   $SCRIPTS/progress.sh set embeddingModel "nomic-ai/CodeRankEmbed"   # if not jina
+   $SCRIPTS/progress.sh set llamaServer.local '{"bin":"<bin>","model":"<ref or nomic-ai/CodeRankEmbed>","gguf":"<path>","ports":[8080,8081]}'
+   ```
+   Tune skill re-prints from `llamaServer.local`.
+7. **Uninstall** (tell user, don't run). Per port:
+   ```bash
+   launchctl bootout gui/$(id -u)/com.tea-rags.llama-server.<p>
+   rm ~/Library/LaunchAgents/com.tea-rags.llama-server.<p>.plist
+   ```
+
+Mark step 4 completed → step 5.
+
 ## 4L-a: Ask GPU host facts
 
 AskUserQuestion, one at a time:
@@ -51,7 +129,7 @@ registration).
 Second+ build → `--port` past previous build's range. Sheet prints, per OS:
 sha256-verified GGUF download (host needs no Node, no tea-rags), launch line per
 device, firewall rule, keep-awake, autostart, final `EMBEDDING_BASE_URL`. Host
-sleeping = failure seen 2026-10-02 → stress keep-awake line.
+sleeping = known failure → stress keep-awake line.
 
 Hand sheet to user verbatim. AskUserQuestion:
 

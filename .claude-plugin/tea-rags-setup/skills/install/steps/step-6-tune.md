@@ -2,32 +2,24 @@
 
 **Pre-check before tuning:**
 
-- If embeddingProvider is "ollama" → verify `ollama --version` succeeds and
-  `ollama list` shows the model. If not → remind user to start Ollama.
-- If embeddingProvider is "llama-server" → verify every URL in
-  `embeddingBaseUrl` (and `embeddingFallbackUrl`) answers
-  `curl -sf <url>/health`. `tea-rags tune` CLI rejects llama-server — tune skill
-  runs its `-np` sweep instead and uses "Tune Defaults" minus embedding keys for
-  the rest.
-- If qdrantMode is "docker" or "native" → verify
-  `curl -sf http://localhost:6333/healthz`. If not → remind user to start
-  Qdrant.
-- If qdrantMode is "embedded" → do NOT verify port 6333 (the embedded daemon
-  uses a random port) and do NOT try to wake the daemon via an MCP tool — MCP is
-  not configured yet at this step. Just verify the embedded binary exists:
-  `test -x "$HOME/.tea-rags/qdrant/bin/qdrant"`. The `tune` skill will tell
-  `tea-rags tune` to spawn the daemon on its own (see `tune` skill section 1a —
-  pass NO `--qdrant-url` for embedded mode).
+- embeddingProvider "ollama" → `ollama --version` ok + `ollama list` shows
+  model. Else → remind user to start Ollama.
+- embeddingProvider "llama-server" → every URL in `embeddingBaseUrl` (and
+  `embeddingFallbackUrl`) answers `curl -sf <url>/health`. `tea-rags tune` CLI
+  rejects llama-server — tune skill runs `-np` sweep instead, "Tune Defaults"
+  minus embedding keys for rest.
+- qdrantMode "docker" / "native" → `curl -sf http://localhost:6333/healthz`.
+  Else → remind user to start Qdrant.
+- qdrantMode "embedded" → do NOT check port 6333 (random port), do NOT wake
+  daemon via MCP tool (MCP not configured yet). Only verify binary:
+  `test -x "$HOME/.tea-rags/qdrant/bin/qdrant"`. `tune` skill lets
+  `tea-rags tune` spawn daemon itself (`tune` section 1a — NO `--qdrant-url` for
+  embedded).
 
-Invoke the `/tea-rags-setup:tune` skill. It will:
+Invoke `/tea-rags-setup:tune` — runs `tea-rags tune` w/ step-4 provider, saves
+results to progress, shows summary (reads `embeddingProvider` + `qdrantMode`
+from progress itself).
 
-1. Run `tea-rags tune` with the provider from step 4
-2. Parse results and save to progress file
-3. Show summary to the user
-
-The tune skill reads `embeddingProvider` and `qdrantMode` from the progress file
-automatically. If tune fails — non-critical, save defaults from `reference.md`
-"Tune Defaults" table and continue.
-
-Warn the user: "Performance tuning failed. Using conservative defaults — you can
-re-run `/tea-rags-setup:tune` later to optimize."
+Tune fails → non-critical: save `reference.md` "Tune Defaults", continue, warn:
+"Performance tuning failed. Using conservative defaults — you can re-run
+`/tea-rags-setup:tune` later to optimize."

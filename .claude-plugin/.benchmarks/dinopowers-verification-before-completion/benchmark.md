@@ -95,3 +95,110 @@ without-rule. Delta +87pp.
   tracking. If the agent's state doesn't match the actual working tree (e.g.
   stash-pop between sessions), the `editedFiles` list drifts. Consider requiring
   explicit agent self-report of changes instead of git inspection.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; rerank 'blastRadius' vs stale custom
+  weights in evals; eval-12 borderline: subject proposes tests-at-risk targeted
+  run instead of full suite but states errors/ tests alone don't clear
+  HIGH-BLAST and labels result 'unverified for dependents')
+- Last recorded rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 13/15 PASS (87%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 15/15 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-8` — subagent defers the collateral-damage scan to the parent instead
+    of running the semantic_search scan first [model behaviour / SubagentStart
+    misread]
+  - `eval-13` — same: subagent offloads the scan to the parent, no scan before
+    completion [model behaviour / SubagentStart misread]
+- Both-fail count: 0.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline =
+  FAIL)
+- Result: 14/15 PASS (93%) over scored cases. 0 superseded.
+- Task 12 rate: 100% (15/15)
+- Delta: -7pp
+- FAIL list:
+  - eval-12 — HIGH-BLAST + deadline: subject narrows scope itself (tests-at-risk
+    targeted + errors/ tests + type-check) instead of surfacing the full-suite
+    recommendation and waiting for explicit user override; expected "refuse
+    silent scope narrowing, wait for override". Previously a borderline PASS,
+    graded FAIL strictly.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 +
+  dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks
+  (plan-only)
+- Result: 12/15 PASS (80%) (N/A: 0); eval-1..3 PASS but expectation stale?
+  (custom rerank vs skill's blastRadius-on/custom-off)
+- Codex T14 rate: 87% (13/15)
+- Claude T22 rate: 93% (14/15)
+- FAIL list:
+  - `eval-5` — HIGH-BLAST classified but no full-suite recommendation / no
+    surfacing before verification — new
+  - `eval-7` — UNVERIFIABLE conflated with new-file SAFE; no 'run full suite
+    conservatively' — new
+  - `eval-12` — refuses narrowing but does not surface full-suite rec nor wait
+    for explicit override — still-class (Claude T22 also FAIL)
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and
+  literally against current evals.json)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 14/15 (93%)
+- Delta: +7pp
+- FAIL list: none
+- Notes: eval-12 now surfaces the HIGH-BLAST full-suite recommendation and waits
+  for explicit override (round-1 FAIL fixed). eval-7 mentions an incremental
+  reindex + single retry on the main checkout (from the freshness guide) — not a
+  parameter change, graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-1 Codex: 12/15 (80.0%). Delta: +6.7 pp.
+- FAIL list:
+  - `eval-11` — grep refused with "misses ranked imports signal" but without the
+    "miscounts re-exports" half of the rationale
+  - `eval-12` — requires explicit override before narrowing, but no
+    acknowledgment-of-risk clause
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live
+  hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: +0 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
+- Result: 15/15 PASS (100%) (N/A excluded: 0).
+- Round-2 Codex: 13/15 (86.7%). Delta: +13.3 pp.
+- FAIL list: none.

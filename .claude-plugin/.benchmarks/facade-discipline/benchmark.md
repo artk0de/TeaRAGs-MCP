@@ -209,3 +209,102 @@ Rule is deployed. Next work in this thread:
   grading (committed)
 - `.claude-plugin/.benchmarks/facade-discipline/workspace/` — gitignored
   iteration data (skill-snapshot + iteration-1)
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 11/12 PASS (92%)
+- Last recorded rate: 100% (12/12 with-rule, iteration 1)
+- FAIL list: eval-5 (control: keep a pure 4-line dispatch in the facade; subject
+  moved resolve + model-guard invalidation into CollectionOps citing the
+  responsibility table). Note: eval-6 (validator location) graded PASS because
+  the current rule text itself puts validators at the bottom of the facade file,
+  contradicting the eval's api/errors.ts expectation (stale eval).
+- Notes: Rule artifact .claude/rules/facade-discipline.md was NOT changed by
+  this epic, so eval-5 reflects a rule/eval tension (iteration-3 'every facade
+  method delegates to Ops' wording vs the control), not a regression from the
+  context change. Subject sonnet.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace,
+  real hooks (plan-only)
+- Result: not graded - 12/12 N/A (the subject is the repo-local rule
+  .claude/rules/facade-discipline.md, not shipped to Codex: no AGENTS.md in the
+  repo, not in any Codex package). Strict reading would be 0/12 with cause "rule
+  not delivered".
+- Claude T12 rate for comparison: 11/12 (92%)
+- CODEX-ONLY: none (N/A)
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only); scored all 19 cases (eval-1..12 + iteration
+  cases 13..19); Task 12 scored 12
+- Result: 16/19 PASS (84%) over 19 scored cases (superseded 0)
+- Task 12 rate: 11/12 (92%); delta -8pp (case set widened; eval-5 now PASS)
+- FAIL:
+  - `eval-6` — validator placed at bottom of explore-facade.ts per current rule;
+    eval expects api/errors.ts (STALE eval, contradicts eval-14; graded PASS in
+    T12)
+  - `eval-12` — review flags inline filter and Map grouping but omits
+    registry.buildMergedFilter and the driftWarning:null / checkDrift item
+  - `eval-16` — eval expects the <=350-line clause for 5-7 methods; rule no
+    longer has it (200-line smoke alarm), subject answers conditionally (STALE
+    eval)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 +
+  dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks
+  (plan-only)
+- Result: not graded — 12/12 N/A (repo-local rule not shipped to Codex; no
+  AGENTS.md). Strict reading would be 0/12: rule not delivered, no placement
+  answers
+- Codex T14 rate: N/A (12/12)
+- Claude T22 rate: 84% (16/19)
+- FAIL list: none
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only; graded strict-literal); scored all 19 cases
+  (eval-1..12 + iteration cases 13..19)
+- Result: 16/19 PASS (84%) over 19 scored cases (superseded 0)
+- Baseline (round 1, Task 22): 16/19 (84%)
+- Delta: +0pp (eval-6, eval-16 now PASS; eval-1, eval-5 newly FAIL)
+- FAIL list:
+  - `eval-1` — new strategy planned (strategies/, union extended, barrel export,
+    Ops dispatch) but no registration step is stated; expected names
+    `createExploreStrategy` registration (rule §3 allows createExploreStrategy
+    OR per-request instantiation — the eval is narrower than the rule)
+  - `eval-5` — extracts resolve/guard into `CollectionOps.clearIndex` ("add or
+    reuse"); expected the existing ingest Ops method
+    (`IngestFacade#clearIndex = this.indexingOps.clear(path)`); the prompt
+    describes the old body (`status.clearIndex`), so the subject never looked at
+    the current code
+  - `eval-12` — flags inline filter, Map grouping and hard-coded
+    `driftWarning: null` (Ops finalize), but does not name
+    `registry.buildMergedFilter` as the Ops-side filter merge
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; no per-case length cap;
+  graded strict-literal against the current evals.json)
+- Result: 19/19 PASS (100%) over 19 scored cases (eval-1..12 + iteration 13..19;
+  superseded 0)
+- Baseline (round 2, Task 22): 84% (16/19)
+- Delta: +16pp
+- FAIL list: none
+- Note: eval-1 (per-request instantiation in the Ops method stated as the
+  registration choice), eval-5 (existing IndexingOps#clear, no new Ops class)
+  and eval-12 (registry.buildMergedFilter + driftWarning as Ops finalize) now
+  pass.
+- Context: new SessionStart core+digest / SubagentStart block (rebuilt from live
+  hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook
+  text present in subject context but declared void (limitation).

@@ -17,28 +17,37 @@
       "category": "core-invocation",
       "prompt": "Проиндексируй /Users/artk0re/Dev/project.",
       "expected": {
-        "mustCall": [
-          "mcp__tea-rags__index_codebase with path='/Users/artk0re/Dev/project'"
+        "mustDo": [
+          "Check registration first: mcp__tea-rags__list_projects → entry with path='/Users/artk0re/Dev/project' and non-empty name",
+          "Not registered → ask ONCE to register as alias `project` (offer override); confirmed → `tea-rags index-codebase /Users/artk0re/Dev/project --name project`; declined → mcp__tea-rags__index_codebase with path='/Users/artk0re/Dev/project'",
+          "Registered → incremental mcp__tea-rags__index_codebase with project=<alias> (or path)",
+          "Report full result (all metrics + duration)"
         ],
         "mustNotCall": [
           "Agent (Task) subagent (direct MCP call is faster)",
           "forceReindex=true (that's force-reindex skill)",
-          "index_codebase without path"
+          "mcp__tea-rags__register_project on first index (index-codebase --name does both)",
+          "Re-register a path that already has a named entry",
+          "index_codebase with neither project nor path"
         ]
       },
-      "failureMode": "Agent dispatches subagent or sets forceReindex"
+      "failureMode": "Agent dispatches subagent, sets forceReindex, or indexes a new path without the one-time alias offer"
     },
     {
       "id": "eval-2",
       "category": "path-from-cwd",
       "prompt": "Проиндексируй.",
       "expected": {
-        "mustCall": [
-          "mcp__tea-rags__index_codebase with path=<current working directory>"
+        "mustDo": [
+          "Target = current working directory (no question about the path)",
+          "list_projects → registered (non-empty name) → incremental mcp__tea-rags__index_codebase with project=<alias> (or path=<cwd>)",
+          "Not registered → one alias offer, then `tea-rags index-codebase <cwd> --name <alias>` (declined → index_codebase path=<cwd>)",
+          "cwd is a linked git worktree of a registered repo → do NOT register or index; tell the user read tools already answer for that tree"
         ],
         "mustNotDo": [
           "Ask user for path (cwd is the obvious default)",
-          "Refuse to index"
+          "Refuse to index a normal checkout",
+          "Spawn a subagent"
         ]
       },
       "failureMode": "Agent blocks on missing path argument"
@@ -75,18 +84,17 @@
       "prompt": "get_index_status вернул [QDRANT_UNAVAILABLE] с Hint: 'Start qdrant via docker-compose up'. Что делать?",
       "expected": {
         "mustDo": [
-          "Parse [CODE] from response",
-          "Read Hint section for concrete fix action",
-          "Propose fix to user with confirmation BEFORE executing",
-          "After user confirms, execute the fix",
-          "Retry get_index_status"
+          "Read the [QDRANT_UNAVAILABLE] code and the Hint (`docker-compose up`) as the concrete fix",
+          "Treat it as a live infra outage (guides/degraded.md): STOP and ask the user (AskUserQuestion) to start Qdrant per the Hint, WAIT for an explicit answer before anything else",
+          "After the user confirms Qdrant is up (or asks you to run the Hint command and you do), retry get_index_status"
         ],
         "mustNotDo": [
-          "Execute fix without user confirmation",
-          "Ignore error and call index_codebase anyway"
+          "Execute a fix (docker / ollama serve) without the user's explicit answer",
+          "Ignore error and call index_codebase anyway",
+          "Silently fall back to text search / Read for code discovery"
         ]
       },
-      "failureMode": "Agent auto-executes fix or ignores error"
+      "failureMode": "Agent auto-executes the fix, ignores the error, or silently downgrades"
     },
     {
       "id": "eval-6",
@@ -94,10 +102,16 @@
       "prompt": "get_index_status: [OLLAMA_UNAVAILABLE] Hint: 'ollama serve'. Fix?",
       "expected": {
         "mustDo": [
-          "Propose 'ollama serve' fix with confirmation",
-          "After confirm, execute and retry"
+          "Read [OLLAMA_UNAVAILABLE] + Hint 'ollama serve'",
+          "STOP and ask the user (AskUserQuestion) to start `ollama serve` or repoint EMBEDDING_URL; WAIT for the explicit answer",
+          "After the answer (and running `ollama serve` only if the user asks you to), retry with a LIVE get_index_status"
         ],
-        "mustNotDo": ["Auto-execute without confirmation"]
+        "mustNotDo": [
+          "Execute a fix (docker / ollama serve) without the user's explicit answer",
+          "Ignore error and call index_codebase anyway",
+          "Silently fall back to text search / Read for code discovery",
+          "Treat hybrid_search/find_symbol as broken — BM25 / text match still work for identifiers"
+        ]
       }
     },
     {

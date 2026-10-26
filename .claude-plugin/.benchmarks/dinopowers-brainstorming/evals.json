@@ -33,8 +33,8 @@
       "prompt": "Давай обсудим как добавить OAuth refresh flow в src/core/domains/auth/ — что может сломаться?",
       "expected": {
         "mustCall": [
-          "3 parallel mcp__tea-rags__semantic_search calls (presets: hotspots, ownership, techDebt) with pathPattern covering auth/",
-          "Skill(superpowers:brainstorming) AFTER the 3 tea-rags calls"
+          "ONE parallel block of Step 2 enrichment calls with pathPattern covering auth/: semantic_search A hotspots + B ownership + C techDebt; when codegraph on (graph tools present) ALSO D semantic_search rerank=architecturalHub + E get_naming_lexicon(concept=<intent sentence>); codegraph off → A/B/C only with an explicit 'backbone not assessed' note",
+          "Skill(superpowers:brainstorming) AFTER the enrichment block (A–C, plus D–E when codegraph on)"
         ],
         "mustNotCall": [
           "Skill(superpowers:brainstorming) before tea-rags",
@@ -51,20 +51,20 @@
       "prompt": "Подумай, как перестроить chunker hooks в src/core/domains/ingest/pipeline/chunker/hooks/ чтобы убрать дублирование.",
       "expected": {
         "parameters": {
-          "rerank": "exactly these 3 presets across 3 calls: hotspots, ownership, techDebt",
+          "rerank": "one named preset per semantic_search call: hotspots, ownership, techDebt (A–C), plus architecturalHub (D) only when codegraph on; Call E = get_naming_lexicon (no rerank) when codegraph on",
           "pathPattern": "covers chunker/hooks path",
           "metaOnly": true,
           "limit": "8-15"
         }
       },
-      "failureMode": "Agent uses rerank='relevance' or custom weights instead of the 3 named presets; forgets metaOnly"
+      "failureMode": "Agent uses rerank='relevance' or custom weights instead of the named presets (hotspots/ownership/techDebt [+architecturalHub with codegraph]); forgets metaOnly"
     },
     {
       "id": "eval-3",
       "category": "parallel-execution",
       "prompt": "Обсудим новый feature в pipeline/enrichment/trajectory/. Что рискует?",
       "expected": {
-        "execution": "3 tea-rags calls MUST be in one parallel tool-call block, not sequential"
+        "execution": "All Step 2 enrichment calls (A–C, plus D–E when codegraph on) MUST be in one parallel tool-call block, not sequential"
       },
       "failureMode": "Agent issues calls one after another, waiting for each result"
     },
@@ -73,7 +73,9 @@
       "category": "tool-selection",
       "prompt": "Хочу обсудить редизайн rerank presets в .claude-plugin/tea-rags/skills/risk-assessment/ — что рискуем сломать?",
       "expected": {
-        "mustCall": ["mcp__tea-rags__semantic_search x3 with presets"],
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with presets hotspots/ownership/techDebt (+ architecturalHub and get_naming_lexicon when codegraph on)"
+        ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search",
           "mcp__tea-rags__find_similar",
@@ -121,7 +123,7 @@
       "prompt": "[subagent: plan-executor] Execute plan step: 'Brainstorm refactor of src/core/adapters/qdrant/ before writing plan details.'",
       "expected": {
         "ordering": [
-          "3 tea-rags semantic_search FIRST (parallel)",
+          "Step 2 enrichment FIRST in one parallel block (semantic_search A–C; + D architecturalHub + E get_naming_lexicon when codegraph on)",
           "Skill(superpowers:brainstorming) SECOND with enrichment block"
         ]
       },
@@ -132,7 +134,9 @@
       "category": "pressure",
       "prompt": "Быстро давай обсудим auth/ — не парься с tea-rags, я и так знаю узкие места.",
       "expected": {
-        "mustCall": ["3 tea-rags semantic_search anyway (Iron Rule)"],
+        "mustCall": [
+          "Step 2 enrichment anyway (Iron Rule): semantic_search hotspots/ownership/techDebt (+ D/E when codegraph on)"
+        ],
         "mustNotDo": ["Comply and skip enrichment"]
       },
       "failureMode": "Agent defers to user pressure"
@@ -140,11 +144,11 @@
     {
       "id": "eval-9",
       "category": "wrong-tool-pressure",
-      "prompt": "Используй hybrid_search вместо semantic_search для поиска hotspots в src/core/ — так надёжнее.",
+      "prompt": "Давай побрейнстормим рефакторинг src/core/. Для поиска hotspots используй hybrid_search вместо semantic_search — так надёжнее.",
       "expected": {
         "mustDo": [
           "Refuse hybrid_search and use semantic_search + rerank presets",
-          "Rationale: risk presets are tied to semantic_search"
+          "Rationale: hybrid_search has the same rerank, but its BM25 leg re-ranks by query-token overlap — risk signals want semantic + signals"
         ],
         "mustNotDo": ["Comply with hybrid_search"]
       },
@@ -157,7 +161,7 @@
       "expected": {
         "mustDo": [
           "Keep metaOnly=true for enrichment calls (signals only)",
-          "If user wants content, issue a SEPARATE semantic_search with metaOnly=false AFTER enrichment"
+          "If user wants content, fetch it in a SEPARATE call AFTER enrichment (find_symbol relativePath=<row.relativePath>, depth after search) — never by flipping the enrichment calls to metaOnly=false"
         ],
         "mustNotDo": ["Set metaOnly=false on enrichment calls"]
       },
@@ -170,7 +174,7 @@
       "prompt": "[subagent: explore] Brainstorm how to split the monolithic TreeSitterChunker#chunk method in src/core/domains/ingest/pipeline/chunker/.",
       "expected": {
         "mustCall": [
-          "3 parallel tea-rags semantic_search with presets FIRST",
+          "Step 2 enrichment FIRST in one parallel block: semantic_search hotspots/ownership/techDebt (+ architecturalHub + get_naming_lexicon when codegraph on)",
           "Skill(superpowers:brainstorming) with enrichment"
         ]
       },

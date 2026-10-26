@@ -31,6 +31,9 @@ export async function openInProcessMcpSession(): Promise<InProcessToolSession> {
   return {
     listTools: session.listTools,
     callTool: session.callTool,
+    readResource: session.readResource,
+    listResources: session.listResources,
+    listResourceTemplates: session.listResourceTemplates,
     close: async () => {
       released ??= (async () => {
         await session.close();

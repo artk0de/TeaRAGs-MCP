@@ -70,7 +70,7 @@
     },
     {
       "id": "C6",
-      "prompt": "path-only answer carried workingTree.project=acme; next call",
+      "prompt": "cwd: /work/acme/.claude/worktrees/feat-x (linked worktree). A path-only answer carried workingTree.project=acme; next call",
       "expected": "project=acme + path=<worktree>",
       "finding": "B3",
       "before": "FAIL (kept path only)",
@@ -78,7 +78,7 @@
     },
     {
       "id": "C7",
-      "prompt": "project-only answer read /work/acme from a worktree",
+      "prompt": "cwd: /work/acme/.claude/worktrees/feat-x (linked worktree). The last call passed project=acme only, and its answer's workingTree.tree is /work/acme; next call",
       "expected": "re-call project=acme + path=<worktree>",
       "finding": "B1",
       "before": "PARTIAL (drop project or keep — undecided)",
@@ -94,8 +94,8 @@
     },
     {
       "id": "C9",
-      "prompt": "unregistered repo first index",
-      "expected": "index_codebase path=/work/newrepo",
+      "prompt": "cwd: /work/newrepo, a repository not registered with tea-rags yet; first index",
+      "expected": "first index addressed by path, no project: index_codebase path=/work/newrepo, or the index skill's CLI registration `tea-rags index-codebase /work/newrepo --name <alias>`",
       "finding": "control",
       "before": "PASS",
       "after": "PASS"
@@ -118,7 +118,7 @@
     },
     {
       "id": "C12",
-      "prompt": "only a raw collection name",
+      "prompt": "main session, cwd /work/acme, but this session has no prime digest and no alias (the fixture's alias is not known to you here); you only hold the raw collection name `code_1a2b3c` from list_collections. Search it — addressing of the first call, and of the follow-up call made after that first answer returned (its workingTree marker has project 'acme')?",
       "expected": "collection (then project from marker)",
       "finding": "control",
       "before": "PASS",

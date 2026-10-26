@@ -5,7 +5,7 @@
     {
       "id": 1,
       "prompt": "Assess risks in the ingest domain",
-      "expected": "Phase 0: pathPattern='**/ingest/**', scopeType='domain'. Phase 1: rank_chunks × 3 presets. NOT 4 presets, NOT search-cascade.",
+      "expected": "Phase 0: pathPattern='**/ingest/**', scopeType='domain'. Phase 1: rank_chunks × 5 risk presets (bugHunt, hotspots, techDebt, dangerous, criticalPath) with their filter presets, all in ONE parallel block together with the Phase 1b structural scan; codegraph off → 4 presets (skip criticalPath, say so). NOT 3 presets, NOT search-cascade.",
       "audit_finding": [1, 2],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",
@@ -23,7 +23,7 @@
     {
       "id": 3,
       "prompt": "Risk scan whole project",
-      "expected": "Broad scope, domain-stratified 6 calls. Pagination stop conditions without search-cascade ref.",
+      "expected": "Broad scope, domain-stratified two-pass scan: 5 presets × no pathPattern, then 5 presets × pathPattern='!**/<dominant-domain>/**' (10 risk calls; 8 when codegraph off), both fed into MERGE. Pagination stop conditions without search-cascade ref.",
       "audit_finding": [3],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",
@@ -32,7 +32,7 @@
     {
       "id": 4,
       "prompt": "Find risky areas before I refactor the trajectory module",
-      "expected": "explore PG → PG-2 delegates to risk-assessment WITH pathPattern. risk-assessment SKIPS Phase 0.",
+      "expected": "Risk intent over an AREA ('risky areas before I refactor <module>'): via explore, its Risk-intent check delegates to risk-assessment WITH the resolved pathPattern and risk-assessment SKIPS Phase 0 (Shortcut); invoked directly, risk-assessment Phase 0 resolves the same pathPattern (e.g. **/trajectory/**). Not PRE-GEN PG-2 (that no longer delegates).",
       "audit_finding": [9],
       "baseline_grade": "FAIL",
       "before_grade": "FAIL",
@@ -50,7 +50,7 @@
     {
       "id": 6,
       "prompt": "What are the riskiest files that data-driven-generation should be careful with?",
-      "expected": "Full flow, Phase 5 includes machine-readable context (pathPattern, riskFiles, overlayLabels) for data-driven chain.",
+      "expected": "Full flow (Phase 0 SCOPE → 1 SCAN + 1b STRUCTURAL → 2 MERGE → 3 EXPAND → 4 ENRICH → 5 OUTPUT). Phase 5 is the prescribed risk map: Critical/High tables with Symbol, File:Line, Risk Type, Key Signals as overlay labels (e.g. bugFix:58% concerning), Tests column (path | none | unverified), Structural risks when codegraph is on, Summary. That table (File:Line + labels) is what the generation chain consumes — NOT an invented extra machine-readable block (pathPattern/riskFiles/overlayLabels is not part of the contract; per-target generation context is explore PRE-GEN PG-4).",
       "audit_finding": [10],
       "baseline_grade": "FAIL",
       "before_grade": "FAIL",
@@ -59,7 +59,7 @@
     {
       "id": 7,
       "prompt": "Show hotspots and ownership patterns in adapters/",
-      "expected": "3 presets (NOT 4th ownership preset). Ownership via overlay. tea-rags only, NOT ripgrep/Grep.",
+      "expected": "The 5 risk presets (4 when codegraph off) scoped to adapters/ — NO extra standalone 'ownership' preset; ownership / bus factor surfaces via the 'dangerous' preset (single-owner) + overlay labels. tea-rags only, NOT ripgrep/Grep.",
       "audit_finding": [1, 4, 6],
       "baseline_grade": "FAIL",
       "before_grade": "PASS",
@@ -77,7 +77,7 @@
     {
       "id": 9,
       "prompt": "Risk assessment for the reranker — I need context before generating new signals",
-      "expected": "explore PG flow or direct risk-assessment. Machine-readable output for generation.",
+      "expected": "'Risk assessment for X' is risk intent → risk-assessment (explore's Risk-intent check overrides PRE-GEN), scoped by Phase 0 to the reranker (pathPattern e.g. **/rerank*/**, scopeType domain); Phase 5 risk map with File:Line + label signals. For the generation handoff: DDG needs pathPattern + per-symbol overlay labels (DDG Prerequisites, explore PRE-GEN PG-2/PG-4 'Context for generation'), not a full-project scan.",
       "audit_finding": [9, 10],
       "baseline_grade": "FAIL",
       "before_grade": "PARTIAL",
@@ -104,7 +104,7 @@
     {
       "id": 12,
       "prompt": "[plan execution] Step 3: Run risk assessment on trajectory domain to identify fragile areas before refactoring signals",
-      "expected": "Plan executor triggers skill, accepts pathPattern, outputs structured context.",
+      "expected": "Plan executor triggers the skill; Phase 0 resolves 'trajectory domain' to a pathPattern (e.g. **/trajectory/**, scopeType domain) — or uses a pathPattern passed by the caller as-is (shortcut) — and every scan call carries it; output is the Phase 5 risk map format (tiered tables with File:Line, Key Signals labels, Tests column, Summary).",
       "audit_finding": [9, 10],
       "baseline_grade": "N/A",
       "before_grade": "N/A",

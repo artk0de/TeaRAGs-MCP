@@ -8,14 +8,14 @@ an architectural centre they cannot measure.
 
 ## Summary
 
-| Metric | Value |
-| --- | --- |
-| Scope (decided) | Full cross-cutting: `search-cascade.md` (canon) + `explore` SKILL + 4 patterns + `bug-hunt` + `systematic-debugging` + `receiving-code-review` |
-| Eval cases | 13 (6 audit-finding OFF, 5 controls ON, 2 subagent-context, incl. 1 non-English) |
-| with-rule (current) | 13/13 (100%) |
-| without-rule baseline | 12/13 (92%) — case 3 ripgrep-first |
-| with-rule (FIXED) | 13/13 (100%), no ON-control regression |
-| Behavioral delta (Opus-class) | +8pp — concentrated on fallback route quality, NOT on the audited false-claims |
+| Metric                        | Value                                                                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope (decided)               | Full cross-cutting: `search-cascade.md` (canon) + `explore` SKILL + 4 patterns + `bug-hunt` + `systematic-debugging` + `receiving-code-review` |
+| Eval cases                    | 13 (6 audit-finding OFF, 5 controls ON, 2 subagent-context, incl. 1 non-English)                                                               |
+| with-rule (current)           | 13/13 (100%)                                                                                                                                   |
+| without-rule baseline         | 12/13 (92%) — case 3 ripgrep-first                                                                                                             |
+| with-rule (FIXED)             | 13/13 (100%), no ON-control regression                                                                                                         |
+| Behavioral delta (Opus-class) | +8pp — concentrated on fallback route quality, NOT on the audited false-claims                                                                 |
 
 ## Key finding — registration gating reframes the premise
 
@@ -42,38 +42,39 @@ run is archived at `workspace/iteration-1/contaminated-v1/`. The honest re-run
 The value is instruction **correctness** + robustness for weaker subagent
 models, not a measured Opus behavior gap:
 
-| # | File | Change |
-| --- | --- | --- |
-| F1 | `search-cascade.md` Graph navigation | Added prime `codegraph.symbols` availability signal + a "When codegraph is off" per-intent fallback table (the canonical source). |
-| F4 | `search-cascade.md` Fallback Chains | Split "Call path A→B" into codegraph-on (trace_path) vs codegraph-off (semantic/hybrid + manual) — the old fallback `get_callees` is itself codegraph-dependent. |
-| F1 | `explore/SKILL.md` | "return empty for every input" → "not registered / absent from tool list"; check prime first. |
-| F1 | `usage-pattern.md` | Same correction; "prime shows no codegraph.symbols ⇒ get_callers/get_callees not registered". |
-| F2 | `cycle-pattern.md` | "empty = DAG" now gated on codegraph ON; when find_cycles is unregistered, empty is NOT a DAG — say cycle detection unavailable. |
-| F5 | `architecture-pattern.md` | Added codegraph-off note distinct from no-hubs-in-scope; fan-in centrality unavailable, no false "architectural centre". |
-| F5 | `entry-point-pattern.md` | Added codegraph-off note; relevance + chunkSize, flagged content-inferred. |
-| F3 | `systematic-debugging.md` | Anti-pattern row "empty trace_path = structurally false → drop" gated on codegraph ON; when off, trace_path absent ≠ evidence, keep hypothesis. Step 3.5 precondition added. |
-| F6 | `bug-hunt/SKILL.md` | trace_path chain step gated on codegraph ON; off ⇒ flat suspects only. |
-| F6 | `receiving-code-review/SKILL.md` | Step 3.5 trace_path route gated on codegraph ON; off ⇒ stay with Step 2 fanIn. |
+| #   | File                                 | Change                                                                                                                                                                       |
+| --- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | `search-cascade.md` Graph navigation | Added prime `codegraph.symbols` availability signal + a "When codegraph is off" per-intent fallback table (the canonical source).                                            |
+| F4  | `search-cascade.md` Fallback Chains  | Split "Call path A→B" into codegraph-on (trace_path) vs codegraph-off (semantic/hybrid + manual) — the old fallback `get_callees` is itself codegraph-dependent.             |
+| F1  | `explore/SKILL.md`                   | "return empty for every input" → "not registered / absent from tool list"; check prime first.                                                                                |
+| F1  | `usage-pattern.md`                   | Same correction; "prime shows no codegraph.symbols ⇒ get_callers/get_callees not registered".                                                                                |
+| F2  | `cycle-pattern.md`                   | "empty = DAG" now gated on codegraph ON; when find_cycles is unregistered, empty is NOT a DAG — say cycle detection unavailable.                                             |
+| F5  | `architecture-pattern.md`            | Added codegraph-off note distinct from no-hubs-in-scope; fan-in centrality unavailable, no false "architectural centre".                                                     |
+| F5  | `entry-point-pattern.md`             | Added codegraph-off note; relevance + chunkSize, flagged content-inferred.                                                                                                   |
+| F3  | `systematic-debugging.md`            | Anti-pattern row "empty trace_path = structurally false → drop" gated on codegraph ON; when off, trace_path absent ≠ evidence, keep hypothesis. Step 3.5 precondition added. |
+| F6  | `bug-hunt/SKILL.md`                  | trace_path chain step gated on codegraph ON; off ⇒ flat suspects only.                                                                                                       |
+| F6  | `receiving-code-review/SKILL.md`     | Step 3.5 trace_path route gated on codegraph ON; off ⇒ stay with Step 2 fanIn.                                                                                               |
 
-Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 → 0.17.6.
+Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 →
+0.17.6.
 
 ## Per-case verdicts (honest harness)
 
-| Case | ENV | without-rule | with-rule current | with-rule FIXED |
-| --- | --- | --- | --- | --- |
-| 1 cycle-off-no-false-dag | A | PASS | PASS | PASS |
-| 2 sysdebug-off-no-drop | A | PASS | PASS | PASS |
-| 3 usage-off-fallback | A | FAIL (ripgrep-first) | PASS | PASS |
-| 4 tracepath-off-fallback | A | PASS | PASS | PASS |
-| 5 architecture-off | A | PASS | PASS | PASS |
-| 6 bughunt-off-flat | A | PASS | PASS | PASS |
-| 7 control-cycle-on | B | PASS | PASS | PASS |
-| 8 control-usage-on | B | PASS | PASS | PASS |
-| 9 control-tracepath-on | B | PASS | PASS | PASS |
-| 10 edge-on-genuine-empty-dag | B | PASS | PASS | PASS |
-| 11 edge-nonenglish-off | A | PASS | PASS | PASS |
-| 12 subagent-explore-off | A | PASS | PASS | PASS |
-| 13 subagent-taskagent-on | B | PASS | PASS | PASS |
+| Case                         | ENV | without-rule         | with-rule current | with-rule FIXED |
+| ---------------------------- | --- | -------------------- | ----------------- | --------------- |
+| 1 cycle-off-no-false-dag     | A   | PASS                 | PASS              | PASS            |
+| 2 sysdebug-off-no-drop       | A   | PASS                 | PASS              | PASS            |
+| 3 usage-off-fallback         | A   | FAIL (ripgrep-first) | PASS              | PASS            |
+| 4 tracepath-off-fallback     | A   | PASS                 | PASS              | PASS            |
+| 5 architecture-off           | A   | PASS                 | PASS              | PASS            |
+| 6 bughunt-off-flat           | A   | PASS                 | PASS              | PASS            |
+| 7 control-cycle-on           | B   | PASS                 | PASS              | PASS            |
+| 8 control-usage-on           | B   | PASS                 | PASS              | PASS            |
+| 9 control-tracepath-on       | B   | PASS                 | PASS              | PASS            |
+| 10 edge-on-genuine-empty-dag | B   | PASS                 | PASS              | PASS            |
+| 11 edge-nonenglish-off       | A   | PASS                 | PASS              | PASS            |
+| 12 subagent-explore-off      | A   | PASS                 | PASS              | PASS            |
+| 13 subagent-taskagent-on     | B   | PASS                 | PASS              | PASS            |
 
 ## Honest limitations
 
@@ -82,3 +83,147 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
   by weaker-model robustness (subagents may run on haiku), which this Opus-only
   eval cannot fully measure.
 - Eval tests INSTRUCTION CLARITY (tool selection plan), not live tool execution.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 13/13 PASS (100%)
+- Last recorded rate: 100% (13/13 with_rule_fixed, honest-v2)
+- FAIL list: none
+- Notes: Artifact mapped to context-main.md/context-subagent.md +
+  guides/navigation.md 'When codegraph is off' + tea-rags:explore/bug-hunt
+  skills. Delta 0pp.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace,
+  real hooks (plan-only)
+- Result: 13/13 PASS (100%) over graded cases (N/A excluded: 0)
+- Claude T12 rate for comparison: 13/13 (100%)
+- CODEX-ONLY: none
+- Both-fail count: 0
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation; graded strictly, borderline =
+  FAIL)
+- Result: 5/13 PASS (38%) over scored cases. Subject sonnet; 0 superseded.
+- Task 12 rate: 100% (13/13)
+- Delta: -62pp
+- FAIL list:
+  - 1,2,3,4,5,6,11,12 (all codegraph-OFF cases) — subject decided codegraph ON
+    from its own registered tool list and ignored the scenario prime-digest
+    signal (the eval keys on the missing `codegraph.symbols` line;
+    context-main.md l.46 and navigation.md "When codegraph is off" key on graph
+    tools absent from the tool list). Plans therefore call
+    find_cycles/get_callers/trace_path/entryPoint and may report "no cycles".
+    Diagnostic variant B (scenario framed as tools-unregistered): 12/13 PASS;
+    only 12 FAIL (entry-point fallback omits the explicit relevance + chunkSize
+    heuristic, uses rerank onboarding).
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins (tea-rags 0.46.10 +
+  dinopowers 0.24.3 + superpowers 7.0.1) via repo-root marketplace, real hooks
+  (plan-only)
+- Result: 12/13 PASS (92%) over graded cases (N/A: 0)
+- Codex T14 rate: 100% (13/13)
+- Claude T22 rate: 38% (5/13)
+- FAIL list:
+  - `12` — subagent OFF entry-point used rerank=onboarding, not
+    relevance+chunkSize (entry-point-pattern.md l.34) — new
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 1): 5/13 (38%)
+- Delta: +62pp
+- FAIL list: none
+- Notes: per the suite's honest-v2 harness (per-ENV tool list), each case now
+  carries a scenario line stating whether graph tools are registered; round 1
+  subjects used their own session tool list instead. All OFF cases detect OFF
+  before any graph call, never claim DAG/no-path, and fall back without
+  get_callees.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 13/13 PASS (100%) (N/A excluded: 0).
+- Round-1 Codex: 12/13 (92.3%). Delta: +7.7 pp.
+- FAIL list: none. Caveat: prompts sent to Codex used the old digest-signal
+  wording, not the current tool-list wording in evals.json; graded on intent.
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no
+  per-case length cap)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 2): 13/13 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: cases carried the evals' own `[environment: codegraph on|off — ...]`
+  prefix verbatim; no extra tool-list line added.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.12
+  / dinopowers 0.24.5, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
+- Result: 9/13 PASS (69.2%) (N/A excluded: 0).
+- Round-2 Codex: 13/13 (100.0%). Delta: -30.8 pp.
+- FAIL list:
+  - `3` — codegraph OFF: leads with find_symbol → get_callers; hybrid_search
+    only as low-resolve cross-check, no name-match caveat
+  - `4` — codegraph OFF: plans trace_path(from,to) as the route; no OFF
+    detection, no "no static path tool" caveat
+  - `11` — Russian cycle intent recognised but plan says "Call find_cycles(...)"
+    before noting it is unavailable — not E1 behaviour (OFF detected before
+    choosing the tool)
+  - `12` — subagent runs semantic_search rerank=entryPoint + minFanOut
+    (fan-graph preset) instead of relevance + chunkSize heuristic — failure mode
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
+- Result: 8/13 PASS (61.5%) (N/A excluded: 0).
+- Round-3 Codex: 9/13 (69.2%). Delta: -7.7 pp.
+- FAIL list:
+  - `5` — still plans rerank="architecturalHub" (conditional); no "fan-in/hub
+    centrality unavailable" + labelled git/relevance substitute (regression vs
+    R3)
+  - `8` — calls get_callers on the raw name — no find_symbol id resolution first
+    (regression vs R3)
+  - `10` — hedges ("would be consistent with"), never states empty find_cycles
+    with codegraph ON = genuine "no cycles / DAG" (regression vs R3)
+  - `12` — semantic_search without the relevance + chunkSize heuristic named;
+    caveat only on reachability
+  - `13` — get_callers without find_symbol resolution (path pin instead of exact
+    id) (regression vs R3)
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; strict literal grading; no
+  per-case length cap)
+- Result: 13/13 PASS (100%) over scored cases (superseded: 0)
+- Baseline (round 3): 13/13 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: cases carried the evals' own `[environment: codegraph on|off — ...]`
+  prefix verbatim; no extra tool-list line added. Case 13 adds a hybrid_search
+  cross-check after get_callers (Ruby, no realized resolve rate) — primary route
+  is graph edges, graded PASS.
+- Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
+  / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
+  present in subject context but declared void (limitation).

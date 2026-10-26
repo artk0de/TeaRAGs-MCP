@@ -29,6 +29,7 @@ import {
 } from "../../core/api/index.js";
 import { CLI_OWNED_TOOLS, cliCommandForTool } from "../call/cli-owned-tools.js";
 import { prepareCallProjectEnv } from "../call/project-env.js";
+import { flushed, routeConsoleToStderr } from "../call/stdio.js";
 import { rememberCallToolNames } from "../call/tool-name-cache.js";
 
 export interface CallArgs {
@@ -278,32 +279,6 @@ async function readAllStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
   return Buffer.concat(chunks).toString("utf8");
-}
-
-/**
- * Keep stdout for the tool's answer alone: anything the in-process server
- * logs through `console.log/info/debug` goes to stderr for the duration — the
- * same contract the stdio transport already imposes on the server.
- */
-function routeConsoleToStderr(): () => void {
-  const saved = { log: console.log, info: console.info, debug: console.debug };
-  console.log = console.error;
-  console.info = console.error;
-  console.debug = console.error;
-  return () => {
-    console.log = saved.log;
-    console.info = saved.info;
-    console.debug = saved.debug;
-  };
-}
-
-/** Resolves once everything written to `stream` so far has been flushed. */
-async function flushed(stream: NodeJS.WriteStream): Promise<void> {
-  return new Promise((resolve) => {
-    stream.write("", () => {
-      resolve();
-    });
-  });
 }
 
 export const callCommand: CommandModule<object, CallArgs> = {

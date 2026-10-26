@@ -205,6 +205,12 @@ export interface App {
    */
   resolveLanguageCapabilities: (languages: readonly string[]) => Map<string, LanguageCapability>;
   /**
+   * Agent-facing language-capability guide (matrix, scales, realized-trust
+   * note) rendered from the native descriptors — the generated rule minus its
+   * `## For humans` tail. Backs `tea-rags://guide/language-capability`.
+   */
+  renderLanguageCapabilityGuide: () => string;
+  /**
    * Whether a collection's build lease is live — the same predicate the orphan
    * report, the version cleanup and registry recovery honour (bd
    * tea-rags-mcp-9ovlp). The marker reader is caller-supplied: read-only CLI

@@ -14,7 +14,7 @@
     {
       "id": 2,
       "prompt": "review_changes returned a mainSequence finding with preExisting: true, no remedy, and a hubLike finding without preExisting.",
-      "expected": "mainSequence preExisting = distanceBefore already past threshold -> report-only line, no fix. hubLike without preExisting = introduced -> must-fix, loads repair/hubLike.md only; compositionRoot flag counts as evidence, bare 'by design' does not. Loads only the two repair files for families present.",
+      "expected": "mainSequence preExisting = distanceBefore already past threshold -> report-only line, no fix. hubLike without preExisting = introduced -> must-fix per repair/hubLike.md; compositionRoot flag counts as evidence, bare 'by design' does not. Loads only the two repair files for families present (mainSequence.md + hubLike.md).",
       "audit_finding": [],
       "baseline_grade": "N/A",
       "before_grade": "N/A",

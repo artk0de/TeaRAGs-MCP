@@ -33,7 +33,7 @@ Target = named symbol / narrow question?
 **Conflict resolution:**
 
 - docs ↔ code → code wins; flag drift explicitly ("docs say X, code does Y").
-  See search-cascade "Code is evidence, docs are hypothesis".
+  See `tea-rags://guide/navigation` "Code is evidence, docs are hypothesis".
 - tests ↔ src → report BOTH facts (test may pin desired behavior, src the
   actual) — don't silently pick one.
 

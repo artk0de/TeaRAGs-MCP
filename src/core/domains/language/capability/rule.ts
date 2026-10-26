@@ -50,13 +50,26 @@ function getOrThrow(caps: Map<string, LanguageCapability>, key: string): Languag
 }
 
 /**
- * Render the agent-facing `language-compatibility.md` rule from the capability
- * Map. Static product fact only — the measured `resolveSuccessRate` is never
+ * Render the agent-facing language-capability guide (`tea-rags://guide/language-capability`)
+ * from the capability Map. Static product fact only — the measured `resolveSuccessRate` is never
  * baked in (it is per-index state owned by prime).
  */
 export function renderRule(caps: Map<string, LanguageCapability>): string {
-  const rows = DISPLAY.map(([key, name]) => matrixRow(getOrThrow(caps, key), name)).join("\n");
   const forHumans = DISPLAY.map(([key, name]) => `- **${name}** — ${getOrThrow(caps, key).codegraph.tech}`).join("\n");
+
+  return `${renderLanguageCapabilityGuide(caps)}
+## For humans — resolution tech (not agent-actionable)
+
+${forHumans}
+`;
+}
+
+/**
+ * The agent-actionable part of {@link renderRule} — everything but the
+ * `## For humans` tail. Served as `tea-rags://guide/language-capability`.
+ */
+export function renderLanguageCapabilityGuide(caps: Map<string, LanguageCapability>): string {
+  const rows = DISPLAY.map(([key, name]) => matrixRow(getOrThrow(caps, key), name)).join("\n");
 
   return `# Language Compatibility
 
@@ -95,7 +108,7 @@ ${renderLanguageVersionPolicies(caps)}
   split between its statements into \`#partN\` chunks, each opening with the
   signature and enclosing block headers as context — one part is NOT the whole
   symbol; \`find_symbol(parentSymbolId)\` reassembles every part into one
-  trusted result. See \`search-cascade.md\` → After-Search Navigation.)
+  trusted result. See \`tea-rags://guide/navigation\`.)
 - **partial** — chunked by section / heading (Markdown). A section is coherent
   for docs; there are no code symbols to split.
 - **none** — CharacterChunker splits at blank lines and top-level statement
@@ -138,9 +151,5 @@ property.
 **Consequence:** when prime reports a low \`resolveSuccessRate\`, an empty
 \`get_callers\` is a resolution artifact, NOT "the symbol has no callers". Do not
 conclude absence from a graph the index says is incomplete.
-
-## For humans — resolution tech (not agent-actionable)
-
-${forHumans}
 `;
 }

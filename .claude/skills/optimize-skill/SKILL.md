@@ -51,7 +51,7 @@ Read skill. Identify problems by category:
 | Category              | What to look for                                               |
 | --------------------- | -------------------------------------------------------------- |
 | **Stale rules**       | References to removed tools, old patterns, outdated stats      |
-| **Conflicts**         | Contradicts search-cascade or other skills                     |
+| **Conflicts**         | Contradicts `tea-rags://guide/decision-tree` or other skills   |
 | **Verbosity**         | Repeated instructions, keyword lists that could be tables      |
 | **Missing use cases** | User intents the skill doesn't handle                          |
 | **Wrong routing**     | Skill sends agent to wrong tool for a given intent             |
@@ -80,8 +80,9 @@ Create eval cases targeting:
    - `[subagent: plan-executor]` — skill called as a plan step
    - `[subagent: other]` — any other agent type that might use the skill These
      cases test whether skill instructions work when calling agent has limited
-     context (no CLAUDE.md, no rules, no search-cascade). Frame prompts as
-     subagent would phrase them — explicit paths, not vague intents.
+     context (no CLAUDE.md, no rules, no `tea-rags://guide/decision-tree`).
+     Frame prompts as subagent would phrase them — explicit paths, not vague
+     intents.
 
 Each case has:
 

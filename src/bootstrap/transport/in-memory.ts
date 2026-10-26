@@ -2,7 +2,13 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  CallToolResult,
+  ReadResourceResult,
+  Resource,
+  ResourceTemplate,
+  Tool,
+} from "@modelcontextprotocol/sdk/types.js";
 
 /**
  * A client session on an MCP server living in the same process (bd
@@ -15,6 +21,10 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 export interface InProcessToolSession {
   listTools: () => Promise<Tool[]>;
   callTool: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
+  /** Rejects when no static resource or template matches `uri`. */
+  readResource: (uri: string) => Promise<ReadResourceResult>;
+  listResources: () => Promise<Resource[]>;
+  listResourceTemplates: () => Promise<ResourceTemplate[]>;
   /** Disconnects both ends. Idempotent. */
   close: () => Promise<void>;
 }
@@ -48,6 +58,27 @@ export async function connectInProcessClient(server: McpServer): Promise<InProce
     },
     callTool: async (name, args) =>
       (await client.callTool({ name, arguments: args }, undefined, { timeout: CALL_TIMEOUT_MS })) as CallToolResult,
+    readResource: async (uri) => client.readResource({ uri }, { timeout: CALL_TIMEOUT_MS }),
+    listResources: async () => {
+      const resources: Resource[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await client.listResources(cursor === undefined ? {} : { cursor });
+        resources.push(...page.resources);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      return resources;
+    },
+    listResourceTemplates: async () => {
+      const templates: ResourceTemplate[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await client.listResourceTemplates(cursor === undefined ? {} : { cursor });
+        templates.push(...page.resourceTemplates);
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+      return templates;
+    },
     close: async () => {
       closed ??= (async () => {
         await client.close();

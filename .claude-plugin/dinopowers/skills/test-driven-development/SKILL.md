@@ -2,81 +2,110 @@
 name: test-driven-development
 description:
   Write failing test BEFORE implementation, match project conventions from
-  tea-rags search of existing test files (mocks, helpers, assertion style,
-  fixture conventions) so new test fits local norms. Triggers on "write a test",
-  "TDD", "напиши тест", "сначала тест", "failing test first", "RED phase",
-  "implement feature X", "add test for Y", "fix bug Z". NOT for projects with no
-  existing tests — fall back to superpowers:test-driven-development directly.
-  Wraps superpowers:test-driven-development with tea-rags test-pattern search.
+  tea-rags search of existing tests (mocks, helpers, assertion style, fixtures)
+  to fit local norms. Triggers on "write a test", "TDD", "напиши тест", "сначала
+  тест", "failing test first", "RED phase", "add test for Y", "find test
+  patterns for X", "test conventions", "extract patterns from tests", "ищи test
+  patterns", "извлеки паттерны из тестов". NOT for projects with no existing
+  tests — fall back to superpowers:test-driven-development. NOT for production
+  code (function, behaviour change, bug fix) → tea-rags:data-driven-generation
+  (RED = its Step 6a). Wraps superpowers:test-driven-development with tea-rags
+  test-pattern search.
 ---
 
 # dinopowers: test-driven-development
 
-Wrapper over `superpowers:test-driven-development`. Ensures RED-phase failing
-test follows project's established test conventions (mock helpers, vi.mock
-setup, assertion style, fixture location), not written from scratch.
+Wrapper over `superpowers:test-driven-development`. RED-phase test follows
+project conventions (mock helpers, vi.mock setup, assertion style, fixture
+location), not written from scratch.
 
 ## Iron Rule
 
-**Two split queries on DSL test chunks MUST be made BEFORE writing the failing
-test** — whenever project has DSL test chunks indexed:
+**Order — writing a failing test OR any request to find test patterns /
+conventions:** `tests-as-context` Step 0 preflight → the two Step 2
+`semantic_search` queries (DSL test chunks indexed) BEFORE any test is written,
+each `rerank: "proven"`, `level: "chunk"`, `metaOnly: false` → only when the
+preflight finds no DSL test chunks, its disclosed file-level fallback. Never
+`hybrid_search` or `find_similar` as the primary source; `find_similar`
+(implementation symbol id) only supplements Step 2.
 
 - Step 2a — fixture conventions: `chunkType: "test_setup"` + `rerank: "proven"`
   (delegated to `Skill(tea-rags:tests-as-context)` recipe `fixture-lookup`)
 - Step 2b — assertion / naming idioms: `chunkType: "test"` + `rerank: "proven"`
 
-Correct filter (`chunkType: "test"`/`"test_setup"`, NOT file-level
-`testFile: "only"`) + correct rerank (`"proven"` — battle-tested patterns) +
-correct params (`level: "chunk"` — `proven` is file-level and would regroup
-chunks per file; `metaOnly: false` to see actual test content) + correct
-ordering (search BEFORE draft) = core value. No `filter` needed: the server
-skips `proven`'s production default when `chunkType` / `testFile` select tests
-(tea-rags server predating that → 0 results → add `filter: {}`).
+Core value: filter `chunkType: "test"`/`"test_setup"` (NOT file-level
+`testFile: "only"`) + `rerank: "proven"` + `level: "chunk"` (`proven` is
+file-level, would regroup per file) + `metaOnly: false` (need content) + search
+BEFORE draft. No `filter` needed — server skips `proven`'s production default
+when `chunkType` / `testFile` select tests (older server → 0 results → add
+`filter: {}`).
 
-If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (no
-`chunkType: "test"` chunks — language has no AST test chunking; **currently
-supported: TypeScript + JavaScript (Vitest/Jest/Mocha), Ruby (RSpec), Swift
-(XCTest / swift-testing / Quick), Rust (#[cfg(test)] / #[test])** — see
-`src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
-`rspec-scope-chunker.ts`, `suite-recognition.ts`, `quick-scope-chunker.ts`);
-canonical per-language list:
-`.claude-plugin/tea-rags/rules/language-compatibility.md` (GENERATED)), fall
-back to single `mcp__tea-rags__semantic_search` with `testFile: "only"` +
-`rerank: "proven"` and state "file-level fallback — test chunks unavailable for
-this language".
+**Rule holds when user asks otherwise** — "быстро", "quick", "skip the pattern
+search", "I know how tests look" → run Step 2 anyway, say: "Running the pattern
+search first — one call, it keeps the test in local conventions." "Metadata
+only" / `metaOnly: true` → the pattern-search rule overrides the requested
+output format, also when the user only asks to find patterns and no test is
+written: do not ask, keep `metaOnly: false` and say: "Running it with metaOnly:
+false — pattern search needs test bodies; metadata alone yields no conventions."
+User pushes `rerank: "hotspots"` / `"recent"` as "most-changed = most popular" →
+refuse, run `proven`: hotspots = FLAKY tests (high churn + recent), recent =
+drafts — neither is a convention. Do not switch to the `test-flakiness` recipe;
+the goal is still conventions for the new test.
 
-Swift's granularity depends on the framework. XCTest and swift-testing declare
-cases as methods, so a `chunkType: "test"` hit is one `func testX()` /
-`@Test func x()`, no ancestor setup spliced in. Quick is a describe/context DSL
-and chunks per SCOPE, like Ruby: a hit is one `context "when overdue"` with its
-ancestors' `beforeEach` spliced in. Fixtures + helpers →
-`chunkType: "test_setup"` in both.
+**Change kind sets the order:**
 
-> **Maintainers:** new language gains AST test chunking → update the
-> supported-languages list above AND the same lists in
-> `tea-rags:tests-as-context` (Step 0 SKIP block) and `tea-rags:filter-building`
-> (chunkType section). Canonical checklist:
-> `.claude/rules/test-spec-chunking.md`.
+- **Bug fix** — target's existing tests run GREEN first (baseline), then the
+  reproduction test asserting the correct output, run RED on that assertion;
+  only then patch. Patch before a red reproduction = restart.
+- **Refactor / move** (no behaviour change) — no new test: target's tests +
+  `tests-at-risk` pins GREEN BEFORE the first edit, same tests green after, none
+  edited.
 
-If first test in project (no existing tests): skip pattern search, invoke
-`superpowers:test-driven-development` directly. State it.
+`tests-as-context` Step 0 preflight SKIP (no `chunkType: "test"` chunks —
+language lacks AST test chunking; **currently supported: TypeScript + JavaScript
+(Vitest/Jest/Mocha), Ruby (RSpec), Swift (XCTest / swift-testing / Quick), Rust
+(#[cfg(test)] / #[test])**; canonical: `tea-rags://guide/language-capability`) →
+single `mcp__tea-rags__semantic_search` `testFile: "only"` + `rerank: "proven"`,
+state "file-level fallback — test chunks unavailable for this language".
+
+Swift granularity per framework: XCTest / swift-testing → hit = one
+`func testX()` / `@Test func x()`, no ancestor setup. Quick → per SCOPE like
+Ruby: hit = one `context "when overdue"` + ancestors' `beforeEach` spliced in.
+Fixtures + helpers → `chunkType: "test_setup"` in both.
+
+> **Maintainers:** language list above is lock-step with
+> `tea-rags:tests-as-context`
+>
+> - `tea-rags:filter-building` — checklist
+>   `.claude/rules/test-spec-chunking.md`.
+
+First test in project (no tests) → skip pattern search,
+`superpowers:test-driven-development` direct. State it.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
-redirects superpowers:X. NEVER bypass the wrapper.
+redirects superpowers:X. NEVER bypass the wrapper. Open each chained SKILL.md
+with its own read.
 
-**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and
-`tea-rags/rules/index-freshness.md`. No background reindex hook. Linked
-worktree: overlay serves uncommitted edits — never reindex for them. Main
-checkout: incremental `mcp__tea-rags__index_codebase` BEFORE first tea-rags call
-over uncommitted edits, or once answers show `changedFiles` > 0 (HEAD moved,
-branch switch) — no consent, also under drift `--force` (ask that separately).
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never
-license Bash `cat` / `sed` / `grep` / `rg` or `Read` over code. Row without
-`treeState` = current; `treeState` row → `find_symbol` re-call.
+**Requires superpowers:** `superpowers:test-driven-development` — availability
+per [CHAINING.md](../../CHAINING.md) "Missing superpowers" steps 1–3. Not in the
+skills list ≠ unavailable (the list is truncated): run
+`ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/test-driven-development/SKILL.md`
+as written first — a hand-built path failing proves nothing; only that glob
+matching nothing → stop and ask the user to install superpowers
+(https://github.com/obra/superpowers). NEVER present this enrichment alone as
+the full workflow.
+
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) +
+`tea-rags://guide/freshness`. Linked worktree → overlay serves edits, never
+reindex. Main checkout → incremental `mcp__tea-rags__index_codebase` BEFORE
+first call over uncommitted edits, or once `changedFiles` > 0 — no consent
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then the answering call). Lag ≠ unusable
+(core rules).
 
 ## Step 1 — Frame the test intent
 
-From user request or in-progress feature, identify:
+From request / in-progress feature identify:
 
 | Element                                           | Example                                                     |
 | ------------------------------------------------- | ----------------------------------------------------------- |
@@ -89,8 +118,11 @@ Compose:
 
 - `intent`: concise sentence (e.g. "ChunkGrouper groups overlapping chunks by
   startLine")
-- `pathHint`: optional pathPattern scoping to test area (from implementation
-  path)
+- `pathHint`: optional pathPattern for test area (from implementation path).
+  Target language has no sibling tests there (Ruby file in TS-tested project) →
+  NO `pathHint` — search whole corpus, then state the outcome: 0 → fallback
+  note; only other-language tests → "cross-language — <lang> conventions may not
+  apply to <target lang>"
 
 ## Step 2 — Search proven test patterns (split queries)
 
@@ -103,16 +135,14 @@ recipe: "fixture-lookup"
 intent: <Step 1 intent, focused on the SETUP shape this test will need>
 ```
 
-Recipe internally issues `mcp__tea-rags__semantic_search` with
-`chunkType: "test_setup"` + `rerank: "proven"` + `level: "chunk"` +
-`metaOnly: false` (limit 6), returns top-K setup chunks with file:line + content
+Recipe runs `semantic_search` `chunkType: "test_setup"` + `rerank: "proven"` +
+`level: "chunk"` + `metaOnly: false` (limit 6) → top-K setup chunks, file:line +
 excerpt.
 
-If recipe returns SKIP (DSL test chunks absent), fall back to ONE
-`mcp__tea-rags__semantic_search` call:
+Recipe SKIP (no DSL chunks) → ONE `mcp__tea-rags__semantic_search`:
 
 ```
-project:     <alias>                    ← search-cascade "Addressing the Codebase"
+project:     <alias>                    ← `tea-rags://guide/freshness` "Addressing the Codebase"
 path:        <your working directory>   ← the tree (worktree / branch checkout)
 query:       <intent from Step 1>
 pathPattern: <pathHint optional>
@@ -123,11 +153,11 @@ limit:       8
 metaOnly:    false
 ```
 
-State explicitly: "DSL test chunks unavailable — file-level fallback in use".
+State: "DSL test chunks unavailable — file-level fallback in use".
 
 ### Step 2b — Assertion / naming idioms (describe-it style, expectation form)
 
-Issue ONE direct `mcp__tea-rags__semantic_search`:
+ONE direct `mcp__tea-rags__semantic_search`:
 
 ```
 project:     <alias>
@@ -141,73 +171,60 @@ limit:       8
 metaOnly:    false
 ```
 
-Skip Step 2b if Step 2a took file-level fallback path — file-level results
-already cover both setup and scenarios mixed together.
+Skip 2b if 2a took file-level fallback — results already mix setup + scenarios.
 
-### Why split queries
-
-DSL test chunking emits two distinct chunk types per
-`test-scope-chunker.ts:265,289` (leaf `it`/`test` blocks) and `:309,340,376`
-(`beforeAll`/`beforeEach` setup). Querying separately:
-
-- Returns setup conventions cleanly in 2a (no scenario noise)
-- Returns assertion idioms cleanly in 2b (no setup noise)
-- Allows different limits / scopes per dimension
-
-`"proven"` preset calibrated for
-`{stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05, similarity: 0.2}` —
-surfaces tests that survived long without breaking = local convention.
+Why split: leaf `it`/`test` and `beforeAll`/`beforeEach` setup = distinct chunk
+types → separate queries = clean setup (2a) / clean idioms (2b), own limits /
+scopes. `proven` → tests that survived long without breaking = local convention.
 
 Do NOT substitute:
 
-| Wrong tool                                                             | Why wrong                                                                                                                              |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `semantic_search` with bare `testFile: "only"` (when DSL chunks exist) | Captures imports, helpers, non-DSL chunks as noise. `chunkType` is the precise filter when DSL chunks are indexed.                     |
-| `pathPattern: "**/*.test.ts"` without `chunkType`                      | Works for TypeScript but misses `*.spec.ts`, `_test.go`, `_spec.rb` etc., AND still captures non-DSL noise. Use `chunkType: "test"`.   |
-| Named preset `"relevance"` / `"recent"` / `"hotspots"`                 | `proven` is calibrated for "conventions to follow"; `recent` returns unstable drafts; `hotspots` returns flaky tests to avoid          |
-| Custom rerank weights                                                  | `proven` preset already encodes the right weights; reinventing diverges from `tea-rags:data-driven-generation` Step 2                  |
-| `mcp__tea-rags__hybrid_search`                                         | Same rerank, but its BM25 leg re-ranks by query-token overlap — signal scan wants semantic + signals                                   |
-| `mcp__tea-rags__find_similar` on implementation file alone             | Finds structurally similar code, not tests that exercise similar behavior                                                              |
-| Built-in Grep for setup or assertion patterns                          | Returns every occurrence; `proven` narrows to CONVENTIONAL uses                                                                        |
-| Skipping the `tests-as-context` preflight                              | Without preflight, fallback path is unknown; you may issue a `chunkType: "test"` query that returns 0 on a non-DSL language by mistake |
+| Wrong tool                                                             | Why wrong                                                                                    |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `semantic_search` with bare `testFile: "only"` (when DSL chunks exist) | Imports, helpers, non-DSL chunks = noise. `chunkType` precise when DSL indexed.              |
+| `pathPattern: "**/*.test.ts"` without `chunkType`                      | Misses `*.spec.ts`, `_test.go`, `_spec.rb`…, still non-DSL noise. Use `chunkType: "test"`.   |
+| Named preset `"relevance"` / `"recent"` / `"hotspots"`                 | `proven` = conventions to follow; `recent` → unstable drafts; `hotspots` → flaky tests       |
+| Custom rerank weights                                                  | `proven` encodes weights; reinventing diverges from `tea-rags:data-driven-generation` Step 2 |
+| `mcp__tea-rags__hybrid_search`                                         | BM25 leg re-ranks by token overlap — want semantic + signals                                 |
+| `mcp__tea-rags__find_similar` on implementation file alone             | As primary = prod code, not tests. SUPPLEMENTARY after Step 2 queries = OK                   |
+| Built-in Grep for setup or assertion patterns                          | Every occurrence; `proven` narrows to CONVENTIONAL uses                                      |
+| Skipping the `tests-as-context` preflight                              | Fallback path unknown; `chunkType: "test"` may return 0 on non-DSL language                  |
 
 Do NOT pass:
 
-- `metaOnly: true` — need actual test body to extract conventions (mock setup,
-  assertion style, helper calls); signal-only payload useless for TDD
+- `metaOnly: true` — need test body (mock setup, assertions, helpers); guards
+  want signals, TDD wants CONTENT
 - `filter` on test file paths — `chunkType` handles granularity; path filters
-  restrict too tight
+  too tight
 
-If both queries return 0 results (no existing tests, or none matching area):
-report "no existing test patterns found — falling back to
-`superpowers:test-driven-development` direct". Do NOT invent conventions.
+Both queries 0 results → report "no existing test patterns found — falling back
+to `superpowers:test-driven-development` direct". Never invent conventions.
 
 ## Step 3 — Extract pattern block
 
-From top-K returned chunks, extract 4-6 concise bullets (NOT raw content):
+From top-K chunks extract 4-6 bullets (NOT raw content, not copy-paste snippets
+— inner skill writes the test):
 
 - **Mock setup convention** (e.g.
   `vi.mock("node:fs", async () => { ...partial(), existsSync: vi.fn() })`)
 - **Helper imports** (e.g.
   `import { createTempTestDir, defaultTestConfig } from "tests/core/domains/ingest/__helpers__/test-helpers"`)
-- **`describe`/`it` naming style** (e.g. BDD "should X when Y" vs functional
-  "X()")
-- **Assertion idiom** (e.g. `expect(result).toEqual(...)`,
+- **`describe`/`it` naming style** (BDD "should X when Y" vs functional "X()")
+- **Assertion idiom** (`expect(result).toEqual(...)`,
   `expect(fn).toHaveBeenCalledWith(...)`, snapshots, property-based)
-- **Fixture location** (inline objects vs `__fixtures__/` files vs factory
-  helpers)
-- **Setup/teardown** (`beforeEach` vs `beforeAll`, cleanup patterns)
+- **Fixture location** (inline objects vs `__fixtures__/` vs factory helpers)
+- **Setup/teardown** (`beforeEach` vs `beforeAll`, cleanup)
 
-Cap bullets at 6. Cite proven test file each convention came from (e.g.
+Cap 6. Cite source proven test file per convention (e.g.
 `tests/core/domains/language/ruby/chunking/rspec-scope-chunker.test.ts`).
 
-If tea-rags returned fewer than 3 proven tests (thin corpus): note "small test
-corpus — conventions inferred from <N> files only, may not be representative".
+< 3 proven tests → note "small test corpus — conventions inferred from <N> files
+only, may not be representative".
 
 ## Step 4 — Invoke superpowers:test-driven-development
 
-Invoke `Skill` tool with `superpowers:test-driven-development`. Prepend pattern
-block from Step 3 as context. Phrase handoff as:
+Invoke `Skill` tool with `superpowers:test-driven-development`. Prepend Step 3
+block. Handoff:
 
 > "Before writing the failing test, match these established conventions from the
 > proven test corpus: …<block>… Deviate only if the new test genuinely needs a
@@ -217,37 +234,31 @@ block from Step 3 as context. Phrase handoff as:
 > `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
 > invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
-Let `superpowers:test-driven-development` run its RED → GREEN → REFACTOR cycle.
-This wrapper does not replace it — grounds RED draft in local conventions.
+Inner skill runs RED → GREEN → REFACTOR. Wrapper grounds RED draft, not
+replaces.
+
+Read-only subagent (`[subagent: explore]`, no writes) → Step 4 still holds:
+state chain `Skill(superpowers:test-driven-development)` SECOND, return RED
+draft and Step 3 block to parent to run it. Never silently replace Step 4.
 
 ## Red Flags — STOP and restart from Step 2
 
-- File-grouped results (`level: "file"` in the response) → `level: "chunk"`
-  missing; redo
-- "I know how tests look in this project" → run Step 2 anyway; memory stale
-  across files
-- "First test of a new module, no patterns needed" → if project has ANY tests,
-  search broader corpus with no `pathPattern`
-- Used `semantic_search` without `chunkType: "test"`/`"test_setup"` (when DSL
-  chunks indexed) → redo; bare `testFile: "only"` captures import / helper noise
-  that dilutes pattern signal
-- Picked `rerank: "recent"` "to get latest conventions" → `proven` calibrated
-  better; recent returns drafts
-- Passed raw test code to `superpowers:test-driven-development` → extract
-  pattern block first (6 bullets, not raw content)
-- Started drafting failing test before Step 2 → revert, restart from Step 2
-- Let `superpowers:test-driven-development` chain into raw
-  `superpowers:verification-before-completion` without redirecting to
-  `dinopowers:verification-before-completion` → intercept and invoke wrapper
-  instead (see Chaining rule)
-
-## Common Mistakes
-
-| Mistake                                                        | Reality                                                                                                                  |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Search with `rerank: "hotspots"` thinking "find popular tests" | `hotspots` surfaces FLAKY tests (high churn + recent). Use `proven` (stable+old+low-bugFix).                             |
-| Omit `chunkType: "test"`/`"test_setup"` filter (DSL projects)  | Returns implementation code or noisy test-file chunks. `chunkType` is the precise filter for DSL leaves and fixtures.    |
-| Use `find_similar` on implementation symbol                    | Finds structurally-related production code, not tests that exercise it                                                   |
-| Extract verbatim code snippets as "patterns"                   | Patterns are conventions (5-6 bullets), not copy-paste. Let `superpowers:test-driven-development` write the actual test. |
-| Skip Step 2 if implementation doesn't exist yet                | Tests for the new feature should still follow project test conventions; run Step 2 on the broader corpus                 |
-| Set `metaOnly: true` for a guard-style call                    | Guards want signals. TDD wants CONTENT (mock setup, assertions). Use `metaOnly: false`.                                  |
+- File-grouped results (`level: "file"` in response) → `level: "chunk"` missing;
+  redo
+- "I know how tests look here" → run Step 2; memory stale across files
+- "First test of new module, no patterns needed" / implementation not yet
+  written → project has ANY tests → search broader corpus, no `pathPattern`
+- `semantic_search` without `chunkType: "test"`/`"test_setup"` (DSL indexed) →
+  redo; bare `testFile: "only"` dilutes signal
+- `rerank: "recent"` "for latest conventions" → `proven`; recent = drafts.
+  `hotspots` = FLAKY tests (high churn + recent)
+- `find_similar` on implementation symbol as primary search → production code,
+  not tests (supplementary after Step 2 = OK)
+- Test language has no sibling tests (Ruby file, TS-only test corpus) → search
+  broader corpus anyway, then state BOTH outcomes: 0 results → fallback note
+  (below); only other-language tests → "cross-language — <lang> conventions may
+  not apply to <target lang>"
+- Raw test code to `superpowers:test-driven-development` → extract ≤6 bullets
+- Drafted failing test before Step 2 → revert, restart Step 2
+- Inner skill chained raw `superpowers:verification-before-completion` →
+  intercept, invoke `dinopowers:verification-before-completion` (Chaining rule)

@@ -1,28 +1,20 @@
 ---
 name: filter-building
 description:
-  Construct tea-rags filter beyond `pathPattern`. Invoke whenever agent
-  reasoning before a tea-rags search includes a SCOPE — domain, language,
-  author, time window, ticket, prod-vs-test split, or directory exclusion.
-  User almost never says "filter"; names the scope ("in the X domain", "Ruby
-  code", "Alice's work", "modified this week", "for ticket RAGS-142",
-  "production code"). Translate every scope into correct typed sugar field
+  Build tea-rags filter beyond `pathPattern`. Invoke whenever reasoning before a
+  tea-rags search includes a SCOPE: domain, language, author, time window,
+  ticket, prod-vs-test split, directory exclusion. User names scope ("in the X
+  domain", "Ruby code", "Alice's work", "modified this week", "for ticket
+  RAGS-142", "production code"), rarely says "filter". Map scope to typed sugar
   (`language`, `testFile`, `documentation`, `author`, `recentAuthor`,
   `contributor`, `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`,
-  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`,
-  `symbolId`), the
-  `level: "file" | "chunk"` switch (sets BOTH filter scope AND result
-  granularity; `modifiedAfter` / `modifiedBefore` never need it), picomatch
-  negation in `pathPattern` (`!**/test/**`), or raw `filter` escape hatch
-  (Qdrant `must`/`should`/`must_not`) for payload keys without typed sugar.
-  Cases: "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent
-  code" → `recentAuthor + modifiedAfter`; "everything Alice touched" →
-  `contributor`; "old payments code" →
-  `modifiedBefore`; "what's new this week" → `modifiedAfter`; "production
-  code, not tests" → `testFile: "exclude"`; "code linked to JIRA-1234" →
-  `taskId`; "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
-  rerank preset — use `tea-rags:analytics-rerank`. NOT for general project
-  exploration — use `tea-rags:explore`.
+  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`),
+  `level: "file" | "chunk"` switch (filter scope AND result granularity),
+  picomatch negation in `pathPattern` (`!**/test/**`), or raw `filter` (Qdrant
+  `must`/`should`/`must_not`) for keys without sugar. E.g. "tests of
+  AuthService" → `testFile: "only"`. NOT for picking rerank preset — use
+  `tea-rags:analytics-rerank`. NOT for general exploration — use
+  `tea-rags:explore`.
 user-invocable: false
 ---
 
@@ -31,30 +23,54 @@ user-invocable: false
 Two ways to constrain a tea-rags search beyond `query` + `pathPattern`. Pick the
 right mechanism — they compose.
 
+**Scope only — rerank is not here.** Request names weights, a preset, or "custom
+rerank" ("rank by high bugFix + ownership") → invoke `tea-rags:analytics-rerank`
+for the `rerank` value. This skill builds the scope (`pathPattern`, typed sugar)
+in parallel: every scope word (area, time, author, test/doc) still becomes its
+typed field in the same call — the rerank value never replaces one. Never
+compose `rerank: { custom: … }` here.
+
+**Raw filter → read syntax FIRST.** Before writing any raw `filter` object (even
+one range) → read `tea-rags://guide/filters` (MCP resource read), unless its
+`# Qdrant Filter Syntax` is already in context. Never from memory. Ask for "raw"
+/ "exact syntax" / a raw object (even one field + range) → plan line 1, copied:
+`ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://guide/filters")`; the
+object comes after it. Examples in this skill are shape only, not the read.
+
 ## Implicit signals — when a filter is needed but the user didn't say "filter"
 
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
 tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 
-| User said... (paraphrased)                          | Filter to add                                    |
-| --------------------------------------------------- | ------------------------------------------------ |
-| "in the X domain / module / area"                   | `pathPattern: "**/X/**"`                         |
-| "tests of X" / "test coverage of X"                 | `testFile: "only"` (+ symbolId or query)         |
-| "production code for X" / "actual implementation"   | `testFile: "exclude"`                            |
-| "Ruby / TypeScript / Python code"                   | `language: "<lang>"` (NOT pathPattern `**/*.rb`) |
-| "modified recently" / "changed this week"           | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "old code" / "legacy" / "untouched for a while"     | `modifiedBefore: <ISO>` (no `level` needed)      |
-| "what's new" / "fresh additions" / "sprint review"  | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "Alice's code" (lines she owns)                     | `author: "Alice Smith"` (exact blame name)       |
-| "what did Alice work on" / "Alice's recent work"    | `recentAuthor` (name/email) + `modifiedAfter`    |
-| "everything Alice touched" / files she committed to | `contributor: "Alice Smith"` (exact name)        |
-| "related to ticket JIRA-X" / "for issue #N"         | `taskId: "JIRA-X"`                               |
-| "drop one-off scripts" / "real code, not snippets"  | `minCommitCount: 5`+                             |
-| "docs about X" / "what's documented"                | `documentation: "only"`                          |
-| "code, not docs"                                    | `documentation: "exclude"`                       |
-| "AuthService class" (specific class)                | `symbolId: "AuthService"` OR `hybrid_search`     |
-| "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`     |
-| "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
+| User said... (paraphrased)                            | Filter to add                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| "in the X domain / module / area / pipeline"          | `pathPattern: "**/X/**"` — always, beside rerank                         |
+| "tests of X" / "tests for <Class>" (even a class)     | `hybrid_search` + `testFile: "only"`; no symbolId, never semantic_search |
+| "production code for X" / "actual implementation"     | `testFile: "exclude"`                                                    |
+| "Ruby / TypeScript / Python code"                     | `language: "<lang>"` (NOT pathPattern `**/*.rb`)                         |
+| "modified recently" / "changed this week"             | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
+| "old code" / "legacy" / "untouched for a while"       | `modifiedBefore: <ISO>` (no `level` needed)                              |
+| "older than N days" / "at least N days old"           | `modifiedBefore: <today-N ISO>`; NOT chunk `minAgeDays: N` (level unset) |
+| "what's new" / "fresh additions" / "sprint review"    | `semantic_search` + `modifiedAfter: <ISO>` (no `level`)                  |
+| "<person>'s code" (lines they own)                    | `author: "<exact git name>"`                                             |
+| "what did <person> work on" / recent work             | `recentAuthor: "<exact git name>"` + `modifiedAfter`                     |
+| "everything <person> touched" / files committed to    | `contributor: "<exact git name>"`                                        |
+| "related to ticket JIRA-X" / "for issue #N"           | `taskId: "JIRA-X"`                                                       |
+| "drop one-off scripts" / "real code, not snippets"    | `minCommitCount: 5`+                                                     |
+| "docs about X" / "what's documented"                  | `documentation: "only"`                                                  |
+| "code, not docs"                                      | `documentation: "exclude"`                                               |
+| "<Class> class itself" (prod code, ask has no "test") | `symbolId: "<Class>"` OR `hybrid_search`                                 |
+| "in /full/abs/path/" (subagent context)               | `pathPattern: "<path from project root>/**"`                             |
+| "exclude vendor / generated / migrations"             | `pathPattern: "!**/vendor/**"` (no typed sugar)                          |
+
+**Person name (`author` / `recentAuthor` / `contributor`) — exact match only.**
+User gives a short or first name (no surname, as typed in chat) → resolve it
+before the filtered call: call 1 =
+`rank_chunks(rerank="ownership", pathPattern=<scope>, metaOnly=true)`, read the
+full spelling from `git.file.recentAuthors` / `git.file.blameAuthors`; call 2
+carries it. Plan line, copied:
+`<author|recentAuthor|contributor>: "<exact git name of <short name>, from call 1>"`.
+Passing the short name as typed = silent empty result.
 
 **Rule of thumb:** user almost never says "filter". They name a SCOPE — domain,
 language, author, time window, ticket, prod-vs-test. Translate the scope into
@@ -64,27 +80,15 @@ by the highest-churn domain — the rest is invisible.
 
 ## Typed filters (fast path)
 
-Top-level params on every search request. Prefer over raw `filter:` whenever a
-typed field expresses the constraint — intent-clear, schema-checked, survives
-directory restructures.
+Typed params on every search request (tool schema; semantics:
+`tea-rags://guide/overview` `### Typed filters`). Prefer over raw `filter:`
+whenever a typed field expresses constraint — intent-clear, schema-checked,
+survives directory moves. Fields, presets, thresholds, raw syntax:
 
-| Field            | Values / type                          | When to use                                                                   |
-| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
-| `language`       | string (e.g. `"ruby"`, `"typescript"`) | scope to one language layer                                                   |
-| `fileExtension`  | string \| string[]                     | constrain by file extension(s)                                                |
-| `chunkType`      | string (e.g. `"method"`, `"class"`)    | only chunks of this type                                                      |
-| `documentation`  | `"only" \| "exclude" \| "include"`     | docs vs code (string enum, not boolean)                                       |
-| `testFile`       | `"only" \| "exclude" \| "include"`     | tests vs production (string enum)                                             |
-| `symbolId`       | string                                 | scope to one symbol                                                           |
-| `author`         | string                                 | files where this author dominates blame                                       |
-| `recentAuthor`   | string (full name OR email)            | files this author committed most, lately                                      |
-| `contributor`    | string (exact git name)                | files this person committed to in the log window — superset of `recentAuthor` |
-| `modifiedAfter`  | ISO date string \| Date                | recent changes (file-level, any level)                                        |
-| `modifiedBefore` | ISO date string \| Date                | exclude recent changes (file-level)                                           |
-| `minAgeDays`     | number                                 | min age — level-aware, see below                                              |
-| `maxAgeDays`     | number                                 | max age — level-aware, see below                                              |
-| `minCommitCount` | number                                 | drop one-off scripts                                                          |
-| `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds                                       |
+!`tea-rags resource "tea-rags://guide/filters" || true`
+
+No `# Qdrant Filter Syntax` above → read `tea-rags://guide/filters`
+(ReadMcpResourceTool) before composing.
 
 ## Test filter levels (file vs chunk granularity)
 
@@ -117,12 +121,12 @@ Swift is BOTH rows: which one a file gets follows its framework, and a Quick
 suite's non-DSL members land in one `test_setup` chunk named after the class.
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
-per-language support: `.claude-plugin/tea-rags/rules/language-compatibility.md`
-(GENERATED — never restate it here). Detect availability via prime digest: test
-chunks absent if no `git.chunk.*` signal shows a `test:` threshold row. Recipes
-depending on test chunks, see `tea-rags:tests-as-context` (Step 0 preflight
-handles this automatically). New language added → update this table in lock-step
-with the matching block in `tea-rags:tests-as-context` and
+per-language support: `tea-rags://guide/language-capability` (GENERATED — never
+restate it here). Test chunks absent if no `git.chunk.*` row of
+`tea-rags://project/<alias>/metrics?section=thresholds` has a `test ≥` value.
+Recipes depending on test chunks, see `tea-rags:tests-as-context` (Step 0
+preflight handles this automatically). New language added → update this table in
+lock-step with the matching block in `tea-rags:tests-as-context` and
 `dinopowers:test-driven-development` — see
 `.claude/rules/test-spec-chunking.md`.
 
@@ -147,7 +151,9 @@ Effective level = explicit `level`, else rerank preset `signalLevel` (e.g.
 only its preset sets it.
 
 **NEVER set `level: "file"` just to make a time filter file-level** → unwanted
-file-grouped results. Pick time filter by intent:
+file-grouped results. Not a licence for chunk `minAgeDays` (see caveat): "older
+than N days" → `modifiedBefore: <today-N ISO>`, or `minAgeDays: N` +
+`level: "file"` for a file list. Pick time filter by intent:
 
 | Intent                                        | Use                                           | Reads                                    |
 | --------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
@@ -176,7 +182,7 @@ data = key absent). Point not re-enriched keeps old stamp → overlay value, `ag
 
 | Sugar field                        | Resolves to                                                              | Pair with                                           |
 | ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
-| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `level: "file"` only for a file list                |
+| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `minAgeDays` → always `level: "file"`               |
 | `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)                      | drop one-off scripts                                |
 | `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level                            | nothing — no `level` needed                         |
 | `author`                           | `git.<effective level>.blameDominantAuthor` (file default)               | exact blame NAME, not email                         |
@@ -221,13 +227,16 @@ Compose with typed filters (e.g. `language: "ruby"` +
 
 Matched exactly (picomatch) against project-relative `relativePath`.
 
-- GOOD: `**/enrichment/**` (directory at any depth)
+- GOOD: `src/auth/**` (a path the user names from the project root — use it
+  as-is, no `**/` prefix)
+- GOOD: `**/<dir>/**` (a directory NAME whose depth is unknown)
 - GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from
   results)
 - GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
 - GOOD: `!**/test/**` (picomatch negation — exclude a directory subtree)
 - GOOD: `!**/vendor/**` (exclude non-test dirs that have no typed sugar)
-- BAD: `{file1.rb,file2.rb}`, `services/**` (no `**/` → project root only)
+- BAD: `{file1.rb,file2.rb}`, `services/**` for a bare name (no `**/` → root
+  only; fine when the user named that root-relative path)
 - BAD: `/full/abs/path/**` (absolute path — never matches; strip project root)
 
 **When to prefer negation over typed sugar.** Use `testFile: "exclude"` for test
@@ -243,56 +252,9 @@ freely.
 
 ## Named filter presets (`{presets}` shorthand)
 
-Pass `filter: { presets: "name" }` (or CSV `"a,b,c"` for multiple) to apply a
-named adaptive filter bundle instead of writing a raw Qdrant filter manually.
-Thresholds are collection percentiles (e.g. p75 of `commitCount`) — they scale
-per repository. Cold-start fallbacks apply when stats are unavailable.
-
-**Mutually exclusive with raw filter.** `{ presets: "..." }` and a raw Qdrant
-filter object are a discriminated union — pass one OR the other, not both in the
-same call. Typed params (`language`, `minAgeDays`, `author`, etc.) AND-compose
-freely with `{presets}`.
-
-### Preset catalog (12 total)
-
-**Static — always available:**
-
-| Name            | What it isolates                                     |
-| --------------- | ---------------------------------------------------- |
-| `production`    | Excludes test/docs — hygiene, safe in any mode       |
-| `coreLogic`     | Excludes test/docs/config — core logic only, hygiene |
-| `securityPaths` | Path-risk signals (auth, crypto, secrets, etc.)      |
-
-**Require git trajectory:**
-
-| Name                | What it isolates                                           |
-| ------------------- | ---------------------------------------------------------- |
-| `freshLegacyEdits`  | Old code (high ageDays) recently modified                  |
-| `fragileSilo`       | Single-author, low-churn, high bug-fix rate                |
-| `panicZone`         | High churn + high bug-fix rate simultaneously              |
-| `godMethods`        | Very high per-chunk import density (structural complexity) |
-| `battleTested`      | High commit count + low bug-fix rate (stable + exercised)  |
-| `abandonedHotspots` | High churn in the past, then quiet for a long time         |
-
-**Require codegraph.symbols trajectory:**
-
-| Name             | What it isolates                                 |
-| ---------------- | ------------------------------------------------ |
-| `hubs`           | High call-graph fan-in (many callers)            |
-| `deadCandidates` | Zero callers, zero callees — potential dead code |
-| `unstableCore`   | High churn + high fan-in (dangerous shared code) |
-
-Names unavailable when their required trajectory isn't registered are gated out
-automatically. Read `tea-rags://schema/filters` for the live catalog with exact
-threshold definitions.
-
-### Inventory-vs-query rule
-
-A HARD specific filter (e.g. `fragileSilo`, `panicZone`) belongs to **inventory
-mode** — where the query is absent and you want a specific slice of the
-codebase. When a natural-language query is present, rank broadly without
-hard-filtering to preserve recall. Hygiene presets (`production`, `coreLogic`)
-are safe in either mode.
+`filter: { presets: "a,b" }` — catalog, gating, inventory-vs-query rule: guide
+above (`## Named filter presets`). Mutually exclusive with raw filter; typed
+params AND-compose with it.
 
 ### Examples
 
@@ -304,10 +266,17 @@ are safe in either mode.
   "metaOnly": true
 }
 
-// Triage: securityAudit rerank, security paths narrowed, Ruby only
+// Ask names dir words ("<a>/<b> paths") → pathPattern, NO securityPaths
 {
-  "query": "authentication token validation",
-  "language": "ruby",
+  "query": "<topic>",
+  "pathPattern": "**/{<a>,<b>}/**",
+  "rerank": "securityAudit"
+}
+
+// Ask names NO dir word ("security-sensitive code") → securityPaths preset
+{
+  "query": "<topic>",
+  "language": "<lang>",
   "filter": { "presets": "securityPaths" },
   "rerank": "securityAudit"
 }
@@ -333,31 +302,23 @@ OR-of-conditions across different fields, range on a non-typed numeric field.
 }
 ```
 
-For exact syntax and the full list of payload keys, **read the resource — do not
-invent syntax**:
-
-```
-ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")
-```
-
-Resource generated from the live registry; always reflects what THIS build
-supports. Do NOT memorize the payload key list — read it on demand.
+Exact syntax + payload keys: `tea-rags://guide/filters`, read before this object
+is written — never invent syntax or key names.
 
 ### Codegraph filters (only when codegraph is active)
 
-The `codegraph.file.*` / `codegraph.chunk.*` payload keys exist ONLY when prime
-`## Enrichment` lists `codegraph.symbols`; filtering on them against an index
-built without codegraph matches nothing. Examples:
+Typed params only — raw `codegraph.*` keys do not resolve (nested payload path).
+Exposed only when graph tools registered. Examples:
 
 ```jsonc
 // Architectural hubs — high-fan-in backbone files
-{ "filter": { "must": [{ "key": "codegraph.file.isHub", "match": { "value": true } }] } }
+{ "isHub": true }
 
 // High blast radius — many incoming call/import edges
-{ "filter": { "must": [{ "key": "codegraph.file.fanIn", "range": { "gte": 10 } }] } }
+{ "minFanIn": 10 }
 
-// Efferent-coupling sources (instability near 1 = depends on many, few depend on it)
-{ "filter": { "must": [{ "key": "codegraph.file.instability", "range": { "gte": 0.8 } }] } }
+// Efferent-coupling sources (instability near 1 = depends on many)
+{ "minInstability": 0.8 }
 ```
 
 `fanIn` / `isHub` are the edge-truth replacements for the `git`/`imports` proxy.
@@ -370,8 +331,8 @@ dominated by the highest-churn domain. To surface the rest, run a SECOND scan
 with the dominant domain negated:
 
 ```jsonc
-// Pass 1: full project, no pathPattern → identifies dominant domain (say "ingest")
-// Pass 2: same query, pathPattern: "!**/ingest/**"
+// Pass 1: full project, no pathPattern → identifies dominant domain <dir>
+// Pass 2: same query, pathPattern: "!**/<dir>/**"
 //         → surfaces risk zones in the rest of the codebase
 ```
 

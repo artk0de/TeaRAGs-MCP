@@ -90,12 +90,19 @@ describe("get_naming_lexicon", () => {
     expect(JSON.parse(result.content[0].text)).toEqual(answer);
   });
 
-  it("stays within the schema budget: description ≤ 300 chars, input schema ≤ 1.5 KB serialized", () => {
+  it("stays within the schema budget: description ≤ 400 chars, input schema ≤ 1.5 KB serialized", () => {
     const { config } = registered();
-    expect(config.description.length).toBeLessThanOrEqual(300);
+    expect(config.description.length).toBeLessThanOrEqual(400);
     // Converted the way the SDK lists a tool to clients.
     const inputSchema = toJsonSchemaCompat(config.inputSchema, { strictUnions: true, pipeStrategy: "input" });
     expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1536);
+  });
+
+  // Codex hand-listed a diff's names into names[] after review_changes had already judged them.
+  it("says a diff's names come from review_changes naming, never hand-listed into names[]", () => {
+    const { description } = registered().config;
+    expect(description).toMatch(/diff[^;]*review_changes[^;]*naming/i);
+    expect(description).toMatch(/never hand-list/i);
   });
 
   // bd tea-rags-mcp-433d2: CONFORMS is read as "the name is right" unless the contract says otherwise.
@@ -189,7 +196,7 @@ describe("get_naming_lexicon", () => {
     const { inputSchema, description } = registered().config;
     expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(false);
     expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(false);
-    expect(description).not.toMatch(/changes/);
+    expect(description).not.toMatch(/\bchanges\b/);
   });
 
   it("rejects `changes` or `files` beside a valid request, naming review_changes as the diff-review owner", () => {

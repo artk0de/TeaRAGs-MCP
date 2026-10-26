@@ -79,11 +79,12 @@ themes for you — omit any theme with no items; never invent a new theme key.
 | `docs`      | Documentation          | `docs(website)`, `docs(readme)`, `docs(blog)` — the user-facing docs       |
 | `fixes`     | Fixes                  | any **user-visible** `fix` outside the plugin (overrides scope mapping)    |
 
-The agent plugin (`.claude-plugin/**`: skills, rules, the dinopowers wrappers)
-is its own product: its skills and rules ARE markdown, so a `docs(plugin)`
-commit changes how the agent behaves and is a plugin change, never a
-documentation change. Keep the two apart — `plugin` holds everything under the
-plugin scopes, `docs` holds only the documentation site and README.
+The agent plugin (`plugins/**`, generated into `.claude-plugin/**` and
+`harness/**`: skills, rules, the dinopowers wrappers) is its own product: its
+skills and rules ARE markdown, so a `docs(plugin)` commit changes how the agent
+behaves and is a plugin change, never a documentation change. Keep the two apart
+— `plugin` holds everything under the plugin scopes, `docs` holds only the
+documentation site and README.
 
 A `docs` item names its surface with a plain leading marker: `README: ` for
 README changes, `Docusaurus: ` for the documentation site (`docs(website)`,

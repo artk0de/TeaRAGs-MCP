@@ -12,26 +12,31 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **CRITICAL: search-cascade is ONLY tool selection method.** Built-in Search,
-   Grep, Glob, `grep`, `rg`, `find` PROHIBITED for code discovery. Catch
-   yourself reaching for grep/search — STOP, use search-cascade decision tree.
-   ONLY acceptable fallback: ripgrep MCP, only after TeaRAGs tools returned no
-   results, and only for literal text (markers, phrases, regex). Identifiers
-   (class/method/constant) never: empty `find_symbol` → partial name, then
-   `hybrid_search` (search-cascade).
-3. **Follow search-cascade decision tree** for SEED tool selection.
+2. **CRITICAL: `tea-rags://guide/decision-tree` is ONLY tool selection method.**
+   Built-in Search, Grep, Glob, `grep`, `rg`, `find` PROHIBITED for code
+   discovery. Catch yourself reaching for grep/search — STOP, use
+   `tea-rags://guide/decision-tree` decision tree. ONLY acceptable fallback:
+   text search, only after TeaRAGs tools returned no results, and only for
+   literal text (markers, phrases, regex). Identifiers (class/method/constant)
+   never: empty `find_symbol` → partial name, then `hybrid_search`
+   (`tea-rags://guide/decision-tree`).
+3. **Follow `tea-rags://guide/decision-tree` decision tree** for SEED tool
+   selection.
 4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
-5. **Deduplicate by content overlap** — skip chunks >80% content overlap from
-   same domain/directory.
+5. **Deduplicate by content overlap** — same directory + >80% overlap → keep
+   only the one with richer signals (overlay labels), drop the other. Different
+   directories → ALWAYS keep both, whatever the overlap — cross-directory
+   repeats ARE the pattern being collected.
 6. **Group output by module/directory** — not flat list.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
 answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
 `rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `--force`: ask separately, keep working); subagent /
-linked worktree → never reindex. Protocol: `index-freshness` "Lag never licenses
-leaving tea-rags".
+`index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
+awaited; print `--force not run; reads continue`; then keep working); subagent /
+linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
+never licenses leaving tea-rags".
 
 ## Intent Classification
 
@@ -44,10 +49,11 @@ values passed:
 
 ## SEED Tool Selection
 
-**Follow search-cascade decision tree** for tool selection. Do NOT hard-code
-tool choice — search-cascade determines tool from query shape.
+**Follow `tea-rags://guide/decision-tree` decision tree** for tool selection. Do
+NOT hard-code tool choice — `tea-rags://guide/decision-tree` determines tool
+from query shape.
 
-This skill provides to search-cascade:
+This skill provides to `tea-rags://guide/decision-tree`:
 
 - **query**: extracted pattern/entity from $ARGUMENTS
 - **rerank**: from strategy table below
@@ -57,12 +63,12 @@ This skill provides to search-cascade:
 
 ## Strategy → Rerank Mapping
 
-| Strategy        | Rerank preset                                                                                     | Expand                                |
-| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **Collect**     | `relevance`                                                                                       | `find_similar` from each unique seed  |
-| **Spread**      | `relevance`                                                                                       | `find_similar` from best seed         |
-| **Antipattern** | `techDebt`                                                                                        | `find_similar` from problematic seeds |
-| **Reference**   | custom "proven": `{ similarity: 0.2, stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05 }` | `find_similar` from best seed         |
+| Strategy        | Rerank preset                                     | Expand                                |
+| --------------- | ------------------------------------------------- | ------------------------------------- |
+| **Collect**     | `relevance`                                       | `find_similar` from each unique seed  |
+| **Spread**      | `relevance`                                       | `find_similar` from best seed         |
+| **Antipattern** | `techDebt`                                        | `find_similar` from problematic seeds |
+| **Reference**   | `proven` (preset name, never a custom weight set) | `find_similar` from best seed         |
 
 **Antipattern rerank override:** for broad scope queries (rank_chunks path), use
 `refactoring` instead of `techDebt` — refactoring preset tuned for large
@@ -71,17 +77,20 @@ chunks + churn, techDebt favors age.
 ## Flow
 
 ```
-1. SEED — search-cascade tool + strategy rerank + pathPattern
+1. SEED — `tea-rags://guide/decision-tree` tool + strategy rerank + pathPattern
 2. EXPAND — find_similar from seed results (skip already-seen chunks)
-3. DEDUPLICATE — skip chunks with >80% content overlap from same domain
-4. GROUP — by module/directory
+3. DEDUPLICATE — state both branches in any dedup answer: same dir + >80%
+   overlap → keep richer-signals one; different dirs → ALWAYS keep both,
+   whatever the overlap
+4. GROUP — by top-level module directory (first 2 path segments after src/)
 5. OUTPUT — grouped list with file:line citations + overlay labels
 ```
 
 ### 1. SEED
 
-Apply search-cascade decision tree to determine tool. Use strategy's rerank
-preset. Set limit by tool:
+Apply `tea-rags://guide/decision-tree`; plan names the tool (identifier →
+`hybrid_search`, behaviour → `semantic_search`). Use strategy's rerank preset.
+Set limit by tool:
 
 - `rank_chunks`: limit=15
 - `semantic_search`: limit=10
@@ -92,6 +101,16 @@ Parameters always include: `metaOnly=false`, rerank from strategy table. Add
 `pathPattern` if scoped.
 
 Note chunk IDs from results for expansion step.
+
+**Validate SEED before EXPAND (MANDATORY — `tea-rags://guide/pagination`):**
+
+- **Disambiguation:** top-10 split across 2+ unrelated directory groups, none
+  > 70% → ask user which area, re-SEED with that `pathPattern`. Never pick one
+  > silently, never EXPAND both.
+- **No-match** (plan names all three signals + both thresholds): score spread
+  `(max−min)/max` < 0.06 · zero query-term overlap in top-5
+  paths/symbols/content · top-10 scattered over > 7 dirs. 2 of 3 → warn "may not
+  be relevant"; 3 of 3 → report no match, do NOT EXPAND noise.
 
 ### 2. EXPAND
 
@@ -112,7 +131,7 @@ coverage:
    modules. Finds semantically similar implementations in other domains,
    structurally different.
 3. Polyglot codebases: also run `find_similar` with `language` filter per
-   non-seed language (see Polyglot Rule in search-cascade).
+   non-seed language (see Polyglot Rule in `tea-rags://guide/decision-tree`).
 
 Track seen chunk paths. Skip already-seen.
 
@@ -148,12 +167,10 @@ Found: [N unique implementations across M modules]
 
 **Label mapping from overlay signals:**
 
-Use labelMap from `get_index_metrics` (loaded at session start by
-search-cascade). Signals scoped: `signals[language][signal][scope].labelMap`
-where scope is `"source"` or `"test"`. Prefer chunk's language + scope
-thresholds when available. If absent in context, call `get_index_metrics`
-yourself. Map raw signal values to nearest labelMap threshold. See
-`tea-rags://schema/signal-labels` for all label definitions.
+Filtering / labelling by signal → read
+`tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap`
+(ReadMcpResourceTool) once; chunk's language + scope (`source` / `test`) bands.
+Map raw value to nearest band. Label meanings: `tea-rags://guide/signal-labels`.
 
 If **Antipattern** strategy: add `⚠️` prefix to problematic implementations. If
 **Reference** strategy: add `✓` prefix to best example.

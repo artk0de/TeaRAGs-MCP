@@ -28,11 +28,12 @@ import type { RegisterToolFn } from "./middleware/error-handler.js";
 
 const REVIEW_CHANGES_DESCRIPTION =
   "Review one working-tree change: every diff-scoped report in one call, sections keyed by id. " +
+  "naming = verdicts on every declaration the change adds, judged against project vocabulary — the complete list; " +
+  "never hand-list a diff's names into get_naming_lexicon. " +
   "Reads the change once — every changed file (no cap), untracked included; changes.base (default HEAD) resolved to its " +
   "merge-base with HEAD = what THIS branch changed; path beside project = linked worktree of the same repo. " +
   "sections = ALLOWLIST, default all registered; unknown id = error; a section NOT requested is OMITTED from the " +
   "map, a requested one whose substrate is missing answers built:false+reason — absence is not not-built. " +
-  "naming: declarations the change adds, judged against project vocabulary (the naming-lexicon review, verbatim). " +
   "incompleteChange: co-change partners of the diff's files the diff does NOT touch — findings pass the " +
   "co-change significance gate (Poisson test vs configuration null n_p*n_q*Qs/M^2, BH q=0.05 over every pair " +
   "touching the diff, history minus the diff's own commits; summary cochangeSignificance + notSignificant), then " +

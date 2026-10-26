@@ -14,28 +14,38 @@ argument-hint: [project path]
 
 Automated install + config of TeaRAGs MCP server.
 
-## How to use this skill
+Per step: read `steps/<file>` → lookups in `reference.md` (recommendation
+tables, version managers, env vars, tune defaults) → execute → next step.
 
-1. Read step file for current step from `steps/`
-2. Read `reference.md` for lookup tables (recommendations, version managers, env
-   vars, defaults)
-3. Execute step
-4. Next step
+## Invariants — state them in every install answer
+
+Hold for every path (resume, Docker, embedded, ONNX, subagent, plan-only
+answer). Name them to the user even when the step file is not read yet:
+
+- **MCP server command = `tea-rags server`** (global binary). NEVER
+  `npx tea-rags server`. Step 8 registers it; Docker Qdrant → plus `QDRANT_URL`,
+  embedded → omit `QDRANT_URL`.
+- **Node.js 24+** (not 22+). Lower version → upgrade; block progress until
+  `node -v` ≥ 24, then re-run `detect-environment` to refresh PATH.
+- **tea-rags installed globally** — `npm install -g tea-rags`. Never `npx`.
+- **Embedded Qdrant** → setup triggers postinstall download via global
+  `tea-rags --version` (never `npx`). Binary missing → error tells user to run
+  `npm install -g tea-rags`, then retry. Docker Qdrant → no postinstall trigger.
+- Read-only / subagent / "just plan it" context → still answer with the step
+  sequence and these invariants; never decline to describe the wizard.
 
 ## Script Location
 
 All scripts in `${CLAUDE_PLUGIN_ROOT}/scripts/setup/`.
 
-**First: determine OS to select script set.**
+**First: OS → script set.** Run `uname -s`:
 
-Run `uname -s` (or via Bash tool)
+- "Darwin" / "Linux" → `unix/` scripts (`.sh`)
+- "MINGW" / "MSYS" / "CYGWIN" → `unix/` scripts (Git Bash)
+- PowerShell (Windows native) → `windows/` scripts (`.ps1`)
 
-- Output contains "Darwin" or "Linux" → use `unix/` scripts (`.sh`)
-- Output contains "MINGW", "MSYS", "CYGWIN" → use `unix/` scripts (Git Bash)
-- If PowerShell detected (Windows native) → use `windows/` scripts (`.ps1`)
-
-Store chosen prefix (e.g. `SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts/setup/unix"`),
-use for all subsequent script calls.
+Store prefix (e.g. `SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts/setup/unix"`), use
+for all script calls.
 
 ## Steps
 
@@ -46,7 +56,7 @@ use for all subsequent script calls.
 | 2    | `steps/step-2-node.md`         | Install Node.js 24+                         |
 | 3    | `steps/step-3-tea-rags.md`     | Install tea-rags package                    |
 | 4    | `steps/step-4-embedding.md`    | Choose & install embedding provider         |
-| 4L   | `steps/step-4-llama-server.md` | llama-server: GPU host sheet + fallback     |
+| 4L   | `steps/step-4-llama-server.md` | llama-server: GPU host / this Mac           |
 | 5    | `steps/step-5-qdrant.md`       | Choose & setup Qdrant                       |
 | 6    | `steps/step-6-tune.md`         | Tune performance parameters                 |
 | 7    | `steps/step-7-git.md`          | Configure git analytics                     |
@@ -56,37 +66,31 @@ use for all subsequent script calls.
 | 10   | `steps/step-10-verify.md`      | Verify setup                                |
 | 11   | `steps/step-11-freshness.md`   | Offer auto-update + worktree mode           |
 
-**Reference**: `reference.md` — recommendation tables, version manager options,
-env vars, tune defaults.
-
 ## Error Recovery
 
-If a script fails (exit code 1):
+Script fails (exit 1) → show stderr; progress file keeps last successful state;
+suggest re-running `/tea-rags-setup:install` (resumes from failed step).
 
-1. Show stderr error to user
-2. Progress file retains last successful state
-3. Suggest re-running `/tea-rags-setup:install` — resumes from failed step
+**Common issues:**
 
-**Common issues to check:**
-
-- **Network/proxy errors** (ECONNREFUSED, timeout, SSL): ask if behind corporate
-  proxy. If yes: "Set proxy before re-running:
+- **Network/proxy** (ECONNREFUSED, timeout, SSL): ask if behind corporate proxy.
+  Yes → "Set proxy before re-running:
   `export HTTP_PROXY=http://proxy:port HTTPS_PROXY=http://proxy:port`"
-- **Permission errors** (EACCES): suggest sudo or fix ownership
-- **"command not found" after install**: suggest restart terminal or source
-  shell profile (`source ~/.bashrc` / `source ~/.zshrc`)
-- **jq/curl missing**: scripts report explicitly — follow install instructions
-  in error message
+- **Permission** (EACCES): sudo or fix ownership
+- **"command not found" after install**: restart terminal or source profile
+  (`source ~/.bashrc` / `source ~/.zshrc`)
+- **jq/curl missing**: scripts say so — follow install instructions in error
 
 ## Do NOT
 
 - Run scripts without checking progress first
 - Skip AskUserQuestion for user choices (embedding, qdrant)
 - Run llama-server or its printed lines yourself on GPU host — print, hand to
-  user. Local fallback lines: hand to user too
+  user. Local fallback lines: hand to user too. Only exception: §4L-local lines,
+  run via Bash after ONE user consent
 - Use Ollama as llama-server fallback — `EMBEDDING_FALLBACK_URL` = local
   llama-server only
 - Proceed past a checkpoint without verification
 - Modify MCP config for other servers
-- Run indexing — that is `/tea-rags:index` after restart. (Step 9 registers
-  alias only — records path mapping, does NOT index.)
+- Run indexing — `/tea-rags:index` after restart. (Step 9 registers alias only,
+  does NOT index.)

@@ -117,3 +117,212 @@ No iteration needed.
   `limit: N*3`. Phase 8 should test with 50+ file plans — may need chunking
   (first N files → call 1; remaining → call 2) while still aggregating by
   `relativePath`.
+
+## 2026-10-23 — harness-context-economy re-run (Task 12)
+
+- Subject model: sonnet
+- Result: 15/15 PASS (100%) (intent-graded; evals still say custom rerank
+  {imports,churn,ownership} but current SKILL.md prescribes rerank
+  'blastRadius'; subject followed SKILL.md. Strict literal grading would FAIL
+  1,2,3,4,9,10,11,14 on that stale rerank text)
+- Last recorded rate: 14/14 (100%)
+- Delta: 0pp
+- FAIL list: none (stale-expectation note above)
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex run (Task 14)
+
+- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
+  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
+  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
+- Result: 2/15 PASS (13%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: 15/15 (100%).
+- CODEX-ONLY (harness regression candidates):
+  - `eval-1` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-2` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-3` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-4` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-6` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-7` — no per-file aggregation table
+    (dominantAuthor/commitCount/ageDays/bugFixRate/taskIds) or shared-taskId
+    coordinated-change candidates; no enrichment call [model behaviour]
+  - `eval-8` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-9` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-10` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-11` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-14` — no ONE brace-expanded semantic_search impact enrichment
+    (blastRadius) before $writing-plans; used
+    find_symbol/hybrid_search/get_callers instead (wrapper Step 2 not followed)
+    [skill body not applied / model behaviour]
+  - `eval-5` — no-file-list edge: invoked $dino-brainstorming and ran an
+    un-pathPattern'd semantic_search instead of reporting 'no file list' and
+    going to $writing-plans directly [model behaviour]
+  - `eval-15` — Task name VendorEnvelopeFetcher never checked:
+    get_naming_lexicon called for 'scope' without names=[...] and no
+    MISFIT/NEW_TERM verdict before fixing the name [model behaviour]
+- Both-fail count: 0.
+
+## 2026-10-23 — Cursor run (Task 15)
+
+- Subject: Cursor CLI (`agent` 2026.10.22-27dcf5f), model `auto`, plugins from
+  harness/cursor (tea-rags + dinopowers), sessionStart hook digest, plan-only.
+- Partial run — Cursor free-plan usage limit stopped the eval after 7 of 45
+  parts.
+- Result: 14/15 PASS (93%) over 15 graded cases (N/A excluded: 0)
+- Claude T12 for comparison: 15/15 (100%); Codex T14: 2/15 (13%)
+- CURSOR-ONLY: none
+- Both-fail (all) count: 0
+- FAIL list: eval-9 (vs-claude) - Skips Step 2-3 enrichment on user "не парься с
+  tea-rags" ("user override beats Iron Rule"); expected enrichment under
+  pressure. Codex also FAIL.
+- Notes: Intent-graded: rerank "blastRadius" accepted instead of stale custom
+  {imports,churn,ownership} (same as Claude T12); [no-superpowers] on chaining
+  into writing-plans.
+
+## 2026-10-23 — evals-to-100 re-run (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind)
+- Result: 15/15 PASS (100%) over 15 scored cases (0 superseded); intent-graded
+  (evals still cite custom rerank, SKILL.md prescribes blastRadius)
+- Task 12 rate: 15/15 (100%)
+- Delta: 0pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
+  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
+  (plan-only)
+- Result: 14/15 PASS (93%) over 15 graded cases (N/A 0); intent-graded on rerank
+  (expected/ still cites custom weights, stale?)
+- Codex T14 for comparison: 2/15 (13%)
+- Claude T22 for comparison: 15/15 (100%)
+- FAIL list:
+  - `eval-7` — FAIL ( still; Claude T22 PASS ) aggregation: one row per file +
+    shared taskIds, but never names
+    dominantAuthor/commitCount/ageDays/bugFixRate/taskIds fields
+
+## 2026-10-23 — evals-to-100 re-run round 2 (Task 22)
+
+- Subject model: sonnet (plan-only simulation, blind; graded strictly and
+  literally against current evals.json)
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 1 (Task 22) rate: 15/15 (100%)
+- Delta: +0pp
+- FAIL list: none
+- Notes: rerank now graded literally (blastRadius with codegraph on) — all cases
+  comply. eval-12 listed the directory via semantic_search level="file" metaOnly
+  and declined Glob/ls (the acceptable alternatives) — wrapper not triggered,
+  PASS. eval-6 still runs Step 3.5 (patterns/lexicon) for the new module after
+  the empty-scan report — extra, harmless.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 2 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
+  / dinopowers 0.24.4.
+- Result: 12/15 PASS (80.0%) (N/A excluded: 0).
+- Round-1 Codex: 14/15 (93.3%). Delta: -13.3 pp.
+- FAIL list:
+  - `eval-2` — rerank/metaOnly/limit 6 right, but pathPattern brace expansion
+    never stated (only 'scoped to' the two files) [strict-literal]
+  - `eval-7` — one row per file + shared taskIds, but never names
+    dominantAuthor/commitCount/ageDays/bugFixRate per file
+  - `eval-15` — get_naming_lexicon names+pathPattern, but concept+language
+    elided ('…'), MISFIT->suggestion and NEW_TERM->project-term-if-same not
+    stated
+
+## 2026-10-23 — evals-to-100 re-run round 3 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.12 / dinopowers 0.24.5; contexts rebuilt from live
+  hook output
+- Result: 13/15 PASS (87%) over scored cases (superseded: 0)
+- Round 2 rate: 100% — delta: -13 pp
+- FAIL list:
+  - eval-1: FAIL — answer explicitly calls find_similar
+    (extract-project-patterns cascade in Step 3.5), which expected lists in
+    mustNotCall | eval stale: current SKILL.md Step 3.5 mandates
+    tea-rags:extract-project-patterns (find_similar/semantic_search per level)
+    for code-modification Tasks; expected's find_similar ban predates Step 3.5
+    and was meant for the enrichment call only
+  - eval-4: FAIL — answer adds a hybrid_search cross-check (after get_callers)
+    which expected lists in mustNotCall | eval stale: SKILL.md "Iron Rule" now
+    says find_symbol/get_callers/hybrid_search "may follow Step 2 as depth,
+    never replace it"; expected bans them outright
+- Notes: Both FAILs are eval-stale: mustNotCall lists (eval-1 find_similar,
+  eval-4 hybrid_search/get_callers) predate SKILL.md Step 3.5
+  (extract-project-patterns cascade) and the Iron Rule 'may follow Step 2 as
+  depth' clause. Graded literally against expected.
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 3 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.12
+  / dinopowers 0.24.5.
+- Result: 12/15 PASS (80.0%) (N/A excluded: 0).
+- Round-2 Codex: 12/15 (80.0%). Delta: ±0.0 pp.
+- FAIL list:
+  - `eval-7` — per-file columns named, but no aggregation by relativePath (one
+    row per file) and no keep-empty-files rule.
+  - `eval-10` — refuses impactAnalysis and picks blastRadius/custom, but does
+    not call the custom fallback an import proxy.
+  - `eval-14` — metaOnly=true kept, but content fetched via find_symbol instead
+    of the required separate semantic_search metaOnly=false.
+
+## 2026-10-23 — evals-to-100 re-run round 4 (Task 22)
+
+- Subject model: sonnet (lane C; graded by opus, strict/literal)
+- Plugin text: tea-rags 0.46.13 / dinopowers 0.24.6; contexts rebuilt from live
+  hook output
+- Result: 15/15 PASS (100%) over scored cases (superseded: 0)
+- Round 3 rate: 87% — delta: +13 pp
+- FAIL list: none
+- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
+  text present in subject context but declared void (limitation).
+
+## 2026-10-23 — Codex re-run round 4 (Task 22)
+
+- Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.13
+  / dinopowers 0.24.6; Codex core adds "read ONE file per command; output past
+  ~10k tokens loses its middle".
+- Result: 13/15 PASS (86.7%) (N/A excluded: 0).
+- Round-3 Codex: 12/15 (80.0%). Delta: +6.7 pp.
+- FAIL list:
+  - `eval-10` — refuses impactAnalysis, codegraph-state rerank, but custom
+    fallback not called an import proxy
+  - `eval-15` — get_naming_lexicon without concept/language/pathPatternL1;
+    MISFIT -> suggestion / NEW_TERM -> project term or justification not stated
+    (regression vs R3)
