@@ -61,8 +61,12 @@ export interface PayloadProjectionMode {
  */
 const LOCATOR_FIELDS = ["relativePath", "symbolId", "startLine", "endLine", "chunkType", "language", "signature"];
 
-/** A content row: the locator plus the body and the prev/next drill ids. */
-const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation"];
+/**
+ * A content row: the locator plus the body and the prev/next drill ids.
+ * `symbols` is the body of a find_symbol directory row (N2) — the file's
+ * top-level symbols; no other row carries a top-level `symbols` key.
+ */
+const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols"];
 
 /**
  * Narrow every result's payload to `fields`, and report the paths that landed

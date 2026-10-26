@@ -191,6 +191,12 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       expect(response.empty).toBeUndefined();
     });
 
+    it("keeps each file row's top-level symbols through the default payload projection", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/" });
+
+      expect(response.results.every((r) => Array.isArray(r.payload?.symbols))).toBe(true);
+    });
+
     it("explains an unknown path with the nearest indexed paths", async () => {
       const response = await facade().findSymbol({ collection: "code_x", relativePath: "src/lib/nope/h.ts" });
 
