@@ -36,6 +36,7 @@ import type {
   SymbolResolutionTarget,
 } from "./codegraph.js";
 import type { TestFileConvention } from "./file-classification.js";
+import type { IngestIgnoreContribution } from "./ingest-config.js";
 import type { ChunkSetBumpScopes } from "./rechunk.js";
 import type { SignalFloors } from "./trajectory.js";
 
@@ -712,6 +713,14 @@ export interface LanguageSymbolResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: acquire what the pass needs from OUTSIDE the process before it
+   * starts — an external analysis that can take minutes (bd s3i8m.6 R2b).
+   * Awaited once per language per pass-2, before `prepareResolvePass`; never
+   * rejects, a failed acquisition is the resolver's own absence. Mirrors
+   * `CallResolver.warmResolvePass`.
+   */
+  warmResolvePass?: (plan: SymbolResolutionPassPlan) => Promise<void>;
+  /**
    * Optional: pass-2's visit order for this language, as groups (bd
    * tea-rags-mcp-vtuu4); `undefined` keeps the spill order. Mirrors
    * `CallResolver.planResolveVisits`.
@@ -1086,6 +1095,293 @@ export type ManifestFilesReader = (
  */
 export type DeclaredDependenciesByLanguage = ReadonlyMap<string, ReadonlySet<string>>;
 
+/** The closed std-trait associated types a Rust external signature table answers (bd s3i8m.7). */
+export type RustClosedAssoc = "Deref::Target" | "Iterator::Item" | "IntoIterator::IntoIter" | "Future::Output";
+
+/**
+ * A type expression read from external (std / dependency) Rust source. `type`
+ * names are canonical paths (`std::sync::MutexGuard`), generic parameters stay
+ * bare (`T`), `Self` stays `Self`, a primitive stays its keyword and `()` is the
+ * empty tuple. `genericParameters` are POSITIONAL over the owner's type
+ * arguments — the impl's self type for a member or associated type, the
+ * declaration for a field or alias — so a substitution reads the receiver's
+ * args by index; a position the impl fixes to a concrete type is `"_"`.
+ */
+export interface RustExternalTypeExpr {
+  readonly type: TypeRef;
+  readonly genericParameters: readonly string[];
+}
+
+/** An inherent `pub fn` of an external type. */
+export interface RustExternalMember {
+  /** Absent when the declared return is not a nominal shape (`impl Trait`, slice, pointer, fn). */
+  readonly returns?: RustExternalTypeExpr;
+  /** The method's own type parameters — a receiver never binds them. */
+  readonly methodGenericParameters: readonly string[];
+  readonly selfKind: "none" | "value" | "ref" | "mut";
+  /** `#[stable]` in a std crate; always true for a dependency crate (no stability attributes). */
+  readonly stable: boolean;
+}
+
+/** A module-level `pub fn` of an external crate (bd s3i8m.7 T-A1). */
+export interface RustExternalFunction {
+  /** Absent when the declared return is not a nominal or tuple shape. `genericParameters` is always empty: no receiver binds them. */
+  readonly returns?: RustExternalTypeExpr;
+  /** The function's own type parameters — the call site never spells them in a way the table reads. */
+  readonly functionGenericParameters: readonly string[];
+  /** `#[stable]` in a std crate; always true for a dependency crate. */
+  readonly stable: boolean;
+}
+
+/** Every fact the table holds about one canonical external type. */
+export interface RustExternalTypeSignatures {
+  /** `"ambiguous"`: cfg arms / impls declare the member with different returns. */
+  readonly inherent: Readonly<Record<string, RustExternalMember | "ambiguous">>;
+  readonly fields: Readonly<Record<string, RustExternalTypeExpr>>;
+  readonly associated: Readonly<Partial<Record<RustClosedAssoc, RustExternalTypeExpr | "ambiguous">>>;
+  /** Trait (canonical path, or the spelled path when the trait lies outside the extraction) → member names. */
+  readonly traitMembers: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
+ * The serializable (JSON-safe) external signature table one extraction yields —
+ * what a disk cache stores and `RustExternalSignatureTable` answers from.
+ * `paths` maps every PUBLIC spelling of a type-like item to its canonical path
+ * (the shortest public path, `std` before `alloc` before `core` on a tie); an
+ * item no public path reaches (`std::sys::*`) has no key anywhere.
+ */
+export interface RustExternalSignatureTableData {
+  readonly crates: readonly string[];
+  readonly paths: Readonly<Record<string, string>>;
+  readonly types: Readonly<Record<string, RustExternalTypeSignatures>>;
+  readonly aliases: Readonly<Record<string, RustExternalTypeExpr>>;
+  /**
+   * The value namespace's `paths`: every public spelling of a free function →
+   * its canonical path. Absent on a table built without the function namespace.
+   */
+  readonly functionPaths?: Readonly<Record<string, string>>;
+  /** Canonical path → the function; `"ambiguous"` when cfg arms declare different returns. */
+  readonly functions?: Readonly<Record<string, RustExternalFunction | "ambiguous">>;
+}
+
+/**
+ * Signatures of Rust code outside the project (std/core/alloc, registry and git
+ * dependencies), read from their source (bd s3i8m.7). Every answer is
+ * `undefined` when the table does not know — never a guess.
+ */
+export interface RustExternalSignatureTable {
+  /** Canonical path a spelling names from the caller's file (`Mutex` + `use std::sync::Mutex;` → `std::sync::Mutex`). */
+  canonicalType: (spelling: string, importText: readonly string[]) => string | undefined;
+  inherentMember: (typePath: string, member: string) => RustExternalMember | "ambiguous" | undefined;
+  associatedType: (typePath: string, assoc: RustClosedAssoc) => RustExternalTypeExpr | undefined;
+  field: (typePath: string, field: string) => RustExternalTypeExpr | undefined;
+  /** Whether a trait impl written for the type declares `member` (`MutexGuard` → `fmt`, `deref`, `drop`). */
+  traitImplDeclares: (typePath: string, member: string) => boolean;
+  /** Public type alias expansion (`std::sync::LockResult` → `Result<T, PoisonError<T>>`). */
+  alias: (typePath: string) => RustExternalTypeExpr | undefined;
+  /**
+   * Canonical path of a free function a spelling names from the caller's file
+   * (`channel` + `use std::sync::mpsc::channel;`, `mpsc::channel` + `use std::sync::mpsc;`).
+   * No prelude arm: the prelude exports no free function a receiver is typed from.
+   */
+  canonicalFunction: (spelling: string, importText: readonly string[]) => string | undefined;
+  freeFunction: (path: string) => RustExternalFunction | "ambiguous" | undefined;
+  readonly identity: string;
+}
+
+/** One `.rs` file of a crate outside the project, as the extractor reads it. */
+export interface RustExternalSourceFile {
+  readonly crate: string;
+  /** Path relative to the crate's `src/` directory (`sync/poison/mutex.rs`). */
+  readonly relPath: string;
+  readonly source: string;
+}
+
+/**
+ * The sources of ONE cacheable extraction unit — the std/core/alloc trio of a
+ * toolchain, or one dependency crate at one exact version.
+ */
+export interface RustExternalSourceSet {
+  /**
+   * Toolchain- or version-exact cache key, without the extractor version:
+   * `std/<rustc commit hash>`, `crates/<name>-<version>`, `crates/<name>-git-<rev7>`.
+   */
+  readonly cacheKey: string;
+  /** Read the sources now; `undefined` when the set is over the size cap or unreadable. */
+  readSources: () => readonly RustExternalSourceFile[] | undefined;
+}
+
+/** What the disk holds for one project: the toolchain's library and the dependencies its code names. */
+export interface RustExternalSourcesOfProject {
+  /** Absent when no `rust-src` is found (no `rustc`, no component, no `RUST_SRC_PATH`). */
+  readonly std: RustExternalSourceSet | undefined;
+  /** Dependencies a project `use` head names, resolved through `Cargo.lock`, sorted by cache key. */
+  readonly dependencies: readonly RustExternalSourceSet[];
+  /** sha256 of the project's `Cargo.lock`; absent without one. */
+  readonly lockDigest: string | undefined;
+  /** Named dependencies whose source is not under `CARGO_HOME` (never fetched). */
+  readonly missingCrates: readonly string[];
+}
+
+/**
+ * The disk side of the Rust external signature table (bd s3i8m.7): locating
+ * sources and the extracted-table cache. A port, so `domains/language` stays a
+ * leaf — the composition layer injects the concrete adapter through
+ * `LanguageFactory`. Total: every failure is an absence, never a throw.
+ */
+export interface RustExternalSignatureSources {
+  locate: (projectRoot: string) => RustExternalSourcesOfProject;
+  /** A cached extraction under `key` (cache key + extractor version); a corrupt file is dropped and reads as a miss. */
+  readCached: (key: string) => RustExternalSignatureTableData | undefined;
+  /** Atomic write (tmp + rename); a failed write is silent — the next run extracts again. */
+  writeCached: (key: string, data: RustExternalSignatureTableData) => void;
+  /** Dependency crates with more `.rs` bytes than this are skipped; part of the table identity. */
+  readonly sizeCapBytes: number;
+}
+
+/**
+ * Where the rustc call-site driver says one call site's callee is defined
+ * (bd s3i8m T6; row mapping: research/rustc-driver/SPEC.md §3).
+ */
+export interface RustCallSiteDefinition {
+  /** `rustc <crate> <resolved impl path, else callee path>`; an indirect local is `rustc local <kind> <name>`. */
+  readonly symbol: string;
+  /** The crate the callee is defined in: `std`, `core`, `alloc`, a dependency or a workspace crate. */
+  readonly package: string;
+  /** True when the definition lies under the project root — the project's own code. */
+  readonly inProject: boolean;
+  /** Project-relative file of the definition; present iff `inProject`. */
+  readonly relPath?: string;
+  /** 1-based line of the definition; present iff `inProject`. */
+  readonly line?: number;
+  /** The callee's own name; `""` for a local. */
+  readonly name: string;
+  /** What the callee is: a fn / method, a type (constructor), a macro, a local binding, else `other`. */
+  readonly kind: "callable" | "type" | "macro" | "local" | "other";
+  /** The trait of the impl the callee is a member of; absent for an inherent or free callee. */
+  readonly implTrait?: string;
+  /**
+   * The trait of a trait-BODY member — the declaration, which proves the trait
+   * and not the impl a call dispatches to (bd s3i8m.6 R3c); absent for an impl
+   * member, a free callee and a non-callable.
+   */
+  readonly declaringTrait?: string;
+  /** True when the callee's crate is a workspace crate, not a dependency. */
+  readonly packageInProject: boolean;
+  /**
+   * The dispatched impl is `#[automatically_derived]`: derive output, neither
+   * a table symbol nor an external call — its site belongs to no in-project
+   * definition.
+   */
+  readonly implIsDerived?: boolean;
+  /**
+   * The callee is a local binding, param or field whose type is a closure, a
+   * fn pointer or an Fn-bound param / trait object (RESIDUAL.md R4): `kind`
+   * is `local`, nothing is defined, and no table symbol is the target.
+   */
+  readonly indirectCallee?: RustIndirectCalleeKind;
+  /**
+   * The definition was GENERATED by a macro the project invoked (format 4):
+   * no source symbol of `name` sits at its line, so no namesake may stand in.
+   */
+  readonly defExpansion?: RustDefinitionExpansion;
+}
+
+/**
+ * The macro whose expansion generated a callee definition (format 4,
+ * research/rustc-driver/SPEC.md §3): the outermost expansion the project's
+ * source invoked.
+ */
+export interface RustDefinitionExpansion {
+  readonly kind: "bang" | "derive" | "attr";
+  /** The invoked macro's name. */
+  readonly macro: string;
+  /** `def_path_str` of the macro definition. */
+  readonly macroDefPath: string;
+  /** The macro is defined under the project root (a `macro_rules!` or a workspace proc-macro crate). */
+  readonly macroInProject: boolean;
+  /** In-project macros only: the definition's file, 1-based line, and the name declared there (a proc macro's fn). */
+  readonly macroDefRelPath?: string;
+  readonly macroDefLine?: number;
+  readonly macroDefName?: string;
+}
+
+/** How an indirect callee's type hides its target (RESIDUAL.md R4). */
+export type RustIndirectCalleeKind = "closure" | "fnPointer" | "fnParam";
+
+/**
+ * Call-site → definition lookup over one rustc driver run of a project
+ * (bd s3i8m T6). `null` when the driver emitted no source row at the position
+ * (not opted in, a crate that failed under the pin, cfg-disabled code, a
+ * macro-produced token, two units disagreeing).
+ */
+export interface RustCallSiteIndex {
+  /** `line` is 1-based; `utf16Col` is 0-based and names the START of the callee name token. */
+  definitionAt: (relPath: string, line: number, utf16Col: number) => RustCallSiteDefinition | null;
+  /** The runner's envKey + units digest. */
+  readonly identity: string;
+}
+
+/**
+ * How one acquisition of a project's rustc call-site index settled. `latched`
+ * is a persisted refusal (build failure, budget, toolchain) that stands until
+ * the environment changes; `skipped` means nothing was attempted.
+ */
+export type RustCallSiteAcquisition =
+  | {
+      kind: "indexed";
+      index: RustCallSiteIndex;
+      cacheHit: boolean;
+      wallMs?: number;
+      /** Unit files the index was decoded from. */
+      units?: number;
+      /** Crate targets that failed to compile under the pin; their sites answer null. */
+      failedCrates?: readonly string[];
+    }
+  | { kind: "latched"; reason: string; detail: string; hint?: string }
+  | {
+      kind: "skipped";
+      /**
+       * `disabled` = switched off (`CODEGRAPH_RUST_DRIVER=off`); `unavailable` =
+       * no driver and no pinned toolchain with rustc-dev (`hint` says how to
+       * install one); `noBulkNoCache` = admission refused a run and no earlier
+       * run exists.
+       */
+      reason: "disabled" | "unavailable" | "noBulkNoCache";
+      hint?: string;
+    };
+
+/**
+ * Whether an acquisition that misses its cache may run the driver, decided by
+ * the domain over the project's `.rs` files the adapter walked (repo-relative).
+ */
+export type RustCallSiteAdmission = (projectRustRelPaths: readonly string[]) => "spawn" | "reuseOnly";
+
+/**
+ * `codegraph.rustDriver` as plain data, plus who may spawn: the working-tree
+ * graph build runs under a short wall budget and must never start `cargo
+ * check`, so it serves the previous run only (`spawn: "never"`).
+ */
+export interface RustCallSiteSourceConfig {
+  enabled: boolean;
+  path?: string;
+  /** Parallel rustc processes; absent = the runner's `max(1, cores / 2)`. */
+  jobs?: number;
+  timeoutSec: number;
+  maxRssMb: number;
+  spawn: "allowed" | "never";
+}
+
+/**
+ * The port the Rust resolver acquires its rustc call-site index through
+ * (bd s3i8m T6). The composition layer injects the adapter through
+ * `LanguageFactory`, as it does `RustExternalSignatureSources`.
+ */
+export interface RustCallSiteSource {
+  /** Never rejects. */
+  acquire: (request: { projectRoot: string; admission: RustCallSiteAdmission }) => Promise<RustCallSiteAcquisition>;
+}
+
 /**
  * One schema table and the instance-accessor names its columns synthesize on the
  * owning model. The COLUMN→accessor expansion (reader / writer / query
@@ -1340,6 +1636,12 @@ export interface LanguageCapability {
    * language with no test-file convention (bash, markdown).
    */
   testFiles?: TestFileConvention;
+  /**
+   * What of this language's own build and vendoring output stays out of the
+   * index — aggregated by `languageIngestIgnoreContribution()` and injected into
+   * the ingest scanner. Absent for a language that leaves nothing behind.
+   */
+  ingestIgnore?: IngestIgnoreContribution;
   codegraph: {
     tier: CodegraphTier | TypingTieredCodegraph;
     tech: string;

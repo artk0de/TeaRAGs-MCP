@@ -5,6 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
   type App,
@@ -106,6 +107,8 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       // Drift is a property of the INDEX — a working tree is checked at its base.
       const drift = await app.checkIndexDrift({ path: status.indexPath ?? path, consume: false });
       if (drift) text += `\n\n## Drift\n${drift}`;
+
+      if (status.rustcDriver) text += `\n\n${formatRustcDriverLine(status.rustcDriver)}`;
       return formatMcpText(text);
     },
   );

@@ -1,3 +1,5 @@
+import type { IgnoredDirectoryMarker } from "../../../contracts/types/ingest-config.js";
+
 /**
  * Built-in ignore patterns applied by FileScanner BEFORE user .gitignore/
  * .contextignore. Covers framework build artefacts, language caches, IDE
@@ -44,7 +46,9 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
   ".bundle/",
   "vendor/bundle/",
 
-  // Java/Kotlin (Maven/Gradle)
+  // Java/Kotlin/Scala build output (Maven, sbt). Cargo uses the same name but
+  // declares it itself (`domains/language/rust/ingest-ignore.ts`) — this entry
+  // is not Rust's, and dropping it would not un-ignore a Cargo `target/`.
   "target/",
   ".gradle/",
 
@@ -113,4 +117,22 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
   "!*.config.json",
   "!composer.json",
   "!deno.json",
+];
+
+/**
+ * Built-in, language-agnostic directories recognised by their contents (see
+ * `IgnoredDirectoryMarker`): vendored suites whose location is a project's
+ * choice, so no path pattern finds them and no name is safe to ignore.
+ *
+ * The web-platform-tests suite, vendored by browser engines (servo keeps it at
+ * `tests/wpt/tests`, ~67k admitted files — 97% of the tree). Its root carries the
+ * `wpt` launcher, `lint.ignore` and the `resources/testharness.js` harness; a
+ * directory merely named `wpt`, or an engine's own test directory beside the
+ * suite carrying one `lint.ignore`, holds not all three.
+ */
+export const BUILTIN_IGNORED_DIRECTORY_MARKERS: readonly IgnoredDirectoryMarker[] = [
+  {
+    reason: "vendored upstream web-platform-tests suite",
+    entries: ["wpt", "lint.ignore", "resources/testharness.js"],
+  },
 ];

@@ -1,0 +1,7 @@
+# Dependencies are vendored (`cargo vendor --versioned-dirs vendor`) so the driver builds
+# offline on first use: `cargo build --release --offline`.
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

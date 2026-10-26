@@ -79,6 +79,10 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
   empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code.
+- `rustc driver: unavailable` (prime / `get_index_status` / `index_codebase`) →
+  tell the user ONCE per session: Rust call edges static-only (lower bound),
+  quote the install command from that line; never install yourself; never claim
+  "no callers" / "dead code" from the Rust graph then.
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → `Read`,
   no confirm question. "Whole file"/"весь файл"/"целиком"/"for context" without
   that order → `find_symbol` (hit's `symbolId`, then file outline), print

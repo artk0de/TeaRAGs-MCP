@@ -284,7 +284,10 @@ fn run() {
     expect(f.edges().filter((edge) => edge.targetSymbolId === "Product#finish")).toEqual([]);
   });
 
-  it("refuses wildcard imports rather than guessing a same-file callee", () => {
+  // Moved pin: an item the module declares outranks every glob-imported name
+  // (Rust reference, "Use declarations": glob imports are shadowed by items),
+  // so `use external::*;` never hides the same-file `fn make`.
+  it("reads a same-file callee through a wildcard import, which never shadows a declared item", () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -298,7 +301,7 @@ fn run() {
       },
       materialized,
     );
-    expect(f.resolve("value.finish()")).toBeNull();
+    expect(f.resolve("value.finish()")).toMatchObject(productFinish);
   });
 
   it.each([
@@ -443,13 +446,9 @@ fn run() { let value = make(); value.finish(); }
     ["callee local", "fn run()", "let make = factory;\nlet value = make();"],
     ["callee pattern", "fn run()", "let (make, _) = pair;\nlet value = make();"],
     ["result shadow", "fn run()", "let value = make();\nlet value = unknown;"],
-    ["result assignment", "fn run()", "let mut value = make();\nvalue = unknown;"],
-    ["result update", "fn run()", "let mut value = make();\nvalue += unknown;"],
-    ["result pattern", "fn run()", "let value = make();\nlet (value, _) = pair;"],
     ["closure", "fn run()", "let value = make();\nlet closure = |make| make();"],
-    ["nested function", "fn run()", "let value = make();\nfn nested() {}"],
+    ["nested function", "fn run()", "let value = make();\nfn make() {}"],
     ["local const", "fn run()", "const make: fn() -> Product = other;\nlet value = make();"],
-    ["block-local result", "fn run()", "{ let value = make(); }"],
   ])("withholds extraction for unproved shadow safety: %s", (_name, header, body) => {
     const f = fixture(
       {
@@ -466,24 +465,141 @@ ${header} {
     expect(f.chunk().callResultBindings?.value).toBeUndefined();
   });
 
-  it.each(["module::make()", "make::<Product>()", "make().await", "make()?", "(|| make())()", "make!()"])(
-    "withholds unsupported initializer %s",
-    (initializer) => {
-      const f = fixture(
-        {
-          "src/main.rs": `${finishers}
+  // A reassignment or update once withheld the result too; Rust fixes a
+  // local's type at its `let`, so the assigned value keeps the call's type.
+  it.each([
+    ["result assignment", "let mut value = make();\nvalue = unknown;"],
+    ["result update", "let mut value = make();\nvalue += unknown;"],
+  ])("keeps typing the result through a %s", (_name, body) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  ${body}
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toEqual([expect.objectContaining({ callee: "make" })]);
+  });
+
+  // bd tea-rags-mcp-s3i8m — a destructuring `let` that rebinds the result
+  // once withheld it outright; it now cuts the result's window at its own end,
+  // so a use after it never reads the call's type.
+  it("does not type a use after a destructuring let that rebinds the result", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  let (value, _) = pair;
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toBeNull();
+  });
+
+  // Since bd tea-rags-mcp-2g2og.24 the gate is per name: an unrelated nested
+  // fn keeps the binding, and a block-local `let` is windowed to its block.
+  it("keeps a binding beside a nested fn that names neither it nor its callee", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  fn nested() {}
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toEqual(productFinish);
+  });
+
+  // Cross-cutting guard: a call-result local whose typed lookup misses must
+  // not DROP a member a project trait may supply by default.
+  it("lets a typed miss on a call-result local continue when a project trait declares the member", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `
+trait Finish { fn finish(&self) {} }
+struct Product;
+impl Finish for Product {}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = make();
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.edges()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sourceSymbolId: "run", targetSymbolId: "Finish#finish" })]),
+    );
+  });
+
+  it("does not type a use past the block a block-local result lives in", () => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  { let value = make(); }
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.resolve("value.finish()")).toBeNull();
+  });
+
+  it.each([
+    ["module::make()", "module::make()"],
+    ["make::<Product>()", "make::<Product>()"],
+    ["make()?", "make()?"],
+    ["(|| make())()", "(|| make())()"],
+  ])("records initializer %s for the init-folding arms", (initializer, initExpression) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
 fn make() -> Product { todo!() }
 fn run() {
   let value = ${initializer};
   value.finish();
 }
 `,
-        },
-        materialized,
-      );
-      expect(f.chunk().callResultBindings?.value).toBeUndefined();
-    },
-  );
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toEqual([expect.objectContaining({ initExpression })]);
+  });
+
+  it.each(["make().await", "make!()"])("withholds unsupported initializer %s", (initializer) => {
+    const f = fixture(
+      {
+        "src/main.rs": `${finishers}
+fn make() -> Product { todo!() }
+fn run() {
+  let value = ${initializer};
+  value.finish();
+}
+`,
+      },
+      materialized,
+    );
+    expect(f.chunk().callResultBindings?.value).toBeUndefined();
+  });
 
   // A dotted method init is a proven initializer since bd tea-rags-mcp-2g2og:
   // the receiver is fold-typed and the method's declared return answers, so it
@@ -525,7 +641,7 @@ fn run() {
       annotated: [{ line: 9, type: "Product" }],
       constructed: [{ line: 10, type: "Product" }],
     });
-    expect(f.chunk().callResultBindings).toBeUndefined();
+    expect(f.chunk().callResultBindings?.annotated).toBeUndefined();
   });
 
   it.each(["value.inner.finish()", "value.get().finish()"])("threads produced locals into %s", (call) => {

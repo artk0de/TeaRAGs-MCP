@@ -381,7 +381,9 @@ export interface SymbolVisibilityRow {
  * The declaration kind a walker saw for a definition (bd tea-rags-mcp-vi0wx) —
  * what lets type-name judgement tell a type (`class`, `interface`, `enum`, …)
  * from a callable or a constant. Language-neutral: each walker maps its own
- * declaration nodes onto this vocabulary.
+ * declaration nodes onto this vocabulary. `macro` is a definition in a
+ * language's macro namespace (Rust `macro_rules!`): a macro invocation lands
+ * only on one, and no call or receiver role admits one (bd tea-rags-mcp-s3i8m.2).
  */
 export type SymbolDefinitionKind =
   | "class"
@@ -391,7 +393,8 @@ export type SymbolDefinitionKind =
   | "type_alias"
   | "constant"
   | "function"
-  | "method";
+  | "method"
+  | "macro";
 
 /**
  * The declaration kind of a callable — a free `function` or a `method` of a

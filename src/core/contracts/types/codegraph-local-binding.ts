@@ -56,8 +56,13 @@ export interface LocalBinding {
    *     read or another name (`opts = self.model._meta`, `app = ctx.app`),
    *     scoped by {@link LocalBinding.scopeEndLine} to the line the def
    *     rebinds the name.
+   *   - `"patternProjection"` (bd tea-rags-mcp-s3i8m, Task 1a) — a name a Rust
+   *     pattern binds (`if let` / `while let` / match arm / `for` / closure
+   *     parameter / destructuring `let`): the value reached by walking
+   *     {@link LocalBinding.projection} into `<expr>`. With no projection the
+   *     binding still SHADOWS the name for its scope, typed as nothing.
    *
-   * {@link isDerivedLocalBinding} names the four.
+   * {@link isDerivedLocalBinding} names the five.
    */
   valueKind?: "instance" | "class" | DerivedLocalBindingKind;
   /**
@@ -126,7 +131,55 @@ export interface LocalBinding {
    * does not record one.
    */
   conditionSpan?: ModifierConditionSpan;
+  /**
+   * The path from the value {@link LocalBinding.sourceExpression} evaluates to
+   * down to the bound name — set only on a `"patternProjection"` binding whose
+   * pattern the walker can unfold (bd tea-rags-mcp-s3i8m, Task 1a). `[]` binds
+   * the whole value (`p @ Some(_)`). ABSENT on a shape no projection
+   * describes (a callback parameter, disagreeing or-pattern arms, a slice):
+   * the name is then untyped, never the outer binding's.
+   */
+  projection?: readonly PatternStep[];
+  /**
+   * The exact source region the binding is visible in, when narrower than its
+   * lines (bd tea-rags-mcp-s3i8m, Task 1a): a Rust closure parameter is
+   * visible inside the closure body only, so `x.map(|w| w.id()) == Some(w.id())`
+   * reads the OUTER `w` after the closure on the same line. A call whose column
+   * is known and falls outside the span skips the binding; a call without a
+   * column falls back to {@link LocalBinding.scopeEndLine}. ABSENT on every
+   * binding scoped by lines alone.
+   */
+  visibleSpan?: ModifierConditionSpan;
+  /**
+   * The inferred shape that typed this binding, when the walker read its type
+   * off a shape whose typing must stay ADDITIVE (src/core/domains/language/CLAUDE.md):
+   * where the spelled type does not place, the resolver reads the call as if
+   * the binding did not exist. ABSENT on a declared, annotated or
+   * associated-constructor binding — those read as they always did.
+   */
+  inferenceShape?: InferredBindingShape;
 }
+
+/**
+ * One step of a {@link LocalBinding.projection}, outermost first:
+ *
+ *   - `variant` — the payload of the enum variant `path` (`Some`, `Self::A`)
+ *     at position `index` (tuple variant) or named `field` (struct variant);
+ *   - `tuple` — the element at `index` of a tuple value;
+ *   - `field` — the named field of a struct value;
+ *   - `element` — one element the iterable value yields (`for`);
+ *   - `adapterParam` — parameter `index` of the closure passed as argument
+ *     `argument` to the method `adapter` called on the value
+ *     (`iter.map(|p| …)` → argument 0, index 0; `iter.fold(init, |acc, x| …)`
+ *     binds `x` at argument 1, index 1).
+ */
+export type PatternStep =
+  | { readonly kind: "variant"; readonly path: string; readonly index: number }
+  | { readonly kind: "variant"; readonly path: string; readonly field: string }
+  | { readonly kind: "tuple"; readonly index: number }
+  | { readonly kind: "field"; readonly name: string }
+  | { readonly kind: "element" }
+  | { readonly kind: "adapterParam"; readonly adapter: string; readonly argument: number; readonly index: number };
 
 /**
  * The `LocalBinding`s that are EXACT constructions, per local name: the 1-based
@@ -233,13 +286,29 @@ export function resolveLocalBinding(
     if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
     if (binding.line > atLine) continue;
     if (isInsideModifierCondition(binding.conditionSpan, atLine, atColumn)) continue;
+    if (binding.visibleSpan !== undefined && atColumn !== undefined) {
+      if (!isInsideModifierCondition(binding.visibleSpan, atLine, atColumn)) continue;
+    }
     if (best === undefined || binding.line > best.line || outranksOnSameLine(binding, best)) best = binding;
   }
   return best;
 }
 
+/**
+ * An inferred binding shape whose typing is additive over the untyped read
+ * (Rust walker): an enum variant constructor (`let d = Res::Ok(x)`), agreeing
+ * `if` / `match` / block arms, a `*self` copy in an impl, and a call-result
+ * `let` kept through reassignment.
+ */
+export type InferredBindingShape = "variantConstructor" | "initializerArms" | "selfCopy" | "reassignedLet";
+
 /** The {@link LocalBinding.valueKind}s whose type only a resolver can fold out of `sourceExpression`. */
-export type DerivedLocalBindingKind = "iterationElement" | "contextEnter" | "tupleElement" | "assignedValue";
+export type DerivedLocalBindingKind =
+  | "iterationElement"
+  | "contextEnter"
+  | "tupleElement"
+  | "assignedValue"
+  | "patternProjection";
 
 /**
  * Whether `binding` is DERIVED — it names an expression for the resolver to
@@ -250,7 +319,13 @@ export function isDerivedLocalBinding(
   binding: LocalBinding | undefined,
 ): binding is LocalBinding & { valueKind: DerivedLocalBindingKind } {
   const kind = binding?.valueKind;
-  return kind === "iterationElement" || kind === "contextEnter" || kind === "tupleElement" || kind === "assignedValue";
+  return (
+    kind === "iterationElement" ||
+    kind === "contextEnter" ||
+    kind === "tupleElement" ||
+    kind === "assignedValue" ||
+    kind === "patternProjection"
+  );
 }
 
 /**
@@ -313,6 +388,14 @@ export interface CallResultBinding {
    */
   readonly closureParameter?: number;
   /**
+   * Set when the binding exists only through an inferred shape (a `let` whose
+   * `if` / `match` arms agree on a constructor, or a `let` kept through a
+   * later reassignment) that a reader must treat as ADDITIVE: where the
+   * binding's value cannot be typed, the name reads as if the walker had
+   * declined it. ABSENT on every plain call-result `let`.
+   */
+  readonly inferenceShape?: InferredBindingShape;
+  /**
    * Set when the binding is the `index`-th payload slot of enum case
    * `caseName`, destructured from the value `callee` spells — the switch
    * SUBJECT rather than a callee (bd tea-rags-mcp-y99pg.16):
@@ -336,7 +419,15 @@ export interface CallResultBinding {
    * an optional as what it wraps may ignore it. ABSENT means no such marker
    * was seen, not that the value is proven non-optional.
    */
-  readonly optional?: true; /**
+  readonly optional?: true;
+  /**
+   * The whole right-hand side, whitespace-collapsed, with a leading `&` /
+   * `&mut` / parens stripped — `make()?`, `B::new().build(x).unwrap()` (bd
+   * tea-rags-mcp-2g2og.24). Set by the Rust walker so a resolver can fold an
+   * init `callee` cannot spell; ABSENT for every other language.
+   */
+  readonly initExpression?: string;
+  /**
    * {@link LocalBinding.conditionSpan}'s meaning: the condition of a modifier
    * guarding the assignment, which runs before it (bd tea-rags-mcp-0qaht.55).
    * Set by the Ruby walker. ABSENT means no such modifier.

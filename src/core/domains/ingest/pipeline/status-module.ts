@@ -18,6 +18,7 @@ import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metada
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
+import type { RustcDriverStatus, RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type {
   EdgeKindCount,
@@ -271,6 +272,21 @@ async function readModelResolvedSites(
     return await graphDb.getModelResolvedSiteCounts(thresholds);
   } catch {
     return [];
+  }
+}
+
+/**
+ * The rustc driver status the last Rust resolve pass persisted (bd s3i8m);
+ * undefined when none was recorded or the read fails, so a daemon without the
+ * op still reports the resolve figures.
+ */
+async function readRustcDriverStatusSafely(
+  graphDb: Pick<GraphDbClient, "getRustcDriverStatus">,
+): Promise<RustcDriverStatusRecord | undefined> {
+  try {
+    return (await graphDb.getRustcDriverStatus()) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -541,8 +557,50 @@ export class StatusModule {
    * must never break because codegraph state is absent. The existence guard
    * (`listCollectionDbNames`, a dir read) prevents a status call from creating a
    * phantom codegraph DB for non-codegraph collections.
+   *
+   * The same reader answers the rustc driver status the last Rust resolve pass
+   * persisted (bd s3i8m); each field is omitted when absent.
    */
-  private async readCodegraphResolve(collection: string): Promise<CodegraphResolveSummary | undefined> {
+  private async readCodegraphReport(
+    collection: string,
+  ): Promise<{ codegraphResolve?: CodegraphResolveSummary; rustcDriver?: RustcDriverStatus }> {
+    const report = await this.withCodegraphReader(collection, async (graphDb) => {
+      const [runStatsRows, edgeCounts, modelCounts, rustcDriver] = await Promise.all([
+        graphDb.getRunStats(),
+        graphDb.getEdgeKindDistribution(),
+        readModelResolvedSites(graphDb, this.residualThresholds),
+        readRustcDriverStatusSafely(graphDb),
+      ]);
+      const codegraphResolve = summarizeCodegraphResolve(runStatsRows, edgeCounts, {
+        counts: modelCounts,
+        thresholds: this.residualThresholds,
+      });
+      return {
+        ...(codegraphResolve === undefined ? {} : { codegraphResolve }),
+        ...(rustcDriver === undefined ? {} : { rustcDriver: rustcDriver.status }),
+      };
+    });
+    return report ?? {};
+  }
+
+  /**
+   * The rustc driver status the codegraph run persisted, with the time it was
+   * recorded (bd s3i8m) — an index run reads it to tell its own outcome from an
+   * earlier run's. Undefined when none was recorded or nothing can be read.
+   */
+  async readRustcDriverStatus(collection: string): Promise<RustcDriverStatusRecord | undefined> {
+    return this.withCodegraphReader(collection, readRustcDriverStatusSafely);
+  }
+
+  /**
+   * Run `readGraph` against the collection's codegraph DB, or answer undefined when
+   * codegraph is off, the DB is absent or ambiguous, or the read fails — status
+   * must never break because codegraph state is absent.
+   */
+  private async withCodegraphReader<T>(
+    collection: string,
+    readGraph: (graphDb: GraphDbClient) => Promise<T>,
+  ): Promise<T | undefined> {
     if (!this.codegraphPool) return undefined;
     // The codegraph DB is keyed by the VERSIONED collection (`code_…_vN`), but
     // the status path usually passes the base/alias name. Resolve to the on-disk
@@ -569,15 +627,7 @@ export class StatusModule {
     try {
       const handle = await this.codegraphPool.acquireReader(physicalCollectionName);
       try {
-        const [rows, edgeCounts, modelCounts] = await Promise.all([
-          handle.graphDb.getRunStats(),
-          handle.graphDb.getEdgeKindDistribution(),
-          readModelResolvedSites(handle.graphDb, this.residualThresholds),
-        ]);
-        return summarizeCodegraphResolve(rows, edgeCounts, {
-          counts: modelCounts,
-          thresholds: this.residualThresholds,
-        });
+        return await readGraph(handle.graphDb);
       } finally {
         await handle.graphDb.close();
       }
@@ -812,7 +862,7 @@ export class StatusModule {
         sparseVersion,
         lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
-        codegraphResolve: await this.readCodegraphResolve(sourceCollection),
+        ...(await this.readCodegraphReport(sourceCollection)),
         quarantine: await this.loadQuarantineSummary(reportedName),
       };
     }
@@ -827,7 +877,7 @@ export class StatusModule {
         filesCount: this.readFileCount(reportedName),
         qdrantUrl: this.qdrant.url,
         sparseVersion,
-        codegraphResolve: await this.readCodegraphResolve(sourceCollection),
+        ...(await this.readCodegraphReport(sourceCollection)),
       };
     }
 

@@ -5,6 +5,7 @@
 
 import { extname } from "node:path";
 
+import type { IngestIgnoreContribution } from "../../../contracts/types/ingest-config.js";
 import {
   extensionsForLanguages,
   LANGUAGE_MAP,
@@ -18,6 +19,7 @@ export interface LanguagePresenceBindings {
   absolutePath: string;
   ignorePatterns: string[];
   customIgnorePatterns?: string[];
+  ignoreContributions?: readonly IngestIgnoreContribution[];
 }
 
 export function bindLanguagePresencePorts(bindings: LanguagePresenceBindings): LanguagePresencePorts {
@@ -29,6 +31,7 @@ export function bindLanguagePresencePorts(bindings: LanguagePresenceBindings): L
         supportedExtensions: extensionsForLanguages(languages),
         ignorePatterns: bindings.ignorePatterns,
         customIgnorePatterns: bindings.customIgnorePatterns,
+        ignoreContributions: bindings.ignoreContributions,
       });
       await scanner.loadIgnorePatterns(bindings.absolutePath);
       const files = await scanner.scanDirectory(bindings.absolutePath);

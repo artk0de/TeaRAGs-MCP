@@ -50,6 +50,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -57,6 +58,9 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  ManifestFilesReader,
+  RustCallSiteSource,
+  RustExternalSignatureSources,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
@@ -64,9 +68,7 @@ import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
 import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
-import { rustNameOf } from "./walker/name-of.js";
-import { RUST_EXTRACTION_PASSES } from "./walker/passes.js";
-import { extractFromRustFile, type RustExtractInput } from "./walker/walker.js";
+import { extractFromRustFile, RUST_EXTRACTION_PASSES, rustNameOf, type RustExtractInput } from "./walker/index.js";
 
 /**
  * Chunk-boundary config for Rust — mirrors the chunker slice of the legacy
@@ -138,9 +140,31 @@ export class RustLanguage implements LanguageProvider {
   });
   readonly resolver: LanguageSymbolResolver;
 
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const callResolver: CallResolver = new RustCallResolver(mode);
+  /**
+   * `manifestFilesReader` reads the project's Cargo.toml files for the
+   * workspace crate map (bd tea-rags-mcp-sjego); `signatureSources` locates
+   * and caches the external signature table (bd s3i8m.7); `callSiteSource`
+   * acquires the rustc call-site index (bd s3i8m T6). Injected by
+   * `LanguageFactory` — this leaf never walks the disk itself.
+   */
+  constructor(
+    mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    manifestFilesReader?: ManifestFilesReader,
+    signatureSources?: RustExternalSignatureSources,
+    callSiteSource?: RustCallSiteSource,
+  ) {
+    const callResolver: CallResolver = new RustCallResolver(
+      mode,
+      manifestFilesReader,
+      signatureSources,
+      callSiteSource,
+    );
     this.resolver = {
+      // Awaited before the pass-start seam: the rustc call-site index.
+      warmResolvePass: async (plan: SymbolResolutionPassPlan): Promise<void> => callResolver.warmResolvePass?.(plan),
+      // The pass-start seam re-reads the workspace's crate map and loads the
+      // external signature table before the first crate-name path resolves.
+      prepareResolvePass: (plan: SymbolResolutionPassPlan): void => callResolver.prepareResolvePass?.(plan),
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
@@ -148,6 +172,9 @@ export class RustLanguage implements LanguageProvider {
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
       hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+      targetsUndecidable: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsUndecidable?.(call, ctx) ?? false,
+      diagnostics: (): Record<string, unknown> | undefined => callResolver.diagnostics?.(),
     };
   }
 }

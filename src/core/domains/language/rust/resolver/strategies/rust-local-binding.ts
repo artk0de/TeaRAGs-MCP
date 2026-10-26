@@ -1,19 +1,75 @@
-import { nearestCallResultBinding, resolveLocalBinding } from "../../../../../contracts/types/codegraph.js";
-import { LocalBindingSymbolResolutionStrategy, type ReceiverTypingPorts } from "../../../kernel/index.js";
+import { resolved } from "../../../../../contracts/resolution.js";
+import {
+  nearestCallResultBinding,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type LocalBinding,
+} from "../../../../../contracts/types/codegraph.js";
+import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
+import {
+  LocalBindingSymbolResolutionStrategy,
+  type NominalTypeRef,
+  type ReceiverCallRef,
+  type ReceiverTypingPorts,
+  type TypeMemberLookup,
+} from "../../../kernel/index.js";
+import { rustStdPrimitiveTypes } from "../../vocabulary/std-prelude.js";
 import { rustDeclaredCallResultType } from "../declared-call-result-type.js";
-import { createRustTypeMemberLookup } from "../rust-type-member-lookup.js";
-import { rustMethodCallResultType } from "./rust-type-receiver.js";
-import type { ResolverConfig } from "./shared.js";
+import { rustPatternBindingType } from "../pattern-binding-type.js";
+import {
+  createRustTypeMemberLookup,
+  resolveRustTypedMissMember,
+  rustTypedMissIsProven,
+} from "../rust-type-member-lookup.js";
+import { rustDeclaredTypeIsForeign } from "../std-type-hops.js";
+import { rustVisibleReceiverBinding } from "../visible-receiver-binding.js";
+import {
+  rustCallResultInitType,
+  rustExpressionType,
+  rustMethodCallResultType,
+  rustShadowingCallResultType,
+  rustValuePreservingSource,
+} from "./rust-type-receiver.js";
+import { lookupRustSymbolsByShortName, type ResolverConfig } from "./shared.js";
+
+const RUST_IDENTIFIER_ONLY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
   typeOfReceiver: (call, ctx) => {
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine, call.startColumn);
+    const visible = rustVisibleReceiverBinding(call.receiver, call.startLine, ctx, call.startColumn);
+    if (visible?.channel === "constructor") {
+      const declared = rustCallResultInitType(visible.callResult, ctx);
+      if (declared !== undefined) return declared;
+    }
+    // A later call-result `let` shadows an earlier local (bd tea-rags-mcp-s3i8m):
+    // untyped, the call CONTINUES — never the shadowed local's type.
+    if (visible?.channel === "callResult" && visible.shadowsLocal) {
+      const shadowing = rustShadowingCallResultType(call.receiver, call.startLine, ctx, visible.binding);
+      if (shadowing !== undefined) return shadowing;
+      // `let x = x.clone();` — the source name read at the `let` line, where the
+      // new binding is not yet visible, types exactly as this port types it.
+      const source = rustValuePreservingSource(visible.binding.initExpression ?? "");
+      if (source === undefined || !RUST_IDENTIFIER_ONLY.test(source)) return null;
+      return RUST_LOCAL_BINDING_TYPING.typeOfReceiver(
+        { ...call, receiver: source, startLine: visible.binding.line, startColumn: undefined },
+        ctx,
+      );
+    }
+    const binding = visible?.channel === "callResult" ? undefined : visible?.binding;
     if (binding === undefined) {
       return (
         rustDeclaredCallResultType(call.receiver, call.startLine, ctx) ??
         rustMethodCallResultType(call.receiver, call.startLine, ctx) ??
         null
       );
+    }
+    // A pattern binding shadows the name: its fold answers, never the
+    // call-result channel or an outer binding (bd tea-rags-mcp-s3i8m, Task 1a).
+    // An unproven fold answers null, so the call CONTINUES down the chain
+    // exactly as an unbound receiver does (Task 1c, additive invariant).
+    if (binding.valueKind === "patternProjection") {
+      return rustPatternBindingType(binding, ctx, rustExpressionType) ?? null;
     }
     if (binding.typeRef !== undefined) {
       return binding.typeRef.form === "instance" && binding.typeRef.name.length > 0 ? binding.typeRef : null;
@@ -38,10 +94,98 @@ const RUST_LOCAL_BINDING_TYPING: ReceiverTypingPorts = {
  * Guard pass: a known receiver type whose member is absent DROPS the edge —
  * falling through to short-name lookup would resolve to a method on an
  * unrelated type (the c5by garbage). A receiver with no bound type continues
- * to the import-match / short-name passes.
+ * to the import-match / short-name passes, and so does a call-result local
+ * whose miss the member lookup cannot rule out (`rustTypedMissDrops`).
+ *
+ * A pattern-bound receiver's miss (bd tea-rags-mcp-s3i8m Task 1d) first asks
+ * `resolveRustTypedMissMember` — a smart pointer's pointee, a trait's provided
+ * method — and otherwise reads exactly as at the untyped baseline unless the
+ * miss is proven.
  */
 export class RustLocalBindingSymbolResolutionStrategy extends LocalBindingSymbolResolutionStrategy {
+  private readonly mode: AmbiguousResolveMode;
+
   constructor(cfg: ResolverConfig) {
-    super("localBinding", RUST_LOCAL_BINDING_TYPING, createRustTypeMemberLookup(cfg.mode), { dropOnTypedMiss: true });
+    const lookup = createRustTypeMemberLookup(cfg.mode);
+    super("localBinding", RUST_LOCAL_BINDING_TYPING, lookup, { dropOnTypedMiss: rustTypedMissDrops(lookup) });
+    this.mode = cfg.mode;
   }
+
+  override attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    const outcome = super.attempt(call, ctx);
+    const { receiver } = call;
+    if (outcome.kind === "resolved" || outcome.kind === "deferred" || !receiver) return outcome;
+    const visible = rustVisibleReceiverBinding(receiver, call.startLine, ctx, call.startColumn);
+    if (visible?.channel !== "local" || !isRustPatternIntroduced(visible.binding)) return outcome;
+    const type = RUST_LOCAL_BINDING_TYPING.typeOfReceiver({ ...call, receiver }, ctx);
+    if (type?.form !== "instance") return outcome;
+    const target = resolveRustTypedMissMember(type, call.member, ctx, this.mode);
+    return target === null ? outcome : resolved(target);
+  }
+}
+
+/**
+ * A binding a pattern site introduced (bd tea-rags-mcp-s3i8m Task 1a): a
+ * projection-folded name, or a typed closure parameter. Both carry the
+ * `visibleSpan` of their arm / body; Rust's line-scoped bindings (`let`, fn
+ * parameters) never do.
+ */
+function isRustPatternIntroduced(binding: LocalBinding | undefined): boolean {
+  return binding?.valueKind === "patternProjection" || binding?.visibleSpan !== undefined;
+}
+
+/**
+ * A pattern receiver's miss is proven only when the walk saw every place the
+ * member could live (`rustTypedMissIsProven`) AND an unplaced type is provably
+ * foreign — a primitive, std, or bound by an external `use`. An unplaced
+ * project spelling (a `type FontRef = Arc<Font>` alias the fold cannot follow,
+ * a crate-local `type Result<T>`) proves nothing.
+ */
+function rustPatternMissIsProven(type: NominalTypeRef, member: string, ctx: CallContext): boolean {
+  if (!type.name.includes(".rs::") && !rustStdPrimitiveTypes.has(type.name)) {
+    const argumentNames = type.args?.map((arg) => (arg.form === "instance" ? arg.name : null));
+    if (!rustDeclaredTypeIsForeign(type.name, argumentNames, ctx)) return false;
+  }
+  return rustTypedMissIsProven(type, member, ctx);
+}
+
+/**
+ * Whether a typed miss DROPS (bd tea-rags-mcp-2g2og.24). A receiver typed from
+ * the call-result channel or a pattern site CONTINUES instead when its member
+ * may live where the lookup does not reach: a project trait declares it (a
+ * default method the type does not override), or the type has a `deref`. A
+ * pattern-introduced binding drops only on top of a PROVEN miss
+ * (`rustPatternMissIsProven`, s3i8m Task 1d): its typing is additive over the
+ * untyped baseline. Every other typed miss still drops.
+ */
+function rustTypedMissDrops(
+  lookup: TypeMemberLookup,
+): (type: NominalTypeRef, call: ReceiverCallRef, ctx: CallContext) => boolean {
+  const mayLiveElsewhere = (type: NominalTypeRef, call: ReceiverCallRef, ctx: CallContext): boolean =>
+    rustProjectTraitDeclares(call.member, ctx) || lookup.findMember(type, "deref", ctx) !== null;
+  return (type, call, ctx) => {
+    const visible = rustVisibleReceiverBinding(call.receiver, call.startLine, ctx, call.startColumn);
+    if (visible === undefined) return true;
+    if (visible.channel === "local" && isRustPatternIntroduced(visible.binding)) {
+      return rustPatternMissIsProven(type, call.member, ctx) && !mayLiveElsewhere(type, call, ctx);
+    }
+    // A local typed by its own binding drops; one typed through the call-result
+    // channel — a later `let`, or a constructor's declared return — may continue.
+    const typedByLocal =
+      visible.channel === "local" ||
+      (visible.channel === "constructor" && rustCallResultInitType(visible.callResult, ctx) === undefined);
+    return typedByLocal || !mayLiveElsewhere(type, call, ctx);
+  };
+}
+
+function rustProjectTraitDeclares(member: string, ctx: CallContext): boolean {
+  return lookupRustSymbolsByShortName(ctx, member).some((definition) => {
+    const ownerId = definition.symbolId.slice(0, -(member.length + 1));
+    return (
+      ownerId.length > 0 &&
+      ctx.symbolTable
+        .lookup(ownerId)
+        .some((owner) => owner.relPath === definition.relPath && owner.symbolKind === "interface")
+    );
+  });
 }

@@ -90,7 +90,12 @@ import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
-import { drainCrossPassInputSpill, persistRunResolveStats, readCodegraphFileOverlays } from "./run-finalize.js";
+import {
+  drainCrossPassInputSpill,
+  persistRunResolveStats,
+  persistRustcDriverStatus,
+  readCodegraphFileOverlays,
+} from "./run-finalize.js";
 import { CodegraphRunState } from "./run-state.js";
 import { symbolDefinitionsOf } from "./symbol-definitions.js";
 import { collectTypeDeclarationReaders } from "./type-declaration-readers.js";
@@ -1272,12 +1277,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * (tests, offline harnesses): it hands over the corpus it means to measure, so
    * the run is treated as covering it. Every pipeline finalize passes it
    * explicitly (`CompletionRunner#applyFileFinalize`).
+   *
+   * The rustc driver's outcome rides the same write (`persistRustcDriverStatus`,
+   * bd s3i8m): read from the resolvers before `clearRunState` drops the run's
+   * languages, persisted where status and prime read it.
    */
   private async recordRunStats(
     graphDb: GraphDbClient,
     runCoverage: EnrichmentRunCoverage = "wholeCorpus",
   ): Promise<void> {
     await persistRunResolveStats(this.runState, graphDb, runCoverage);
+    await persistRustcDriverStatus(this.resolutionRunner.resolverDiagnostics(), graphDb, Date.now());
   }
 
   /**

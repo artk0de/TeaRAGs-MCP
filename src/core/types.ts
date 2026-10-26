@@ -10,8 +10,10 @@
  * New code should import from `contracts/` directly (or via `api/public`).
  */
 
+import type { RustcDriverStatus } from "./contracts/rustc-driver-status.js";
 import type { ResidualPassReport } from "./contracts/types/codegraph-residual.js";
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
+import type { IngestIgnoreContribution } from "./contracts/types/ingest-config.js";
 import type { ProviderRunMetrics } from "./contracts/types/provider.js";
 import type { RechunkTestFileScope } from "./contracts/types/rechunk.js";
 import type { EmbeddingProducerStarvation, EmbeddingThroughputOptimum } from "./contracts/types/registry.js";
@@ -42,6 +44,8 @@ export interface ScannerConfig {
   supportedExtensions: string[];
   ignorePatterns: string[];
   customIgnorePatterns?: string[];
+  /** Per-owner contributions (the languages' aggregate) — see `IngestIgnoreContribution`. */
+  ignoreContributions?: readonly IngestIgnoreContribution[];
 }
 
 export interface ChunkerConfig {
@@ -156,6 +160,8 @@ export interface IndexStats {
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
+  /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
+  rustcDriver?: RustcDriverStatus;
 }
 
 export interface ChangeStats {
@@ -592,6 +598,8 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
+  /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
+  rustcDriver?: RustcDriverStatus;
   /**
    * The collection's last residual pass in this process (`--resolve-residual`,
    * or the cache-only re-apply of an index run). Never persisted.

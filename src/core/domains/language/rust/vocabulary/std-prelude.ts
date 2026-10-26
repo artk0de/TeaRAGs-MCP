@@ -10,6 +10,8 @@
  * is reserved by std itself or spelled by the prelude, never merely common.
  */
 
+import type { TypeRef } from "../../../../contracts/types/language.js";
+
 /** Path heads `use` can spell that always name std, never a project crate. */
 export const rustStdPathHeads: ReadonlySet<string> = new Set(["std", "core", "alloc", "proc_macro", "test"]);
 
@@ -39,10 +41,112 @@ export const rustStdPreludeTypes: ReadonlySet<string> = new Set([
   "Duration",
   "SystemTime",
   "Ordering",
+  "Option",
+  "Result",
 ]);
+
+/** The primitive types — `str`, the integers, floats, `bool`, `char`; slices and arrays are read by shape. */
+export const rustStdPrimitiveTypes: ReadonlySet<string> = new Set([
+  "str",
+  "bool",
+  "char",
+  "u8",
+  "u16",
+  "u32",
+  "u64",
+  "u128",
+  "usize",
+  "i8",
+  "i16",
+  "i32",
+  "i64",
+  "i128",
+  "isize",
+  "f32",
+  "f64",
+]);
+
+/**
+ * The std smart pointers whose method resolution auto-derefs to their single
+ * type argument: a receiver typed `Box<T>` is std's only when `T` is.
+ */
+export const rustStdSmartPointers: ReadonlySet<string> = new Set(["Box", "Rc", "Arc"]);
+
+/**
+ * The members `#[derive(..)]` generates — Default, Clone, Debug, PartialEq,
+ * PartialOrd, Ord, Hash — plus the provided methods those traits carry. A
+ * project type's call to one of them with no hand-written body anywhere in the
+ * project lands in generated code (or std's provided body), never in-project.
+ */
+export const rustDerivableTraitMembers: ReadonlySet<string> = new Set([
+  "default",
+  "clone",
+  "clone_from",
+  "fmt",
+  "eq",
+  "ne",
+  "partial_cmp",
+  "lt",
+  "le",
+  "gt",
+  "ge",
+  "cmp",
+  "max",
+  "min",
+  "clamp",
+  "hash",
+]);
+
+/**
+ * Std types whose `new(value)` takes the one value they wrap as their single
+ * type argument: `Arc::new(x)` is `Arc<typeof x>`.
+ */
+export const rustStdValueWrappers: ReadonlySet<string> = new Set([
+  "Box",
+  "Rc",
+  "Arc",
+  "Cell",
+  "RefCell",
+  "Mutex",
+  "RwLock",
+]);
+
+const RUST_STD_ORDERING: TypeRef = { form: "instance", name: "Ordering" };
+const RUST_STD_BOOL: TypeRef = { form: "instance", name: "bool" };
+
+/**
+ * The return companion of {@link rustDerivableTraitMembers} (bd s3i8m.7 T3c):
+ * what a std trait member returns on any implementor. `"Self"` is the
+ * receiver itself (Clone, the blanket `ToOwned for T: Clone`); every other
+ * entry is the same type whichever implementor — or deref target — answers it.
+ * Iterator's `max` / `min` share Ord's names but not its return: left out.
+ */
+export const rustStdTraitMemberReturns: ReadonlyMap<string, TypeRef | "Self"> = new Map<string, TypeRef | "Self">([
+  ["clone", "Self"],
+  ["to_owned", "Self"],
+  ["to_string", { form: "instance", name: "String" }],
+  ...["eq", "ne", "lt", "le", "gt", "ge"].map((member): [string, TypeRef] => [member, RUST_STD_BOOL]),
+  ["cmp", RUST_STD_ORDERING],
+  ["partial_cmp", { form: "instance", name: "Option", args: [RUST_STD_ORDERING] }],
+  ["hash", { form: "tuple", elements: [] }],
+]);
+
+/** The owned form `to_owned` answers for a borrowed std type with its own `ToOwned` impl (`str` → `String`). */
+export const rustStdOwnedForms: ReadonlyMap<string, string> = new Map([
+  ["str", "String"],
+  ["Path", "PathBuf"],
+  ["OsStr", "OsString"],
+  ["CStr", "CString"],
+]);
+
+/** Prelude types `?` / `unwrap` / `expect` unwrap to their first type argument. */
+export const rustStdUnwrappingTypes: ReadonlySet<string> = new Set(["Option", "Result"]);
 
 /** Enum variant constructors the prelude binds: `Ok(())`, `Some(x)`, `Err(e)`. */
 export const rustStdPreludeVariants: ReadonlySet<string> = new Set(["Ok", "Err", "Some", "None"]);
+
+/** Free functions the std prelude binds in every module without a `use`: `drop(x)` is `std::mem::drop`. */
+export const rustStdPreludeFunctions: ReadonlySet<string> = new Set(["drop"]);
 
 /** Macros the std prelude binds in every module without a `use`. */
 export const rustStdMacros: ReadonlySet<string> = new Set([
@@ -129,10 +233,36 @@ export function rustTextIsStdPreludeType(text: string): boolean {
   return rustStdPreludeTypes.has(text);
 }
 
+/** A std-owned type spelling: a prelude type, a primitive, or a slice / array (`[u8]`, `[u8; 4]`). */
+export function rustTextIsStdType(text: string): boolean {
+  return rustStdPreludeTypes.has(text) || rustStdPrimitiveTypes.has(text) || text.startsWith("[");
+}
+
+export function rustTextIsStdSmartPointer(text: string): boolean {
+  return rustStdSmartPointers.has(text);
+}
+
+export function rustTextIsDerivableTraitMember(text: string): boolean {
+  return rustDerivableTraitMembers.has(text);
+}
+
+export function rustTextIsStdUnwrappingType(text: string): boolean {
+  return rustStdUnwrappingTypes.has(text);
+}
+
 export function rustTextIsStdPreludeVariant(text: string): boolean {
   return rustStdPreludeVariants.has(text);
 }
 
+/** A bare call the prelude answers without a `use`: a variant constructor or a prelude free function. */
+export function rustTextIsStdPreludeCallable(text: string): boolean {
+  return rustStdPreludeVariants.has(text) || rustStdPreludeFunctions.has(text);
+}
+
 export function rustTextIsStdMacro(text: string): boolean {
   return rustStdMacros.has(text);
+}
+
+export function rustTextIsStdValueWrapper(text: string): boolean {
+  return rustStdValueWrappers.has(text);
 }

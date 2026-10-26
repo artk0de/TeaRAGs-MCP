@@ -2,8 +2,8 @@ import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
-import { resolveRustMemberWithDeref } from "../rust-type-member-lookup.js";
+import { rustDeclaredFieldIsForeign, rustDeclaredFieldType, rustLexicalSelfType } from "../declared-field-type.js";
+import { resolveRustMemberWithDeref, rustTypedMissIsProven } from "../rust-type-member-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -34,7 +34,7 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
     // never a field: fields are bare identifiers. The chain fold types the
     // call's result and the typed strategy answers the member — dropping here
     // hid every `self.<method>()…` chain behind this guard (bd tea-rags-mcp-2g2og).
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(fieldSegment)) return CONTINUE;
+    if (!/^(?:[A-Za-z_][A-Za-z0-9_]*|\d+)$/.test(fieldSegment)) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
@@ -49,17 +49,34 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
       // target before the typed-miss verdict lands (bd tea-rags-mcp-2g2og).
       // The verdict stays DROP: the field type is known, so the call never
       // reaches the global short-name paths (bd tea-rags-mcp-q1pl).
-      const selfType = rustLexicalSelfType(ctx);
-      const placedField = selfType === undefined ? undefined : rustDeclaredFieldType(selfType, fieldSegment, ctx);
-      if (placedField?.form === "instance" || placedField?.form === "class") {
-        const derefHit = resolveRustMemberWithDeref(placedField, call.member, ctx, this.cfg.mode);
-        if (derefHit !== null) return resolved(derefHit);
-      }
-      return DROP;
+      return this.attemptPlacedField(call, fieldSegment, ctx);
     }
-    // Field type NOT recorded. A `self.<field>` receiver is an
-    // instance-field access, never a module/import name — DROP rather
-    // than fall through to the import-match / global short-name paths.
-    return DROP;
+    // Field type NOT in the legacy short-name map — a tuple field (`self.0`)
+    // lives only in the placed map (bd tea-rags-mcp-2g2og.24). A `self.<field>`
+    // receiver is an instance-field access, never a module/import name — DROP
+    // rather than fall through to the import-match / global short-name paths.
+    return this.attemptPlacedField(call, fieldSegment, ctx);
+  }
+
+  /**
+   * The placed-map answer. A named field keeps the guard's DROP on a miss. A
+   * tuple field (`self.0`) was never guarded before the placed map recorded
+   * it, so the typing stays additive (bd tea-rags-mcp-s3i8m.5): it drops only
+   * on a PROVEN miss — a placed type the walk saw completely, or a declared
+   * type that is provably foreign (`Arc<Url>`) — and otherwise CONTINUEs to
+   * the prior read, which answered `self.0.borrow_mut()` on an unplaceable
+   * project wrapper.
+   */
+  private attemptPlacedField(call: CallRef, fieldSegment: string, ctx: CallContext): SymbolResolutionOutcome {
+    const tupleField = /^\d+$/.test(fieldSegment);
+    const selfType = rustLexicalSelfType(ctx);
+    const placedField = selfType === undefined ? undefined : rustDeclaredFieldType(selfType, fieldSegment, ctx);
+    if (placedField?.form === "instance" || placedField?.form === "class") {
+      const hit = resolveRustMemberWithDeref(placedField, call.member, ctx, this.cfg.mode);
+      if (hit !== null) return resolved(hit);
+      return !tupleField || rustTypedMissIsProven(placedField, call.member, ctx) ? DROP : CONTINUE;
+    }
+    if (!tupleField) return DROP;
+    return selfType !== undefined && rustDeclaredFieldIsForeign(selfType, fieldSegment, ctx) ? DROP : CONTINUE;
   }
 }

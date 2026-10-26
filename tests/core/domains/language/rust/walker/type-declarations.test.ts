@@ -54,7 +54,14 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Bits", symbolKind: "class", line: 2, reopens: false },
       { typeId: "Kind", symbolKind: "enum", line: 3, reopens: false },
       { typeId: "Store", symbolKind: "interface", line: 4, reopens: false },
-      { typeId: "Map", symbolKind: "type_alias", line: 5, reopens: false, genericParameters: ["T"] },
+      {
+        typeId: "Map",
+        symbolKind: "type_alias",
+        line: 5,
+        reopens: false,
+        genericParameters: ["T"],
+        aliasedType: { form: "instance", name: "Vec", args: [{ form: "instance", name: "T" }] },
+      },
       { typeId: "MAX", symbolKind: "constant", line: 6, reopens: false },
       { typeId: "COUNTER", symbolKind: "constant", line: 7, reopens: false },
       { typeId: "inner", symbolKind: "module", line: 8, reopens: false },
@@ -106,7 +113,44 @@ describe("Rust walker — type declaration facts", () => {
       { typeId: "Limits::FLOOR", symbolKind: "constant", line: 3, reopens: false },
       { typeId: "Pool", symbolKind: "class", line: 5, reopens: false },
       { typeId: "Pool::SIZE", symbolKind: "constant", line: 7, reopens: false },
+      {
+        typeId: "Wrapper",
+        symbolKind: "class",
+        line: 9,
+        reopens: true,
+        conforms: ["Limits"],
+        selfConstraints: { types: [], startLine: 9, endLine: 11 },
+      },
       { typeId: "Wrapper::CAP", symbolKind: "constant", line: 10, reopens: false },
+    ]);
+  });
+
+  // bd tea-rags-mcp-s3i8m — servo `Trusted::new(ptr: &T) -> Trusted<T>`.
+  it("lists an inherent impl's associated fns that return the type and bind a generic from an argument", () => {
+    const src = [
+      "pub struct Trusted<T> { ptr: *const T }",
+      "impl<U> Trusted<U> {",
+      "    pub fn new(ptr: &U) -> Trusted<U> { todo!() }",
+      "    pub fn pair(tag: u8, value: &mut U) -> Self { todo!() }",
+      "    pub fn wrapped(values: Vec<U>) -> Self { todo!() }",
+      "    pub fn shadowed<U>(value: U) -> Self { todo!() }",
+      "    pub fn root(&self, other: &U) -> Self { todo!() }",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extract(src).typeDeclarations).toEqual([
+      {
+        typeId: "Trusted",
+        symbolKind: "class",
+        line: 1,
+        reopens: false,
+        genericParameters: ["T"],
+        genericInitializers: [
+          { name: "new", labels: [null], binds: ["T"] },
+          { name: "pair", labels: [null, null], binds: [null, "T"] },
+        ],
+      },
     ]);
   });
 
@@ -132,7 +176,41 @@ describe("Rust walker — type declaration facts", () => {
   it("gives a struct no conforms: `impl Trait for S` is not a supertype of the declaration", () => {
     const src = ["struct S;", "impl Clone for S { fn clone(&self) -> Self { S } }", ""].join("\n");
 
-    expect(extract(src).typeDeclarations).toEqual([{ typeId: "S", symbolKind: "class", line: 1, reopens: false }]);
+    expect(extract(src).typeDeclarations).toEqual([
+      { typeId: "S", symbolKind: "class", line: 1, reopens: false },
+      {
+        typeId: "S",
+        symbolKind: "class",
+        line: 2,
+        reopens: true,
+        conforms: ["Clone"],
+        selfConstraints: { types: [], startLine: 2, endLine: 2 },
+      },
+    ]);
+  });
+
+  it("gives a blanket impl on its own type parameter that parameter's bounds, inline and where (s3i8m)", () => {
+    const src = [
+      "impl<'a, T: NumberDecoder + ?Sized, U> CompactByteDecoder<U> for T",
+      "where",
+      "    T: io::Read + Handler<U>,",
+      "    U: Clone,",
+      "{",
+      "}",
+      "",
+    ].join("\n");
+
+    expect(extract(src).typeDeclarations).toEqual([
+      {
+        typeId: "T",
+        symbolKind: "class",
+        line: 1,
+        reopens: true,
+        conforms: ["CompactByteDecoder"],
+        genericParameters: ["T", "U"],
+        selfConstraints: { types: ["NumberDecoder", "io::Read", "Handler"], startLine: 1, endLine: 6 },
+      },
+    ]);
   });
 
   it("does not publish a trait-mandated associated type in an impl, nor a trait's associated type declaration", () => {
@@ -149,6 +227,14 @@ describe("Rust walker — type declaration facts", () => {
     expect(extract(src).typeDeclarations).toEqual([
       { typeId: "Source", symbolKind: "interface", line: 1, reopens: false },
       { typeId: "Counter", symbolKind: "class", line: 2, reopens: false },
+      {
+        typeId: "Counter",
+        symbolKind: "class",
+        line: 3,
+        reopens: true,
+        conforms: ["Iterator"],
+        selfConstraints: { types: [], startLine: 3, endLine: 6 },
+      },
     ]);
   });
 
@@ -245,6 +331,7 @@ const BASELINE_EXTRACTION = {
   relPath: "src/a.rs",
   language: "rust",
   imports: [{ importText: "std::fmt", startLine: 1 }],
+  rustUseImports: ["std::fmt"],
   chunks: [
     { symbolId: "Engine", scope: [], startLine: 5, endLine: 5, calls: [], symbolKind: "class", visibility: "public" },
     {
@@ -270,20 +357,67 @@ const BASELINE_EXTRACTION = {
       scope: ["Engine"],
       startLine: 14,
       endLine: 14,
-      calls: [{ callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 14, startColumn: 44 }],
+      calls: [
+        {
+          callText: "Worker::new()",
+          receiver: "Worker",
+          member: "new",
+          startLine: 14,
+          startColumn: 44,
+          memberStartLine: 14,
+          memberStartColumn: 52,
+        },
+      ],
       symbolKind: "method",
       visibility: "public",
     },
     {
+      // The call-result channel gates per name since bd tea-rags-mcp-2g2og.24:
+      // the `println!` beside `w` no longer withdraws it.
+      callResultBindings: {
+        w: [{ line: 16, endLine: 16, scopeEndLine: 21, callee: "Worker::new", initExpression: "Worker::new()" }],
+      },
       symbolId: "Engine#go",
       scope: ["Engine"],
       startLine: 15,
       endLine: 21,
       calls: [
-        { callText: "Worker::new()", receiver: "Worker", member: "new", startLine: 16, startColumn: 16 },
-        { callText: "w.start()", receiver: "w", member: "start", startLine: 17, startColumn: 8 },
-        { callText: "self.worker.tick()", receiver: "self.worker", member: "tick", startLine: 18, startColumn: 8 },
-        { callText: 'println!("{}", p.id())', receiver: null, member: "println", startLine: 19, startColumn: 8 },
+        {
+          callText: "Worker::new()",
+          receiver: "Worker",
+          member: "new",
+          startLine: 16,
+          startColumn: 16,
+          memberStartLine: 16,
+          memberStartColumn: 24,
+        },
+        {
+          callText: "w.start()",
+          receiver: "w",
+          member: "start",
+          startLine: 17,
+          startColumn: 8,
+          memberStartLine: 17,
+          memberStartColumn: 10,
+        },
+        {
+          callText: "self.worker.tick()",
+          receiver: "self.worker",
+          member: "tick",
+          startLine: 18,
+          startColumn: 8,
+          memberStartLine: 18,
+          memberStartColumn: 20,
+        },
+        {
+          callText: 'println!("{}", p.id())',
+          receiver: null,
+          member: "println",
+          startLine: 19,
+          startColumn: 8,
+          memberStartLine: 19,
+          memberStartColumn: 8,
+        },
       ],
       symbolKind: "method",
       localBindings: { p: [{ line: 15, type: "Worker" }], w: [{ line: 16, type: "Worker" }] },
@@ -312,7 +446,17 @@ const BASELINE_EXTRACTION = {
       scope: ["inner"],
       startLine: 26,
       endLine: 26,
-      calls: [{ callText: "super::free()", receiver: "super", member: "free", startLine: 26, startColumn: 22 }],
+      calls: [
+        {
+          callText: "super::free()",
+          receiver: "super",
+          member: "free",
+          startLine: 26,
+          startColumn: 22,
+          memberStartLine: 26,
+          memberStartColumn: 29,
+        },
+      ],
       symbolKind: "function",
       visibility: "public",
     },

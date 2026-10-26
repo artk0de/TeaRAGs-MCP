@@ -19,6 +19,7 @@ import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js"
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
+import type { RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { ChunkSetBumpScopes, RechunkFileSelector } from "../../../contracts/types/rechunk.js";
@@ -421,8 +422,10 @@ export class IndexingOps {
     // the profiler or swap the progress sink out from under the running one.
     const collectionName = await this.claimCollectionForIndexing(path, options);
     let heldUntilEnrichmentSettles = false;
+    const startedAtMs = Date.now();
     try {
-      const stats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
+      const ranStats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
+      const stats = await this.withRustcDriverStatus(ranStats, collectionName, startedAtMs);
       heldUntilEnrichmentSettles = true;
       const release = this.releaseCollectionWhenEnrichmentSettles(
         collectionName,
@@ -434,6 +437,28 @@ export class IndexingOps {
     } finally {
       if (!heldUntilEnrichmentSettles) await this.releaseCollectionForIndexing(collectionName);
     }
+  }
+
+  /**
+   * Attach the rustc driver status this run's codegraph pass persisted (bd
+   * s3i8m). The pass runs in the enrichment worker and records the status in the
+   * codegraph DB; a record older than the run's start is an earlier run's, and a
+   * run whose enrichment detached has not resolved Rust yet — both attach
+   * nothing. A failed read never touches the run's outcome.
+   */
+  private async withRustcDriverStatus(
+    stats: IndexStats,
+    collectionName: string,
+    startedAtMs: number,
+  ): Promise<IndexStats> {
+    let record: RustcDriverStatusRecord | undefined;
+    try {
+      record = await this.status.readRustcDriverStatus(collectionName);
+    } catch {
+      return stats;
+    }
+    if (record === undefined || record.recordedAtMs < startedAtMs) return stats;
+    return { ...stats, rustcDriver: record.status };
   }
 
   private async runClaimed(
@@ -1100,6 +1125,7 @@ export class IndexingOps {
         absolutePath,
         ignorePatterns: this.config.ignorePatterns,
         customIgnorePatterns: this.config.customIgnorePatterns,
+        ignoreContributions: this.config.ignoreContributions,
       }),
       { scopeToTree: !recompute },
     );

@@ -25,6 +25,7 @@ import {
   type RelPath,
   type SymbolDefinition,
   type SymbolDefinitionKind,
+  type SymbolResolutionPassPlan,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   LanguageCapability,
@@ -90,6 +91,8 @@ export interface ResolverInputs {
   callableArgSources: CallContext["callableArgSources"];
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
   typeDeclarations: CallContext["typeDeclarations"];
+  rustMacroUseCratesByFile: CallContext["rustMacroUseCratesByFile"];
+  rustUseImportsByFile: CallContext["rustUseImportsByFile"];
   extendedHookMixins: CallContext["extendedHookMixins"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
   runScope: NonNullable<CallContext["runScope"]>;
@@ -147,6 +150,12 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // bd tea-rags-mcp-y99pg.1 — which files DECLARE a type and which only
     // re-open it. Empty ⇒ every declaration counts as the type, as before.
     typeDeclarations: inputs.typeDeclarations,
+    // bd tea-rags-mcp-s3i8m.4 B2 — a Rust crate root's `#[macro_use] extern
+    // crate` list. Empty ⇒ a bare macro the crate does not declare stays
+    // unresolved, the pre-channel answer.
+    rustMacroUseCratesByFile: inputs.rustMacroUseCratesByFile,
+    // bd tea-rags-mcp-s3i8m letCall S4a — a Rust file's `use` import texts.
+    rustUseImportsByFile: inputs.rustUseImportsByFile,
     // bd tea-rags-mcp-89k7k.35.31 — what a module's `self.extended` hook mixes
     // into the extender. Absent ⇒ an instance lookup drops a singleton-only
     // `extend M` and substitutes nothing, as before.
@@ -378,21 +387,44 @@ export class CallEdgeResolutionRunner {
     for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
       if (!supported.has(language)) continue;
       const { resolver } = this.languageFactory.create(language);
-      const expectedRelPaths = this.runState.extractedRelPathsByLanguage.get(language);
-      const expectedCallSites = this.callSitesOf(expectedRelPaths);
-      resolver?.prepareResolvePass?.({
-        expectedFileCount,
-        // The corpus itself, not only its size: a resolver priming a
-        // whole-project cache has to build it over the files this pass will
-        // ask for, and the project's own declared file set is a different one
-        // (bd tea-rags-mcp-6aytq).
-        expectedRelPaths,
-        // Present only when some file has calls, so a plan with nothing to
-        // count carries no empty map (bd tea-rags-mcp-vtuu4).
-        ...(expectedCallSites.size > 0 ? { expectedCallSites } : {}),
-        projectRoot: this.runState.projectRoot,
-      });
+      resolver?.prepareResolvePass?.(this.passPlanFor(language, expectedFileCount));
     }
+  }
+
+  /**
+   * Await each language's external acquisition before the pass (bd s3i8m.6
+   * R2b) — the async counterpart of {@link prepareResolvePass}, over the same
+   * plan. The languages warm concurrently; a hook never rejects by contract,
+   * and languages the factory does not support are skipped.
+   */
+  async warmResolvePass(): Promise<void> {
+    const supported = new Set(this.languageFactory.supported());
+    const warming: Promise<void>[] = [];
+    for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
+      if (!supported.has(language)) continue;
+      const { resolver } = this.languageFactory.create(language);
+      const warmed = resolver?.warmResolvePass?.(this.passPlanFor(language, expectedFileCount));
+      if (warmed !== undefined) warming.push(warmed);
+    }
+    await Promise.all(warming);
+  }
+
+  /** The pass plan both pass-start hooks receive for `language`. */
+  private passPlanFor(language: string, expectedFileCount: number): SymbolResolutionPassPlan {
+    const expectedRelPaths = this.runState.extractedRelPathsByLanguage.get(language);
+    const expectedCallSites = this.callSitesOf(expectedRelPaths);
+    return {
+      expectedFileCount,
+      // The corpus itself, not only its size: a resolver priming a
+      // whole-project cache has to build it over the files this pass will
+      // ask for, and the project's own declared file set is a different one
+      // (bd tea-rags-mcp-6aytq).
+      expectedRelPaths,
+      // Present only when some file has calls, so a plan with nothing to
+      // count carries no empty map (bd tea-rags-mcp-vtuu4).
+      ...(expectedCallSites.size > 0 ? { expectedCallSites } : {}),
+      projectRoot: this.runState.projectRoot,
+    };
   }
 
   /** Pass-1's call-site counts for `relPaths`, files without calls omitted. */
@@ -656,6 +688,11 @@ export class CallEdgeResolutionRunner {
       // Run-global for the same reason: a type's declaration and its re-openings
       // live in files the caller does not own (bd tea-rags-mcp-y99pg.1).
       typeDeclarations: state.typeDeclarations,
+      // Run-global: the crate root that lists the macro_use crates is rarely
+      // the file invoking the bare macro (bd tea-rags-mcp-s3i8m.4 B2).
+      rustMacroUseCratesByFile: state.rustMacroUseCratesByFile,
+      // Run-global: a file's use set is read from files other than its own.
+      rustUseImportsByFile: state.rustUseImportsByFile,
       // A module's `self.extended` hook and the `extend` it answers live in
       // different files (bd tea-rags-mcp-89k7k.35.31): run-global if any file
       // contributed, else this file's own.

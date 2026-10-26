@@ -12,9 +12,12 @@
  *   | any other `function_item`                   | function   |
  *   | `const_item`, `static_item`                 | constant   |
  *   | `type_item`                                 | type_alias |
+ *   | `macro_definition` (`macro_rules!`)         | macro      |
  *
- * An `impl_item` declares nothing (it implements a type declared elsewhere) and
- * a `macro_rules!` has no kind in the vocabulary, so both read undefined.
+ * An `impl_item` declares nothing (it implements a type declared elsewhere), so
+ * it reads undefined. A `macro_rules!` is tagged `macro` so it lives in the
+ * macro namespace: no callee role admits it, and a macro invocation lands only
+ * on it (bd tea-rags-mcp-s3i8m.2).
  *
  * `rustNameOf` names no `const` / `static` / `type` item, so the walker never
  * tags one today. Adding those symbols would move the chunk set: a top-level
@@ -56,6 +59,8 @@ export function symbolKindOf(nodeType: string, context: RustSymbolKindContext = 
       return "constant";
     case "type_item":
       return "type_alias";
+    case "macro_definition":
+      return "macro";
     default:
       return undefined;
   }

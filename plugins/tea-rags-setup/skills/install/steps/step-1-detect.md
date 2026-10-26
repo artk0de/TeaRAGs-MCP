@@ -16,6 +16,7 @@ $SCRIPTS/progress.sh set hasDocker <true|false>
 $SCRIPTS/progress.sh set hasOllama <true|false>
 $SCRIPTS/progress.sh set hasBrew <true|false>
 $SCRIPTS/progress.sh set hasWinget <true|false>
+$SCRIPTS/progress.sh set hasRust <true|false>
 $SCRIPTS/progress.sh set steps.detect '{"status":"completed","at":"<now>"}'
 ```
 
@@ -24,3 +25,8 @@ $SCRIPTS/progress.sh set steps.detect '{"status":"completed","at":"<now>"}'
 recommendation logic (GPU, embedding provider descriptions).
 
 `nodePath` null → Node.js not installed, Step 2 handles it.
+
+**Rust detection:** `hasRust` is `true` when `Cargo.toml` exists at the root of
+the project (the skill's `[project path]` argument, else the current directory).
+Step 7R acts on it; re-check there if Step 4a settles on a different
+`projectPath`.

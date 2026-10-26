@@ -43,12 +43,14 @@ import {
  */
 const PINNED_FIELD_LOSSES: Readonly<Record<string, readonly string[]>> = {
   /**
-   * All three are TYPE-position nodes. The TypeScript walker reads `object` and
+   * All four are TYPE-position nodes. The TypeScript walker reads `object` and
    * `property` only under explicit `member_expression` / `subscript_expression`
-   * type guards, and reads no `operator` at all, so none is reachable today —
-   * they are pinned to catch a future read, not to record a live defect.
+   * type guards, and reads no `operator` at all; `argument` entered the survey
+   * with the Rust external-signature extractor, which reads it on a Rust
+   * `use_declaration` only. None is reachable today — they are pinned to catch a
+   * future read, not to record a live defect.
    */
-  typescript: ["literal_type.operator", "type_query.object", "type_query.property"],
+  typescript: ["literal_type.argument", "literal_type.operator", "type_query.object", "type_query.property"],
   "typescript-tsx": [],
   javascript: [],
   python: [],
@@ -68,9 +70,12 @@ const PINNED_FIELD_LOSSES: Readonly<Record<string, readonly string[]>> = {
    *
    * The same 15 shapes, in the same order, are what the real-corpus probe found
    * (6,634 losing sites) — this fixture reproduces the grammar's full inventory,
-   * not a sample of it.
+   * not a sample of it. `array_type.element` joined when the Rust walker began
+   * reading Rust's `array_type` `element` field (bd tea-rags-mcp-s3i8m.3); the
+   * Swift walker reads no `element`, so it is inert like the rest.
    */
   swift: [
+    "array_type.element",
     "as_expression.type",
     "check_expression.type",
     "dictionary_type.key",

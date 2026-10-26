@@ -9,6 +9,13 @@ Once you've [installed TeaRAGs](/quickstart/installation) and
 [connected to an agent](/quickstart/connect-to-agent), indexing a codebase is
 one command.
 
+:::tip Rust projects: install the compiler driver toolchain
+Without it, Rust call-graph edges are static-only (resolution rate 0.54-0.71
+instead of 0.98-0.99 on tikv, servo, ripgrep). One command, about 1.5 GB:
+`rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src`. Details:
+[Rust compiler driver](../usage/advanced/codegraph-enrichments.md#rust-compiler-driver).
+:::
+
 ## Index Your Codebase
 
 If you installed the Claude Code skills plugin (`tea-rags@tea-rags`), open

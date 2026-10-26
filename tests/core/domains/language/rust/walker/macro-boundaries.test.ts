@@ -31,7 +31,13 @@ describe("Rust macro boundaries", () => {
     );
 
     expect(extraction.chunks.map(({ symbolId }) => symbolId)).toEqual(["emit_value"]);
-    expect(extraction.chunks[0]).toMatchObject({ symbolId: "emit_value", startLine: 1, endLine: 3 });
+    expect(extraction.chunks[0]).toMatchObject({
+      symbolId: "emit_value",
+      startLine: 1,
+      endLine: 3,
+      // bd tea-rags-mcp-s3i8m.2 — a macro definition lives in the macro namespace.
+      symbolKind: "macro",
+    });
     expect(extraction.chunks[0].calls).toEqual([]);
   });
 
@@ -50,7 +56,15 @@ describe("Rust macro boundaries", () => {
     expect(extraction.chunks.map(({ symbolId }) => symbolId)).toEqual(["emit_value", "run"]);
     expect(extraction.chunks.find(({ symbolId }) => symbolId === "emit_value")?.calls).toEqual([]);
     expect(extraction.chunks.find(({ symbolId }) => symbolId === "run")?.calls).toEqual([
-      { callText: "emit_value!(42)", receiver: null, member: "emit_value", startLine: 5, startColumn: 4 },
+      {
+        callText: "emit_value!(42)",
+        receiver: null,
+        member: "emit_value",
+        startLine: 5,
+        startColumn: 4,
+        memberStartLine: 5,
+        memberStartColumn: 4,
+      },
     ]);
   });
 });

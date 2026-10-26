@@ -52,6 +52,24 @@ describe("EnvDriftMonitor", () => {
     ]);
   });
 
+  it("routes a CODEGRAPH_RUST_DRIVER flip to a codegraph recompute, and ignores its runtime budget", () => {
+    const monitor = new EnvDriftMonitor(
+      registryWith({ CODEGRAPH_RUST_DRIVER: "true", CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "900" }),
+      () => ({ CODEGRAPH_RUST_DRIVER: "false", CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60" }),
+      NO_RUNNING_FLAGS,
+    );
+
+    expect(monitor.check("c")).toEqual([
+      {
+        axis: "env",
+        subject: "CODEGRAPH_RUST_DRIVER",
+        indexed: "true",
+        current: "false",
+        remedy: { kind: "recompute", trajectories: new Set(["codegraph"]), languages: null },
+      },
+    ]);
+  });
+
   it("routes a chunk-set key to the full reindex", () => {
     const monitor = new EnvDriftMonitor(
       registryWith({ INGEST_CHUNK_OVERLAP: "200" }),

@@ -97,6 +97,78 @@ Graph extraction runs for **8 languages** across 15 extensions:
 Files in other languages are still indexed and embedded by tea-rags — they just
 carry no codegraph signals.
 
+### Rust compiler driver
+
+For Rust projects, install the driver toolchain. Without it, Rust call edges are
+static-only, a lower bound that misses trait dispatch and macro-expanded calls.
+Measured call-resolution rate without and with the driver:
+
+| Corpus  | Without | With  |
+| ------- | ------- | ----- |
+| tikv    | 0.545   | 0.987 |
+| servo   | 0.542   | 0.985 |
+| ripgrep | 0.712   | 0.995 |
+
+```bash
+rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src
+```
+
+Rust call edges come from two sources. The static walker resolves what it can
+from the syntax tree; the rest is answered by the compiler. tea-rags ships its
+own rustc driver, `tea-rags-rustc-driver`, which runs `cargo check` over your
+workspace and records, for every call site, the function rustc resolved it to:
+trait methods through `dyn` and generic bounds, UFCS calls, derived impls and
+macro-expanded calls included.
+
+The driver is on by default and needs one pinned nightly toolchain with the
+compiler's own crates:
+
+```bash
+rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src
+```
+
+That is about 1.5 GB. Homebrew's `rust` has no `rustc-dev` and cannot build the
+driver. The toolchain is only used by tea-rags; your project keeps building
+with whatever toolchain it pins.
+
+What a run costs:
+
+- **First run.** tea-rags compiles the driver from the crate source and
+  vendored dependencies shipped in the npm package, offline, into
+  `~/.tea-rags/rustc-driver/bin/` (20–30 s on an Apple-silicon laptop), then
+  runs `cargo check` over the workspace. The check has its own target directory
+  under `~/.tea-rags/rustc-driver/`, so dependencies are compiled once more even
+  if your own `target/` is warm.
+- **Later runs.** The driver binary is reused. When `Cargo.lock`, the manifests
+  and the cargo arguments have not changed and no `.rs` file changed since a
+  check that compiled every crate, the stored call sites are reused and
+  `cargo check` does not run at all. When `.rs` files changed and the previous
+  check's build directory is still there, cargo re-checks only the units that
+  changed (seconds on a leaf crate), so edited files keep their exact call
+  sites. A small incremental run never starts a check from an empty build
+  directory, except to retry a crate the last check left uncompiled after a
+  `.rs` file in it changed (you fixed the error).
+
+Because it is `cargo check`, your project's build scripts and procedural macros
+execute, the same as in your editor. The check runs offline: run
+`cargo fetch` in the project first if its dependencies are not downloaded yet.
+Crates whose CMake builds fail under CMake 4 are handled for you
+(`CMAKE_POLICY_VERSION_MINIMUM=3.5` is set for the run).
+
+The index run reports the driver in one status line:
+
+| Status        | Meaning                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| `indexed`     | The driver ran (or its cached result was reused); lists units, failed crates and wall time    |
+| `unavailable` | Neither a driver binary nor the pinned toolchain was found; the line carries the install command |
+| `off`         | Switched off with `CODEGRAPH_RUST_DRIVER=off`                                                  |
+| `latched`     | The driver build or every crate's check failed; not retried until the inputs change (for a failed check, editing any `.rs` file counts); a check that failed only because a dependency is missing from the offline cargo cache is never latched and shows the `cargo fetch` hint every run |
+| `skipped`     | The project was not checked this run; the line gives the reason                               |
+
+Without the driver, Rust still gets the walker's edges; only the
+compiler-resolved ones are missing. Tuning variables are listed under
+[Trajectory: Codegraph](/config/environment-variables#trajectory-codegraph).
+
 ## What You Get
 
 Codegraph computes signals at **two scopes**:

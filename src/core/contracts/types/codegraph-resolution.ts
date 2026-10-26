@@ -20,6 +20,7 @@ import type {
   ImportRef,
   ModuleReexport,
   RubyExtendedHookMixin,
+  RustMacroUseCrate,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
@@ -103,6 +104,14 @@ export interface CallResolver {
    * Mirrors `LanguageSymbolResolver.prepareResolvePass`.
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
+  /**
+   * Optional: acquire an external analysis the pass reads before it starts
+   * (bd s3i8m.6 R2b) — minutes, unlike the sizing `prepareResolvePass` does.
+   * Awaited at most once per language per pass-2, before `prepareResolvePass`.
+   * Never rejects: a resolver whose acquisition fails resolves without it.
+   * Mirrors `LanguageSymbolResolver.warmResolvePass`.
+   */
+  warmResolvePass?: (plan: SymbolResolutionPassPlan) => Promise<void>;
   /**
    * Optional: the order pass-2 should visit this language's files in, as
    * groups (bd tea-rags-mcp-vtuu4). Read once, after `prepareResolvePass`.
@@ -452,6 +461,22 @@ export interface CallContext {
    * existed: every declaration of a type counts as the type.
    */
   typeDeclarations?: Readonly<Record<string, readonly TypeDeclarationFact[]>>;
+  /**
+   * `FileExtraction.rustMacroUseCrates` collected RUN-GLOBAL, keyed by the
+   * crate-root relPath that declares each list (bd tea-rags-mcp-s3i8m.4 B2): a
+   * bare `m!` in any file of the crate reads its root's list. Replaced on a
+   * re-walk, hydrated for unwalked files. Absent ⇒ a bare macro the crate does
+   * not declare stays unresolved, as before the channel existed.
+   */
+  rustMacroUseCratesByFile?: Readonly<Record<string, readonly RustMacroUseCrate[]>>;
+  /**
+   * `FileExtraction.rustUseImports` collected RUN-GLOBAL, keyed by the Rust
+   * file's relPath (bd tea-rags-mcp-s3i8m letCall S4a). Replaced on a re-walk,
+   * hydrated for unwalked files. Read to place a type another file's
+   * declaration spells (a callee's return, a struct's field) through THAT
+   * file's imports (S4b). Absent ⇒ such a type declines, as before.
+   */
+  rustUseImportsByFile?: Readonly<Record<string, readonly string[]>>;
   /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker

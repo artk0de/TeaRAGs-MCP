@@ -15,7 +15,7 @@ import type { CallableArgSource, DispatchRef, DispatchTable } from "./codegraph-
 import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, ConstructedLocalLines, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
-import type { RubyTypeRef } from "./language.js";
+import type { RubyTypeRef, TypeRef } from "./language.js";
 
 /**
  * Per-file extraction emitted by the TypeScript walker (and, in slice 3,
@@ -375,6 +375,23 @@ export interface FileExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
   classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+  /**
+   * The file's `#[macro_use] extern crate <name> [as alias];` declarations, in
+   * SOURCE ORDER (bd tea-rags-mcp-s3i8m.4 B2). Rust admits a macro-loading
+   * `extern crate` at the crate root only, so only a crate-root file carries
+   * the list, and it scopes every file of that crate: a bare `m!` the crate
+   * does not declare reaches the `#[macro_export]` macro of the LAST listed
+   * crate that exports `m`. Read run-global as
+   * `CallContext.rustMacroUseCratesByFile`. Absent when the file has none.
+   */
+  rustMacroUseCrates?: readonly RustMacroUseCrate[];
+  /**
+   * The `importText` of every `use` statement of a Rust file, in source order
+   * (bd tea-rags-mcp-s3i8m letCall S4a): the per-file use set the resolver
+   * reads run-global as `CallContext.rustUseImportsByFile`. Absent when the
+   * file has no `use`.
+   */
+  rustUseImports?: readonly string[];
   /**
    * Every name this file's `from <module> import <name>` statements bind, and
    * where each came from (bd tea-rags-mcp-xpl83.3).
@@ -775,9 +792,20 @@ export interface TypeDeclarationFact {
    * of its {@link genericParameters}: each one's argument labels in order
    * (`null` for `_`) and, per position, the generic parameter it binds or
    * `null` — `init(_ value: Value)` → `{ labels: [null], binds: ["Value"] }`
-   * (bd tea-rags-mcp-y99pg.26). Absent when none does.
+   * (bd tea-rags-mcp-y99pg.26). Absent when none does. Rust: the associated
+   * fns of an inherent impl that return the type itself, each with its
+   * {@link GenericInitializerFact.name} — `fn new(ptr: &T) -> Trusted<T>` →
+   * `{ name: "new", labels: [null], binds: ["T"] }` (bd tea-rags-mcp-s3i8m).
    */
   readonly genericInitializers?: readonly GenericInitializerFact[];
+  /**
+   * What a `type_alias` declaration stands for, in its own file's spelling,
+   * its {@link genericParameters} left as written: `pub type DomRoot<T> =
+   * Root<Dom<T>>` → `Root<Dom<T>>` (bd tea-rags-mcp-s3i8m). Set by the Rust
+   * walker; absent on every other kind and when the aliased type has no
+   * nominal spelling.
+   */
+  readonly aliasedType?: TypeRef;
   /**
    * For each method taking ONE function-typed parameter, the types that
    * function's parameters are declared with, by method name:
@@ -827,6 +855,8 @@ export interface TypeDeclarationFact {
    * 1-indexed line span — the constraint holds inside THIS body only, and a
    * file routinely re-opens one protocol several times under different
    * constraints. Absent when the clause constrains nothing about `Self`.
+   * Rust: every trait impl re-opening carries one for its span, `types` being
+   * a generic `Self`'s bounds (`impl<T: B> Tr for T` → `["B"]`), else empty.
    */
   readonly selfConstraints?: SelfConstraintFact;
   /**
@@ -900,6 +930,8 @@ export interface SwiftFieldConstruction {
 
 /** One initializer of a generic type (`TypeDeclarationFact.genericInitializers`). */
 export interface GenericInitializerFact {
+  /** The initializer's own name where a language names it (Rust `new`); absent for Swift `init`. */
+  readonly name?: string;
   /** Argument labels in order, `null` for an unlabelled parameter. */
   readonly labels: readonly (string | null)[];
   /** Per position, the type's generic parameter that parameter is typed as, or `null`. */
@@ -910,6 +942,21 @@ export interface GenericInitializerFact {
  * One name a `from <module> import <name>` statement binds into its own module's
  * namespace (bd tea-rags-mcp-xpl83.3).
  */
+/**
+ * One `#[macro_use] extern crate` of a Rust crate root (bd
+ * tea-rags-mcp-s3i8m.4 B2) — `FileExtraction.rustMacroUseCrates`.
+ */
+export interface RustMacroUseCrate {
+  /** The crate as written after `extern crate` — the name its macros come from. */
+  readonly crateName: string;
+  /** The `as` name of a renamed crate; macros keep their own names, so it never scopes them. */
+  readonly alias?: string;
+  /** `#[macro_use(a, b)]` imports these macros only; absent for a bare `#[macro_use]` (all of them). */
+  readonly macros?: readonly string[];
+  /** 1-based line of the `extern crate` item. */
+  readonly line: number;
+}
+
 export interface ModuleReexport {
   /**
    * The LOCAL name the statement binds — what an importer of THIS module sees.
@@ -1289,6 +1336,15 @@ export interface CallRef {
    * place a same-line position decides which binding is in force.
    */
   startColumn?: number;
+  /**
+   * Position of the call's member-name token — the `b` of `a.b()`, the last
+   * segment of `a::b()`, the name of `m!()` (bd s3i8m.6 R3-1): 1-based line,
+   * 0-based UTF-16 column. What a compiler-grade index (the rustc driver)
+   * keys a reference by, and what tells a nested call from the call it sits
+   * in when both start at one column. Optional: ABSENT means unknown.
+   */
+  memberStartLine?: number;
+  memberStartColumn?: number;
   /**
    * The receiver exactly as the source spells it, where a language's
    * `receiver` normalizes sugar away: Swift strips optional chaining and

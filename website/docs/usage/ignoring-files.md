@@ -132,6 +132,19 @@ These patterns are always applied regardless of your configuration:
 | `*.map`, `*.log`                             | Source maps and logs      |
 | `.env`, `.env.*`                             | Environment secrets       |
 
+Some directories are recognised by what they contain rather than by their name,
+so no pattern can catch them:
+
+| Directory holding                                 | What it excludes                                     |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| `wpt`, `lint.ignore`, `resources/testharness.js`  | A vendored upstream web-platform-tests suite         |
+| `.cargo-checksum.json` (declared by Rust)         | A crate vendored by `cargo vendor`                   |
+
+Languages declare their own build output too: Rust contributes Cargo's
+`target/`. A plain `vendor/` directory is not ignored, since Rails keeps
+application code there. The project root is never excluded by a marker, and a
+`!pattern` negation does not re-include a marked directory.
+
 ### `ignorePatterns` parameter
 
 Pass patterns directly to `index_codebase` for per-call overrides:

@@ -127,3 +127,26 @@ describe("index_codebase — partial incremental run (bd tea-rags-mcp-6l1w6)", (
     expect(text).not.toContain("Warning");
   });
 });
+
+describe("index_codebase — rustc driver line (s3i8m T9)", () => {
+  const cleanRun: IndexStats = { ...seededRun, worktreeSeed: undefined };
+
+  it("appends one driver line from the run's stats", async () => {
+    const { handler } = harness({
+      ...cleanRun,
+      rustcDriver: { outcome: "unavailable", hint: "get a toolchain" },
+    });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text.split("\n").filter((l) => l.startsWith("rustc driver:"))).toEqual([
+      "rustc driver: unavailable — Rust call edges are static-only (lower bound); get a toolchain",
+    ]);
+  });
+
+  it("appends nothing for a run without a driver status", async () => {
+    const { handler } = harness(cleanRun);
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).not.toContain("rustc driver");
+  });
+});

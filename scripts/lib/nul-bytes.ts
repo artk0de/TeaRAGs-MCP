@@ -55,7 +55,7 @@ export function describeNulByteOffense(offense: LocatedNulByteOffense): string {
 
 /**
  * Formats whose NUL bytes are content: images, fonts, documents, archives,
- * media, compiled objects, databases, model weights.
+ * media, compiled objects, databases, model weights, SCIP (protobuf) indexes.
  */
 const BINARY_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   ...["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "tif", "tiff", "ico", "icns", "heic"],
@@ -63,7 +63,7 @@ const BINARY_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
   ...["pdf", "zip", "gz", "tgz", "bz2", "xz", "zst", "7z", "tar", "jar"],
   ...["mp3", "mp4", "m4a", "mov", "webm", "wav", "ogg", "flac"],
   ...["wasm", "node", "so", "dylib", "dll", "exe", "o", "a", "class", "pyc"],
-  ...["db", "sqlite", "duckdb", "wal", "onnx", "bin", "npy"],
+  ...["db", "sqlite", "duckdb", "wal", "onnx", "bin", "npy", "scip"],
 ]);
 
 /**
@@ -77,8 +77,16 @@ const BINARY_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
  * favicon and logo); the list covers the formats a checkout plausibly adds.
  */
 export function isNulGuardedPath(path: string): boolean {
+  if (VENDORED_CRATE_PATH.test(path)) return false;
   return !BINARY_FILE_EXTENSIONS.has(extname(path).slice(1).toLowerCase());
 }
+
+/**
+ * Third-party crates `cargo vendor` copied into a native crate (`native/<crate>/vendor/`):
+ * byte-exact copies whose `.cargo-checksum.json` pins every file, so a NUL in one of their
+ * fixtures is content no escape can replace.
+ */
+const VENDORED_CRATE_PATH = /^native\/[^/]+\/vendor\//;
 
 /** Git's mode for a gitlink: its "blob" id names a commit of another repository. */
 const GITLINK_MODE = "160000";

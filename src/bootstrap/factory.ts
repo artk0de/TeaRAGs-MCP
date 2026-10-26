@@ -70,6 +70,7 @@ import {
   initDebugLogger,
   InMemoryGlobalSymbolTable,
   InMemoryTemporalSymbolCommitBuffer,
+  languageIngestIgnoreContribution,
   LanguageVersionDriftMonitor,
   NamingLexiconOps,
   nativeLanguageCapabilities,
@@ -125,7 +126,7 @@ import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/cont
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
-import type { LanguageFactoryDescriptor } from "../core/contracts/types/language.js";
+import type { LanguageFactoryDescriptor, RustCallSiteSourceConfig } from "../core/contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import type { WorkingTree } from "../core/contracts/types/working-tree.js";
@@ -922,6 +923,7 @@ export function wireCodegraph(
     // their resolver with the configured mode.
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
+    rustDriver: codegraphWorkerConfig.rustDriver,
     // Codegraph-layer exclusion (user-supplied patterns; generated + test
     // files are excluded unconditionally). The shape mirrors
     // `CodegraphExclusionOptions`; the provider builds the actual `Ignore`
@@ -972,6 +974,7 @@ export function wireCodegraph(
       ambiguousResolveMode: codegraphWorkerConfig.ambiguousResolveMode,
       dbMemoryLimit: codegraphWorkerConfig.dbMemoryLimit,
       dbThreads: codegraphWorkerConfig.dbThreads,
+      rustDriver: codegraphWorkerConfig.rustDriver,
     },
     // The verdicts an index run re-applies after its walk; the tree build
     // re-applies them the same way (`cacheOnly`) to the files it re-walks.
@@ -1196,6 +1199,7 @@ function buildCodegraphWorkerDescriptor(deps: {
     dbThreads: codegraph.dbThreads,
     ambiguousResolveMode: ambiguousMode,
     residualMenuLimit: codegraph.residual.menuLimit,
+    rustDriver: rustCallSiteSourceConfigOf(codegraph),
     ...(temporal ? { temporal } : {}),
   };
   const workerDescriptor: WorkerEnrichmentDescriptor = {
@@ -1215,6 +1219,23 @@ function buildCodegraphWorkerDescriptor(deps: {
     serializableConfig: codegraphWorkerConfig,
   };
   return { codegraphWorkerConfig, workerDescriptor };
+}
+
+/**
+ * `codegraph.rustDriver` as the rustc call-site source config every resolving
+ * thread builds from (bd s3i8m T8). Spawning is allowed here; the working-tree
+ * graph build narrows it to reuse-only itself.
+ */
+function rustCallSiteSourceConfigOf(codegraph: CodegraphZodConfig): RustCallSiteSourceConfig {
+  const { enabled, path, jobs, timeoutSec, maxRssMb } = codegraph.rustDriver;
+  return {
+    enabled,
+    ...(path ? { path } : {}),
+    ...(jobs === undefined ? {} : { jobs }),
+    timeoutSec,
+    maxRssMb,
+    spawn: "allowed",
+  };
 }
 
 /**
@@ -1307,7 +1328,7 @@ function createIngestFacade(
   return new IngestFacade({
     qdrant: shared.qdrant,
     embeddings: shared.embeddings,
-    config: config.ingestCode,
+    config: withLanguageIgnoreContributions(config.ingestCode),
     // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
     // adapter; es-git selection fail-louds here on first git blob read.
     blobReaderFactory: async (repoRoot: string) =>
@@ -2482,6 +2503,16 @@ export function createConfiguredServer(
 // ---------------------------------------------------------------------------
 
 /**
+ * `ingestCode` carrying the languages' own ignore contributions (Cargo's
+ * `target/`, `cargo vendor` crates, …). The scanner owns no language, so every
+ * scanner this root builds — ingest's walk and the working-tree admission —
+ * receives them from here, and the two agree on what is indexed.
+ */
+function withLanguageIgnoreContributions(ingestCode: AppConfig["ingestCode"]): AppConfig["ingestCode"] {
+  return { ...ingestCode, ignoreContributions: [languageIngestIgnoreContribution()] };
+}
+
+/**
  * The ingest admission rule for one working tree (bd tea-rags-mcp-xi2r9): the
  * same `FileScanner` ingest builds — extensions, built-in and project ignore
  * files, configured patterns — loaded at the tree's root, so the working-tree
@@ -2490,11 +2521,13 @@ export function createConfiguredServer(
 export function createWorkingTreeFileFilter(
   ingestCode: AppConfig["ingestCode"],
 ): (root: string) => Promise<(relativePath: string) => boolean> {
+  const { ignoreContributions } = withLanguageIgnoreContributions(ingestCode);
   return async (root) => {
     const scanner = new FileScanner({
       supportedExtensions: ingestCode.supportedExtensions,
       ignorePatterns: ingestCode.ignorePatterns,
       customIgnorePatterns: ingestCode.customIgnorePatterns,
+      ignoreContributions,
     });
     await scanner.loadIgnorePatterns(root);
     return (relativePath) => scanner.accepts(relativePath);

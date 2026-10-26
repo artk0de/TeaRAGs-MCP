@@ -191,7 +191,23 @@ function unwrittenTerminalLevels(progress: CompletionTerminalMarkerProgress): re
   }
 }
 
+/**
+ * How often a pending `runFinalize` keeps the run's liveness heartbeat going.
+ * Below the 2 min enrichment stale threshold; the coordinator's own throttle
+ * bounds the writes.
+ */
+export const FINALIZE_KEEPALIVE_INTERVAL_MS = 30_000;
+
 export class CompletionRunner {
+  /**
+   * Heartbeat for the run while one provider's finalize is in flight (bd
+   * s3i8m.6 R2b). Pass 2 applies nothing until it returns — a rustc call-site
+   * acquisition (`cargo check`) can hold it for minutes — so the apply-site
+   * heartbeat goes silent and the run would read as stalled. Wired by the
+   * coordinator, like `EnrichmentApplier.onApply`.
+   */
+  finalizeKeepalive: ((physicalCollectionName: PhysicalCollectionName) => void) | undefined;
+
   /**
    * Provider keys whose persisted pass-1 aggregate read failed THIS run
    * (bd tea-rags-mcp-weno4). The read is best-effort, but without the injected
@@ -514,21 +530,23 @@ export class CompletionRunner {
       const fileOverlays = await this.timedFinalizeSubstep(
         "runFinalize",
         async () =>
-          executor.runFinalize(ctx.provider, root, {
-            collectionName: physicalCollectionName || undefined,
-            crossPass: filePhase.crossPassEnabled,
-            // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
-            // run can never fall back to the provider's direct-caller default.
-            runCoverage: filePhase.runCoverage,
-            // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
-            // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
-            // makes, and pass-2 — the only writer of those rows — runs inside it, so
-            // this is what keeps a first index / `--force` from persisting NULL and
-            // making the next run repair the whole corpus. Providers that keep no
-            // per-file store (git) ignore it.
-            contentHashes: filePhase.runContentHashes,
-            ...(pass1Aggregates ? { pass1Aggregates } : {}),
-          }),
+          this.keptAlive(physicalCollectionName, async () =>
+            executor.runFinalize(ctx.provider, root, {
+              collectionName: physicalCollectionName || undefined,
+              crossPass: filePhase.crossPassEnabled,
+              // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
+              // run can never fall back to the provider's direct-caller default.
+              runCoverage: filePhase.runCoverage,
+              // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
+              // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
+              // makes, and pass-2 — the only writer of those rows — runs inside it, so
+              // this is what keeps a first index / `--force` from persisting NULL and
+              // making the next run repair the whole corpus. Providers that keep no
+              // per-file store (git) ignore it.
+              contentHashes: filePhase.runContentHashes,
+              ...(pass1Aggregates ? { pass1Aggregates } : {}),
+            }),
+          ),
         ctx.key,
       );
       // Apply whenever there is something to settle, not only when the graph
@@ -548,6 +566,20 @@ export class CompletionRunner {
       }
     }
     await this.timedFinalizeSubstep("drain", async () => filePhase.drain());
+  }
+
+  /** Run `work` with {@link finalizeKeepalive} ticking until it settles. */
+  private async keptAlive<T>(physicalCollectionName: PhysicalCollectionName, work: () => Promise<T>): Promise<T> {
+    const keepalive = this.finalizeKeepalive;
+    if (keepalive === undefined) return work();
+    const timer = setInterval(() => {
+      keepalive(physicalCollectionName);
+    }, FINALIZE_KEEPALIVE_INTERVAL_MS);
+    try {
+      return await work();
+    } finally {
+      clearInterval(timer);
+    }
   }
 
   /**

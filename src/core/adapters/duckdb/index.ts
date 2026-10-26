@@ -1,5 +1,5 @@
 export { DuckDbGraphClient, type DuckDbGraphClientOptions } from "./client.js";
-export { DuckDbOpenFailedError } from "./errors.js";
+export { CodegraphDatabaseMissingError, DuckDbOpenFailedError } from "./errors.js";
 export {
   GraphDbClientPool,
   type CollectionGraphHandle,

@@ -188,6 +188,43 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(checkpointCalls).toBe(0);
   });
 
+  // bd s3i8m.6 R2b — the external acquisition (the rustc call-site index) must settle
+  // before the pass sizes itself or reads its first spill line.
+  it("awaits warmResolvePass before prepareResolvePass and before the first spill line", async () => {
+    const events: string[] = [];
+    let releaseWarm!: () => void;
+    const warmGate = new Promise<void>((resolve) => {
+      releaseWarm = resolve;
+    });
+    const resolutionRunner = {
+      warmResolvePass: async () => {
+        events.push("warm:start");
+        await warmGate;
+        events.push("warm:end");
+      },
+      prepareResolvePass: () => {
+        events.push("prepare");
+      },
+      resolve: (extraction: FileExtraction): GraphEdges => {
+        events.push(`resolve:${extraction.relPath}`);
+        return { fileEdges: [], methodEdges: [] };
+      },
+    } as unknown as CallEdgeResolutionRunner;
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb: makeGraphDb(), symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      new CodegraphRunState(),
+    );
+
+    const pass = finalizer.resolveAndUpsert(writeSpill([{ ...EXTRACTION, relPath: "src/a.ts" }]));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(events).toEqual(["warm:start"]);
+
+    releaseWarm();
+    await pass;
+    expect(events).toEqual(["warm:start", "warm:end", "prepare", "resolve:src/a.ts"]);
+  });
+
   it("buffers and bulk-upserts a normal file's edges in a single batch transaction", async () => {
     const upsertedBatches: readonly BulkFileUpsertEntry[][] = [];
     const graphDb = makeGraphDb({

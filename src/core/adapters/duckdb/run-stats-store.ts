@@ -6,7 +6,8 @@
  * one answers (bd tea-rags-mcp-xpmwg):
  *
  * - `cg_file_resolve_stats` — one caller file's tally per receiver kind. A run
- *   replaces the rows of the files it resolved and nothing else, so the SUM
+ *  | "getRustcDriverStatus"
+ replaces the rows of the files it resolved and nothing else, so the SUM
  *   describes the corpus however few files the last run touched.
  * - `cg_run_stats` — the legacy per-run table, replaced per language. It was
  *   the only table before migration 025, so it is what every language reads
@@ -18,6 +19,7 @@
  * telling exact edges apart from over-approximations.
  */
 
+import type { RustcDriverStatus, RustcDriverStatusRecord } from "../../contracts/rustc-driver-status.js";
 import type {
   CodegraphStorageMaintenance,
   EdgeKindCount,
@@ -49,7 +51,12 @@ const COUNTER_COLUMNS = FILE_RESOLVE_STATS_VALUE_COLUMNS.slice(1);
 
 export class DuckDbRunStatsStore implements Pick<
   CodegraphStorageMaintenance,
-  "recordRunStats" | "recordFileResolveStats" | "getRunStats" | "getEdgeKindDistribution"
+  | "recordRunStats"
+  | "recordFileResolveStats"
+  | "getRunStats"
+  | "getEdgeKindDistribution"
+  | "recordRustcDriverStatus"
+  | "getRustcDriverStatus"
 > {
   constructor(private readonly session: DuckDbGraphSession) {}
 
@@ -214,5 +221,25 @@ export class DuckDbRunStatsStore implements Pick<
       origin: r.origin as EdgeOrigin,
       count: Number(r.cnt),
     }));
+  }
+
+  /** One record per collection: a later run that resolved Rust replaces it (bd s3i8m). */
+  async recordRustcDriverStatus(record: RustcDriverStatusRecord): Promise<void> {
+    return this.session.transaction(async () => {
+      await this.session.run("DELETE FROM cg_rustc_driver_status");
+      await this.session.run("INSERT INTO cg_rustc_driver_status (status_json, recorded_at_ms) VALUES (?, ?)", [
+        JSON.stringify(record.status),
+        record.recordedAtMs,
+      ]);
+    });
+  }
+
+  async getRustcDriverStatus(): Promise<RustcDriverStatusRecord | null> {
+    const statusRows = await this.session.queryAll<{ status_json: string; recorded_at_ms: number | bigint }>(
+      "SELECT status_json, recorded_at_ms FROM cg_rustc_driver_status LIMIT 1",
+    );
+    const row = statusRows[0];
+    if (row === undefined) return null;
+    return { status: JSON.parse(row.status_json) as RustcDriverStatus, recordedAtMs: Number(row.recorded_at_ms) };
   }
 }

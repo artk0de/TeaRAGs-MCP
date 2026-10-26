@@ -41,20 +41,21 @@ const PIN_TEST = "navigator-enumerations.test.ts";
  */
 const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> = {
   classifierLocalBindings: ["python"],
-  diagnostics: ["typescript"],
+  diagnostics: ["rust", "typescript"],
   endResolveVisitGroup: ["typescript"],
   hasInProjectDefinition: ["javascript", "python", "ruby", "rust", "swift", "typescript"],
   planResolveVisits: ["typescript"],
-  prepareResolvePass: ["go", "typescript"],
+  prepareResolvePass: ["go", "rust", "typescript"],
   residualExclusion: ["ruby"],
   residualOverrideMenu: ["ruby"],
   residualReturnType: ["ruby"],
   resolveFileEdges: ["java", "javascript", "python", "ruby", "swift", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],
   targetsExternalImport: ["java", "javascript", "python", "ruby", "rust", "typescript"],
-  targetsUndecidable: ["python"],
+  targetsUndecidable: ["python", "rust"],
   typeOfCallArgument: ["ruby"],
   visibleLocalBindings: ["python"],
+  warmResolvePass: ["rust"],
 };
 
 /**

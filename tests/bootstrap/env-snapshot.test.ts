@@ -85,6 +85,9 @@ describe("buildRegistryEnvSnapshot", () => {
       CODEGRAPH_DB_MEMORY_LIMIT_MAX: "4GB",
       CODEGRAPH_DB_THREADS: "2",
       CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: "strict",
+      CODEGRAPH_RUST_DRIVER: "true",
+      CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "3600",
+      CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "12288",
       EMBEDDING_TUNE_BATCH_TIMEOUT_MS: "2000",
       EMBEDDING_TUNE_RETRY_ATTEMPTS: "3",
       EMBEDDING_TUNE_RETRY_DELAY_MS: "1000",
@@ -145,6 +148,8 @@ describe("buildRegistryEnvSnapshot", () => {
       "CODE_TEST_PATHS",
       "CODEGRAPH_DB_PATH",
       "CODEGRAPH_CUSTOM_EXCLUDE",
+      "CODEGRAPH_RUST_DRIVER_PATH",
+      "CODEGRAPH_RUST_DRIVER_JOBS",
       "QDRANT_MAX_RESIDENT_MEMORY_PERCENT",
       "QDRANT_SEARCH_MAX_BATCHSIZE",
     ]) {
@@ -157,9 +162,15 @@ describe("buildRegistryEnvSnapshot", () => {
       tune: { minBatchSize: "8", maxRequestsPerMinute: "600" },
     });
     cfg.ingest = ingestSchema.parse({ testPaths: "spec/,test/", tune: {} });
-    cfg.codegraph = codegraphSchema.parse({ dbPath: "/tmp/cg", customExcludePatterns: "vendor/**,generated/**" });
+    cfg.codegraph = codegraphSchema.parse({
+      dbPath: "/tmp/cg",
+      customExcludePatterns: "vendor/**,generated/**",
+      rustDriver: { path: "/opt/drv/tea-rags-rustc-driver", jobs: "3" },
+    });
     cfg.qdrantTune = qdrantTuneSchema.parse({ maxResidentMemoryPercent: "80", searchMaxBatchsize: "64" });
     const set = buildRegistryEnvSnapshot(cfg, resolveDomainEnvCodeDefaults());
+    expect(set.CODEGRAPH_RUST_DRIVER_PATH).toBe("/opt/drv/tea-rags-rustc-driver");
+    expect(set.CODEGRAPH_RUST_DRIVER_JOBS).toBe("3");
     expect(set.EMBEDDING_DIMENSIONS).toBe("768");
     expect(set.EMBEDDING_TUNE_MIN_BATCH_SIZE).toBe("8");
     expect(set.EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE).toBe("600");
@@ -206,6 +217,7 @@ describe("buildRegistryEnvSnapshot", () => {
     cfg.codegraph = codegraphSchema.parse({
       dbPath: "/tmp/cg",
       customExcludePatterns: "vendor/**",
+      rustDriver: { path: "/opt/drv/tea-rags-rustc-driver", jobs: "2" },
       residual: {
         kevUrls: "http://gpu:8090",
         kevSessionUrl: "http://gpu:8008",

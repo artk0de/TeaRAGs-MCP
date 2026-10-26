@@ -13,6 +13,27 @@ describe("replayRegistryEnv", () => {
     expect(target.TRAJECTORY_GIT_CHUNK_CONCURRENCY).toBe("5");
   });
 
+  it("replays the rustc driver flags a run recorded (bd s3i8m T8)", () => {
+    const target: Record<string, string> = { CODEGRAPH_RUST_DRIVER_JOBS: "4" };
+    replayRegistryEnv(
+      {
+        CODEGRAPH_RUST_DRIVER: "false",
+        CODEGRAPH_RUST_DRIVER_JOBS: "2",
+        CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tea-rags-rustc-driver",
+        CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
+        CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
+      },
+      target,
+    );
+    expect(target).toEqual({
+      CODEGRAPH_RUST_DRIVER: "false",
+      CODEGRAPH_RUST_DRIVER_JOBS: "4",
+      CODEGRAPH_RUST_DRIVER_PATH: "/opt/drv/tea-rags-rustc-driver",
+      CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC: "60",
+      CODEGRAPH_RUST_DRIVER_MAX_RSS_MB: "2048",
+    });
+  });
+
   it("keeps an already-set non-empty target value (env > registry)", () => {
     const target: Record<string, string> = { GIT_ADAPTER: "git" };
     replayRegistryEnv({ GIT_ADAPTER: "es-git" }, target);

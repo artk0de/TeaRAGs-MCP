@@ -153,7 +153,12 @@ export {
 } from "../domains/maintenance/drift/index.js";
 
 // language — symbol collection and the native capability table
-export { collectSymbols, DefaultSymbolIdComposer, nativeLanguageCapabilities } from "../domains/language/index.js";
+export {
+  collectSymbols,
+  DefaultSymbolIdComposer,
+  languageIngestIgnoreContribution,
+  nativeLanguageCapabilities,
+} from "../domains/language/index.js";
 
 // trajectory/codegraph/symbols — the global symbol table
 export { InMemoryGlobalSymbolTable } from "../domains/trajectory/codegraph/symbols/index.js";

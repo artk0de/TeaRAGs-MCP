@@ -29,6 +29,8 @@
  */
 
 import { readManifestFiles } from "../../../adapters/filesystem/dependency-manifests.js";
+import { processRustExternalSignatureSources } from "../../../adapters/rust-signatures/index.js";
+import { processRustcCallSiteSource } from "../../../adapters/rustc-driver/callsite-source.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type { AmbiguousResolveMode } from "../../../contracts/types/codegraph.js";
 import type {
@@ -36,6 +38,9 @@ import type {
   LanguageCrossRunParseCache,
   LanguageFactoryDescriptor,
   ManifestFilesReader,
+  RustCallSiteSource,
+  RustCallSiteSourceConfig,
+  RustExternalSignatureSources,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
@@ -134,6 +139,12 @@ export interface CodegraphWorkerConfig {
   /** `CODEGRAPH_RESIDUAL_MENU_LIMIT` for the in-thread provider's resolution runner. */
   residualMenuLimit?: number;
   /**
+   * `codegraph.rustDriver` plus who may spawn (bd s3i8m T8) — plain data, so
+   * the thread that resolves builds the rustc call-site source itself. Absent
+   * or disabled ⇒ no source, no `cargo check`.
+   */
+  rustDriver?: RustCallSiteSourceConfig;
+  /**
    * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp) —
    * plain data, so the pinned worker rebuilds the SAME completion hook the
    * main-thread provider carries. Absent ⇒ no co-change build.
@@ -154,6 +165,8 @@ interface LanguageModule {
     ambiguousResolveMode?: AmbiguousResolveMode;
     crossRunParseCache?: LanguageCrossRunParseCache;
     manifestFilesReader?: ManifestFilesReader;
+    rustExternalSignatureSources?: RustExternalSignatureSources;
+    rustcCallSiteSource?: RustCallSiteSource;
   }) => LanguageFactoryDescriptor;
   CrossRunParseCache: new () => LanguageCrossRunParseCache;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
@@ -247,6 +260,16 @@ async function loadCodegraphPoolBuilder(poolFactoryModulePath: string): Promise<
 }
 
 /**
+ * The Rust index source the in-thread `LanguageFactory` receives: the
+ * process-scoped rustc call-site source, only when the driver slot is on.
+ */
+export function rustIndexSourcesOf(config: Pick<CodegraphWorkerConfig, "rustDriver">): {
+  rustcCallSiteSource?: RustCallSiteSource;
+} {
+  return config.rustDriver?.enabled ? { rustcCallSiteSource: processRustcCallSiteSource(config.rustDriver) } : {};
+}
+
+/**
  * Build a `CodegraphEnrichmentProvider` runtime from a structured-clone-safe
  * config — the rebuild seam the enrichment worker (through the bootstrap
  * module's `createCodegraphEnrichmentProvider`) and the working-tree graph
@@ -286,9 +309,16 @@ export async function createCodegraphProviderRuntime(
   // The manifest walk is a function, so it cannot ride the structured-clone
   // config: this module — loaded in-thread by the enrichment worker — wires it
   // here, exactly as the main-thread composition does (bd tea-rags-mcp-2wu2h).
+  // The Rust external signature sources (bd s3i8m.7) are an object with
+  // methods, so they are wired here in-thread the same way: `prepareResolvePass`
+  // runs on the thread that built this runtime.
   const languageFactory = new lang.LanguageFactory({
     ambiguousResolveMode: config.ambiguousResolveMode,
     manifestFilesReader: readManifestFiles,
+    rustExternalSignatureSources: processRustExternalSignatureSources(),
+    // The rustc call-site source likewise (bd s3i8m T8): built here, in the
+    // thread whose pass-2 awaits it, and only when its slot is on.
+    ...rustIndexSourcesOf(config),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
   const composer = new lang.DefaultSymbolIdComposer();

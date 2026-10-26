@@ -76,6 +76,17 @@ import {
   collectDependencyManifestSources,
   readManifestFiles,
 } from "../src/core/adapters/filesystem/dependency-manifests.js";
+import { processRustExternalSignatureSources } from "../src/core/adapters/rust-signatures/index.js";
+import {
+  acquireRustcCallSites,
+  defaultRustcCallSiteRunnerDeps,
+  RUSTC_DRIVER_DEFAULT_CARGO_ARGS,
+  RUSTC_DRIVER_DEFAULT_MAX_RSS_MB,
+  RUSTC_DRIVER_DEFAULT_TIMEOUT_SEC,
+  type RustcCallSiteAcquisition,
+  type RustcCallSiteRunnerDeps,
+} from "../src/core/adapters/rustc-driver/callsite-runner.js";
+import { createRustcCallSiteSource } from "../src/core/adapters/rustc-driver/callsite-source.js";
 import { deferred } from "../src/core/contracts/resolution.js";
 import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
@@ -86,7 +97,13 @@ import {
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
+import type {
+  RustCallSiteSource,
+  RustExternalSignatureSources,
+  RustExternalSourcesOfProject,
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+} from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
@@ -96,14 +113,14 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
-import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
-import { resolveViaChain } from "../src/core/domains/language/kernel/index.js";
+import { dispatchFanoutPolicyFor, resolveViaChain } from "../src/core/domains/language/kernel/index.js";
 import {
   createPythonSymbolResolutionChain,
   PythonAncestorLinearizerCache,
   PythonImportFileMapper,
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { RustExternalSignatureTableCache } from "../src/core/domains/language/rust/external-signatures/index.js";
 import {
   collectInstantiationSiteResolvers,
   collectKnownTargetCalleeLocators,
@@ -501,6 +518,10 @@ function newProductionRunState(root: string, factory: LanguageFactory): Codegrap
 }
 
 export interface RunResult {
+  /** Present only under `--rustc-driver`. */
+  rustcDriverWarm?: RustcDriverWarm;
+  /** Rust only: what the external signature sources located (bd s3i8m.7) — one report line. */
+  rustSignatures?: string;
   rows: CallSiteRow[];
   /** Files whose call sites were scored — the `--lang` extensions. */
   files: number;
@@ -554,6 +575,25 @@ export interface RunResult {
   persisted?: PersistedEdgeTally;
   /** Under `--dump-edges`: every site's scored answer plus every edge production pushes there. */
   edgeDump?: TallyEdgeDumpRow[];
+  /** Under `--residual-rows`: every `missWithInProjectDef` site, the residual taxonomy's population. */
+  residualRows?: ResidualCallSiteRow[];
+}
+
+/**
+ * One call site production left unresolved while an in-project definition of
+ * its member exists (bd tea-rags-mcp-s3i8m.1). The `kindSamples` per kind are a
+ * preview; these rows are the whole population a residual classifier reads.
+ */
+export interface ResidualCallSiteRow {
+  relPath: string;
+  startLine: number;
+  /** 0-based, as the walker recorded it. */
+  startColumn?: number;
+  callText: string;
+  receiver: string | null;
+  member: string;
+  receiverKind: ReceiverKind;
+  missBucket: "missWithInProjectDef";
 }
 
 /**
@@ -594,6 +634,49 @@ export interface ChainTallyRunOptions {
   persisted?: boolean;
   /** Collect the per-site rows `--dump-edges` writes (the substrate identity gates). */
   edgeDump?: boolean;
+  /** Collect every `missWithInProjectDef` site for `--residual-rows` (bd tea-rags-mcp-s3i8m.1). */
+  residualRows?: boolean;
+  /**
+   * Hand the Rust resolver the rustc call-site driver source (bd s3i8m T8) and
+   * await `warmResolvePass()` before `prepareResolvePass()`, timing the warm
+   * separately. Off by default.
+   */
+  rustcDriver?: boolean;
+  /** `--rustc-driver-timeout-sec`: wall-clock budget override (default 3600). */
+  rustcDriverTimeoutSec?: number;
+  /** `--rustc-driver-max-rss-mb`: process-tree RSS budget override (default 12288). */
+  rustcDriverMaxRssMb?: number;
+  /** `--rustc-driver-cargo-args`: cargo arguments, verbatim (default `RUSTC_DRIVER_DEFAULT_CARGO_ARGS`). */
+  rustcDriverCargoArgs?: string;
+}
+
+/** `--rustc-driver`: the driver acquisition's wall time and how the runner settled. */
+export interface RustcDriverWarm {
+  warmMs: number;
+  /** The runner status (`ok` / `partial` / `failed` / …) or `not acquired`. */
+  status: string;
+  units: number;
+  failed: number;
+  /** In-project callable rows the pass found no table symbol for (RESIDUAL R1's gate); absent = none counted. */
+  inProjectUnmapped?: number;
+  /** Closure / fn pointer / Fn-bound param callee rows the pass dropped (RESIDUAL R4); absent = none counted. */
+  localCallee?: number;
+  /** Macro-generated definition rows the pass decided (format 4); absent = none counted. */
+  generated?: number;
+  /** Of those, project-macro rows whose macro mapped to no table symbol (dropped); absent = none counted. */
+  generatedUnmapped?: number;
+  /** The cargo arguments the driver ran with (the override, else the runner default); absent = not recorded. */
+  cargoArgs?: string;
+}
+
+/** The one `RUSTC-DRIVER` report line. */
+export function describeRustcDriverWarm(warm: RustcDriverWarm): string {
+  const counters = (["inProjectUnmapped", "localCallee", "generated", "generatedUnmapped"] as const)
+    .filter((key) => warm[key] !== undefined)
+    .map((key) => ` · ${key} ${warm[key]}`)
+    .join("");
+  const cargo = warm.cargoArgs === undefined ? "" : ` · cargo-args "${warm.cargoArgs}"`;
+  return `RUSTC-DRIVER warm ${(warm.warmMs / 1000).toFixed(2)}s · ${warm.status} · units ${warm.units} · failed ${warm.failed}${counters}${cargo}`;
 }
 
 /**
@@ -677,6 +760,57 @@ function tallyKindStats(
   kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
+/** The spawn-allowed rustc call-site source (schema defaults unless overridden), timing and recording every runner outcome. */
+function recordingRustcCallSiteSource(
+  sink: { outcome: RustcCallSiteAcquisition; wallMs: number }[],
+  budget: { timeoutSec?: number; maxRssMb?: number; cargoArgs?: string } = {},
+): RustCallSiteSource {
+  let runnerDeps: RustcCallSiteRunnerDeps | undefined;
+  return createRustcCallSiteSource(
+    {
+      enabled: true,
+      timeoutSec: budget.timeoutSec ?? RUSTC_DRIVER_DEFAULT_TIMEOUT_SEC,
+      maxRssMb: budget.maxRssMb ?? RUSTC_DRIVER_DEFAULT_MAX_RSS_MB,
+      spawn: "allowed",
+    },
+    {
+      acquire: async (options) => {
+        const start = performance.now();
+        const outcome = await acquireRustcCallSites((runnerDeps ??= defaultRustcCallSiteRunnerDeps()), {
+          ...options,
+          ...(budget.cargoArgs === undefined ? {} : { cargoArgs: budget.cargoArgs }),
+        });
+        sink.push({ outcome, wallMs: performance.now() - start });
+        return outcome;
+      },
+    },
+  );
+}
+
+function rustcDriverWarmOf(
+  recorded: { outcome: RustcCallSiteAcquisition; wallMs: number } | undefined,
+): RustcDriverWarm {
+  if (recorded === undefined) return { warmMs: 0, status: "not acquired", units: 0, failed: 0 };
+  const { outcome, wallMs } = recorded;
+  return {
+    warmMs: wallMs,
+    status: outcome.status,
+    units: outcome.diagnostics.unitCount,
+    failed: outcome.diagnostics.failedCrates.length,
+  };
+}
+
+/** One line for what the Rust external signature sources located — `absent` std means the table answers nothing from std. */
+export function describeRustSignatures(sources: RustExternalSignatureSources, root: string): string {
+  const found: RustExternalSourcesOfProject = sources.locate(root);
+  // The run already extracted and cached the table; this reload is a cache hit.
+  const tables = new RustExternalSignatureTableCache(sources);
+  tables.reload(root);
+  const identity = tables.forRoot(root)?.identity.slice(0, 16) ?? "undefined";
+  const deps = `deps ${found.dependencies.length} · missing ${found.missingCrates.length}`;
+  return `RUST-SIGNATURES table ${identity} · std ${found.std?.cacheKey ?? "absent"} · ${deps}`;
+}
+
 export async function run(
   root: string,
   lang: string,
@@ -712,7 +846,23 @@ export async function run(
   // the python nor the java provider reads it, so the existing legs are unmoved.
   // The manifest walk is injected the way production's composition injects it,
   // or Go's module map reads no go.mod and every module-path import misses.
-  const factory = new LanguageFactory({ repoRoot: root, manifestFilesReader: readManifestFiles });
+  const driverAcquisitions: { outcome: RustcCallSiteAcquisition; wallMs: number }[] = [];
+  // Production's composition always injects the external signature sources (bd s3i8m.7).
+  const signatureSources = processRustExternalSignatureSources();
+  const factory = new LanguageFactory({
+    repoRoot: root,
+    manifestFilesReader: readManifestFiles,
+    rustExternalSignatureSources: signatureSources,
+    ...(opts.rustcDriver === true
+      ? {
+          rustcCallSiteSource: recordingRustcCallSiteSource(driverAcquisitions, {
+            timeoutSec: opts.rustcDriverTimeoutSec,
+            maxRssMb: opts.rustcDriverMaxRssMb,
+            cargoArgs: opts.rustcDriverCargoArgs,
+          }),
+        }
+      : {}),
+  });
   const production = factory.create(lang).resolver;
   if (!production) throw new Error(`language '${lang}' has no resolver`);
 
@@ -775,6 +925,7 @@ export async function run(
   const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
   const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
   const edgeDump: TallyEdgeDumpRow[] | null = opts.edgeDump === true ? [] : null;
+  const residualRows: ResidualCallSiteRow[] | null = opts.residualRows === true ? [] : null;
   let dispatchTableSites = 0;
   let chainDrift = 0;
   let singleSites = 0;
@@ -786,6 +937,18 @@ export async function run(
   // over every file the walk absorbed, then each resolver is told its volume.
   await runState.seal(async () => symbolTable);
   const runner = new CallEdgeResolutionRunner(factory, runState);
+  let rustcDriverWarm: RustcDriverWarm | undefined;
+  // One warm acquires the injected index; its wall time is kept out of pass 2.
+  let warmMs = 0;
+  if (opts.rustcDriver === true) {
+    const warmStart = performance.now();
+    await runner.warmResolvePass();
+    warmMs = performance.now() - warmStart;
+    rustcDriverWarm = {
+      ...rustcDriverWarmOf(driverAcquisitions[driverAcquisitions.length - 1]),
+      cargoArgs: opts.rustcDriverCargoArgs ?? RUSTC_DRIVER_DEFAULT_CARGO_ARGS,
+    };
+  }
   runner.prepareResolvePass();
 
   for (const extraction of scored) {
@@ -838,9 +1001,22 @@ export async function run(
       edgeDump?.push(
         ...edgeDumpRowsOf({ relPath: extraction.relPath, call, verdict, answer: baseline, dispatchTable }),
       );
+      if (residualRows !== null && verdict.missBucket === "missWithInProjectDef") {
+        residualRows.push({
+          relPath: extraction.relPath,
+          startLine: call.startLine,
+          startColumn: call.startColumn,
+          callText: call.callText,
+          receiver: call.receiver ?? null,
+          member: call.member,
+          receiverKind: verdict.receiverKind,
+          missBucket: "missWithInProjectDef",
+        });
+      }
     }
   }
-  const pass2Ms = performance.now() - pass2Start;
+  // The driver warm is reported on its own line, not folded into pass 2.
+  const pass2Ms = performance.now() - pass2Start - warmMs;
 
   let persisted: PersistedEdgeTally | undefined;
   if (opts.persisted === true) {
@@ -865,6 +1041,20 @@ export async function run(
       loc += text.length === 0 ? 0 : text.split("\n").length;
     }
   }
+  if (rustcDriverWarm !== undefined) {
+    const driver = runner.resolverDiagnostics().rust?.rustcCallSites;
+    const counted = (key: string): number =>
+      typeof driver === "object" && driver !== null && key in driver
+        ? Number((driver as Record<string, unknown>)[key])
+        : 0;
+    rustcDriverWarm = {
+      ...rustcDriverWarm,
+      inProjectUnmapped: counted("inProjectUnmapped"),
+      localCallee: counted("localCallee"),
+      generated: counted("generated"),
+      generatedUnmapped: counted("generatedUnmapped"),
+    };
+  }
 
   return {
     rows,
@@ -886,7 +1076,10 @@ export async function run(
     kindSamples: kindSamples ?? undefined,
     persisted,
     edgeDump: edgeDump ?? undefined,
+    residualRows: residualRows ?? undefined,
     timeOnly,
+    ...(rustcDriverWarm === undefined ? {} : { rustcDriverWarm }),
+    ...(lang === "rust" ? { rustSignatures: describeRustSignatures(signatureSources, root) } : {}),
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
   };
@@ -895,6 +1088,25 @@ export async function run(
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
+
+/** A positive finite number for `flag`, or `undefined` when absent; anything else throws. */
+function readPositiveNumber(flag: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${flag} expects a positive number, got "${raw}"`);
+  return value;
+}
+
+/** `--rustc-driver-cargo-args` value, verbatim; only meaningful with `--rustc-driver`, anything else throws. */
+function readRustcDriverCargoArgs(argv: readonly string[]): string | undefined {
+  const flag = "--rustc-driver-cargo-args";
+  const index = argv.indexOf(flag);
+  if (index < 0) return undefined;
+  if (!argv.includes("--rustc-driver")) throw new Error(`${flag} requires --rustc-driver`);
+  const value = argv[index + 1];
+  if (value === undefined || value.trim() === "") throw new Error(`${flag} expects a non-empty argument string`);
+  return value;
+}
 
 export function parseArgs(argv: readonly string[]) {
   const read = (flag: string): string | undefined => {
@@ -909,9 +1121,14 @@ export function parseArgs(argv: readonly string[]) {
     samples: Number(read("--samples") ?? 10),
     json: read("--json") ?? null,
     dumpEdges: read("--dump-edges") ?? null,
+    residualRows: read("--residual-rows") ?? null,
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
+    rustcDriver: argv.includes("--rustc-driver"),
+    rustcDriverTimeoutSec: readPositiveNumber("--rustc-driver-timeout-sec", read("--rustc-driver-timeout-sec")),
+    rustcDriverMaxRssMb: readPositiveNumber("--rustc-driver-max-rss-mb", read("--rustc-driver-max-rss-mb")),
+    rustcDriverCargoArgs: readRustcDriverCargoArgs(argv),
     kindStats: argv.includes("--kind-stats"),
     persisted: argv.includes("--persisted"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
@@ -936,6 +1153,11 @@ async function main(): Promise<void> {
     kindStats: opts.kindStats,
     persisted: opts.persisted,
     edgeDump: opts.dumpEdges !== null,
+    residualRows: opts.residualRows !== null,
+    rustcDriver: opts.rustcDriver,
+    rustcDriverTimeoutSec: opts.rustcDriverTimeoutSec,
+    rustcDriverMaxRssMb: opts.rustcDriverMaxRssMb,
+    rustcDriverCargoArgs: opts.rustcDriverCargoArgs,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -1011,6 +1233,10 @@ async function main(): Promise<void> {
     // The block's leading blank line is report spacing, not data.
     writeFileSync(opts.dumpEdges, formatTallyEdgeDump(result.edgeDump, kindStatsBlock.slice(1).join("\n")));
   }
+  if (opts.residualRows !== null && result.residualRows !== undefined) {
+    // NDJSON: one row per line, so a 100k-row corpus streams through `jq`/readline.
+    writeFileSync(opts.residualRows, result.residualRows.map((row) => `${JSON.stringify(row)}\n`).join(""));
+  }
   if (result.timing !== undefined) {
     out.push(
       ...formatTimingBlock(result.timing, {
@@ -1020,12 +1246,14 @@ async function main(): Promise<void> {
       }),
     );
   }
+  if (result.rustSignatures !== undefined) out.push(result.rustSignatures);
+  if (result.rustcDriverWarm !== undefined) out.push(describeRustcDriverWarm(result.rustcDriverWarm));
   process.stdout.write(`${out.join("\n")}\n`);
 
   if (opts.json) {
     writeFileSync(
       opts.json,
-      `${JSON.stringify({ opts, result: { ...result, rows: undefined, edgeDump: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
+      `${JSON.stringify({ opts, result: { ...result, rows: undefined, edgeDump: undefined, residualRows: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
     );
   }
 }

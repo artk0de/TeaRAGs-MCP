@@ -13,6 +13,7 @@ import type { AmbiguousResolveMode, TemporalSymbolCommitBuffer } from "../../../
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
+  RustCallSiteSourceConfig,
   SymbolIdComposer,
 } from "../../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provider.js";
@@ -73,6 +74,13 @@ export interface CodegraphDeps {
   ambiguousResolveMode?: AmbiguousResolveMode;
   /** `CODEGRAPH_RESIDUAL_MENU_LIMIT`, spread into the symbols provider deps. */
   residualMenuLimit?: number;
+  /**
+   * `codegraph.rustDriver` (bd s3i8m T8): the composition root builds the
+   * main-thread `LanguageFactory`'s rustc call-site source from it, as the
+   * enrichment worker does from `CodegraphWorkerConfig.rustDriver`. Absent or
+   * disabled ⇒ no source.
+   */
+  rustDriver?: RustCallSiteSourceConfig;
   /**
    * Worker-pool descriptor built by the bootstrap composition root (which
    * alone knows the absolute compiled-JS worker module path + daemon socket).

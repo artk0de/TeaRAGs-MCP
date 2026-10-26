@@ -167,6 +167,13 @@ function buildEnvInputs(env: EnvReader) {
     dbThreads: env("CODEGRAPH_DB_THREADS"),
     customExcludePatterns: env("CODEGRAPH_CUSTOM_EXCLUDE"),
     ambiguousResolveMode: env("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE"),
+    rustDriver: {
+      enabled: env("CODEGRAPH_RUST_DRIVER"),
+      path: env("CODEGRAPH_RUST_DRIVER_PATH"),
+      jobs: env("CODEGRAPH_RUST_DRIVER_JOBS"),
+      timeoutSec: env("CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC"),
+      maxRssMb: env("CODEGRAPH_RUST_DRIVER_MAX_RSS_MB"),
+    },
     residual: {
       kevUrls: env("CODEGRAPH_RESIDUAL_KEV_URL"),
       kevThreshold: env("CODEGRAPH_RESIDUAL_KEV_THRESHOLD"),

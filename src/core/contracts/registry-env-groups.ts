@@ -96,6 +96,14 @@ const REGISTRY_ENV_GROUP_TABLE = [
   { canonical: "CODEGRAPH_DB_THREADS", aliases: [], consequence: "runtime" },
   { canonical: "CODEGRAPH_CUSTOM_EXCLUDE", aliases: [], consequence: "enrichment:codegraph" },
   { canonical: "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", aliases: [], consequence: "enrichment:codegraph" },
+  // codegraph.rustDriver (bd s3i8m T8) — whether the rustc call-site slot runs
+  // decides which Rust edges land; where the driver lives, its parallelism and
+  // its budgets do not.
+  { canonical: "CODEGRAPH_RUST_DRIVER", aliases: [], consequence: "enrichment:codegraph" },
+  { canonical: "CODEGRAPH_RUST_DRIVER_PATH", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RUST_DRIVER_JOBS", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_RUST_DRIVER_MAX_RSS_MB", aliases: [], consequence: "runtime" },
   // codegraph.residual — which model answers and how many requests are in flight;
   // verdicts are cached outside the index, so none of these invalidates it.
   { canonical: "CODEGRAPH_RESIDUAL_KEV_URL", aliases: [], consequence: "runtime" },

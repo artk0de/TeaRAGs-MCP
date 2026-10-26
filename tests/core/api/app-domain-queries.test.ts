@@ -37,7 +37,7 @@ afterAll(() => {
 });
 
 /** Wired the way the composition does — a real ProjectRegistryOps over a temp registry. */
-function makeApp() {
+function makeApp(overrides: Partial<AppDeps> = {}) {
   const deps: AppDeps = {
     qdrant: {} as QdrantManager,
     embeddings: {} as EmbeddingProvider,
@@ -53,6 +53,7 @@ function makeApp() {
     projectRegistryOps: new ProjectRegistryOps({ registry: new CollectionRegistry(registryDir) }),
     quantizationScalar: true,
     turboQuant: true,
+    ...overrides,
   };
   return createApp(deps);
 }

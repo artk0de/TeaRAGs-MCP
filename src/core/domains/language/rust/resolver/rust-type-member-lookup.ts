@@ -1,8 +1,17 @@
 /** Rust nominal type member lookup for the reusable kernel receiver strategies. */
 
 import type { AmbiguousResolveMode, CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { createTypeMemberLookup, type NominalTypeRef, type TypeMemberLookup } from "../../kernel/index.js";
+import {
+  createTypeMemberLookup,
+  RunScopedMemo,
+  type NominalTypeRef,
+  type TypeMemberLookup,
+} from "../../kernel/index.js";
 import { rustDerefTarget, rustExactMember } from "./declared-return-type.js";
+import { rustExternalDerefHop, rustProjectImplementsMemberOn, rustStdDerefTarget } from "./external-type-hops.js";
+import { rustExternalSignaturesOf } from "./resolve-environment.js";
+import { rustCrateRootOf, rustCrateUniqueType } from "./rust-crate-scope.js";
+import { rustStdSmartPointerTarget, rustThroughSmartPointers } from "./std-type-hops.js";
 import { lookupRustSymbolsByShortName, pickSameFileThenSingle } from "./strategies/shared.js";
 
 /**
@@ -36,11 +45,241 @@ function resolveRustNominalMember(owner: NominalTypeRef, member: string, ctx: Ca
     const hit = resolveRustNominalMemberOn(current, member, ctx, mode);
     if (hit !== null) return hit;
     if (member === "deref") return null;
-    const next = rustDerefTarget(current, ctx);
+    // A std smart pointer (`Arc<Core>`) derefs to its target for every member
+    // it does not answer itself (bd tea-rags-mcp-2g2og.24); a table type
+    // (`MutexGuard<Store>`) to its `Deref::Target` (bd s3i8m.7 T3b).
+    const pointee = rustStdDerefTarget(current, member, ctx);
+    const next = pointee?.form === "instance" ? pointee : rustDerefTarget(current, ctx);
     if (next === undefined || next.name === current.name) return null;
     current = next;
   }
   return null;
+}
+
+/**
+ * The member a typed PATTERN receiver's miss still reaches (bd
+ * tea-rags-mcp-s3i8m Task 1d), or `null`. Two readings the nominal walk
+ * leaves out:
+ *   - a std smart pointer whose own member (`clone`, `as_ref`, …) the walk
+ *     stops on: the pointee's own declaration of that member answers
+ *     (`err.clone()` on `Box<Error>` with `impl Clone for Error`);
+ *   - a project trait's PROVIDED method on a type that implements the trait
+ *     (`impl FormControl for HTMLInputElement {}` → `FormControl#to_element`).
+ * Anything not proven answers `null`, and the call keeps its typed-miss verdict.
+ */
+export function resolveRustTypedMissMember(
+  type: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): { targetRelPath: string; targetSymbolId: string } | null {
+  const pointee = rustThroughSmartPointers(type);
+  if (pointee.form !== "instance") return null;
+  if (pointee !== type) {
+    const hit = resolveRustNominalMember(pointee, member, ctx, mode);
+    if (hit !== null) return hit;
+  }
+  const provided = rustTraitProvidedMember(pointee, member, ctx);
+  return provided === undefined ? null : { targetRelPath: provided.relPath, targetSymbolId: provided.symbolId };
+}
+
+/**
+ * The sole provided method `member` of a project trait the placed `owner`
+ * implements, read off the `implements` hierarchy (keyed by short name). The
+ * owner must be the unique type of its name in its crate, and the trait a
+ * project `interface`. A trait outside the owner's crate counts only when no
+ * other project type shares the owner's name: the hierarchy cannot tell two
+ * namesakes' impls apart.
+ */
+function rustTraitProvidedMember(
+  owner: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+): SymbolDefinition | undefined {
+  const boundary = owner.name.indexOf(".rs::");
+  if (boundary < 0 || ctx.hierarchy === undefined) return undefined;
+  const relPath = owner.name.slice(0, boundary + 3);
+  const typeName = owner.name
+    .slice(boundary + 5)
+    .split("::")
+    .at(-1);
+  const root = rustCrateRootOf(relPath, ctx);
+  if (typeName === undefined || root === undefined) return undefined;
+  if (rustCrateUniqueType(typeName, root, ctx)?.relPath !== relPath) return undefined;
+  const traits = new Set(
+    ctx.hierarchy
+      .getAncestors(typeName, { kinds: ["implements"] })
+      .map((edge) => edge.ancestorFqName.split("::").at(-1) ?? edge.ancestorFqName),
+  );
+  if (traits.size === 0) return undefined;
+  const nameIsGloballyUnique =
+    lookupRustSymbolsByShortName(ctx, typeName).filter(
+      (def) =>
+        (def.symbolKind === "class" || def.symbolKind === "enum") &&
+        (def.symbolId === typeName || def.symbolId.endsWith(`::${typeName}`)),
+    ).length === 1;
+  const suffix = `#${member}`;
+  const candidates = lookupRustSymbolsByShortName(ctx, member).filter((def) => {
+    if (!def.symbolId.endsWith(suffix)) return false;
+    const traitId = def.symbolId.slice(0, -suffix.length);
+    const traitName = traitId.split("::").at(-1);
+    if (traitName === undefined || !traits.has(traitName)) return false;
+    const isTrait = ctx.symbolTable
+      .lookup(traitId)
+      .some((trait) => trait.relPath === def.relPath && trait.symbolKind === "interface");
+    return isTrait && (nameIsGloballyUnique || rustCrateRootOf(def.relPath, ctx) === root);
+  });
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+/**
+ * Whether a typed member miss on `owner` is PROVEN, so the call may drop
+ * instead of reaching the prior read (bd tea-rags-mcp-s3i8m.5). The chain
+ * typing is additive: a miss proves something only when the walk saw every
+ * place the member could live. It did not when
+ *   - the owner is placed on a file that only reopens it with an `impl` block
+ *     (`impl Ext for Engine`, `impl Trait for Ref<'_, T>`), not its declaration;
+ *   - another file's `impl` of the same type declares the member — Rust
+ *     inherent impls may live in any module of the crate;
+ *   - the owner implements `Deref` and the fold cannot follow it to a placed
+ *     target (`type Target = EntryStorage<EK, ER>` on generics it dropped, a
+ *     type-alias target).
+ * A std type the fold carries unplaced keeps its miss verdict: its members
+ * are std unless the project implements them on it, which the walk searched.
+ */
+export function rustTypedMissIsProven(
+  owner: NominalTypeRef,
+  member: string,
+  ctx: CallContext,
+  { ownerFactRequired = true }: { readonly ownerFactRequired?: boolean } = {},
+): boolean {
+  let current = owner;
+  for (let hop = 0; hop < 3; hop++) {
+    const boundary = current.name.indexOf(".rs::");
+    if (boundary < 0) {
+      const pointee = rustStdSmartPointerTarget(current, member);
+      if (pointee?.form === "instance") {
+        current = pointee;
+        continue;
+      }
+      if (pointee !== undefined) return true;
+      // A table `Deref::Target` (bd s3i8m.7 T3b): a target the fold cannot
+      // spell, or a project impl on the type's short name the full-path walk
+      // could not see, proves nothing.
+      const hop = rustExternalDerefHop(current, member, ctx);
+      if (hop === undefined || hop === "own") return !rustTableTypeImplementedByProject(current, member, ctx);
+      if (hop === "unprovable") return false;
+      current = hop.target;
+      continue;
+    }
+    const relPath = current.name.slice(0, boundary + 3);
+    const typeId = current.name.slice(boundary + 5);
+    const ownerDeclared = ctx.typeDeclarations?.[relPath]?.some((fact) => fact.typeId === typeId && !fact.reopens);
+    if (ownerDeclared !== true && ownerFactRequired) return false;
+    if (ctx.symbolTable.lookup(`${typeId}#${member}`).length > 0) return false;
+    if (ctx.symbolTable.lookup(`${typeId}.${member}`).length > 0) return false;
+    // A trait the type implements may provide the member as a default body.
+    if (rustImplementedTraitDeclares(typeId, member, ctx)) return false;
+    if (ctx.symbolTable.lookup(`${typeId}#deref`).length === 0) return true;
+    const derefTarget = rustDerefTarget(current, ctx);
+    if (derefTarget === undefined) return rustDerefsToForeignMissing(current, relPath, typeId, member, ctx);
+    if (derefTarget.name === current.name) return false;
+    current = derefTarget;
+  }
+  return false;
+}
+
+const RUST_IMPLEMENTED_TRAITS = new RunScopedMemo<object, Map<string, Set<string>>>();
+
+/**
+ * Whether a trait some `impl Trait for <typeId>` names declares `member`
+ * (`BatchExecutor#collect_summary`, a default body the impl does not repeat).
+ * Keyed on the short type name; the run's impl facts are indexed once.
+ */
+function rustImplementedTraitDeclares(typeId: string, member: string, ctx: CallContext): boolean {
+  const declarations = ctx.typeDeclarations;
+  if (declarations === undefined) return false;
+  let index = RUST_IMPLEMENTED_TRAITS.get(ctx.runScope, declarations);
+  if (index === undefined) {
+    index = new Map();
+    for (const facts of Object.values(declarations)) {
+      for (const fact of facts) {
+        if (!fact.reopens || fact.conforms === undefined) continue;
+        const shortName = fact.typeId.split("::").at(-1) ?? fact.typeId;
+        const traits = index.get(shortName) ?? new Set<string>();
+        for (const trait of fact.conforms) traits.add(trait.split("::").at(-1) ?? trait);
+        index.set(shortName, traits);
+      }
+    }
+    RUST_IMPLEMENTED_TRAITS.set(ctx.runScope, declarations, index);
+  }
+  const traits = index.get(typeId.split("::").at(-1) ?? typeId);
+  return traits !== undefined && [...traits].some((trait) => ctx.symbolTable.lookup(`${trait}#${member}`).length > 0);
+}
+
+/**
+ * A table-typed receiver travels by its canonical path (`std::sync::MutexGuard`),
+ * which a project `impl Ext for MutexGuard<'_, T>` never spells: its short
+ * name is asked instead. Without a table the fold carries no such receiver.
+ */
+function rustTableTypeImplementedByProject(owner: NominalTypeRef, member: string, ctx: CallContext): boolean {
+  if (rustExternalSignaturesOf(ctx) === undefined || !owner.name.includes("::")) return false;
+  return rustProjectImplementsMemberOn(ctx, owner.name.split("::").at(-1) ?? owner.name, member);
+}
+
+/**
+ * A `Deref` the fold could not place still proves the miss when its declared
+ * target names no project type at all (`fn deref(&self) -> &str`, `-> &AttrValue`
+ * from an external crate) and the project implements no such member on that
+ * name. A generic parameter, a `Self::Target` spelling or a project type the
+ * fold failed to place proves nothing.
+ */
+function rustDerefsToForeignMissing(
+  owner: NominalTypeRef,
+  relPath: string,
+  typeId: string,
+  member: string,
+  ctx: CallContext,
+): boolean {
+  const deref = rustExactMember(owner, "deref", ctx);
+  if (deref === undefined) return false;
+  const derefReturn = ctx.structuredReturnTypes?.[`${deref.relPath}::${deref.symbolId}`];
+  if (derefReturn?.form !== "instance" || derefReturn.name === "Self" || derefReturn.name.startsWith("Self::")) {
+    return false;
+  }
+  const head = derefReturn.name.split("::").at(-1) ?? derefReturn.name;
+  const generic = ctx.typeDeclarations?.[relPath]?.some(
+    (fact) => fact.typeId === typeId && fact.genericParameters?.includes(head) === true,
+  );
+  if (generic === true) return false;
+  const named = lookupRustSymbolsByShortName(ctx, head).filter(
+    (def) => def.symbolId === head || def.symbolId.endsWith(`::${head}`),
+  );
+  if (named.length > 0 || rustProjectTypeShortNames(ctx).has(head)) return false;
+  return !lookupRustSymbolsByShortName(ctx, member).some(
+    (def) => isRustTypeMember(def.symbolId, head, "#", member) || isRustTypeMember(def.symbolId, head, ".", member),
+  );
+}
+
+const PROJECT_TYPE_SHORT_NAMES = new RunScopedMemo<object, { files: number; names: ReadonlySet<string> }>();
+
+/**
+ * Every type short name the project declares — type aliases included, which
+ * the symbol table may not chunk (`pub type BatchRouter<N, C> = Router<…>`).
+ * Memoised per resolve run and rebuilt when the map's file count moves, since
+ * the run state fills that map in place while it absorbs files.
+ */
+function rustProjectTypeShortNames(ctx: CallContext): ReadonlySet<string> {
+  const declarations = ctx.typeDeclarations;
+  if (declarations === undefined) return new Set();
+  const files = Object.keys(declarations).length;
+  const cached = PROJECT_TYPE_SHORT_NAMES.get(ctx.runScope, declarations);
+  if (cached?.files === files) return cached.names;
+  const names = new Set(
+    Object.values(declarations).flatMap((facts) => facts.map((fact) => fact.typeId.split("::").at(-1) ?? "")),
+  );
+  PROJECT_TYPE_SHORT_NAMES.set(ctx.runScope, declarations, { files, names });
+  return names;
 }
 
 function resolveRustNominalMemberOn(

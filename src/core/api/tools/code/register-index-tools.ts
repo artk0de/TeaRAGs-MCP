@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { formatWorktreeSeedReport, type App, type IndexStats } from "../../public/index.js";
+import { formatRustcDriverLine, formatWorktreeSeedReport, type App, type IndexStats } from "../../public/index.js";
 import { formatEnrichmentStatus } from "../formatters/enrichment.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
@@ -109,6 +109,12 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         if (stats.errors && stats.errors.length > 0) statusMessage += `\n\nWarnings:\n${stats.errors.join("\n")}`;
       } else if (stats.status === "failed") {
         statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
+      }
+
+      // The run's rustc driver line (bd s3i8m T9), filled once by IndexingOps —
+      // the CLI renders the same field.
+      if (stats.status !== "failed" && stats.rustcDriver) {
+        statusMessage += `\n\n${formatRustcDriverLine(stats.rustcDriver)}`;
       }
 
       return {

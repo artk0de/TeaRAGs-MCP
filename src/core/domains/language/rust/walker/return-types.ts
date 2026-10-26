@@ -4,10 +4,18 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import { DefaultSymbolIdComposer } from "../../kernel/index.js";
 import { rustNameOf } from "./name-of.js";
 
-/** The nominal Rust type as declared; references preserve the referent and generic arguments keep their positions. */
+/**
+ * The nominal Rust type as declared; references preserve the referent and generic arguments keep their positions.
+ * A tuple type keeps its elements in order (bd tea-rags-mcp-s3i8m, Task 1a), each one required.
+ */
 export function rustDeclaredTypeRef(node: AstNode | null): TypeRef | undefined {
   if (node === null) return undefined;
   if (node.type === "reference_type") return rustDeclaredTypeRef(node.childForFieldName("type"));
+  if (node.type === "tuple_type") {
+    const elements = node.namedChildren.map(rustDeclaredTypeRef);
+    if (elements.length === 0 || elements.some((element) => element === undefined)) return undefined;
+    return { form: "tuple", elements: elements as TypeRef[] };
+  }
   if (["identifier", "type_identifier", "scoped_type_identifier", "scoped_identifier"].includes(node.type)) {
     return { form: "instance", name: node.text };
   }
@@ -20,6 +28,33 @@ export function rustDeclaredTypeRef(node: AstNode | null): TypeRef | undefined {
     .map(rustDeclaredTypeRef);
   if (typeArguments.some((arg) => arg === undefined)) return undefined;
   return { ...genericType, args: typeArguments as TypeRef[] };
+}
+
+/**
+ * A generic type whose arguments {@link rustDeclaredTypeRef} cannot spell
+ * (`Vec<u8>`, `Res<(u8, u8)>`, `Box<dyn Fn()>`): its head and argument count, every argument unknown.
+ */
+export function rustGenericHead(typeNode: AstNode | null): { name: string; argumentCount: number } | undefined {
+  const node = typeNode?.type === "reference_type" ? typeNode.childForFieldName("type") : typeNode;
+  if (node?.type !== "generic_type") return undefined;
+  const head = rustDeclaredTypeRef(node.childForFieldName("type"));
+  const argumentCount = (node.childForFieldName("type_arguments")?.namedChildren ?? []).filter(
+    (argument) => argument.type !== "lifetime",
+  ).length;
+  if (head?.form !== "instance" || argumentCount === 0) return undefined;
+  return { name: head.name, argumentCount };
+}
+
+/**
+ * A declared return as a TypeRef; a generic return whose arguments cannot be
+ * spelled keeps its head (`fn fix(..) -> Res<(u8, u8)>` answers `Res`) — the
+ * shape the resolver already keeps when an argument does not place.
+ */
+function rustDeclaredReturnRef(node: AstNode | null): TypeRef | undefined {
+  const spelled = rustDeclaredTypeRef(node);
+  if (spelled !== undefined) return spelled;
+  const head = rustGenericHead(node);
+  return head === undefined ? undefined : { form: "instance", name: head.name };
 }
 
 export function rustGenericParameters(node: AstNode): string[] {
@@ -45,14 +80,21 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
     for (const child of node.children) collectOwners(child, childScope);
   };
   collectOwners(root, []);
-  const visit = (node: AstNode, scope: readonly string[], inheritedUnsafeOwner: boolean): void => {
+  const visit = (
+    node: AstNode,
+    scope: readonly string[],
+    inheritedUnsafeOwner: boolean,
+    inheritedAssociatedTypes: ReadonlyMap<string, TypeRef>,
+  ): void => {
     let unsafeOwner = inheritedUnsafeOwner;
+    let associatedTypes = inheritedAssociatedTypes;
     const named = rustNameOf(node);
     if (node.type === "impl_item" && named !== null) {
       const parameters = declarations.get([...scope, named.name].join("::"));
       const owner = rustDeclaredTypeRef(node.childForFieldName("type"));
       const ownerTypeArguments = owner?.form === "instance" ? (owner.args ?? []) : [];
       const implParameters = rustGenericParameters(node);
+      associatedTypes = rustConcreteAssociatedTypes(node, implParameters);
       if (ownerTypeArguments.length > 0 || implParameters.length > 0) {
         unsafeOwner ||=
           parameters?.length !== ownerTypeArguments.length ||
@@ -77,27 +119,82 @@ export function collectRustReturnTypes(root: AstNode, relPath: string): Record<s
       ) {
         return;
       }
-      const declaredType = rustDeclaredTypeRef(node.childForFieldName("return_type"));
+      const spelledType = rustDeclaredReturnRef(node.childForFieldName("return_type"));
+      const associatedName =
+        spelledType?.form === "instance" && spelledType.args === undefined && spelledType.name.startsWith("Self::")
+          ? spelledType.name.slice("Self::".length)
+          : undefined;
+      const declaredType =
+        (associatedName === undefined ? undefined : associatedTypes.get(associatedName)) ?? spelledType;
       const generics = new Set(rustGenericParameters(node));
       const unknown = (recv: TypeRef): boolean =>
-        (recv.form === "instance" || recv.form === "class") &&
-        (generics.has(recv.name) || (recv.args?.some(unknown) ?? false));
-      if (!unsafeOwner && named !== null && declaredType !== undefined && !unknown(declaredType)) {
+        recv.form === "tuple"
+          ? recv.elements.some(unknown)
+          : (recv.form === "instance" || recv.form === "class") &&
+            (generics.has(recv.name) || (recv.args?.some(unknown) ?? false));
+      const knownType = declaredType === undefined ? undefined : rustWithoutCallSiteArguments(declaredType, unknown);
+      if (!unsafeOwner && named !== null && knownType !== undefined) {
         const id = composer.compose(scope.join("::"), named.name, {
           scopeSeparator: "::",
           methodKind: named.methodKind,
         });
         const key = `${relPath}::${id}`;
+        // A namesake declared again (an inherent `fn` and a trait impl's, servo's
+        // `Promise::new_in_realm`) is ambiguous only when the two returns differ:
+        // agreeing declarations type the call whichever one Rust picks (bd tea-rags-mcp-s3i8m).
+        if (Object.hasOwn(returnTypes, key) && JSON.stringify(returnTypes[key]) === JSON.stringify(knownType)) {
+          return;
+        }
         if (Object.hasOwn(returnTypes, key)) {
           delete returnTypes[key];
           ambiguous.add(key);
-        } else if (!ambiguous.has(key)) returnTypes[key] = declaredType;
+        } else if (!ambiguous.has(key)) returnTypes[key] = knownType;
       }
       return;
     }
     const childScope = named === null ? scope : [...scope, named.name];
-    for (const child of node.children) visit(child, childScope, unsafeOwner);
+    for (const child of node.children) visit(child, childScope, unsafeOwner, associatedTypes);
   };
-  visit(root, [], false);
+  visit(root, [], false, new Map());
   return returnTypes;
+}
+
+/**
+ * A return whose generic ARGUMENTS name the function's own type parameters
+ * (`fn map<U>(self, f: F) -> Res<U>`) still has a call-site-independent head:
+ * the arguments are dropped and `Res` stays typed, the shape the resolver
+ * already keeps when an owner argument does not substitute. A head that is
+ * itself a parameter (`-> T`) or a tuple holding one stays unknown.
+ */
+function rustWithoutCallSiteArguments(declared: TypeRef, unknown: (recv: TypeRef) => boolean): TypeRef | undefined {
+  if (!unknown(declared)) return declared;
+  if (declared.form !== "instance" && declared.form !== "class") return undefined;
+  if (!declared.args?.some(unknown)) return undefined;
+  const head: TypeRef = { form: declared.form, name: declared.name };
+  return unknown(head) ? undefined : head;
+}
+
+/**
+ * An impl's `type Name = Concrete;` items (bd tea-rags-mcp-s3i8m): a method
+ * declared `-> &Self::Target` in `impl Deref for RootedPromise { type Target =
+ * Promise; … }` returns `Promise`. An associated type naming one of the impl's
+ * generic parameters (`type Target = T`) stays `Self::Target`, which the
+ * resolver reads as the owner's single argument.
+ */
+function rustConcreteAssociatedTypes(node: AstNode, implParameters: readonly string[]): Map<string, TypeRef> {
+  const associated = new Map<string, TypeRef>();
+  const mentionsParameter = (recv: TypeRef): boolean =>
+    recv.form === "tuple"
+      ? recv.elements.some(mentionsParameter)
+      : (recv.form === "instance" || recv.form === "class") &&
+        (implParameters.includes(recv.name) ||
+          recv.name.startsWith("Self::") ||
+          (recv.args?.some(mentionsParameter) ?? false));
+  for (const item of node.childForFieldName("body")?.namedChildren ?? []) {
+    if (item.type !== "type_item") continue;
+    const name = item.childForFieldName("name")?.text;
+    const declared = rustDeclaredTypeRef(item.childForFieldName("type"));
+    if (name !== undefined && declared !== undefined && !mentionsParameter(declared)) associated.set(name, declared);
+  }
+  return associated;
 }

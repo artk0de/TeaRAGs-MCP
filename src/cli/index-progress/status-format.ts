@@ -5,6 +5,7 @@
  */
 
 import {
+  formatRustcDriverLine,
   formatWorktreeSeedReport,
   type EnrichmentLevelHealth,
   type EnrichmentMetrics,
@@ -99,6 +100,9 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(colors.bold("Worktree seed"));
     for (const line of seedLines) lines.push(`  ${line}`);
   }
+
+  // The rustc call-site driver line (bd s3i8m T9): ON by default, so every Rust run says how it settled.
+  if (status.rustcDriver) lines.push(formatRustcDriverLine(status.rustcDriver));
 
   // Scoped force outcome (bd tea-rags-mcp-j4oww), injected from IndexStats likewise.
   if (status.scopedRechunk) {
@@ -262,6 +266,11 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.worktreeSeed) {
     base.worktreeSeed = status.worktreeSeed;
+  }
+
+  if (status.rustcDriver) {
+    base.rustcDriver = status.rustcDriver;
+    base.rustcDriverLine = formatRustcDriverLine(status.rustcDriver);
   }
 
   if (status.scopedRechunk) {

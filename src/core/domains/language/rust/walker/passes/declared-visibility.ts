@@ -1,14 +1,14 @@
 /**
  * Rust declared visibility (bd tea-rags-mcp-jwjyr.1), read by the kernel's
  * declared-visibility facet for every item `rustNameOf` names except an `impl`
- * block (no visibility of its own) and a `macro_rules!` (exported by attribute,
- * not by `pub`):
+ * block (no visibility of its own):
  *
  *   | item                                              | visibility |
  *   | ------------------------------------------------- | ---------- |
  *   | any `pub` form (`pub`, `pub(crate)`, `pub(super)`, `pub(in …)`) | public |
  *   | fn inside a `trait` body                          | public     |
  *   | fn inside an `impl Trait for Type` body           | public     |
+ *   | `macro_rules!` under `#[macro_export]`            | public     |
  *   | anything else without `pub`                       | private    |
  *
  * "private" is Rust's module privacy — visible to the declaring module and its
@@ -26,7 +26,35 @@ import {
 } from "../../../kernel/index.js";
 import { rustNameOf } from "../name-of.js";
 
-const UNRECORDED_ITEM_TYPES: ReadonlySet<string> = new Set(["impl_item", "macro_definition"]);
+const UNRECORDED_ITEM_TYPES: ReadonlySet<string> = new Set(["impl_item"]);
+
+/** Nodes that may sit between an item and its outer attributes: further attributes and comments. */
+const RUST_ATTRIBUTE_RUN_TYPES: ReadonlySet<string> = new Set(["attribute_item", "line_comment", "block_comment"]);
+
+const RUST_MACRO_EXPORT_ATTRIBUTE = /^#\[\s*macro_export\b/;
+
+/**
+ * The texts of an item's outer attributes, nearest first: the run of
+ * `attribute_item` siblings (comments may interleave) directly above it.
+ */
+export function rustOuterAttributeTexts(node: AstNode): string[] {
+  const texts: string[] = [];
+  for (let sibling = node.previousNamedSibling; sibling !== null; sibling = sibling.previousNamedSibling) {
+    if (!RUST_ATTRIBUTE_RUN_TYPES.has(sibling.type)) break;
+    if (sibling.type === "attribute_item") texts.push(sibling.text);
+  }
+  return texts;
+}
+
+/**
+ * A `macro_rules!` is exported by attribute, not by `pub` (bd
+ * tea-rags-mcp-s3i8m.4): `#[macro_export]` (any argument form) among its outer
+ * attributes puts it at the crate root for every dependent crate; without it
+ * the macro is textually scoped to its own crate.
+ */
+function rustMacroIsExported(node: AstNode): boolean {
+  return rustOuterAttributeTexts(node).some((text) => RUST_MACRO_EXPORT_ATTRIBUTE.test(text));
+}
 
 /** A fn whose visibility is its trait's: declared in a trait, or implementing one. */
 function isTraitMember(node: AstNode): boolean {
@@ -42,6 +70,7 @@ function isTraitMember(node: AstNode): boolean {
 }
 
 function rustVisibility(node: AstNode): DeclaredVisibility {
+  if (node.type === "macro_definition") return rustMacroIsExported(node) ? "public" : "private";
   if (node.children.some((c) => c.type === "visibility_modifier")) return "public";
   return isTraitMember(node) ? "public" : "private";
 }

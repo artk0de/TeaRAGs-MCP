@@ -5,6 +5,8 @@ import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  describeRustcDriverWarm,
+  describeRustSignatures,
   formatKindStatsBlock,
   formatTimingBlock,
   parseArgs,
@@ -62,6 +64,105 @@ describe("scoredExtensionsFor", () => {
 
   it("throws rather than scoring nothing for an unwalked language", () => {
     expect(() => scoredExtensionsFor("cobol")).toThrow(/cobol/);
+  });
+});
+
+describe("parseArgs --rustc-driver (bd s3i8m T8)", () => {
+  it("is off by default, with no budget overrides", () => {
+    const opts = parseArgs([]);
+    expect(opts.rustcDriver).toBe(false);
+    expect(opts.rustcDriverTimeoutSec).toBeUndefined();
+    expect(opts.rustcDriverMaxRssMb).toBeUndefined();
+  });
+
+  it("turns on when named and reads the budget overrides", () => {
+    const opts = parseArgs([
+      "--lang",
+      "rust",
+      "--rustc-driver",
+      "--rustc-driver-timeout-sec",
+      "600",
+      "--rustc-driver-max-rss-mb",
+      "4096",
+    ]);
+    expect(opts.rustcDriver).toBe(true);
+    expect(opts.rustcDriverTimeoutSec).toBe(600);
+    expect(opts.rustcDriverMaxRssMb).toBe(4096);
+  });
+});
+
+describe("parseArgs --rustc-driver-cargo-args", () => {
+  it("is undefined by default", () => {
+    expect(parseArgs([]).rustcDriverCargoArgs).toBeUndefined();
+  });
+
+  it("reads the value verbatim alongside --rustc-driver", () => {
+    const opts = parseArgs(["--rustc-driver", "--rustc-driver-cargo-args", "-p ripgrep --lib"]);
+    expect(opts.rustcDriverCargoArgs).toBe("-p ripgrep --lib");
+  });
+
+  it("is a usage error without --rustc-driver", () => {
+    expect(() => parseArgs(["--rustc-driver-cargo-args", "--lib"])).toThrow(/requires --rustc-driver/);
+  });
+
+  it("is a usage error with an empty value", () => {
+    expect(() => parseArgs(["--rustc-driver", "--rustc-driver-cargo-args"])).toThrow(/non-empty/);
+  });
+});
+
+describe("describeRustcDriverWarm (bd s3i8m T8)", () => {
+  it("prints the warm time, the runner status, units and failed crates on one line", () => {
+    expect(describeRustcDriverWarm({ warmMs: 12_345, status: "partial", units: 40, failed: 2 })).toBe(
+      "RUSTC-DRIVER warm 12.35s · partial · units 40 · failed 2",
+    );
+  });
+
+  it("records the cargo arguments the driver ran with", () => {
+    expect(describeRustcDriverWarm({ warmMs: 1000, status: "ok", units: 3, failed: 0, cargoArgs: "--lib" })).toBe(
+      'RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · cargo-args "--lib"',
+    );
+  });
+
+  it("says not acquired when the source never answered", () => {
+    expect(describeRustcDriverWarm({ warmMs: 0, status: "not acquired", units: 0, failed: 0 })).toBe(
+      "RUSTC-DRIVER warm 0.00s · not acquired · units 0 · failed 0",
+    );
+  });
+
+  it("appends the in-project rows no table symbol maps when the pass counted them (RESIDUAL R2)", () => {
+    expect(describeRustcDriverWarm({ warmMs: 1000, status: "ok", units: 3, failed: 0, inProjectUnmapped: 7 })).toBe(
+      "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 7",
+    );
+  });
+
+  it("appends the driver-proven local and indirect callee sites when the pass counted them (RESIDUAL R4)", () => {
+    expect(
+      describeRustcDriverWarm({
+        warmMs: 1000,
+        status: "ok",
+        units: 3,
+        failed: 0,
+        inProjectUnmapped: 0,
+        localCallee: 12,
+      }),
+    ).toBe("RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 0 · localCallee 12");
+  });
+
+  it("appends the macro-generated definition sites and the unmapped project ones (format 4)", () => {
+    expect(
+      describeRustcDriverWarm({
+        warmMs: 1000,
+        status: "ok",
+        units: 3,
+        failed: 0,
+        inProjectUnmapped: 2,
+        localCallee: 0,
+        generated: 40,
+        generatedUnmapped: 3,
+      }),
+    ).toBe(
+      "RUSTC-DRIVER warm 1.00s · ok · units 3 · failed 0 · inProjectUnmapped 2 · localCallee 0 · generated 40 · generatedUnmapped 3",
+    );
   });
 });
 
@@ -467,4 +568,19 @@ describe("codegraph-chain-tally dispatch-table parity with the production runner
     const ruby = await productionRun(corpus, "ruby");
     expect(ruby.kinds.constant.unnarrowedTemplate).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe("describeRustSignatures", () => {
+  it("names an absent std source and an undefined table — the run measured without signatures", () => {
+    const line = describeRustSignatures(
+      {
+        locate: () => ({ std: undefined, dependencies: [], lockDigest: undefined, missingCrates: ["demo"] }),
+        readCached: () => undefined,
+        writeCached: () => {},
+        sizeCapBytes: 1,
+      },
+      "/nonexistent/corpus",
+    );
+    expect(line).toBe("RUST-SIGNATURES table undefined · std absent · deps 0 · missing 1");
+  });
 });

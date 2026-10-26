@@ -293,6 +293,8 @@ export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../../co
 // k7kmu C3, the `optimizer-recovery` precedent); the worktree facade
 // re-exports it for the domain's consumers.
 export { formatWorktreeSeedReport } from "../../contracts/worktree-seed-report.js";
+export { formatRustcDriverLine } from "../../contracts/rustc-driver-status.js";
+export type { RustcDriverStatus } from "../../contracts/rustc-driver-status.js";
 
 // ── SchemaBuilderPort (used by mcp tool registration) ─────────────────
 // mcp writes against the PORT; bootstrap constructs the internal

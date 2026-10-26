@@ -112,6 +112,18 @@ describe("mergeExtraction — arrays concat, base first", () => {
     expect(merged.identifierDeclarations?.map((d) => d.name)).toEqual(["a", "b"]);
   });
 
+  it("concatenates rustMacroUseCrates base-first, source order kept (bd tea-rags-mcp-s3i8m.4 B2)", () => {
+    const base = baseExtraction({ rustMacroUseCrates: [{ crateName: "tikv_util", line: 2 }] });
+    const merged = mergeExtraction(base, { rustMacroUseCrates: [{ crateName: "log", line: 4 }] });
+    expect(merged.rustMacroUseCrates?.map((c) => c.crateName)).toEqual(["tikv_util", "log"]);
+  });
+
+  it("concatenates rustUseImports base-first, source order kept (bd s3i8m letCall S4a)", () => {
+    const base = baseExtraction({ rustUseImports: ["use std::fmt;"] });
+    const merged = mergeExtraction(base, { rustUseImports: ["use crate::a::b;"] });
+    expect(merged.rustUseImports).toEqual(["use std::fmt;", "use crate::a::b;"]);
+  });
+
   it("concatenates fieldAccesses base-first, and a pass's empty list leaves the channel absent (bd tea-rags-mcp-zy6hx)", () => {
     const fact = (fieldName: string, line: number) => ({
       symbolId: "A#m",

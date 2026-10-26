@@ -119,6 +119,11 @@ describe("parseAppConfigZod", () => {
       "CODEGRAPH_DB_THREADS",
       "CODEGRAPH_CUSTOM_EXCLUDE",
       "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
+      "CODEGRAPH_RUST_DRIVER",
+      "CODEGRAPH_RUST_DRIVER_PATH",
+      "CODEGRAPH_RUST_DRIVER_JOBS",
+      "CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC",
+      "CODEGRAPH_RUST_DRIVER_MAX_RSS_MB",
     ];
     for (const key of keysToDelete) {
       delete process.env[key];
@@ -164,6 +169,31 @@ describe("parseAppConfigZod", () => {
       expect(codegraph.dbMemoryLimitMax).toBe("8GB");
       // The base/idle limit is independent — MAX never leaks into it.
       expect(codegraph.dbMemoryLimit).toBe("2GB");
+    });
+
+    it("rustc driver defaults: on, 1 h wall, 12 GB RSS, jobs and path left to the runner", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.rustDriver).toEqual({ enabled: true, timeoutSec: 3600, maxRssMb: 12_288 });
+    });
+
+    it("CODEGRAPH_RUST_DRIVER_* override the rustc driver slot", async () => {
+      process.env.CODEGRAPH_RUST_DRIVER = "off";
+      process.env.CODEGRAPH_RUST_DRIVER_PATH = "/opt/drv/tea-rags-rustc-driver";
+      process.env.CODEGRAPH_RUST_DRIVER_JOBS = "3";
+      process.env.CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC = "600";
+      process.env.CODEGRAPH_RUST_DRIVER_MAX_RSS_MB = "2048";
+      const { parseAppConfigZod } = await freshImport();
+      const { codegraph } = parseAppConfigZod();
+
+      expect(codegraph.rustDriver).toEqual({
+        enabled: false,
+        path: "/opt/drv/tea-rags-rustc-driver",
+        jobs: 3,
+        timeoutSec: 600,
+        maxRssMb: 2048,
+      });
     });
 
     it("CODEGRAPH_ENABLED=false opts out", async () => {

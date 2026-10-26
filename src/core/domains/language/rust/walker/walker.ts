@@ -32,16 +32,24 @@ import type {
   ChunkExtraction,
   FileExtraction,
   ImportRef,
+  InferredBindingShape,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
-import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
+import { readRustBareType } from "./bare-type.js";
 import { collectRustCallResultBindings } from "./call-result-bindings.js";
-import { rustDeclaredStructFields } from "./field-types.js";
+import { rustDeclaredEnumVariantFields, rustDeclaredStructFields } from "./field-types.js";
+import { rustInferredConstructorType } from "./initializer-arms.js";
 import { rustNameOf } from "./name-of.js";
+import { collectRustPatternBindings } from "./pattern-bindings.js";
 import { collectRustReturnTypes, rustDeclaredTypeRef } from "./return-types.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
-import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
+import {
+  isRustLocalScopeBoundary,
+  rustImplGenericConstructors,
+  rustTypeDeclarationFactOf,
+  type RustImplGenericConstructor,
+} from "./type-declarations.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -107,6 +115,8 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  // bd tea-rags-mcp-s3i8m letCall S4a — the same importText set `imports` carries.
+  if (imports.length > 0) out.rustUseImports = imports.map((i) => i.importText);
   if (moduleReexports.length > 0) out.moduleReexports = moduleReexports;
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
@@ -118,7 +128,7 @@ interface RustSymbolKindReading {
   readonly scopeKey: string;
   readonly startLine: number;
   readonly endLine: number;
-  /** Undefined for a node `rustNameOf` names but that declares nothing (`impl`, `macro_rules!`). */
+  /** Undefined for a node `rustNameOf` names but that declares nothing (`impl`). */
   readonly kind: SymbolDefinitionKind | undefined;
 }
 
@@ -147,13 +157,23 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
   const out: RustSymbolKindReading[] = [];
   const typeDeclarations: TypeDeclarationFact[] = [];
   const classFieldTypesByClassKey = createIdentifierRecord<Record<string, string>>();
+  const constructorsByTypeId = new Map<string, RustImplGenericConstructor[]>();
   const visit = (node: AstNode, scope: readonly string[], local: boolean): void => {
     if (!local) {
+      const constructors = rustImplGenericConstructors(node);
+      const implName = constructors.length > 0 ? rustNameOf(node)?.name : undefined;
+      if (implName !== undefined) {
+        const typeId = [...scope, implName].join("::");
+        constructorsByTypeId.set(typeId, [...(constructorsByTypeId.get(typeId) ?? []), ...constructors]);
+      }
       const fact = rustTypeDeclarationFactOf(node, scope);
       if (fact !== null) {
         typeDeclarations.push(fact);
         const { fields } = rustDeclaredStructFields(node, fact.genericParameters ?? []);
         if (Object.keys(fields).length > 0) classFieldTypesByClassKey[`${relPath}::${fact.typeId}`] = fields;
+        for (const [variant, declared] of rustDeclaredEnumVariantFields(node, fact.genericParameters ?? [])) {
+          classFieldTypesByClassKey[`${relPath}::${fact.typeId}::${variant}`] = declared.fields;
+        }
       }
     }
     const named = rustNameOf(node);
@@ -171,7 +191,33 @@ function collectRustDeclarationReadings(root: AstNode, relPath: string): RustDec
     for (const child of node.children) visit(child, childScope, childLocal);
   };
   visit(root, [], false);
-  return { readings: out, typeDeclarations, classFieldTypesByClassKey };
+  return {
+    readings: out,
+    typeDeclarations: typeDeclarations.map((fact) => withGenericConstructors(fact, constructorsByTypeId)),
+    classFieldTypesByClassKey,
+  };
+}
+
+/**
+ * A generic type's own fact with the generic constructors its file's inherent
+ * impls declare (bd tea-rags-mcp-s3i8m), each bound position named by the
+ * type's generic parameter. A name two impls declare is ambiguous and dropped.
+ */
+function withGenericConstructors(
+  fact: TypeDeclarationFact,
+  constructorsByTypeId: ReadonlyMap<string, readonly RustImplGenericConstructor[]>,
+): TypeDeclarationFact {
+  const parameters = fact.genericParameters;
+  const constructors = constructorsByTypeId.get(fact.typeId);
+  if (fact.reopens || parameters === undefined || constructors === undefined) return fact;
+  const genericInitializers = constructors
+    .filter((constructor) => constructors.filter((other) => other.name === constructor.name).length === 1)
+    .map((constructor) => ({
+      name: constructor.name,
+      labels: constructor.binds.map(() => null),
+      binds: constructor.binds.map((position) => (position === null ? null : (parameters[position] ?? null))),
+    }));
+  return genericInitializers.length === 0 ? fact : { ...fact, genericInitializers };
 }
 
 /** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */
@@ -189,41 +235,6 @@ function symbolKindOfChunk(
   )?.kind;
 }
 
-/**
- * Reduce a Rust type node to its bare base type name, mirroring the Go
- * walker's `readBareTypeNode`. Strips references (`&Foo`, `&mut Foo` →
- * `Foo`) and unwraps generics (`Vec<Thing>` → `Vec`). Returns null for
- * shapes with no single named base (tuple/array/slice/fn-pointer types,
- * trait objects) so the binding is skipped rather than guessed.
- *
- * tree-sitter-rust shapes:
- *   - `type_identifier`         → `Foo`           (read text)
- *   - `reference_type`          → `&Foo` / `&mut Foo` (descend to inner type)
- *   - `generic_type`            → `Vec<Thing>`    (read `type` field base)
- *   - `scoped_type_identifier`  → `mod::Foo`      (bare last segment)
- */
-function readRustBareType(typeNode: AstNode | null): string | null {
-  if (!typeNode) return null;
-  if (typeNode.type === "type_identifier" || typeNode.type === "identifier") return typeNode.text;
-  if (typeNode.type === "reference_type") {
-    // `&Foo` / `&mut Foo` — the referent type is the only `type` field.
-    const inner = typeNode.childForFieldName("type");
-    return readRustBareType(inner);
-  }
-  if (typeNode.type === "generic_type") {
-    // `Vec<Thing>`, `Box<dyn T>` — base type is the `type` field; could
-    // itself be a `scoped_type_identifier`, so recurse to its bare name.
-    const base = typeNode.childForFieldName("type");
-    return readRustBareType(base);
-  }
-  if (typeNode.type === "scoped_type_identifier") {
-    // `std::vec::Vec` / `module::Foo` — bare last segment.
-    const name = typeNode.childForFieldName("name");
-    return name?.type === "type_identifier" ? name.text : null;
-  }
-  return null;
-}
-
 function rustGenericBounds(fn: AstNode): Record<string, string> {
   const bounds: Record<string, string> = createIdentifierRecord();
   const parameters = fn.childForFieldName("type_parameters");
@@ -239,11 +250,29 @@ function rustGenericBounds(fn: AstNode): Record<string, string> {
   return bounds;
 }
 
+/**
+ * A binding annotation std owns by shape (bd tea-rags-mcp-s3i8m.3): a
+ * primitive (`&str`, `usize`) reads as its name, a slice or array
+ * (`&[u8]`, `[u8; 4]`) as `[<element>]` — the spelling an `impl … for [u8]`
+ * block's methods carry as their owner. Bindings only: struct field types keep
+ * `readRustBareType`'s nominal reading.
+ */
+function readRustStdShapeType(typeNode: AstNode | null): string | null {
+  if (!typeNode) return null;
+  if (typeNode.type === "primitive_type") return typeNode.text;
+  if (typeNode.type === "reference_type") return readRustStdShapeType(typeNode.childForFieldName("type"));
+  if (typeNode.type === "array_type") {
+    const element = typeNode.childForFieldName("element");
+    return element ? `[${element.text}]` : null;
+  }
+  return null;
+}
+
 function rustTypeRefFor(
   typeNode: AstNode | null,
   genericBounds: Readonly<Record<string, string>>,
 ): { type: string; typeRef?: LocalBinding["typeRef"] } | null {
-  const type = readRustBareType(typeNode);
+  const type = readRustBareType(typeNode) ?? readRustStdShapeType(typeNode);
   if (type === null) return null;
   const bound = genericBounds[type];
   const ref = rustDeclaredTypeRef(typeNode);
@@ -397,23 +426,47 @@ function collectRustLocalBindingsForChunk(
       return;
     }
 
-    // Untyped `let y = Foo::new()` — associated-fn constructor inference.
+    // Untyped `let y = Foo::new()` / `Res::Ok(x)`, directly or as the agreeing
+    // arms of an `if` / `match` / block initializer; `let d = *self` copies the impl's type.
     const value = node.childForFieldName("value");
-    if (value?.type !== "call_expression") return;
-    const callee = value.childForFieldName("function");
-    if (callee?.type !== "scoped_identifier") return;
-    const pathNode = callee.childForFieldName("path");
-    const fnNameNode = callee.childForFieldName("name");
-    // `Worker::new` — path is the receiving type, including a turbofish
-    // generic (`Worker::<Token>`); strip only the generic arguments and keep
-    // the constructor's nominal owner.
-    if (!pathNode || fnNameNode?.type !== "identifier") return;
-    const typeName = readRustBareType(pathNode);
-    if (typeName && isRustConstructorAssocFn(fnNameNode.text) && isCapWordsType(typeName)) {
-      (bindings[varName] ??= []).push({ line: node.startPosition.row + 1, type: typeName });
-    }
+    if (value === null) return;
+    // Every shape newer than the direct `Foo::new()` carries its `inferenceShape`:
+    // the resolver reads it as absent where its type does not place.
+    const constructed = rustInferredConstructorType(value);
+    const selfCopy = constructed === null ? rustSelfCopyType(value, fn) : null;
+    const inferred: { readonly type: string; readonly shape?: InferredBindingShape } | null =
+      constructed ?? (selfCopy === null ? null : { type: selfCopy, shape: "selfCopy" });
+    if (inferred === null) return;
+    const line = node.startPosition.row + 1;
+    (bindings[varName] ??= []).push(
+      inferred.shape === undefined
+        ? { line, type: inferred.type }
+        : { line, type: inferred.type, inferenceShape: inferred.shape },
+    );
   });
+
+  // Pattern-bound names shadow the outer binding for their scope (bd
+  // tea-rags-mcp-s3i8m, Task 1a); a typed closure parameter takes the
+  // fn-parameter typing path.
+  collectRustPatternBindings(
+    fn,
+    startLine,
+    endLine,
+    (typeNode) => rustTypeRefFor(typeNode, genericBounds),
+    (name, binding) => (bindings[name] ??= []).push(binding),
+  );
   return bindings;
+}
+
+/**
+ * `*self` inside an `impl` method is a copy of the receiver: the impl's own
+ * type. A trait's default body has no concrete `Self`, so it spells nothing.
+ */
+function rustSelfCopyType(value: AstNode, fn: AstNode): string | null {
+  if (value.type !== "unary_expression" || value.children[0]?.type !== "*") return null;
+  if (value.namedChildren[0]?.type !== "self") return null;
+  const owner = fn.parent?.type === "declaration_list" ? fn.parent.parent : null;
+  return owner?.type === "impl_item" ? readRustBareType(owner.childForFieldName("type")) : null;
 }
 
 function rustUseClause(node: AstNode): AstNode | null {
@@ -452,65 +505,57 @@ function collectRustImports(root: AstNode): ImportRef[] {
 }
 
 function collectRustModuleReexports(root: AstNode): ModuleReexport[] {
-  const out: ModuleReexport[] = [];
+  const moduleReexports: ModuleReexport[] = [];
   walk(root, (node) => {
     if (node.type !== "use_declaration" || !node.children.some((child) => child.type === "visibility_modifier")) return;
     const clause = rustUseClause(node);
-    if (!clause) return;
+    if (clause) collectRustUseTreeReexports(clause, [], moduleReexports);
+  });
+  return moduleReexports;
+}
 
-    if (clause.type === "use_as_clause") {
-      const path = rustUsePathNode(clause);
-      const alias = rustUseAlias(clause);
-      if (!path || !alias) return;
-      const sourceParts = rustUsePathParts(path);
-      out.push({
+/**
+ * One `pub use` tree, flattened leaf by leaf with each leaf's FULL source
+ * module (bd tea-rags-mcp-s3i8m.8): tikv's `pub use self::{peer::{find_peer}}`
+ * re-exports `find_peer` from `self::peer`, not from `self` — the one-level
+ * reading recorded the group's head as the module and skipped nested groups.
+ */
+function collectRustUseTreeReexports(node: AstNode, base: readonly string[], moduleReexports: ModuleReexport[]): void {
+  if (node.type === "use_list") {
+    for (const member of node.namedChildren) collectRustUseTreeReexports(member, base, moduleReexports);
+    return;
+  }
+  if (node.type === "scoped_use_list") {
+    const head = node.childForFieldName("path");
+    const list = node.childForFieldName("list") ?? node.children.find((child) => child.type === "use_list");
+    if (list) collectRustUseTreeReexports(list, [...base, ...rustUsePathParts(head)], moduleReexports);
+    return;
+  }
+  if (node.type === "use_as_clause") {
+    const alias = rustUseAlias(node);
+    const sourceParts = [...base, ...rustUsePathParts(rustUsePathNode(node))];
+    if (alias && sourceParts.length > 0) {
+      moduleReexports.push({
         exportedName: alias.exportedName,
         sourceModule: sourceParts.slice(0, -1).join("::"),
         sourceName: alias.sourceName,
       });
-      return;
     }
-
-    if (clause.type === "use_wildcard") {
-      const sourceModule = rustUsePathNode(clause)?.text;
-      if (sourceModule) out.push({ exportedName: "*", sourceModule });
-      return;
-    }
-
-    if (clause.type === "scoped_use_list") {
-      const sourceModule = rustUsePathNode(clause)?.text;
-      const useList = clause.childForFieldName("list") ?? clause.children.find((child) => child.type === "use_list");
-      if (!sourceModule || !useList) return;
-      for (const member of useList.children) {
-        if (member.type === "use_as_clause") {
-          const alias = rustUseAlias(member);
-          if (alias) out.push({ exportedName: alias.exportedName, sourceModule, sourceName: alias.sourceName });
-          continue;
-        }
-        if (member.type === "use_wildcard") {
-          out.push({ exportedName: "*", sourceModule });
-          continue;
-        }
-        if (member.type === "identifier" || member.type === "scoped_identifier") {
-          const sourceParts = rustUsePathParts(member);
-          const sourceName = sourceParts.at(-1);
-          if (sourceName) out.push({ exportedName: sourceName, sourceModule, sourceName });
-        }
-      }
-      return;
-    }
-
-    const sourceParts = rustUsePathParts(clause);
-    const sourceName = sourceParts.at(-1);
-    if (sourceName) {
-      out.push({
-        exportedName: sourceName,
-        sourceModule: sourceParts.slice(0, -1).join("::"),
-        sourceName,
-      });
-    }
-  });
-  return out;
+    return;
+  }
+  if (node.type === "use_wildcard") {
+    const path = node.namedChildren[0] ?? null;
+    const sourceModule = [...base, ...rustUsePathParts(path)].join("::");
+    if (sourceModule) moduleReexports.push({ exportedName: "*", sourceModule });
+    return;
+  }
+  const sourceParts = [...base, ...rustUsePathParts(node)];
+  // `self` in a group re-exports the group's own module under its last name.
+  const leafParts = sourceParts.at(-1) === "self" ? sourceParts.slice(0, -1) : sourceParts;
+  const sourceName = leafParts.at(-1);
+  if (sourceName) {
+    moduleReexports.push({ exportedName: sourceName, sourceModule: leafParts.slice(0, -1).join("::"), sourceName });
+  }
 }
 
 function collectRustCalls(root: AstNode): CallRef[] {
@@ -518,6 +563,7 @@ function collectRustCalls(root: AstNode): CallRef[] {
   walk(root, (node) => {
     const shape = rustCallSiteShape(node);
     if (shape) {
+      const member = rustCallMemberToken(node);
       out.push({
         callText: node.text,
         ...shape,
@@ -525,6 +571,10 @@ function collectRustCalls(root: AstNode): CallRef[] {
         // The Node parser exposes UTF-16 code-unit columns. This is the
         // expression's start, not the callee token's range or a UTF-8 offset.
         startColumn: node.startPosition.column,
+        ...(member && {
+          memberStartLine: member.startPosition.row + 1,
+          memberStartColumn: member.startPosition.column,
+        }),
       });
     }
   });
@@ -576,6 +626,27 @@ export function rustCallSiteShape(node: AstNode): RustCallShape | null {
     return name ? { receiver: fn.childForFieldName("path")?.text ?? null, member: name.text } : null;
   }
   return fn?.type === "identifier" ? { receiver: null, member: fn.text } : null;
+}
+
+/**
+ * The member-name token of the call {@link rustCallSiteShape} describes (the
+ * `macro` name, the field of `a.b()`, the last segment of `a::b()`, a bare
+ * callee), or null when the shape is null. Its position is what a
+ * rustc call-site driver row is keyed by, and the only thing that
+ * tells `A::new().build()` from the nested `A::new()` — they share a start.
+ */
+export function rustCallMemberToken(node: AstNode): AstNode | null {
+  if (node.type === "macro_invocation") {
+    const macroField = node.childForFieldName("macro");
+    if (macroField?.type !== "scoped_identifier") return macroField;
+    return macroField.childForFieldName("name");
+  }
+  if (node.type !== "call_expression") return null;
+  let fn = node.childForFieldName("function");
+  while (fn?.type === "generic_function") fn = fn.childForFieldName("function");
+  if (fn?.type === "field_expression") return fn.childForFieldName("field");
+  if (fn?.type === "scoped_identifier") return fn.childForFieldName("name");
+  return fn?.type === "identifier" ? fn : null;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

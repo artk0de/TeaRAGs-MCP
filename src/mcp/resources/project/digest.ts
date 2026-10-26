@@ -1,4 +1,5 @@
 import {
+  formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
   type CollectionEntry,
@@ -58,6 +59,7 @@ export function formatSlimDigest(data: ProjectDigestData, now: Date): string {
 
   const resolveWarnings = data.status.codegraphResolve ? formatResolveWarnings(data.status.codegraphResolve) : [];
   if (resolveWarnings.length > 0) lines.push("", ...resolveWarnings);
+  if (data.status.rustcDriver) lines.push("", formatRustcDriverLine(data.status.rustcDriver));
 
   const { infraHealth, enrichment } = data.status;
   if (infraHealth && !isInfraHealthy(infraHealth)) {
