@@ -604,7 +604,7 @@
     {
       "id": "naming-type-draft",
       "category": "step5-lexicon-type-draft",
-      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript (tea-rags). CREATE of a new resolution pass that extends SymbolResolutionStrategy, in src/core/domains/language/ruby/resolution/. Draft class name: RubyConstReceiverPass.",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript (tea-rags). CREATE of a new resolution pass that extends SymbolResolutionStrategy, in src/core/domains/language/ruby/resolution/. Draft class name: RubyConstReceiverPass, planned file src/core/domains/language/ruby/resolution/const-receiver-pass.ts. The Step 5 get_naming_lexicon call (once made) returns MISFIT for RubyConstReceiverPass with suggestion RubyConstReceiverStrategy (the family's role word).",
       "prompt": "Добавь новый проход резолвинга для Ruby-констант как отдельный класс рядом с остальными стратегиями.",
       "expected": {
         "mustDo": [

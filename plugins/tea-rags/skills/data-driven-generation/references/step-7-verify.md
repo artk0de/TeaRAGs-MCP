@@ -4,47 +4,9 @@ Loaded by `SKILL.md` Step 7 and by wrappers that run its gate.
 
 ## Step 7 answer block
 
-Every Step 7 answer — real run, plan-only, supplied findings, "tests green,
-finalize", "can I commit?" — is these lines, in this order, as the steps of the
-answer. Only definition of Step 7 output; checks 1–4 below say how to fill it.
-
-```
-RISK <symbol> <chunk.<field>.label> → defensive call: <guard>; pinned by <test> | UNPINNED
-N-TH-WAY find_similar(positiveCode = generated code): <near-duplicate module → Step 4> | none
-PINS tests-at-risk + 6a pins: green                                   (MODIFY)
-INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non-preExisting finding)
-FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
-REMEDY-APPLIED <family> <edge|symbol> — preExisting, server remedy applied: <remedy operation>   (per preExisting WITH remedy — never optional)
-REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
-PARTNER <path> — edited in this diff: <contract it depends on> | not touched because <checkable reason citing a symbol>   (per incompleteChange / silentCoupling partner)
-PARTNER <manifest path> — version manifest: known noise per repair/silentCoupling.md (detector drops manifests; bump follows the versioning rule), no coupling edit   (per plugin.json / package.json / lockfile partner)
-GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
-RE-REVIEW same review_changes + targeted tests: target gone, no new finding
-GATE review_changes: introduced=0, partial=false
-```
-
-- One `RISK` line per checked symbol (≤ 5). `N-TH-WAY` always printed.
-- First `GATE` line = the review held NOW, printed even at zero findings. It is
-  never replaced by the closing line: partial review (`truncated` /
-  `built: false` / `scopeSkippedFiles`) → `partial=true` here, then `files`
-  batches as the repair, then the closing line.
-- `INTRODUCED` operation = concrete: the `remedy` spelled out (`retargetImport`
-  → "in `<source>` import `<names>` from `<to>` instead of `<from>`"), else the
-  repair file's `## No remedy` step.
-- `RE-REVIEW` + closing `GATE` = the re-run every repair or batch ends with; a
-  plan prints the closing line as the result required to commit, followed by its
-  fallback:
-  `else after round 2: ESCALATE <family>: <metric> <before> → <after> vs <threshold>, edge <src> → <dst>`
-  (hubLike: efferent count vs cut, the new import) + AskUserQuestion, no commit.
-- Nothing to repair and not partial → `RE-REVIEW` + closing line dropped; the
-  first `GATE` line is final.
-- `FALSE-POSITIVE` = not counted in `introduced`. Filing the issue in the
-  session's tracker is part of this step (no separate consent); the issue id
-  comes from that filing call — **Confirm first** below.
-- Codegraph off → gate lines become
-  `GATE review_changes: architecture not judged (codegraph off)`.
-- Paraphrase ("gate is clean", "report the updated result", "re-run the gate") =
-  no line. **No gate line = task not done.**
+Lives in `skills/data-driven-generation/SKILL.md` Step 7
+(`#### Step 7 answer block`) — the only definition of Step 7 output, printed
+from there line by line. Checks 1–4 below say how to fill it.
 
 ## Checks
 

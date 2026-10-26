@@ -6,7 +6,8 @@ description:
   needing attention — NOT one-preset asks like bug-prone areas
   (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something's
   off in X" (dinopowers:systematic-debugging), NOT refactoring candidates
-  ("what to refactor in X", "cleanup X" → explore). Answer: phases 0–5,
+  ("what to refactor in X", "cleanup X" → explore), NOT risks of named
+  `Class#method` symbols (explore PRE-GEN). Answer: phases 0–5,
   Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
   Output: line
 codex-description:
@@ -26,7 +27,10 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 **Not this skill — check first:** user feels something is wrong / off in an area
 and names no risk dimension (risk, health, debt, hotspots) → stop here, route to
 dinopowers:systematic-debugging (unframed symptom: bug-hunt skipped there). No
-scan.
+scan. Prompt names symbol ids (`Class#method`, `Class.static`), even beside an
+area word ("pipeline") → stop here, explore PRE-GEN PG-2 replaces this scan;
+plan line copied with the prompt's ids:
+`find_symbol(symbols=["<id1>", "<id2>", …], rerank="techDebt", metaOnly=false)`.
 
 **Answer contract — reports AND plan-only answers.** Copy the skeleton below:
 plan-only → its numbered steps first, one line per phase, never merged or moved

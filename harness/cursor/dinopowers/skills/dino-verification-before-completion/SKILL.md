@@ -45,12 +45,12 @@ in your tool list; unsure → read
 `tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
 
 **Diff review, same gate** (codegraph on, session edited files) — BEFORE "done"
-/ commit: open the tea-rags plugin file
-`skills/data-driven-generation/references/step-7-verify.md` (not under
-dinopowers) in this turn, plan-only included, run it, and print its
-`## Step 7 answer block` line by line — that block IS the answer; nothing here
-narrows or restates it. Wrapper-only: `changes:{}` = uncommitted edit; committed
-branch → `changes:{base}`, base = `git merge-base HEAD main`, never a sibling /
+/ commit: open the tea-rags plugin file `skills/data-driven-generation/SKILL.md`
+(not under dinopowers) in this turn, plan-only included, run its Step 7 (checks
+per its `references/step-7-verify.md`), and print its `#### Step 7 answer block`
+line by line — that block IS the answer; nothing here narrows or restates it.
+Wrapper-only: `changes:{}` = uncommitted edit; committed branch →
+`changes:{base}`, base = `git merge-base HEAD main`, never a sibling /
 integration branch; findings from a stack below = its owner's, cite the commit,
 no triage.
 

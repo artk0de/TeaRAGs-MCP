@@ -53,7 +53,7 @@
       "id": "E2",
       "context": "main, own checkout, 10 min later, already 'decided index behind'",
       "prompt": "body of IRSConnectionsController#create + OAUTH_REGEXP constant",
-      "expected": "find_symbol ×2 (incremental if not yet run); NOT grep/Read",
+      "expected": "ONE find_symbol(symbols: [\"IRSConnectionsController#create\", \"OAUTH_REGEXP\"]) batch (incremental if not yet run); NOT grep/Read",
       "audit_finding": "A2,A4",
       "results": {
         "no_rule": "FAIL",

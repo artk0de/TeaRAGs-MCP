@@ -13,7 +13,11 @@ description:
 
 **Not this skill — check first:** user feels something is wrong / off in an area
 and names no risk dimension (risk, health, debt, hotspots) → stop here, route to
-systematic-debugging (unframed symptom: bug-hunt skipped there). No scan.
+systematic-debugging (unframed symptom: bug-hunt skipped there). No scan. Prompt
+names symbol ids (`Class#method`, `Class.static`), even beside an area word
+("pipeline") → stop here, explore PRE-GEN PG-2 replaces this scan; plan line
+copied with the prompt's ids:
+`find_symbol(symbols=["<id1>", "<id2>", …], rerank="techDebt", metaOnly=false)`.
 
 **Answer contract — reports AND plan-only answers.** Copy the skeleton below:
 plan-only → its numbered steps first, one line per phase, never merged or moved

@@ -285,7 +285,13 @@ lexicon) → pick the term now; print BOTH slots filled:
 `NEW_TERM Debouncer — no project term denotes coalescing bursts into one call`.
 A line still showing `<term>`, conditional ("X is a candidate, conventions
 decide"), or described not printed = not the line. "Project vocabulary" / "a
-name that describes the lookup" without the name = Step 5 not done.
+name that describes the lookup" without the name = Step 5 not done. Lexicon
+result not in hand (plan-only, call planned): the lines still print, NOW —
+project code already in hand holding the same type (context line, template,
+container: `<x> = <finder>(id)`) gives the names, read like `byType` top names:
+`rec → ledger_entry (EXACT expected, local — lexicon confirms)`; no such code →
+`<draft> → [planned; not run] (lexicon decides; MISFIT → suggestion)`. "Apply
+the returned verdicts" alone = no line.
 
 ### Step 6: GENERATE — RED → GREEN → REFACTOR
 
@@ -316,10 +322,63 @@ placement, re-simulate, then move. Output line:
 
 ### Step 7: VERIFY
 
-Open [references/step-7-verify.md](./references/step-7-verify.md) — never
-skipped, also on "tests green, finalize" / "can I commit?". **Its
-`## Step 7 answer block` IS the answer, line for line, in order;** no other
-place defines Step 7 output. Checks:
+Open [references/step-7-verify.md](./references/step-7-verify.md) (how to fill
+each check, triage, repair rounds) — never skipped, also on "tests green,
+finalize" / "can I commit?".
+
+#### Step 7 answer block
+
+Every Step 7 answer — real run, plan-only, supplied findings, "tests green,
+finalize", "can I commit?", a hand-back report to a parent — is these lines, in
+this order, as the steps of the answer, copied, slots filled. Only definition of
+Step 7 output.
+
+```
+RISK <symbol> <chunk.<field>.label> → defensive call: <guard>; pinned by <test> | UNPINNED
+N-TH-WAY find_similar(positiveCode = generated code): <near-duplicate module → Step 4> | none
+PINS tests-at-risk + 6a pins: green                                   (MODIFY)
+NAMING <name> <MISFIT|COLLISION|genericName|NEW_TERM> → renamed <new name> | kept: <one-line why> | adopted <alternative>   (per non-conforming verdict of the review's naming section)
+INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non-preExisting finding)
+FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
+REMEDY-APPLIED <family> <edge|symbol> — preExisting, server remedy applied: <remedy operation>   (per preExisting WITH remedy — never optional)
+REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
+PARTNER <path> — edited in this diff: <contract it depends on> | not touched because <checkable reason citing a symbol>   (per incompleteChange / silentCoupling partner)
+PARTNER <manifest path> — version manifest: known noise per repair/silentCoupling.md (detector drops manifests; bump follows the versioning rule), no coupling edit   (per plugin.json / package.json / lockfile partner)
+GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
+RE-REVIEW same review_changes + targeted tests: target gone, no new finding
+GATE review_changes: introduced=0, partial=false
+```
+
+- One `RISK` line per checked symbol (≤ 5). `N-TH-WAY` always printed.
+- `NAMING` = one line per naming verdict that is not conforming, rename done
+  before the commit; none → line dropped.
+- First `GATE` line = the review held NOW, printed even at zero findings, its
+  `introduced=` = count of `INTRODUCED` lines (= `change.introducedCount` when
+  supplied; `preExisting` findings never counted). It is never replaced by the
+  closing line: partial review (`truncated` / `built: false` /
+  `scopeSkippedFiles`) → `partial=true` here, then `files` batches as the
+  repair, then the closing line.
+- `INTRODUCED` operation = concrete: the `remedy` spelled out (`retargetImport`
+  → "in `<source>` import `<names>` from `<to>` instead of `<from>`"), else the
+  repair file's `## No remedy` step spelled out as the edit it prescribes (e.g.
+  "retarget the import to `<facade>`"), never the heading name.
+- `RE-REVIEW` + closing `GATE` = the re-run every repair or batch ends with; a
+  plan prints the closing line as the result required to commit, followed by its
+  fallback:
+  `else after round 2: ESCALATE <family>: <metric> <before> → <after> vs <threshold>, edge <src> → <dst>`
+  (hubLike: efferent count vs cut, the new import) + ask the user, no commit.
+- Nothing to repair and not partial → `RE-REVIEW` + closing line dropped; the
+  first `GATE` line is final. Repair already done before this answer (hand-back
+  after a clean re-run) → print the closing line.
+- `FALSE-POSITIVE` = not counted in `introduced`. Filing the issue in the
+  session's tracker is part of this step (no separate consent); the issue id
+  comes from that filing call — **Confirm first** in the reference.
+- Codegraph off → gate lines become
+  `GATE review_changes: architecture not judged (codegraph off)`.
+- Paraphrase ("gate is clean", "review_changes clean", "report the updated
+  result", "re-run the gate") = no line. **No gate line = task not done.**
+
+Checks:
 
 1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
    on called / changed symbols, ≤ 5, most central first; read
