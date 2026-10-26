@@ -226,17 +226,19 @@ Branch on Task verdict BEFORE invoking `$executing-plans`:
   explicit confirmation before `$executing-plans`
 - `UNSAFE` → pause: surface block + recommend (a) split Task into smaller Tasks,
   (b) add owner as co-author/reviewer, (c) require tests-before-edit. No
-  `$executing-plans` until the user explicitly overrides.
+  `$executing-plans` until the user explicitly overrides. Print this line under
+  the block, copied — also when the verdict waits on a labelMap read (then it is
+  the line for the `concerning`/`critical` label, printed in full):
+  `UNSAFE Task N — <both halves>. Paused. Options: (a) split the Task, (b) owner as co-author/reviewer, (c) tests before edit. Reply 'override Task N' to proceed.`
 
 Guard block = circuit breaker, not documentation. NEVER silently downgrade
 (UNSAFE→CAUTION, CAUTION→SAFE) "to keep momentum"; surface true verdict, user
 may downgrade.
 
 **Pre-emptive "skip it" is NOT an override.** Deadline / "no time" / "пропусти
-UNSAFE" said before or alongside the verdict → still surface the block +
-recommendations and wait. Say: "Guard is UNSAFE for Task N — <signals>. Options:
-(a)/(b)/(c). Reply 'override Task N' to proceed anyway." Explicit override =
-user reply AFTER seeing the block, naming the Task.
+UNSAFE" said before or alongside the verdict → still surface the block + the
+`UNSAFE Task N — …` line of the `UNSAFE` bullet above, and wait. Explicit
+override = user reply AFTER seeing the block, naming the Task.
 
 **Chaining reminder:** Task run may chain into `$test-driven-development`,
 `$verification-before-completion`, `$requesting-code-review`,
@@ -275,8 +277,9 @@ BEFORE `$executing-plans`. DDG picks own mode (CREATE / EXTEND / MODIFY) via
   any Edit/Write (CREATE / EXTEND)
 - **Modification** (change behavior of EXISTING symbol in place: bug fix,
   condition tweak, new branch, hotfix) → **MUST** `$data-driven-generation`
-  BEFORE any Edit/Write (MODIFY). The plan prints these three lines, slots
-  filled, in this order:
+  BEFORE any Edit/Write (MODIFY). The plan prints these three lines NOW, first,
+  slots filled, in this order — before any DDG line (HOTFIX / mode lines follow
+  them, never replace them):
 
   ```
   Step 4.5 skipped — MODIFY skips TEMPLATE

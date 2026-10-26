@@ -19,8 +19,9 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
-- file/dir path, doc TOC → `find_symbol(relativePath:)`; user's manual-read
-  order → `Read` (Invariants)
+- file/dir path, doc TOC → `find_symbol(relativePath:)`; its imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
+  user's manual-read order → `Read` (Invariants)
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
@@ -49,13 +50,16 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 **Invariants.**
 
-- Never `Read` after `find_symbol` — method = full body; outline
-  (class/file/doc) → drill `find_symbol(symbol: <id>)`; 2+ ids → ONE
+- Never `Read` after `find_symbol` — method = full body; small file
+  (`kind: "file"`) = full text, the read itself, nothing after; outline
+  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; 2+ ids → ONE
   `find_symbol(symbols: [<ids>])`. After a search, or a file/id already known:
   `find_symbol` next — another search is the "Curiosity search" anti-pattern;
   never re-search/`Read`.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
+- Answer has `truncated` → next call = `truncated.next` as given, or narrowed
+  (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
   No `treeState` = current; `treeState` row = pre-edit copy (say why, e.g.
   `denseUnavailable`): dependents' fanIn/churn valid, not proof of the edit →
@@ -78,7 +82,8 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` — callers the
   index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
   empty `find_cycles` = DAG.
-- Docs = hypothesis; verify in code.
+- Docs = hypothesis; verify in code — unless the doc is the subject ("what does
+  README say") → report it as-is, no code pass.
 - `rustc driver: unavailable` (prime / `get_index_status` / `index_codebase`) →
   tell the user ONCE per session: Rust call edges static-only (lower bound),
   quote the install command from that line; never install yourself; never claim
@@ -91,11 +96,12 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
-`empty.reason`, ambiguous name, when to stop → `pagination`; skill pick,
-fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked worktree →
-`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw
-`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;
-graph/AST, other language → `language-capability`; no prime digest →
+`truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`; skill
+pick, fallbacks → `decision-tree`; stale banner, drift, `treeState`, linked
+worktree → `freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`;
+raw `filter:` → `filters`; `rerank`, labels → `presets`, `signals`,
+`signal-labels`; graph/AST, other language → `language-capability`; architecture
+report / `review_changes` answer → `architecture` / `review`; no prime digest →
 `tea-rags://project/<alias>/digest`; numeric filter value not given
 (minCommitCount/minAgeDays/maxAgeDays/minFanIn/modifiedAfter window) or bare raw
 number, no label → `…/metrics?language=<lang>&section=thresholds`.

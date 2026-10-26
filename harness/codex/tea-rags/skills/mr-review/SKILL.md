@@ -168,7 +168,9 @@ Contract shape + conventions + degradation:
 
 **Local:** chat report — findings by severity (major first), observations,
 dimensions-skipped notes. No posting. **D8 naming overrides the severity
-grouping, local too:** emit exactly this block, copied, one finding per line:
+grouping, local too:** emit exactly this block, copied, one finding per line —
+plan-only answers too, NOW, slots filled from verdicts already in context (else
+`[planned; not run]`); "the block must follow the format" = block not emitted:
 
 ```
 ### Naming

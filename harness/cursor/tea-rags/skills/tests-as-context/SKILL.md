@@ -1,7 +1,7 @@
 ---
 name: tests-as-context
 description:
-  'Internal step invoked by /data-driven-generation, /filter-building,
+  'Internal step invoked by /data-driven-generation, /explore, /filter-building,
   /mr-review, /test-first. Agentic-only — surfaces DSL test chunks (chunkType
   "test" scenarios, "test_setup" fixtures) as context for review, verification,
   refactoring, debugging; a user asking for test patterns / conventions wants
@@ -13,6 +13,12 @@ description:
 > **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
+
+You are the callee: a wrapper or skill hands you `recipe` + its inputs. No
+caller, a user asking for this skill or "which tests cover X" → print
+`tests-as-context is agent-only — not a slash command.`, then explore's ONE
+call, no recipe, no split:
+`hybrid_search(query="<module name + exported symbol names of X>", testFile:"only", metaOnly:true)`.
 
 Five recipes turn DSL test chunks into review / verify / refactor / TDD
 enrichment. Owned by tea-rags, used by dinopowers wrappers and other tea-rags

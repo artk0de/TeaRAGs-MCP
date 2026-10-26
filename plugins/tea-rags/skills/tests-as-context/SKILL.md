@@ -5,7 +5,9 @@ description:
   Agentic-only — surfaces DSL test chunks (chunkType "test" scenarios,
   "test_setup" fixtures) as context for review, verification, refactoring,
   debugging; a user asking for test patterns / conventions wants the dinopowers
-  TDD wrapper, not this recipe.
+  TDD wrapper, not this recipe. NOT user-invocable: user names this skill or
+  asks which tests cover X → say agent-only, run explore's ONE
+  hybrid_search(testFile:"only", query=<module/symbol names>).
   Five recipes: tests-at-risk (scenarios under threat for edited source),
   fixture-lookup (reuse existing setup before drafting new),
   regression-archaeology (when was the test for X added), test-flakiness
@@ -14,11 +16,23 @@ description:
   automatically when DSL test chunks absent from index. Invoked from
   dinopowers wrappers (test-driven-development, requesting-code-review,
   verification-before-completion, receiving-code-review) and direct
-  use-cases.md callouts. NOT user-invocable — does not appear in interactive
-  slash command list.
+  use-cases.md callouts; never in the slash command list.
+codex-description:
+  Agentic-only callee of dinopowers wrappers — DSL test chunks (chunkType
+  "test"/"test_setup") as context: tests-at-risk, fixture-lookup,
+  regression-archaeology, test-flakiness, spec-extraction. NOT user-invocable:
+  user names this skill or asks which tests cover X → say agent-only, run
+  explore's ONE hybrid_search(testFile:"only", query=<module + exported symbol
+  names>). Test patterns / conventions → dinopowers TDD wrapper.
 ---
 
 # tests-as-context
+
+You are the callee: a wrapper or skill hands you `recipe` + its inputs. No
+caller, a user asking for this skill or "which tests cover X" → print
+`tests-as-context is agent-only — not a slash command.`, then explore's ONE
+call, no recipe, no split:
+`hybrid_search(query="<module name + exported symbol names of X>", testFile:"only", metaOnly:true)`.
 
 Five recipes turn DSL test chunks into review / verify / refactor / TDD
 enrichment. Owned by tea-rags, used by dinopowers wrappers and other tea-rags

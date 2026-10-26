@@ -3,9 +3,10 @@ name: explore
 description:
   Explore, understand, explain, investigate code — "how does X work", "show me
   the architecture of Y", "what does Z do", "where is X used", "find all X",
-  "antipatterns in X", "best example of X", "files matching <Name>" (not Glob).
-  Also pre-generation investigation — "before I code/change/modify/refactor X",
-  "what should I know before touching X", "research before coding", "context for
+  "antipatterns in X", "best example of X", "files matching <Name>" (not Glob),
+  "which tests cover X" (also when asked for agent-only tests-as-context). Also
+  pre-generation investigation — "before I code/change/modify/refactor X", "what
+  should I know before touching X", "research before coding", "context for
   changing X", "risks before refactoring X". NOT for active bugs, a bug already
   found in a file, named suspects or search hits carrying bugFixRate labels (use
   bug-hunt), NOT for writing a plan (use writing-plans), NOT for standalone code
@@ -74,13 +75,17 @@ Y" stays PRE-GEN.
 
 ## Risk intent → delegate to risk-assessment
 
-$ARGUMENTS has risk signals over an AREA ("risk surface", "risk zones", "risky
-areas", "code health", "assess risks", "problematic areas", "risks before
+Risks of NAMED symbols — prompt carries 1–5 ids (`Class#method`,
+`Class.static`), even beside an area word ("pipeline", "module") — or of ONE
+named change ("risks before I change the scoring") → PRE-GEN PG-2, no
+risk-assessment, no `rank_chunks`; plan line copied with the prompt's ids:
+`find_symbol(symbols=["<id1>", "<id2>", …], rerank="techDebt", metaOnly=false)`.
+Else $ARGUMENTS has risk signals over an AREA ("risk surface", "risk zones",
+"risky areas", "code health", "assess risks", "problematic areas", "risks before
 refactoring/changing <module>") → delegate `risk-assessment/SKILL.md` WITH the
 resolved `pathPattern` (Scope extraction below) — it then skips its Phase 0.
 Checked FIRST — overrides EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords, "before I
-refactor" included. Risks of ONE named symbol / change ("risks before I change
-the scoring") → PRE-GEN PG-2 signals.
+refactor" included.
 
 ## Change intent → rank_chunks codeReview
 
@@ -236,9 +241,9 @@ Apply tables above, first match:
    `hybrid_search` / `semantic_search` on it; known symbol, no file →
    `find_symbol` + `hybrid_search`; else `semantic_search`
    `metaOnly=true limit=10 documentation="exclude"` → PG-2 ONE
-   `find_symbol(symbols=[<2–5 key symbols>], rerank="techDebt")` (own overlay
-   signals, no risk-assessment delegation) → PG-3 `find_symbol` on 1–2 symbols
-   only (e.g. base error classes), never call chains.
+   `find_symbol(symbols=[<2–5 key symbols>], rerank="techDebt", metaOnly=false)`
+   (own overlay signals, no risk-assessment delegation) → PG-3 `find_symbol` on
+   1–2 symbols only (e.g. base error classes), never call chains.
 5. EXPLAIN → Explore Flow below, format per
    [references/explain-pattern.md](./references/explain-pattern.md). Named
    component ("the <name> adapter") → Scope extraction probe FIRST, then
