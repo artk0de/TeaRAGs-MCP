@@ -58,7 +58,7 @@ export function tabulateRecordArrays(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, tabulateRecordArrays(inner)]));
 }
 
-function isColumnTable(value: Record<string, unknown>): value is ColumnTable & Record<string, unknown> {
+export function isColumnTable(value: Record<string, unknown>): value is ColumnTable & Record<string, unknown> {
   const keys = Object.keys(value);
   return keys.length === 2 && Array.isArray(value.columns) && Array.isArray(value.rows);
 }

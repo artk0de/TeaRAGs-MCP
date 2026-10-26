@@ -37,6 +37,7 @@ import {
 } from "../public/index.js";
 import { formatMcpResponse, type McpToolResult } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
+import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { projectField, WORKING_TREE_PATH_HINT } from "./schemas.js";
 
 /**
@@ -451,7 +452,21 @@ interface CodegraphToolDef {
   description: string;
   schemaKey: keyof CodegraphSchemas;
   invoke: (app: App, request: unknown) => Promise<McpToolResult>;
+  /** Rows the response budget guard trims (bd tea-rags-mcp-c01gm); absent = the answer is a verdict, never cut. */
+  responseRows?: ResponseRowsPolicy;
 }
+
+/**
+ * The report's rows are its per-detector violation groups. `offset` skips the
+ * same count in EVERY detector, so the guard caps every group at one count and
+ * the continuation pages the held judgement by `reportId` — a group-order or
+ * largest-first cut would leave a tail no single offset reaches without overlap.
+ */
+const ARCHITECTURE_REPORT_ROWS: ResponseRowsPolicy = {
+  rows: ["violations.*"],
+  continuation: offsetContinuation(["reportId"]),
+  narrowing: ["detectors", "limit", "evidenceLimit", "pathPattern"],
+};
 
 const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
   {
@@ -468,6 +483,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       `unknown file → empty importers + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callers",
+    responseRows: { narrowing: ["limit", "includeAmbiguous"] },
     invoke: async (app, request) => formatMcpResponse(await app.getCallers(request as GetCallersRequest)),
   },
   {
@@ -481,6 +497,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       `unknown file → empty imports + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callees",
+    responseRows: { narrowing: ["limit"] },
     invoke: async (app, request) => formatMcpResponse(await app.getCallees(request as GetCalleesRequest)),
   },
   {
@@ -495,6 +512,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "the cycle was not recomputed since the index upgrade. hasModelEdge:true + modelEdgeCount = " +
       "hops inside the cycle only residual-model edges support (absent = all static).",
     schemaKey: "find_cycles",
+    responseRows: { narrowing: ["scope", "pathPattern"] },
     invoke: async (app, request) => formatMcpResponse(await app.findCycles(request as FindCyclesRequest)),
   },
   {
@@ -618,6 +636,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "re-cuts the held judgement (8 reports, ~10 min, MCP server memory); evicted, expired, other scope or tree " +
       "counts moved -> empty.reason reportStale, re-call without reportId.",
     schemaKey: "get_architecture_report",
+    responseRows: ARCHITECTURE_REPORT_ROWS,
     invoke: async (app, request) => {
       const req = request as GetArchitectureReportRequest;
       const answer = req.restructurePlan
@@ -638,6 +657,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
       "collisions: names equal to other symbols. Ranked, with counts and an example each.",
     schemaKey: "get_ontology_report",
+    responseRows: { narrowing: ["sections", "limit", "pathPattern", "language"] },
     invoke: async (app, request) => formatMcpResponse(await app.getOntologyReport(request as GetOntologyReportRequest)),
   },
   {
@@ -652,6 +672,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "carries empty {reason:notBuilt}. files[].empty {reason:noHistory} = file shares no commit in window. " +
       "Before editing a file, surface silent high-strength partners as change-context.",
     schemaKey: "find_co_changed",
+    responseRows: { narrowing: ["files", "limit"] },
     invoke: async (app, request) => formatMcpResponse(await app.findCoChanged(request as FindCoChangedRequest)),
   },
   {
@@ -667,6 +688,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "from/to: host-class id with no node of its own → traced via the member's first definer up " +
       "hierarchy in MRO order; resolvedEndpoints names the id traced.",
     schemaKey: "trace_path",
+    responseRows: { narrowing: ["maxPaths", "maxDepth", "fromPath", "toPath"] },
     // `TracePathRequest.rerank` is the string preset name the curated enum
     // (z.ZodTypeAny erases to unknown after .optional()) narrows to.
     invoke: async (app, request) => formatMcpResponse(await app.tracePath(request as TracePathRequest)),
@@ -702,6 +724,7 @@ export function registerCodegraphTools(
         description: tool.description,
         inputSchema: schemas[tool.schemaKey],
         annotations: { readOnlyHint: true, idempotentHint: true },
+        ...(tool.responseRows && { responseRows: tool.responseRows }),
       },
       async (request: unknown) => tool.invoke(app, request),
     );

@@ -183,4 +183,13 @@ export const SearchResultOutputSchema = {
     .describe(
       "find_symbol directory path: results = its files (relativePath, language, symbols); subdirs one level down.",
     ),
+  truncated: z
+    .object({
+      returned: z.number(),
+      omitted: z.number(),
+      next: z.object({ tool: z.string(), args: z.record(z.string(), z.unknown()), why: z.string() }).optional(),
+      message: z.string().optional(),
+    })
+    .optional()
+    .describe("Over the response budget: tail rows dropped whole. next = same call for the rest — run verbatim."),
 };
