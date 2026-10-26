@@ -27,7 +27,8 @@ export type InputErrorCode =
   | "INPUT_UNKNOWN_ARCHITECTURE_COMPONENT"
   | "INPUT_UNKNOWN_RESTRUCTURE_COMPONENT"
   | "INPUT_UNKNOWN_RESTRUCTURE_FILE"
-  | "INPUT_UNKNOWN_RESTRUCTURE_EDGE";
+  | "INPUT_UNKNOWN_RESTRUCTURE_EDGE"
+  | "INPUT_UNKNOWN_RERANK_SIGNAL";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -344,6 +345,22 @@ export class UnknownRestructureEdgeError extends InputValidationError {
       code: "INPUT_UNKNOWN_RESTRUCTURE_EDGE",
       message: `restructure[${opIndex}] removes an edge the production graph does not hold: ${from} → ${to}.`,
       hint: "Name a file edge as findings' evidence names it (base paths, source → target), each at most once.",
+    });
+  }
+}
+
+/**
+ * Thrown by the search tools (bd tea-rags-mcp-0y5oj) when `rerank: {custom}`
+ * names a weight no registered derived signal answers. The schema shows the
+ * custom arm as an open `{<signal>: number}` map, so an unknown key would
+ * otherwise score as weight 0 — a ranking the caller never asked for.
+ */
+export class UnknownRerankSignalError extends InputValidationError {
+  constructor(unknown: readonly string[], validSignals: readonly string[]) {
+    super({
+      code: "INPUT_UNKNOWN_RERANK_SIGNAL",
+      message: `rerank.custom names unknown signal(s): ${unknown.join(", ")}.`,
+      hint: `Valid rerank.custom keys: ${validSignals.join(", ")}. Catalog: tea-rags://guide/signals.`,
     });
   }
 }

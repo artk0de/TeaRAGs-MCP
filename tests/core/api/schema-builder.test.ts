@@ -55,21 +55,23 @@ function createMockReranker(overrides?: {
 
 describe("SchemaBuilder", () => {
   describe("buildScoringWeightsSchema", () => {
-    it("produces a Zod object with all descriptor names as optional number keys", () => {
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): the weights arm is an open
+    // {<signal>: number} map instead of one optional key per descriptor — the
+    // enumeration cost ~1.5 KB per rerank-bearing tool in tools/list. The key
+    // set moved to customWeightSignals, checked server-side by sanitizeRerank.
+    it("produces an open {<signal>: number} record, keys not enumerated", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
       const schema = builder.buildScoringWeightsSchema();
 
-      // Should be a ZodObject
-      expect(schema).toBeInstanceOf(z.ZodObject);
-
-      const { shape } = schema;
-      expect(shape).toHaveProperty("recency");
-      expect(shape).toHaveProperty("similarity");
-      expect(shape).toHaveProperty("churn");
-
-      // Each field should accept a number
+      expect(schema).toBeInstanceOf(z.ZodRecord);
       const parsed = schema.parse({ recency: 0.5, similarity: 0.3 });
       expect(parsed).toEqual({ recency: 0.5, similarity: 0.3 });
+      expect(z.toJSONSchema(schema)).not.toHaveProperty("properties");
+    });
+
+    it("customWeightSignals lists every descriptor name — the custom-key check's one source", () => {
+      const builder = new SchemaBuilder(createMockReranker() as Reranker);
+      expect(builder.customWeightSignals()).toEqual(["recency", "similarity", "churn"]);
     });
 
     it("fields are optional (empty object is valid)", () => {
@@ -85,11 +87,9 @@ describe("SchemaBuilder", () => {
       expect(() => schema.parse({ recency: "high" })).toThrow();
     });
 
-    it("does not include descriptions on weight fields", () => {
+    it("does not include a description on the weights map", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
-      const schema = builder.buildScoringWeightsSchema();
-      const recencyField = schema.shape.recency;
-      expect(recencyField.description).toBeUndefined();
+      expect(builder.buildScoringWeightsSchema().description).toBeUndefined();
     });
 
     it("handles empty descriptor list", () => {

@@ -13,6 +13,7 @@ import {
 // since we only care about coercion of number/boolean fields, not rerank shape.
 const mockSchemaBuilder = {
   buildRerankSchema: () => z.string(),
+  customWeightSignals: () => ["similarity"],
   buildFilterSchema: () => z.record(z.string(), z.any()),
   filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
 } as unknown as SchemaBuilder;
@@ -351,6 +352,7 @@ describe("typed filter exposure follows the registered filter params", () => {
   const withoutCodegraph = createSearchSchemas({
     ...mockSchemaBuilder,
     buildRerankSchema: () => z.string(),
+    customWeightSignals: () => ["similarity"],
     buildFilterSchema: () => z.record(z.string(), z.any()),
     filterParamNames: () => ["language", "author", "minAgeDays"],
   } as unknown as SchemaBuilder);

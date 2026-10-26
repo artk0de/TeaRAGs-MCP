@@ -18,6 +18,9 @@ import { z } from "zod";
 
 import type { App, SchemaBuilder } from "../../../../src/core/api/index.js";
 import { registerCodegraphTools } from "../../../../src/core/api/tools/codegraph.js";
+import { AGENT_CONTEXT_GUIDES } from "../../../../src/mcp/resources/generated/agent-context.js";
+
+const ARCHITECTURE_GUIDE = AGENT_CONTEXT_GUIDES.architecture ?? "";
 
 function makeApp(hasCodegraph: boolean): App {
   return {
@@ -215,7 +218,9 @@ describe("get_architecture_report", () => {
     const schema = z.object(config.inputSchema);
 
     expect(config.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
-    expect(config.description).toMatch(/Stable Dependencies/);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(ARCHITECTURE_GUIDE).toMatch(/Stable Dependencies/);
     expect(schema.safeParse({ project: "tea-rags" }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", pathPattern: "src/core/**", limit: 20 }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", limit: 0 }).success).toBe(false);
@@ -265,11 +270,14 @@ describe("get_architecture_report", () => {
     const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
     const schema = z.object(config.inputSchema);
 
-    expect(config.description).toMatch(/MISFIT/);
-    expect(config.description).toMatch(/established direction/);
-    // NEW_PATTERN is never a whole-repo verdict: the description names it only
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(config.description).toMatch(/norms/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/MISFIT/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/established direction/);
+    // NEW_PATTERN is never a whole-repo verdict: the guide names it only
     // as a planned-edges answer (bd tea-rags-mcp-xb669.2), never under norms.
-    const normsClause = config.description.slice(config.description.indexOf("norms option"));
+    const normsClause = ARCHITECTURE_GUIDE.slice(ARCHITECTURE_GUIDE.indexOf("**norms**"));
     expect(normsClause.slice(0, normsClause.indexOf("plannedEdges"))).not.toMatch(/NEW_PATTERN/);
     expect(schema.safeParse({ project: "tea-rags", norms: true }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", norms: "yes" }).success).toBe(false);
@@ -336,8 +344,10 @@ describe("get_architecture_report", () => {
     const edge = { source: "src/a.ts", target: "src/b.ts" };
 
     expect(config.description).toMatch(/plannedEdges/);
-    expect(config.description).toMatch(/NEW_PATTERN/);
-    expect(config.description).toMatch(/UNJUDGED/);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(ARCHITECTURE_GUIDE).toMatch(/NEW_PATTERN/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/UNJUDGED/);
     expect(schema.safeParse({ project: "tea-rags", plannedEdges: [edge] }).success).toBe(true);
     expect(schema.safeParse({ project: "tea-rags", plannedEdges: [{ ...edge, reference: "B::Error" }] }).success).toBe(
       true,
@@ -374,8 +384,10 @@ describe("get_architecture_report", () => {
     const move = { move: { files: ["src/a.ts"], toComponent: "src/b" } };
     const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
 
-    expect(config.description).toMatch(/restructure mode/);
-    expect(config.description).toMatch(/introduced\/resolved/);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(config.description).toMatch(/restructure = what-if/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/introduced\/resolved/);
     expect(parse([move])).toBe(true);
     expect(parse([{ merge: { components: ["src/a", "src/b"] } }])).toBe(true);
     expect(parse([{ split: { component: "src/a", groups: [["src/a/x.ts"], ["src/a/y.ts"]] } }])).toBe(true);
@@ -394,13 +406,15 @@ describe("get_architecture_report", () => {
     const schema = z.object(config.inputSchema);
     const parse = (restructure: unknown) => schema.safeParse({ project: "tea-rags", restructure }).success;
 
-    expect(config.description).toMatch(/co-change detectors read history and do not respond/);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(ARCHITECTURE_GUIDE).toMatch(/co-change\s+detectors read history and do not respond/);
     expect(parse([{ addFile: { file: "src/contracts/port.ts" } }])).toBe(true);
     expect(parse([{ addFile: { file: "src/a/port.ts", component: "src/a" } }])).toBe(true);
     expect(parse([{ addEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
     expect(parse([{ removeEdge: { from: "src/a.ts", to: "src/b.ts" } }])).toBe(true);
     expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: true } }])).toBe(true);
-    expect(config.description).toMatch(/addFile\{file,component\?,abstract\?\}/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/addFile\{file,component\?,abstract\?\}/);
     expect(parse([{ addFile: { file: "src/contracts/port.ts", abstract: "yes" } }])).toBe(false);
     expect(parse([{ addFile: { file: "" } }])).toBe(false);
     expect(parse([{ addEdge: { from: "src/a.ts" } }])).toBe(false);
@@ -430,8 +444,10 @@ describe("get_architecture_report", () => {
     const cut = { removeEdge: { from: "src/a.ts", to: "src/b.ts" } };
     const parse = (restructurePlan: unknown) => schema.safeParse({ project: "tea-rags", restructurePlan }).success;
 
-    expect(config.description).toMatch(/restructurePlan mode/);
-    expect(config.description).toMatch(/trade-offs/);
+    // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
+    // tool description to tea-rags://guide/architecture.
+    expect(config.description).toMatch(/restructurePlan = ordered plan/);
+    expect(ARCHITECTURE_GUIDE).toMatch(/trade-offs/);
     expect(parse({ candidates: [{ id: "c", rationale: "why", ops: [cut] }] })).toBe(true);
     expect(parse({ candidates: [], includeReportCandidates: true })).toBe(true);
     expect(parse({ candidates: [{ id: "c", ops: [] }] })).toBe(false);

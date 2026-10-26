@@ -4,6 +4,7 @@
  */
 
 import type { WorkingTreeMarker, WorkingTreeState } from "../public/dto/working-tree.js";
+import { UnknownRerankSignalError } from "../public/errors.js";
 import { tabulateRecordArrays } from "./columns.js";
 
 export interface McpToolResult {
@@ -176,11 +177,18 @@ export function formatMcpError(message: string): McpToolResult {
 
 /**
  * Sanitize rerank param from Zod schema (custom values may be undefined) to App-compatible type.
+ * The schema shows `custom` as an open `{<signal>: number}` map (bd tea-rags-mcp-0y5oj),
+ * so the key check lives here: a key outside `validSignals` (`SchemaBuilderPort#customWeightSignals`)
+ * is an {@link UnknownRerankSignalError}, never a silent zero weight.
  */
 export function sanitizeRerank(
   rerank: string | { custom: Record<string, number | undefined> } | undefined,
+  validSignals: readonly string[],
 ): string | { custom: Record<string, number> } | undefined {
   if (!rerank || typeof rerank === "string") return rerank;
+  const known = new Set(validSignals);
+  const unknown = Object.keys(rerank.custom).filter((key) => !known.has(key));
+  if (unknown.length > 0) throw new UnknownRerankSignalError(unknown, validSignals);
   const cleaned: Record<string, number> = {};
   for (const [k, v] of Object.entries(rerank.custom)) {
     if (typeof v === "number") cleaned[k] = v;

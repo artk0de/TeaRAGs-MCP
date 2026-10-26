@@ -23,6 +23,7 @@ export function registerSearchTools(
 ): void {
   const { app, register: registerToolSafe } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
+  const customWeightSignals = deps.schemaBuilder.customWeightSignals();
 
   // search_code
   registerToolSafe(
@@ -41,7 +42,10 @@ export function registerSearchTools(
     async ({ rerank, ...rest }) => {
       const response = await app.searchCode({
         ...rest,
-        rerank: sanitizeRerank(rerank as string | { custom: Record<string, number | undefined> } | undefined),
+        rerank: sanitizeRerank(
+          rerank as string | { custom: Record<string, number | undefined> } | undefined,
+          customWeightSignals,
+        ),
       });
 
       const workingTreeLine = response.workingTree ? `\n\n${formatWorkingTreeMarker(response.workingTree)}` : "";

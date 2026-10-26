@@ -4,16 +4,16 @@ import { collectionPathFields as codegraphFields } from "../../../../src/core/ap
 import { IndexCodebaseSchema, projectField, WORKING_TREE_PATH_HINT } from "../../../../src/core/api/tools/schemas.js";
 
 describe("addressing param descriptions (project = index, path = tree)", () => {
-  const projectText = "Index alias — pass every call. Alone → registered checkout. Priority: collection>project>path.";
+  // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): the shared hints shrank to ≤ 60
+  // chars; priority + alias-alone moved to tea-rags://guide/overview.
+  const projectText = "Alias from list_projects/prime; pass every call.";
 
   it("projectField describes the index and says to pass it always", () => {
     expect(projectField().description).toBe(projectText);
   });
 
   it("WORKING_TREE_PATH_HINT describes the tree, passed with project", () => {
-    expect(WORKING_TREE_PATH_HINT).toBe(
-      "Working tree: your cwd (checkout / worktree). Pass WITH project; needed for worktrees.",
-    );
+    expect(WORKING_TREE_PATH_HINT).toBe("Your working tree (cwd / worktree); pass WITH project.");
   });
 
   it("codegraph tools reuse the shared project/path text", () => {

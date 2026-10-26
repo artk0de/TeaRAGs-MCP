@@ -174,6 +174,7 @@ describe("explicit include / documentation language yield the preset default", (
   describe("through the MCP search schema", () => {
     const { SemanticSearchSchema } = createSearchSchemas({
       buildRerankSchema: () => z.string(),
+      customWeightSignals: () => ["similarity"],
       buildFilterSchema: () => z.record(z.string(), z.any()),
       filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
     } as unknown as SchemaBuilder);
