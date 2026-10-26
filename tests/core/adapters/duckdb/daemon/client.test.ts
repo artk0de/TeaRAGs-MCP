@@ -765,6 +765,30 @@ describe("DaemonGraphDbClient — getSymbolVisibilities (bd tea-rags-mcp-sqqkz)"
   });
 });
 
+describe("DaemonGraphDbClient — lookupSymbolIdsByShortName (bd tea-rags-mcp-wrosj)", () => {
+  it("proxies the short-name suggestion read through the daemon socket with the name and limit", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "lookupSymbolIdsByShortName" ? ["A#run", "B.run"] : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const result = await client.lookupSymbolIdsByShortName("run", 5);
+    await client.close();
+
+    expect(result).toEqual(["A#run", "B.run"]);
+    expect(seen.find((r) => r.op === "lookupSymbolIdsByShortName")?.params).toMatchObject({
+      collection: "code_x_v1",
+      shortName: "run",
+      limit: 5,
+    });
+  });
+});
+
 describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hme.1)", () => {
   it("proxies the convention-privacy candidate read through the daemon socket with the languages", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));

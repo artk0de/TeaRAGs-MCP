@@ -266,6 +266,15 @@ export class DuckDbSymbolStore {
     return out;
   }
 
+  /** Suggestions for an id the graph does not hold (N6): ids defined under `shortName`. */
+  async lookupSymbolIdsByShortName(shortName: string, limit: number): Promise<SymbolId[]> {
+    const rows = await this.session.queryAll<{ symbol_id: string }>(
+      `SELECT DISTINCT symbol_id FROM cg_symbols WHERE short_name = ? ORDER BY symbol_id LIMIT ?`,
+      [shortName, limit],
+    );
+    return rows.map((row) => row.symbol_id);
+  }
+
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     // Tier 1 — exact symbol_id match (the canonical fast path, indexed).
     const exact = await this.session.queryAll<{ rel_path: string; chunk_id: string | null }>(

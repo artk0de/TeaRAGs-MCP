@@ -16,6 +16,7 @@
  */
 
 import type { GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import {
   DEFAULT_COCHANGE_PARTNERS_LIMIT,
   rankCochangePartners,
@@ -34,10 +35,12 @@ export class CochangeOps {
     const files = request.files.map(normalizeRelativePath);
     const graph = await graphDb.readTemporalCochangeGraph();
     if (graph.meta === null) return CochangeOps.empty(files);
+    const ranked = rankCochangePartners(graph, files, request.limit ?? DEFAULT_COCHANGE_PARTNERS_LIMIT, pathExists);
     return {
       built: true,
       provenance: graph.meta,
-      files: rankCochangePartners(graph, files, request.limit ?? DEFAULT_COCHANGE_PARTNERS_LIMIT, pathExists),
+      // N6: a file the built graph holds no partner for says why on its own row.
+      files: ranked.map((file) => (file.inGraph ? file : { ...file, empty: noHistory(file.relPath) })),
     };
   }
 
@@ -46,6 +49,17 @@ export class CochangeOps {
     return {
       built: false,
       files: [...files].map((relPath) => ({ relPath, inGraph: false, partners: [] })),
+      empty: {
+        reason: "notBuilt",
+        message: "No co-change build has run for this collection; run a codegraph enrichment (index the project).",
+      },
     };
   }
+}
+
+function noHistory(relPath: RelPath): EmptyAnswerExplanation {
+  return {
+    reason: "noHistory",
+    message: `${relPath} shares no commit with another file in the co-change window (new, rarely changed, or not a repo-relative path).`,
+  };
 }

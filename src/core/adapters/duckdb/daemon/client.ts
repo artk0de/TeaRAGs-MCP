@@ -274,6 +274,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return this.symbolFiles.getSymbolVisibilities(symbolIds);
   }
 
+  async lookupSymbolIdsByShortName(shortName: string, limit: number): Promise<SymbolId[]> {
+    return this.symbolFiles.lookupSymbolIdsByShortName(shortName, limit);
+  }
+
   async replaceFieldAccessesBulk(entries: readonly FieldAccessReplaceEntry[]): Promise<void> {
     return this.fieldAccesses.replaceFieldAccessesBulk(entries);
   }

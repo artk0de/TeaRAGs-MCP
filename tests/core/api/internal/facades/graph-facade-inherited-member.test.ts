@@ -102,7 +102,8 @@ describe("GraphFacade — host-class member aliasing (bd tea-rags-mcp-63l69)", (
 
     const res = await facade.getCallers({ collection: "c", symbolId: "Account#own" });
 
-    expect(res).toEqual({ callers: [] });
+    // N6 (bd tea-rags-mcp-wrosj): the empty answer names its reason; still unaliased.
+    expect(res).toEqual({ callers: [], empty: expect.objectContaining({ reason: "noEdges" }) });
     expect(db.getCallers).toHaveBeenCalledTimes(1);
   });
 
@@ -110,7 +111,11 @@ describe("GraphFacade — host-class member aliasing (bd tea-rags-mcp-63l69)", (
     const db = graphDb();
     const facade = new GraphFacade({ pool: fakePool(db), collectionRegistry: registry });
 
-    expect(await facade.getCallees({ collection: "c", symbolId: "Account.missing" })).toEqual({ callees: [] });
+    // N6 (bd tea-rags-mcp-wrosj): the empty answer names its reason; still unaliased.
+    expect(await facade.getCallees({ collection: "c", symbolId: "Account.missing" })).toEqual({
+      callees: [],
+      empty: expect.objectContaining({ reason: "unknownSymbol" }),
+    });
   });
 
   it("includeAmbiguous reads the member segment of the definer", async () => {

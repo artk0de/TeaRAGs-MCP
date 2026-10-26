@@ -90,6 +90,8 @@ describe("CochangeOps#find", () => {
         { relPath: "a.ts", inGraph: false, partners: [] },
         { relPath: "b.ts", inGraph: false, partners: [] },
       ],
+      // N6 (bd tea-rags-mcp-wrosj): built:false also says why.
+      empty: expect.objectContaining({ reason: "notBuilt" }),
     });
     expect("provenance" in result).toBe(false);
   });

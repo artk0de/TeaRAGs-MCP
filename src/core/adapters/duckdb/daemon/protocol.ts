@@ -215,6 +215,9 @@ export const DAEMON_OPS = [
   // find_symbol outline (bd tea-rags-mcp-sqqkz). REQUIRED like getFileImporters:
   // a daemon from an older build is restarted at handshake, not asked blindly.
   "getSymbolVisibilities",
+  // Short-name suggestions for an id get_callers / get_callees cannot find
+  // (agent turn economy N6). REQUIRED like getSymbolVisibilities.
+  "lookupSymbolIdsByShortName",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
   // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
   // "unknown daemon op" — a tolerated legacy op, see `LEGACY_TOLERATED_OPS`.
@@ -406,6 +409,7 @@ export interface DaemonOpParamsMap {
   getPageRank: { symbolId: SymbolId; relPath?: RelPath };
   findSymbolChunk: { symbolId: SymbolId };
   getSymbolVisibilities: { symbolIds: SymbolId[] };
+  lookupSymbolIdsByShortName: { shortName: string; limit: number };
   getSymbolLineRangesBulk: { relPaths: readonly RelPath[] };
   diffSymbolSignals: NoDaemonOpParams;
   aggregateIdentifiersByType: IdentifierTypeAggregateQuery;

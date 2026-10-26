@@ -150,7 +150,12 @@ describe("GraphFacade#findCoChanged", () => {
 
     const res = await facade.findCoChanged({ collection: "code_x", files: ["a.ts"] });
 
-    expect(res).toEqual({ built: false, files: [{ relPath: "a.ts", inGraph: false, partners: [] }] });
+    expect(res).toEqual({
+      built: false,
+      files: [{ relPath: "a.ts", inGraph: false, partners: [] }],
+      // N6 (bd tea-rags-mcp-wrosj): built:false also says why.
+      empty: expect.objectContaining({ reason: "notBuilt" }),
+    });
   });
 
   it("rethrows a read failure on a database that exists", async () => {

@@ -140,7 +140,11 @@ describe("GraphFacade — declared visibility (bd tea-rags-mcp-sqqkz)", () => {
     };
     const facade = new GraphFacade({ pool: fakePool(graphDb), collectionRegistry: registry });
 
-    expect(await facade.getCallers({ collection: "c", symbolId: "run" })).toEqual({ callers: [] });
+    // N6 (bd tea-rags-mcp-wrosj): the empty answer names its reason; still no top-level visibility.
+    expect(await facade.getCallers({ collection: "c", symbolId: "run" })).toEqual({
+      callers: [],
+      empty: expect.objectContaining({ reason: "noEdges" }),
+    });
   });
 
   it("a failing visibility lookup degrades to the undecorated answer", async () => {
