@@ -1,6 +1,6 @@
 ---
 name: data-driven-generation
-description:
+description: >-
   Decide HOW to write or change code by inspecting git signals on neighbors —
   classifies task mode (CREATE / EXTEND / MODIFY), pulls strategy and templates
   from proven low-churn implementations, reuses existing shared helpers instead
@@ -12,7 +12,7 @@ description:
   tea-rags:explore. NOT for pure rename/extract; a file MOVE still runs Step 6
   restructure SIM + Step 7 gate. Overlay → strategy question: Step 1 answers it,
   no code needed.
-codex-description:
+codex-description: >-
   Decide HOW to write/change code from git signals on neighbors — mode
   CREATE/EXTEND/MODIFY, templates from proven low-churn code, reuse shared
   helpers. Triggers "implement function X", "add method to Y", "change behavior

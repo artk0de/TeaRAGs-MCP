@@ -1,6 +1,6 @@
 ---
 name: data-driven-generation
-description:
+description: >-
   Decide HOW to write or change code by inspecting git signals on neighbors —
   classifies task mode (CREATE / EXTEND / MODIFY), pulls strategy and templates
   from proven low-churn implementations, reuses existing shared helpers instead

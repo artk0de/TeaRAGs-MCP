@@ -1,6 +1,6 @@
 ---
 name: writing-skills
-description:
+description: >-
   Author/rewrite SKILL.md inside plugins/dinopowers/, enforce wrapper pattern
   (tea-rags enrichment step then chain into superpowers:*) + description style
   to win against parent skills. Triggers on "add dinopowers:X", "create a
@@ -9,7 +9,7 @@ description:
   dinopowers skill", "tweak SKILL.md frontmatter". NOT other plugins' SKILL.md,
   NOT a word / typo swap in any SKILL.md (→ direct Edit, no skill). Wraps
   superpowers:writing-skills with dinopowers wrapper-pattern enforcement.
-codex-description:
+codex-description: >-
   Author/rewrite SKILL.md inside plugins/dinopowers/ — enforce wrapper pattern
   (tea-rags enrichment, then chain superpowers:*) and routing description style.
   Triggers "add dinopowers:X", "create a wrapper skill", "edit/rewrite

@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description:
+description: >-
   Brainstorm code change seeing risk, ownership, tech-debt signals from tea-rags
   first — creative exploration grounded in actual state of affected area.
   Triggers on "brainstorm X" (incl. "brainstorm splitting/refactoring Y" — verb
@@ -11,7 +11,7 @@ description:
   refactor without a brainstorm/discuss verb (→ explore PRE-GEN), NOT trivial
   edits with no code area. Wraps superpowers:brainstorming with tea-rags risk
   signals.
-codex-description:
+codex-description: >-
   Brainstorm code change grounded in tea-rags risk, ownership, tech-debt
   signals. Verb brainstorm/discuss beats explore PRE-GEN ("brainstorm
   splitting/refactoring Y"). Triggers on "brainstorm X", "design feature",

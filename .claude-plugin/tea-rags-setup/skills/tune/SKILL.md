@@ -1,6 +1,6 @@
 ---
 name: tune
-description:
+description: >-
   Benchmark this hardware and write optimal performance parameters
   (embedding throughput, Qdrant storage, pipeline concurrency, git
   trajectory) into ~/.tea-rags/setup-progress.json. Triggers on "indexing
@@ -9,7 +9,7 @@ description:
   llama-server: sweeps -np 1/2/4/8 on running instances. NOT for first-time
   install — use install for that. Can run standalone or as part of
   /tea-rags-setup:install.
-argument-hint: [--provider ollama|onnx|llama-server] [--full]
+argument-hint: "[--provider ollama|onnx|llama-server] [--full]"
 ---
 
 # TeaRAGs Performance Tuning

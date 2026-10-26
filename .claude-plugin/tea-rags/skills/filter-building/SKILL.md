@@ -1,6 +1,6 @@
 ---
 name: filter-building
-description:
+description: >-
   Build tea-rags filter beyond `pathPattern`. Invoke whenever reasoning before a
   tea-rags search includes a SCOPE: domain, language, author, time window,
   ticket, prod-vs-test split, directory exclusion. User names scope ("in the X

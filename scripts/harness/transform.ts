@@ -31,22 +31,31 @@ export interface Frontmatter {
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---(?:\n|$)/;
 
+/** YAML block scalar indicator: `>` folds lines with spaces, `|` keeps newlines. */
+const BLOCK_SCALAR = /^([>|])[-+]?$/;
+
 /**
- * Lenient frontmatter reader — Claude Code accepts descriptions that strict
- * YAML rejects (an unquoted `{custom: {...}}`), so values are taken as text.
+ * Lenient frontmatter reader: values are taken as text, line by line. Sources
+ * must still parse as strict YAML — Claude Code drops a skill whose
+ * frontmatter does not from the model's listing (bd tea-rags-mcp-zes6j) — so
+ * descriptions are written as `>-` block scalars, read here like YAML reads them.
  */
 export function parseFrontmatter(md: string): Frontmatter {
   const match = FRONTMATTER.exec(md);
   if (!match) return { fields: {}, body: md };
   const fields: Record<string, string> = {};
   let key: string | null = null;
+  let separator = " ";
   for (const line of match[1].split("\n")) {
     const keyLine = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
     if (keyLine) {
       key = keyLine[1];
-      fields[key] = keyLine[2].trim();
+      const value = keyLine[2].trim();
+      const block = BLOCK_SCALAR.exec(value);
+      separator = block?.[1] === "|" ? "\n" : " ";
+      fields[key] = block ? "" : value;
     } else if (key && /^\s+\S/.test(line)) {
-      fields[key] = `${fields[key]} ${line.trim()}`.trim();
+      fields[key] = fields[key] === "" ? line.trim() : `${fields[key]}${separator}${line.trim()}`;
     }
   }
   for (const [name, value] of Object.entries(fields)) {

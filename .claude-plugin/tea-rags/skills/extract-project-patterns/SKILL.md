@@ -1,7 +1,7 @@
 ---
 name: extract-project-patterns
 user-invocable: false
-description:
+description: >-
   Agentic-only — runs on any behaviorQuery / positiveIds handoff: proven code as
   code-gen templates, not test patterns. Read
   body before planning: locality cascade L1 = target subdomain → L2 = infra

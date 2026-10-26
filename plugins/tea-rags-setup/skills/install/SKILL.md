@@ -1,6 +1,6 @@
 ---
 name: install
-description:
+description: >-
   Run automated TeaRAGs install wizard from scratch — detects environment,
   installs deps (Node.js, tea-rags, Ollama/ONNX/llama-server, Qdrant), tunes
   performance, configures MCP server. Progress saves to

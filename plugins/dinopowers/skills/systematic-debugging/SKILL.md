@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description:
+description: >-
   Debug concrete failure: first run tea-rags:bug-hunt for ranked suspect list
   (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
   ends with Cause / Fix / Prevention report. Triggers on
@@ -11,7 +11,7 @@ description:
   NOT for code review, a code-health scan with no felt malfunction, or
   a request to apply a named fix at a named location (→ data-driven-generation).
   Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
-codex-description:
+codex-description: >-
   Concrete failure — bug-hunt first for ranked suspects. Felt malfunction (zones too) beats explore/risk-assessment. Triggers
   "debug X", "why Y fails", "test fails", "X feels off", "same bug elsewhere?", "падает", "почему не
   работает", "стектрейс". NOT code review, health scan, "сколько тестов падает", symbol body/callers w/o

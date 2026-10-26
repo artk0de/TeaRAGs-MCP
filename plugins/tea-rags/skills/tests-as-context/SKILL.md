@@ -1,7 +1,7 @@
 ---
 name: tests-as-context
 user-invocable: false
-description:
+description: >-
   Agentic-only — surfaces DSL test chunks (chunkType "test" scenarios,
   "test_setup" fixtures) as context for review, verification, refactoring,
   debugging; a user asking for test patterns / conventions wants the dinopowers
@@ -17,7 +17,7 @@ description:
   dinopowers wrappers (test-driven-development, requesting-code-review,
   verification-before-completion, receiving-code-review) and direct
   use-cases.md callouts; never in the slash command list.
-codex-description:
+codex-description: >-
   Agentic-only callee of dinopowers wrappers — DSL test chunks (chunkType
   "test"/"test_setup") as context: tests-at-risk, fixture-lookup,
   regression-archaeology, test-flakiness, spec-extraction; caller asks a

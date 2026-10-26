@@ -1,6 +1,6 @@
 ---
 name: mr-review
-description:
+description: >-
   Signal-driven review of merge request or local branch — rank diff risks via
   tea-rags (blast radius, fragile zones, silo style, missing tests, doc
   invariants, cycles, naming), emit plain-language comments each naming a

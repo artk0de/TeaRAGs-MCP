@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description:
+description: >-
   Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas

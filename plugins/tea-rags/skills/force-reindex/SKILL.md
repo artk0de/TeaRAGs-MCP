@@ -1,6 +1,6 @@
 ---
 name: force-reindex
-description:
+description: >-
   Force full re-index, zero downtime: new versioned collection built in
   background while search continues; alias switches atomically. Also for a
   corrupt index. Requires explicit user confirmation — NEVER invoke

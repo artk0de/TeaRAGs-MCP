@@ -1,6 +1,6 @@
 ---
 name: receiving-code-review
-description:
+description: >-
   Assess reviewer's suggested change (rename, refactor, move, extract) — query
   tea-rags imports/churn signals on affected target, measure blast radius before
   agreeing or pushing back. Triggers on "reviewer suggests", "should I rename",
@@ -10,7 +10,7 @@ description:
   refactor this per review". NOT for vague stylistic nits without a named
   symbol. Wraps superpowers:receiving-code-review with tea-rags blast-radius
   signals.
-codex-description:
+codex-description: >-
   Weigh reviewer's change (rename/refactor/move/extract) by tea-rags blast
   radius before agreeing/pushing back. Triggers "reviewer
   suggests", "should I rename", "code review feedback", "PR comment

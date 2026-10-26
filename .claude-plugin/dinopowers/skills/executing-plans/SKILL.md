@@ -1,6 +1,6 @@
 ---
 name: executing-plans
-description:
+description: >-
   Execute written implementation plan or tracker issue whose Tasks edit code,
   per-Task SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven
   cascade for code-generation and behavior-modification Tasks (strategy+template

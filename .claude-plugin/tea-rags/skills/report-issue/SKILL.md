@@ -1,6 +1,6 @@
 ---
 name: report-issue
-description:
+description: >-
   Help the user file a high-quality GitHub issue for a TeaRAGs bug — gather
   environment + diagnostic context, CHECK FOR EXISTING/KNOWN ISSUES FIRST, then
   produce a pre-filled issue URL (or `gh issue create` when available). Triggers

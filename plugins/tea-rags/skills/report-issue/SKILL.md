@@ -1,13 +1,13 @@
 ---
 name: report-issue
-description:
+description: >-
   Help the user file a high-quality GitHub issue for a TeaRAGs bug — gather
   environment + diagnostic context, CHECK FOR EXISTING/KNOWN ISSUES FIRST, then
   produce a pre-filled issue URL (or `gh issue create` when available). Triggers
   on "report a bug", "file an issue", "open a GitHub issue about this error /
   the quarantine", "зарепорти баг в tea-rags", "это похоже на баг tea-rags". NOT
   for user-fixable config / setup errors (those hints are already actionable).
-codex-description:
+codex-description: >-
   File a GitHub issue for a TeaRAGs bug — gather env + diagnostics, check
   existing issues first, produce a pre-filled issue URL or gh issue create.
   Triggers "report a bug", "file an issue", "open a GitHub issue about this

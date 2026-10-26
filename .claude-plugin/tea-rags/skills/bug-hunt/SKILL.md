@@ -1,6 +1,6 @@
 ---
 name: bug-hunt
-description:
+description: >-
   Find source of concrete failure — rank historically buggy code (high
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test

@@ -1,6 +1,6 @@
 ---
 name: writing-skills
-description:
+description: >-
   Author/rewrite SKILL.md inside plugins/dinopowers/, enforce wrapper pattern
   (tea-rags enrichment step then chain into superpowers:*) + description style
   to win against parent skills. Triggers on "add dinopowers:X", "create a

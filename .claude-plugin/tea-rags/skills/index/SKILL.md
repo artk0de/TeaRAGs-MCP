@@ -1,6 +1,6 @@
 ---
 name: index
-description:
+description: >-
   Index/reindex codebase: new → alias + index (index-codebase --name); indexed →
   incremental; corrupt → force-reindex. NOT status checks (get_index_status).
 argument-hint: [path to codebase]

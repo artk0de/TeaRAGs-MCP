@@ -1,6 +1,6 @@
 ---
 name: finishing-a-development-branch
-description:
+description: >-
   Finalize dev branch (merge/PR/cleanup) with tea-rags:risk-assessment over full
   branch diff. Triggers on "finish the branch", "ready to merge", "wrap up the
   feature", "ветка готова", "доводим до merge", "branch ready", "PR time",

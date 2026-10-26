@@ -1,6 +1,6 @@
 ---
 name: mr-review
-description:
+description: >-
   Signal-driven review of merge request or local branch — rank diff risks via
   tea-rags (blast radius, fragile zones, silo style, missing tests, doc
   invariants, cycles, naming), emit plain-language comments each naming a
@@ -11,7 +11,7 @@ description:
   context before requesting review (use dinopowers:requesting-code-review), NOT
   for health scan without a diff (use risk-assessment), NOT for debugging a
   concrete failure (use bug-hunt).
-codex-description:
+codex-description: >-
   Signal-driven review of a merge request or local branch — rank diff risks
   (blast radius, fragile zones, missing tests), comments naming concrete fixes.
   Triggers "review this MR <url>", "review MR/PR", "review my branch", "проведи

@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description:
+description: >-
   Before claiming work complete, scan tea-rags imports/churn on just-edited
   files for collateral-damage candidates (files whose dependents could break),
   then run verification commands so success claims rest on evidence. Triggers on

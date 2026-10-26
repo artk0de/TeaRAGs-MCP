@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description:
+description: >-
   Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
@@ -10,7 +10,7 @@ description:
   `Class#method` symbols (explore PRE-GEN). Answer: phases 0–5,
   Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
   Output: line
-codex-description:
+codex-description: >-
   Project/domain health — multi-preset risk scan (bugs, hotspots, tech debt)
   into tiers; "evaluate risks", "assess code health", "zones needing attention".
   NOT one-preset asks, bug-prone areas (analytics-rerank). NOT bug symptoms,

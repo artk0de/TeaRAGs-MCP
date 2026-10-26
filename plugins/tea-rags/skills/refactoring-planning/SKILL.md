@@ -1,6 +1,6 @@
 ---
 name: refactoring-planning
-description:
+description: >-
   Turn architecture diagnosis into ordered, simulated refactoring plan — expand
   each critical/active finding (SDP, hub-like, leaking abstraction, layering
   back-edge) into restructure ops from repair recipes, order them with
@@ -11,7 +11,7 @@ description:
   нарушения" — NOT for diagnosis alone (use architecture-diagnostics), NOT for
   one in-file change (use data-driven-generation), NOT for code health scan (use
   risk-assessment).
-codex-description:
+codex-description: >-
   Turn architecture diagnosis into an ordered, simulated refactoring plan —
   findings → simulated ops order → Tasks for writing-plans. Triggers "plan a
   refactoring", "plan the architecture fix", "fix order", "refactoring roadmap",

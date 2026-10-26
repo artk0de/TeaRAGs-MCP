@@ -1,7 +1,7 @@
 ---
 name: tests-as-context
 user-invocable: false
-description:
+description: >-
   Agentic-only — surfaces DSL test chunks (chunkType "test" scenarios,
   "test_setup" fixtures) as context for review, verification, refactoring,
   debugging; a user asking for test patterns / conventions wants the dinopowers

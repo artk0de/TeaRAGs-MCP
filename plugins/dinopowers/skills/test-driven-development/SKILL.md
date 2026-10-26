@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description:
+description: >-
   Write failing test BEFORE implementation, match project conventions from
   tea-rags search of existing tests (mocks, helpers, assertion style, fixtures)
   to fit local norms. Triggers on "write a test", "TDD", "напиши тест", "сначала
@@ -11,7 +11,7 @@ description:
   code (function, behaviour change, bug fix) → tea-rags:data-driven-generation
   (RED = its Step 6a). Wraps superpowers:test-driven-development with tea-rags
   test-pattern search.
-codex-description:
+codex-description: >-
   Write failing test BEFORE implementation, matching local test conventions via
   tea-rags. Triggers "write a test", "TDD", "failing test first", "RED phase",
   "add test for Y", "find test patterns/conventions", "напиши тест", "сначала

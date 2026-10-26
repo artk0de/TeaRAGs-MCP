@@ -1,6 +1,6 @@
 ---
 name: brainstorming
-description:
+description: >-
   Brainstorm code change seeing risk, ownership, tech-debt signals from tea-rags
   first — creative exploration grounded in actual state of affected area.
   Triggers on "brainstorm X" (incl. "brainstorm splitting/refactoring Y" — verb

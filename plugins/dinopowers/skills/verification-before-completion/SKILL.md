@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion
-description:
+description: >-
   Before claiming work complete, scan tea-rags imports/churn on just-edited
   files for collateral-damage candidates (files whose dependents could break),
   then run verification commands so success claims rest on evidence. Triggers on
@@ -9,7 +9,7 @@ description:
   mid-work sanity checks without a completion claim. Wraps
   superpowers:verification-before-completion with a tea-rags collateral-damage
   scan.
-codex-description:
+codex-description: >-
   Before claiming done — collateral-damage scan of edits, then verification
   commands (evidence before claims). Completion claim beats
   finishing-a-development-branch unless merge/PR asked. Triggers "ready to

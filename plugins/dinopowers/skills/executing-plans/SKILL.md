@@ -1,6 +1,6 @@
 ---
 name: executing-plans
-description:
+description: >-
   Execute written implementation plan or tracker issue whose Tasks edit code,
   per-Task SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven
   cascade for code-generation and behavior-modification Tasks (strategy+template
@@ -10,7 +10,7 @@ description:
   or quoted Task, NOT a step that drafts a (sub-)plan (→
   dinopowers:writing-plans). Wraps superpowers:executing-plans with tea-rags
   git-signal verdicts and tea-rags:data-driven-generation cascade.
-codex-description:
+codex-description: >-
   Execute plan / tracker issue whose Tasks edit code — per-Task
   SAFE/CAUTION/UNSAFE verdict + data-driven-generation cascade. Plan/issue/quoted
   Task beats data-driven-generation. Triggers "execute the plan", "start Task

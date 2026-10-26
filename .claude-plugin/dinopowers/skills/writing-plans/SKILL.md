@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description:
+description: >-
   Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
   reflects real impact+risk. Triggers on "write a plan", "draft a plan", "draft

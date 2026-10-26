@@ -1,6 +1,6 @@
 ---
 name: analytics-rerank
-description:
+description: >-
   Pick tea-rags rerank preset, build `{custom: {...}}` weight set, or compose
   analytics-driven search (ownership, tech-debt, hotspots, code-review,
   security-audit, fragile-silo). Covers rerank decision tree (documentation

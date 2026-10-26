@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description:
+description: >-
   Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
   reflects real impact+risk. Triggers on "write a plan", "draft a plan", "draft
@@ -12,7 +12,7 @@ description:
   class stays a plan Task). NOT for plans with no named files or code area to
   enrich. Wraps superpowers:writing-plans with per-file tea-rags signal
   enrichment.
-codex-description:
+codex-description: >-
   Implementation plan + per-file tea-rags signals. Plan ask beats explore
   PRE-GEN (even "add X"/"impact analysis"/"before changing") and
   data-driven-generation (class-creating Task too). Triggers

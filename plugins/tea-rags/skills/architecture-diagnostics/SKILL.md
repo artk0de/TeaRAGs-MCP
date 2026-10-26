@@ -1,6 +1,6 @@
 ---
 name: architecture-diagnostics
-description:
+description: >-
   Check code layout: dependency direction, module borders, Stable Dependencies
   Principle violations, leaking abstractions (imports past adopted facade),
   silent coupling (files changing together, no import/call between),
@@ -15,7 +15,7 @@ description:
   "hub-like dependency", "архитектурные нарушения" — NOT for risk/health of code
   (use risk-assessment), NOT for one failure (use bug-hunt), NOT for plain cycle
   listing (find_cycles).
-codex-description:
+codex-description: >-
   Check code layout — dependency direction, SDP violations, module borders,
   leaking abstractions, silent coupling, zone of pain, hub-like deps, layer map
   / move candidates. Triggers "is architecture right", "layering violations",

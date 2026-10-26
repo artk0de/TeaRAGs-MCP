@@ -103,6 +103,18 @@ describe("parseFrontmatter", () => {
     expect(fields).toEqual({ name: "a", description: "It's a folded value" });
   });
 
+  it("reads folded (>-) and literal (|) block scalars as YAML does", () => {
+    const { fields } = parseFrontmatter(
+      `---\nname: a\ndescription: >-\n  Rank chunks: {custom: weights}\n  by signal.\nnote: |\n  line one\n  line two\n---\n`,
+    );
+
+    expect(fields).toEqual({
+      name: "a",
+      description: "Rank chunks: {custom: weights} by signal.",
+      note: "line one\nline two",
+    });
+  });
+
   it("returns empty fields for a file without frontmatter", () => {
     expect(parseFrontmatter("# Title\n").fields).toEqual({});
   });

@@ -1,6 +1,6 @@
 ---
 name: requesting-code-review
-description:
+description: >-
   Prepare code-review request bundle: per-file ownership, churn, connected
   taskIds from tea-rags git signals before composing review request — reviewers
   know who to ping, where risk lives. Triggers on "request review", "open a PR",

@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description:
+description: >-
   Write failing test BEFORE implementation, match project conventions from
   tea-rags search of existing tests (mocks, helpers, assertion style, fixtures)
   to fit local norms. Triggers on "write a test", "TDD", "напиши тест", "сначала

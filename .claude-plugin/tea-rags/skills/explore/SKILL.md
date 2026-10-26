@@ -1,6 +1,6 @@
 ---
 name: explore
-description:
+description: >-
   Explore, understand, explain, investigate code — "how does X work", "show me
   the architecture of Y", "what does Z do", "where is X used", "find all X",
   "antipatterns in X", "best example of X", "files matching <Name>" (not Glob),

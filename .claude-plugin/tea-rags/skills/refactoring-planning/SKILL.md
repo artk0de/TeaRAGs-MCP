@@ -1,6 +1,6 @@
 ---
 name: refactoring-planning
-description:
+description: >-
   Turn architecture diagnosis into ordered, simulated refactoring plan — expand
   each critical/active finding (SDP, hub-like, leaking abstraction, layering
   back-edge) into restructure ops from repair recipes, order them with

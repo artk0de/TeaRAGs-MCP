@@ -1,6 +1,6 @@
 ---
 name: architecture-diagnostics
-description:
+description: >-
   Check code layout: dependency direction, module borders, Stable Dependencies
   Principle violations, leaking abstractions (imports past adopted facade),
   silent coupling (files changing together, no import/call between),

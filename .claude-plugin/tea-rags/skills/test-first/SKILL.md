@@ -1,7 +1,7 @@
 ---
 name: test-first
 user-invocable: false
-description:
+description: >-
   Agentic-only RED-phase skill — writes failing tests BEFORE implementation,
   from spec/plan acceptance criteria or given test code verbatim, else one test
   per behaviour of the task. Conventions from tests-as-context (fixture-lookup,

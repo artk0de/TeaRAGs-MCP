@@ -1,6 +1,6 @@
 ---
 name: bug-hunt
-description:
+description: >-
   Find source of concrete failure — rank historically buggy code (high
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
@@ -11,7 +11,7 @@ description:
   history", "посмотри через git", "read the whole file" / "прочитай весь файл"
   of a search hit, "падает". NOT for code health scanning without bug intent —
   use risk-assessment for that.
-codex-description:
+codex-description: >-
   Failure source — buggy (bugFixRate) + fresh code vs symptom. Triggers "debug
   X", "why Y fails", "test fails", stack trace, "падает", "find bugs in X",
   "bug in X — compare Y", "suspects in X, Y", bugFixRate hit,

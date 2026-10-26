@@ -1,6 +1,6 @@
 ---
 name: receiving-code-review
-description:
+description: >-
   Assess reviewer's suggested change (rename, refactor, move, extract) — query
   tea-rags imports/churn signals on affected target, measure blast radius before
   agreeing or pushing back. Triggers on "reviewer suggests", "should I rename",

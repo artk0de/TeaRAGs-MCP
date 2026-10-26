@@ -7,7 +7,7 @@ cat > /dev/null
 ROOT="${PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CONTEXT=$(cat "$ROOT/scripts/core.txt" 2>/dev/null)
 if command -v tea-rags > /dev/null 2>&1 && command -v python3 > /dev/null 2>&1; then
-  DIGEST=$(tea-rags prime "$PWD" 2>/dev/null | python3 -I "$ROOT/scripts/fit-digest.py" 8700 "${#CONTEXT}" 2>/dev/null)
+  DIGEST=$(tea-rags prime "$PWD" 2>/dev/null | python3 -I "$ROOT/scripts/fit-digest.py" 8950 "${#CONTEXT}" 2>/dev/null)
   if [ -n "$DIGEST" ]; then
     CONTEXT="$CONTEXT
 

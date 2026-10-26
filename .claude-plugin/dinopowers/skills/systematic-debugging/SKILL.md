@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description:
+description: >-
   Debug concrete failure: first run tea-rags:bug-hunt for ranked suspect list
   (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
   ends with Cause / Fix / Prevention report. Triggers on
