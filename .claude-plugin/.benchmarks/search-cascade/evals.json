@@ -190,6 +190,66 @@
         "Read the file for import lines",
         "text search for import statements"
       ]
+    },
+    {
+      "id": 18,
+      "audit_finding": "response budget guard — follow truncated.next, never repeat the call",
+      "context": "hybrid_search(project: 'shop', path: '/work/shop', query: 'PaymentGateway', metaOnly: true, limit: 80) answered 31 rows plus truncated: {returned: 31, omitted: 49, next: {tool: 'hybrid_search', args: {project: 'shop', path: '/work/shop', query: 'PaymentGateway', metaOnly: true, offset: 31, limit: 49}}, message: 'Answer trimmed to the 12000-token response budget. Narrow it with: limit, pathPattern, fields.'}",
+      "prompt": "List every usage of PaymentGateway.",
+      "expected": "Answer is partial (31 of 80). Runs truncated.next verbatim (offset 31, limit 49) — or narrows with a knob the message names (pathPattern) — until the list is complete; reports the full set.",
+      "not": [
+        "re-run the identical hybrid_search call",
+        "present the 31 rows as every usage",
+        "fall back to text search because the answer was cut"
+      ]
+    },
+    {
+      "id": 19,
+      "audit_finding": "find_symbol unknownSymbol — retry the suggestion",
+      "context": "find_symbol(project: 'shop', path: '/work/shop', symbol: 'InvoiceService.finalize') answered results: [] with empty: {reason: 'unknownSymbol', message: 'InvoiceService.finalize is not an indexed symbol id; the other separator exists.', suggestions: ['InvoiceService#finalize']}",
+      "prompt": "Show me the body of InvoiceService.finalize.",
+      "expected": "find_symbol(project: 'shop', path: '/work/shop', symbol: 'InvoiceService#finalize') — the suggestion verbatim — and answer from its body",
+      "not": [
+        "report that the method does not exist",
+        "Read or grep the file for the method",
+        "hybrid_search before trying the suggestion"
+      ]
+    },
+    {
+      "id": 20,
+      "audit_finding": "list_projects unknownProject — retry a suggested alias",
+      "context": "list_projects(project: 'shopapp') answered projects: [] with empty: {reason: 'unknownProject', message: 'No project registered as \"shopapp\".', suggestions: ['shop-app', 'shop']}",
+      "prompt": "Which embedding model does the shopapp index use?",
+      "expected": "Retries with the nearest suggested alias, list_projects(project: 'shop-app') (full record carries the embedding model), and answers from it; if the user's intent between 'shop-app' and 'shop' is unclear after that, says which one was used",
+      "not": [
+        "report that the project does not exist",
+        "register a new project",
+        "read the embedding model from compact default rows (they do not carry it)"
+      ]
+    },
+    {
+      "id": 21,
+      "audit_finding": "list_projects default rows are compact — full record per alias",
+      "context": "list_projects() answered compact rows only: name, path, collectionName, chunksCount, indexedAt, codegraphEnabled, worktreeOf. One row: name 'billing', path '/srv/billing'.",
+      "prompt": "What Qdrant URL and embedding model is the billing project registered with?",
+      "expected": "list_projects(project: 'billing') → that entry's full record (Qdrant URL, embedding model, env) and answer from it",
+      "not": [
+        "answer 'not configured' / 'unknown' from the compact rows",
+        "read ~/.tea-rags registry files from disk",
+        "re-register the project"
+      ]
+    },
+    {
+      "id": 22,
+      "audit_finding": "rerank.custom unknown key — swap for a valid key from the error",
+      "context": "rank_chunks(project: 'shop', path: '/work/shop', rerank: {custom: {churn: 0.6, authorCount: 0.4}}, level: 'file') failed: \"[INPUT_UNKNOWN_RERANK_SIGNAL] rerank.custom names unknown signal(s): authorCount. Hint: Valid rerank.custom keys: similarity, recency, stability, churn, age, ownership, knowledgeSilo, bugFix, … Catalog: tea-rags://guide/signals.\"",
+      "prompt": "Rank files by churn and how many people touch them.",
+      "expected": "Replaces authorCount with the listed key of that intent (ownership or knowledgeSilo — author concentration), keeps churn 0.6, re-calls rank_chunks once",
+      "not": [
+        "drop rerank and run unranked",
+        "invent another unlisted key (authors, contributorCount)",
+        "give up and answer without the call"
+      ]
     }
   ],
   "results": {

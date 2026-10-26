@@ -2,8 +2,8 @@
 
 Loaded by `SKILL.md` Phase 3c2.
 
-`detector: "shotgunSurgery"`, SAME components as SDP. ONE logical change
-reaching into ≥ k components, spread recurring beyond chance, components in ≥ 2
+`violations.shotgunSurgery`, SAME components as SDP. ONE logical change reaching
+into ≥ k components, spread recurring beyond chance, components in ≥ 2
 structural islands. Logical change = commits joined by shared task id (commit
 message) ONLY, across bursts; else one commit. Umbrella/epic ids (breadth =
 distinct ids on their commits above a Tukey fence) join nothing. Shared files
@@ -53,17 +53,17 @@ re-rank by it.
 
 Evidence per line:
 
-| Evidence                                          | Read as                                                                                                                       |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real  |
-| `strength`                                        | Wilson lower bound of support over component changes — cohesion, not severity                                                 |
-| `familyEvidence`                                  | −log10 p − log10 C(n₂, m): gate's tail bound at the spread's width m, charged for every m-set of the n₂ twice-changed; order  |
-| `islands`                                         | connected groups (≥ 2; dependency, chain through touched x, specific neighbour, one feature subtree) — missing link goes here |
-| `exemplarFiles`                                   | per component the file the holding commits touched most                                                                       |
-| `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                            |
-| `sampleCommits`                                   | shas to cite — latest commit of each holding change, newest change first                                                      |
-| `sampleChanges`                                   | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited                         |
-| `drillDown.hint`                                  | run verbatim (`find_co_changed`) for file-level partners                                                                      |
+| Evidence                                          | Read as                                                                                                                                                              |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `support` / `weightedSupport` / `expectedSupport` | distinct changes holding whole spread / Σ their specificity weights / E[weighted] under the null; weighted ≫ expected = real                                         |
+| `strength`                                        | Wilson lower bound of support over component changes — cohesion, not severity                                                                                        |
+| `familyEvidence`                                  | −log10 p − log10 C(n₂, m): gate's tail bound at the spread's width m, charged for every m-set of the n₂ twice-changed; order                                         |
+| `islands`                                         | connected groups (≥ 2; dependency, chain through touched x, specific neighbour, one feature subtree) — missing link goes here                                        |
+| `exemplarFiles`                                   | per component the file the holding commits touched most                                                                                                              |
+| `carrierFiles`                                    | per component (aligned) files the holding changes touched, most-touched first (≤ 5) — recipe input                                                                   |
+| `sampleCommits`                                   | shas to cite — latest commit of each holding change, newest change first                                                                                             |
+| `sampleChanges`                                   | per sample (aligned) every sha of that logical change — `git show` them to see what one change edited                                                                |
+| `drillDown.files` / `drillDown.limit`             | args of the group's `violationDrillDownHints.shotgunSurgery` template: `find_co_changed(files: <drillDown.files>, limit: <drillDown.limit>)` for file-level partners |
 
 Explain EVERY reported spread before recommending (server judges recurrence, not
 meaning — semantics is agent's job). Recipe, per spread:

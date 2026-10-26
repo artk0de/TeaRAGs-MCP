@@ -47,6 +47,10 @@ plain record list; record arrays in text tools too): `result.X` below = column
 `payload.X` of that row; overlay = column `rankingOverlay.chunk.<signal>.label`;
 null = absent. Shape: `tea-rags://guide/overview` `## Response shape`.
 
+**Answer carries `truncated`** (12k-token response budget hit) → rows are
+partial: run `truncated.next` verbatim or narrow by a knob its `message` names;
+never re-run the same call (`tea-rags://guide/pagination`).
+
 | After search returns…                       | If you need…                            | Next call                                                                                                                                 |
 | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |

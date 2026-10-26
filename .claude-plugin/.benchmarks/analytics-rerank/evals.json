@@ -153,6 +153,16 @@
         "without_rule": "FAIL",
         "without_rule_note": "Custom { bugFixRate, age, similarity }. WRONG weight key 'bugFixRate'. Missed the securityAudit preset which is the curated combination for this exact case."
       }
+    },
+    {
+      "id": "T13",
+      "audit_finding": "unknown rerank.custom key → INPUT_UNKNOWN_RERANK_SIGNAL recovery",
+      "prompt": "In /Users/me/proj/ I called semantic_search(query: 'retry logic', rerank: {custom: {similarity: 0.5, bugFixRate: 0.5}}) and it failed: \"[INPUT_UNKNOWN_RERANK_SIGNAL] rerank.custom names unknown signal(s): bugFixRate. Hint: Valid rerank.custom keys: similarity, recency, churn, bugFix, ownership, … Catalog: tea-rags://guide/signals.\" Fix it and get me the results.",
+      "expected": "Replaces only the unknown key with the listed key of the same intent (bugFixRate → bugFix), keeps similarity 0.5, re-calls semantic_search once. Does not drop rerank, does not guess another unlisted key, does not abandon the search.",
+      "result": {
+        "with_rule": "PENDING",
+        "without_rule": "PENDING"
+      }
     }
   ],
   "failure_taxonomy_without_rule": {

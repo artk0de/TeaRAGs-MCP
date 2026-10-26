@@ -2,7 +2,7 @@
 
 Loaded by `SKILL.md` Phase 3d2.
 
-`detector: "hubLikeDependency"`, SAME components as SDP. Hub = Ca AND Ce both
+`violations.hubLikeDependency`, SAME components as SDP. Hub = Ca AND Ce both
 past adaptive cut AND balanced (|Ca − Ce| / (Ca + Ce) < 1/4, Arcan) — many
 depend on it, it depends on many. I near 0.5 → SDP silent, main sequence may
 read healthy. Ce counts edges to non-foundation components; edges into contracts

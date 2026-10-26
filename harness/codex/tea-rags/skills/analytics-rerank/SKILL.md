@@ -43,6 +43,8 @@ Existing preset fits the analytics question?  (cheat sheet below)
          keys + numbers verbatim. No recipe matches → build custom weights:
          read tea-rags://guide/signals for the canonical weight-key catalog
          (generated from the live registry; never invent key names).
+         Call fails `INPUT_UNKNOWN_RERANK_SIGNAL` → swap that key for the
+         hint's listed key of the same intent, re-call (guide/signals).
 ```
 
 ## Catalogs — always read on demand

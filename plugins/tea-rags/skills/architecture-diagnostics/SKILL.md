@@ -38,12 +38,12 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 2. Phase 1 — REPORT: one `get_architecture_report` call
 3. Phase 2 — ROOT CAUSES first (**never lead with flat violations**)
 4. Phase 3 — residual violations, judged by evidence
-5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
-6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
-   - Phase 3c2 — SHOTGUN SURGERY (`detector: "shotgunSurgery"`)
-7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`), then 3d2 — HUB-LIKE
-   DEPENDENCY (`detector: "hubLikeDependency"`)
-8. Phase 3e — LAYERING (`detector: "layering"`)
+5. Phase 3b — LEAKING ABSTRACTION (`violations.leakingAbstraction`)
+6. Phase 3c — SILENT COUPLING (`violations.silentCoupling`)
+   - Phase 3c2 — SHOTGUN SURGERY (`violations.shotgunSurgery`)
+7. Phase 3d — MAIN SEQUENCE (`violations.mainSequence`), then 3d2 — HUB-LIKE
+   DEPENDENCY (`violations.hubLikeDependency`)
+8. Phase 3e — LAYERING (`violations.layering`)
    - Phase 3h — DIFF-TIME FINDINGS (only for `review_changes` architecture
      findings: `preExisting`, `remedy`, repair files)
 9. Phase 3f — LAYER MAP (only when the request carried `layerMap`)
@@ -99,15 +99,18 @@ partial.
 
 ```text
 get_architecture_report(path: "<your working directory>", pathPattern?: "<glob>", limit?: 50, norms?: true,
+                        detectors?: ["<detector>"], evidenceLimit?: 3,
                         layerMap?: { scopePathPattern?, granularity?: "directory"|"file", directoryDepth? })
 ```
 
 **Read [references/phase-1-report.md](./references/phase-1-report.md) before
 reading the response** — `pathPattern` vs `domain` scope, `norms`, tooling /
 test-support removal, `limit` per detector (totals in `summary.<detector>`; more
-than returned → say truncated), costliest-first `score`, impact `tier` (lead
-critical, then active; `built: false` ≠ structural). Every finding carries
-`detector` — never mix groups across detectors.
+than returned → say truncated), trimmed lists (`<key>Count` = full length;
+`next` = drill call), `violationDrillDownHints` template, `reportId` paging,
+costliest-first `score`, impact `tier` (lead critical, then active;
+`built: false` ≠ structural). Findings are grouped per detector
+(`violations.<detector>` table) — never mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -206,10 +209,10 @@ Threshold [adoptionThreshold] ([method], η [separability]); [activeModuleCount]
 ## Silent coupling — [violationCount] ([strongLinkedCount] strong pairs linked in code)
 Threshold [strengthThreshold] ([method], η [separability]); history [commitCount] commits since [windowSince] @ [head]
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
-Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`drillDown.hint`) |
+Grouped: | # | Shared file | Partners (N) | Top 3 (support / λ / strength) | Drill (`find_co_changed(files: <drillDown.files>, limit: <drillDown.limit>)`) |
 
 ## Shotgun surgery — [violationCount]; k [widthThreshold] ([widthThresholdMethod]); [wideUnitCount]/[unitCount] wide commit sets over [burstCount] bursts; admitted [admittedSetCount] k-sets of family C(n,k) [familySize] (q [q]) → [spreadCount] spreads
-| # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`drillDown.hint`) |
+| # | Components | Islands | Support / λ | Strength | Exemplar files | Sample commit | Drill (`find_co_changed(files: <drillDown.files>, limit: <drillDown.limit>)`) |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
 Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N

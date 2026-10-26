@@ -15,7 +15,8 @@ from codegraph co-change sub-graph (git window, mass-change commits dropped).
 | `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) or strengths not bimodal (η < 0.8)    |
 | `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`                                        |
 | `sharedNeighbourSignificance`            | per-pair chance of sharing a neighbour given both import counts (hypergeometric), BH q; absent = no dependency edges |
-| `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it                                          |
+| `explainedPairCount`                     | TOTAL pairs a specific shared neighbour explains — cite this number                                                  |
+| `explainedPairs`                         | the pairs themselves, only with `includeExplainedPairs: true`; `evidence.explainedBy` names the neighbour            |
 
 `rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
 `relPath`, `violationCount`, `maxStrength`, `partners`. Read first — hub of
@@ -39,10 +40,13 @@ Grouped finding (`kind: "group"`): ≥ 2 pairs share one endpoint → ONE violat
 `expectedSupport`, `strength`), `evidence.topPartners` = 3 strongest. Greedy,
 most pairs first; pair in exactly one group. Typical: locale / key-addressed
 file vs every component reading its keys — implicit coupling through string
-keys, one finding not N. Drill in: run `evidence.drillDown.hint` verbatim
-(`find_co_changed(files: [...], limit: N)`). `violationCount` stays pairs;
-`groupedFindingCount` = findings; `limit` caps findings. review_changes
-architecture section: same grouping, `partners` / `drillDown` on finding.
+keys, one finding not N. Drill in: `violationDrillDownHints.silentCoupling` is a
+template naming the row's fields, not values — call
+`find_co_changed(path: "<your working directory>", files: <row evidence.drillDown.files>, limit: <row evidence.drillDown.limit>)`.
+`partners[]` stays whole; nested evidence lists cut to `evidenceLimit` carry
+`<key>Count` (full length). `violationCount` stays pairs; `groupedFindingCount`
+= findings; `limit` caps findings. review_changes architecture section: same
+grouping, `partners` / `drillDown` on finding.
 
 Fix direction: make coupling explicit (shared contract / generated table / one
 owner) OR merge. Type-only imports ARE graph edges (callWeight 0) on indexes

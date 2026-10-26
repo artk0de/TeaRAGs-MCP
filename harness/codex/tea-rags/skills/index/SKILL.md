@@ -53,7 +53,9 @@ metrics + duration) — even when nothing ran:
    insists (seeds separate project).
 
 2. Registered? `list_projects` → entry with `path` = target AND non-empty `name`
-   (recovery auto-created entries have `name=""`).
+   (recovery auto-created entries have `name=""`). Default rows are compact
+   (alias, path, counts, `worktreeOf`) — enough for this check;
+   `list_projects(project: "<alias>")` returns that one full record.
 
 3. **Not registered → register + index, one command.** Default alias = final
    non-empty path segment, lowercased, non-alphanumeric → `-`, `p-` prefix if

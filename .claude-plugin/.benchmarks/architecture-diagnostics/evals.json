@@ -19,6 +19,55 @@
       "baseline_grade": "N/A",
       "before_grade": "N/A",
       "after_grade": "PASS"
+    },
+    {
+      "id": 3,
+      "prompt": "get_architecture_report (path=/work/shop) answered violations.silentCoupling with one grouped row: relPath src/i18n/strings.ts, partnerCount 9, evidence.drillDown.tool 'find_co_changed', evidence.drillDown.files ['src/i18n/strings.ts'], evidence.drillDown.limit 9. Top-level violationDrillDownHints.silentCoupling = \"call find_co_changed(files: drillDown.files, limit: drillDown.limit) to list this file's co-change partners\". Show me every co-change partner of that file.",
+      "expected": "Fills the hoisted template from THAT row: find_co_changed(path: '/work/shop', files: ['src/i18n/strings.ts'], limit: 9). Never passes the literal words 'drillDown.files' / 'drillDown.limit' as arguments, never re-runs get_architecture_report for this, never reads the file instead.",
+      "audit_finding": ["hoisted drill hint is a template, not a ready call"],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
+    },
+    {
+      "id": 4,
+      "prompt": "get_architecture_report (path=/work/shop, pathPattern 'src/orders/**') answered a stableDependencies row src/orders -> src/legacy with evidence.fileEdges listing 3 edges and evidence.fileEdgeCount 11. The answer also has evidenceTrimmed {limit: 3} and next: [{tool: 'get_architecture_report', args: {path: '/work/shop', pathPattern: 'src/orders/**', reportId: 'r-7', detectors: ['stableDependencies'], evidenceLimit: 'all'}}]. How many file edges carry this violation? List all of them.",
+      "expected": "Answers 11 edges (fileEdgeCount = full length), not 3. To list them runs the answer's next call verbatim (detectors ['stableDependencies'], evidenceLimit 'all', reportId 'r-7'). Does not re-call with a bigger limit, does not present the 3 listed edges as the complete set.",
+      "audit_finding": [
+        "trimmed evidence arrays: <key>Count is the full length; next restores the group"
+      ],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
+    },
+    {
+      "id": 5,
+      "prompt": "get_architecture_report (path=/work/shop) returned reportId 'r-9', 10 stableDependencies rows, and summary.stableDependencies.violationCount 34. Show me the next 10 stableDependencies violations.",
+      "expected": "Pages the held report: get_architecture_report(path: '/work/shop', reportId: 'r-9', detectors: ['stableDependencies'] (optional), offset: 10, limit: 10). Says 34 total. Does not re-run the full report with limit: 20, does not claim there are only 10.",
+      "audit_finding": ["reportId + offset paging over a held snapshot"],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
+    },
+    {
+      "id": 6,
+      "prompt": "A paging call get_architecture_report(path=/work/shop, reportId: 'r-9', offset: 10, limit: 10) answered with no violations and empty: {reason: 'reportStale', message: 'No held report matches this reportId'}. Continue listing the violations.",
+      "expected": "reportStale = the held snapshot is gone, not 'no more violations'. Re-calls ONCE without reportId (same path / scope / limit) for a fresh report, then pages with that answer's new reportId. Never reports 'no further violations', never retries the same reportId.",
+      "audit_finding": ["reportStale empty reason"],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
+    },
+    {
+      "id": 7,
+      "prompt": "get_architecture_report (path=/work/shop) answered summary.silentCoupling.explainedPairCount 76; the summary carries no explainedPairs list. How many co-change pairs does a shared neighbour explain, and which ones are they?",
+      "expected": "76 pairs (explainedPairCount = total). The list itself needs a re-call with includeExplainedPairs: true (same path/scope); does not answer '0' or 'none' from the missing list, does not invent pairs.",
+      "audit_finding": [
+        "explainedPairCount total; list behind includeExplainedPairs"
+      ],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PENDING"
     }
   ]
 }
