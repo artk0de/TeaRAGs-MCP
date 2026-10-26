@@ -151,6 +151,42 @@ function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: stri
   return { ago: formatRelativeTime(diffMs), stale: diffMs > STALE_THRESHOLD_MS };
 }
 
+const SHORT_REASON_MAX = 40;
+const ERROR_CODE_TOKEN = /\b(E[A-Z0-9]{3,}|HTTP \d{3})\b/;
+
+/** Error-code token when the message carries one, else its first clause capped at {@link SHORT_REASON_MAX}. */
+function shortFailureReason(message: string): string {
+  const code = ERROR_CODE_TOKEN.exec(message);
+  if (code) return code[1];
+  const clause = message
+    .replace(/^\S+\s+/, "")
+    .split(/[:;,]/)[0]
+    .trim();
+  return (clause || message).slice(0, SHORT_REASON_MAX);
+}
+
+/**
+ * Multi-URL tier: `url: <probe message>` entries joined by `; ` collapse to
+ * `unavailable N/M: <urls — reason groups>`. Single-URL tiers and reasons that
+ * do not parse as per-URL entries return undefined (legacy render).
+ */
+function summarizeTierFailures(tierUrl: string, reason: string | undefined): string | undefined {
+  const total = tierUrl.split(",").length;
+  if (total < 2 || reason === undefined) return undefined;
+  const groups = new Map<string, string[]>();
+  let failed = 0;
+  for (const entry of reason.split(/; (?=https?:\/\/)/)) {
+    const m = /^(\S+): (.+)$/s.exec(entry);
+    if (!m) return undefined;
+    const short = shortFailureReason(m[2]);
+    groups.set(short, [...(groups.get(short) ?? []), m[1]]);
+    failed += 1;
+  }
+  if (groups.size === 1 && failed === total) return `unavailable ${failed}/${total}: ${[...groups.keys()][0]}`;
+  const parts = [...groups].map(([short, members]) => `${members.join(", ")} — ${short}`);
+  return `unavailable ${failed}/${total}: ${parts.join("; ")}`;
+}
+
 /**
  * `recoveryTarget` addresses the recover command printed for a failed
  * optimizer (bd tea-rags-mcp-ye5o) — the digest only REPORTS it, never recovers.
@@ -175,11 +211,13 @@ function formatInfraSection(infra: InfraHealth, recoveryTarget: OptimizerRecover
   const e = infra.embedding;
   const badge = (ok: boolean, reason?: string) =>
     ok ? "available" : reason ? `unavailable: ${reason}` : "unavailable";
+  const tierBadge = (url: string, ok: boolean, reason?: string) =>
+    ok ? "available" : (summarizeTierFailures(url, reason) ?? badge(ok, reason));
   if (e.url) {
     // Per-endpoint health: each ollama endpoint carries its OWN status badge.
-    const primary = ` · primary ${e.url} (${badge(e.primaryAvailable ?? e.available, e.primaryUnavailableReason)})`;
+    const primary = ` · primary ${e.url} (${tierBadge(e.url, e.primaryAvailable ?? e.available, e.primaryUnavailableReason)})`;
     const fallback = e.fallbackUrl
-      ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : badge(e.fallbackAvailable, e.fallbackUnavailableReason)})`
+      ? ` · fallback ${e.fallbackUrl} (${e.fallbackAvailable === undefined ? "unknown" : tierBadge(e.fallbackUrl, e.fallbackAvailable, e.fallbackUnavailableReason)})`
       : "";
     lines.push(`embedding: ${e.provider}${primary}${fallback}`);
 
