@@ -95,9 +95,37 @@ describe("response budget", () => {
       project: "tea-rags",
       path: "/wt/agent",
       query: "q",
-      limit: 50,
+      limit: 50 - kept,
       offset: 10 + kept,
     });
+  });
+
+  it("continues with the rest of the requested limit window, never below 1", () => {
+    const run = (args: Record<string, unknown>) => {
+      const out = enforceResponseBudget(searchResult(25, 3000), "hybrid_search", args, SEARCH_POLICY);
+      const t = (out.structuredContent as { truncated: { returned: number; next: { args: Record<string, unknown> } } })
+        .truncated;
+      return t;
+    };
+
+    const first = run({ query: "q", limit: 25 });
+    expect(first.next.args.offset).toBe(first.returned);
+    expect(first.next.args.limit).toBe(25 - first.returned);
+
+    const shifted = run({ query: "q", limit: 25, offset: 5 });
+    expect(shifted.next.args.offset).toBe(5 + shifted.returned);
+    expect(shifted.next.args.limit).toBe(25 - shifted.returned);
+    expect(first.returned).toBeGreaterThan(0);
+    expect(first.returned).toBeLessThan(25);
+
+    const floor = offsetContinuation()({ limit: 3 }, { perCollection: 7, answer: {} } as never);
+    expect(floor?.limit).toBe(1);
+  });
+
+  it("leaves limit absent in the continuation when the request carried none", () => {
+    const out = enforceResponseBudget(searchResult(25, 3000), "hybrid_search", { query: "q" }, SEARCH_POLICY);
+    const { next } = (out.structuredContent as { truncated: { next: { args: Record<string, unknown> } } }).truncated;
+    expect(next.args).not.toHaveProperty("limit");
   });
 
   it("never drops summary, workingTree, empty, next, notices, reportId, directory or missing", () => {
