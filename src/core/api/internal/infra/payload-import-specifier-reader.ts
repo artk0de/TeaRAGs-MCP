@@ -18,7 +18,7 @@ import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-i
 import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { IndexedFileImports } from "../../../domains/trajectory/codegraph/symbols/index.js";
-import { TEST_EXCLUSION_FILTER_CONDITIONS } from "../../../domains/trajectory/static/index.js";
+import { isTestPayload, TEST_EXCLUSION_FILTER_CONDITIONS } from "../../../domains/trajectory/static/index.js";
 
 /** Files read at once — a bound on concurrent scrolls, not a batch the answer depends on. */
 const IMPORT_SPECIFIER_READ_CONCURRENCY = 8;
@@ -95,21 +95,9 @@ export class IndexedFileImportsAccumulator {
       if (typeof relativePath !== "string" || this.files.has(relativePath)) continue;
       if (!Array.isArray(imports) || imports.length === 0) continue;
       this.files.set(relativePath, {
-        isTest: TEST_EXCLUSION_FILTER_CONDITIONS.some(
-          (condition) => readPayloadPath(payload, condition.key) === condition.match.value,
-        ),
+        isTest: isTestPayload(payload),
         specifiers: imports.filter((s): s is string => typeof s === "string"),
       });
     }
   }
-}
-
-/** A dotted payload path read off the nested payload object. */
-function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
-  let value: unknown = payload;
-  for (const segment of path.split(".")) {
-    if (typeof value !== "object" || value === null) return undefined;
-    value = (value as Record<string, unknown>)[segment];
-  }
-  return value;
 }

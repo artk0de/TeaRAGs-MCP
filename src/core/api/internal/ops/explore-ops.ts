@@ -400,9 +400,11 @@ export class ExploreOps {
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
     if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, path, workingTreeView);
     const strategy = this.buildFindSymbolStrategy(request);
-    const response = await this.executeExplore(strategy, ctx, path, {
+    const answer = await this.executeExplore(strategy, ctx, path, {
       fields: request.fields,
       workingTreeView,
+      // The file the agent committed to is the anchor (q1g6s.2); same gate as search.
+      expansionHints: this.expansionHintsEnabled(),
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -411,6 +413,8 @@ export class ExploreOps {
     // A directory path is answered by its listing (N2), an unknown path by the
     // nearest indexed paths (N6 `unknownPath`).
     const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
+    // A directory listing names many files and commits to none — no anchor.
+    const response = directory ? withoutNext(answer) : answer;
     const empty =
       strategy instanceof FileOutlineStrategy
         ? strategy.emptyAnswer
@@ -475,14 +479,28 @@ export class ExploreOps {
       const { request: address, resolvedAs } = answer.rows[i];
       return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...row.payload } };
     });
+    const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
+    // Anchors from the full rows, before projection — the lean fields keep relativePath, `fields` may not.
+    const next = this.expansionHintsEnabled()
+      ? buildSearchExpansionCalls(
+          answer.rows.map(({ result }) => result),
+          workingTree,
+        )
+      : [];
     return {
       results,
+      ...(next.length > 0 ? { next } : {}),
       driftWarning,
       missing: answer.missing,
       ...(request.fields && projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
       ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
-      ...(workingTreeView ? { workingTree: finalizeWorkingTreeMarker(workingTreeView) } : {}),
+      ...(workingTree ? { workingTree } : {}),
     };
+  }
+
+  /** Gate for `next` expansion hints: codegraph wired — the signal find_symbol's codegraphWarning reads. */
+  private expansionHintsEnabled(): boolean {
+    return this.chunkResolver !== undefined;
   }
 
   /**
@@ -644,8 +662,7 @@ export class ExploreOps {
       presetFilterNotice,
       fields: request.fields,
       workingTreeView,
-      // Gate: codegraph wired — the same signal find_symbol's codegraphWarning reads.
-      expansionHints: this.chunkResolver !== undefined,
+      expansionHints: this.expansionHintsEnabled(),
     });
     // N6: the diagnosis counts run ONLY on an empty answer, and a failed
     // count leaves the explanation out instead of failing the search.
@@ -1286,6 +1303,11 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
  */
 function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
   return { ...view.marker, floors: [...view.marker.floors] };
+}
+
+function withoutNext(response: ExploreResponse): ExploreResponse {
+  const { next: _next, ...rest } = response;
+  return rest;
 }
 
 /** The payload a find_symbol batch row carries unless `fields` or `rerank` asks for more (N1). */
