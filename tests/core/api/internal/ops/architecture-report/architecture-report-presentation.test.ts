@@ -76,6 +76,7 @@ function report(): GetArchitectureReportResponse {
     summary: {
       silentCoupling: {
         violationCount: 7,
+        excluded: { explainedBySharedNeighbour: 5 },
         explainedPairs: [{ detector: "silentCoupling" }, { detector: "silentCoupling" }],
       },
       layering: { levelCount: 4 },
@@ -154,13 +155,13 @@ describe("presentArchitectureReport", () => {
     expect(view).not.toHaveProperty("evidenceTrimmed");
   });
 
-  it("reduces the explained pairs to a count by default and lists them on includeExplainedPairs", () => {
+  it("reduces the explained pairs to their TOTAL count, not the limit-capped list's length; lists them on includeExplainedPairs", () => {
     const counted = present().summary.silentCoupling;
-    expect(counted.explainedPairCount).toBe(2);
+    expect(counted.explainedPairCount).toBe(5);
     expect(counted).not.toHaveProperty("explainedPairs");
 
     const listed = present({ includeExplainedPairs: true }).summary.silentCoupling;
-    expect(listed.explainedPairCount).toBe(2);
+    expect(listed.explainedPairCount).toBe(5);
     expect(listed.explainedPairs).toHaveLength(2);
   });
 

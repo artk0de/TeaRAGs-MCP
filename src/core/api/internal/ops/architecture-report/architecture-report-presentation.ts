@@ -98,7 +98,8 @@ export function presentArchitectureReport(
       ...summary,
       silentCoupling: {
         ...silentCoupling,
-        explainedPairCount: explainedPairs?.length ?? 0,
+        // The total, not the limit-capped list's length (bd tea-rags-mcp-jur12).
+        explainedPairCount: silentCoupling.excluded.explainedBySharedNeighbour,
         ...(view.includeExplainedPairs && explainedPairs ? { explainedPairs } : {}),
       },
     },
