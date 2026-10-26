@@ -1,3 +1,4 @@
+import { payloadMatchesFilter } from "../../../adapters/qdrant/filters/payload-match.js";
 import type { QdrantFilterCondition } from "../../../adapters/qdrant/types.js";
 import type { AdaptiveFilterCondition } from "../../../contracts/types/filter-preset.js";
 
@@ -26,4 +27,13 @@ export const TEST_EXCLUSION_FILTER_CONDITIONS = [
 /** A preset condition that excludes test files: `isTest eq true`, occur `must_not`. */
 export function isTestExclusionCondition(c: AdaptiveFilterCondition): boolean {
   return c.signal === "isTest" && c.op === "eq" && c.value === true && c.occur === "must_not";
+}
+
+/**
+ * A payload {@link TEST_EXCLUSION_FILTER_CONDITIONS} would exclude, decided in
+ * memory with Qdrant's semantics: the row a `testFile: "exclude"` query drops is
+ * exactly the row this calls a test.
+ */
+export function isTestPayload(payload: Record<string, unknown>): boolean {
+  return payloadMatchesFilter(payload, { should: TEST_EXCLUSION_FILTER_CONDITIONS });
 }

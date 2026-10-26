@@ -2,7 +2,7 @@
  * ExploreOps — `next` expansion hints and the lean default payload on the read
  * path (agent turn economy N4 + N5, bd tea-rags-mcp-r4rl1).
  *
- * `next` rides on hybrid_search / semantic_search answers only, only when
+ * `next` rides on hybrid_search / semantic_search / find_symbol answers, only when
  * codegraph is wired (the gate the find_symbol `codegraphWarning` reads), and
  * its args name the tree that answered. The default projection runs last, so
  * the anchors are chosen from the full rows even when the payload is narrowed.
@@ -137,17 +137,21 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
         ? f.hybridSearch({ collection: "code_x", query: "q", ...extra })
         : f.semanticSearch({ collection: "code_x", query: "q", ...extra });
 
-    it(`${tool}: codegraph on → co-change + callers hints addressed to the answering tree`, async () => {
+    it(`${tool}: codegraph on → callees + callers + co-change hints addressed to the answering tree`, async () => {
       const response = await call(makeFacade(HITS));
 
       expect(response.next).toEqual([
         expect.objectContaining({
-          tool: "find_co_changed",
-          args: { project: "tea-rags", path: MARKER.tree, files: ["src/a.ts", "src/b.ts"] },
+          tool: "get_callees",
+          args: { project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" },
         }),
         expect.objectContaining({
           tool: "get_callers",
           args: { project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" },
+        }),
+        expect.objectContaining({
+          tool: "find_co_changed",
+          args: { project: "tea-rags", path: MARKER.tree, files: ["src/a.ts", "src/b.ts"] },
         }),
       ]);
     });
@@ -155,7 +159,7 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
     it(`${tool}: anchors are chosen from the full rows even when fields drops relativePath`, async () => {
       const response = await call(makeFacade(HITS), { fields: ["symbolId"] });
 
-      expect(response.next?.[0]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
     });
 
     it(`${tool}: codegraph off → no next`, async () => {
@@ -171,10 +175,52 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
     });
   }
 
-  it("find_symbol answers carry no next", async () => {
-    const response = await makeFacade(HITS).findSymbol({ collection: "code_x", symbol: "aFn" });
+  describe("find_symbol — the anchor the agent committed to carries the same hints", () => {
+    it("relativePath (file outline) → anchor = that file", async () => {
+      const response = await makeFacade(HITS).findSymbol({ collection: "code_x", relativePath: "src/a.ts" });
 
-    expect(response).not.toHaveProperty("next");
+      expect(response.next?.map((c) => c.tool)).toEqual(["get_callees", "get_callers", "find_co_changed"]);
+      expect(response.next?.[0]?.args).toEqual({ project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" });
+      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts"]);
+    });
+
+    it("symbol mode → anchors = distinct files of the returned rows", async () => {
+      const hits = [
+        point("a", 0.9, "src/a.ts", { symbolId: "A#run" }),
+        point("b", 0.8, "src/b.ts", { symbolId: "B#run" }),
+      ];
+      const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbol: "run" });
+
+      expect(response.next?.[0]?.args.relativePath).toBe("src/a.ts");
+      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+    });
+
+    it("symbols batch → anchors = distinct non-test files of the returned rows, first-seen order", async () => {
+      const hits = [point("t", 0.9, "tests/a.test.ts", { isTest: true }), ...HITS];
+      const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbols: ["tFn", "aFn", "bFn"] });
+
+      expect(response.next?.[0]?.args.relativePath).toBe("src/a.ts");
+      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+    });
+
+    it("relativePath naming a directory → listing commits to no file, no next", async () => {
+      const response = await makeFacade(HITS).findSymbol({ collection: "code_x", relativePath: "src" });
+
+      expect(response.directory).toBeDefined();
+      expect(response).not.toHaveProperty("next");
+    });
+
+    it("codegraph off → no next", async () => {
+      const response = await makeFacade(HITS, { codegraph: false }).findSymbol({ collection: "code_x", symbol: "aFn" });
+
+      expect(response).not.toHaveProperty("next");
+    });
+
+    it("no anchor left (empty answer) → no next key", async () => {
+      const response = await makeFacade([]).findSymbol({ collection: "code_x", symbol: "aFn" });
+
+      expect(response).not.toHaveProperty("next");
+    });
   });
 
   it("hybrid_search metaOnly without rerank → payload is the locator with its signature", async () => {

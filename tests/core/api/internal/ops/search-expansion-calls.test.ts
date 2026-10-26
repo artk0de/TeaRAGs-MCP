@@ -27,32 +27,55 @@ const hit = (relativePath: string, language = "typescript", extra: Record<string
 });
 
 describe("buildSearchExpansionCalls", () => {
-  it("emits find_co_changed on the top two files and get_callers on the top one, addressed to the tree", () => {
+  it("emits get_callees then get_callers on the top file, find_co_changed on the top two last, addressed to the tree", () => {
     const calls = buildSearchExpansionCalls([hit("src/a.ts"), hit("src/b.ts"), hit("src/c.ts")], MARKER);
+    const address = { project: "tea-rags", path: "/repo/.claude/worktrees/feature" };
 
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({
-      tool: "find_co_changed",
-      args: { project: "tea-rags", path: "/repo/.claude/worktrees/feature", files: ["src/a.ts", "src/b.ts"] },
-    });
-    expect(calls[1]).toMatchObject({
-      tool: "get_callers",
-      args: { project: "tea-rags", path: "/repo/.claude/worktrees/feature", relativePath: "src/a.ts" },
-    });
-    for (const call of calls) expect(call.why.length).toBeGreaterThan(0);
+    expect(calls.map((call) => call.tool)).toEqual(["get_callees", "get_callers", "find_co_changed"]);
+    expect(calls[0]?.args).toEqual({ ...address, relativePath: "src/a.ts" });
+    expect(calls[1]?.args).toEqual({ ...address, relativePath: "src/a.ts" });
+    expect(calls[2]?.args).toEqual({ ...address, files: ["src/a.ts", "src/b.ts"] });
+  });
+
+  it("names the concrete anchor files and the reason in every why", () => {
+    const calls = buildSearchExpansionCalls([hit("src/a.ts"), hit("src/b.ts")], MARKER);
+
+    expect(calls.map((call) => call.why)).toEqual([
+      "files src/a.ts imports — change candidates",
+      "files importing src/a.ts — callers to update",
+      "files co-edited with src/a.ts, src/b.ts in git history",
+    ]);
+  });
+
+  it("skips test files when choosing anchors — the payload's test classification, not a path rule", () => {
+    const calls = buildSearchExpansionCalls(
+      [
+        hit("spec/models/user_spec.rb", "ruby", { isTest: true }),
+        hit("tests/__helpers__/x.ts", "typescript", { codegraph: { symbols: { file: { skippedAs: "test" } } } }),
+        hit("src/a.ts"),
+      ],
+      MARKER,
+    );
+
+    expect(calls[0]?.args.relativePath).toBe("src/a.ts");
+    expect(calls[2]?.args.files).toEqual(["src/a.ts"]);
+  });
+
+  it("emits nothing for a tests-only answer", () => {
+    expect(buildSearchExpansionCalls([hit("tests/a.test.ts", "typescript", { isTest: true })], MARKER)).toEqual([]);
   });
 
   it("collapses the chunks of one file into one anchor", () => {
     const calls = buildSearchExpansionCalls([hit("src/a.ts"), hit("src/a.ts"), hit("src/b.ts")], MARKER);
 
-    expect(calls[0]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(calls[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
   it("names one file when the answer holds only one", () => {
     const calls = buildSearchExpansionCalls([hit("src/a.ts"), hit("src/a.ts")], MARKER);
 
-    expect(calls[0]?.args.files).toEqual(["src/a.ts"]);
-    expect(calls[1]?.args.relativePath).toBe("src/a.ts");
+    expect(calls[2]?.args.files).toEqual(["src/a.ts"]);
+    expect(calls[0]?.args.relativePath).toBe("src/a.ts");
   });
 
   it("skips doc chunks when choosing anchors", () => {
@@ -61,7 +84,7 @@ describe("buildSearchExpansionCalls", () => {
       MARKER,
     );
 
-    expect(calls[0]?.args.files).toEqual(["src/a.ts"]);
+    expect(calls[2]?.args.files).toEqual(["src/a.ts"]);
   });
 
   it("emits nothing for a docs-only answer", () => {
@@ -75,6 +98,7 @@ describe("buildSearchExpansionCalls", () => {
   it("carries no address when the answer has no working-tree marker", () => {
     const calls = buildSearchExpansionCalls([hit("src/a.ts")], undefined);
 
-    expect(calls[0]?.args).toEqual({ files: ["src/a.ts"] });
+    expect(calls[0]?.args).toEqual({ relativePath: "src/a.ts" });
+    expect(calls[2]?.args).toEqual({ files: ["src/a.ts"] });
   });
 });
