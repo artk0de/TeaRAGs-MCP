@@ -7,7 +7,8 @@ in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` wit
 its own command first; a plan from memory is not reading it. A skill path you
 did not open with a command in this turn is invalid in a plan — open it first.
 
-**Addressing.** Every read call: `project=<alias>` (which index) +
+**Addressing.** Every read call, each next/planned call you write included
+(`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +
 `path=<this task's cwd>` (which tree, re-checks too). Alias: prime `## Project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
 alone, never ask; only a `collection` → it alone, then say
@@ -19,6 +20,8 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 - file path / doc TOC → `find_symbol(relativePath:)`
+- regex / literal TODO/phrase, even "every …" → `rg`/Grep only — no tea-rags
+  seed or fallback; command output → `<cmd> 2>&1 | grep -E '…'`
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`
@@ -27,8 +30,6 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - who calls X / impact → `find_symbol` → `get_callers`/`get_callees`
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review; a name's fit → `review_changes` / `get_naming_lexicon`
-- literal TODO/phrase/regex → `rg`/Grep, never tea-rags; command output →
-  `<cmd> 2>&1 | grep -E '…'`
 
 Never Grep/`rg`/`rg --files`, Glob or `cat`/`sed` to locate or read code —
 identifiers (even `a|b`) are SYMBOL searches. A name → `names:[{name,kind}]`; a

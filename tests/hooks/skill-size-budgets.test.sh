@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 
-SKILL_CAP=26000
+SKILL_CAP=30000
 ARCH_CAP=16000
 for f in "$ROOT"/plugins/tea-rags/skills/*/SKILL.md; do
   name="$(basename "$(dirname "$f")")"

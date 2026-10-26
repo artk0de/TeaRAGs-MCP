@@ -24,11 +24,12 @@ No code area identifiable (pure conceptual) → skip enrichment, invoke
 `$brainstorming` directly, say so explicitly. Never fabricate area.
 
 **User explicitly asks to read named files / find callers of a symbol** → those
-reads are the USER's task, not wrapper enrichment: plan them in the SAME step as
-the Step 2 block, never deferred — `find_symbol relativePath=<file>` per named
+reads are the USER's task, not wrapper enrichment: planned in the SAME answer as
+separate calls AFTER the Step 2 block returns — never inside the parallel block,
+never deferred to a later turn. `find_symbol relativePath=<file>` per named
 file, `hybrid_search metaOnly:true query=<symbol>` for callers (graph tools on →
 `get_callers`). Print:
-`user reads: find_symbol / hybrid_search metaOnly, alongside the Step 2 block`.
+`user reads: find_symbol / hybrid_search metaOnly — separate calls AFTER the Step 2 block returns, same answer, not deferred`.
 
 **Otherwise Step 2 block = this wrapper's FIRST tool calls; the wrapper adds no
 `find_symbol` of its own** — not before Step 2 (a user-named area / dir becomes
@@ -76,9 +77,13 @@ Disqualifier first: user rules files out ("no specific files", "без конк�
 файлов", "conceptually") → no area, a subsystem word in the request ("cache
 layer design") notwithstanding — never glob it; Step 4 without enrichment.
 
-Named path new / not in git yet → `pathPattern` = that path exactly, Step 2
-calls still RUN (new path ≠ no area). NEVER widen to a parent dir to find
-signals.
+Directory scope → `pathPattern="<dir>/**"` (`src/app/widgets/` →
+`src/app/widgets/**`); a bare `<dir>/` matches no file. Print it:
+`dir "<dir>/" → pathPattern="<dir>/**"`.
+
+Named path new / not in git yet → `pathPattern` = that path exactly (dir →
+`<dir>/**`), Step 2 calls still RUN (new path ≠ no area). NEVER widen to a
+parent dir to find signals.
 
 Compose `pathPattern` (e.g. `**/auth/**`,
 `src/core/domains/ingest/**/chunker/**`) + `query` (one sentence, change
@@ -175,8 +180,8 @@ Do NOT pass:
 - `metaOnly: false` — content unneeded, payload bloats. No "show / read the
   content" in the prompt → no content call, conditional ones included. Prompt
   asks to SEE content → enrichment stays `metaOnly: true`; content = separate
-  call AFTER Step 2: `find_symbol relativePath=<row.relativePath>` (outline →
-  drill ids)
+  call AFTER the Step 2 block returns (same answer, never in the block, never
+  deferred): `find_symbol relativePath=<row.relativePath>` (outline → drill ids)
 - custom `rerank` weights instead of named presets — loses calibrated semantics
 - `filter` on `git.ageDays` / `git.commitCount` — presets encode them; filters
   shrink set, hide debt

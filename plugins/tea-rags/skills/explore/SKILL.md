@@ -15,8 +15,8 @@ codex-description:
   "architecture of Y", "best example of X"; pre-generation context — "before I
   change/refactor X", "what to know before touching X". NOT for active bugs, a
   bug already found, named suspects, hits with bugFixRate labels (bug-hunt). NOT
-  for writing a plan (writing-plans). NOT standalone health scan
-  (risk-assessment).
+  for plan requests ("draft a plan to add X", [subagent:…] too) (writing-plans).
+  NOT standalone health scan (risk-assessment).
 argument-hint: [what to explore — feature, module, or question]
 ---
 
@@ -30,12 +30,16 @@ below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / "callers of X" → decide codegraph first (plan line below); on →
 `Strategy: codegraph row 2` (`get_callers`), never TRACE-only `hybrid_search`.
+Off (or off branch of an unknown state) → TRACE loop, copied, ≥ 2 calls:
+`hybrid_search(query="<X>", metaOnly=true)` → per caller hit
+`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
+fail.
 
 | User intent contains                                                                                         | Strategy | Skip if                                                                                      |
 | ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
 | "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt; structure phrasing → codegraph row 4 |
 | "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct           |
-| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans                                                       |
+| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | plan request ("draft a plan to add X") → writing-plans; mid-refactor → executing-plans       |
 | "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)                         |
 
 **State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
@@ -57,6 +61,16 @@ Behaviour words without all/every ("search for retry logic and error recovery")
 = BREADTH `semantic_search`, not EXEMPLAR.
 
 🛑 Unsure → ask user. NEVER assume strategy from partial signals.
+
+## Plan intent → writing-plans
+
+Request to author a plan ("write/draft a plan", "draft a plan to add X", "plan
+the change to <files>", "add a Task to the plan") → hand off to
+`dinopowers:writing-plans`; its ONE impact `semantic_search` is the first call.
+Holds with "add X" / "before changing" / "impact analysis" and a
+`[subagent: explore]` label. Checked before every section below — never PRE-GEN,
+never `find_symbol` outlines first. A plan STEP "Research X before implementing
+Y" stays PRE-GEN.
 
 ## Risk intent → delegate to risk-assessment
 

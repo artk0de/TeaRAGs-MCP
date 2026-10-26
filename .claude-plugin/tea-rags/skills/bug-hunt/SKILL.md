@@ -18,9 +18,13 @@ argument-hint: [bug description or symptom]
 
 **Routing** (first match wins; each row prints its line):
 
+- "Read the whole file" / "прочитай весь файл" of a hit with known lines →
+  refuse — no hunt / search / outline walk, also via `explore`; print both:
+  `Full file reads refused. Chunk coordinates exist. Use them. Depth → find_symbol, never Read.`
+  `find_symbol(path=<cwd>, symbol=<chunk symbolId>) body (lines <start>–<end>); neighbours: navigation.prev/nextSymbolId`.
 - Explain / compare a known file ("show / how does it work / compare / read
   it"), even when the prompt says a bug was found there → no hunt, no search;
-  also via `explore` the answer prints both lines:
+  also via `explore` the answer prints both lines verbatim, before any plan:
   `'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
   `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body`.
 - Bug intent on a named file / symbol ("find bugs in <file>", "найди баги в X"),
@@ -32,11 +36,17 @@ argument-hint: [bug description or symptom]
 - Search result already carries labels ("<file>:<line> `bugFixRate` critical —
   proceed?") → triage and PRESENT now, also via a wrapper: no symptom question,
   no review question, no confirm search, no step 0; print, slots filled:
-  `Suspect: <file>:<line> — <class> (prime | secondary | fresh | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
+  `Suspect: <file>:<line> — <class> (prime | secondary | fresh | uncommitted | SKIP) — bugFixRate <label>, relativeChurn <label | unverified> — <one-sentence why>`.
+  SKIP + "check there (anyway)" → print Rule 7's skip line, no drill, also in
+  wrapper handoff.
 - User demands `hybrid_search` on an error string → refuse, run the Loop:
   `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.`
+- When did an error / code appear in history, git asked ("посмотри через git",
+  `git log -S`) → never git log / blame / `-S`, run the Loop (Rule 2); print:
+  `git log refused — git history is already in the index signals; answering via semantic_search(query=<symptom>, rerank="bugHunt"): ageDays / commitCount / taskIds.`
 - Where is a literal string / error phrase written (no tool demanded) → no hunt
-  (no step 0, no probes), never cat / sed / Read around the hit; both lines:
+  (no step 0, no probes), never cat / sed / Read around the hit; the plan never
+  ends at the rg hit — find_symbol follows it; print both lines, slots filled:
   `rg -n -F "<phrase>" .` +
   `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
@@ -52,7 +62,8 @@ argument-hint: [bug description or symptom]
 - Reached via a wrapper (`dino-systematic-debugging`: `symptom` + `pathHint`) →
   run THIS Loop in full; `pathHint` = scope pathPattern, never a substitute for
   step 0 or the probes. PRESENT/STOP ends bug-hunt only — the wrapper's
-  hypothesis block + handoff follow, checkpoint filled or not.
+  hypothesis block + handoff follow, checkpoint filled or not; override note ≠
+  new evidence, SKIP stays undrilled.
 
 Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
 populations: code with bug-fix history, fresh code too young to have one,
@@ -110,11 +121,10 @@ A plan names these calls; "later" / "not in this run" never drops one.
 
 6. **Chunk or rg hit in hand → `find_symbol`** (symbolId body / relativePath
    outline / prev-next id), never Read of a code file. "Read the whole file" →
-   print
-   `Full file read refused — chunk coordinates exist, use them: depth → find_symbol, never Read.`
-   Row with `treeState` = index's PRE-EDIT copy (text + lines stale) — say so;
-   it stays the **uncommitted suspect**, no symptom needed: `healthy` history
-   never clears uncommitted code. Next `find_symbol(path=<cwd>, symbol=<id>)`.
+   Routing row 1, both lines. Row with `treeState` = index's PRE-EDIT copy
+   (text + lines stale) — say so; it stays the **uncommitted suspect**, no
+   symptom needed: `healthy` history never clears uncommitted code. Next
+   `find_symbol(path=<cwd>, symbol=<id>)`.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
    first, never `get_callers`; the plan prints three lines, frame ids filled:
@@ -155,10 +165,10 @@ No `## Signal thresholds` above → read
    via overlay. Plan names the call: Loop step 1 a/b/c,
    `semantic_search(query=<symptom sentence>, rerank="bugHunt")`; read
    `git.ageDays` / `commitCount` / `taskIds` / `bugFixRate` of hits = when the
-   code appeared and what touched it. Tell user: "git history is already in the
-   index signals — answering from them". Never ask the user to paste `git log`.
-   `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
-   code history or content — feeds Uncommitted probe only.
+   code appeared and what touched it. Print the Routing git line. Never ask the
+   user to paste `git log`. `git status --porcelain -uall` allowed: working-tree
+   state (file NAMES), not code history or content — feeds Uncommitted probe
+   only.
 3. **No text search (Grep / `rg`) for code discovery** — TeaRAGs only; text
    search for literal text, identifiers never — `hybrid_search`.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk

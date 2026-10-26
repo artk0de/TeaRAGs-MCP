@@ -16,7 +16,8 @@ examples per tool.
 
 - Ownership analysis → rerank="ownership", metaOnly=true
 - Tech debt discovery → rerank="techDebt", level="file", minAgeDays=90
-- Security audit → rerank="securityAudit", `pathPattern="**/auth/**"`
+- Security audit → rerank="securityAudit", `pathPattern="**/auth/**"` (dir name,
+  depth unknown; user-named `src/auth` → `src/auth/**`)
 
 ## hybrid_search Examples
 

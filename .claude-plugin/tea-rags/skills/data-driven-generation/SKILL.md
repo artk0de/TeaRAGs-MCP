@@ -29,7 +29,9 @@ family → its `<plugin root>/repair/<family>.md` (plugin root = folder holding
 ## Prerequisites
 
 **Addressing:** every tea-rags call passes `project=<alias>` +
-`path=<your working directory>` — `tea-rags://guide/freshness`.
+`path=<your working directory>` — `tea-rags://guide/freshness`. Every step (Step
+7 verify and `references/*` included); a call shown below without `path` still
+carries both.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.

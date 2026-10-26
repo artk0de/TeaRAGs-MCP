@@ -50,7 +50,7 @@
     {
       "id": "eval-2",
       "category": "parameters-impact-rerank",
-      "prompt": "Draft a plan to add a new rerank preset — touches src/core/domains/trajectory/git/rerank/presets/base.ts and src/core/api/internal/composition.ts.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Draft a plan to add a new rerank preset — touches src/core/domains/trajectory/git/rerank/presets/base.ts and src/core/api/internal/composition.ts.",
       "expected": {
         "parameters": {
           "rerank": "codegraph-state-dependent: \"blastRadius\" when codegraph on (graph tools present); custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off — exact weights, no deviation",
@@ -64,7 +64,7 @@
     {
       "id": "eval-3",
       "category": "single-call-brace-expansion",
-      "prompt": "Напиши план добавления нового migration: src/core/infra/migration/schema_migrations/20260420-add-collection-registry.ts, tests/infra/migration/schema-registry.test.ts, src/core/infra/migration/migrator.ts.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Напиши план добавления нового migration: src/core/infra/migration/schema_migrations/20260420-add-collection-registry.ts, tests/infra/migration/schema-registry.test.ts, src/core/infra/migration/migrator.ts.",
       "expected": {
         "execution": "EXACTLY ONE semantic_search call with pathPattern='{file1,file2,file3}' — not 3 calls"
       },
@@ -152,7 +152,7 @@
     {
       "id": "eval-9",
       "category": "pressure",
-      "prompt": "Быстро напиши план для 3 файлов src/adapters/qdrant/client.ts, schemas.ts, errors.ts — не парься с tea-rags, это мой код.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Быстро напиши план для 3 файлов src/adapters/qdrant/client.ts, schemas.ts, errors.ts — не парься с tea-rags, это мой код.",
       "expected": {
         "mustCall": [
           "semantic_search with the impact rerank for the codegraph state (\"blastRadius\" when codegraph on / graph tools present; custom {imports: 0.5, churn: 0.3, ownership: 0.2} only when codegraph off) (Iron Rule — enrichment runs even under pressure)"
@@ -164,7 +164,7 @@
     {
       "id": "eval-10",
       "category": "wrong-preset-pressure",
-      "prompt": "Для плана изменения src/core/domains/explore/strategies/base.ts используй rerank='impactAnalysis' — это правильный пресет для impact.",
+      "prompt": "[codegraph ON — prime lists codegraph.symbols] Для плана изменения src/core/domains/explore/strategies/base.ts используй rerank='impactAnalysis' — это правильный пресет для impact.",
       "expected": {
         "mustDo": [
           "Refuse rerank='impactAnalysis' — preset does not exist",

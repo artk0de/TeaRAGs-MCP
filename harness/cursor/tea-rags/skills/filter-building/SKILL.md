@@ -215,13 +215,16 @@ Compose with typed filters (e.g. `language: "ruby"` +
 
 Matched exactly (picomatch) against project-relative `relativePath`.
 
-- GOOD: `**/<dir>/**` (directory at any depth)
+- GOOD: `src/auth/**` (a path the user names from the project root — use it
+  as-is, no `**/` prefix)
+- GOOD: `**/<dir>/**` (a directory NAME whose depth is unknown)
 - GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from
   results)
 - GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
 - GOOD: `!**/test/**` (picomatch negation — exclude a directory subtree)
 - GOOD: `!**/vendor/**` (exclude non-test dirs that have no typed sugar)
-- BAD: `{file1.rb,file2.rb}`, `services/**` (no `**/` → project root only)
+- BAD: `{file1.rb,file2.rb}`, `services/**` for a bare name (no `**/` → root
+  only; fine when the user named that root-relative path)
 - BAD: `/full/abs/path/**` (absolute path — never matches; strip project root)
 
 **When to prefer negation over typed sugar.** Use `testFile: "exclude"` for test

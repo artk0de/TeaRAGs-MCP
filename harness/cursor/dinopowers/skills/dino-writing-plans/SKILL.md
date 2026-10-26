@@ -8,7 +8,7 @@ description:
   Task to the plan", "распиши задачи по файлам", "распиши план изменения
   <files>", "plan the change to <files>", "plan the refactor". A plan request
   beats explore PRE-GEN, also when it adds "impact analysis" / "before changing"
-  (any [subagent: …] label), and data-driven-generation (a Task that creates a
+  (any [subagent:…] label), and data-driven-generation (a Task that creates a
   class stays a plan Task). NOT for plans with no named files or code area to
   enrich. Wraps /writing-plans with per-file tea-rags signal enrichment.'
 ---

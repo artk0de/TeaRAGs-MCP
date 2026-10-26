@@ -1,9 +1,12 @@
 # USAGE Pattern
 
 **Codegraph off** (stated, or registry says off — SKILL.md "Codegraph
-availability") → `find_symbol` + `hybrid_search` name-match (no edge truth — say
-so); path A→B = manual chain, "no static path tool". Never call/plan
-`get_callers` / `get_callees` / `trace_path`.
+availability") → `find_symbol` + iterative `hybrid_search` name-match (no edge
+truth — say so). Callers, copied, ≥ 2 calls:
+`hybrid_search(query="<X>", metaOnly=true)` → per caller hit
+`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels
+(`trace-pattern.md`). One call = fail. Path A→B = manual chain, "no static path
+tool". Never call/plan `get_callers` / `get_callees` / `trace_path`.
 
 Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
 call edges), not content matching — no false hits on comments, strings,

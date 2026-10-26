@@ -6,9 +6,14 @@ For EACH case state the NEXT actions you would take (max 3, in order): tool name
   anything. If you would ask the user something, write
   `AskUserQuestion: <text>`.
 
-Shared definitions — a case has this marker / drift only when it names
-`MARKER-COLD` / `DRIFT-FORCE`; a case naming neither has only the state it
-states itself:
+A case has only the state it states itself — no shared marker or drift.
+
+`/work/acme` is the registered alias `acme`'s OWN checkout (main session cwd)
+unless a case says otherwise. Codegraph is on. Embedding is available.
+
+---
+
+Definitions for cases that name them (each evals.json prompt carries its own copy):
 
 ```
 MARKER-COLD = "workingTree":{"tree":"/work/acme","indexedCommit":"cbb76f5","treeCommit":"d569ae8",
@@ -18,11 +23,6 @@ DRIFT-FORCE = "driftWarning":"Language versions:\n  *.chunking: 4 → 5\n  *.wal
   fix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\n
   Run: tea-rags index-codebase --project acme --force"
 ```
-
-`/work/acme` is the registered alias `acme`'s OWN checkout (main session cwd)
-unless a case says otherwise. Codegraph is on. Embedding is available.
-
----
 
 E1 [main session, inside dinopowers:brainstorming enrichment step, Ruby/Rails]
 Your three semantic_search calls (hotspots/ownership/techDebt, metaOnly) and one
