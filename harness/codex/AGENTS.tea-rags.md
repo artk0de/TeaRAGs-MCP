@@ -42,8 +42,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - who calls X / impact → `find_symbol` → `get_callers`/`get_callees`
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review, a diff's names →
-  `review_changes(changes:{base}, sections:[the asked ones])`; one name →
-  `get_naming_lexicon`
+  `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
+  uncommitted, `{base}` = branch; one name → `get_naming_lexicon`
 - project's embedding / Qdrant / env → `list_projects(project:)`
 
 Never Grep/`rg`/`rg --files`, Glob or `cat`/`sed` to locate or read code —
@@ -66,6 +66,9 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - Answer has `truncated` → next call = `truncated.next` as given, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
+- `empty.reason: unknownPath` →
+  `find_symbol(relativePath: <dir its suggestions share>)`, never one suggested
+  file.
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
   No `treeState` = current; `treeState` row = pre-edit copy (say why, e.g.
   `denseUnavailable`): dependents' fanIn/churn valid, not proof of the edit →

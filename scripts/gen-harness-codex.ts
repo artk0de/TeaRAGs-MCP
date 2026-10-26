@@ -323,10 +323,10 @@ PY
 
 /**
  * Cap on one hook's `additionalContext`, in chars. Codex keeps ~2.5k tokens of a hook's output and
- * drops the middle past that; at ~3.9 chars/token that is ~9.8k chars, so 8,950 leaves room for
+ * drops the middle past that; at ~3.9 chars/token that is ~9.8k chars, so 9,100 leaves room for
  * token-dense digest tables.
  */
-export const CODEX_HOOK_CONTEXT_BUDGET = 8_950;
+export const CODEX_HOOK_CONTEXT_BUDGET = 9_100;
 
 /**
  * Fits the prime digest into what core leaves of {@link CODEX_HOOK_CONTEXT_BUDGET}: sections in
