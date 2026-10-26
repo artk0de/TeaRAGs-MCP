@@ -25,6 +25,8 @@ export type {
 export { isEnrichmentRecompute, rechunkSelectorOf } from "./ingest.js";
 export {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
+  ARCHITECTURE_REPORT_DETECTORS,
+  ARCHITECTURE_REPORT_EVIDENCE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
 } from "./architecture.js";

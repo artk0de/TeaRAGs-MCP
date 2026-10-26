@@ -43,7 +43,7 @@ import type {
   FindSymbolRequest,
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
-  GetArchitectureReportResponse,
+  GetArchitectureReportToolResponse,
   GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
   GetCalleesRequest,
@@ -157,7 +157,7 @@ export interface App {
   getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
   /** Architecture diagnostics (bd tea-rags-mcp-94hd9) — Stable Dependencies violations, root causes, exclusions. */
-  getArchitectureReport: (request: GetArchitectureReportRequest) => Promise<GetArchitectureReportResponse>;
+  getArchitectureReport: (request: GetArchitectureReportRequest) => Promise<GetArchitectureReportToolResponse>;
   /** `get_architecture_report` planned-edges mode (bd tea-rags-mcp-xb669.2) — write-time dependency-norm verdicts. */
   judgePlannedArchitectureEdges: (
     request: GetArchitectureReportRequest,

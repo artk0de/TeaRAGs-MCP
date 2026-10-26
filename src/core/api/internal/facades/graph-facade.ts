@@ -48,7 +48,7 @@ import { resolvePhysicalCollection, splitMethodSymbol } from "../../../primitive
 import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
-  GetArchitectureReportResponse,
+  GetArchitectureReportToolResponse,
   GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
   GitFileMaintenanceSignals,
@@ -82,6 +82,7 @@ import {
   ArchitectureReportSnapshotCache,
   architectureReportSnapshotKey,
 } from "../ops/architecture-report-snapshot-cache.js";
+import { architectureReportViewOf, presentArchitectureReport } from "../ops/architecture-report/index.js";
 import {
   ArchitectureRestructureOps,
   type ArchitectureRestructureLookups,
@@ -561,7 +562,7 @@ export class GraphFacade {
     );
   }
 
-  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
+  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportToolResponse> {
     const { readImportSpecifiers, readFileCommitCounts, readFileMaintenanceSignals } = this.deps;
     const addressedCollection = () => resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName;
     const importSpecifiers = readImportSpecifiers
@@ -572,7 +573,7 @@ export class GraphFacade {
       ? async () => readFileMaintenanceSignals(addressedCollection())
       : undefined;
     const { indexedFileImports, declaredTestDependencies, treeFileText } = addressedTestSupportLookups(this.deps, req);
-    return this.inRequestWindow(async () => {
+    const report = await this.inRequestWindow(async () => {
       // One tree measurement serves the snapshot key and the read (bd tea-rags-mcp-00309).
       const measured = await this.measureWorkingTree(req);
       const marker = measured.view?.marker;
@@ -602,6 +603,9 @@ export class GraphFacade {
       const reportId = this.reportSnapshots.hold(snapshotKey, judgement);
       return { reportId, ...this.architectureReport.shapeResponse(judgement, req), ...treeField };
     });
+    // Tool view only (bd tea-rags-mcp-9ah49): every other reader keeps the flat report;
+    // the held reportId (bd tea-rags-mcp-00309) rides into the view so `next` pages the same judgement.
+    return presentArchitectureReport(report, architectureReportViewOf(req, report.reportId), report.workingTree);
   }
 
   /**

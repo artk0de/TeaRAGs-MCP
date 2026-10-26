@@ -91,7 +91,7 @@ import {
 import type {
   GetArchitecturePlannedEdgesResponse,
   GetArchitectureReportRequest,
-  GetArchitectureReportResponse,
+  GetArchitectureReportToolResponse,
   GetArchitectureRestructurePlanResponse,
   GetArchitectureRestructureResponse,
 } from "../public/dto/architecture.js";
@@ -101,6 +101,7 @@ import type { ReviewChangesRequest, ReviewChangesResult } from "../public/dto/re
 import { buildCompositePresets } from "./composite-presets/index.js";
 import { ArchitecturePlannedEdgeOps } from "./ops/architecture-planned-edge-ops.js";
 import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
+import { architectureReportViewOf, presentArchitectureReport } from "./ops/architecture-report/index.js";
 import { ArchitectureRestructureOps } from "./ops/architecture-restructure-ops.js";
 import { ArchitectureRestructurePlanOps } from "./ops/architecture-restructure-plan-ops.js";
 import { CochangeOps } from "./ops/cochange-ops.js";
@@ -512,10 +513,12 @@ export function composeAppOps(deps: AppOpsDeps): AppOpsComposition {
  * The architecture report for a collection with no codegraph database:
  * nothing read, `edgeCount: 0` telling it apart from a judged clean graph —
  * `ArchitectureReportOps.empty`, surfaced by the composition root so the
- * App's codegraph-off fallback needs no deep ops import.
+ * App's codegraph-off fallback needs no deep ops import. In the tool view
+ * (bd tea-rags-mcp-9ah49), like the facade's answer.
  */
-export function emptyArchitectureReport(request: GetArchitectureReportRequest): GetArchitectureReportResponse {
-  return ArchitectureReportOps.empty(request);
+export function emptyArchitectureReport(request: GetArchitectureReportRequest): GetArchitectureReportToolResponse {
+  const report = ArchitectureReportOps.empty(request);
+  return presentArchitectureReport(report, architectureReportViewOf(request), report.workingTree);
 }
 
 /**

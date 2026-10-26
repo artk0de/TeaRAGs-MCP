@@ -120,8 +120,7 @@ describe("GraphFacade#getArchitectureReport snapshot cache", () => {
     const { facade } = makeFacade();
 
     const whole = await facade.getArchitectureReport({ collection: "code_x" });
-    const sdp = (r: { violations: { detector: string }[] }) =>
-      r.violations.filter((v) => v.detector === "stableDependencies");
+    const sdp = (r: { violations: Record<string, unknown[] | undefined> }) => r.violations.stableDependencies ?? [];
     expect(sdp(whole)).toHaveLength(2);
 
     const page0 = await facade.getArchitectureReport({ collection: "code_x", limit: 1, reportId: whole.reportId });
@@ -149,8 +148,7 @@ describe("GraphFacade#getArchitectureReport snapshot cache", () => {
     const whole = await facade.getArchitectureReport({ collection: "code_x" });
     const page1 = await facade.getArchitectureReport({ collection: "code_x", limit: 1, offset: 1 });
 
-    const sdp = (r: { violations: { detector: string }[] }) =>
-      r.violations.filter((v) => v.detector === "stableDependencies");
+    const sdp = (r: { violations: Record<string, unknown[] | undefined> }) => r.violations.stableDependencies ?? [];
     expect(sdp(page1)).toEqual(sdp(whole).slice(1, 2));
   });
 
@@ -162,7 +160,7 @@ describe("GraphFacade#getArchitectureReport snapshot cache", () => {
     const paged = await facade.getArchitectureReport({ collection: "code_x", offset: 1, reportId: first.reportId });
 
     expect(paged.empty).toEqual({ reason: "reportStale", message: expect.stringContaining("without reportId") });
-    expect(paged.violations).toEqual([]);
+    expect(paged.violations).toEqual({});
     expect(paged.reportId).toBeUndefined();
     expect(graphDb.readFileDependencyGraph).toHaveBeenCalledTimes(1);
   });

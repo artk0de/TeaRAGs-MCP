@@ -23,14 +23,78 @@
 import type { ArchitectureFindingKeyFamily } from "../../../contracts/types/architecture-finding-key.js";
 import type {
   ArchitectureLayerMapOptions,
+  ArchitectureReportSummary,
   ArchitectureRestructureCompiledOp,
   ArchitectureRestructureOp,
+  ArchitectureViolation,
   ArchitectureViolationImpactTier,
+  GetArchitectureReportResponse,
+  SilentCouplingReportSummary,
 } from "../../../contracts/types/architecture-report.js";
+import type { SuggestedToolCall } from "../../../contracts/types/suggested-tool-call.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import type { ArchitectureChangeSubject } from "./review.js";
 
 export type * from "../../../contracts/types/architecture-report.js";
+
+/** A violation family's name — the key the tool view groups violations by. */
+export type ArchitectureReportDetector = ArchitectureViolation["detector"];
+
+/**
+ * Every detector, for the `detectors` selector's wire enum. The two
+ * assignments below fail compilation when this list and the violation union
+ * drift apart in either direction.
+ */
+export const ARCHITECTURE_REPORT_DETECTORS = [
+  "stableDependencies",
+  "leakingAbstraction",
+  "silentCoupling",
+  "shotgunSurgery",
+  "mainSequence",
+  "hubLikeDependency",
+  "layering",
+  "norms",
+] as const satisfies readonly ArchitectureReportDetector[];
+const _everyDetectorListed: readonly (typeof ARCHITECTURE_REPORT_DETECTORS)[number][] =
+  [] as ArchitectureReportDetector[];
+
+/** Evidence entries per array the tool view keeps by default. */
+export const ARCHITECTURE_REPORT_EVIDENCE_LIMIT = 3;
+
+/** A cap on evidence arrays, or `"all"` for none. */
+export type ArchitectureReportEvidenceLimit = number | "all";
+
+/** `summary.silentCoupling` as the tool returns it: the explained pairs' count, the list only on opt-in. */
+export type PresentedSilentCouplingReportSummary = Omit<SilentCouplingReportSummary, "explainedPairs"> & {
+  /** Pairs the list would hold — capped at `limit`; the uncapped total is `excluded.explainedBySharedNeighbour`. */
+  explainedPairCount: number;
+  explainedPairs?: SilentCouplingReportSummary["explainedPairs"];
+};
+
+/**
+ * The `get_architecture_report` answer at the TOOL boundary (bd
+ * tea-rags-mcp-9ah49). The internal {@link GetArchitectureReportResponse} —
+ * read by review_changes, restructure and the violation delta — keeps its flat
+ * `violations`; only the tool view groups and trims.
+ */
+export interface GetArchitectureReportToolResponse extends Omit<
+  GetArchitectureReportResponse,
+  "violations" | "summary"
+> {
+  summary: Omit<ArchitectureReportSummary, "silentCoupling"> & { silentCoupling: PresentedSilentCouplingReportSummary };
+  /**
+   * Per detector, in the report's detector order, each group's rows without
+   * the `detector` key; evidence arrays capped at `evidenceLimit`, with a
+   * sibling `<key>Count` holding the full length when the row had none.
+   */
+  violations: Partial<Record<ArchitectureReportDetector, ArchitectureViolation[]>>;
+  /** A group's `evidence.drillDown.hint` when every row carried the same one — lifted out of the rows. */
+  violationDrillDownHints?: Partial<Record<ArchitectureReportDetector, string>>;
+  /** Present when any evidence array was cut. */
+  evidenceTrimmed?: { limit: number };
+  /** Per group with cut evidence: the same call narrowed to that detector, `evidenceLimit: "all"`. */
+  next?: SuggestedToolCall[];
+}
 
 export interface GetArchitectureReportRequest {
   /** Project alias from the collection registry — RECOMMENDED. */
@@ -106,6 +170,16 @@ export interface GetArchitectureReportRequest {
    * already-changed file goes unnoticed until the report expires.
    */
   reportId?: string;
+  /**
+   * Tool-view cap on every evidence array of a violation (bd
+   * tea-rags-mcp-9ah49): default {@link ARCHITECTURE_REPORT_EVIDENCE_LIMIT},
+   * `"all"` = untrimmed. A trimmed group answers a `next` call restoring it.
+   */
+  evidenceLimit?: ArchitectureReportEvidenceLimit;
+  /** Tool-view selector: only these detectors' violation groups come back. */
+  detectors?: ArchitectureReportDetector[];
+  /** Tool-view opt-in: `summary.silentCoupling.explainedPairs` as a list; default only its count. */
+  includeExplainedPairs?: boolean;
   /**
    * Planned-edges MODE (bd tea-rags-mcp-xb669.2): judge each edge a writer is
    * about to add against the indexed graph's dependency norms, BEFORE it is

@@ -19,6 +19,8 @@ import { z } from "zod";
 
 import {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
+  ARCHITECTURE_REPORT_DETECTORS,
+  ARCHITECTURE_REPORT_EVIDENCE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
@@ -207,6 +209,21 @@ const GetArchitectureReportInputShape = {
     .describe(
       "Previous answer's reportId: page it without recompute. MCP server memory only (CLI call recomputes); re-editing changed files undetected until TTL.",
     ),
+  evidenceLimit: z
+    .union([z.number().int().positive().max(500), z.literal("all")])
+    .optional()
+    .describe(
+      `Max entries per violation evidence array (default ${ARCHITECTURE_REPORT_EVIDENCE_LIMIT}); "all" = untrimmed. Trimmed group -> next call restores it.`,
+    ),
+  detectors: z
+    .array(z.enum(ARCHITECTURE_REPORT_DETECTORS))
+    .min(1)
+    .optional()
+    .describe("Return only these detectors' violation groups. Summary keeps all totals."),
+  includeExplainedPairs: z
+    .boolean()
+    .optional()
+    .describe("List summary.silentCoupling.explainedPairs; default only explainedPairCount."),
   plannedEdges: z
     .array(z.object({ source: z.string().min(1), target: z.string().min(1), reference: z.string().optional() }))
     .min(1)
@@ -486,6 +503,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
       "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
+      "violations = one table per detector (group-wide drillDown hint in violationDrillDownHints); evidence arrays cut " +
+      "to evidenceLimit, full length in <key>Count, evidenceTrimmed + next per cut group. " +
       "Impact tier (stableDependencies, leakingAbstraction, norms, layering backEdge/knot/abstractionBypass; others untiered, " +
       "summary.impactTiers.notApplicable): structural = no carrying file edge co-changes beyond chance; active = >=1 carrying " +
       "edge pair admitted by silentCoupling's co-change gate (full family; test/generated/docs/version-manifest pairs never count); " +

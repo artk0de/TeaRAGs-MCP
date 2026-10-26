@@ -37,6 +37,8 @@ export type { App } from "./app.js";
 // `IndexingOps#run` and the CLI index worker branch on.
 export {
   ARCHITECTURE_PLANNED_EDGE_LIMIT,
+  ARCHITECTURE_REPORT_DETECTORS,
+  ARCHITECTURE_REPORT_EVIDENCE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
   isEnrichmentRecompute,
