@@ -214,8 +214,8 @@ filter-building (`modifiedBefore: <today − 365d>` — file-level, query-time; 
 Every reranked result (metaOnly too) carries
 `rankingOverlay.{file,chunk}.<field>` — `{value,label}` for labelled signals
 (table columns `<field>.value` / `<field>.label` when 2+ results). Labels live
-only there; payload = raw. Read `references/runtime-introspection.md` for the
-structure, `references/signal-interpretation.md` for pair diagnostics
+only there; payload = raw. Read `../../references/runtime-introspection.md` for
+the structure, `../../references/signal-interpretation.md` for pair diagnostics
 disambiguating single-signal ambiguity (god module vs bug attractor, healthy
 owner vs toxic silo, legacy minefield vs proven stable).
 
