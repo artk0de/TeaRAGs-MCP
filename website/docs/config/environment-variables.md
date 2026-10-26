@@ -27,6 +27,7 @@ overrides the registry for every setting — together with the `--force` or
 | `SERVER_HTTP_PORT`       | Port for HTTP transport                 | `3000`         |
 | `SERVER_HTTP_TIMEOUT_MS` | Request timeout for HTTP transport (ms) | `300000`       |
 | `SERVER_PROMPTS_FILE`    | Path to prompts configuration JSON      | `prompts.json` |
+| `MCP_SERVER_INSTRUCTIONS` | MCP `instructions` sent on connect: `core` (always-on rules core) or `pointer` (one line pointing at `tea-rags://guide/core`; use when the Claude Code plugin hook already injects the full core) | `core` |
 
 ## Qdrant
 

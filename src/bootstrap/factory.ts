@@ -134,7 +134,12 @@ import type { WorkingTree } from "../core/contracts/types/working-tree.js";
 import { setDebug } from "../core/primitives/diagnostics/index.js";
 import { installFileClassificationSettings } from "../core/primitives/paths/index.js";
 import { loadPromptsConfig, registerAllPrompts, type PromptsConfig } from "../mcp/prompts/index.js";
-import { AGENT_CONTEXT_CORE, registerAllResources, serverInstructions } from "../mcp/resources/index.js";
+import {
+  AGENT_CONTEXT_CORE,
+  registerAllResources,
+  serverInstructions,
+  type ServerInstructionsMode,
+} from "../mcp/resources/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { hydrateCodegraphSymbolTable } from "./codegraph-symbol-table-hydration.js";
 import {
@@ -2469,6 +2474,11 @@ export interface ConfiguredServerOptions {
    * (bd tea-rags-mcp-8vy3o).
    */
   autoUpdate?: boolean;
+  /**
+   * What the `initialize` result carries as `instructions` (`MCP_SERVER_INSTRUCTIONS`).
+   * Default `core`; `pointer` sends only the pointer line to `tea-rags://guide/core`.
+   */
+  instructionsMode?: ServerInstructionsMode;
 }
 
 export function createConfiguredServer(
@@ -2480,7 +2490,7 @@ export function createConfiguredServer(
   // an oversized core is cut to a head + pointer to tea-rags://guide/core.
   const server = new McpServer(
     { name: pkg.name, version: pkg.version },
-    { instructions: serverInstructions(AGENT_CONTEXT_CORE) },
+    { instructions: serverInstructions(AGENT_CONTEXT_CORE, undefined, options.instructionsMode) },
   );
 
   registerAllTools(server, {

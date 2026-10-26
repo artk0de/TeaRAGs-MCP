@@ -277,6 +277,7 @@ function makeConfig(): AppConfig {
     httpPort: 3000,
     requestTimeoutMs: 300000,
     promptsConfigFile: "/nonexistent/prompts.json",
+    serverInstructions: "core",
     ingestCode: {
       chunkSize: 2500,
       chunkOverlap: 300,

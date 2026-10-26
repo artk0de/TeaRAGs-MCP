@@ -83,7 +83,7 @@ export async function runMcpServer(options: McpServerRunOptions = {}): Promise<v
   if (options.http || config.transportMode === "http") {
     await startHttpServer({ config, ctx, promptsConfig });
   } else {
-    const server = createConfiguredServer(ctx, promptsConfig);
+    const server = createConfiguredServer(ctx, promptsConfig, { instructionsMode: config.serverInstructions });
     // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
     // resources and then exits; the listeners above only release.
     await startStdioServer(server, { cleanup: ctx.cleanup });
