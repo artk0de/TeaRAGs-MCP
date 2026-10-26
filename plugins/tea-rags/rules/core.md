@@ -52,14 +52,17 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 - Lag (`changedFiles`, `pendingFiles`, `floors: []`, drift) → stay in tea-rags.
   No `treeState` = current; `treeState` row = pre-edit copy (say why, e.g.
   `denseUnavailable`): dependents' fanIn/churn valid, not proof of the edit →
-  `find_symbol`; still in its `pendingFiles` → `find_symbol` again.
+  `find_symbol`; `pendingFiles` > 0 (a count; your file may be one) → plan both
+  lines: `find_symbol(<same params>)` and
+  `still in pendingFiles → find_symbol(<same params>) again`.
 - Freshness: (1) subagent → keep reading; no `index_codebase`/
   `AskUserQuestion`; drift/`--force`/remedy → parent report. Main: (2) cwd in
   `.claude/worktrees/` or ≠ alias's path → print
   `linked worktree (<test>) — no reindex`; own checkout behind
   (`changedFiles`>0, stale, unindexed edits, said so) → incremental
   `index_codebase(project=)` first, no consent. (3) Drift `Run:` `--force*` →
-  subagent: (1); main: print ONE line
+  subagent: (1); main: (2)'s incremental still runs first when the checkout is
+  behind, plus ONE line
   `AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`,
   never awaited, never "won't proceed"; next = the task's read call.
 - Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`. Edges at

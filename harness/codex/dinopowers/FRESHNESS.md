@@ -14,8 +14,8 @@ Addressing + lag rules: core rules (always on). Wrappers follow, never restate.
   answer prints the report line
   `to parent: index behind (changedFiles <N>) — run <Run: line>` (no drift → no
   `run` part); linked worktree → never reindex (overlay serves tree; `treeState`
-  row = pre-edit copy → `find_symbol`; file in `pendingFiles` → plan both lines:
-  `find_symbol(<same params>)` and
+  row = pre-edit copy → `find_symbol`; `pendingFiles` > 0 (a count; your file
+  may be one) → plan both lines: `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`); main session in
   the alias's own checkout → incremental `index_codebase(project=)` NOW, no
   consent. Drift `Run:` with `--force` adds ONE line ask the user: run <Run:

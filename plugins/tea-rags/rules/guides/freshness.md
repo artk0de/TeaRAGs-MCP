@@ -139,9 +139,10 @@ and tree, never "index unusable". Thousands of changed files included.
   `current — <floor> floor covers it`.
 - Row without `treeState` from an unchanged file → row current. Use it.
 - Row with `treeState` / file in `pendingFiles` → `find_symbol` (reads tree once
-  warm); a `pendingFiles` file → plan both lines: `find_symbol(<same params>)`
-  and `still in pendingFiles → find_symbol(<same params>) again`.
-  `indexOnlyFiles` only → `Read`.
+  warm); `pendingFiles` > 0 (a count; your file may be one) → plan both lines:
+  `find_symbol(<same params>)` and
+  `still in pendingFiles → find_symbol(<same params>) again`. `indexOnlyFiles`
+  only → `Read`.
 - `floors: []` on first calls = overlay warming, not failure. Subagent or linked
   worktree → no reindex, keep calling, later calls read more; main session in
   the own checkout → incremental `index_codebase` now (table above).
