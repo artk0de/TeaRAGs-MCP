@@ -332,6 +332,25 @@ export interface RegistryFileV1 {
 export type ProjectInfo = CollectionEntry;
 
 /**
+ * The fields a default `list_projects` row carries, in wire order — what an
+ * agent needs to find an alias and its path. The full record (env, language
+ * versions, auto-update, starvation) comes only from `list_projects(project)`.
+ * One constant: the projection and the pin test both read it.
+ */
+export const PROJECT_LISTING_COMPACT_FIELDS = [
+  "name",
+  "path",
+  "collectionName",
+  "chunksCount",
+  "indexedAt",
+  "codegraphEnabled",
+  "worktreeOf",
+] as const satisfies readonly (keyof ProjectInfo)[];
+
+/** One default `list_projects` row. */
+export type ProjectListingRow = Partial<Pick<ProjectInfo, (typeof PROJECT_LISTING_COMPACT_FIELDS)[number]>>;
+
+/**
  * The registry surface a module outside the owning domain may depend on.
  *
  * The concrete `CollectionRegistry` lives in `domains/maintenance/registry/`;

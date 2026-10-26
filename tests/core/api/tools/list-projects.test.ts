@@ -14,14 +14,14 @@ type CapturedTool = {
   handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
 };
 
-function makeHarness(listProjectsImpl?: App["listProjects"]) {
+function makeHarness(listProjectsImpl?: App["getProjectListing"]) {
   const captured: CapturedTool[] = [];
   const register = vi.fn((_server, name, config, handler) => {
     captured.push({ name, config, handler });
   });
 
   const app = {
-    listProjects:
+    getProjectListing:
       listProjectsImpl ??
       vi.fn().mockResolvedValue({
         projects: [
@@ -52,7 +52,7 @@ describe("registerProjectTools — list_projects", () => {
     expect(captured.map((t) => t.name)).toContain("list_projects");
   });
 
-  it("tool has title, description, readOnly annotation, and empty input schema", () => {
+  it("tool has title, description, and readOnly annotation", () => {
     const { captured } = makeHarness();
     const tool = captured.find((t) => t.name === "list_projects");
     expect(tool).toBeDefined();
@@ -62,16 +62,29 @@ describe("registerProjectTools — list_projects", () => {
     expect(tool!.config.annotations).toMatchObject({ readOnlyHint: true });
   });
 
-  it("handler delegates to app.listProjects and returns JSON-formatted result", async () => {
+  it("handler delegates to app.getProjectListing and returns JSON-formatted result", async () => {
     const { captured, app } = makeHarness();
     const tool = captured.find((t) => t.name === "list_projects")!;
     const result = (await tool.handler({}, {})) as { content: { type: string; text: string }[] };
-    expect(app.listProjects).toHaveBeenCalledTimes(1);
+    expect(app.getProjectListing).toHaveBeenCalledWith({});
     expect(result.content).toHaveLength(1);
     expect(result.content[0].type).toBe("text");
     const parsed = JSON.parse(result.content[0].text) as { projects: { name: string }[] };
     expect(parsed.projects).toHaveLength(1);
     expect(parsed.projects[0].name).toBe("alpha");
+  });
+
+  it("threads the project param to the app", async () => {
+    const { captured, app } = makeHarness();
+    const tool = captured.find((t) => t.name === "list_projects")!;
+    await tool.handler({ project: "alpha" }, {});
+    expect(app.getProjectListing).toHaveBeenCalledWith({ project: "alpha" });
+  });
+
+  it("declares an optional project input", () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "list_projects")!;
+    expect(Object.keys(tool.config.inputSchema ?? {})).toEqual(["project"]);
   });
 
   it("returns empty projects list when registry is empty", async () => {

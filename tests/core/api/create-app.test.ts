@@ -108,6 +108,7 @@ function createMockProjectRegistryOps(): ProjectRegistryOps {
   return {
     register: vi.fn().mockResolvedValue({ collectionName: "code_test", alreadyIndexed: false }),
     list: vi.fn().mockResolvedValue({ projects: [] }),
+    listing: vi.fn().mockResolvedValue({ projects: [] }),
     unregister: vi.fn().mockResolvedValue({ removed: false }),
   } as unknown as ProjectRegistryOps;
 }
@@ -243,6 +244,12 @@ describe("createApp", () => {
       const out = await app.listProjects();
       expect(deps.projectRegistryOps.list).toHaveBeenCalled();
       expect(out.projects).toEqual([]);
+    });
+
+    it("delegates getProjectListing to ProjectRegistryOps#listing", async () => {
+      const app = createApp(deps);
+      await app.getProjectListing({ project: "alpha" });
+      expect(deps.projectRegistryOps.listing).toHaveBeenCalledWith({ project: "alpha" });
     });
 
     it("delegates unregisterProject to ProjectRegistryOps", async () => {

@@ -6,6 +6,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
 import type { App } from "../public/index.js";
 import { formatMcpResponse } from "./format.js";
@@ -21,12 +22,14 @@ export function registerProjectTools(server: McpServer, deps: { app: App; regist
     {
       title: "List Projects",
       description:
-        "List registered projects + collection metadata from $TEA_RAGS_DATA_DIR/registry.json. Per project returns: collection name, indexed path, embedding model + dimensions, Qdrant URL, indexedAt timestamp, tea-rags version, chunk count.",
-      inputSchema: {},
+        "Registered projects from registry.json. Default: compact rows — name, path, collectionName, chunksCount, indexedAt, codegraphEnabled, worktreeOf. With project: that one full record (embedding, Qdrant, env, language versions); unknown alias → empty.suggestions.",
+      inputSchema: {
+        project: z.string().optional().describe("Alias → full record of that project only. Omit → compact list."),
+      },
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const result = await app.listProjects();
+    async ({ project }) => {
+      const result = await app.getProjectListing(project === undefined ? {} : { project });
       return formatMcpResponse(result);
     },
   );

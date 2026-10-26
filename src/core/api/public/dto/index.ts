@@ -64,6 +64,8 @@ export type { WorkingTreeFloor, WorkingTreeIndexTarget, WorkingTreeMarker, Worki
 
 export type {
   // Registry
+  ListProjectsRequest,
+  ListProjectsResponse,
   ProjectRegistryAddress,
   StaleProjectEntry,
   StaleProjectPruneReport,

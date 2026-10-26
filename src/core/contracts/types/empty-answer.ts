@@ -27,6 +27,8 @@ export type EmptyAnswerReason =
   | "notBuilt"
   /** The file has no commit history in the co-change window. */
   | "noHistory"
+  /** `list_projects` `project` names no registered alias; suggestions = nearest aliases. */
+  | "unknownProject"
   /** Nothing matched and no narrower reason applies. */
   | "noMatch"
   /**

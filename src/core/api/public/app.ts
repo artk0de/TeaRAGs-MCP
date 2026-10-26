@@ -57,6 +57,8 @@ import type {
   IndexOptions,
   IndexStats,
   IndexStatus,
+  ListProjectsRequest,
+  ListProjectsResponse,
   NamingLexiconRequest,
   NamingLexiconResult,
   PathTraceResult,
@@ -150,6 +152,8 @@ export interface App {
     name: string;
   }) => Promise<{ collectionName: string; alreadyIndexed: boolean }>;
   listProjects: () => Promise<{ projects: ProjectInfo[] }>;
+  /** The MCP `list_projects` answer: compact rows, or one project's full record (→ ProjectRegistryOps#listing). */
+  getProjectListing: (request: ListProjectsRequest) => Promise<ListProjectsResponse>;
   unregisterProject: (input: ProjectRegistryAddress) => Promise<{ removed: boolean }>;
 
   // -- Codegraph (→ internal/facades/graph-facade.ts) --
