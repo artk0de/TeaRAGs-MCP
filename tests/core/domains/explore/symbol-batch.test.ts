@@ -6,12 +6,20 @@
  * as `resolvedAs`, an ambiguity cap, and a miss list.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import type { RelPath } from "../../../../src/core/contracts/types/codegraph.js";
 import type { ScrollChunk } from "../../../../src/core/domains/explore/chunk-grouping/types.js";
 import { SymbolSearchStrategy } from "../../../../src/core/domains/explore/strategies/symbol.js";
 import { SymbolBatchDrill } from "../../../../src/core/domains/explore/symbol-batch.js";
 import type { WorkingTreeView } from "../../../../src/core/domains/explore/working-tree/index.js";
+import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { codeRow, fakeWorkingTreeView } from "./__fixtures__/working-tree-view.js";
 
 describe("SymbolBatchDrill", () => {
@@ -180,5 +188,67 @@ describe("SymbolBatchDrill", () => {
 
       expect(answer.rows[0].result.treeState).toBe("modified");
     });
+  });
+});
+
+// bd tea-rags-mcp-ll0s8 — through the codegraph hop: the Qdrant scroll misses
+// both FQNs, so each address resolves via the real DuckDB symbol store. The
+// nonexistent one must land in `missing`, never as another class's `#update`.
+describe("SymbolBatchDrill — codegraph hop with a nonexistent FQN", () => {
+  let dir: string;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("lists a nonexistent FQN as missing instead of answering with a same-tail member of another class", async () => {
+    dir = mkdtempSync(join(tmpdir(), "batch-ll0s8-"));
+    const graph = new DuckDbGraphClient({ path: join(dir, "graph.duckdb") });
+    await graph.init();
+    await runMigrations(graph, DATABASE_MIGRATIONS);
+    const client = "app/controllers/client/signature_requests_controller.rb" as RelPath;
+    const sites = "app/controllers/admin/sites_controller.rb" as RelPath;
+    const clientUpdate = "Api::Client::SignatureRequestsController#update";
+    const sitesUpdate = "Api::Admin::SitesController#update";
+    for (const [rel, symbolId, chunkId] of [
+      [client, clientUpdate, "chunk_client_update"],
+      [sites, sitesUpdate, "chunk_sites_update"],
+    ] as const) {
+      await graph.upsertSymbols(rel, [
+        { symbolId, fqName: symbolId, shortName: "update", relPath: rel, scope: symbolId.split(/#|::/).slice(0, -1) },
+      ]);
+      await graph.updateSymbolChunkIds(rel, new Map([[symbolId, chunkId]]));
+    }
+
+    const chunks: Record<string, { symbolId: string; relativePath: string }> = {
+      chunk_client_update: { symbolId: clientUpdate, relativePath: client },
+      chunk_sites_update: { symbolId: sitesUpdate, relativePath: sites },
+    };
+    const qdrant = {
+      scrollFiltered: vi.fn().mockResolvedValue([]),
+      getPoint: vi.fn(async (_c: string, id: string) => ({
+        id,
+        payload: { ...chunks[id], chunkType: "function", content: `${id} body`, startLine: 1, endLine: 3 },
+      })),
+    } as any;
+    const resolver = { resolveSymbolChunk: async (_c: string, symbolId: string) => graph.findSymbolChunk(symbolId) };
+    const drill = new SymbolBatchDrill(
+      (symbol) =>
+        new SymbolSearchStrategy(
+          qdrant,
+          { rerank: (r: any[]) => r } as any,
+          [],
+          [],
+          { buildMergedFilter: () => undefined } as any,
+          { symbol },
+          resolver,
+        ),
+    );
+
+    const guestUpdate = "Api::Guest::SignatureRequestsController#update";
+    const answer = await drill.execute([clientUpdate, guestUpdate], { collectionName: "c", limit: 50 });
+    await graph.close();
+
+    expect(answer.rows.map((r) => [r.request, r.result.payload?.symbolId])).toEqual([[clientUpdate, clientUpdate]]);
+    expect(answer.missing.map((m) => m.request)).toEqual([guestUpdate]);
   });
 });

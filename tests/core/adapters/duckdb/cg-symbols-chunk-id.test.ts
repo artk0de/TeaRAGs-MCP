@@ -221,4 +221,54 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
 
     await client.close();
   });
+
+  // bd tea-rags-mcp-ll0s8 — the tail alone must not answer a qualified query
+  // from an unrelated owner: a nonexistent `Guest::...Controller#update` came
+  // back as `Admin::Firms::SitesController#update`, silently.
+  async function seedUnrelatedUpdate(client: DuckDbGraphClient): Promise<void> {
+    const sites = "app/controllers/admin/firms/sites_controller.rb" as RelPath;
+    await client.upsertSymbols(sites, [
+      {
+        symbolId: "Api::Admin::Firms::SitesController#update",
+        fqName: "Api::Admin::Firms::SitesController#update",
+        shortName: "update",
+        relPath: sites,
+        scope: ["Api", "Admin", "Firms", "SitesController"],
+      },
+    ]);
+    await client.updateSymbolChunkIds(
+      sites,
+      new Map([["Api::Admin::Firms::SitesController#update", "chunk_sites_update"]]),
+    );
+  }
+
+  it("returns null for an FQN whose owner does not exist, even when another class's member shares the tail", async () => {
+    const client = await seed();
+    await seedUnrelatedUpdate(client);
+
+    expect(await client.findSymbolChunk("Api::Guest::Documents::SignatureRequestsController#update")).toBeNull();
+
+    await client.close();
+  });
+
+  it("resolves a qualified query whose owner prefixes the stored owner at a segment boundary", async () => {
+    const client = await seed();
+    await seedUnrelatedUpdate(client);
+
+    expect(await client.findSymbolChunk("Api::Admin.update")).toEqual({
+      relPath: "app/controllers/admin/firms/sites_controller.rb",
+      chunkId: "chunk_sites_update",
+    });
+
+    await client.close();
+  });
+
+  it("does not resolve a qualified query whose owner is a prefix NOT at a segment boundary", async () => {
+    const client = await seed();
+
+    // `Acc` is a string prefix of `Account`, not a namespace segment of it.
+    expect(await client.findSymbolChunk("Acc.suspended")).toBeNull();
+
+    await client.close();
+  });
 });

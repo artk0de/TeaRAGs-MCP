@@ -292,19 +292,40 @@ export class DuckDbSymbolStore {
     // name segment so the symbol's already-joined chunk (and its edges) surface
     // via the symbol-API. Mirrors the bare-name last-segment match the Qdrant
     // SymbolSearchStrategy applies for `def` methods. See bd tea-rags-mcp-mtlhd.
+    //
+    // A qualified query keeps its owner: the candidate must start with that
+    // owner at a segment boundary (`Account.suspended` reaches
+    // `Account::Suspensions.suspended`, `Acc.suspended` does not). The tail
+    // alone would answer a nonexistent `Guest::FooController#update` with any
+    // other class's `#update`, silently. See bd tea-rags-mcp-ll0s8.
     const tail = lastNameSegment(symbolId);
     if (tail.length === 0) return null;
     const likeTail = escapeLikeLiteral(tail);
+    const owner = symbolId.slice(0, symbolId.length - tail.length).replace(/(?:[#.]|::)$/, "");
+    const tailMatch = `( symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\' )`;
+    const tailParams = [`%.${likeTail}`, `%#${likeTail}`, `%::${likeTail}`];
+    let candidateMatch: string;
+    let candidateParams: string[];
+    if (owner.length === 0) {
+      candidateMatch = `( symbol_id = ? OR ${tailMatch} )`;
+      candidateParams = [tail, ...tailParams];
+    } else {
+      const likeOwner = escapeLikeLiteral(owner);
+      candidateMatch = `( symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\'
+              OR symbol_id LIKE ? ESCAPE '\\' )
+           AND ${tailMatch}`;
+      candidateParams = [`${likeOwner}::%`, `${likeOwner}.%`, `${likeOwner}#%`, ...tailParams];
+    }
     const bySegment = await this.session.queryAll<{ rel_path: string; chunk_id: string | null }>(
       `SELECT rel_path, chunk_id FROM cg_symbols
          WHERE chunk_id IS NOT NULL
-           AND ( symbol_id = ?
-              OR symbol_id LIKE ? ESCAPE '\\'
-              OR symbol_id LIKE ? ESCAPE '\\'
-              OR symbol_id LIKE ? ESCAPE '\\' )
+           AND ${candidateMatch}
          ORDER BY symbol_id
          LIMIT 1`,
-      [tail, `%.${likeTail}`, `%#${likeTail}`, `%::${likeTail}`],
+      candidateParams,
     );
     if (bySegment.length === 0) return null;
     return { relPath: bySegment[0].rel_path, chunkId: bySegment[0].chunk_id as string };
