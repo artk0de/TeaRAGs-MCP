@@ -93,7 +93,9 @@ export function offsetContinuation(carry: readonly string[] = []): ResponseConti
     const carried = Object.fromEntries(
       carry.filter((key) => cut.answer[key] !== undefined).map((key) => [key, cut.answer[key]]),
     );
-    return { ...args, offset: offset + cut.perCollection, ...carried };
+    // The continuation covers the rest of the requested window, not a fresh `limit` rows.
+    const window = typeof args.limit === "number" ? { limit: Math.max(1, args.limit - cut.perCollection) } : {};
+    return { ...args, offset: offset + cut.perCollection, ...window, ...carried };
   };
 }
 
