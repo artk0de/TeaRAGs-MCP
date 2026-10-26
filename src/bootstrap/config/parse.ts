@@ -79,6 +79,7 @@ function buildEnvInputs(env: EnvReader) {
     httpPort: env("SERVER_HTTP_PORT", "HTTP_PORT"),
     requestTimeoutMs: env("SERVER_HTTP_TIMEOUT_MS", "HTTP_REQUEST_TIMEOUT_MS"),
     promptsConfigFile: env("SERVER_PROMPTS_FILE", "PROMPTS_CONFIG_FILE"),
+    serverInstructions: env("MCP_SERVER_INSTRUCTIONS"),
   };
 
   const embeddingTune = {

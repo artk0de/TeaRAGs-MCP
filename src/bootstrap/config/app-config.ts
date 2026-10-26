@@ -37,6 +37,8 @@ export interface AppConfig {
   httpPort: number;
   requestTimeoutMs: number;
   promptsConfigFile: string;
+  /** `MCP_SERVER_INSTRUCTIONS` — handed to `createConfiguredServer` as `instructionsMode`. */
+  serverInstructions: "core" | "pointer";
   ingestCode: IngestCodeConfig;
   trajectoryIngest: TrajectoryIngestConfig;
   vcs: VcsConfig;
@@ -87,6 +89,7 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
     httpPort: zodConfig.core.httpPort,
     requestTimeoutMs: zodConfig.core.requestTimeoutMs,
     promptsConfigFile: zodConfig.core.promptsConfigFile,
+    serverInstructions: zodConfig.core.serverInstructions,
     ingestCode: {
       chunkSize: zodConfig.ingest.chunkSize,
       chunkOverlap: zodConfig.ingest.chunkOverlap,

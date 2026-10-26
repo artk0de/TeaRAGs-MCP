@@ -17,4 +17,9 @@ export {
 } from "./registry.js";
 
 export { AGENT_CONTEXT_CORE } from "./generated/agent-context.js";
-export { CORE_RESOURCE_URI, INSTRUCTIONS_MAX_CHARS, serverInstructions } from "./instructions.js";
+export {
+  CORE_RESOURCE_URI,
+  INSTRUCTIONS_MAX_CHARS,
+  serverInstructions,
+  type ServerInstructionsMode,
+} from "./instructions.js";

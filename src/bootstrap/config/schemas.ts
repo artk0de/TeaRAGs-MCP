@@ -25,6 +25,13 @@ export const coreSchema = z.object({
   httpPort: intWithDefault(3000),
   requestTimeoutMs: intWithDefault(300000),
   promptsConfigFile: z.string().default(join(__dirname, "../../../prompts.json")),
+  /**
+   * `MCP_SERVER_INSTRUCTIONS` — what the MCP `initialize` result carries as
+   * `instructions`: the always-on core (`core`) or only the pointer line to
+   * `tea-rags://guide/core` (`pointer`, for sessions whose plugin hook already
+   * injects the full core).
+   */
+  serverInstructions: z.enum(["core", "pointer"]).default("core"),
 });
 
 export const embeddingTuneSchema = z.object({

@@ -12,13 +12,22 @@ const POINTER = `Full rules continue in MCP resource ${CORE_RESOURCE_URI} (no MC
 
 const SEPARATOR = "\n\n";
 
+/** `core` = the always-on core (head + pointer when oversized); `pointer` = the pointer line alone. */
+export type ServerInstructionsMode = "core" | "pointer";
+
 /**
  * Core verbatim when it fits `cap`; otherwise its head cut on a blank-line
  * boundary (a line boundary when no blank line lands in the second half),
- * followed by one pointer line to the full core. Empty core → `undefined`.
+ * followed by one pointer line to the full core. `pointer` mode sends the
+ * pointer line alone. Empty core → `undefined` in both modes.
  */
-export function serverInstructions(core: string, cap: number = INSTRUCTIONS_MAX_CHARS): string | undefined {
+export function serverInstructions(
+  core: string,
+  cap: number = INSTRUCTIONS_MAX_CHARS,
+  mode: ServerInstructionsMode = "core",
+): string | undefined {
   if (core === "") return undefined;
+  if (mode === "pointer") return POINTER;
   if (core.length <= cap) return core;
 
   const window = core.slice(0, cap - SEPARATOR.length - POINTER.length + 1);
