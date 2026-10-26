@@ -38,7 +38,7 @@ skills.
 
 ## Step 0 — Preflight
 
-No `## Signal thresholds — <lang>` table above → read
+No `## Signal thresholds — <lang>` table in the output above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
 (read_mcp_resource). Resource unreadable → ONE probe instead:
 `semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`

@@ -334,18 +334,14 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, threshold tables dropped first", async () => {
+  it("fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, unranked sections dropped first", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const dir = mkdtempSync(join(tmpdir(), "codex-fit-digest-"));
     try {
       const script = join(dir, "fit-digest.py");
       writeFileSync(script, rendered.get("tea-rags/scripts/fit-digest.py") ?? "");
-      const row = (i: number) => `| signal${i} | low/high | ${i} / ${i * 2} |`;
       const digest = [
         "# tea-rags prime — /work/demo",
-        "",
-        "## Signal thresholds — ruby",
-        Array.from({ length: 12 }, (_, i) => row(i)).join("\n"),
         "",
         "## Status",
         `indexed · collection \`code_x\` · ${"last indexed: 6d ago · ".repeat(6)}`,
@@ -367,7 +363,7 @@ describe("renderCodexHarness", () => {
         "resolve rate: 94%",
         "",
         "## Scale",
-        `chunks: 41k · files: 3.2k ${"· languages: 4 ".repeat(10)}`,
+        ...Array.from({ length: 30 }, (_, i) => `scale row ${i}: chunks 41k · files 3.2k · languages 4`),
       ].join("\n");
       const budget = CODEX_HOOK_CONTEXT_BUDGET;
       const used = budget - 1_600;
@@ -384,11 +380,10 @@ describe("renderCodexHarness", () => {
         "## Enrichment",
         "## Language capability",
         "resolve rate: 94%",
-        "## Scale",
       ]) {
         expect(fitted).toContain(kept);
       }
-      expect(fitted).not.toContain("## Signal thresholds");
+      expect(fitted).not.toContain("## Scale");
       expect(fitted.trimEnd().split("\n").at(-1)).toContain("tea-rags resource tea-rags://project/demo/digest");
     } finally {
       rmSync(dir, { recursive: true, force: true });

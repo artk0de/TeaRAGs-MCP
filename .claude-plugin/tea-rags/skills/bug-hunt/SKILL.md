@@ -175,7 +175,7 @@ A plan names these calls; "later" / "not in this run" never drops one.
 
 !`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds,resolve" --path "$PWD" || true`
 
-No `## Signal thresholds` above → read
+No `## Signal thresholds` table in the output above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`
 (ReadMcpResourceTool).
 
@@ -267,7 +267,8 @@ population to recently changed files so it surfaces.
   caveat) → `modifiedAfter` stays default probe.
 - **Window start:** symptom onset if known (last green run, release, date user
   names); else today − N days, N = where `recent` ends: the first number of the
-  `git.file.ageDays` row's `source ≥` cell in `## Signal thresholds`.
+  `git.file.ageDays` row's `source ≥` cell in the metrics resource's
+  `## Signal thresholds`.
 - Committed history only: walk emits committed files → untracked /
   never-committed file carries NO `lastModifiedAt` → outside every time filter.
   Uncommitted edit to committed file → timestamp = last COMMIT → probe misses

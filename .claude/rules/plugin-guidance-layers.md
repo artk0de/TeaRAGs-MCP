@@ -18,7 +18,7 @@ bolt onto first file you open.
 
 | Layer                  | Owns (kind of fact)                                                                                                       | Lives in                                                                                                       | Delivered to agent                                                   |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| **prime / digest**     | **Live runtime STATE** — index status, staleness, drift, infra health, thresholds / labelMap, polyglot set, version       | `src/cli/prime/**` → `tea-rags prime`; `tea-rags://project/<alias>/digest` + `/metrics`                        | SessionStart hook; resource on demand                                |
+| **prime / digest**     | **Live runtime STATE** — index status, staleness, drift, infra health, polyglot set, version                              | `src/cli/prime/**` → `tea-rags prime`; `tea-rags://project/<alias>/digest` + `/metrics`                        | SessionStart hook; resource on demand                                |
 | **MCP tool schema**    | **Call CONTRACT** — params, enums, defaults, addressing, pagination shape, per-tool description                           | `src/mcp/tools/**` (handler descriptions) + `src/core/api/internal/infra/schema-builder.ts` (generated Zod)    | at tool-call time                                                    |
 | **resources + guides** | **REFERENCE + on-demand POLICY** — preset / signal / filter catalogs; navigation, decision tree, freshness, degraded mode | `src/mcp/resources/registry.ts` (builders) + `plugins/tea-rags/rules/guides/*.md` → `tea-rags://guide/<topic>` | on demand (`ReadMcpResource` / `tea-rags resource <uri>`)            |
 | **core**               | **Always-on POLICY** — addressing, routing table, invariants, guide-trigger catalog, destructive-tool consent             | `plugins/tea-rags/rules/core.md` (≤ 3,700 chars)                                                               | server `instructions` + SessionStart (`inject-rules.sh`), every turn |
@@ -56,8 +56,9 @@ view. Wrong layer = drift.
 
 - **State vs everything** — any _current_ number (chunk count, "stale 2d ago",
   drift fields, threshold cutoff) → **prime only**. Changes every reindex; copy
-  in a rule goes stale immediately. A rule may say "read threshold from prime",
-  never "threshold is 8".
+  in a rule goes stale immediately. Thresholds / labelMap live in the metrics
+  resource, not prime. A rule may say "read threshold from the metrics
+  resource", never "threshold is 8".
 - **Builder resources vs guides/core** — both describe tool routing
   (`tea-rags://guide/search-examples` ↔ `guide/decision-tree`). Builder
   resources = **exhaustive** reference (generated from live registry →
