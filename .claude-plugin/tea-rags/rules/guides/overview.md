@@ -8,11 +8,11 @@
 
 ## Tools Quick Reference
 - search_code — quick semantic lookup, human-readable output
-- semantic_search — analytical, structured JSON, full metadata
+- semantic_search — analytical, structured JSON; signals via rerank or fields
 - hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — batch analytics by signals (metaOnly default true; offline scoring, not online search)
 - find_similar — find code similar to examples; negative-only inputs + strategy="best_score" → anti-pattern detection
-- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding);
+- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (small file → full text; no embedding);
   pass a rerank preset for a single-call diagnostic (definition + rankingOverlay)
 
 ## Response shape

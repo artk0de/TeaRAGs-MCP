@@ -34,10 +34,12 @@ examples per tool.
 - Drill from outline/TOC → symbol="<id copied from an outline line>" (one member / doc section)
 - Existence check → symbol="myFunc", metaOnly=true (no content)
 - With signals → symbol="Reranker#score", rerank="hotspots" (ranking overlay)
+- Batch drill → symbols=["Reranker#rerank","Reranker.create"] (N bodies, one call)
 
 **By file path (relativePath param, mutually exclusive with symbol):**
-- File outline → relativePath="src/reranker.ts" (code structure with hierarchy)
+- File outline → relativePath="src/reranker.ts" (code structure with hierarchy; small file ≤150 lines → full text, kind:"file")
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
+- Directory → relativePath="src/explore/" (files + top-level symbols, subdirs w/ counts)
 - From search result → find_symbol(symbol: parentSymbolId) → class outline or doc TOC (doc parent = doc path)
 
 ## rank_chunks Examples (batch analytics, not online search)
@@ -156,7 +158,7 @@ inflate limit. Results stop matching intent → reformulate, don't paginate.
   drill a member with find_symbol(symbol: "PaymentService#charge").
 - Method with risk overlay →
   find_symbol(symbol: "PaymentService#charge", rerank: "hotspots")
-- File-scoped outline → find_symbol(relativePath: "src/payments/service.ts")
+- File-scoped outline → find_symbol(relativePath: "src/payments/service.ts") (small file → its full text)
 - Doc-TOC mode → find_symbol(relativePath: "docs/api.md") returns heading
   list with doc:<hash> ids; second find_symbol(symbol: "doc:<hash>") returns
   that section. Works on any markdown corpus, not just code.
