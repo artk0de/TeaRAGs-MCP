@@ -9,4 +9,6 @@ export interface SymbolBatchMiss {
   request: string;
   message: string;
   treeState?: WorkingTreeState;
+  /** An unknown PATH entry: the nearest indexed paths, as `empty.suggestions` of `relativePath:` carries them. */
+  suggestions?: string[];
 }

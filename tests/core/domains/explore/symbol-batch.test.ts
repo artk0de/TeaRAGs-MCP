@@ -16,7 +16,7 @@ import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.j
 import type { RelPath } from "../../../../src/core/contracts/types/codegraph.js";
 import type { ScrollChunk } from "../../../../src/core/domains/explore/chunk-grouping/types.js";
 import { SymbolSearchStrategy } from "../../../../src/core/domains/explore/strategies/symbol.js";
-import { SymbolBatchDrill } from "../../../../src/core/domains/explore/symbol-batch.js";
+import { isFilePathAddress, SymbolBatchDrill } from "../../../../src/core/domains/explore/symbol-batch.js";
 import type { WorkingTreeView } from "../../../../src/core/domains/explore/working-tree/index.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
@@ -251,4 +251,20 @@ describe("SymbolBatchDrill — codegraph hop with a nonexistent FQN", () => {
     expect(answer.rows.map((r) => [r.request, r.result.payload?.symbolId])).toEqual([[clientUpdate, clientUpdate]]);
     expect(answer.missing.map((m) => m.request)).toEqual([guestUpdate]);
   });
+});
+
+describe("isFilePathAddress (q1g6s.4)", () => {
+  it.each(["src/foo.ts", "app/models/user.rb", "docs/guide.md", "src/lib/", "README.md", "package.json"])(
+    "reads %s as a file path",
+    (address) => {
+      expect(isFilePathAddress(address)).toBe(true);
+    },
+  );
+
+  it.each(["Foo.bar", "Foo#bar", "A::B#c", "A::B.create", "helper", "Integer#/", "Foo.rb#x", "Foo::Bar", "a/b c"])(
+    "reads %s as a symbol id",
+    (address) => {
+      expect(isFilePathAddress(address)).toBe(false);
+    },
+  );
 });

@@ -384,4 +384,11 @@ describe("FindSymbolSchema — symbols batch (N1)", () => {
     expect(parse({ symbols: [] }).success).toBe(false);
     expect(parse({ symbols: Array.from({ length: 21 }, (_, i) => `s${i}`) }).success).toBe(false);
   });
+
+  it("says the batch takes file paths beside symbol ids (q1g6s.4)", () => {
+    const hint = createSearchSchemas(mockSchemaBuilder).FindSymbolSchema.symbols.description ?? "";
+
+    expect(hint).toMatch(/symbol ids/);
+    expect(hint).toMatch(/file paths/);
+  });
 });

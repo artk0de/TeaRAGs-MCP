@@ -460,7 +460,10 @@ export class ExploreOps {
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const workingTreeView = await pendingView;
-    const drill = new SymbolBatchDrill((symbol) => this.buildSymbolSearchStrategy(request, symbol));
+    const drill = new SymbolBatchDrill(
+      (symbol) => this.buildSymbolSearchStrategy(request, symbol),
+      (relativePath) => this.buildFileOutlineStrategy(relativePath, request.language),
+    );
     const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const leanFields = request.metaOnly ? BATCH_LEAN_FIELDS.filter((f) => f !== "content") : BATCH_LEAN_FIELDS;
@@ -802,17 +805,20 @@ export class ExploreOps {
   }
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
-    if (request.relativePath) {
-      return new FileOutlineStrategy(
-        this.qdrant,
-        this.reranker,
-        this.payloadSignals,
-        this.essentialKeys,
-        { relativePath: request.relativePath, language: request.language },
-        this.visibilityResolver,
-      );
-    }
+    if (request.relativePath) return this.buildFileOutlineStrategy(request.relativePath, request.language);
     return this.buildSymbolSearchStrategy(request, request.symbol as string);
+  }
+
+  /** The path-mode strategy for one file or directory — single `relativePath` and every batch path entry alike. */
+  private buildFileOutlineStrategy(relativePath: string, language: string | undefined): FileOutlineStrategy {
+    return new FileOutlineStrategy(
+      this.qdrant,
+      this.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+      { relativePath, language },
+      this.visibilityResolver,
+    );
   }
 
   /** The symbol-mode strategy for one address — single `symbol` and every batch address alike. */
@@ -1310,5 +1316,9 @@ function withoutNext(response: ExploreResponse): ExploreResponse {
   return rest;
 }
 
-/** The payload a find_symbol batch row carries unless `fields` or `rerank` asks for more (N1). */
-const BATCH_LEAN_FIELDS = ["symbolId", "relativePath", "startLine", "endLine", "content"];
+/**
+ * The payload a find_symbol batch row carries unless `fields` or `rerank` asks
+ * for more (N1). `kind` tells a path entry's full text (`file`) from its
+ * outline (q1g6s.4); symbol rows carry none, so it never shows on them.
+ */
+const BATCH_LEAN_FIELDS = ["symbolId", "relativePath", "kind", "startLine", "endLine", "content"];

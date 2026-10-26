@@ -167,10 +167,17 @@ export const SearchResultOutputSchema = {
     ),
   missing: z
     .array(
-      z.object({ request: z.string(), message: z.string(), treeState: z.enum(["modified", "deleted"]).optional() }),
+      z.object({
+        request: z.string(),
+        message: z.string(),
+        treeState: z.enum(["modified", "deleted"]).optional(),
+        suggestions: z.array(z.string()).optional(),
+      }),
     )
     .optional()
-    .describe("find_symbol symbols only: addresses nothing answered; ambiguous → qualify with Class# or pathPattern."),
+    .describe(
+      "find_symbol symbols only: addresses nothing answered; ambiguous → qualify with Class# or pathPattern; unknown path → suggestions = nearest paths.",
+    ),
   directory: z
     .object({
       kind: z.literal("directory"),
