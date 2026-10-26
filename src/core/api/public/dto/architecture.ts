@@ -77,11 +77,22 @@ export type PresentedSilentCouplingReportSummary = Omit<SilentCouplingReportSumm
  * read by review_changes, restructure and the violation delta — keeps its flat
  * `violations`; only the tool view groups and trims.
  */
+/** Summary blocks a detector owns — the `detectors` selector scopes them. */
+type DetectorSummaryKey = Extract<keyof ArchitectureReportSummary, ArchitectureReportDetector>;
+
 export interface GetArchitectureReportToolResponse extends Omit<
   GetArchitectureReportResponse,
   "violations" | "summary"
 > {
-  summary: Omit<ArchitectureReportSummary, "silentCoupling"> & { silentCoupling: PresentedSilentCouplingReportSummary };
+  /**
+   * Evidence lists capped at `evidenceLimit` like the violations' (bd
+   * tea-rags-mcp-q1g6s.1), `impactTiers` whole. A detector's block is absent
+   * when the `detectors` selector leaves that detector out.
+   */
+  summary: Omit<ArchitectureReportSummary, DetectorSummaryKey> &
+    Partial<Omit<Pick<ArchitectureReportSummary, DetectorSummaryKey>, "silentCoupling">> & {
+      silentCoupling?: PresentedSilentCouplingReportSummary;
+    };
   /**
    * Per detector, in the report's detector order, each group's rows without
    * the `detector` key; evidence arrays capped at `evidenceLimit`, with a
