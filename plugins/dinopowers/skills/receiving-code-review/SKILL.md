@@ -11,12 +11,13 @@ description:
   symbol. Wraps superpowers:receiving-code-review with tea-rags blast-radius
   signals.
 codex-description:
-  Weigh reviewer's suggested change (rename, refactor, move, extract) by
-  tea-rags blast radius before agreeing/pushing back. Triggers "reviewer
+  Weigh reviewer's change (rename/refactor/move/extract) by tea-rags blast
+  radius before agreeing/pushing back. Triggers "reviewer
   suggests", "should I rename", "code review feedback", "PR comment
-  about/wants", "address the review", "code review wants me to", "refactor this
+  about/wants", "address the review", "refactor this
   per review", "ревьюер предлагает", "стоит ли переименовать", "сделай как
-  просит ревьюер". NOT stylistic nits with no named symbol.
+  просит ревьюер". Structural ask with no named symbol ("extract loop body")
+  still scans first. NOT stylistic nits.
 ---
 
 # dinopowers: receiving-code-review
@@ -84,6 +85,11 @@ cross-cutting) + `intent` (one sentence).
 
 Stylistic-only → Step 4, verdict `PASS-THROUGH (non-structural)`. Never invent
 structural implications.
+
+Structural change (rename / extract / move / inline) with NO named target or
+file → still Step 2 FIRST, never straight to Step 4: `query` = the comment text
+(+ task context), no `pathPattern` — the one call locates the code AND measures
+its impact. Asking which symbol does not replace that call.
 
 ## Step 2 — Impact analysis call
 

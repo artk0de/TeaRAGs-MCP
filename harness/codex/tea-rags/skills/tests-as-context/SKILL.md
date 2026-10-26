@@ -2,10 +2,10 @@
 name: tests-as-context
 description:
   'Internal step invoked by $data-driven-generation, $explore, $filter-building,
-  $mr-review, $test-first. Agentic-only — surfaces DSL test chunks (chunkType
-  "test" scenarios, "test_setup" fixtures) as context for review, verification,
-  refactoring, debugging; a user asking for test patterns / conventions wants
-  the dinopowers TDD wrapper, not this recipe.'
+  $mr-review, $risk-assessment, $test-first. Agentic-only — surfaces DSL test
+  chunks (chunkType "test" scenarios, "test_setup" fixtures) as context for
+  review, verification, refactoring, debugging; a user asking for test patterns
+  / conventions wants the dinopowers TDD wrapper, not this recipe.'
 ---
 
 # tests-as-context
@@ -44,12 +44,15 @@ skills.
 
 ## Step 0 — Preflight
 
-No `## Signal thresholds — <lang>` table in the output above → read
+No `## Signal thresholds — <lang>` table in the output above (fresh subagent, no
+digest) → FIRST call = read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
-(read_mcp_resource). Resource unreadable → ONE probe instead:
+(read_mcp_resource; alias from the SubagentStart line / cwd — no `list_projects`
+before it). Resource unreadable → ONE probe instead:
 `semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`
-— ≥1 row = present, 0 = absent. Test corpus **present** if ≥1 `git.chunk.*` row
-has numbers (or `=src`) in `test ≥`, e.g.
+— ≥1 row = present → recipe; 0 rows = absent → the SKIP block below. Both carry
+`project` + `path`. Test corpus **present** if ≥1 `git.chunk.*` row has numbers
+(or `=src`) in `test ≥`, e.g.
 
 ```
 | signal | bands | source ≥ | test ≥ |
@@ -63,7 +66,8 @@ row.
 `path: <your working directory>`. Lag (`changedFiles` / `pendingFiles` / drift)
 never licenses `cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
-If absent — return verdict, stop:
+If absent — return this verdict block whole (header + reasons (a)–(c) + fallback
+line; a bare "SKIP" is not the verdict), stop:
 
 ```
 SKIP — no test chunks indexed for <project>. Possible reasons:

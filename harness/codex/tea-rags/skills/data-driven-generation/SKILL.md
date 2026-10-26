@@ -351,7 +351,9 @@ GATE review_changes: introduced=0, partial=false
 
 - One `RISK` line per checked symbol (≤ 5). `N-TH-WAY` always printed.
 - `NAMING` = one line per naming verdict that is not conforming, rename done
-  before the commit; none → line dropped.
+  before the commit; none → line dropped. MISFIT → `renamed <suggestion>`.
+  NEW_TERM `alternatives` = soft: `adopted` only when it denotes the same thing,
+  else `kept: <why>`.
 - First `GATE` line = the review held NOW, printed even at zero findings, its
   `introduced=` = count of `INTRODUCED` lines (= `change.introducedCount` when
   supplied; `preExisting` findings never counted). It is never replaced by the
@@ -366,7 +368,9 @@ GATE review_changes: introduced=0, partial=false
   plan prints the closing line as the result required to commit, followed by its
   fallback:
   `else after round 2: ESCALATE <family>: <metric> <before> → <after> vs <threshold>, edge <src> → <dst>`
-  (hubLike: efferent count vs cut, the new import) + ask the user, no commit.
+  (hubLike: efferent count vs cut, the new import) + ask the user naming what
+  each round tried and why it was reverted, options: fix this way / accept with
+  a reason / bead — no commit, no third round, until answered.
 - Nothing to repair and not partial → `RE-REVIEW` + closing line dropped; the
   first `GATE` line is final. Repair already done before this answer (hand-back
   after a clean re-run) → print the closing line.

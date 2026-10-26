@@ -78,6 +78,11 @@ cross-cutting) + `intent` (one sentence).
 Stylistic-only → Step 4, verdict `PASS-THROUGH (non-structural)`. Never invent
 structural implications.
 
+Structural change (rename / extract / move / inline) with NO named target or
+file → still Step 2 FIRST, never straight to Step 4: `query` = the comment text
+(+ task context), no `pathPattern` — the one call locates the code AND measures
+its impact. Asking which symbol does not replace that call.
+
 ## Step 2 — Impact analysis call
 
 ONE `mcp__tea-rags__semantic_search` — same idiom as `dinopowers:writing-plans`

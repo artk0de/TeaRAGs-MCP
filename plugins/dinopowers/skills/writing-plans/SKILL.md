@@ -13,12 +13,13 @@ description:
   enrich. Wraps superpowers:writing-plans with per-file tea-rags signal
   enrichment.
 codex-description:
-  Implementation plan + per-file tea-rags signals. Plan request beats explore
+  Implementation plan + per-file tea-rags signals. Plan ask beats explore
   PRE-GEN (even "add X"/"impact analysis"/"before changing") and
-  data-driven-generation (class-creating Task = plan Task). Triggers
+  data-driven-generation (class-creating Task too). Triggers
   "write/draft a (sub-)plan", "plan the change to <files>", "plan the refactor",
-  "add Task to plan", "напиши/допиши план", "распиши план/задачи по <files>".
-  NOT plans naming no files/code area, NOT "how is X organized" (explore).
+  "add Task to plan", "напиши/допиши план", "распиши план/задачи по <files>",
+  "Execute plan step: Draft…". NOT plans w/o files/area, NOT "how is X
+  organized" (explore).
 ---
 
 # dinopowers: writing-plans

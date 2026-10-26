@@ -29,9 +29,12 @@ plan line copied with the prompt's ids:
 plan-only → its numbered steps first, one line per phase, never merged or moved
 to a preamble; then the Phase 5 tables themselves (format: Phase 5), headings +
 header rows, `[planned; not run]` in cells not gathered yet. Prose, a column
-list or `Output:` alone is NOT the map. Hand-off only when the prompt mentions
-generation ("before implementing" / "generate"): resolved scope + per-symbol
-overlay labels, no extra block or scan. `Output:` = last line, verbatim:
+list or `Output:` alone is NOT the map. Hand-off only when the user is about to
+generate in the scope ("before implementing" / "before generating X"): resolved
+scope + per-symbol overlay labels, no extra block or scan. Naming DDG only as
+the map's consumer ("what data-driven-generation should be careful with") → full
+phases 0–5 here, the map IS the hand-off: no DDG / explore routing, no extra
+block. `Output:` = last line, verbatim:
 
 ```
 0. SCOPE (Phase 0): "<word> <process noun>" → ONE semantic_search(query=<phrase>, pathPattern="**/<word>/**") → hits: pathPattern="**/<word>/**" kept; location test: pass → pathPattern; concept → ONE semantic_search → prefixes; whole project → none

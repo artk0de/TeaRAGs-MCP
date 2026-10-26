@@ -12,10 +12,11 @@ description:
   a request to apply a named fix at a named location (→ data-driven-generation).
   Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
 codex-description:
-  Debug concrete failure — tea-rags:bug-hunt first for ranked suspects. Felt malfunction (zones too) beats explore, risk-assessment. Triggers
-  "debug X", "fix the bug", "why Y fails", "test fails", "X feels off", "same bug elsewhere?", "падает", "почему не
-  работает", "стектрейс". NOT code review, health scan, "сколько тестов падает" (count), symbol body/callers with
-  no failure, named fix at named spot (→ data-driven-generation).
+  Concrete failure — bug-hunt first for ranked suspects. Felt malfunction (zones too) beats explore/risk-assessment. Triggers
+  "debug X", "why Y fails", "test fails", "X feels off", "same bug elsewhere?", "падает", "почему не
+  работает", "стектрейс". NOT code review, health scan, "сколько тестов падает", symbol body/callers w/o
+  failure, named fix at named spot (→ data-driven-generation), empty scan of
+  unindexed edit (→ verification).
 ---
 
 # dinopowers: systematic-debugging

@@ -54,7 +54,9 @@ Existing preset fits the analytics question?  (cheat sheet below)
          read tea-rags://guide/signals for the canonical weight-key catalog
          (generated from the live registry; never invent key names).
          Call fails `INPUT_UNKNOWN_RERANK_SIGNAL` → swap that key for the
-         hint's listed key of the same intent, re-call (guide/signals).
+         hint's listed key of the same intent, keep other weights, re-call
+         once — name the key (authors / how many people → `ownership` or
+         `knowledgeSilo`; commit volume → `churn`), never a placeholder.
 ```
 
 ## Catalogs — always read on demand

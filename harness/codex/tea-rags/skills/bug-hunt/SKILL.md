@@ -1,12 +1,12 @@
 ---
 name: bug-hunt
 description:
-  'Find failure source — rank buggy (bugFixRate) + fresh code vs symptom.
-  Triggers "debug X", "why Y fails", "test fails", stack trace, "падает", "find
-  bugs in X", "found a bug in X — compare Y", "suspects in X and Y", hit with
-  bugFixRate labels, "прочитай весь файл" of a hit, "где в коде строка ''X''",
-  "посмотри через git". Beats explore; symptom + zones to check ("проверь зоны
-  A, B") beats risk-assessment. NOT health scan, test counts.'
+  'Failure source — buggy (bugFixRate) + fresh code vs symptom. Triggers "debug
+  X", "why Y fails", "test fails", stack trace, "падает", "find bugs in X", "bug
+  in X — compare Y", "suspects in X, Y", bugFixRate hit, "прочитай весь файл"
+  (hit), "где в коде строка ''X''", "посмотри через git". Beats explore; symptom
+  + zones ("проверь зоны A, B") beats risk-assessment. NOT health scan/test
+  counts/empty scan of unindexed edit (verification).'
 ---
 
 # Bug Hunt

@@ -38,7 +38,9 @@ superpowers. Availability check — in this order, plan-only included:
    `ls $CODEX_HOME/plugins/cache/*/superpowers/*/skills/<Y>/SKILL.md` (default
    `~/.codex`) — run that glob as written: the plugin sits one level down, under
    a marketplace dir (`cache/<marketplace>/superpowers/<version>/`), so a bare
-   `ls cache` never shows it. Then read that file. superpowers is a separate
+   `ls cache` never shows it. Read that file only at the wrapper's chain step,
+   after its enrichment — a plan's first step loads the wrapper alone, never
+   "load `$dino-Y`, then `$Y`". superpowers is a separate
    plugin, never under the dinopowers or tea-rags dir — a hand-built path there
    failing proves nothing; run the glob. Found → available; invoke
    `Skill(superpowers:Y)` after the wrapper's required enrichment.

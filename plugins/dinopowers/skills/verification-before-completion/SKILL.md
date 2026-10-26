@@ -10,12 +10,13 @@ description:
   superpowers:verification-before-completion with a tea-rags collateral-damage
   scan.
 codex-description:
-  Before claiming work complete — tea-rags collateral-damage scan of just-edited
-  files, then verification commands so claims rest on evidence. Completion claim
-  beats finishing-a-development-branch unless merge/PR is asked. Triggers on
-  "ready to commit", "all done", "should be fixed now", "commit and push",
-  "готово", "можно коммитить", "проверь перед commit", "все работает". NOT
-  mid-work sanity checks with no completion claim.
+  Before claiming done — collateral-damage scan of edits, then verification
+  commands (evidence before claims). Completion claim beats
+  finishing-a-development-branch unless merge/PR asked. Triggers "ready to
+  commit", "all done", "should be fixed now", "commit and push", "готово",
+  "можно коммитить", "проверь перед commit", "все работает", scan empty on an
+  unindexed edit (UNVERIFIABLE, no bug). NOT mid-work checks w/o a completion
+  claim.
 ---
 
 # dinopowers: verification-before-completion

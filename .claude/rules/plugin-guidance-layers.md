@@ -47,7 +47,7 @@ After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 4,096 head (first 512 self-contained: addressing first) + a
 `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full
 core (≤ 7,000 incl. wrapper); Codex's hook shares `CODEX_HOOK_CONTEXT_BUDGET`
-(8,500) with the digest. Grow a guide, not the core. Hook stdout past ~16KB
+(8,700) with the digest. Grow a guide, not the core. Hook stdout past ~16KB
 reaches the model as a 2KB preview; the splitter in `inject-rules.sh` stays as a
 guard.
 

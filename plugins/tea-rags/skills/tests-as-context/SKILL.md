@@ -20,7 +20,8 @@ description:
 codex-description:
   Agentic-only callee of dinopowers wrappers — DSL test chunks (chunkType
   "test"/"test_setup") as context: tests-at-risk, fixture-lookup,
-  regression-archaeology, test-flakiness, spec-extraction. NOT user-invocable:
+  regression-archaeology, test-flakiness, spec-extraction; caller asks a
+  tests-at-risk recipe → here, not risk-assessment. NOT user-invocable:
   user names this skill or asks which tests cover X → say agent-only, run
   explore's ONE hybrid_search(testFile:"only", query=<module + exported symbol
   names>). Test patterns / conventions → dinopowers TDD wrapper.
@@ -64,11 +65,14 @@ skills.
 
 !`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds" --path "$PWD" || true`
 
-No `## Signal thresholds — <lang>` table in the output above → read
+No `## Signal thresholds — <lang>` table in the output above (fresh subagent, no
+digest) → FIRST call = read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds`
-(ReadMcpResourceTool). Resource unreadable → ONE probe instead:
+(ReadMcpResourceTool; alias from the SubagentStart line / cwd — no
+`list_projects` before it). Resource unreadable → ONE probe instead:
 `semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`
-— ≥1 row = present, 0 = absent. Test corpus **present** if ≥1 `git.chunk.*` row
+— ≥1 row = present → recipe; 0 rows = absent → the SKIP block below. Both carry
+`project` + `path`. Test corpus **present** if ≥1 `git.chunk.*` row
 has numbers (or `=src`) in `test ≥`, e.g.
 
 ```
@@ -83,7 +87,8 @@ row.
 `path: <your working directory>`. Lag (`changedFiles` / `pendingFiles` / drift)
 never licenses `cat` / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
-If absent — return verdict, stop:
+If absent — return this verdict block whole (header + reasons (a)–(c) + fallback
+line; a bare "SKIP" is not the verdict), stop:
 
 ```
 SKIP — no test chunks indexed for <project>. Possible reasons:

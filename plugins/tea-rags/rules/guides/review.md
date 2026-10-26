@@ -38,6 +38,12 @@ data = notJudged `noCohesionData`, never zero (cap 50 reports).
 
 ## architecture
 
+Findings in hand (deciding fix / report-only) → `tea-rags:architecture-diagnostics`
+Phase 3h: load `repair/<family>.md` of every family present, one class line per
+finding — no `preExisting` = introduced, must-fix (exempt only by
+`compositionRoot` flag / Known-false-positive entry, never bare "by design");
+`preExisting` + `remedy` = cheap fix; `preExisting`, no remedy = report-only.
+
 The diff's added edges judged by the boundary detectors: stableDependencies,
 leakingAbstraction, cycles, mainSequence delta, silentCoupling, facadeContract,
 layeringBackEdge (added edge from lower inferred level up; evidence levels +
