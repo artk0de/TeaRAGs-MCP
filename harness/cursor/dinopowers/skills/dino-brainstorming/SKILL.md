@@ -34,8 +34,10 @@ No code area identifiable (pure conceptual) → skip enrichment, invoke
 **User explicitly asks to read named files / find callers of a symbol** → those
 reads are the USER's task, not wrapper enrichment: planned in the SAME answer as
 separate calls AFTER the Step 2 block returns — never inside the parallel block,
-never deferred to a later turn. `find_symbol relativePath=<file>` per named
-file, `hybrid_search metaOnly:true query=<symbol>` for callers (graph tools on →
+never deferred to a later turn. One named file →
+`find_symbol relativePath=<file>`; several → ONE `find_symbol symbols=[<files>]`
+(core Invariants), never one call per file;
+`hybrid_search metaOnly:true query=<symbol>` for callers (graph tools on →
 `get_callers`). Print:
 `user reads: find_symbol / hybrid_search metaOnly — separate calls AFTER the Step 2 block returns, same answer, not deferred`.
 
@@ -192,7 +194,8 @@ Do NOT pass:
   content" in the prompt → no content call, conditional ones included. Prompt
   asks to SEE content → enrichment stays `metaOnly: true`; content = separate
   call AFTER the Step 2 block returns (same answer, never in the block, never
-  deferred): `find_symbol relativePath=<row.relativePath>` (outline → drill ids)
+  deferred): `find_symbol relativePath=<row.relativePath>` (outline → drill
+  ids); several rows → ONE `find_symbol symbols=[<row paths or ids>]`
 - custom `rerank` weights instead of named presets — loses calibrated semantics
 - `filter` on `git.ageDays` / `git.commitCount` — presets encode them; filters
   shrink set, hide debt

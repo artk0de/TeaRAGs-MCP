@@ -314,6 +314,23 @@
         ]
       },
       "failureMode": "metaOnly drops raw git.*; plan loses taskIds and owners"
+    },
+    {
+      "id": "eval-17",
+      "category": "batch-task-symbols (1k059)",
+      "prompt": "Напиши план: Task 1 меняет `Orders::Checkout#finalize` (app/services/orders/checkout.rb), Task 2 — `Orders::TaxQuote#compute` (app/services/orders/tax_quote.rb), Task 3 — `Orders::Receipt#render` (app/views/orders/receipt.rb). Перед планом покажи текущие тела этих трёх методов.",
+      "expected": {
+        "mustDo": [
+          "Step 2 semantic_search over the three files first (brace pathPattern, metaOnly)",
+          "AFTER Step 2: ONE find_symbol(symbols: [\"Orders::Checkout#finalize\", \"Orders::TaxQuote#compute\", \"Orders::Receipt#render\"]) for the three bodies"
+        ],
+        "mustNotDo": [
+          "Three separate find_symbol calls, one per method",
+          "find_symbol before Step 2",
+          "Step 2 with metaOnly: false to get the bodies"
+        ]
+      },
+      "failureMode": "Plan Task symbols read one call each instead of one batch"
     }
   ]
 }

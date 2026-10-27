@@ -52,8 +52,12 @@ codegraph on → rerank="blastRadius" (real fanIn + churn + bugFix = true blast 
 codegraph off → rerank={custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} — import proxy, approximate impact; the plan says so
 ```
 
-Content wanted → keep enrichment `metaOnly: true`, then AFTER it
-`find_symbol(relativePath:)` outline → member bodies (core depth rule).
+Content wanted → keep enrichment `metaOnly: true`, then AFTER it: a named
+`Class#method` / `Mod::method` IS its id — no outline call to find it; no symbol
+named → `find_symbol(relativePath:)` outline → member bodies (core depth rule).
+Several named Task symbols / files → ONE `find_symbol(symbols: [<ids>])` — each
+named symbol's id (body), a file path only where no symbol is named (core
+Invariants); never one call each.
 
 Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres",
 "no specific files", "без конкретных файлов") → skip enrichment,
