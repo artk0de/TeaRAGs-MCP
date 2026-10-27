@@ -10,7 +10,8 @@ note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((
 # harness persists it to a file and the model sees a 2KB preview instead. The
 # always-on corpus is `core.md` alone (guides are served as resources), so it
 # arrives as one part; the splitter still guards a corpus that outgrows it.
-BUDGET=8000
+# 9500 = owner decision 2026-10-28 (core ~9.2KB after the read-ban rows).
+BUDGET=9500
 
 TMPD="$(mktemp -d)"; OUT="$TMPD/out.txt"; ALL="$TMPD/all.txt"
 
