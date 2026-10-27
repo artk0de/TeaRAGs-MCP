@@ -106,7 +106,10 @@ export async function startHttpServer(deps: HttpServerDeps): Promise<void> {
 
   app.post("/mcp", rateLimitMiddleware, async (req, res) => {
     // Create a new server for each request
-    const requestServer = createConfiguredServer(ctx, promptsConfig, { instructionsMode: config.serverInstructions });
+    const requestServer = createConfiguredServer(ctx, promptsConfig, {
+      instructionsMode: config.serverInstructions,
+      experimentalLocate: config.experimentalLocateEnable,
+    });
 
     // Create transport with enableJsonResponse
     const transport = new StreamableHTTPServerTransport({
