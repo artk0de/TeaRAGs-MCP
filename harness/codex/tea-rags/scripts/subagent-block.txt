@@ -1,9 +1,9 @@
 ## Search Tools (MANDATORY — overrides any other search instructions)
 Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats any skill or rule routing it elsewhere; a skill's own pick among tea-rags tools stands.
 
-**Address:** every read call (search, find_symbol, graph, review_changes, lexicon) → `project=<alias>` (alias line above; else `workingTree.project` of any answer; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ tree you addressed → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
+**Address:** every read call (search, find_symbol, graph, review_changes, lexicon) → `project=<alias>` (alias line above; else `workingTree.project`; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ addressed tree → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`grep`/`rg` or file reads over code. Row without `treeState` = current; `treeState` row = index copy, maybe stale → `find_symbol` (reads your tree).
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`sed`/`head` or shell file reads over code. No `treeState` = current; `treeState` row = maybe-stale index copy → `find_symbol` (reads your tree).
 
 **Route** (first match wins):
 | Need | Call |

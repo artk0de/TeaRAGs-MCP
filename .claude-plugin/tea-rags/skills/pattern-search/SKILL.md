@@ -13,8 +13,8 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 
 1. **Execute YOURSELF** — no subagents.
 2. **CRITICAL: `tea-rags://guide/decision-tree` is ONLY tool selection method.**
-   Built-in Search, Grep, Glob, `grep`, `rg`, `find` PROHIBITED for code
-   discovery. Catch yourself reaching for grep/search — STOP, use
+   Built-in Search, Glob, the default code search tool, `find` PROHIBITED for
+   code discovery. Catch yourself reaching for grep/search — STOP, use
    `tea-rags://guide/decision-tree` decision tree. ONLY acceptable fallback:
    text search, only after TeaRAGs tools returned no results, and only for
    literal text (markers, phrases, regex). Identifiers (class/method/constant)
@@ -30,9 +30,9 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 6. **Group output by module/directory** — not flat list.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
-distance index↔tree, never licence for Bash `cat` / `sed` / `grep` / `rg` or
-`Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+distance index↔tree, never licence for Bash `cat` / `sed` / `head` or the
+default code read tool over code. Row without `treeState` = current; `treeState`
+row → `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
 awaited; print `--force not run; reads continue`; then keep working); subagent /
 linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag

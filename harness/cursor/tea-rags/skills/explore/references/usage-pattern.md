@@ -43,7 +43,7 @@ instance, `Class.method` static, `functionName` top-level). Bare
   `empty.reason: "unknownFile"` + `message` — fix path, never report "nothing
   imports it"; `noEdges` at a low resolve rate = lower bound, add the
   `hybrid_search` below. Codegraph off → `hybrid_search metaOnly:true` on the
-  module path / import string. User offers `grep` / `rg` for importers → refuse,
+  module path / import string. User offers Grep tool for importers → refuse,
   answer starts with this line:
 
   ```
