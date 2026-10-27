@@ -616,6 +616,26 @@ export class CodegraphDaemonRequestAbortedError extends InfraError {
 }
 
 /**
+ * A client sent the daemon a frame that is not a request: not JSON, or no
+ * object carrying a numeric `id`. Without an id there is nothing to answer, so
+ * the daemon closes that one connection and keeps serving the others.
+ */
+export class CodegraphDaemonMalformedFrameError extends InfraError {
+  constructor(frame: string, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_MALFORMED_FRAME",
+      message: `Codegraph daemon closed a connection that sent a malformed frame: ${frame.slice(0, 120)}`,
+      hint:
+        "The client is not speaking the daemon protocol — a foreign tool on the socket, or a client " +
+        "that corrupted its own stream. The daemon and its other connections are unaffected; the " +
+        "client reconnects on its next request.",
+      httpStatus: 400,
+      cause,
+    });
+  }
+}
+
+/**
  * The codegraph-unavailable family (bd tea-rags-mcp-a43tr) — daemon stale /
  * skewed / wedged / unreachable, or the DuckDB file will not open. Membership is
  * decided by `code` in `contracts/types/codegraph-unavailable.ts`, which domain

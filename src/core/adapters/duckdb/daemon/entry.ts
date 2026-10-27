@@ -30,7 +30,11 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../primitives/diagnostics/index.js";
-import { CodegraphDaemonDrainRefusedError, CodegraphDaemonOwnedElsewhereError } from "../errors.js";
+import {
+  CodegraphDaemonDrainRefusedError,
+  CodegraphDaemonMalformedFrameError,
+  CodegraphDaemonOwnedElsewhereError,
+} from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import { ForeignBuildDaemonLockArbiter } from "./foreign-build-lock-arbiter.js";
@@ -213,6 +217,20 @@ export function createIdleShutdown(deps: IdleShutdownDeps): () => void {
   };
 }
 
+/** Read one frame as a request; anything without a numeric `id` cannot be answered. */
+function parseDaemonRequest(frame: string): DaemonRequest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(frame);
+  } catch (err) {
+    throw new CodegraphDaemonMalformedFrameError(frame, err as Error);
+  }
+  if (typeof parsed !== "object" || parsed === null || typeof (parsed as { id?: unknown }).id !== "number") {
+    throw new CodegraphDaemonMalformedFrameError(frame);
+  }
+  return parsed as DaemonRequest;
+}
+
 /**
  * Build the per-connection `data`/`close` handler pair for a socket. Extracted
  * so tests can drive framing + refcounting without a live `net.Server`.
@@ -241,8 +259,16 @@ export function createConnectionHandler(
     // dropped, and a graph analysis stops at its next phase boundary.
     const connection = new AbortController();
     sock.on("data", (chunk: Buffer) => {
+      if (sock.destroyed) return;
       for (const frame of frames.push(chunk)) {
-        const req = JSON.parse(frame) as DaemonRequest;
+        let req: DaemonRequest;
+        try {
+          req = parseDaemonRequest(frame);
+        } catch (err) {
+          process.stderr.write(`[codegraph-daemon] ${(err as Error).message}\n`);
+          sock.destroy();
+          return;
+        }
         if (req.op === "shutdown") {
           // bd tea-rags-mcp-zgcmo: a drain while ANOTHER connection has writes
           // in flight used to cut them mid-run (the 42hno EPIPE class — a
