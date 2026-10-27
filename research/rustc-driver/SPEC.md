@@ -341,8 +341,8 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   `cmake_minimum_required` < 3.5, which killed tikv's grpcio-sys / snappy-sys
   build scripts on this host (measured 2026-10-23).
 - `CARGO_NET_OFFLINE=true`, and
-  `CARGO_TARGET_DIR=~/.tea-rags/rustc-driver/target/<envKey>`. The user's
-  `target/` is never read or written.
+  `CARGO_TARGET_DIR=~/.tea-rags/rustc-driver/projects/<projectKey>/target`. The
+  user's `target/` is never read or written.
 - Wall + process-tree RSS budget with tree kill (reuse the SCIP runner's
   supervisor). `-j` defaults to `CODEGRAPH_RUST_DRIVER_JOBS` or
   `max(1, cores/2)`, because cold RSS scales with parallel rustc processes
@@ -355,8 +355,19 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
 ### 8.4 Cache keying (same lattice as `scip-runner.ts`)
 
 - `envKey = sha256([CALLSITES_FORMAT, driver -V (version + pin + sourceHash), rustc -vV of the pin, Cargo.lock, every Cargo.toml (sorted), cargo args, jobs-independent settings])`.
-  The directory `~/.tea-rags/rustc-driver/<envKey>/` holds `target/`,
-  `units/*.ndjson`, `latch.json`, `run.json`.
+  envKey is a field of the run record, not a path. One directory per project,
+  `~/.tea-rags/rustc-driver/projects/<projectKey>/` (`projectKey` = sha256 of
+  the canonical project root), holds a persistent `target/` and the run record
+  of one environment: `env.json` (`{ envKey }`), `run.json`, `sources.json`,
+  `units/*.ndjson`, `latch.json`. When the envKey changes, the run record is
+  dropped and `target/` is kept: cargo's own fingerprints invalidate the units a
+  new driver binary, rustc or Cargo.lock affects, so a changed environment costs
+  an incremental check, not a cold build. `run.lock` (an `O_EXCL` pid lock,
+  waited for up to the run's wall budget) serializes acquisitions of one project
+  across processes; cargo locks `target/` itself, the lock keeps the run record
+  writes from interleaving. The per-envKey `<64 hex>/` directories of the
+  earlier layout are removed from the rustc-driver root on every acquisition;
+  `bin/`, `build-logs/` and `build-tmp/` belong to `driver-build.ts`.
 - There is no contentKey blob. cargo's fingerprints are the content cache. An
   index run that spawns the driver (warm ≈ seconds) then reads `units/`.
 - No-op short-circuit, under any admission: when the previous run is complete

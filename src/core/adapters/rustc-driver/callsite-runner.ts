@@ -9,10 +9,16 @@
  *
  * Every spawn is forced onto the pinned toolchain (`RUSTUP_TOOLCHAIN`, `RUSTC`,
  * `SYSROOT`, the pin's `bin/` first on `PATH`) whatever the corpus pins, works
- * offline, and writes only under `${dataDir}/rustc-driver/<envKey>/`
- * (`target/`, `units/`, `run.json`, `latch.json`) — the user's `target/` is
- * never read or written. A wall and a process-tree RSS budget kill the tree on
- * a breach.
+ * offline, and writes only under `${dataDir}/rustc-driver/projects/<sha256 of
+ * the canonical project root>/` — the user's `target/` is never read or written.
+ * That one dir per project holds a persistent `target/` and the run record of
+ * one environment: `env.json` (its envKey), `run.json`, `sources.json`,
+ * `units/`, `latch.json`. A new envKey drops the record and keeps `target/`
+ * (cargo's fingerprints invalidate what the new driver, rustc or Cargo.lock
+ * touches). `run.lock` serializes acquisitions of one project across processes.
+ * The per-envKey `<64 hex>/` dirs of the earlier layout are swept from the
+ * rustc-driver root on every acquisition. A wall and a process-tree RSS budget
+ * kill the tree on a breach.
  *
  * Cache: cargo's own fingerprints are the content cache, so an acquisition that
  * spawns (warm ≈ seconds) reads the units `run.json` lists; the driver deletes
@@ -37,6 +43,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -67,6 +74,7 @@ import {
   type SupervisedChildHost,
   type SupervisedChildSpawnOptions,
 } from "../process-tree/supervised-child.js";
+import { DaemonLock } from "../qdrant/embedded/daemon-lock.js";
 import { decodeRustcCallSites } from "./callsite-decoder.js";
 import {
   computeRustcDriverSourceHash,
@@ -98,11 +106,22 @@ export const RUSTC_DRIVER_DEFAULT_TIMEOUT_SEC = 3600;
 export const RUSTC_DRIVER_DEFAULT_MAX_RSS_MB = 12_288;
 /** Budget poll period. */
 export const RUSTC_DRIVER_POLL_MS = 2000;
+/** How often a run waiting on the project lock retries it. */
+const LOCK_POLL_MS = 1000;
 
 /** The `run.json` / unit-file layout the runner reads (the crate's `CALLSITES_FORMAT`). */
 const CALLSITES_FORMAT = 5;
 const HOST_COMMAND_TIMEOUT_MS = 10_000;
 const OUTPUT_TAIL_CHARS = 4096;
+const RUSTC_DRIVER_DIR = "rustc-driver";
+const PROJECTS_DIR = "projects";
+/** A rustc-driver root entry of the per-envKey layout that preceded `projects/`. */
+const LEGACY_ENV_DIR = /^[0-9a-f]{64}$/;
+/** `{ envKey }` of the environment the project dir's run record belongs to. */
+const ENV_FILE = "env.json";
+/** Held for the whole acquisition so two runs on one project never interleave record writes. */
+const LOCK_FILE = "run.lock";
+const UNITS_DIR = "units";
 const LATCH_FILE = "latch.json";
 const RUN_FILE = "run.json";
 /** The `.rs` stamps the run that wrote `run.json` started from; what a reuse is judged against. */
@@ -199,6 +218,8 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
     /** tmp + rename, creating parent directories; a failed write is silent. */
     writeTextAtomic: (path: string, text: string) => void;
     remove: (path: string) => void;
+    /** Entry names of a directory; none when it is unreadable. */
+    listDir: (path: string) => readonly string[];
     stat: (path: string) => { size: number; mtimeMs: number } | undefined;
     listRustSources: (projectRoot: string) => readonly RustSourceStamp[];
     /** Canonical path (symlinks resolved), as cargo reports it in package ids; the input when unresolvable. */
@@ -206,6 +227,11 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
   };
   /** Every workspace `Cargo.toml` under the root. */
   readCargoManifests: (projectRoot: string) => readonly ManifestFile[];
+  /**
+   * Exclusive lock on `lockPath` across processes, waited for up to `waitMs`;
+   * resolves to its release, or `undefined` when another holder kept it that long.
+   */
+  lockRunRecord: (lockPath: string, waitMs: number) => Promise<(() => void) | undefined>;
 }
 
 interface ResolvedDriver {
@@ -239,7 +265,7 @@ interface PersistedLatch {
  * Whatever the admission, a complete previous run with unchanged `.rs` stamps is
  * served without cargo (`reused`). A `reuseOnly` admission is upgraded to a
  * spawn in two cases only:
- * - warm + changed: a `run.json` exists for this envKey, its `target/` exists on
+ * - warm + changed: a `run.json` of this envKey exists, the project's `target/` exists on
  *   disk, and a `.rs` file was added, removed or re-stamped since its
  *   `sources.json` (or none was recorded). Cargo's fingerprints keep this an
  *   incremental check (seconds; ~1.5 min when tikv's root crate changed, against
@@ -274,6 +300,7 @@ async function acquire(
   deps: RustcCallSiteRunnerDeps,
   options: RustcCallSiteRunOptions,
 ): Promise<RustcCallSiteAcquisition> {
+  sweepLegacyEnvironmentDirs(deps);
   const discovery = deps.discover();
   const unavailable = (): RustcCallSiteAcquisition => ({
     status: "unavailable",
@@ -312,8 +339,54 @@ async function acquire(
   }
   const cargoArgs = options.cargoArgs ?? RUSTC_DRIVER_DEFAULT_CARGO_ARGS;
   const envKey = environmentKey(deps, options.projectRoot, driver, banner.stdout.trim(), cargoArgs);
-  const envDir = join(deps.dataDir, "rustc-driver", envKey);
+  const envDir = rustcDriverProjectDir(deps.dataDir, deps.fs.realPath(options.projectRoot));
 
+  const lockPath = join(envDir, LOCK_FILE);
+  const release = await deps.lockRunRecord(lockPath, (options.timeoutSec ?? RUSTC_DRIVER_DEFAULT_TIMEOUT_SEC) * 1000);
+  if (!release) {
+    return {
+      status: "failed",
+      diagnostics: { ...emptyDiagnostics(), envKey, detail: `another run still holds ${lockPath}` },
+    };
+  }
+  try {
+    adoptEnvironment(deps, envDir, envKey);
+    return await acquireForEnvironment(deps, options, { driver, envKey, envDir, cargoArgs }, sources, reuseOnly);
+  } finally {
+    release();
+  }
+}
+
+interface RustcDriverEnvironment {
+  driver: ResolvedDriver;
+  envKey: string;
+  /** The project dir: the run record of `envKey` and the persistent `target/`. */
+  envDir: string;
+  cargoArgs: string;
+}
+
+/**
+ * Points the project dir's run record at `envKey`. A record of another
+ * environment (run.json, sources.json, units, latch) is dropped; `target/` is
+ * kept, since cargo's own fingerprints invalidate it per unit when the driver,
+ * rustc or Cargo.lock changed.
+ */
+function adoptEnvironment(deps: RustcCallSiteRunnerDeps, envDir: string, envKey: string): void {
+  const recorded = parseJson(deps.fs.readText(join(envDir, ENV_FILE)));
+  if (isRecord(recorded) && recorded.envKey === envKey) return;
+  for (const name of [RUN_FILE, SOURCES_FILE, LATCH_FILE, UNITS_DIR]) deps.fs.remove(join(envDir, name));
+  deps.fs.writeTextAtomic(join(envDir, ENV_FILE), JSON.stringify({ envKey }));
+}
+
+async function acquireForEnvironment(
+  deps: RustcCallSiteRunnerDeps,
+  options: RustcCallSiteRunOptions,
+  environment: RustcDriverEnvironment,
+  sources: () => readonly RustSourceStamp[],
+  reuseOnly: () => boolean,
+): Promise<RustcCallSiteAcquisition> {
+  const { driver, envKey, envDir, cargoArgs } = environment;
+  const neverSpawn = options.spawn === "never";
   const latch = readLatch(deps, envDir, sources);
   if (latch) {
     return {
@@ -346,6 +419,30 @@ async function acquire(
     }
   }
   return runDriver(deps, options, driver, envKey, envDir, cargoArgs, sources());
+}
+
+/** `${dataDir}/rustc-driver/projects/<sha256 of the canonical project root>`. */
+function rustcDriverProjectDir(dataDir: string, canonicalProjectRoot: string): string {
+  return join(dataDir, RUSTC_DRIVER_DIR, PROJECTS_DIR, sha256(canonicalProjectRoot));
+}
+
+/**
+ * Removes the per-envKey dirs (`<64 hex>/` at the rustc-driver root) of the
+ * layout before one dir per project: nothing reads them any more, and each held
+ * a cargo target dir of several GB. Every other entry (`bin/`, `build-logs/`,
+ * `build-tmp/`, `projects/`) is left alone. Best-effort: a failed removal is
+ * retried on the next acquisition.
+ */
+function sweepLegacyEnvironmentDirs(deps: RustcCallSiteRunnerDeps): void {
+  const root = join(deps.dataDir, RUSTC_DRIVER_DIR);
+  for (const name of deps.fs.listDir(root)) {
+    if (!LEGACY_ENV_DIR.test(name)) continue;
+    try {
+      deps.fs.remove(join(root, name));
+    } catch {
+      // Left for the next acquisition.
+    }
+  }
 }
 
 /** The run left no failed crate and no missing unit: its units cover the whole workspace. */
@@ -557,7 +654,7 @@ function decodedAcquisition(
   const texts: string[] = [];
   const stamps: [string, number, number][] = [];
   for (const unit of driverRun.units) {
-    const path = join(envDir, "units", unit.file);
+    const path = join(envDir, UNITS_DIR, unit.file);
     const text = deps.fs.readText(path);
     if (text === undefined) continue;
     texts.push(text);
@@ -811,6 +908,13 @@ export function defaultRustcCallSiteRunnerDeps(
       remove: (path) => {
         rmSync(path, { recursive: true, force: true });
       },
+      listDir: (path) => {
+        try {
+          return readdirSync(path);
+        } catch {
+          return [];
+        }
+      },
       stat: (path) => {
         try {
           const stat = statSync(path);
@@ -829,7 +933,33 @@ export function defaultRustcCallSiteRunnerDeps(
       },
     },
     readCargoManifests: (projectRoot) => readManifestFiles(projectRoot, (fileName) => fileName === "Cargo.toml"),
+    lockRunRecord: lockRustcDriverRunRecord,
   };
+}
+
+/**
+ * `O_EXCL` pid lock file at `lockPath` (a dead holder's lock is taken over),
+ * polled until `waitMs` has passed. A lock dir that cannot be created yields a
+ * no-op release: there is nothing to serialize when nothing can be written.
+ */
+export async function lockRustcDriverRunRecord(lockPath: string, waitMs: number): Promise<(() => void) | undefined> {
+  try {
+    mkdirSync(dirname(lockPath), { recursive: true });
+  } catch {
+    return () => undefined;
+  }
+  const lock = new DaemonLock();
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const held = lock.acquire(lockPath);
+    if (held) {
+      return () => {
+        lock.release(held.fd);
+      };
+    }
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((done) => setTimeout(done, Math.min(LOCK_POLL_MS, Math.max(1, deadline - Date.now()))));
+  }
 }
 
 function writeTextAtomic(path: string, text: string): void {
