@@ -42,7 +42,7 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
   → ONE `semantic_search(query: "a ||| b ||| c")` (≤5 phrasings fused; real ids
   among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
-  ONE batch; never text search, never one call per phrasing
+  ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
   -rl, not tea-rags; phrase/error string → plan these three lines, never stop at
@@ -126,8 +126,8 @@ diff's → `review_changes` verdicts, nothing after.
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
   `3. shell grep -rl "<name>" (literal)` — callers the index lacks. No graph
-  retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles` =
-  DAG.
+  retry. Digest `codegraph off` → no graph tools, callers = usages row, never
+  "no cycles"; silent digest = on, no probe; on + empty `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` (status/index/empty Rust graph answer) → tell user

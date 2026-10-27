@@ -42,7 +42,7 @@ After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 
 ## Delivery budget — core is one part
 
-`core.md` ≤ 9,200 chars (owner decision 2026-10-28, 9200), injected as
+`core.md` ≤ 9,400 chars (owner decision 2026-10-28, 9400), injected as
 `--part 1 --parts 1` (`tests/hooks/agent-context-budgets.test.sh`). Server
 `instructions` get a ≤ 4,096 head (first 512 self-contained: addressing first) +
 a `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full

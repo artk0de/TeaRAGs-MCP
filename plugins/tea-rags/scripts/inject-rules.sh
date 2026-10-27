@@ -20,7 +20,7 @@ RULES_DIR="$PLUGIN_ROOT/rules"
 
 RULE_FILES="core.md"
 
-MAX_BYTES=10000
+MAX_BYTES=11000
 PART=0
 PARTS=0
 COUNT_ONLY=0
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --part)       PART="${2:-0}";        shift 2 || shift ;;
     --parts)      PARTS="${2:-0}";       shift 2 || shift ;;
-    --max-bytes)  MAX_BYTES="${2:-10000}"; shift 2 || shift ;;
+    --max-bytes)  MAX_BYTES="${2:-11000}"; shift 2 || shift ;;
     --count)      COUNT_ONLY=1;          shift ;;
     *)                                   shift ;;
   esac
