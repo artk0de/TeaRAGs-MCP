@@ -64,7 +64,6 @@ never re-run the same call (`tea-rags://guide/pagination`).
 | Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |
 | 2+ ids in hand (outline lines, hits)        | Their bodies / sections                 | ONE `find_symbol(symbols: [<id1>, <id2>, ...])` (≤ 20) — rows keyed by `request`, misses in `missing[]`; never one call per id            |
 | A directory path                            | Its files, their top-level symbols      | `find_symbol(relativePath: "<dir>")` — `directory` frame with subdirs; NOT `ls`, NOT a glob listing                                       |
-| Answer carries `next` (search, find_symbol) | Callees / callers / co-change of anchor | each `next[i]` call verbatim, in order, before any new search — `project` + `path` already set; its `why` names the file and what it adds |
 | Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |
 | Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |
 | Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |
@@ -134,6 +133,9 @@ route, not `Read`, not `ls` / a glob listing, not `semantic_search`:
   / glob to answer "what's in this directory"; drill a file next.
 - Unknown path → `empty.reason: "unknownPath"` + nearest `suggestions` — retry
   with one of them.
+- A miss on `Class#member` lists the class's members in `suggestions` (similar
+  names first) — pick from them or read `find_symbol(symbol: <Class>)`; never
+  guess another member id.
 
 **Outline / TOC = map, not content — read chapters by address.** Every line of
 class outline, file outline, doc TOC carries id (`Class#method`, `Class.method`,

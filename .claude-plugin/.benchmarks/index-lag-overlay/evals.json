@@ -39,7 +39,7 @@
       "id": "E1",
       "context": "main, own checkout, dinopowers:brainstorming, first tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
       "prompt": "read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
-      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol for the tickets' code; who else calls → get_callers AND the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `new_session_url`; NOT Bash cat/sed, Read",
+      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol for the tickets' code; who else calls → get_callers AND the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `new_session_url`; NOT Bash cat/sed, Read",
       "audit_finding": "A1,A2,A3,A4",
       "results": {
         "no_rule": "FAIL",
@@ -95,7 +95,7 @@
       "id": "E5",
       "context": "main, auto-mode Bash note, healthy index",
       "prompt": "every caller of build_after_sign_in_url",
-      "expected": "get_callers + the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `build_after_sign_in_url` (call sites the graph misses); NOT hybrid_search as the name sweep, NOT cat/Read",
+      "expected": "get_callers + the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `build_after_sign_in_url` (call sites the graph misses); NOT hybrid_search as the name sweep, NOT cat/Read",
       "audit_finding": "A3",
       "results": {
         "no_rule": "PASS",
@@ -207,7 +207,7 @@
       "id": "E13",
       "context": "edge, Russian, explicit user override",
       "prompt": "user: просто прочитай lib/navigation_urls.rb руками",
-      "expected": "Read (user override wins)",
+      "expected": "lib/navigation_urls.rb is indexed: tell the user the tea-rags plugin hook blocks a manual Read of indexed code, read it via find_symbol(relativePath: \"lib/navigation_urls.rb\") (lag does not license shell reads); no shell cat/sed workaround, no confirm question (0jt47; was 'Read (user override wins)' before the ueplg deny hook)",
       "audit_finding": "edge (over-correction guard)",
       "results": {
         "no_rule": "PASS",
@@ -221,7 +221,7 @@
       "id": "E14",
       "context": "main, graph",
       "prompt": "get_callers after 120 s, treeGraphUnavailable timeout, floors [], caller in changed file",
-      "expected": "find_symbol on the caller in the changed file + the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal name (callers the index lacks) (+ incremental on own checkout); no graph retry; NOT Read/cat",
+      "expected": "find_symbol on the caller in the changed file + the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal name (callers the index lacks) (+ incremental on own checkout); no graph retry; NOT Read/cat",
       "audit_finding": "A2,A3",
       "results": {
         "no_rule": "FAIL",

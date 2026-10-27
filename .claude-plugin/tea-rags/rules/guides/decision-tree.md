@@ -344,7 +344,7 @@ For detailed guidance on specific topics, read these when needed:
 - `rules/references/signal-interpretation.md` — pair diagnostics for overlay
   signals
 - `rules/references/runtime-introspection.md` — MCP resources catalog (presets /
-  signals / filters / labels), `infraHealth`, `driftWarning`, and
+  signals / filters / labels), `infraHealth`, index drift (status / prime), and
   `rankingOverlay` explanation layer
 - `rules/references/subagent-injection.md` — verbatim block parent agents must
   prepend to subagent prompts before `Agent` tool dispatch

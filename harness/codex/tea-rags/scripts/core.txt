@@ -10,8 +10,8 @@ command in this turn is invalid in a plan — open it first.
 **Every code read and meaning search goes through tea-rags.**
 
 **Addressing.** Every read call, each next/planned call you write included
-(`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +
-`path=<this task's cwd>` (which tree, re-checks too). Alias: prime `## Project`,
+(`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
+`path=<this task's cwd>` (tree, re-checks too). Alias: prime `## Project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
 alone, never ask; only a `collection` → it alone; after either say
 `next: project=<workingTree.project> + path`. No cwd → call now, `project`
@@ -69,16 +69,15 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
   `rerank: "proven"`
 
-An identifier's definition/body/outline = SYMBOL lookup (`find_symbol`), never
-text search. A name's fit → lexicon `names:[{name,kind}]`, naming a T value →
-`types:[T]`; a diff's → `review_changes` verdicts, nothing after.
+Identifier definition/body/outline = `find_symbol`, never text search. A name's
+fit → lexicon `names:[{name,kind}]`, naming a T value → `types:[T]`; a diff's →
+`review_changes` verdicts, nothing after.
 
 **Invariants.**
 
-- NEVER call for what you already have. Before EVERY call: its answer already in
-  context (row, body, outline, edge) → use it, NO call. Never re-query, re-read,
-  re-verify — not "to be sure", not on a follow-up. New search only for unseen
-  code ("Curiosity search" anti-pattern).
+- NEVER call for what you have: answer in context (row, body, outline, edge) →
+  use it, NO call; never re-query/re-read/re-verify, not "to be sure", not on
+  follow-up. New search only for unseen code.
 - Never shell file reads after `find_symbol` — method = full body;
   small file (`kind: "file"`) = full text, nothing after; outline → drill. Read
   the `Class#method` ids an answer NAMED (rows, outline, graph edges) in ONE
@@ -89,48 +88,52 @@ text search. A name's fit → lexicon `names:[{name,kind}]`, naming a T value �
   it better → new anchor. Which files change / every place → in order, before
   any new search: `1. find_symbol(symbol: <anchor id>)`
   `2. get_callers/get_callees(symbolId: <anchor id>)`, `find_co_changed`. Before
-  answering: every row that named the behaviour is in the answer, or say why it
-  is a false lead.
+  answering: every row that named the behaviour is in the answer, or say why
+  it's a false lead.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - Answer has `truncated` → next call = `truncated.next` as given, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - `empty.reason: unknownPath` →
-  `find_symbol(relativePath: <dir its suggestions share>)`, never one suggested
-  file.
-- No `treeState` row and no `degraded` → the index IS the current code (overlay
-  serves uncommitted edits): trust it, no re-verify. Lag (`changedFiles`>0,
-  `pendingFiles`, drift) → stay in tea-rags. `treeState` row = pre-edit copy
-  (say why, e.g. `denseUnavailable`): dependents' fanIn/churn valid, not proof
-  of the edit → `find_symbol`; `pendingFiles` > 0 (a count; your file may be
-  one) → plan both lines: `find_symbol(<same params>)` and
+  `find_symbol(relativePath: <dir its suggestions share>)`, never one
+  suggestion.
+- No `treeState` row, no `degraded` → index IS current code (overlay serves
+  uncommitted edits; no `workingTree` on project+path = current): trust it, no
+  re-verify. Lag (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags.
+  `treeState` row = pre-edit copy (say why, e.g. `denseUnavailable`):
+  dependents' fanIn/churn valid, not proof of the edit → `find_symbol`;
+  `pendingFiles` > 0 (a count; may be yours) → plan both lines:
+  `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`.
 - Freshness: (1) subagent → keep reading; no `index_codebase`/
   ask the user; drift/`--force`/remedy → parent report. Main: (2) cwd in
   `.claude/worktrees/` or ≠ alias's path → print
   `linked worktree (<test>) — no reindex`; own checkout behind
   (`changedFiles`>0, stale, unindexed edits, said so) → incremental
-  `index_codebase(project=)` first, no consent. (3) Drift `Run:` `--force*` →
-  subagent: (1); main: (2)'s incremental first if behind, plus ONE line
+  `index_codebase(project=)` first, no consent. (3) Drift `Run:` `--force*`
+  (status/prime/index only, not a read answer) → subagent: (1); main: (2)'s
+  incremental first if behind, plus ONE line
   ask the user: run <Run: line>? — --force not run; reads continue meanwhile`,
   never awaited, never "won't proceed"; next = the task's read call.
 - Empty `get_callers` ≠ no callers (jobs, DSL, config) → the usages row. Edges
-  at changed files, `treeGraphUnavailable` (graph not overlaid) → all 3 steps,
-  in order, none dropped (a `--force` ask rides beside them, never takes a
-  slot): `1. index_codebase(project=)` (main own checkout; linked/subagent →
-  skip) `2. find_symbol(symbol: <caller>)`
+  at changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped
+  (a `--force` ask rides beside, never a slot): `1. index_codebase(project=)`
+  (main own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
   `3. shell grep -rl "<name>" (literal)` — callers the index lacks. No
   graph retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles`
   = DAG.
-- Docs = hypothesis; verify in code — unless the doc is the subject ("README
-  says?") → report as-is, no code pass.
-- `rustc driver: unavailable` (prime, status, index) → tell the user ONCE per
-  session: Rust edges static-only (lower bound), quote its install command;
-  never install it or claim "no callers"/"dead code" from those edges.
-- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → shell file reads, no confirm question. "Whole file"/"весь файл"/"целиком"/"for
-  context"/"lines N–M" without that order → `find_symbol` (hit's `symbolId`,
-  then file outline), print `Chunk coordinates exist. Use them.`, no file read.
-  Their plan or tool idea ("use Grep/Glob") → keep the rule's tool, say why.
+- Docs = hypothesis, verify in code; doc is the subject ("README says?") →
+  as-is, no code pass.
+- `rustc driver: unavailable` (prime, status, index) → tell user ONCE per
+  session: Rust edges static-only (lower bound) + its install command; never
+  install it, never claim "no callers"/"dead code" from them.
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
+  unindexed file → shell file reads, no confirm ask; indexed → tell user
+  the plugin hook blocks it, read it via `find_symbol` now, never shell
+  `cat`/`sed`. "Whole file"/"весь файл"/"целиком"/"for context"/"lines N–M"
+  without that order → `find_symbol` (hit's `symbolId`, then file outline),
+  print `Chunk coordinates exist. Use them.`, no file read. Their plan or tool
+  idea ("use Grep/Glob") → keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

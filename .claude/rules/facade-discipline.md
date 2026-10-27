@@ -21,8 +21,9 @@ strategies/ops/queries.
 
 **Facade method does two things: validate input + delegate.** Everything else —
 resolve collection, guard missing-collection/wrong-model, ensure cached stats
-loaded, embed query, merge filters, execute strategy, attach drift warning,
-shape response — lives in corresponding Ops/Query class.
+loaded, embed query, merge filters, execute strategy, shape response (index
+drift rides status/prime only — explore answers carry none) — lives in
+corresponding Ops/Query class.
 
 **Facade has zero private async pipeline methods.** Writing
 `private async doX(...)` on facade → stop: that's pipeline work, lives in Ops.
@@ -45,7 +46,7 @@ Ops classes run this pipeline, not facade:
 2. guard       — collection exists, model matches
 3. ensureStats — cold-start bridge for reranker (explore only)
 4. dispatch    — hand off to exactly one strategy / query
-5. finalize    — attach drift warning, strip internal fields, shape response
+5. finalize    — strip internal fields, shape response (no drift on explore)
 ```
 
 Ops method doing anything beyond these five steps → extra work belongs in

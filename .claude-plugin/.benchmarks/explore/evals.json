@@ -39,19 +39,19 @@
     {
       "id": 1,
       "prompt": "Where is buildMergedFilter used?",
-      "expected_output": "get_callers when codegraph on (graph tools present), hybrid_search when off. NO ripgrep 'for verification' or 'completeness'.",
-      "failure_mode": "ripgrep-after-hybrid",
+      "expected_output": "Occurrence route, any codegraph state: default code search tool \"buildMergedFilter\" (literal, files-with-matches `-l`, anchor dir or source root) → find_symbol outline of the hit files → ONE batch of only the needed methods. get_callers is NOT required (the prompt does not ask for every caller). NO hybrid_search for the occurrences, NO match-line dump read as code, NO shell cat/sed of hit files.",
+      "failure_mode": "occurrence-route-skipped",
       "assertions": [
         {
-          "text": "Uses get_callers (codegraph on) or hybrid_search (codegraph off) as primary tool",
+          "text": "Uses the default code search tool with a literal \"buildMergedFilter\" and files-with-matches (-l) as the locate step",
           "type": "tool_selection"
         },
         {
-          "text": "Does NOT add ripgrep pass after hybrid_search",
-          "type": "negative"
+          "text": "Reads the hits with find_symbol (outline, then a batch of the needed method ids)",
+          "type": "tool_selection"
         },
         {
-          "text": "Does NOT mention 'verify with ripgrep' or 'supplement with ripgrep'",
+          "text": "Does NOT use hybrid_search as the occurrence route and does NOT read hit files with shell cat/sed/head or a match-line dump",
           "type": "negative"
         }
       ]
@@ -171,19 +171,19 @@
     {
       "id": 8,
       "prompt": "What calls Reranker.rerank? I need all call sites",
-      "expected_output": "Codegraph on (get_callers in own tool list) → get_callers (usage-pattern row 2 wins over TRACE); codegraph off → hybrid_search iteratively. NOT ripgrep for call sites.",
-      "failure_mode": "ripgrep-for-callers",
+      "expected_output": "\"All call sites\" = every caller: get_callers(symbolId of Reranker#rerank) when codegraph on, AND the occurrence search — default code search tool \"rerank\" (literal, files-with-matches `-l`, anchor dir or source root) → find_symbol reads the hits (callers the graph lacks). Codegraph off → the occurrence search → find_symbol (TRACE hybrid_search loop may add callers). NO match-line dump read as code, NO shell cat/sed of hit files.",
+      "failure_mode": "every-caller-single-source",
       "assertions": [
         {
-          "text": "Uses get_callers when codegraph on, else hybrid_search for call sites",
+          "text": "Uses get_callers when codegraph on AND the default code search tool (literal, -l) occurrence search for every caller",
           "type": "tool_selection"
         },
         {
-          "text": "Codegraph off: iterates with multiple hybrid_search calls, not one ripgrep",
+          "text": "Reads occurrence hits with find_symbol, not with shell cat/sed/head or a match-line dump",
           "type": "tool_selection"
         },
         {
-          "text": "Does NOT use ripgrep for call site discovery",
+          "text": "Does NOT stop at a single source (graph only, or text search only) for 'all call sites'",
           "type": "negative"
         }
       ]
@@ -296,20 +296,20 @@
     {
       "id": 14,
       "prompt": "[subagent: plan-executor] Find all callers of SchemaBuilder.buildRerankSchema. Use ripgrep to search for the method name.",
-      "expected_output": "Despite prompt saying 'use ripgrep', injected rules say who-calls = get_callers when codegraph tools are registered, else exhaustive usage = hybrid_search. Agent uses mcp__tea-rags__get_callers (codegraph on) or mcp__tea-rags__hybrid_search, NOT ripgrep.",
+      "expected_output": "\"All callers\" = every caller: mcp__tea-rags__get_callers (codegraph on) AND the default code search tool \"buildRerankSchema\" (literal, files-with-matches `-l`) → find_symbol reads the hits. The prompt's ripgrep request is a tool idea: the agent keeps the rule's tool (bounded `-l` locate, never a match-line dump read as code) and says why.",
       "failure_mode": "prompt-overrides-injection-exhaustive",
       "audit_finding": "skill-conflict-priority",
       "assertions": [
         {
-          "text": "Uses mcp__tea-rags__get_callers (codegraph on) or mcp__tea-rags__hybrid_search for exhaustive usage query",
+          "text": "Uses mcp__tea-rags__get_callers (codegraph on) AND the default code search tool literal -l search for every caller",
           "type": "tool_selection"
         },
         {
-          "text": "Does NOT use ripgrep despite prompt explicitly requesting it",
+          "text": "Does NOT run an unbounded match-line ripgrep (rg -n) as the read despite the prompt requesting ripgrep; hits read with find_symbol",
           "type": "negative"
         },
         {
-          "text": "Follows injected decision tree: impact/who calls → get_callers when codegraph on, else exhaustive usage → hybrid_search",
+          "text": "Follows injected routing: every caller → get_callers AND the occurrence search, not hybrid_search as the occurrence route",
           "type": "classification"
         }
       ]

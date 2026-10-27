@@ -162,8 +162,9 @@ and tree, never "index unusable". Thousands of changed files included.
   Unindexed / unregistered / pipe over command output / unparsable command / any
   error → allowed. File created after last index run = not indexed → allowed.
   Hook sees the call, not the chat: user's manual-read order ("with Read",
-  "руками") still denied — say so, quote the deny, ask user to read it or
-  disable the hook; never route around via another reader.
+  "руками") still denied — say so, quote the deny, read it via `find_symbol`
+  (user may read it or disable the hook); never route around via shell
+  `cat`/`sed` or another reader.
 
 ## Worktree clone — teardown only
 
