@@ -42,6 +42,13 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
   uncommitted, `{base}` = branch; one name → `get_naming_lexicon`
 - project's embedding / Qdrant / env → `list_projects(project:)`
+- research — layout of `<dir>` → `get_architecture_report(pathPattern)`;
+  implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`; registered
+  / configured `<X>` → `hybrid_search("<X> register config")`; ticket `<T>` →
+  `semantic_search(taskId:)`; owners / recent churn / debt / don't-touch →
+  `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
+  dead code → `filter:{presets:"deadCandidates"}`; which to copy →
+  `rerank: "proven"`
 
 Never Grep/`rg`/`rg --files`, Glob or `cat`/`sed` to locate or read code —
 identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
@@ -109,13 +116,12 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
 `truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`; skill
-pick, fallbacks, research / planning question (architecture, contracts, flags,
-models, owners) → `decision-tree` "Question → call"; stale banner, drift,
-`treeState`, linked worktree → `freshness`; embedding/qdrant error,
-`denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`, labels →
-`presets`, `signals`, `signal-labels`; graph/AST, other language →
-`language-capability`; architecture report / `review_changes` answer →
-`architecture` / `review`; no prime digest →
+pick, fallbacks, other research questions → `decision-tree` "Question → call";
+stale banner, drift, `treeState`, linked worktree → `freshness`;
+embedding/qdrant error, `denseUnavailable` → `degraded`; raw `filter:` →
+`filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`; graph/AST,
+other language → `language-capability`; architecture report / `review_changes`
+answer → `architecture` / `review`; no prime digest →
 `tea-rags://project/<alias>/digest`; numeric filter value not given
 (minCommitCount/minAgeDays/maxAgeDays/minFanIn/modifiedAfter window) or bare raw
 number, no label → `…/metrics?language=<lang>&section=thresholds`.
