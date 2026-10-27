@@ -19,11 +19,11 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
 Indexed code is never READ with shell file reads, shell `cat`/`sed`/`head` (even
-in `a; b`) or shell grep -rl match lines. The shell grep -rl only LOCATES exact
+in `a; b`) or search-tool match lines. The shell grep -rl only LOCATES exact
 text — `-l` first or a line cap, in the anchor's dir when known, else the source
-root, never the repo root or a search for the dir; then `find_symbol` reads the
-needed methods. No find/Glob to locate code. Shell / shell file reads only for
-files outside the index (`*.json`, locale/data `*.yml`) — say so.
+root, never the repo root or a search for the dir. No find/Glob to locate code.
+Shell / shell file reads only for files outside the index (`*.json`, locale/data
+`*.yml`) — say so.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
@@ -35,10 +35,13 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
+- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
+  → `semantic_search` (real ids among them → `hybrid_search(metaOnly)`) → anchor
+  → `get_callees`/`get_callers` → ONE batch of needed methods; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
-  -rl, never tea-rags; phrase/error string → plan these three lines, never stop
-  at the hit: `shell grep -rl "<phrase>" <dir> (literal, line cap)` →
+  -rl, not tea-rags; phrase/error string → plan these three lines, never stop at
+  the hit: `shell grep -rl "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
@@ -48,19 +51,19 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - every call / all callers of X → plan both lines, a named grep/rg too:
   `get_callers(symbolId:)` + the usages row's search
 - where X is used/referenced, every occurrence, who constructs X, files
-  containing X (exact name/constant/string, even `a|b`), "grep for X" → shell
-  grep -rl `"<X>" <dir>` (literal, `-l`) → `find_symbol` outline → batch of only
-  the needed methods, never stop at the hit
+  containing X (exact name/constant/string you know; `a|b` only of seen ids),
+  "grep for X" → shell grep -rl `"<X>" <src dir>` (literal, `-l`) →
+  `find_symbol` outline → batch of only the needed methods, never stop at the
+  hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
-- behaviour/intent, no name → `semantic_search` only, no `hybrid_search`
 - code like a chunk in hand → `find_similar(positiveIds:)`
 - how X works / what happens when → `get_callees`; who calls X/impact/where Y is
-  handled → `get_callers` — `symbolId:` (id from a row)
+  handled → `get_callers` — `symbolId:` (a row's id)
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review, a diff's names →
   `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
-  uncommitted, `{base}` = branch; one name → `get_naming_lexicon`
+  uncommitted, `{base}` = branch
 - project's embedding/Qdrant/env → `list_projects(project:)`
 - research — layout of `<dir>` → `get_architecture_report(pathPattern)`;
   implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`; registered/
@@ -75,35 +78,33 @@ diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 
-- NEVER call for what you have: answer in context (row, body, outline, edge) →
-  use it, NO call; never re-query/re-read/re-verify, not "to be sure", not on
-  follow-up. New search only for unseen code.
-- Never shell file reads after `find_symbol` — method = full body; small file
-  (`kind: "file"`) = full text, nothing after; outline → drill. Read the
-  `Class#method` ids an answer NAMED (rows, outline, graph edges) in ONE
-  `find_symbol(symbols: [<ids>])` — never file/dir paths. After a search:
-  `find_symbol` next.
+- NEVER call for what you have (row, body, outline, edge in context) → use it;
+  never re-query/re-read/re-verify, not "to be sure", not on follow-up. New
+  search only for unseen code.
+- After `find_symbol`: method = full body; small file (`kind: "file"`) = full
+  text, nothing after; outline → drill. Read the `Class#method` ids an answer
+  NAMED (rows, outline, graph edges) in ONE `find_symbol(symbols: [<ids>])` —
+  never file/dir paths. After a search: `find_symbol` next.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
   it better → new anchor. Which files change / every place → in order, before
   any new search: `1. find_symbol(symbol: <anchor id>)`
   `2. get_callers/get_callees(symbolId: <anchor id>)`, `find_co_changed`. Before
-  answering: every row that named the behaviour is in the answer, or say why
-  it's a false lead.
+  answering: every row that named the behaviour is in the answer, or why it's a
+  false lead.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
-- Answer has `truncated` → next call = `truncated.next` as given, or narrowed
+- `truncated` → next call = `truncated.next` as given, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - `empty.reason: unknownPath` →
   `find_symbol(relativePath: <dir its suggestions share>)`, never one
   suggestion.
 - No `treeState` row, no `degraded` → index IS current code (overlay serves
-  uncommitted edits; no `workingTree` on project+path = current): trust it, no
-  re-verify. Lag (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags.
-  `treeState` row = pre-edit copy (say why, e.g. `denseUnavailable`):
-  dependents' fanIn/churn valid, not proof of the edit → `find_symbol`;
-  `pendingFiles` > 0 (a count; may be yours) → plan both lines:
-  `find_symbol(<same params>)` and
+  uncommitted edits; no `workingTree` on project+path = current): trust it. Lag
+  (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags. `treeState` row
+  = pre-edit copy (say why, e.g. `denseUnavailable`): dependents' fanIn/churn
+  valid, not proof of the edit → `find_symbol`; `pendingFiles` > 0 (a count; may
+  be yours) → plan both lines: `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`.
 - Freshness: (1) subagent → keep reading; no `index_codebase`/ ask the user;
   drift/`--force`/remedy → parent report. Main: (2) cwd in `.claude/worktrees/`
@@ -114,21 +115,21 @@ diff's → `review_changes` verdicts, nothing after.
   (2)'s incremental first if behind, plus ONE line ask the user: run <Run:
   line>? — --force not run; reads continue meanwhile`, never awaited, never
   "won't proceed"; next = the task's read call.
-- Empty `get_callers` ≠ no callers (jobs, DSL, config) → the usages row. Edges
-  at changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped
-  (a `--force` ask rides beside, never a slot): `1. index_codebase(project=)`
-  (main own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
+- Empty `get_callers` ≠ no callers (jobs, DSL, config) → usages row. Edges at
+  changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped (a
+  `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
+  own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
   `3. shell grep -rl "<name>" (literal)` — callers the index lacks. No graph
   retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles` =
   DAG.
-- Docs = hypothesis, verify in code; doc is the subject ("README says?") →
-  as-is, no code pass.
-- `rustc driver: unavailable` (prime/status/index) → tell user ONCE per session:
-  Rust edges static-only (lower bound) + its install command; never install it,
-  never claim "no callers"/"dead code" from them.
+- Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
+  code pass.
+- `rustc driver: unavailable` (prime/status/index) → tell user ONCE: Rust edges
+  static-only (lower bound) + install command; never install it or claim "no
+  callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
   unindexed file → shell file reads, no confirm ask; indexed → tell user the
-  plugin hook blocks it, read it via `find_symbol` now, never shell `cat`/`sed`.
+  plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.
   "Whole file"/"весь файл"/"целиком"/"for context"/"lines N–M" without that
   order → `find_symbol` (hit's `symbolId`, then file outline), print
   `Chunk coordinates exist. Use them.`, no file read. Their plan or tool idea
@@ -141,9 +142,9 @@ pick, fallbacks, research questions → `decision-tree`; stale banner, drift,
 `treeState`, linked worktree → `freshness`; embedding/qdrant error,
 `denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`, labels →
 `presets`, `signals`, `signal-labels`; graph/AST, other language →
-`language-capability`; architecture report / `review_changes` answer →
+`language-capability`; architecture / `review_changes` answer →
 `architecture`/`review`; no prime digest → `tea-rags://project/<alias>/digest`;
-numeric filter value not given or bare raw number, no label →
+numeric filter value unknown / bare raw number, no label →
 `…/metrics?language=<lang>&section=thresholds`.
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.

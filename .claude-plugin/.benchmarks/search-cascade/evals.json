@@ -494,6 +494,30 @@
         "a default code search tool match-line dump of the file as a workaround",
         "silently reading via find_symbol without telling the user the hook blocks the manual read"
       ]
+    },
+    {
+      "id": "A1",
+      "audit_finding": "c9aft: concept searches written as a regex alternation of synonyms/spellings went to the default code search tool under the usages row's `even a|b` licence",
+      "context": "Project alias `tollgate`, cwd /work/tollgate (its own checkout), Ruby/Rails, codegraph on, healthy index. No file, class or constant has been named or seen yet.",
+      "prompt": "How does the app handle throttling from the payment provider — rate limit, retry-after, 429?",
+      "expected": "a behaviour / concept question: first lookup = semantic_search (or hybrid_search with metaOnly when real identifiers are among the words) for the throttling behaviour; then the anchor row → get_callees / get_callers on its symbolId, or ONE find_symbol batch of only the needed method bodies",
+      "not": [
+        "a default code search tool alternation of the concept words (e.g. `rate_limit|retry_after|429`) as any discovery search",
+        "cat / Read of hit files"
+      ]
+    },
+    {
+      "id": "A2",
+      "audit_finding": "c9aft guard: an exact constant still takes the bounded occurrence search after the concept-alternation rule",
+      "context": "Project alias `tollgate`, cwd /work/tollgate (its own checkout), Ruby/Rails, codegraph on, healthy index.",
+      "prompt": "Where is `RETRY_AFTER_SECONDS` used?",
+      "expected": "the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `RETRY_AFTER_SECONDS`, bounded (`-l` / files_with_matches, or a line cap), scoped to the source root (not the repo root); then find_symbol reads the hits (outline via relativePath, then a batch of only the needed methods)",
+      "not": [
+        "semantic_search",
+        "hybrid_search for the name",
+        "an unbounded content search",
+        "cat / Read of hit files"
+      ]
     }
   ],
   "results": {
