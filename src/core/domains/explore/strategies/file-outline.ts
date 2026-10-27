@@ -54,6 +54,13 @@ const FULL_TEXT_MAX_LINES = 150;
 export interface FileOutlineInput {
   relativePath: string;
   language?: string;
+  /**
+   * A STRICT full-text cap: a file over it answers its outline even when the
+   * outline is longer than the file (find_symbol `symbols` batch, bd
+   * tea-rags-mcp-yz10n). Absent → the `relativePath:` rule: up to
+   * {@link FULL_TEXT_MAX_LINES} lines, or an outline at least as long as the file.
+   */
+  fullTextMaxLines?: number;
 }
 
 export class FileOutlineStrategy extends BaseExploreStrategy {
@@ -83,8 +90,14 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     return this.unknownPath;
   }
 
+  /** True when the `relativePath:` rule would have answered full text but `fullTextMaxLines` kept the outline. */
+  get fullTextWithheld(): boolean {
+    return this.withheldFullText;
+  }
+
   private directoryOutline?: DirectoryOutline;
   private unknownPath?: EmptyAnswerExplanation;
+  private withheldFullText = false;
 
   /** No overfetch — a single scroll page is enough for one file's chunks. */
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {
@@ -146,6 +159,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
    * the tree's, read whole — chunks overlap and member chunks carry container
    * headers, so no concatenation of them is the file. A file the view serves
    * from the index (`treeState: "modified"`) or cannot read keeps the outline.
+   * `fullTextMaxLines` then tightens the rule to a strict line cap.
    */
   private async fullTextOrOutline(outline: ExploreResult, ctx: ExploreContext): Promise<ExploreResult> {
     const view = ctx.workingTreeView;
@@ -156,6 +170,11 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     const lineCount = countLines(text);
     const outlineText = typeof outline.payload?.content === "string" ? outline.payload.content : "";
     if (lineCount > FULL_TEXT_MAX_LINES && outlineText.length < text.length) return outline;
+    const cap = this.input.fullTextMaxLines;
+    if (cap !== undefined && lineCount > cap) {
+      this.withheldFullText = true;
+      return outline;
+    }
     return {
       ...outline,
       payload: { ...outline.payload, kind: "file", content: text, startLine: 1, endLine: lineCount },

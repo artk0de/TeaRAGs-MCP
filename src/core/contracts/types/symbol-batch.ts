@@ -1,6 +1,13 @@
 import type { WorkingTreeState } from "./working-tree.js";
 
 /**
+ * A find_symbol batch is not `cat` (bd tea-rags-mcp-yz10n): a file entry
+ * answers its outline, and only a file of at most this many lines its full
+ * text. One constant for the drill and the tool prose that states it.
+ */
+export const BATCH_FULL_TEXT_MAX_LINES = 60;
+
+/**
  * A find_symbol batch address (agent turn economy N1) no symbol answered: the
  * address as requested, why, and — when the working tree deleted the file the
  * index holds it in — `treeState: "deleted"`.
