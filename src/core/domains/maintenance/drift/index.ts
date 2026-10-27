@@ -8,7 +8,13 @@ export {
   type IndexDriftRecompute,
   type IndexDriftRemedy,
 } from "./remedy.js";
-export { formatIndexDriftReport, IndexDriftReporter, type IndexDriftReport } from "./report.js";
+export {
+  formatConsumedIndexDriftReport,
+  formatIndexDriftReport,
+  IndexDriftReporter,
+  type ConsumedIndexDriftReport,
+  type IndexDriftReport,
+} from "./report.js";
 export { SchemaDriftMonitor } from "./schema-drift-monitor.js";
 export { StatsContractDriftMonitor } from "./stats-contract-drift-monitor.js";
 export {

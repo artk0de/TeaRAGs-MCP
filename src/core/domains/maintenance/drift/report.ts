@@ -4,8 +4,9 @@
  *
  * The monitors stay stateless about who has been told: consumption ("this
  * process has already shown THIS report for this collection") lives here, so a
- * search response carries each distinct warning once per server session and
- * again after each index run resets it (spec decision 13).
+ * search response carries each distinct warning in full once per server session
+ * and again after each index run resets it (spec decision 13); in between, a
+ * repeat rides as a one-line pointer (q1g6s.15).
  */
 
 import { hashCollectionForPath } from "../../../adapters/filesystem/path-canonicalization.js";
@@ -18,6 +19,16 @@ export interface IndexDriftReport {
   remedy: IndexDriftRemedy;
   /** Registry name of the collection, when one is registered — fills `--project`. */
   projectAlias?: string;
+}
+
+/**
+ * What a consuming check hands a search answer (q1g6s.15): the report, and
+ * whether this process already showed it in full. A repeat renders as a
+ * one-line pointer, not silence — the drift is still there.
+ */
+export interface ConsumedIndexDriftReport {
+  report: IndexDriftReport;
+  repeat: boolean;
 }
 
 const AXIS_TITLE: Record<IndexDriftAxis, string> = {
@@ -75,7 +86,8 @@ export class IndexDriftReporter {
   }
 
   /**
-   * Once per collection per REPORT, until `reset` — the path-addressed search.
+   * In full once per collection per REPORT, until `reset`, then as a repeat — the
+   * path-addressed search.
    *
    * Keying by collection alone spent the warning on whatever the first check
    * happened to find: a clean check silenced the next search that actually had
@@ -84,7 +96,7 @@ export class IndexDriftReporter {
    * would SEE fixes both — a clean check consumes nothing, and a changed report
    * is a report nobody has been shown.
    */
-  async checkAndConsume(path: string): Promise<IndexDriftReport | null> {
+  async checkAndConsume(path: string): Promise<ConsumedIndexDriftReport | null> {
     const collectionName = await this.resolvePath(path);
     return collectionName === null ? null : this.checkAndConsumeByCollectionName(collectionName);
   }
@@ -94,13 +106,13 @@ export class IndexDriftReporter {
    * path-addressed one does: a request that names its collection outright is
    * still a search riding a warning along with an answer, not an inspection.
    */
-  checkAndConsumeByCollectionName(collectionName: string): IndexDriftReport | null {
+  checkAndConsumeByCollectionName(collectionName: string): ConsumedIndexDriftReport | null {
     const report = this.checkByCollectionName(collectionName);
     if (report === null) return null;
     const signature = `${collectionName}${SIGNATURE_SEPARATOR}${formatIndexDriftReport(report)}`;
-    if (this.consumed.has(signature)) return null;
+    if (this.consumed.has(signature)) return { report, repeat: true };
     this.consumed.add(signature);
-    return report;
+    return { report, repeat: false };
   }
 
   /**
@@ -129,6 +141,13 @@ export class IndexDriftReporter {
       return null;
     }
   }
+}
+
+/** A first sighting in full; a repeat as one line pointing where the full report lives. */
+export function formatConsumedIndexDriftReport({ report, repeat }: ConsumedIndexDriftReport): string {
+  if (!repeat) return formatIndexDriftReport(report);
+  const where = report.projectAlias ? `tea-rags://project/${report.projectAlias}/digest` : "get_index_status";
+  return `index drift unchanged — see ${where}`;
 }
 
 export function formatIndexDriftReport(report: IndexDriftReport): string {

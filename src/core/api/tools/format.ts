@@ -29,25 +29,25 @@ export function formatMcpResponse(data: unknown, columnOrder: readonly string[] 
 }
 
 /**
- * The marker of a clean answer on the MCP output (bd tea-rags-mcp-45kbu): the
- * tree, its alias, and `changedFiles: 0` — the agent rules read that zero as
- * "measured clean", so it stays explicit.
+ * The marker on the MCP output (bd tea-rags-mcp-45kbu, q1g6s.15): the tree,
+ * its alias, and only what the reader acts on — non-zero counts and the
+ * qualifiers. A clean answer is `{ tree, project? }`: absent counts mean
+ * measured clean. `floors`, the commits and `indexedDirty` stay internal: a
+ * benchmark whose every answer carried them saw the agent stop trusting the
+ * index.
  */
-export interface CompactWorkingTreeMarker {
-  tree: string;
-  project?: string;
-  changedFiles: 0;
-}
+export type CompactWorkingTreeMarker = Pick<WorkingTreeMarker, "tree"> &
+  Partial<Omit<WorkingTreeMarker, "tree" | "floors" | "indexedCommit" | "treeCommit" | "indexedDirty">>;
 
 /**
- * True when the answer's tree matches its index and no layer fell back: no
- * changed or deleted file, and none of the qualifiers that tell the reader to
- * act is present.
+ * True when every part of the answer is current: the tree matches its index,
+ * or the overlay served the answer from the tree completely — no qualifier
+ * names a part still read from the index. The change counts do not decide it:
+ * an agent that read `changedFiles: 378` on an answer the overlay had fully
+ * served re-read the file from disk (q1g6s.15).
  */
-function isCleanWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
+function isCurrentWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
   return (
-    marker.changedFiles === 0 &&
-    marker.deletedFiles === 0 &&
     marker.degraded === undefined &&
     marker.pendingFiles === undefined &&
     marker.indexOnlyFiles === undefined &&
@@ -59,13 +59,32 @@ function isCleanWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
 }
 
 /**
- * The marker as the MCP output carries it: compact when clean, else the full
- * marker unchanged. The domain marker is never mutated — internal consumers
- * keep every field; only the wire form is shortened.
+ * The marker as the MCP output carries it: tree and alias when the answer is
+ * current; else also the qualifiers naming what is not, the non-zero counts
+ * beside them as the size of that part. The domain marker is never mutated —
+ * internal consumers keep every field; only the wire form is shortened.
  */
-export function compactWorkingTreeMarker(marker: WorkingTreeMarker): WorkingTreeMarker | CompactWorkingTreeMarker {
-  if (!isCleanWorkingTreeMarker(marker)) return marker;
-  return { tree: marker.tree, ...(marker.project !== undefined && { project: marker.project }), changedFiles: 0 };
+export function compactWorkingTreeMarker(marker: WorkingTreeMarker): CompactWorkingTreeMarker {
+  if (isCurrentWorkingTreeMarker(marker)) {
+    return { tree: marker.tree, ...(marker.project !== undefined && { project: marker.project }) };
+  }
+  const {
+    tree,
+    floors: _floors,
+    indexedCommit: _indexedCommit,
+    treeCommit: _treeCommit,
+    indexedDirty: _indexedDirty,
+    changedFiles,
+    deletedFiles,
+    ...qualifiers
+  } = marker;
+  return {
+    tree,
+    ...(qualifiers.project !== undefined && { project: qualifiers.project }),
+    ...(changedFiles > 0 && { changedFiles }),
+    ...(deletedFiles > 0 && { deletedFiles }),
+    ...qualifiers,
+  };
 }
 
 /** A top-level `workingTree` marker of an answer DTO, compacted; anything else as is. */
@@ -208,13 +227,13 @@ export function appendDriftWarning(result: McpToolResult, warning: string | null
 
 /**
  * One-line text render of the `workingTree` marker (bd tea-rags-mcp-xi2r9) for
- * the text-output tools; structured tools carry the object itself.
+ * the text-output tools; structured tools carry the object itself. An answer
+ * that is current renders tree and project only; `showDistance` keeps the
+ * change counts for `get_index_status`, whose question IS that distance.
  */
-export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
+export function formatWorkingTreeMarker(marker: WorkingTreeMarker, options: { showDistance?: boolean } = {}): string {
   const project = marker.project ? ` · project ${marker.project}` : "";
-  if (isCleanWorkingTreeMarker(marker)) return `workingTree: ${marker.tree}${project} · changed 0`;
-  const sha = (commit: string | null): string => (commit ? commit.slice(0, 7) : "none");
-  const floors = marker.floors.length > 0 ? marker.floors.join(",") : "none";
+  if (!options.showDistance && isCurrentWorkingTreeMarker(marker)) return `workingTree: ${marker.tree}${project}`;
   const treeGraph = marker.treeGraphUnavailable ? ` · tree graph unavailable: ${marker.treeGraphUnavailable}` : "";
   const dense = marker.denseUnavailable ? ` · dense unavailable: ${marker.denseUnavailable.reason}` : "";
   const git = marker.gitUnavailable ? ` · git unavailable: ${marker.gitUnavailable.reason}` : "";
@@ -223,9 +242,9 @@ export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
     ...(marker.pendingFiles ? [`${marker.pendingFiles} pending`] : []),
   ];
   const changedFromIndex = fromIndex.length > 0 ? ` (${fromIndex.join(", ")})` : "";
-  const line =
-    `workingTree: ${marker.tree}${project} · index @${sha(marker.indexedCommit)} · tree @${sha(marker.treeCommit)}` +
-    ` · changed ${marker.changedFiles}${changedFromIndex} · deleted ${marker.deletedFiles} · floors ${floors}${treeGraph}${dense}${git}`;
+  const changed = marker.changedFiles > 0 ? ` · changed ${marker.changedFiles}${changedFromIndex}` : "";
+  const deleted = marker.deletedFiles > 0 ? ` · deleted ${marker.deletedFiles}` : "";
+  const line = `workingTree: ${marker.tree}${project}${changed}${deleted}${treeGraph}${dense}${git}`;
   return marker.degraded ? `${line} · degraded: ${marker.degraded.reason} → ${marker.degraded.remedy}` : line;
 }
 

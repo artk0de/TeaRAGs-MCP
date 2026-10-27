@@ -164,8 +164,8 @@ describe("registerSearchTools", () => {
   });
 
   it("emits results as a column table, one row per result, envelope fields beside it", async () => {
-    // A changed tree: a clean marker goes out compact (bd tea-rags-mcp-45kbu).
-    const workingTree = { tree: "/x", changedFiles: 1, deletedFiles: 0, floors: [] };
+    // A changed tree the overlay could not fully serve keeps its lag fields (q1g6s.15).
+    const workingTree = { tree: "/x", changedFiles: 1, deletedFiles: 0, floors: [], pendingFiles: 1 };
     const { captured } = makeHarness({
       hybridSearch: vi.fn().mockResolvedValue({
         results: [
@@ -190,7 +190,7 @@ describe("registerSearchTools", () => {
       ],
     });
     expect(result.structuredContent.driftWarning).toBe("stale");
-    expect(result.structuredContent.workingTree).toEqual(workingTree);
+    expect(result.structuredContent.workingTree).toEqual({ tree: "/x", changedFiles: 1, pendingFiles: 1 });
   });
 });
 
@@ -359,7 +359,7 @@ describe("registerSearchTools — workingTree", () => {
     "%s passes workingTree through to structuredContent",
     async (toolName) => {
       const { captured } = makeHarness({
-        [appMethods[toolName]]: vi.fn().mockResolvedValue({ results: [], workingTree: marker }),
+        [appMethods[toolName]]: vi.fn().mockResolvedValue({ results: [], workingTree: { ...marker, pendingFiles: 2 } }),
       });
       const tool = captured.find((t) => t.name === toolName);
 
@@ -367,7 +367,12 @@ describe("registerSearchTools — workingTree", () => {
         structuredContent: { workingTree?: unknown };
       };
 
-      expect(result.structuredContent.workingTree).toEqual(marker);
+      expect(result.structuredContent.workingTree).toEqual({
+        tree: "/repo/wt",
+        changedFiles: 3,
+        deletedFiles: 1,
+        pendingFiles: 2,
+      });
     },
   );
 
@@ -381,7 +386,7 @@ describe("registerSearchTools — workingTree", () => {
   // bd tea-rags-mcp-45kbu: a clean tree's marker goes out compact, and the
   // output schema the SDK validates every answer against accepts that shape.
   it.each(Object.keys(appMethods) as (keyof typeof appMethods)[])(
-    "%s emits a clean marker as tree, project and changedFiles 0",
+    "%s emits a clean marker as tree and project",
     async (toolName) => {
       const clean = { ...marker, changedFiles: 0, deletedFiles: 0, project: "proj" };
       const { captured } = makeHarness({
@@ -396,7 +401,6 @@ describe("registerSearchTools — workingTree", () => {
       expect(result.structuredContent.workingTree).toStrictEqual({
         tree: "/repo/wt",
         project: "proj",
-        changedFiles: 0,
       });
       expect(() => z.object(tool!.config.outputSchema as z.ZodRawShape).parse(result.structuredContent)).not.toThrow();
     },

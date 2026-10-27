@@ -134,6 +134,8 @@ describe("read tools on a path whose index does not exist (D3)", () => {
     const response = await graphFacade(async () => true).getCallers({ path: nonGitTree, symbolId: "helperB" });
 
     expect(response.callers).toEqual([]);
-    expect(response.workingTree?.degraded?.reason).toBe("index has no indexedCommit stamp");
+    expect(response.workingTree?.degraded?.reason).toContain(
+      "index has no indexedCommit stamp): answers come from the index",
+    );
   });
 });

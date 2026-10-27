@@ -261,6 +261,18 @@ const NO_TREE_REASON = "no working tree resolved for this index";
 const NO_TREE_REMEDY = "pass path=<your working directory>";
 const UNREADABLE_REMEDY = "check that {tree} is a readable git checkout";
 
+/**
+ * A degraded marker's reason (q1g6s.15): the cause, then what the answer still
+ * is — the index at its last indexed commit, only uncommitted edits missing. A
+ * bare cause read as "index unusable" and drove the agent off the index.
+ */
+function overlayUnavailableReason(cause: string): string {
+  return (
+    `working-tree overlay unavailable (${cause}): answers come from the index at its last indexed commit; ` +
+    "uncommitted edits are not reflected"
+  );
+}
+
 const EMPTY_PATHS: ReadonlySet<string> = new Set();
 
 /**
@@ -478,7 +490,7 @@ export class WorkingTreeOverlay {
     const degraded = (reason: string, remedy: string): WorkingTreeMeasurement => ({
       kind: "degraded",
       view: {
-        marker: { ...marker, degraded: { reason, remedy: fill(remedy) } },
+        marker: { ...marker, degraded: { reason: overlayUnavailableReason(reason), remedy: fill(remedy) } },
         touchedPaths: EMPTY_PATHS,
         deletedPaths: EMPTY_PATHS,
         indexServedPaths: EMPTY_PATHS,

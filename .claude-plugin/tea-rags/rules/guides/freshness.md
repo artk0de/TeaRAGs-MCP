@@ -45,40 +45,39 @@ Index resolution priority: `collection > project > path`; the tree comes from
 **Read the `workingTree` marker on every answer:** `project` = alias of the
 index that answered (pass it on later calls); `tree` = tree it read (a check
 only: every next call, re-checks included, keeps `path=<your working directory>`
-— never `path=<answer's tree>`); `changedFiles` / `deletedFiles` = distance from
-`indexedCommit` (`0` = measured clean — a clean marker is compacted to
-`{tree, project?, changedFiles: 0}`, the other keys absent); `floors` = layers
-read from the tree — `chunks` (find_symbol / outline, rank_chunks rows),
-`sparse` (hybrid_search BM25), `dense` (semantic_search / find_similar / hybrid
-vector ranking of changed files), `codegraph` (graph tools' edges). A row or
-edge no floor covers reflects the index; `denseUnavailable` /
-`treeGraphUnavailable` name why a layer fell back to it; `gitUnavailable` counts
-changed-file rows whose git signals are still computing — they rank without that
-history this call, re-call later. `pendingFiles` = re-read files not yet warm:
-their rows are the index's (`treeState: "modified"`), a later call reads more of
-the tree — re-call for current code; never a reindex trigger by itself.
-`indexOnlyFiles` = changed files with no AST chunking (json / yaml / sql / toml
-…): never re-read, rows are the index's (`treeState: "modified"`); current text
-→ `Read` the file. Graph answer with `changedFiles` > 0 and no `codegraph` floor
-→ edges touching changed files are the index's (`degraded` says why): trust
-edges between untouched files, re-check changed ones via `find_symbol` /
-`hybrid_search` (`metaOnly`), `path=<your working directory>`; linked worktree →
-that re-check is the whole fix, no reindex. `degraded` → its `remedy` under the
-consent rows of "Reindex triggers" (subagent: report it to the parent, never
-reindex). `tree` ≠ the tree you addressed (your working directory, or the
-checkout a skill names) → wrong tree, its rows unusable; re-call with
-`project` + that `path`.
+— never `path=<answer's tree>`); `changedFiles` / `deletedFiles` = files the
+tree changed / deleted since the index, present only beside a field below that
+names what the overlay did not serve; a marker of just `{tree, project?}` =
+every row current (tree clean, or the overlay served it — never re-read from
+disk). Rows from changed files are read from the tree unless they carry
+`treeState`; `denseUnavailable` / `treeGraphUnavailable` name why a layer fell
+back to the index (no `treeGraphUnavailable` = graph answers cover the tree);
+`gitUnavailable` counts changed-file rows whose git signals are still computing
+— they rank without that history this call, re-call later. `pendingFiles` =
+re-read files not yet warm: their rows are the index's
+(`treeState: "modified"`), a later call reads more of the tree — re-call for
+current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
+files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
+the index's (`treeState: "modified"`); current text → `Read` the file. Graph
+answer with `changedFiles` > 0 and `treeGraphUnavailable` → edges touching
+changed files are the index's (`degraded` says why): trust edges between
+untouched files, re-check changed ones via `find_symbol` / `hybrid_search`
+(`metaOnly`), `path=<your working directory>`; linked worktree → that re-check
+is the whole fix, no reindex. `degraded` → its `remedy` under the consent rows
+of "Reindex triggers" (subagent: report it to the parent, never reindex). `tree`
+≠ the tree you addressed (your working directory, or the checkout a skill names)
+→ wrong tree, its rows unusable; re-call with `project` + that `path`.
 
-**Lag ≠ unusable (MANDATORY).** Counts above and drift = distance index↔tree,
-never licence to leave tea-rags — thousands of changed files included. Row
-without `treeState` = current (file unchanged, or a floor read it from your
+**Lag ≠ unusable (MANDATORY).** Counts above, `degraded` and drift = distance
+index↔tree, never licence to leave tea-rags — thousands of changed files
+included. Row without `treeState` = current (file unchanged, or read from your
 tree). First match: (1) subagent → never `index_codebase`, never
 `AskUserQuestion` — drift, `--force` `Run:` line, `degraded` remedy go into the
 report to the parent. Main session: (2) linked worktree → no reindex; own
 checkout behind (`changedFiles` > 0, stale banner, unindexed edits, or the
 session already knows the index is behind) → incremental `index_codebase` first,
 no consent, even when no marker is in hand. (3) Drift `Run:` with `--force*`,
-any `changedFiles` (0 included) → its own question ONE line
+any `changedFiles` (clean marker included) → its own question ONE line
 `AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`
 (never folded into another question, never awaited, never "won't proceed"), then
 the next read. Asked "run --force?" → answer no, not without consent; ask; keep
@@ -120,29 +119,30 @@ answer prints the report line
 ## Linked worktree — overlay, not reindex
 
 Read tools called with `project` + `path=<your working directory>` answer for
-that tree against the repository's index — floors and `treeState` reading:
-"Addressing the Codebase" above. Main-checkout reindex cannot see worktree
-edits; `index_codebase path=<worktree>` seeds a separate project. Both wrong →
-never reindex for the tree's own edits — `pendingFiles` (not yet warm, a later
-call reads more) and `indexOnlyFiles` (no AST chunking, served from the index)
+that tree against the repository's index — `treeState` reading: "Addressing the
+Codebase" above. Main-checkout reindex cannot see worktree edits;
+`index_codebase path=<worktree>` seeds a separate project. Both wrong → never
+reindex for the tree's own edits — `pendingFiles` (not yet warm, a later call
+reads more) and `indexOnlyFiles` (no AST chunking, served from the index)
 included. `degraded` → its `remedy` under the consent rows above. Main checkout
 keeps the reindex rows above: dense vectors of changed files lag otherwise.
 
 ## Lag never licenses leaving tea-rags
 
-Marker counts (`changedFiles`, `deletedFiles`, `pendingFiles`,
+Marker counts (`changedFiles`, `deletedFiles`, `pendingFiles`, `degraded`,
 `denseUnavailable`, `treeGraphUnavailable`) and drift = DISTANCE between index
 and tree, never "index unusable". Thousands of changed files included.
 
-- Row from a file your tree changed or added, no `treeState` → the overlay read
-  it from your tree: row current. Use it.
+- Row from a file your tree changed or added, no `treeState` → read from your
+  tree (find_symbol chunks, hybrid_search BM25, vector rank of semantic_search /
+  find_similar / hybrid). Row current; print `current — read from the tree`.
 - Row without `treeState` from an unchanged file → row current. Use it.
 - Row with `treeState` / file in `pendingFiles` → `find_symbol` (reads tree once
   warm); `pendingFiles` > 0 (a count; your file may be one) → plan both lines:
   `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`. `indexOnlyFiles`
   only → `Read`.
-- `changedFiles` > 0 on first calls = overlay warming, not failure. Subagent or
+- `pendingFiles` on first calls = overlay warming, not failure. Subagent or
   linked worktree → no reindex, keep calling, later calls read more; main
   session in the own checkout → incremental `index_codebase` now (table above).
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For

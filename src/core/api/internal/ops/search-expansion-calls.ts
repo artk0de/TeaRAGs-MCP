@@ -9,7 +9,8 @@
  *
  * Order is by measured yield (q1g6s.2): the anchor's callees (helpers it
  * imports) and callers found gold files on a Rails benchmark, co-change on
- * rarely edited anchors answered `noHistory` — so co-change goes last.
+ * rarely edited anchors answered `noHistory` — so co-change goes last, and a
+ * search answer carries none (q1g6s.15: 348 hints offered, 1 followed).
  *
  * Built from the answer's own rows: no graph-DB read at answer time. An unbuilt
  * co-change layer answers `built: false` from `find_co_changed` itself.
@@ -28,8 +29,8 @@ const ANCHOR_FILES = 2;
  * What the graph hints address (q1g6s.15). `relativePath` answers IMPORT edges
  * only, so a hint on a code row by its file never reaches the call graph:
  *
- * - `row` (search answers): the top row's code symbolId, else its file; plus
- *   co-change of the top two files.
+ * - `row` (search answers): the top row's code symbolId, else its file — two
+ *   hints at most, no co-change.
  * - `symbol` (find_symbol `symbol` / `symbols`): the first symbol the answer
  *   names, call edges only — no file-level hint the agent did not ask about.
  * - `file` (find_symbol `relativePath`): the file the answer outlines.
@@ -40,7 +41,7 @@ type ExpansionRow = { payload?: Record<string, unknown> };
 
 /**
  * The hints for an answer: `get_callees` and `get_callers` on its top anchor,
- * then (row / file scope) `find_co_changed` on the top two distinct files.
+ * then (file scope only) `find_co_changed` on the top two distinct files.
  * Rows are taken in answer order (the ranking, or find_symbol's row order);
  * doc and test rows never anchor. Empty when no row is left — the caller then
  * omits `next`.
@@ -65,11 +66,14 @@ export function buildSearchExpansionCalls(
   }
   if (anchors.length === 0) return [];
   const [top] = anchors;
-  const topSymbolId = scope === "row" ? codeSymbolIdOf(rows[0]) : undefined;
-  return [
-    ...(topSymbolId === undefined
+  if (scope === "row") {
+    const topSymbolId = codeSymbolIdOf(rows[0]);
+    return topSymbolId === undefined
       ? graphCalls(address, { relativePath: top }, top)
-      : graphCalls(address, { symbolId: topSymbolId }, topSymbolId)),
+      : graphCalls(address, { symbolId: topSymbolId }, topSymbolId);
+  }
+  return [
+    ...graphCalls(address, { relativePath: top }, top),
     {
       tool: "find_co_changed",
       args: { ...address, files: anchors },

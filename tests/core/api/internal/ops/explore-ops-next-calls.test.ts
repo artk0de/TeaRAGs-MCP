@@ -138,7 +138,9 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
         : f.semanticSearch({ collection: "code_x", query: "q", ...extra });
 
     // PIN-UPDATED q1g6s.15: a code row is addressed by its symbolId — relativePath answers import edges only.
-    it(`${tool}: codegraph on → callees + callers on the top symbol + co-change hints addressed to the answering tree`, async () => {
+    // PIN-UPDATED q1g6s.15: a benchmark offered 348 next hints and the agent followed 1 —
+    // a search answer carries at most the two graph hints on its top row, no co-change.
+    it(`${tool}: codegraph on → only callees + callers on the top symbol, addressed to the answering tree`, async () => {
       const response = await call(makeFacade(HITS));
 
       expect(response.next).toEqual([
@@ -150,17 +152,13 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
           tool: "get_callers",
           args: { project: "tea-rags", path: MARKER.tree, symbolId: "aFn" },
         }),
-        expect.objectContaining({
-          tool: "find_co_changed",
-          args: { project: "tea-rags", path: MARKER.tree, files: ["src/a.ts", "src/b.ts"] },
-        }),
       ]);
     });
 
-    it(`${tool}: anchors are chosen from the full rows even when fields drops relativePath`, async () => {
-      const response = await call(makeFacade(HITS), { fields: ["symbolId"] });
+    it(`${tool}: the anchor is chosen from the full rows even when fields drops symbolId`, async () => {
+      const response = await call(makeFacade(HITS), { fields: ["relativePath"] });
 
-      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+      expect(response.next?.[0]?.args.symbolId).toBe("aFn");
     });
 
     it(`${tool}: codegraph off → no next`, async () => {

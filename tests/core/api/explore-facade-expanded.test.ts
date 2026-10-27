@@ -217,7 +217,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("returns drift warning from path-based check", async () => {
       const driftReporter = makeMockDriftReporter({
-        checkAndConsume: vi.fn().mockResolvedValue(driftReport),
+        checkAndConsume: vi.fn().mockResolvedValue({ report: driftReport, repeat: false }),
       });
       const { facade } = makeFacade({ driftReporter });
 
@@ -229,10 +229,22 @@ describe("ExploreFacade — expanded methods", () => {
       expect(result.driftWarning).toBe(driftReportText);
     });
 
+    // q1g6s.15: a report this process already showed rides as one line, not the full text.
+    it("returns a one-line pointer when the reporter has shown the same report", async () => {
+      const driftReporter = makeMockDriftReporter({
+        checkAndConsume: vi.fn().mockResolvedValue({ report: { ...driftReport, projectAlias: "proj" }, repeat: true }),
+      });
+      const { facade } = makeFacade({ driftReporter });
+
+      const result = await facade.semanticSearch({ path: "/tmp/test-project", query: "test" });
+
+      expect(result.driftWarning).toBe("index drift unchanged — see tea-rags://project/proj/digest");
+    });
+
     it("returns drift warning from collection-based check", async () => {
       // Consuming: a collection-addressed search is still a search.
       const driftReporter = makeMockDriftReporter({
-        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
+        checkAndConsumeByCollectionName: vi.fn().mockReturnValue({ report: driftReport, repeat: false }),
       });
       const { facade } = makeFacade({ driftReporter });
 
@@ -556,7 +568,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("returns drift warning when present", async () => {
       const driftReporter = makeMockDriftReporter({
-        checkAndConsume: vi.fn().mockResolvedValue(driftReport),
+        checkAndConsume: vi.fn().mockResolvedValue({ report: driftReport, repeat: false }),
       });
       const { facade } = makeFacade({ driftReporter });
 

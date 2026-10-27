@@ -22,3 +22,4 @@ export type { TrajectoryErrorCode } from "./errors.js";
 export { ALL_COMPOSITE_FILTER_PRESETS, buildCompositeFilterPresets } from "./composite/filter-presets/index.js";
 export { GitTrajectory } from "./git.js";
 export { filterPayloadKeys } from "./filter-payload-keys.js";
+export { compileFilterPreset } from "./filter-presets/compiler.js";
