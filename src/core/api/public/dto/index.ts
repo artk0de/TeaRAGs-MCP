@@ -30,6 +30,7 @@ export {
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
 } from "./architecture.js";
+export { CALL_TREE_DEFAULT_LIMIT, CALL_TREE_MAX_DEPTH } from "./graph.js";
 
 export type {
   // Ingest
@@ -89,6 +90,9 @@ export type {
   GetCallersResponse,
   SymbolCalleesResponse,
   SymbolCallersResponse,
+  SymbolCallTreeResponse,
+  CallTreeRow,
+  GraphPageTruncation,
   // trace_path
   TracePathRequest,
   PathStep,

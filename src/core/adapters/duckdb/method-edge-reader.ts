@@ -60,10 +60,58 @@ function withEdgeOrigin<E extends object>(row: E & EdgeOriginColumns): E {
   return { ...(edge as unknown as E), origin: "model", model, p };
 }
 
+/** A callee row as `cg_symbols_edges_method` stores it. */
+type CalleeEdgeRow = CalleeEdge & { edgeKind: MethodEdgeKind | null; confidence: number | null } & EdgeOriginColumns;
+
+/** A stored callee row as the reads answer it: NULL kind/confidence undefined, provenance only on a model edge. */
+function calleeEdgeOf(e: CalleeEdgeRow): CalleeEdge {
+  const edge: CalleeEdge = {
+    targetSymbolId: e.targetSymbolId,
+    targetRelPath: e.targetRelPath,
+    callExpression: e.callExpression,
+    edgeKind: e.edgeKind ?? undefined,
+    confidence: e.confidence ?? undefined,
+  };
+  if (e.origin === "model" && e.model !== null && e.p !== null) {
+    edge.origin = "model";
+    edge.model = e.model;
+    edge.p = e.p;
+  }
+  return edge;
+}
+
+/** Appends `value` to the list `map` holds under `key`. */
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
+/** `(target, base, sep, member)` bind rows for the method-form ids, the shape the poly-base VALUES joins read. */
+function methodSplitBinds(
+  symbolIds: readonly SymbolId[],
+): { target: SymbolId; base: string; sep: string; member: string }[] {
+  return [...new Set(symbolIds)].flatMap((target) => {
+    const split = splitMethodSymbol(target);
+    return split ? [{ target, base: split.base, sep: split.sep, member: split.member }] : [];
+  });
+}
+
+/** Splits `items` into `IN (…)` / VALUES sized chunks. */
+function inListChunks<T>(items: readonly T[]): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += SCOPED_EDGE_IN_LIST_CHUNK) {
+    chunks.push(items.slice(i, i + SCOPED_EDGE_IN_LIST_CHUNK));
+  }
+  return chunks;
+}
+
 export class DuckDbMethodEdgeReader implements Pick<
   CodegraphGraphReadStore,
   | "getCallers"
   | "getCallees"
+  | "getCallersBulk"
+  | "getCalleesBulk"
   | "getCalleeEdges"
   | "getCalleeEdgesScoped"
   | "getSymbolRelPaths"
@@ -104,28 +152,14 @@ export class DuckDbMethodEdgeReader implements Pick<
   }
 
   async getCallees(symbolId: SymbolId): Promise<CalleeEdge[]> {
-    const edges = await this.session.queryAll<
-      CalleeEdge & { edgeKind: MethodEdgeKind | null; confidence: number | null } & EdgeOriginColumns
-    >(
+    const edges = await this.session.queryAll<CalleeEdgeRow>(
       `SELECT target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence, origin, model, p
          FROM cg_symbols_edges_method WHERE source_symbol_id = ? ORDER BY target_rel_path`,
       [symbolId],
     );
     const out: CalleeEdge[] = [];
     for (const e of edges) {
-      const base: CalleeEdge = {
-        targetSymbolId: e.targetSymbolId,
-        targetRelPath: e.targetRelPath,
-        callExpression: e.callExpression,
-        edgeKind: e.edgeKind ?? undefined,
-        confidence: e.confidence ?? undefined,
-      };
-      if (e.origin === "model" && e.model !== null && e.p !== null) {
-        base.origin = "model";
-        base.model = e.model;
-        base.p = e.p;
-      }
-      out.push(base);
+      out.push(calleeEdgeOf(e));
       // bd tea-rags-mcp-2jet-E — expand a `poly-base` edge to the overriding
       // subtypes at query time. The persisted edge points at the base decl
       // `T#m`; the reverse inheritance index yields the subtypes, and we keep
@@ -158,6 +192,93 @@ export class DuckDbMethodEdgeReader implements Pick<
       [split.sep, split.member, split.base],
     );
     return rows.map((r) => ({ targetSymbolId: r.targetSymbolId, targetRelPath: r.targetRelPath, callExpression }));
+  }
+
+  /**
+   * {@link getCallers} for a whole BFS frontier (bd tea-rags-mcp-afdpc): the
+   * direct edges in one `IN (…)` read per chunk, the poly-base callers of every
+   * method-form target in one join over a VALUES list, then the same per-target
+   * dedupe. Within a target the order is (source path, source id, call
+   * expression) — total over the edge key, so a page cut is stable.
+   */
+  async getCallersBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CallerEdge[]>> {
+    const out = new Map<SymbolId, CallerEdge[]>();
+    type Row = CallerEdge & EdgeOriginColumns & { target: SymbolId };
+    for (const batch of inListChunks([...new Set(symbolIds)])) {
+      const rows = await this.session.queryAll<Row>(
+        `SELECT target_symbol_id AS target, source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence, origin, model, p
+           FROM cg_symbols_edges_method WHERE target_symbol_id IN (${batch.map(() => "?").join(", ")})
+          ORDER BY target_symbol_id, source_rel_path, source_symbol_id, call_expression`,
+        batch,
+      );
+      for (const { target, ...row } of rows) pushTo(out, target, withEdgeOrigin<CallerEdge>(row));
+    }
+    // Symmetric CHA cone expansion, as getCallers: a caller of the capped base
+    // `T#m` reaches every override `Sub#m` of a subtype of `T`.
+    for (const batch of inListChunks(methodSplitBinds(symbolIds))) {
+      const rows = await this.session.queryAll<Row>(
+        `SELECT q.target AS target, m.source_symbol_id AS "sourceSymbolId", m.source_rel_path AS "sourceRelPath", m.call_expression AS "callExpression", m.edge_kind AS "edgeKind", m.confidence, m.origin, m.model, m.p
+           FROM (VALUES ${batch.map(() => "(?, ?, ?, ?)").join(", ")}) AS q(target, base, sep, member)
+           JOIN cg_symbols_inheritance i ON i.source_fq_name = q.base
+           JOIN cg_symbols_edges_method m ON m.edge_kind = 'poly-base' AND m.target_symbol_id = i.ancestor_fq_name || q.sep || q.member
+          ORDER BY q.target, m.source_rel_path, m.source_symbol_id, m.call_expression`,
+        batch.flatMap((m) => [m.target, m.base, m.sep, m.member]),
+      );
+      for (const { target, ...row } of rows) pushTo(out, target, withEdgeOrigin<CallerEdge>(row));
+    }
+    for (const [target, edges] of out) out.set(target, dedupeCallerEdges(edges));
+    return out;
+  }
+
+  /**
+   * {@link getCallees} for a whole BFS frontier (bd tea-rags-mcp-afdpc): the
+   * direct edges in one `IN (…)` read per chunk, every poly-base edge's
+   * overriding subtypes in one join, each placed right after its base edge as
+   * the one-symbol read places it. Within a source the order is (target path,
+   * target id, call expression).
+   */
+  async getCalleesBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CalleeEdge[]>> {
+    const direct: { source: SymbolId; row: CalleeEdgeRow }[] = [];
+    for (const batch of inListChunks([...new Set(symbolIds)])) {
+      const rows = await this.session.queryAll<CalleeEdgeRow & { source: SymbolId }>(
+        `SELECT source_symbol_id AS source, target_symbol_id AS "targetSymbolId", target_rel_path AS "targetRelPath", call_expression AS "callExpression", edge_kind AS "edgeKind", confidence, origin, model, p
+           FROM cg_symbols_edges_method WHERE source_symbol_id IN (${batch.map(() => "?").join(", ")})
+          ORDER BY source_symbol_id, target_rel_path, target_symbol_id, call_expression`,
+        batch,
+      );
+      for (const { source, ...row } of rows) direct.push({ source, row });
+    }
+    const subtypes = await this.readPolyBaseSubtypes(
+      direct.flatMap(({ row }) => (row.edgeKind === "poly-base" && row.targetSymbolId ? [row.targetSymbolId] : [])),
+    );
+    const out = new Map<SymbolId, CalleeEdge[]>();
+    for (const { source, row } of direct) {
+      pushTo(out, source, calleeEdgeOf(row));
+      if (row.edgeKind !== "poly-base" || !row.targetSymbolId) continue;
+      for (const sub of subtypes.get(row.targetSymbolId) ?? []) {
+        pushTo(out, source, { ...sub, callExpression: row.callExpression });
+      }
+    }
+    return out;
+  }
+
+  /** Batched {@link expandPolyBaseCallees}: per capped base target `T#m`, the subtypes declaring their own `S#m`. */
+  private async readPolyBaseSubtypes(
+    symbolIds: readonly SymbolId[],
+  ): Promise<Map<SymbolId, { targetSymbolId: SymbolId; targetRelPath: RelPath }[]>> {
+    const out = new Map<SymbolId, { targetSymbolId: SymbolId; targetRelPath: RelPath }[]>();
+    for (const batch of inListChunks(methodSplitBinds(symbolIds))) {
+      const rows = await this.session.queryAll<{ base: SymbolId; targetSymbolId: SymbolId; targetRelPath: RelPath }>(
+        `SELECT q.target AS base, s.symbol_id AS "targetSymbolId", s.rel_path AS "targetRelPath"
+           FROM (VALUES ${batch.map(() => "(?, ?, ?, ?)").join(", ")}) AS q(target, base, sep, member)
+           JOIN cg_symbols_inheritance i ON i.ancestor_fq_name = q.base
+           JOIN cg_symbols s ON s.symbol_id = i.source_fq_name || q.sep || q.member
+          ORDER BY q.target, s.symbol_id`,
+        batch.flatMap((m) => [m.target, m.base, m.sep, m.member]),
+      );
+      for (const { base, ...sub } of rows) pushTo(out, base, sub);
+    }
+    return out;
   }
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {

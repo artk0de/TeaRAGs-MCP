@@ -78,6 +78,7 @@ export {
   type CodegraphStoredChunk,
 } from "./chunk-signal-settlement.js";
 export * from "./path-tracing/index.js";
+export * from "./call-tree/index.js";
 export * from "./boundary-diagnostics/index.js";
 export * from "./edge-overlay/index.js";
 export * from "./restructure/index.js";

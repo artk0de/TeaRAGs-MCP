@@ -55,13 +55,14 @@ import type {
   GitFileMaintenanceSignals,
 } from "../../public/dto/architecture.js";
 import type { FindCoChangedRequest, FindCoChangedResult } from "../../public/dto/cochange.js";
-import type {
-  FindCyclesRequest,
-  FindCyclesResponse,
-  GetCalleesRequest,
-  GetCalleesResponse,
-  GetCallersRequest,
-  GetCallersResponse,
+import {
+  CALL_TREE_MAX_DEPTH,
+  type FindCyclesRequest,
+  type FindCyclesResponse,
+  type GetCalleesRequest,
+  type GetCalleesResponse,
+  type GetCallersRequest,
+  type GetCallersResponse,
 } from "../../public/dto/graph.js";
 import { InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import {
@@ -89,6 +90,7 @@ import {
   type ArchitectureRestructureLookups,
 } from "../ops/architecture-restructure-ops.js";
 import { ArchitectureRestructurePlanOps } from "../ops/architecture-restructure-plan-ops.js";
+import { pageGraphRows, readCalleeTree, readCallerTree, type CallTreeReads } from "../ops/call-tree-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
@@ -126,6 +128,11 @@ export interface GraphFacadeDeps {
    * says so (`testChunk`) instead of `unknownSymbol`. Optional: absent, the answer stays `unknownSymbol`.
    */
   readSymbolIsTest?: (collectionName: string, symbolId: SymbolId) => Promise<boolean>;
+  /**
+   * One-line signatures of graph symbols from the ADDRESSED collection's payload, for the `depth > 1` call tree's
+   * rows (bd tea-rags-mcp-afdpc). Optional: absent, the rows carry no signature.
+   */
+  readSymbolSignatures?: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<Map<SymbolId, string>>;
   /**
    * Every file's `git.file.commitCount`, read from the ADDRESSED collection's
    * payload. The main-sequence detector gates the zone of pain on it
@@ -478,6 +485,7 @@ export class GraphFacade {
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
     const target = graphTarget(req);
+    const depth = validateGraphDepthRequest(req, target.kind);
     if (target.kind === "file") {
       if (req.includeAmbiguous) {
         throw new InvalidParameterError("includeAmbiguous", "applies to a symbolId target only, not to relativePath");
@@ -485,7 +493,7 @@ export class GraphFacade {
       const limit = req.limit ?? DEFAULT_LIMIT;
       return this.withMarkedReadHandle(
         req,
-        async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit),
+        async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit, req.offset),
         FileImportOps.emptyImporters(target.relativePath),
       );
     }
@@ -501,7 +509,16 @@ export class GraphFacade {
           this.testChunkProbe(req),
         );
         const resolved = { ...resolvedField(read), ...emptyField(read) };
-        const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        if (depth > 1) {
+          const tree = await readCallerTree(read.queriedSymbolId, read.edges, this.callTreeReads(handle, req), {
+            ...req,
+            depth,
+          });
+          return { ...resolved, ...tree };
+        }
+        const page = pageGraphRows(read.edges.filter(isNavigationVisibleEdge), req.offset, req.limit ?? DEFAULT_LIMIT);
+        const visible = page.rows;
+        const truncated = page.truncated ? { truncated: page.truncated } : {};
         // Declared visibility of the queried symbol and every caller, one
         // batched read (bd tea-rags-mcp-sqqkz); unknown levels leave the field out.
         const { queried, callers } = await decorateCallers(handle.graphDb, read.queriedSymbolId, visible);
@@ -512,7 +529,7 @@ export class GraphFacade {
         // was persisted under). Bare symbols skip the lookup; the DEFAULT
         // (flag absent) response stays byte-identical to the pre-flag shape.
         const member = req.includeAmbiguous ? splitMethodSymbol(symbolId)?.member : undefined;
-        if (member === undefined) return { ...resolved, ...queried, callers };
+        if (member === undefined) return { ...resolved, ...queried, callers, ...truncated };
         const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
         return {
           ...resolved,
@@ -524,6 +541,7 @@ export class GraphFacade {
             callExpression: s.callExpression,
             candidateCount: s.candidateCount,
           })),
+          ...truncated,
         };
       },
       { callers: [] },
@@ -532,11 +550,12 @@ export class GraphFacade {
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
     const target = graphTarget(req);
+    const depth = validateGraphDepthRequest(req, target.kind);
     if (target.kind === "file") {
       const limit = req.limit ?? DEFAULT_LIMIT;
       return this.withMarkedReadHandle(
         req,
-        async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit),
+        async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit, req.offset),
         FileImportOps.emptyImports(target.relativePath),
       );
     }
@@ -551,20 +570,43 @@ export class GraphFacade {
           "callees",
           this.testChunkProbe(req),
         );
+        if (depth > 1) {
+          const tree = await readCalleeTree(read.queriedSymbolId, read.edges, this.callTreeReads(handle, req), {
+            ...req,
+            depth,
+          });
+          return { ...resolvedField(read), ...tree, ...emptyField(read) };
+        }
         const visible = read.edges.filter(isNavigationVisibleEdge);
-        const resolved = collapseCalleesByTarget(visible.filter((e) => e.targetSymbolId !== null)).slice(
-          0,
+        const page = pageGraphRows(
+          collapseCalleesByTarget(visible.filter((e) => e.targetSymbolId !== null)),
+          req.offset,
           req.limit ?? DEFAULT_LIMIT,
         );
         return {
           ...resolvedField(read),
-          callees: await decorateCallees(handle.graphDb, resolved),
+          callees: await decorateCallees(handle.graphDb, page.rows),
           ...unresolvedCallsField(visible),
           ...emptyField(read),
+          ...(page.truncated ? { truncated: page.truncated } : {}),
         };
       },
       { callees: [] },
     );
+  }
+
+  /** The call tree's reads over this request's graph handle; signatures from the addressed collection's payload. */
+  private callTreeReads(handle: CollectionGraphHandle, req: GetCallersRequest | GetCalleesRequest): CallTreeReads {
+    const { readSymbolSignatures } = this.deps;
+    return {
+      readCalleesBulk: async (ids) => handle.graphDb.getCalleesBulk(ids),
+      readCallersBulk: async (ids) => handle.graphDb.getCallersBulk(ids),
+      isVisible: isNavigationVisibleEdge,
+      ...(readSymbolSignatures && {
+        readSignatures: async (ids: readonly SymbolId[]) =>
+          readSymbolSignatures(resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName, ids),
+      }),
+    };
   }
 
   /**
@@ -767,4 +809,25 @@ export class GraphFacade {
       { cycles: [] },
     );
   }
+}
+
+/**
+ * The hop count a get_callers / get_callees request asks for (bd tea-rags-mcp-afdpc): 1 by default, an integer
+ * 1–{@link CALL_TREE_MAX_DEPTH}; above 1 only for a symbolId target and without `includeAmbiguous`.
+ */
+export function validateGraphDepthRequest(
+  req: (GetCallersRequest | GetCalleesRequest) & { includeAmbiguous?: boolean },
+  targetKind: "file" | "symbol",
+): number {
+  const depth = req.depth ?? 1;
+  if (!Number.isInteger(depth) || depth < 1 || depth > CALL_TREE_MAX_DEPTH) {
+    throw new InvalidParameterError("depth", `must be an integer from 1 to ${String(CALL_TREE_MAX_DEPTH)}`);
+  }
+  if (depth > 1 && targetKind === "file") {
+    throw new InvalidParameterError("depth", "applies to a symbolId target only; relativePath answers one import hop");
+  }
+  if (depth > 1 && req.includeAmbiguous) {
+    throw new InvalidParameterError("includeAmbiguous", "applies to depth 1 only");
+  }
+  return depth;
 }

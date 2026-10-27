@@ -43,6 +43,23 @@ export class DaemonGraphReadStoreProxy implements CodegraphGraphReadStore {
     return (await this.ops.call("getCallees", { symbolId })) as CalleeEdge[];
   }
 
+  async getCallersBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CallerEdge[]>> {
+    // Served as `[key, value][]` entries (a Map cannot JSON-serialise) — rebuild the Map here.
+    const entries = (await this.ops.call("getCallersBulk", { symbolIds: [...symbolIds] })) as [
+      SymbolId,
+      CallerEdge[],
+    ][];
+    return new Map(entries);
+  }
+
+  async getCalleesBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CalleeEdge[]>> {
+    const entries = (await this.ops.call("getCalleesBulk", { symbolIds: [...symbolIds] })) as [
+      SymbolId,
+      CalleeEdge[],
+    ][];
+    return new Map(entries);
+  }
+
   async getAmbiguousCallersByMember(member: string, limit?: number): Promise<AmbiguousCallerSite[]> {
     return (await this.ops.call("getAmbiguousCallersByMember", { member, limit })) as AmbiguousCallerSite[];
   }

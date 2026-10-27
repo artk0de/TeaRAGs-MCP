@@ -36,6 +36,13 @@ export interface GetCallersRequest {
    */
   relativePath?: RelPath;
   limit?: number;
+  /** Rows to skip before `limit` — the continuation `truncated.next` carries (bd tea-rags-mcp-afdpc). */
+  offset?: number;
+  /**
+   * symbolId scope only: hops to walk, 1–3 (default 1). Above 1 the answer is a
+   * BFS `tree` instead of the one-hop list (bd tea-rags-mcp-afdpc).
+   */
+  depth?: number;
   /**
    * Opt-in lazy ambiguous expansion (bd tea-rags-mcp-f2jsb A4): also fetch
    * `cg_ambiguous_fanout` aggregates whose member matches the target's member
@@ -85,8 +92,59 @@ export interface AmbiguousCallerResult {
  * `get_callers` / `get_callees` answer: symbol scope when the request named a
  * `symbolId`, file scope when it named a `relativePath`.
  */
-export type GetCallersResponse = (SymbolCallersResponse | FileImportersResponse) & WorkingTreeMarkerField;
-export type GetCalleesResponse = (SymbolCalleesResponse | FileImportsResponse) & WorkingTreeMarkerField;
+export type GetCallersResponse = (SymbolCallersResponse | FileImportersResponse | SymbolCallTreeResponse) &
+  WorkingTreeMarkerField;
+export type GetCalleesResponse = (SymbolCalleesResponse | FileImportsResponse | SymbolCallTreeResponse) &
+  WorkingTreeMarkerField;
+
+/** Rows a `depth > 1` get_callers / get_callees answer returns when the request names no `limit` (bd tea-rags-mcp-afdpc). */
+export const CALL_TREE_DEFAULT_LIMIT = 40;
+
+/** Deepest call tree a request may ask for: three hops already map a flow end to end. */
+export const CALL_TREE_MAX_DEPTH = 3;
+
+/**
+ * The page cut a graph answer made (bd tea-rags-mcp-afdpc): rows returned, rows
+ * past the window. The MCP layer attaches `next` — the same call with
+ * `offset` advanced by `returned`.
+ */
+export interface GraphPageTruncation {
+  returned: number;
+  omitted: number;
+}
+
+/** Present only when rows exist past `offset + limit`; an answer that fits carries none. */
+export interface GraphPageTruncationField {
+  truncated?: GraphPageTruncation;
+}
+
+/**
+ * One row of a `depth > 1` answer (bd tea-rags-mcp-afdpc), in BFS order:
+ * `parent` is the node the edge leaves (the queried symbol at depth 1) — a
+ * symbol is expanded once, so a parent id names one row. `seen` marks a
+ * back-reference to a symbol listed earlier, not expanded again; `external` =
+ * the expanded node's call sites pinned to no in-project symbol.
+ */
+export interface CallTreeRow {
+  depth: number;
+  parent: SymbolId;
+  symbolId: SymbolId;
+  relPath: RelPath;
+  edgeKind?: string;
+  confidence?: number;
+  origin?: EdgeOrigin;
+  external?: number;
+  seen?: true;
+  /** First code line of the symbol's chunk, as a metaOnly search row's `signature`. */
+  signature?: string;
+}
+
+/** `get_callers` / `get_callees` with `depth > 1`: the reverse / forward call tree of `symbolId`. */
+export interface SymbolCallTreeResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
+  tree: CallTreeRow[];
+  /** get_callees: the queried symbol's own call sites pinned to no in-project symbol. Absent when none. */
+  unresolved?: number;
+}
 
 /**
  * Which working tree a graph answer was read for (bd tea-rags-mcp-xi2r9). With
@@ -120,7 +178,7 @@ export interface FileImportResult {
   origin?: "model";
 }
 
-interface FileScopeResponseBase extends EmptyAnswerField {
+interface FileScopeResponseBase extends EmptyAnswerField, GraphPageTruncationField {
   /** The file the request named, normalised (a leading `./` stripped). */
   relativePath: RelPath;
   /** Edge count before `limit` was applied. */
@@ -166,7 +224,7 @@ export interface EmptyAnswerField {
   empty?: EmptyAnswerExplanation;
 }
 
-export interface SymbolCallersResponse extends ResolvedSymbolIdField, EmptyAnswerField {
+export interface SymbolCallersResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -197,6 +255,13 @@ export interface GetCalleesRequest {
    */
   relativePath?: RelPath;
   limit?: number;
+  /** Rows to skip before `limit` — the continuation `truncated.next` carries (bd tea-rags-mcp-afdpc). */
+  offset?: number;
+  /**
+   * symbolId scope only: hops to walk, 1–3 (default 1). Above 1 the answer is a
+   * BFS `tree` instead of the one-hop list (bd tea-rags-mcp-afdpc).
+   */
+  depth?: number;
 }
 
 /** One callee; `visibility` is the TARGET symbol's own (never set on a file-only edge). */
@@ -214,7 +279,7 @@ export interface CalleeResult extends DeclaredVisibilityField {
   p?: number;
 }
 
-export interface SymbolCalleesResponse extends ResolvedSymbolIdField, EmptyAnswerField {
+export interface SymbolCalleesResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
   /** Callees with a resolved target symbol only. */
   callees: CalleeResult[];
   /** Call sites the resolver pinned to no target symbol; they are not `callees` rows. Absent when none. */

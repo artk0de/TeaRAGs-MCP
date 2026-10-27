@@ -113,6 +113,7 @@ export { resolveBaseIndexEntry, resolveCollection } from "./internal/collection-
 export { listWorktreeInfos, toWorktreeInfo, worktreeInfoForPath } from "./internal/ops/worktree-ops.js";
 export { readPayloadFileCommitCounts } from "./internal/infra/payload-file-commit-count-reader.js";
 export { readPayloadSymbolIsTest } from "./internal/infra/payload-symbol-is-test-reader.js";
+export { readPayloadSymbolSignatures } from "./internal/infra/payload-symbol-signature-reader.js";
 export { readPayloadFileMaintenanceSignals } from "./internal/infra/payload-file-maintenance-signal-reader.js";
 export { RequestScopedFileFactsReader } from "./internal/infra/payload-file-facts-reader.js";
 export {

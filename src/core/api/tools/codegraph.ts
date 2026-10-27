@@ -23,6 +23,8 @@ import {
   ARCHITECTURE_REPORT_EVIDENCE_LIMIT,
   ARCHITECTURE_RESTRUCTURE_OP_LIMIT,
   ARCHITECTURE_RESTRUCTURE_PLAN_CANDIDATE_LIMIT,
+  CALL_TREE_DEFAULT_LIMIT,
+  CALL_TREE_MAX_DEPTH,
   CODEGRAPH_SYMBOLS_PROVIDER_KEY,
   type App,
   type FindCoChangedRequest,
@@ -37,7 +39,7 @@ import {
 } from "../public/index.js";
 import { formatMcpResponse, type McpToolResult, type WorkingTreeCallAddress } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
-import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
+import { offsetContinuation, withPageContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { projectField, WORKING_TREE_PATH_HINT } from "./schemas.js";
 
 /**
@@ -70,6 +72,44 @@ const EMPTY_GRAPH_ANSWER_CONTRACT =
   "with same short name), testChunk (id is an indexed test chunk; tests are not graph nodes), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
   "unknownFile.";
 
+/** The `depth > 1` answer shared by get_callers / get_callees (bd tea-rags-mcp-afdpc). */
+const CALL_TREE_CONTRACT =
+  `depth 2–${String(CALL_TREE_MAX_DEPTH)} → BFS tree rows (parent = row the edge leaves; seen = listed earlier, ` +
+  "not re-expanded; external = unresolved sites); a cut page's truncated.next = next page, run as given. ";
+
+/** Paging + depth params shared by get_callers / get_callees. */
+function graphPageFields(rowNoun: string) {
+  return {
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(500)
+      .optional()
+      .describe(`Max ${rowNoun} (default 50; depth>1 tree rows: ${String(CALL_TREE_DEFAULT_LIMIT)})`),
+    offset: z.number().int().nonnegative().optional().describe("Rows to skip, in the answer's stable order."),
+    depth: z
+      .number()
+      .int()
+      .min(1)
+      .max(CALL_TREE_MAX_DEPTH)
+      .optional()
+      .describe(`symbolId only: hops to walk, 1–${String(CALL_TREE_MAX_DEPTH)} (default 1). Above 1 → BFS tree.`),
+  };
+}
+
+/** Row collections the response budget may cut — each pages by the same `offset`. */
+const CALLER_ROWS: ResponseRowsPolicy = {
+  rows: ["callers", "importers", "tree"],
+  continuation: offsetContinuation(),
+  narrowing: ["limit", "depth", "includeAmbiguous"],
+};
+const CALLEE_ROWS: ResponseRowsPolicy = {
+  rows: ["callees", "imports", "tree"],
+  continuation: offsetContinuation(),
+  narrowing: ["limit", "depth"],
+};
+
 /**
  * Pinned column order of the symbol-scope edge tables, so two answers of one tool never disagree on it. Keys an
  * answer lacks drop out; keys not listed (file-scope tables) follow in first-seen order.
@@ -95,6 +135,19 @@ const CALLEE_COLUMN_ORDER = [
   "model",
   "p",
 ] as const;
+/** The `tree` table of a depth > 1 answer: position in the tree first, the one long cell last. */
+const CALL_TREE_COLUMN_ORDER = [
+  "depth",
+  "parent",
+  "symbolId",
+  "relPath",
+  "edgeKind",
+  "confidence",
+  "origin",
+  "external",
+  "seen",
+  "signature",
+] as const;
 
 const GetCallersInputShape = {
   ...collectionPathFields(),
@@ -109,7 +162,7 @@ const GetCallersInputShape = {
       "Target FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files importing it. " +
         "Provide exactly one of 'symbolId' / 'relativePath'.",
     ),
-  limit: z.number().int().positive().max(500).optional().describe("Max caller edges / importer files (default 50)"),
+  ...graphPageFields("caller edges / importer files"),
   includeAmbiguous: z
     .boolean()
     .optional()
@@ -131,7 +184,7 @@ const GetCalleesInputShape = {
       "Source FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files it imports. " +
         "Provide exactly one of 'symbolId' / 'relativePath'.",
     ),
-  limit: z.number().int().positive().max(500).optional().describe("Max callee edges / imported files (default 50)"),
+  ...graphPageFields("callee edges / imported files"),
 };
 
 const FindCyclesInputShape = {
@@ -508,15 +561,17 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
       "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      `unknown file → empty importers + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
+      `unknown file → empty importers + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callers",
-    responseRows: { narrowing: ["limit", "includeAmbiguous"] },
-    invoke: async (app, request) =>
-      formatMcpResponse(
-        await app.getCallers(request as GetCallersRequest),
-        CALLER_COLUMN_ORDER,
+    responseRows: CALLER_ROWS,
+    invoke: async (app, request) => {
+      const answer = await app.getCallers(request as GetCallersRequest);
+      return formatMcpResponse(
+        withPageContinuation("get_callers", request as Record<string, unknown>, answer),
+        "tree" in answer ? CALL_TREE_COLUMN_ORDER : CALLER_COLUMN_ORDER,
         request as WorkingTreeCallAddress,
-      ),
+      );
+    },
   },
   {
     name: "get_callees",
@@ -529,15 +584,17 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      `unknown file → empty imports + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
+      `unknown file → empty imports + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callees",
-    responseRows: { narrowing: ["limit"] },
-    invoke: async (app, request) =>
-      formatMcpResponse(
-        await app.getCallees(request as GetCalleesRequest),
-        CALLEE_COLUMN_ORDER,
+    responseRows: CALLEE_ROWS,
+    invoke: async (app, request) => {
+      const answer = await app.getCallees(request as GetCalleesRequest);
+      return formatMcpResponse(
+        withPageContinuation("get_callees", request as Record<string, unknown>, answer),
+        "tree" in answer ? CALL_TREE_COLUMN_ORDER : CALLEE_COLUMN_ORDER,
         request as WorkingTreeCallAddress,
-      ),
+      );
+    },
   },
   {
     name: "find_cycles",

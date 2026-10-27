@@ -148,6 +148,10 @@ export const DAEMON_OPS = [
   "getFanOut",
   "getCallers",
   "getCallees",
+  // Frontier forms for the call tree (bd tea-rags-mcp-afdpc) — own ops, so a daemon
+  // from an older build is restarted at handshake, never asked a shape it predates.
+  "getCallersBulk",
+  "getCalleesBulk",
   "getAmbiguousCallersByMember",
   "getCalleeEdges",
   "getCalleeEdgesScoped",
@@ -371,6 +375,8 @@ export interface DaemonOpParamsMap {
   getFanOut: { relPath: RelPath };
   getCallers: { symbolId: SymbolId };
   getCallees: { symbolId: SymbolId };
+  getCallersBulk: { symbolIds: SymbolId[] };
+  getCalleesBulk: { symbolIds: SymbolId[] };
   getAmbiguousCallersByMember: { member: string; limit?: number };
   getCalleeEdges: { symbolIds: SymbolId[] };
   getCalleeEdgesScoped: { refs: FileScopedSymbolRef[] };

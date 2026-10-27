@@ -22,6 +22,7 @@ export {
   computeFetchLimit,
   postProcess,
   filterMetaOnly,
+  chunkSignature,
   type SearchResult,
   type FetchLimits,
   type PostProcessOptions,
