@@ -27,7 +27,9 @@ export async function loadProjectDigestData(app: App, alias: string): Promise<Pr
   );
   const [status, metricsResult, drift, memory] = await Promise.allSettled([
     statusRequest,
-    app.getIndexMetrics(path),
+    // No digest section renders the working-tree marker, and measuring it diffs
+    // the whole tree (~1 s on a 32k-file checkout) on every prime (bd o4p5l).
+    app.getIndexMetrics(path, { workingTreeMarker: false }),
     // Inspection, like get_index_status — the once-per-session warning belongs to the search path.
     app.checkIndexDrift({ path, consume: false }),
     memoryRequest,

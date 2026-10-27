@@ -238,7 +238,7 @@ export function createApp(deps: AppDeps): App {
     deleteDocuments: async (req) => ops.document.delete(req),
 
     // -- Index metrics --
-    getIndexMetrics: async (path) => facades.explore.getIndexMetrics(path),
+    getIndexMetrics: async (path, options) => facades.explore.getIndexMetrics(path, undefined, options),
 
     // -- Schema descriptors --
     getSchemaDescriptors: () => {

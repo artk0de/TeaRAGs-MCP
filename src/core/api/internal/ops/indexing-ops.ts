@@ -882,7 +882,28 @@ export class IndexingOps {
     // Only if this call succeeds do we mark qdrant.available = true below.
     const exists = await this.qdrant.collectionExists(aliasCollectionName);
 
-    const embeddingHealthy = await this.embeddings.checkHealth();
+    // Every read below is independent of the others, and a probe of an
+    // unreachable endpoint waits out its timeout — issued one after another the
+    // probes stacked those waits on every prime (bd o4p5l). They all start now;
+    // failures still surface in the order the reads were once awaited.
+    const collectionRequest = exists
+      ? Promise.all([
+          this.qdrant.getCollectionInfo(aliasCollectionName),
+          this.qdrant.getCollectionDiskBytes(aliasCollectionName),
+        ])
+      : undefined;
+    const statusRequest = this.status.getIndexStatus(path);
+    // Started but not awaited yet: its rejection is observed in the settle below.
+    collectionRequest?.catch(() => undefined);
+    statusRequest.catch(() => undefined);
+    const activeProbe = this.embeddings.checkHealth().then((healthy) => ({
+      healthy,
+      // The endpoint this process is actually using right now — under failover
+      // it differs from the configured primary, and that difference is the
+      // first thing a "why was this run slow" diagnosis needs to see. Read once
+      // the active probe settled, as it is the probe that can flip failover.
+      activeUrl: this.embeddings.getBaseUrl?.(),
+    }));
     // Track BOTH primary and fallback embedding endpoints. Symmetric with
     // qdrant.url tracking: the prime CLI digest reads these to show the
     // operator which endpoint the project was last indexed against AND its
@@ -893,27 +914,25 @@ export class IndexingOps {
     // EMBEDDING_FALLBACK_URL).
     const primaryUrl = this.embeddings.getPrimaryBaseUrl?.() ?? this.embeddings.getBaseUrl?.();
     const fallbackUrl = this.embeddings.getFallbackBaseUrl?.();
-    // The endpoint this process is actually using right now — under failover
-    // it differs from the configured primary above, and that difference is
-    // the first thing a "why was this run slow" diagnosis needs to see.
-    const activeUrl = this.embeddings.getBaseUrl?.();
     // Live-probe the fallback endpoint separately — checkHealth above only
     // probes the ACTIVE endpoint, so the digest would otherwise show the
     // fallback URL with no indication of whether the backup is actually up.
-    const fallbackAvailable = fallbackUrl !== undefined ? await this.embeddings.checkFallbackHealth?.() : undefined;
+    const fallbackProbe = fallbackUrl !== undefined ? this.embeddings.checkFallbackHealth?.() : undefined;
     // Probe the CONFIGURED primary independently: `checkHealth` above reports
     // the ACTIVE endpoint (the fallback once failover flips), so the digest
     // would otherwise lose the primary's true status under failover. Only when
     // a primary url is known and the provider exposes the probe.
-    const primaryAvailable = primaryUrl !== undefined ? await this.embeddings.checkPrimaryHealth?.() : undefined;
+    const primaryProbe = primaryUrl !== undefined ? this.embeddings.checkPrimaryHealth?.() : undefined;
+    // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
+    // swallows all errors → undefined, so this never blocks or fails get_index_status.
+    const versionRequest = this.qdrant.getServerVersion();
+    const [{ healthy: embeddingHealthy, activeUrl }, fallbackAvailable, primaryAvailable, qdrantVersion] =
+      await Promise.all([activeProbe, fallbackProbe, primaryProbe, versionRequest]);
     // The reason is read AFTER the probes above - it is what they just recorded.
     const primaryUnavailableReason =
       primaryAvailable === false ? this.embeddings.getPrimaryUnavailableReason?.() : undefined;
     const fallbackUnavailableReason =
       fallbackAvailable === false ? this.embeddings.getFallbackUnavailableReason?.() : undefined;
-    // Best-effort probe of the RUNNING daemon's reported version. getServerVersion
-    // swallows all errors → undefined, so this never blocks or fails get_index_status.
-    const qdrantVersion = await this.qdrant.getServerVersion();
     // What the throughput tuner last settled on for the embedding identity in
     // use right now — the run that just finished recorded it before this read.
     // Keyed exactly as the tuner keys it: provider + endpoint SET + model (y1ynz).
@@ -954,16 +973,15 @@ export class IndexingOps {
     // the Qdrant infra-health block. getCollectionDiskBytes returns undefined for
     // external Qdrant or on any fs error; quantization comes from the same
     // getCollectionInfo round-trip that yields status / optimizerStatus.
-    if (exists) {
-      const info = await this.qdrant.getCollectionInfo(aliasCollectionName);
+    if (collectionRequest) {
+      const [info, indexSizeBytes] = await collectionRequest;
       infraHealth.qdrant.status = info.status;
       infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
       infraHealth.qdrant.quantization = info.quantization;
-      const indexSizeBytes = await this.qdrant.getCollectionDiskBytes(aliasCollectionName);
       if (indexSizeBytes !== undefined) infraHealth.qdrant.indexSizeBytes = indexSizeBytes;
     }
 
-    const status = await this.status.getIndexStatus(path);
+    const status = await statusRequest;
     const residualResolution = this.residualReports.get(aliasCollectionName);
     return { ...status, infraHealth, ...(residualResolution ? { residualResolution } : {}) };
   }

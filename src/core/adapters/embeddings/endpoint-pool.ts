@@ -92,6 +92,7 @@ export class EmbeddingEndpointPool {
   private readonly probe: (url: string) => Promise<boolean>;
   private readonly now: () => number;
   private readonly ewmaAlpha: number;
+  private readonly tierProbesInFlight = new Map<EmbeddingEndpointTier, Promise<boolean>>();
 
   constructor(config: EmbeddingEndpointPoolConfig) {
     this.peers = [...config.peers];
@@ -218,7 +219,20 @@ export class EmbeddingEndpointPool {
     return this.endpoints.map(toState);
   }
 
+  /**
+   * One probe round per tier at a time: a status read checks the active tier and
+   * each configured tier side by side, and a round against an unreachable host
+   * waits out the probe timeout — concurrent askers share it (bd o4p5l).
+   */
   private async checkTierHealth(tier: EmbeddingEndpointTier): Promise<boolean> {
+    const inFlight = this.tierProbesInFlight.get(tier);
+    if (inFlight) return inFlight;
+    const round = this.probeTier(tier).finally(() => this.tierProbesInFlight.delete(tier));
+    this.tierProbesInFlight.set(tier, round);
+    return round;
+  }
+
+  private async probeTier(tier: EmbeddingEndpointTier): Promise<boolean> {
     const members = this.endpoints.filter((e) => e.tier === tier && !e.retired);
     const results = await Promise.all(
       members.map(async (endpoint) => {

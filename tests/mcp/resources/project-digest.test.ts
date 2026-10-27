@@ -114,6 +114,15 @@ describe("tea-rags://project/{alias}/digest template", () => {
     expect(await textOf("tea-rags://project/fixture/digest")).toBe(formatSlimDigest(fixtureData(), NOW));
   });
 
+  it("reads the metrics without the working-tree marker it never renders (bd o4p5l)", async () => {
+    const app = fixtureApp();
+    const getIndexMetrics = vi.spyOn(app, "getIndexMetrics");
+
+    await textOf("tea-rags://project/fixture/digest", app);
+
+    expect(getIndexMetrics).toHaveBeenCalledWith(expect.any(String), { workingTreeMarker: false });
+  });
+
   it("answers an unknown alias with a text instead of an error", async () => {
     expect(await textOf("tea-rags://project/unknown/digest")).toBe("project 'unknown' not registered\n");
   });

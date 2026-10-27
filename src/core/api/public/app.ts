@@ -54,6 +54,7 @@ import type {
   GetOntologyReportResponse,
   HybridSearchRequest,
   IndexMetrics,
+  IndexMetricsReadOptions,
   IndexOptions,
   IndexStats,
   IndexStatus,
@@ -119,7 +120,7 @@ export interface App {
   deleteDocuments: (request: DeleteDocumentsRequest) => Promise<{ count: number }>;
 
   // -- Index metrics (→ internal/facades/explore-facade.ts) --
-  getIndexMetrics: (path: string) => Promise<IndexMetrics>;
+  getIndexMetrics: (path: string, options?: IndexMetricsReadOptions) => Promise<IndexMetrics>;
 
   // -- Schema descriptors (→ Reranker via deps) --
   getSchemaDescriptors: () => PresetDescriptors;

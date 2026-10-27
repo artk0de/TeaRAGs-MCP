@@ -58,7 +58,7 @@ export type {
   DeleteDocumentsRequest,
 } from "./document.js";
 
-export type { IndexMetrics, SignalMetrics } from "./metrics.js";
+export type { IndexMetrics, IndexMetricsReadOptions, SignalMetrics } from "./metrics.js";
 
 export type { WorkingTreeFloor, WorkingTreeIndexTarget, WorkingTreeMarker, WorkingTreeState } from "./working-tree.js";
 

@@ -261,6 +261,24 @@ describe("EmbeddingEndpointPool", () => {
     expect(down.activeTier()).toBe("fallback");
   });
 
+  it("concurrent health checks of one tier share a single probe per endpoint (bd o4p5l)", async () => {
+    const probe = vi.fn(async (url: string) => url === FALLBACK);
+    const pool = makePool({ probe });
+
+    const [first, second, fallback] = await Promise.all([
+      pool.checkPeersHealth(),
+      pool.checkPeersHealth(),
+      pool.checkFallbacksHealth(),
+    ]);
+
+    expect([first, second, fallback]).toEqual([false, false, true]);
+    expect(probe.mock.calls.map(([url]) => url).sort()).toEqual([FALLBACK, PEER_A, PEER_B].sort());
+
+    // Settled: the next check probes afresh.
+    await pool.checkPeersHealth();
+    expect(probe).toHaveBeenCalledTimes(5);
+  });
+
   it("checkFallbacksHealth reports fallback health, or undefined when none is configured", async () => {
     expect(await makePool({ probe: async () => true }).checkFallbacksHealth()).toBe(true);
     expect(await makePool({ probe: async () => false }).checkFallbacksHealth()).toBe(false);

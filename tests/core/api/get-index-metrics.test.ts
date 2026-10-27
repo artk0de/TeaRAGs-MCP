@@ -422,6 +422,19 @@ describe("getIndexMetrics", () => {
       expect(view.mock.calls[0][0].baseIndex.collectionName).toBe(result.collection);
     });
 
+    it("skips the tree measurement when the caller declines the marker (bd o4p5l)", async () => {
+      // The project digest renders no marker; measuring the tree cost ~1 s of
+      // every prime on a 32k-file checkout.
+      const view = vi.fn().mockResolvedValue({ marker, touchedPaths: new Set(), deletedPaths: new Set() });
+      const { facade } = makeExploreFacade({ workingTreeOverlay: { view } });
+
+      const result = await facade.getIndexMetrics("/project", undefined, { workingTreeMarker: false });
+
+      expect(result.workingTree).toBeUndefined();
+      expect(view).not.toHaveBeenCalled();
+      expect(result.collection).toBe((await facade.getIndexMetrics("/project")).collection);
+    });
+
     it("carries no marker when no overlay is wired", async () => {
       const { facade } = makeExploreFacade();
 
