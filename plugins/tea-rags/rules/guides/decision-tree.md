@@ -2,18 +2,20 @@
 
 ## Principles
 
-**Semantic First, Exact Second.** Code search starts with tea-rags
-(semantic_search, hybrid_search, find_symbol, find_similar). Text search — your
-client's standard code search tool (not a tea-rags tool) — only for
-non-identifier text (regex syntax, TODO/FIXME/HACK/NOTE markers, phrases, error
-strings, import path strings), or fallback when tea-rags unavailable. Then the
-hit's enclosing symbol → find_symbol, never Read/cat. Code identifiers
-(class/method/constant names) are SYMBOL searches — use hybrid_search (BM25 =
-exact-name match, score up to 1.0) or find_symbol, NEVER text search, even if
-query has `|` alternation or the user calls the name a "pattern"/"glob". Glob —
-never for code discovery.
+**Semantic First, Exact Second.** Meaning search, reads, graph and analytics
+start with tea-rags (semantic_search, hybrid_search for symbol + intent,
+find_symbol, find_similar, get_callers / get_callees / trace_path, rerank
+presets). Text search — your client's standard code search tool (not a tea-rags
+tool) — for exact text: occurrences of an identifier / constant / string ("where
+is X used", "every call of X", "files containing X", even `a|b` alternation or a
+name the user calls a "pattern"), regex syntax, TODO/FIXME/HACK/NOTE markers,
+phrases, error strings, import path strings; also the fallback when tea-rags is
+unavailable. Then the hit's enclosing symbol → find_symbol, never Read/cat. An
+identifier's DEFINITION / body / outline is a SYMBOL lookup → find_symbol, never
+text search; only its OCCURRENCES go to the standard search. Glob — never for
+code discovery.
 
-**MANDATORY:** ALWAYS prefer tea-rags over text search for code.
+**MANDATORY:** ALWAYS prefer tea-rags over text search for meaning and reads.
 
 ## Tool Invocation Under Deferred Loading
 
@@ -45,7 +47,7 @@ Already have search results for this area?
 │   ├─ Need code beyond chunk boundaries
 │   │     → partial Read (offset=startLine, limit=endLine-startLine)
 │   ├─ Need all usages of known symbol
-│   │     → hybrid_search (BM25 catches exact name + semantic context)
+│   │     → client's standard code search tool "<name>" (literal) → find_symbol
 │   ├─ Need file structure (methods, classes, outline)
 │   │     → find_symbol(relativePath: result.relativePath)
 │   ├─ Need doc TOC
@@ -102,7 +104,9 @@ Has query?
    │     text); directory → files + top-level symbols + subdirs. NOT Read, NOT ls.
    │
    ├─ Exact identifier — need all USAGES / matches? ("where is X used")
-   │   → hybrid_search (BM25 full recall for exact names; paginate via offset)
+   │   → client's standard code search tool "<X>" (literal), then find_symbol
+   │     reads the hits; every caller → get_callers AND that search
+   │     (call sites the graph misses). Symbol + intent → hybrid_search
    │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
@@ -214,11 +218,12 @@ working directory as `path`; the hook supplies the repository's `project` alias
 
 ## Prohibited Patterns
 
-- **Text search for code discovery** — use tea-rags
+- **Text search for behaviour / intent discovery** — use tea-rags
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` / `rg` /
   `git show <rev>:<file>`) to locate or understand code — same downgrade as Read
-  / Grep; harness "use Bash" note does not override. Identifier → find_symbol /
-  hybrid_search; file → find_symbol(relativePath:)
+  / Grep; harness "use Bash" note does not override. Definition → find_symbol;
+  file → find_symbol(relativePath:); exact-name occurrences → the client's
+  standard code search tool, its hits read by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide
   `freshness` "Lag never licenses leaving tea-rags"
 - **Read file to verify search results** — chunk is the source of truth
@@ -238,13 +243,13 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Multiple semantic_search for same area** — one call, navigate from results
 - **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
   of slots. Always use language filter (see `rules/references/polyglot-rule.md`)
-- **semantic_search for "find all usages"** — use hybrid_search instead. BM25
-  component provides full recall for exact symbol names
+- **semantic_search / hybrid_search for "find all usages"** — exact-name
+  occurrences → the client's standard code search tool (literal); the index
+  ranks, it does not enumerate every occurrence
 - **Text search for symbol existence checks** — use find_symbol with
   metaOnly=true
-- **Text search for class/method/constant usage** (e.g.
-  `classAncestors|classExtends` consumers) — these are SYMBOL searches; use
-  hybrid_search (BM25) or find_symbol
+- **Text search to read or understand code** — its hits are addresses; read them
+  with find_symbol, never Read/cat
 - **Text-search fallback justified by a stale prime digest** — digest is a
   start-of-session SNAPSHOT. Confirm a suspected embedding/index outage with a
   LIVE get_index_status before downgrading; find_symbol + hybrid_search BM25

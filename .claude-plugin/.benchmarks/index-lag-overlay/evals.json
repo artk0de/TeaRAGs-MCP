@@ -39,7 +39,7 @@
       "id": "E1",
       "context": "main, own checkout, dinopowers:brainstorming, first tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}] + DRIFT-FORCE [\"driftWarning\":\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"]",
       "prompt": "read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
-      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol / hybrid_search metaOnly; NOT Bash cat/grep, rg, Read",
+      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol for the tickets' code; who else calls → get_callers AND the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `new_session_url`; NOT Bash cat/sed, Read",
       "audit_finding": "A1,A2,A3,A4",
       "results": {
         "no_rule": "FAIL",
@@ -95,7 +95,7 @@
       "id": "E5",
       "context": "main, auto-mode Bash note, healthy index",
       "prompt": "every caller of build_after_sign_in_url",
-      "expected": "get_callers + hybrid_search metaOnly; NOT Bash grep",
+      "expected": "get_callers + the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `build_after_sign_in_url` (call sites the graph misses); NOT hybrid_search as the name sweep, NOT cat/Read",
       "audit_finding": "A3",
       "results": {
         "no_rule": "PASS",
@@ -221,7 +221,7 @@
       "id": "E14",
       "context": "main, graph",
       "prompt": "get_callers after 120 s, treeGraphUnavailable timeout, floors [], caller in changed file",
-      "expected": "find_symbol + hybrid_search re-check (+ incremental on own checkout); NOT Read/rg",
+      "expected": "find_symbol on the caller in the changed file + the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal name (callers the index lacks) (+ incremental on own checkout); no graph retry; NOT Read/cat",
       "audit_finding": "A2,A3",
       "results": {
         "no_rule": "FAIL",
@@ -244,6 +244,55 @@
         "full_rules_after": "PASS",
         "wrapper_only_after": "PASS"
       }
+    },
+    {
+      "id": "H6",
+      "audit_finding": "q1g6s.17 trust a clean index: no verify search",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; semantic_search(project: 'acme', path: '/work/acme', query: 'tax rounding') answered workingTree {tree: '/work/acme', changedFiles: 0, pendingFiles: 0, floors: []}, no row has treeState, no degraded / denseUnavailable. Top row TaxCalc#round_cents, content (whole method): \"def round_cents(amount)\\n  (amount * 100).round(half: :even) / 100.0\\nend\"",
+      "prompt": "Explain how TaxCalc#round_cents rounds — and is that the current code?",
+      "expected": "NO tool call: the clean answer IS the current code; explains banker's rounding (half to even) to cents from the row",
+      "not": [
+        "find_symbol / search to verify the row",
+        "Read / cat",
+        "git show / git diff",
+        "get_index_status"
+      ]
+    },
+    {
+      "id": "H7",
+      "audit_finding": "q1g6s.17 guard: treeState row still re-read",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; hybrid_search(project: 'acme', path: '/work/acme', query: 'Pricing apply discount') answered workingTree {tree: '/work/acme', changedFiles: 3, pendingFiles: 0, floors: []}; row Pricing#apply carries treeState: 'modified' (pre-edit index copy) with its old content.",
+      "prompt": "What does Pricing#apply do now?",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Pricing#apply') — reads the current tree; the row's content is not the answer",
+      "not": [
+        "answer from the treeState row's content alone",
+        "Read / cat",
+        "index_codebase --force"
+      ]
+    },
+    {
+      "id": "H8",
+      "audit_finding": "q1g6s.17 degraded: reads stay in tea-rags, no verify loop",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; hybrid_search(project: 'acme', path: '/work/acme', query: 'Ledger post') answered rows ranked lexically with top-level denseUnavailable: {reason: 'embedding provider unreachable'}; top row symbolId Ledger#post (metaOnly, no content).",
+      "prompt": "Show me Ledger#post and how it treats a closed account.",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Ledger#post') (needs no embedding) and answers from the body",
+      "not": [
+        "Bash cat / sed / Read of the file",
+        "retrying the search / get_index_status to re-verify before reading",
+        "semantic_search"
+      ]
+    },
+    {
+      "id": "H9",
+      "audit_finding": "q1g6s.17 guard: summary line is not the body",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; earlier turns were compacted. The summary says only: 'read Ledger#post earlier (find_symbol)'. Its body is NOT in this context.",
+      "prompt": "Does Ledger#post lock the account row before writing?",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Ledger#post') — the body is not in context, so it is read again",
+      "not": [
+        "answer from memory of the summary line",
+        "Read / cat",
+        "a search instead of find_symbol"
+      ]
     }
   ],
   "summary": {
