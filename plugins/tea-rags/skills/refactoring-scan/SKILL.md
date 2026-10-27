@@ -24,8 +24,9 @@ Refactoring candidates ≠ defects.
 2. **Tool choice + stop conditions from `tea-rags://guide/decision-tree`** —
    pass query + rerank + pathPattern, tree picks tool; gradient-drop /
    diminishing-returns / cross-preset rules, NO absolute score thresholds.
-3. **No text search (Grep / `rg`) for code discovery** — tea-rags tools; text
-   search only for literal text (identifiers → `hybrid_search`).
+3. **No text search (the default code search tool) for code discovery** —
+   tea-rags tools; text search only for literal text (identifiers →
+   `hybrid_search`).
 4. **`limit=10` per preset = hard cap.** A preset returned more ("50 results —
    take all?") → no: keep the top results up to 10, cut earlier at a gradient
    drop / diminishing returns, never by an absolute score; SCAN never pages

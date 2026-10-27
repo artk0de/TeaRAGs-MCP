@@ -152,9 +152,9 @@ and tree, never "index unusable". Thousands of changed files included.
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
   caller in the changed file + the default code search tool `"<name>"` (literal)
   for callers the index lacks.
-- Bash `cat` / `sed -n` / `head` / `grep` / `rg` / `git show` over code = same
-  downgrade as `Read` / Grep — harness "use Bash" note does not override.
-  Exception: user explicitly asks for manual read.
+- Bash `cat` / `sed -n` / `head` / `git show` over code = same downgrade as the
+  default code read tool / default code search tool match lines — harness "use
+  Bash" note does not override. Exception: user explicitly asks for manual read.
 - Claude Code: PreToolUse hook `deny-indexed-read.sh` denies `Read`, and Bash
   `cat`/`sed`/`head`/`tail`/`less`/`more` (compounds too), of a file the index
   snapshot lists (`tea-rags project indexed --path <file>` /

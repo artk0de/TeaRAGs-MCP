@@ -43,8 +43,8 @@ instance, `Class.method` static, `functionName` top-level). Bare
   `empty.reason: "unknownFile"` + `message` — fix path, never report "nothing
   imports it"; `noEdges` at a low resolve rate = lower bound, add the
   `hybrid_search` below. Codegraph off → `hybrid_search metaOnly:true` on the
-  module path / import string. User offers `grep` / `rg` for importers → refuse,
-  answer starts with this line:
+  module path / import string. User offers the default code search tool for
+  importers → refuse, answer starts with this line:
 
   ```
   Not grep: it matches import text only — misses re-exports and call weight. Importers via <get_callers(relativePath=<module>) | hybrid_search on the module path (codegraph off)>.

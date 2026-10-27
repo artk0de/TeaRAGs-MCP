@@ -101,9 +101,9 @@ failed metrics / label-map read never stops the run: Phase 0 still resolves
 `pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
-distance index↔tree, never licence for Bash `cat` / `sed` / `grep` / `rg` or
-`Read` over code. Row without `treeState` = current; `treeState` row →
-`find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
+distance index↔tree, never licence for Bash `cat` / `sed` / `head` or the
+default code read tool over code. Row without `treeState` = current; `treeState`
+row → `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
 awaited; print `--force not run; reads continue`; then keep working); subagent /
 linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
