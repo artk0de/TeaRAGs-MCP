@@ -1074,6 +1074,52 @@ describe("resolveSymbols", () => {
       );
     });
 
+    it("spans a class cut into several class-level blocks from its first window to its last line", () => {
+      // bd tea-rags-mcp-q1g6s.12: taxdome `User` outlined at startLine 28 when
+      // its first window starts at 4, and a trailing window after the last
+      // method drew startLine > endLine — the header was whichever window the
+      // scroll returned first, the end the last member's.
+      const block = (id: string, startLine: number, endLine: number) => ({
+        id,
+        payload: {
+          symbolId: "User",
+          name: "User",
+          chunkType: "block",
+          parentSymbolId: "User",
+          parentType: "class",
+          relativePath: "app/models/user.rb",
+          language: "ruby",
+          content: `# class body ${startLine}`,
+          startLine,
+          endLine,
+        },
+      });
+      const chunks = [
+        block("block-126", 126, 130),
+        {
+          id: "perform",
+          payload: {
+            symbolId: "User#perform",
+            name: "perform",
+            chunkType: "function",
+            parentSymbolId: "User",
+            parentType: "class",
+            relativePath: "app/models/user.rb",
+            language: "ruby",
+            content: "def perform(id)\n  run(id)\nend",
+            startLine: 86,
+            endLine: 116,
+          },
+        },
+        block("block-4", 4, 9),
+      ];
+
+      const results = resolveSymbols(chunks, "User");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload).toMatchObject({ content: "User\n  User#perform", startLine: 4, endLine: 130 });
+    });
+
     it("does not synthesise an outline when the shared parent is not a class/module container", () => {
       const nested = (id: string, symbolId: string) => ({
         id,

@@ -201,7 +201,9 @@ export const CodeChunkGrouper = {
       fileExtension: classChunk.payload.fileExtension,
       content: outlineContent,
       startLine: classChunk.payload.startLine,
-      endLine: sorted.length > 0 ? sorted[sorted.length - 1].payload.endLine : classChunk.payload.endLine,
+      // The class's last line, not its last member's: a class-level window can
+      // follow the last method (a Ruby class body tail, bd tea-rags-mcp-q1g6s.12).
+      endLine: Math.max(...allChunks.map((c) => Number(c.payload.endLine) || 0)),
       git: fileGit(classChunk),
       codegraph: fileCodegraph(classChunk),
       chunkCount: allChunks.length,

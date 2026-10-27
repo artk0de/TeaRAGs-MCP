@@ -160,7 +160,7 @@ export function resolveSymbols(
 function planClassChunkOutlines(groups: ScrollChunk[][]): ContainerOutlinePlan[] {
   const plans: ContainerOutlinePlan[] = [];
   for (const group of groups) {
-    const classChunk = group.find(isClassLevelChunk);
+    const classChunk = classHeaderOf(group);
     if (!classChunk) continue;
     const ids = new Set(
       [classChunk.payload.symbolId, classChunk.payload.name].filter((id): id is string => typeof id === "string"),
@@ -178,6 +178,23 @@ function planClassChunkOutlines(groups: ScrollChunk[][]): ContainerOutlinePlan[]
     });
   }
   return plans;
+}
+
+/**
+ * The header chunk of a class group, spanning every class-level window: a Ruby
+ * class body is several same-id blocks in scroll order, so the first one found
+ * is not the class's start, and a trailing window ends past the last member
+ * (bd tea-rags-mcp-q1g6s.12 — taxdome `User` outlined with startLine > endLine).
+ */
+function classHeaderOf(group: ScrollChunk[]): ScrollChunk | undefined {
+  const windows = group.filter(isClassLevelChunk);
+  if (windows.length === 0) return undefined;
+  const lines = (key: "startLine" | "endLine"): number[] => windows.map((c) => Number(c.payload[key]) || 0);
+  const [first] = [...windows].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
+  return {
+    ...first,
+    payload: { ...first.payload, startLine: Math.min(...lines("startLine")), endLine: Math.max(...lines("endLine")) },
+  };
 }
 
 /**
