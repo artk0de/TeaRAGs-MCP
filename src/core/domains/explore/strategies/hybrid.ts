@@ -14,15 +14,21 @@
 import { QdrantInvalidQueryParameterError } from "../../../adapters/qdrant/errors.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
-import { FileLevelGrouper } from "../chunk-grouping/index.js";
-import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { FileLevelGrouper, type ScrollChunk } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors/index.js";
-import { scoreWorkingTreeRowsByVector, WORKING_TREE_DENSE_WAIT_MS } from "../working-tree/dense-floor.js";
-import { claimWorkingTreeFloors, relativePathOf } from "../working-tree/index.js";
-import { fuseWorkingTreeRows, scoreWorkingTreeRows, workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
-import { recordWorkingTreeDenseState } from "../working-tree/tree-graph-marker.js";
+import {
+  claimWorkingTreeFloors,
+  fuseWorkingTreeRows,
+  recordWorkingTreeDenseState,
+  relativePathOf,
+  scoreWorkingTreeRows,
+  scoreWorkingTreeRowsByVector,
+  WORKING_TREE_DENSE_WAIT_MS,
+  workingTreeRowAdmitted,
+} from "../working-tree/index.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
+import { searchQueryVariants } from "./query-variant-search.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
 
@@ -52,6 +58,14 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     const collectionInfo = await this.qdrant.getCollectionInfo(ctx.collectionName);
     if (!collectionInfo.hybridEnabled) {
       throw new HybridNotEnabledError(ctx.collectionName);
+    }
+    if (ctx.queryVariants) {
+      // A dense + BM25 leg per variant; BM25 alone when none could be embedded.
+      const legs = ctx.queryVariants.map(({ query, embedding }) => ({
+        ...(embedding ? { dense: embedding } : {}),
+        sparse: generateSparseVector(query),
+      }));
+      return searchQueryVariants(this.qdrant, ctx, legs);
     }
 
     const sparseVector = ctx.sparseVector ?? generateSparseVector(ctx.query ?? "");

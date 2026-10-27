@@ -20,6 +20,7 @@ import { relativePathOf } from "../working-tree/substitute.js";
 import { recordWorkingTreeDenseState } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy, type WorkingTreeDenseFloorRead } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
+import { searchQueryVariants } from "./query-variant-search.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /**
@@ -40,6 +41,13 @@ export class VectorSearchStrategy extends BaseExploreStrategy {
     const { embedding } = ctx;
     if (!embedding) {
       throw new InvalidQueryError("VectorSearchStrategy requires an embedding in the context");
+    }
+    if (ctx.queryVariants) {
+      return searchQueryVariants(
+        this.qdrant,
+        ctx,
+        ctx.queryVariants.map(({ embedding: dense }) => ({ dense })),
+      );
     }
     const floor = await this.readWorkingTreeDenseFloor(ctx);
     const filter = floor ? await this.excludeWorkingTreeBase(ctx, floor.view, ctx.filter) : ctx.filter;

@@ -37,7 +37,7 @@ import {
 } from "./errors.js";
 import { toQdrantPointId } from "./point-id.js";
 import { withServicePointExclusions } from "./service-points.js";
-import type { SearchResult, SparseVector } from "./types.js";
+import type { FusedSearchLeg, SearchResult, SparseVector } from "./types.js";
 
 // Declared in types.ts so ports.ts stays a leaf off the connection/alias graph.
 export type { SearchResult } from "./types.js";
@@ -294,6 +294,43 @@ export class QdrantSearchExecutor {
     return this.runHybridQuery(collectionName, {
       prefetch,
       query: fusionQuery,
+      limit: fetchLimit,
+      filter: qdrantFilter,
+      with_payload: true,
+    });
+  }
+
+  /**
+   * Query variants (bd tea-rags-mcp-2vuz): one Query API request with a
+   * prefetch per leg — each variant's dense vector and/or sparse vector — fused
+   * by plain RRF, so every leg has an equal say. The dense legs name the
+   * `dense` vector only on a hybrid collection, as `search` does.
+   */
+  async fusedSearch(
+    collectionName: string,
+    legs: readonly FusedSearchLeg[],
+    fetchLimit: number,
+    filter?: Record<string, unknown>,
+  ): Promise<SearchResult[]> {
+    const qdrantFilter = withServicePointExclusions(filter);
+    const { hybridEnabled } = await this.lookupCollectionInfo(collectionName);
+    const prefetch = legs.flatMap(({ dense, sparse }) => [
+      ...(dense
+        ? [
+            {
+              query: dense,
+              ...(hybridEnabled ? { using: "dense" } : {}),
+              limit: fetchLimit,
+              filter: qdrantFilter,
+              params: QUANTIZATION_SEARCH_PARAMS,
+            },
+          ]
+        : []),
+      ...(sparse ? [{ query: sparse, using: "text", limit: fetchLimit, filter: qdrantFilter }] : []),
+    ]);
+    return this.runHybridQuery(collectionName, {
+      prefetch,
+      query: { fusion: "rrf" },
       limit: fetchLimit,
       filter: qdrantFilter,
       with_payload: true,

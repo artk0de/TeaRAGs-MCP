@@ -30,6 +30,7 @@ import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contrac
 import type { EmbeddingCallOptions } from "../embeddings/base.js";
 import type {
   CollectionInfo,
+  FusedSearchLeg,
   PayloadFieldIndex,
   QdrantCollectionMemoryUsage,
   QdrantUpdateStatus,
@@ -322,6 +323,13 @@ export interface QdrantSearchReader {
     filter?: Record<string, unknown>,
     semanticWeight?: number,
     identityPrefetchFilter?: Record<string, unknown>,
+  ) => Promise<SearchResult[]>;
+  /** Several query variants in one request: a prefetch per leg, fused server-side by plain RRF. */
+  fusedSearch: (
+    collectionName: string,
+    legs: readonly FusedSearchLeg[],
+    fetchLimit: number,
+    filter?: Record<string, unknown>,
   ) => Promise<SearchResult[]>;
 }
 

@@ -59,12 +59,13 @@ import { SchemaMetadataPointStore } from "./schema-metadata-point.js";
 import { QdrantScroller } from "./scroller.js";
 import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
 import { QdrantSnapshotStore } from "./snapshots.js";
-import type { QdrantUpdateStatus, SparseVector } from "./types.js";
+import type { FusedSearchLeg, QdrantUpdateStatus, SparseVector } from "./types.js";
 import { awaitWriteBarrier, type PayloadWriteBarrierOutcome } from "./write-barrier.js";
 
 export type {
   CollectionInfo,
   EmbeddedDaemonProbe,
+  FusedSearchLeg,
   QdrantCollectionMemoryUsage,
   QdrantMemoryUsage,
   SearchResult,
@@ -599,6 +600,19 @@ export class QdrantManager
       semanticWeight,
       identityPrefetchFilter,
     );
+  }
+
+  /**
+   * Several query variants in one request — a prefetch per dense / sparse leg,
+   * fused server-side by plain RRF (see `QdrantSearchExecutor#fusedSearch`).
+   */
+  async fusedSearch(
+    collectionName: string,
+    legs: readonly FusedSearchLeg[],
+    fetchLimit: number,
+    filter?: Record<string, unknown>,
+  ): Promise<SearchResult[]> {
+    return this.searcher.fusedSearch(collectionName, legs, fetchLimit, filter);
   }
 
   // ── Traversal ──
