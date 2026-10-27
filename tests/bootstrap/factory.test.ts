@@ -278,6 +278,7 @@ function makeConfig(): AppConfig {
     requestTimeoutMs: 300000,
     promptsConfigFile: "/nonexistent/prompts.json",
     serverInstructions: "core",
+    experimentalLocateEnable: false,
     ingestCode: {
       chunkSize: 2500,
       chunkOverlap: 300,
