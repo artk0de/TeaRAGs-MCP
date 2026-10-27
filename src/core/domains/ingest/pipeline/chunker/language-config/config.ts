@@ -498,6 +498,10 @@ export const LANGUAGE_MAP: Record<string, string> = {
   ".go": "go",
   ".rs": "rust",
   ".rb": "ruby",
+  // Rake task files (bd tea-rags-mcp-k0602). The codegraph walks them too
+  // (`CODEGRAPH_LANGUAGES`); the tables move together, or a file has a graph
+  // node and no chunks, or the reverse.
+  ".rake": "ruby",
   ".php": "php",
 
   // Systems languages

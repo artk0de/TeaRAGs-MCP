@@ -575,7 +575,7 @@ export class TreeSitterChunker implements CodeChunker {
 
       for (const [index, node] of nodes.entries()) {
         const content = code.substring(node.startIndex, node.endIndex);
-        const decision = langConfig.classifier?.classifyNode(node) ?? ({ kind: "passthrough" } as const);
+        const decision = langConfig.classifier?.classifyNode(node, filePath) ?? ({ kind: "passthrough" } as const);
         // Explicit drop.
         if (decision.kind === "skip") continue;
         // Min-length noise gate for statements without a stable symbolId. A
@@ -922,7 +922,12 @@ export class TreeSitterChunker implements CodeChunker {
     chunks: CodeChunk[],
     decision: ChunkDecision,
   ): void {
-    const attributePrefix = this.leadingAttributeStart(node);
+    // A classifier may open its chunks at an earlier sibling (Rake `desc`).
+    const leadingNode = decision.kind === "emit" ? decision.leadingNode : undefined;
+    const attributePrefix =
+      leadingNode === undefined
+        ? this.leadingAttributeStart(node)
+        : { startIndex: leadingNode.startIndex, startLine: leadingNode.startPosition.row + 1 };
     const content = code.substring(attributePrefix.startIndex, node.endIndex);
 
     if (decision.kind === "skip") return;

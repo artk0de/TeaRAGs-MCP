@@ -272,7 +272,16 @@ export type ChunkDecision =
   | { kind: "passthrough" }
   | { kind: "statement" }
   | { kind: "skip" }
-  | { kind: "emit"; chunks: EmittedChunk[] };
+  | {
+      kind: "emit";
+      chunks: EmittedChunk[];
+      /**
+       * An earlier sibling the emitted chunks open at, its rows carried with
+       * the node (Rake `desc` above a top-level task, bd tea-rags-mcp-k0602).
+       * Absent → the node's own start (after any leading attribute).
+       */
+      leadingNode?: AstNode;
+    };
 
 /**
  * Per-language node→chunk classification. The engine consults it for each
@@ -282,7 +291,8 @@ export type ChunkDecision =
  * one (Go, JavaScript).
  */
 export interface LanguageChunkClassifier {
-  classifyNode: (node: AstNode) => ChunkDecision;
+  /** `filePath` lets a classifier answer for one file family only (Ruby: `.rake` tasks, bd tea-rags-mcp-k0602). */
+  classifyNode: (node: AstNode, filePath?: string) => ChunkDecision;
 }
 
 /** Single hook in the chain */
@@ -317,6 +327,17 @@ export interface TestExample {
   text: string;
   startLine: number;
   endLine: number;
+  /**
+   * The segment this example contributes to its symbolId and its chunk `name`
+   * when that is not the display form — a Rake task's name (`seed` for
+   * `task seed: :environment`). Absent → `name`.
+   */
+  idName?: string;
+  /**
+   * The id is `idName` alone, outside every enclosing scope: Rake never scopes
+   * a `file` task or a `rule` by its namespace.
+   */
+  idUnscoped?: boolean;
 }
 
 /**
@@ -338,6 +359,8 @@ export interface TestScope {
   otherLines: TestScopeLine[];
   examples: TestExample[];
   children: TestScope[];
+  /** The segment this scope contributes to ids when not its display form (`billing` for `namespace :billing`). Absent → `name`. */
+  idName?: string;
 }
 
 /**

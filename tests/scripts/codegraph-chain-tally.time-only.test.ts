@@ -47,8 +47,8 @@ describe("scoredExtensionsFor", () => {
     expect([...scoredExtensionsFor("typescript")].sort()).toEqual([".cts", ".mts", ".ts", ".tsx"]);
   });
 
-  it("gives Ruby and Python their single extension", () => {
-    expect(scoredExtensionsFor("ruby")).toEqual([".rb"]);
+  it("gives Ruby its .rb/.rake extensions and Python its single extension", () => {
+    expect(scoredExtensionsFor("ruby")).toEqual([".rb", ".rake"]);
     expect(scoredExtensionsFor("python")).toEqual([".py"]);
   });
 

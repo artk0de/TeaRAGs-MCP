@@ -11,6 +11,7 @@ import {
 import {
   EXAMPLE_GROUP_BUDGET_CHARS,
   produceTestScopeChunks,
+  type ScopeChunkVocabulary,
 } from "../../../../../src/core/domains/language/kernel/test-scope-chunks.js";
 
 const CONFIG = { maxChunkSize: 2500 };
@@ -778,5 +779,58 @@ describe("produceTestScopeChunks", () => {
       expect(bodyChunkPrefixLength + chunk.content.length).toBeLessThanOrEqual(maxChunkSize);
       expect(chunk.content).toBe(fits.text.trim());
     });
+  });
+});
+
+describe("produceTestScopeChunks under a namespace vocabulary (bd tea-rags-mcp-k0602)", () => {
+  const RAKE_SCOPE_CHUNK_VOCABULARY: ScopeChunkVocabulary = {
+    idSeparator: ":",
+    idPath: "namespace",
+    leafChunkType: "function",
+    setupChunkType: "block",
+    packLeaves: false,
+    minSetupContent: 0,
+  };
+  const task = (name: string, idName: string, startLine: number, idUnscoped?: boolean): TestExample => ({
+    ...example(name, startLine),
+    idName,
+    ...(idUnscoped ? { idUnscoped } : {}),
+  });
+
+  it("addresses every leaf by the full namespace path, joined by the vocabulary's separator", () => {
+    const root = scope("namespace :billing", 1, 30, {
+      idName: "billing",
+      examples: [task("task :seed", "seed", 2), task("file 'out.csv'", "out.csv", 20, true)],
+      children: [
+        scope("namespace :templates", 6, 18, {
+          idName: "templates",
+          otherLines: [line("    def helper = 1", 7)],
+          examples: [task("task :reset", "reset", 8), task("task :prune", "prune", 12)],
+        }),
+      ],
+    });
+
+    const chunks = produceTestScopeChunks(root, "billing", CONFIG, RAKE_SCOPE_CHUNK_VOCABULARY);
+
+    expect(chunks.map((c) => [c.symbolId, c.chunkType, c.name, c.parentSymbolId])).toEqual([
+      ["billing:seed", "function", "seed", "billing"],
+      ["billing:templates", "block", "templates", "billing"],
+      ["billing:templates:reset", "function", "reset", "billing:templates"],
+      ["billing:templates:prune", "function", "prune", "billing:templates"],
+      ["out.csv", "function", "out.csv", "billing"],
+    ]);
+    expect(chunks.every((c) => c.memberSymbolIds === undefined)).toBe(true);
+    expect(chunks.some((c) => c.parentType === TEST_SCOPE_PARENT_TYPE)).toBe(false);
+  });
+
+  it("keeps a namespace's tiny own lines even with no leaf below it", () => {
+    const root = scope("namespace :billing", 1, 4, {
+      idName: "billing",
+      otherLines: [line("  def h = 1", 2)],
+    });
+
+    const chunks = produceTestScopeChunks(root, "billing", CONFIG, RAKE_SCOPE_CHUNK_VOCABULARY);
+
+    expect(chunks.map((c) => [c.symbolId, c.content])).toEqual([["billing", "def h = 1"]]);
   });
 });

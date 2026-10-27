@@ -139,7 +139,7 @@ export { FrameworkVocabularyRegistry } from "./framework-vocabulary.js";
 export type { FrameworkVocabularyDescriptor } from "./framework-vocabulary.js";
 export { deriveStructuralConformance } from "./structural-conformance.js";
 export { DefaultSymbolIdComposer, symbolIdNames } from "./symbol-id.js";
-export { produceTestScopeChunks } from "./test-scope-chunks.js";
+export { produceTestScopeChunks, TEST_SCOPE_CHUNK_VOCABULARY, type ScopeChunkVocabulary } from "./test-scope-chunks.js";
 export { typeFactChannels } from "./type-fact-channels.js";
 export { TypeFactStore } from "./type-fact-store.js";
 export {

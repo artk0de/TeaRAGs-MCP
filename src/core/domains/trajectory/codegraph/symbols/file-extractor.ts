@@ -95,6 +95,13 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
     language: "ruby",
     scopeSeparator: "::",
   },
+  // Rake task files (bd tea-rags-mcp-k0602) are Ruby source: the same grammar,
+  // walker and separator as `.rb`. Ingest lists them in `LANGUAGE_MAP` /
+  // `DEFAULT_CODE_EXTENSIONS` — the tables move together.
+  ".rake": {
+    language: "ruby",
+    scopeSeparator: "::",
+  },
   // JavaScript variants — the single `tree-sitter-javascript` grammar serves all
   // four extensions.
   ".js": {

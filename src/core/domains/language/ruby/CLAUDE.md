@@ -216,6 +216,14 @@
   Why: splicing parent setup in the hook, or matching a setup line's text, is
   the pre-kernel code this replaced — `let(:include_examples_flag)` used to make
   a setup-only scope a `test`.
+- **Rake rides the same reader, never a parallel chunker.** The tree walk is
+  `readRubyDslScopeTree` (`chunking/dsl-scope-tree.ts`); RSpec and Rake differ
+  only in their `RubyDslScopeVocabulary` and in the kernel
+  `ScopeChunkVocabulary` they emit under. Rake's is production code — chunkType
+  `function`, no test parentType, `:`-joined namespace ids, no packing — and a
+  top-level task (no `namespace` container for a hook to claim) is named by
+  `RubyChunkClassifier` from the same `rakeTaskNameOf`. Why: a second walk would
+  drift from RSpec's line rules, and the 6xdwe coverage guarantee rests on them.
 
 ## Boundaries
 

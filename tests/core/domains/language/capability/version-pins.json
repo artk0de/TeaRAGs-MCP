@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 6,
-      "digest": "sha256:9bd542a441ffa8682f2b511d1849ab5b0b982f42e3a10e361290bc3b2f4d9766"
+      "digest": "sha256:3e4217b655cef0e442f4c49c4cac92e55f8d44018e4c061aee741e300d3c9eed"
     },
     "walker": {
       "version": 8,
-      "digest": "sha256:e7dd0b7600a243c933a136068569d2a88fbd6e81a8b124dee6913de0f059493f"
+      "digest": "sha256:f98b11ed84798e3395b9d59ea40438401e306a2069be7a3a0efcaf1d2baaed8b"
     }
   },
   "bash": {
@@ -59,12 +59,12 @@
   },
   "ruby": {
     "chunking": {
-      "version": 2,
-      "digest": "sha256:e2836b0d1d86a83ff1b29e61606149eaab28356f9ab5400c18977acf8420dd47"
+      "version": 3,
+      "digest": "sha256:34a1f7b5899c1dd2e02b0161d5c436f59ee46ae7bf588378aff58ed72aa27ca7"
     },
     "walker": {
       "version": 11,
-      "digest": "sha256:5c241a527c36444c922616b0a26cb9132ebbefe8e0ac46b1f671e350a7f990bf"
+      "digest": "sha256:277713be8284701846e57cae8b28b5091f7fd76301561e03ca474045d04508e9"
     }
   },
   "rust": {

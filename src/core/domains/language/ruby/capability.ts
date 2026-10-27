@@ -30,7 +30,7 @@ export const capability: LanguageCapability = {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
     summary:
       "15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors",
-    tech: "15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated)",
+    tech: "15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated) + .rake chunked as the Rake DSL (task id ns:task, chunk type function, task calls attributed to the task)",
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
     // Ruby never calls a class by its bare name: `Money(x)` is a METHOD, and the
     // class is only the receiver of `Money.new`.
@@ -167,7 +167,11 @@ export const capability: LanguageCapability = {
   // a class method's bare self reads are no self-dispatch hooks; a framework verb on self
   // no longer lands on an unrelated project namesake; `perform_async_<x>` wrappers dispatch
   // to the worker's entrypoint. A walker-10 index keeps the old edges until a recompute.
-  versions: { chunking: 2, walker: 11, codegraphSchema: 2 },
+  // chunking 3: bd tea-rags-mcp-k0602 — a `.rake` file is chunked as the Rake DSL: one
+  // `function` chunk per task / multitask / file / rule, addressed by its namespace-qualified
+  // Rake name (`billing:sync`), `desc` attached; a chunking-2 index holds a `.rake` file
+  // as plain Ruby (`--force --file-extension .rake`). `.rb` output is unchanged.
+  versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

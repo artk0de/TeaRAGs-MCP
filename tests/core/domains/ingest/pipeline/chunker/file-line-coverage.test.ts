@@ -167,6 +167,45 @@ describe("TreeSitterChunker — every non-blank line is chunked", () => {
     expect(missingFromContent(code, chunks)).toEqual([]);
   });
 
+  it("keeps every line of a Rake task file in some chunk (bd tea-rags-mcp-k0602)", async () => {
+    const code = [
+      'require "csv"',
+      "",
+      "def log_line(text) = puts(text)",
+      "",
+      "namespace :billing do",
+      "  # Syncs every billing invoice.",
+      '  desc "Seed"',
+      "  task seed: :environment do",
+      "    Template.where(kind: :billing).find_each(&:seed!)",
+      "  end",
+      "",
+      "  namespace :cache do",
+      "    task :clear do",
+      "      Rails.cache.clear",
+      "    end",
+      "  end",
+      "  task default: :seed",
+      '  desc "dangling"',
+      "end",
+      "",
+      'desc "Run all"',
+      "task all: %w[billing:sync]",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/lib/tasks/billing.rake", "ruby");
+
+    // A namespace's own `do` row is carried as its title row, without the
+    // block opener, exactly as an RSpec scope's is; a bare `end` is no search
+    // target. Every other line is chunk text verbatim.
+    const searchable = code
+      .split("\n")
+      .filter((text) => text.trim() !== "" && text.trim() !== "end" && text.trim() !== 'require "csv"')
+      .map((text) => text.replace(/\s+do$/, ""))
+      .join("\n");
+    expect(missingFromContent(searchable, chunks)).toEqual([]);
+  });
+
   it("still yields no chunk for a blank markdown or YAML file", async () => {
     expect(await chunker.chunk("\n \n", "/repo/blank.md", "markdown")).toEqual([]);
     expect(await chunker.chunk("\n", "/repo/config/blank.yaml", "yaml")).toEqual([]);

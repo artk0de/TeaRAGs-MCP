@@ -45,7 +45,7 @@ import type {
   TypeRef,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
-import { isRubyModuleImport, rubyHooks } from "./chunking/index.js";
+import { isRubyModuleImport, RubyChunkClassifier, rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueFor } from "./dsl/index.js";
 import { RUBY_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST } from "./gemfile.js";
@@ -91,6 +91,8 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   },
   hooks: rubyHooks,
   isModuleImport: isRubyModuleImport,
+  // Names a top-level Rake task by its Rake name (bd tea-rags-mcp-k0602).
+  classifier: new RubyChunkClassifier(),
   // Class-body DSL macros are represented in chunks by category grouping
   // (`class-body-chunker.ts` via `CATEGORY_TO_GROUP`), NOT as per-method chunks.
   // The synthesised methods they declare are a codegraph concern only — emitted

@@ -23,6 +23,7 @@ export const DEFAULT_CODE_EXTENSIONS = [
   ".cxx",
   ".cs",
   ".rb",
+  ".rake",
   ".php",
   ".swift",
   ".dart",

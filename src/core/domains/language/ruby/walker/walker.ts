@@ -67,6 +67,7 @@ import { buildRubyChunkExtractions } from "./chunk-extractions.js";
 import { attachRubyClassHierarchyChannels, collectRubyClassAncestors } from "./class-hierarchy.js";
 import { collectRubyConstantRefs, collectRubyDefinedConstants, collectRubyRequires } from "./constant-refs.js";
 import { buildRubyFileTypeEnv } from "./file-type-env.js";
+import { withRakeTaskSymbols } from "./rake-task-symbols.js";
 import { collectRubyDispatchTables } from "./registry-dispatch.js";
 import type { RubyExtractInput } from "./shared/index.js";
 import { rubyChunkDeclarationIndex } from "./symbol-kind.js";
@@ -91,8 +92,10 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // published below, in their usual order.
   const chunkDeclarations = rubyChunkDeclarationIndex(input.chunks);
   const classDeclarations = collectRubyClassAncestors(input.tree.rootNode, chunkDeclarations.visit, catalogue);
-  const symbolKinds = chunkDeclarations.kinds(catalogue);
-  const { chunks, siteContextAt } = buildRubyChunkExtractions(input, calls, typeEnv, catalogue, symbolKinds);
+  // A `.rake` file's tasks are `function` symbols under their chunk's Rake
+  // name, so the calls in a task body are attributed to the task.
+  const rake = withRakeTaskSymbols(input, chunkDeclarations.kinds(catalogue));
+  const { chunks, siteContextAt } = buildRubyChunkExtractions(rake.input, calls, typeEnv, catalogue, rake.symbolKinds);
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,

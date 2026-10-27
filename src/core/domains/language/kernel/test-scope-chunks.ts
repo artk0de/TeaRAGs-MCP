@@ -42,6 +42,12 @@
  * not the AST container the engine would stamp, and that type is the one signal
  * explore reads to tell an example from a scope's setup chunk.
  *
+ * The ids, chunk types and packing above are the TEST vocabulary
+ * (`TEST_SCOPE_CHUNK_VOCABULARY`, the default). A DSL that is not a test —
+ * Rake, bd tea-rags-mcp-k0602 — reads its AST into the same tree and passes
+ * its own `ScopeChunkVocabulary`: the scope-tree machinery is shared, only the
+ * naming and the chunk kinds differ.
+ *
  * Lives on the SHARED `chunking` axis, not the kernel's `walker` axis
  * (`capability/version-axes.ts`): it moves chunks, never edges.
  */
@@ -50,6 +56,7 @@ import {
   bodyChunkContentBudget,
   TEST_SCOPE_PARENT_TYPE,
   type BodyChunkResult,
+  type ChunkType,
   type HookChunkingConfig,
   type TestExample,
   type TestScope,
@@ -57,10 +64,47 @@ import {
 } from "../../../contracts/types/chunker.js";
 
 /**
+ * How a scope DSL names and types its chunks — the part of emission that
+ * differs between a test DSL and a production one. The tree reading, source
+ * order, `~N`, title rows and setup packing are the same for every vocabulary.
+ */
+export interface ScopeChunkVocabulary {
+  /** Joins the segments of a symbolId. */
+  idSeparator: string;
+  /**
+   * `subject`: a scope is `<topLevelName><sep><scope>` — its IMMEDIATE name
+   * under the root's subject (RSpec, Jest). `namespace`: a scope is its
+   * parent's id, then its own segment — the full path, root first (Rake).
+   */
+  idPath: "subject" | "namespace";
+  /** chunkType of a leaf (an example, a task) and of a setup scope that delegates to leaves. */
+  leafChunkType: ChunkType;
+  /** chunkType of a scope's own setup and other lines. */
+  setupChunkType: ChunkType;
+  /** parentType of a leaf; absent → the container's AST type, as for any other body chunk. */
+  leafParentType?: string;
+  /** Pack adjacent leaves of one scope into one chunk (bd tea-rags-mcp-g5i0a); else every leaf is its own chunk. */
+  packLeaves: boolean;
+  /** Below this a leafless scope's own lines are dropped as noise. */
+  minSetupContent: number;
+}
+
+/**
  * Below this (after trim) a chunk carries no searchable signal of its own: an
  * example is grouped with its tiny siblings, a setup-only leaf is dropped.
  */
 const MIN_TEST_CHUNK_CONTENT = 50;
+
+/** The test-spec vocabulary every test DSL chunker emits under (`.claude/rules/test-spec-chunking.md`). */
+export const TEST_SCOPE_CHUNK_VOCABULARY: ScopeChunkVocabulary = {
+  idSeparator: ".",
+  idPath: "subject",
+  leafChunkType: "test",
+  setupChunkType: "test_setup",
+  leafParentType: TEST_SCOPE_PARENT_TYPE,
+  packLeaves: true,
+  minSetupContent: MIN_TEST_CHUNK_CONTENT,
+};
 
 /**
  * The most characters one pack of adjacent examples may hold (bd
@@ -80,6 +124,8 @@ type ExampleEvent = { kind: "example"; example: TestExample; scope: TestScope; a
 interface PendingSetup {
   scope: TestScope;
   scopeId: string;
+  /** The enclosing scope's id; absent on the root. */
+  parentScopeId?: string;
   content: string;
   startLine: number;
   endLine: number;
@@ -99,13 +145,16 @@ interface PendingExample {
 /**
  * Emit the chunks of one test scope tree. `topLevelName` is the language's
  * reading of the root container's subject (`Worker` for
- * `RSpec.describe Worker`), the first segment of every id.
+ * `RSpec.describe Worker`), the first segment of every id under the `subject`
+ * id path; the `namespace` path ignores it.
  */
 export function produceTestScopeChunks(
   root: TestScope,
   topLevelName: string,
   config: HookChunkingConfig,
+  vocabulary: ScopeChunkVocabulary = TEST_SCOPE_CHUNK_VOCABULARY,
 ): BodyChunkResult[] {
+  const sep = vocabulary.idSeparator;
   // The engine emits every chunk under the container header(s); the example
   // has only what is left of the cap (bd tea-rags-mcp-pi1cl).
   const contentBudget = bodyChunkContentBudget(config);
@@ -124,20 +173,27 @@ export function produceTestScopeChunks(
 
   for (const event of sourceOrder(root, [])) {
     if (event.kind === "scope") {
-      const scopeId = disambiguate(`${topLevelName}.${event.scope.name}`);
+      const parent = event.ancestors.at(-1);
+      const parentScopeId = parent === undefined ? undefined : scopeIds.get(parent);
+      // The id's prefix: the root's subject (`subject` path), else the parent
+      // scope's own id, `~N` included (`namespace` path; none on the root).
+      const prefix = vocabulary.idPath === "subject" ? topLevelName : parentScopeId;
+      const segment = event.scope.idName ?? event.scope.name;
+      const scopeId = disambiguate(prefix === undefined ? segment : `${prefix}${sep}${segment}`);
       scopeIds.set(event.scope, scopeId);
-      const setup = pendingScopeSetup(event.scope, scopeId);
+      const setup = pendingScopeSetup(event.scope, scopeId, parentScopeId, vocabulary.minSetupContent);
       if (setup) slots.push(setup);
       continue;
     }
 
     const scopeId = scopeIds.get(event.scope) as string;
+    const leafSegment = event.example.idName ?? event.example.name;
     // The root's own call row is the container header the engine prepends.
     const header = [...event.ancestors, event.scope].slice(1).map((s) => s.name);
     const pending: PendingExample = {
       example: event.example,
       scope: event.scope,
-      symbolId: disambiguate(`${scopeId}.${event.example.name}`),
+      symbolId: disambiguate(event.example.idUnscoped ? leafSegment : `${scopeId}${sep}${leafSegment}`),
       header,
       content: withScopeHeader(header, event.example.text, contentBudget),
     };
@@ -148,7 +204,7 @@ export function produceTestScopeChunks(
   // Each example pack is emitted at the slot of its earliest member.
   const groupAt = new Map<PendingExample, PendingExample[]>();
   const grouped = new Set<PendingExample>();
-  for (const scope of scopesOf(root)) {
+  for (const scope of vocabulary.packLeaves ? scopesOf(root) : []) {
     for (const group of examplePacks(scope, pendingOf, contentBudget)) {
       groupAt.set(group[0], group);
       for (const member of group) grouped.add(member);
@@ -173,12 +229,18 @@ export function produceTestScopeChunks(
   for (const slot of slots) {
     if (!isPending(slot)) {
       const pack = packAt.get(slot);
-      if (pack) results.push(setupChunk(pack, topLevelName));
+      if (pack) {
+        // `subject` parents every setup pack under the root's subject;
+        // `namespace` under the enclosing scope (none on the root: the engine
+        // then names the container, as for any body chunk).
+        const parentSymbolId = vocabulary.idPath === "subject" ? topLevelName : pack[0].parentScopeId;
+        results.push(setupChunk(pack, parentSymbolId, vocabulary));
+      }
       continue;
     }
     const group = groupAt.get(slot);
     if (group) {
-      results.push(groupChunk(group, scopeIds.get(slot.scope) as string, contentBudget));
+      results.push(groupChunk(group, scopeIds.get(slot.scope) as string, contentBudget, vocabulary));
       continue;
     }
     if (grouped.has(slot)) continue;
@@ -186,11 +248,11 @@ export function produceTestScopeChunks(
       content: slot.content,
       startLine: slot.example.startLine,
       endLine: slot.example.endLine,
-      chunkType: "test",
+      chunkType: vocabulary.leafChunkType,
       symbolId: slot.symbolId,
-      name: slot.example.name,
+      name: slot.example.idName ?? slot.example.name,
       parentSymbolId: scopeIds.get(slot.scope),
-      parentType: TEST_SCOPE_PARENT_TYPE,
+      ...(vocabulary.leafParentType === undefined ? {} : { parentType: vocabulary.leafParentType }),
       // The example's call row. An example oversized on its own sheds every
       // title row above, so it opens its chunk, and the engine repeats it on
       // every `#part2+` it cuts (bd tea-rags-mcp-l24yk).
@@ -337,7 +399,12 @@ function groupContent(members: PendingExample[], budget: number): string {
  * its row count in `content` after the scope title rows (`memberRowCounts`),
  * which is what lets explore answer one member's id with that member alone.
  */
-function groupChunk(members: PendingExample[], scopeId: string, budget: number): BodyChunkResult {
+function groupChunk(
+  members: PendingExample[],
+  scopeId: string,
+  budget: number,
+  vocabulary: ScopeChunkVocabulary,
+): BodyChunkResult {
   const [first] = members;
   const last = members[members.length - 1];
   return {
@@ -345,11 +412,11 @@ function groupChunk(members: PendingExample[], scopeId: string, budget: number):
     startLine: first.example.startLine,
     endLine: last.example.endLine,
     lineRanges: members.map((m) => ({ start: m.example.startLine, end: m.example.endLine })),
-    chunkType: "test",
+    chunkType: vocabulary.leafChunkType,
     symbolId: first.symbolId,
-    name: first.example.name,
+    name: first.example.idName ?? first.example.name,
     parentSymbolId: scopeId,
-    parentType: TEST_SCOPE_PARENT_TYPE,
+    ...(vocabulary.leafParentType === undefined ? {} : { parentType: vocabulary.leafParentType }),
     memberRowCounts: members.map((m) => m.example.text.trim().split("\n").length),
     memberSymbolIds: members.map((m) => m.symbolId),
   };
@@ -361,18 +428,24 @@ function groupChunk(members: PendingExample[], scopeId: string, budget: number):
  * examples; a leaf with setup and nothing else must clear the minimum like any
  * other chunk.
  */
-function pendingScopeSetup(scope: TestScope, scopeId: string): PendingSetup | undefined {
+function pendingScopeSetup(
+  scope: TestScope,
+  scopeId: string,
+  parentScopeId: string | undefined,
+  minSetupContent: number,
+): PendingSetup | undefined {
   const own: TestScopeLine[] = [...scope.setupLines, ...scope.otherLines];
   if (own.length === 0) return undefined;
   const content = own
     .map((l) => l.text)
     .join("\n")
     .trim();
-  if (content.length < MIN_TEST_CHUNK_CONTENT && !hasExamples(scope)) return undefined;
+  if (content.length < minSetupContent && !hasExamples(scope)) return undefined;
   const lines = own.map((l) => l.sourceLine);
   return {
     scope,
     scopeId,
+    ...(parentScopeId === undefined ? {} : { parentScopeId }),
     content,
     startLine: Math.min(...lines),
     endLine: Math.max(...lines),
@@ -407,23 +480,28 @@ function packSetups(members: PendingSetup[], budget: number): PendingSetup[][] {
 
 /**
  * One setup chunk carrying the setup of every member scope, in source order.
- * Named after the first member; `test` when its member runs shared examples
- * (such a scope is never packed with others), else `test_setup`. Per member,
- * aligned: its scope's span (what an example's start line is matched
- * against), its row count in `content` (what lets hydration render one member
- * alone), and — on a pack of several — its id and own line range.
+ * Named after the first member; the vocabulary's leaf type when its member
+ * runs shared examples (such a scope is never packed with others), else its
+ * setup type (`test` / `test_setup` for tests). Per member, aligned: its
+ * scope's span (what an example's start line is matched against), its row
+ * count in `content` (what lets hydration render one member alone), and — on
+ * a pack of several — its id and own line range.
  */
-function setupChunk(members: PendingSetup[], topLevelName: string): BodyChunkResult {
+function setupChunk(
+  members: PendingSetup[],
+  parentSymbolId: string | undefined,
+  vocabulary: ScopeChunkVocabulary,
+): BodyChunkResult {
   const [first] = members;
   const packed = members.length > 1;
   return {
     content: members.map((m) => m.content).join("\n"),
     startLine: Math.min(...members.map((m) => m.startLine)),
     endLine: Math.max(...members.map((m) => m.endLine)),
-    chunkType: first.delegates ? "test" : "test_setup",
+    chunkType: first.delegates ? vocabulary.leafChunkType : vocabulary.setupChunkType,
     symbolId: first.scopeId,
-    name: first.scope.name,
-    parentSymbolId: topLevelName,
+    name: first.scope.idName ?? first.scope.name,
+    ...(parentSymbolId === undefined ? {} : { parentSymbolId }),
     ...(packed ? { lineRanges: members.map((m) => ({ start: m.startLine, end: m.endLine })) } : {}),
     scopeLineRanges: members.map((m) => ({ start: m.scope.startLine, end: m.scope.endLine })),
     memberRowCounts: members.map((m) => m.content.split("\n").length),

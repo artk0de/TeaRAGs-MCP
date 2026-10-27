@@ -163,6 +163,33 @@ describe("parseAppConfig (Zod bridge)", () => {
 
     expect(config.ingestCode.supportedExtensions).toEqual(expect.arrayContaining([".js", ".jsx", ".mjs", ".cjs"]));
   });
+
+  it("ingests Ruby's Rake task files .rake under lib/tasks with the default ignores (bd tea-rags-mcp-k0602)", async () => {
+    const { parseAppConfig } = await freshImport();
+    const config = parseAppConfig();
+    const { FileScanner } = await import("../../src/core/domains/ingest/pipeline/scanner.js");
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    expect(config.ingestCode.supportedExtensions).toEqual(expect.arrayContaining([".rb", ".rake"]));
+
+    const repo = mkdtempSync(join(tmpdir(), "k0602-rake-"));
+    try {
+      mkdirSync(join(repo, "lib", "tasks"), { recursive: true });
+      writeFileSync(join(repo, "lib", "tasks", "billing.rake"), "namespace :billing do\nend\n");
+      const scanner = new FileScanner({
+        supportedExtensions: config.ingestCode.supportedExtensions,
+        ignorePatterns: config.ingestCode.ignorePatterns,
+      });
+      await scanner.loadIgnorePatterns(repo);
+
+      expect(scanner.accepts("lib/tasks/billing.rake")).toBe(true);
+      expect(await scanner.scanDirectory(repo)).toEqual([join(repo, "lib", "tasks", "billing.rake")]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
