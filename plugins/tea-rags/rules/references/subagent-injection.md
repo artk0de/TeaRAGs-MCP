@@ -35,7 +35,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 |---|---|
 | file/dir: outline / doc TOC | `find_symbol(relativePath:)` |
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
-| every occurrence of a name/constant/string | client's standard code search tool (literal) → `find_symbol` |
+| every occurrence of a name/constant/string | default code search tool (literal, `-l`) → `find_symbol` |
 | symbol + intent | `hybrid_search` |
 | behaviour, no name | `semantic_search` only |
 | a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
@@ -43,7 +43,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 | how X works / who calls X | `get_callees` / `get_callers` (`symbolId:` from a row) |
 | chain A→B ("how does X reach Y") | `find_symbol` both ids → `trace_path` |
 | diff review | `review_changes` (naming verdicts = answer) |
-| literal text: TODO, phrase, regex, import string | client's standard code search tool (literal) |
+| literal text: TODO, phrase, regex, import string | default code search tool (literal) |
 
 Identifier definition/body = `find_symbol`; occurrences (even `a|b`) → that row; every caller → `get_callers` + it. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
 

@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.47.31",
+  "version": "0.47.32",
   "author": {
     "name": "artk0de"
   },
@@ -24,18 +24,6 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-fresh.sh",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/deny-indexed-read.sh",
-            "timeout": 3
           }
         ]
       }

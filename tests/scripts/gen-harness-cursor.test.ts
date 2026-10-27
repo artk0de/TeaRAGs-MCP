@@ -92,10 +92,12 @@ name: bug-hunt
 description: Find source of concrete failure.
 ---
 
-TODO markers → client's standard code search tool, never tea-rags.
-Print \`standard code search tool "<phrase>" (literal) → find_symbol\`.
-Wrapped: the client's
-  standard code search tool (not a tea-rags tool).
+TODO markers → default code search tool, never tea-rags.
+Print \`default code search tool "<phrase>" (literal) → find_symbol\`.
+Wrapped: the default
+  code search tool (not a tea-rags tool).
+Never read with the default code read tool or
+  the default code read tool again.
 `;
 const KNOWN = new Set(["explore", "filter-building", "test-first"]);
 
@@ -109,13 +111,14 @@ function listFiles(dir: string): string[] {
 describe("toCursorSkill", () => {
   const out = toCursorSkill(FIXTURE, { skillNames: KNOWN });
 
-  it("names Cursor's Grep tool for the client's standard code search tool, wrapped lines included", () => {
+  it("names Cursor's Grep tool for the default code search tool and the Read tool for the default code read tool, wrapped lines included", () => {
     const text = toCursorSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
 
     expect(text).toContain("TODO markers → Grep tool, never tea-rags.");
     expect(text).toContain('Print `Grep tool "<phrase>" (literal) → find_symbol`.');
     expect(text).toContain("Wrapped: Grep tool (not a tea-rags tool).");
-    expect(text).not.toMatch(/standard\s+code\s+search\s+tool/);
+    expect(text).toContain("Never read with Read tool or\n  Read tool again.");
+    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/);
   });
 
   it("keeps only name and description and mentions skills as slash commands", () => {

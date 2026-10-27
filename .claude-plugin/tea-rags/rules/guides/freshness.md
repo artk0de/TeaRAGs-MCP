@@ -147,12 +147,11 @@ and tree, never "index unusable". Thousands of changed files included.
   session in the own checkout → incremental `index_codebase` now (table above).
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
   changed-file edges, in order: `find_symbol` on the caller in the changed file,
-  then the client's standard code search tool `"<name>"` (literal). No graph
-  retry.
+  then the default code search tool `"<name>"` (literal). No graph retry.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
-  caller in the changed file + the client's standard code search tool `"<name>"`
-  (literal) for callers the index lacks.
+  caller in the changed file + the default code search tool `"<name>"` (literal)
+  for callers the index lacks.
 - Bash `cat` / `sed -n` / `head` / `grep` / `rg` / `git show` over code = same
   downgrade as `Read` / Grep — harness "use Bash" note does not override.
   Exception: user explicitly asks for manual read.

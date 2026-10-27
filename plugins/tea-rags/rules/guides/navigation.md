@@ -204,14 +204,14 @@ convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
 non-graph substitute — never read an absent/empty graph tool as positive fact
 (no "it's a DAG", no "path structurally impossible", no "architectural centre"):
 
-| Graph intent        | Non-codegraph fallback                                                                               |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| who calls / X calls | client's standard code search tool `"<name>"` (literal) + `find_symbol` — name-match, NOT edge truth |
-| call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"              |
-| cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"                |
-| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"                     |
-| architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable                          |
-| entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed             |
+| Graph intent        | Non-codegraph fallback                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| who calls / X calls | default code search tool `"<name>" <dir>` (literal, files-with-matches) + `find_symbol` — name-match, NOT edge truth |
+| call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"                              |
+| cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"                                |
+| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"                                     |
+| architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable                                          |
+| entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed                             |
 
 ### Optimal routes (navigate, don't re-search)
 
@@ -220,6 +220,12 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
 - Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
   bodies → ONE `find_symbol(symbols: [<member ids>])` for all members needed.
-- Who-uses-X repo-wide → the client's standard code search tool `"<X>"`
-  (literal) when codegraph off; `get_callers` (exact, graph) AND that search
-  when codegraph on.
+- Who-uses-X → the default code search tool `"<X>" <dir>` (literal, `-l`),
+  bounded: files-with-matches first, or a line cap; `<dir>` = the anchor's dir
+  when known, else the source root — never hybrid_search / semantic_search to
+  find a dir for it, never an unbounded occurrence search. Its hits →
+  `find_symbol(relativePath: <hit file>)` outline → batch of only the needed
+  methods (each hit's enclosing method, or the members the question is about;
+  never every member of the outline) — never the default code read tool, never
+  `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound. Codegraph
+  on → `get_callers` (exact, graph) AND that search.

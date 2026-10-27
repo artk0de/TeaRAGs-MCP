@@ -1029,3 +1029,85 @@ merges every part — the epic's target.
 - Watch: green Codex 14 runs 2–3 add a member-id batch after the directory frame
   for a pure "what is in <dir>" question. Not in case 14's `not` list, graded
   PASS; a leak of the routing-row wording to re-check next round.
+
+## 2026-10-27 — bounded occurrence search, no shell reads of indexed code (urs4z, tea-rags 0.47.32)
+
+- Defect: occurrence searches without a files-with-matches mode or line cap (46
+  of 88 standard-search calls, 135k chars, largest 24k), shell reads of indexed
+  files inside compounds (`cat f; sed -n …p f; grep …`), and `Read` of a search
+  hit.
+- core.md: the top paragraph now carries the ban (indexed code never read via
+  `Read`, `cat`/`sed`/`head`, or grep match lines; grep only locates —
+  files-with-matches or a line cap, anchor's dir, never whole-repo; then
+  find_symbol reads the needed methods). Usages row `"<X>" <dir>` (literal,
+  `-l`) → outline → batch of only the needed methods; phrase row line-capped;
+  row 1 and the manual-read invariant take "lines N–M". `rg --files` mentions
+  dropped. core.md 8897 → 8821 chars; Codex `core.txt` 9478 → 9468 bytes; Cursor
+  `tea-rags-core.mdc` 9044 chars.
+- Guides aligned: navigation (Who-uses-X, codegraph-off table), decision-tree
+  (preamble, usages branches, Bash-compound and unbounded-search anti-patterns),
+  pagination (`noEdges`), bug-hunt (phrase line, no `rg`).
+- New cases G1 (constant usages in a 14k-file repo) and G2 (lines 90–130 of an
+  indexed file plus a same-dir grep). Slice: G1, G2 + neighbours R1, R2, R3, 8;
+  one session per run, Codex ×3, Claude ×1 (owner rule), stand
+  `/tmp/1k059-stand-tr`.
+
+| Case | Red Codex | Red Claude | Round 1 Codex | Round 1 Claude | Round 2 Codex | Round 2 Claude | Final Codex | Final Claude |
+| ---- | --------- | ---------- | ------------- | -------------- | ------------- | -------------- | ----------- | ------------ |
+| G1   | 0/3       | 0/1        | 3/3           | 1/1            | 1/3           | 1/1            | 1/3         | 1/1          |
+| G2   | 0/3       | 0/1        | 0/3           | 1/1            | 1/3           | 1/1            | 0/3         | 1/1          |
+| R1   | 3/3       | 1/1        | 3/3           | 1/1            | 2/3           | 1/1            | 3/3         | 0/1          |
+| R2   | 3/3       | 1/1        | 3/3           | 1/1            | 2/3           | 1/1            | 3/3         | 1/1          |
+| R3   | 3/3       | 1/1        | 3/3           | 1/1            | 3/3           | 1/1            | 3/3         | 0/1          |
+| 8    | 3/3       | 1/1        | 3/3           | 1/1            | 3/3           | 1/1            | 3/3         | 1/1          |
+
+- Red: every G1 run searched the whole repo with content output; G2 ran `Read`
+  of the range (Codex 2/3) or an uncapped grep.
+- Round 1 (flags `-l` / `-m 5` in core rows): G1 fixed; G2 Codex read "show me
+  lines 90–130" as a manual-read order → `Read` 3/3.
+- Round 2 (+ "lines N–M" in row 1 and the manual-read invariant): G2 Read 2/3 on
+  Codex; G1 whole-repo `-l` on 2/3 with unchanged G1 wording (variance); R1/R2
+  Codex r3 opened explore → `usage-pattern.md` → `hybrid_search` for the name
+  (explore TRACE has no occurrence route — pre-existing).
+- Final (owner wording: neutral bound terms, ban in the top paragraph): G2
+  shell/`Read` gone 3/3 on Codex, but the grep lost its cap (no `-m`), so 0/3 on
+  the bound; G1 whole-repo `-l` 2/3. Claude R1/R3 called `hybrid_search` first
+  to find an "anchor dir" for a name with no known anchor — the scope clause
+  needs "else the source root".
+- Open: Codex dialect maps the tool phrase to `shell grep -rn`, which every row
+  expands into a recursive, uncapped command; the final owner terminology
+  ("default code search tool" / "default code read tool") needs the transform
+  updated in the same change.
+
+## 2026-10-27 — repair round: bounded Codex dialect, owner terminology (urs4z, tea-rags 0.47.32)
+
+- Root cause on Codex: `scripts/harness/transform.ts` mapped the tool phrase to
+  `shell grep -rn`, so every row rendered a recursive, uncapped command. The
+  dialect now maps "default code search tool" → `shell grep -rl` (Cursor
+  `Grep tool`) and the new "default code read tool" → `shell file reads` (Cursor
+  `Read tool`); "client's standard code search tool" is gone from sources, and a
+  generator test fails on any role phrase or `shell grep -rn` in the rendered
+  Codex harness.
+- core.md: the ban names the two roles; scope clause "in the anchor's dir when
+  known, else the source root — never the repo root or
+  hybrid_search/semantic_search for a dir"; row 1 batch "(N–M: ids spanning
+  it)"; callers row "every call / all callers". explore SKILL.md and
+  `usage-pattern.md` carry the occurrence route (no `hybrid_search` for
+  exact-name usages). core.md 8875 chars, Codex `core.txt` 9241, Cursor
+  `tea-rags-core.mdc` 9044.
+
+| Case | Round 1 Codex | Round 1 Claude | Round 2 Codex | Round 2 Claude |
+| ---- | ------------- | -------------- | ------------- | -------------- |
+| G1   | 2/3           | 1/1            | 3/3           | 1/1            |
+| G2   | 2/3           | 1/1            | 3/3           | 1/1            |
+| R1   | 3/3           | 1/1            | 3/3           | 1/1            |
+| R2   | 2/3           | 1/1            | 3/3           | 1/1            |
+| R3   | 3/3           | 1/1            | 3/3           | 1/1            |
+| 8    | 3/3           | 1/1            | 3/3           | 1/1            |
+
+- Round 1 (mapping + terminology + scope clause): every Codex search was
+  `grep -rl`. Fails: G1 r2 scoped to the repo root, G2 r1 skipped the range
+  batch, R2 r1 matched the usages row and dropped `get_callers`.
+- Round 2 (+ "never the repo root", range batch, "every call" in the callers
+  row): all green. Watch: with no anchor, runs now scope to `app/` (Claude also
+  runs `lib/`/`spec/` separately); recall outside the source dirs is the cost.

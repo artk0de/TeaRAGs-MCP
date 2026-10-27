@@ -441,6 +441,33 @@
         "one find_symbol(symbol:) call per member id",
         "a symbols batch before any outline"
       ]
+    },
+    {
+      "id": "G1",
+      "audit_finding": "urs4z: unbounded occurrence searches — 46 of 88 standard-search calls had no -l / line cap (135k chars, largest single 24k), hits then opened with Read",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, about 14000 files, codegraph on, healthy index. `SETTLEMENT_WINDOW_DAYS` is exported from src/payouts/settlement/window.ts.",
+      "prompt": "Where is SETTLEMENT_WINDOW_DAYS used?",
+      "expected": "the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `SETTLEMENT_WINDOW_DAYS`, BOUNDED — files first (`-l` / Grep files_with_matches) or line-capped (`-m N`, `| head`, head_limit, count) — and scoped to a directory (the anchor's dir src/payouts/settlement/ or its source tree, not the repo root); then find_symbol reads the hits: outline via relativePath, then ONE batch carrying only the methods the answer needs (the enclosing method of each hit), picked from the outline or hit lines; the hit lines are only addresses — never read as the code answer, find_symbol reads them",
+      "not": [
+        "an unbounded occurrence search: content output with no -l / -m / head / head_limit / count",
+        "a whole-repo search (`.`, repo root, no path)",
+        "Read / cat / sed -n of a hit file",
+        "grep output lines (-n / context dumps) read as the code itself instead of a find_symbol read",
+        "a batch carrying every member id of an outline",
+        "hybrid_search or semantic_search as the occurrence sweep"
+      ]
+    },
+    {
+      "id": "G2",
+      "audit_finding": "urs4z: shell reads of indexed code inside Bash compounds (`cat <f>; sed -n 96,125p <f>; rg …` = 13k) and Read of indexed files right after a search hit",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. app/services/fulfillment/parcel_router.rb is indexed (260 lines, class Fulfillment::ParcelRouter).",
+      "prompt": "Show me lines 90–130 of app/services/fulfillment/parcel_router.rb and grep for `carrier_quota` in the same dir.",
+      "expected": "find_symbol(relativePath: \"app/services/fulfillment/parcel_router.rb\") outline, then find_symbol for only the member id(s) covering lines 90–130 (symbol: or ONE symbols: batch); the client's standard code search tool for the literal `carrier_quota` scoped to app/services/fulfillment/ and bounded (-l / -m N / head_limit); its hits read by find_symbol (only the methods the answer needs)",
+      "not": [
+        "cat / sed -n / head / tail / awk of an indexed file — alone or inside a shell compound (`a; b`, `a && b`)",
+        "Read of parcel_router.rb or of a search hit",
+        "an unbounded or whole-repo search for carrier_quota"
+      ]
     }
   ],
   "results": {
