@@ -47,9 +47,10 @@ After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 4,096 head (first 512 self-contained: addressing first) + a
 `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full
 core (≤ 8,500 incl. wrapper); Codex carries core and the digest in separate
-SessionStart hooks, each ≤ `CODEX_HOOK_CONTEXT_BUDGET` (9,500). Grow a guide,
-not the core. Hook stdout past ~16KB reaches the model as a 2KB preview; the
-splitter in `inject-rules.sh` stays as a guard.
+SessionStart hooks: core ≤ `CODEX_CORE_HOOK_BUDGET` (9,650), digest ≤
+`CODEX_HOOK_CONTEXT_BUDGET` (9,500). Grow a guide, not the core. Hook stdout
+past ~16KB reaches the model as a 2KB preview; the splitter in `inject-rules.sh`
+stays as a guard.
 
 ## Precedence — why placement matters (don't duplicate across layers)
 

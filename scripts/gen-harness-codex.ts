@@ -66,7 +66,8 @@ const CODEX_DIALECT: HarnessDialect = {
  * built from this core instead of the skill (Task 14 eval).
  */
 const CODEX_SKILL_LOADING = `
-**Skills are not loaded for you.** A task a skill covers (\`$name\` /
+**Skills are not loaded for you** — except this core:
+\`$tea-rags-core\` IS this text, never open its \`SKILL.md\`. A task a skill covers (\`$name\` /
 \`$dino-<name>\`) → open its \`SKILL.md\` in this turn, BEFORE planning ("I
 would read the skill" is not reading it), then every reference file or
 \`tea-rags://\` resource it marks MANDATORY for your case. A skill that hands off
@@ -331,6 +332,13 @@ PY
 export const CODEX_HOOK_CONTEXT_BUDGET = 9_500;
 
 /**
+ * Cap on the CORE hook's payload, in chars — prose, not the digest's token-dense tables. A
+ * 2026-10-27 probe (one SessionStart hook of ~58-char prose lines, 2 runs per size) delivered 9,686
+ * chars whole and cut 10,150 (`…80 tokens truncated…`); 9,650 stays under the measured whole size.
+ */
+export const CODEX_CORE_HOOK_BUDGET = 9_650;
+
+/**
  * Fits the prime digest into {@link CODEX_HOOK_CONTEXT_BUDGET} minus the chars already used: sections in
  * routing priority (Project, Status, Drift, Enrichment, Language capability, Codegraph resolve, the
  * rest in digest order, signal-threshold tables last), long lines clipped, and a pointer to the full
@@ -520,7 +528,8 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
 - \`tea-rags/.mcp.json\` — stdio server \`tea-rags server\`, tool calls pre-approved.
 - \`tea-rags/hooks/hooks.json\` — SessionStart, two hooks in order: \`\${PLUGIN_ROOT}/scripts/session-start.sh\`
   (core rules, \`scripts/core.txt\`), then \`\${PLUGIN_ROOT}/scripts/session-digest.sh\` (\`tea-rags prime "$PWD"\`
-  fitted by \`scripts/fit-digest.py\`), each its own \`hookSpecificOutput.additionalContext\` ≤ ${CODEX_HOOK_CONTEXT_BUDGET} chars;
+  fitted by \`scripts/fit-digest.py\`), each its own \`hookSpecificOutput.additionalContext\` (core ≤ ${CODEX_CORE_HOOK_BUDGET},
+  digest ≤ ${CODEX_HOOK_CONTEXT_BUDGET} chars);
   SubagentStart \`\${PLUGIN_ROOT}/scripts/subagent-block.sh\` (\`hookSpecificOutput.additionalContext\`).
   PreToolUse (\`${SHELL_TOOL_MATCHER}\`) \`\${PLUGIN_ROOT}/scripts/one-file-read.sh\` — exit 2 for a shell command that prints
   two or more \`.md\` files (one file per command keeps a skill's output contract in view).

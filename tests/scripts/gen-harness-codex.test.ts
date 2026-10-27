@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CODEX_DESCRIPTION_MAX_CHARS,
   CODEX_HARNESS_DIR,
+  CODEX_CORE_HOOK_BUDGET,
   CODEX_HOOK_CONTEXT_BUDGET,
   CODEX_MARKETPLACE_PATH,
   renderCodexHarness,
@@ -298,11 +299,21 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  it("tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md", async () => {
+    // TD-93238 Codex sessions (2026-10-27): 14 of 44 pre-search shell reads re-opened
+    // skills/tea-rags-core/SKILL.md — the text the SessionStart hook had already injected.
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    const skillsRule = core.slice(core.indexOf("**Skills are not loaded for you"));
+    expect(skillsRule.slice(0, 200)).toMatch(/`\$tea-rags-core` IS this text/);
+    expect(skillsRule.slice(0, 200)).toMatch(/never open its `SKILL\.md`/);
+  });
+
   it("keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
     const coreSource = readFileSync(join(ROOT, PLUGINS_DIR, "tea-rags/rules/core.md"), "utf8");
-    expect(coreSource.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+    expect(coreSource.length).toBeLessThanOrEqual(CODEX_CORE_HOOK_BUDGET);
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
     const bin = mkdtempSync(join(tmpdir(), "codex-bin-"));
     try {
@@ -344,7 +355,7 @@ describe("renderCodexHarness", () => {
 
       const coreContext = contextOf("session-start.sh");
       expect(coreContext).toBe(core.replace(/\n+$/, ""));
-      expect(coreContext.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+      expect(coreContext.length).toBeLessThanOrEqual(CODEX_CORE_HOOK_BUDGET);
 
       const context = contextOf("session-digest.sh");
       expect(context.length).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
@@ -454,7 +465,7 @@ describe("renderCodexHarness", () => {
     const payloads = [...rendered].filter(([path]) => /^[^/]+\/scripts\/[^/]+\.txt$/.test(path));
     expect(payloads.length).toBeGreaterThanOrEqual(4);
     for (const [path, content] of payloads) {
-      expect(content.length, path).toBeLessThanOrEqual(CODEX_HOOK_CONTEXT_BUDGET);
+      expect(content.length, path).toBeLessThanOrEqual(path.endsWith("/core.txt") ? CODEX_CORE_HOOK_BUDGET : CODEX_HOOK_CONTEXT_BUDGET);
     }
   });
 

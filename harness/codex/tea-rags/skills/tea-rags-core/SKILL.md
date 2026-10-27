@@ -141,7 +141,8 @@ number, no label → `…/metrics?language=<lang>&section=thresholds`.
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.
 
-**Skills are not loaded for you.** A task a skill covers (`$name` /
+**Skills are not loaded for you** — except this core: `$tea-rags-core` IS this
+text, never open its `SKILL.md`. A task a skill covers (`$name` /
 `$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would
 read the skill" is not reading it), then every reference file or `tea-rags://`
 resource it marks MANDATORY for your case. A skill that hands off to another
