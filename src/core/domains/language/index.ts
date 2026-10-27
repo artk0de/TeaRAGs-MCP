@@ -24,3 +24,4 @@ export { GrammarPackageNotInstalledError, LanguageError, UnsupportedLanguageErro
 export { RubyLanguage } from "./ruby/index.js";
 export { TypeScriptLanguage } from "./typescript/index.js";
 export { MarkdownLanguage } from "./markdown/index.js";
+export { YamlLanguage } from "./yaml/index.js";

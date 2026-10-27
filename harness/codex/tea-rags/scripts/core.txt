@@ -8,7 +8,7 @@ first; a plan from memory is not reading it. A skill path you did not open with 
 command in this turn is invalid in a plan — open it first.
 
 **Every code search and code read goes through tea-rags.** Shell, `Read`, Grep
-only for files outside the index (`db/`, `*.yml`, `*.json`) — say so.
+only for files outside the index (`*.json`, locale/data `*.yml`) — say so.
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +

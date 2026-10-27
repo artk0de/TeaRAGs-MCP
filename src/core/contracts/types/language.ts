@@ -12,7 +12,7 @@
  */
 
 import type { AstNode, MaterializedTree } from "./ast.js";
-import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
+import type { ChunkingHook, DocumentSectionSplitter, LanguageChunkClassifier } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -522,6 +522,12 @@ export interface LanguageChunkerHooks {
   alwaysExtractChildren?: boolean;
   /** Flags documentation languages (markdown, etc.) for content-type filtering. */
   isDocumentation?: boolean;
+  /**
+   * Section cutter of a documentation language that is not markdown. With
+   * `isDocumentation` set, the engine emits its sections as documentation
+   * chunks; absent, documentation source goes to the markdown chunker.
+   */
+  sectionSplitter?: DocumentSectionSplitter;
   /** Language-specific chunking hooks (ordered chain). */
   hooks?: ChunkingHook[];
   /** Custom name extraction for language-specific node types (e.g. RSpec call nodes). */

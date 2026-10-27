@@ -128,7 +128,7 @@ describe("seeded support versions", () => {
     // its axes stay put. swift LEFT this set when its walker + resolver landed:
     // it now emits method edges, so the widened key applies to it like every
     // other edge-emitting language.
-    const NO_CALL_GRAPH = new Set(["markdown"]);
+    const NO_CALL_GRAPH = new Set(["markdown", "yaml"]);
 
     for (const [language, v] of versions) {
       // `*` is not a language vertical. Its axes stand for sources that run

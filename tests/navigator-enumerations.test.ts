@@ -82,6 +82,7 @@ const LANGUAGE_SPELLINGS: Readonly<Record<string, RegExp>> = {
   java: /\bJava\b/,
   javascript: /\bJavaScript\b|\bJS\b/,
   markdown: /\bMarkdown\b/,
+  yaml: /\bYAML\b/,
   python: /\bPython\b/,
   ruby: /\bRuby\b/,
   rust: /\bRust\b/,

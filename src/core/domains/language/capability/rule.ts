@@ -14,6 +14,7 @@ const DISPLAY: readonly (readonly [string, string])[] = [
   ["bash", "Bash"],
   ["swift", "Swift"],
   ["markdown", "Markdown"],
+  ["yaml", "YAML"],
 ];
 
 function isTypingTiered(tier: CodegraphTier | TypingTieredCodegraph): tier is TypingTieredCodegraph {

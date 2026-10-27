@@ -1,7 +1,7 @@
 # tea-rags core
 
 **Every code search and code read goes through tea-rags.** Shell, `Read`, Grep
-only for files outside the index (`db/`, `*.yml`, `*.json`) — say so.
+only for files outside the index (`*.json`, locale/data `*.yml`) — say so.
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` (which index) +

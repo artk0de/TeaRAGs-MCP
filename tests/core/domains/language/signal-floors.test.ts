@@ -27,16 +27,17 @@ describe("LanguageFactory.signalFloors", () => {
 
   it("declares all three mass signals for every code language", () => {
     for (const [lang, langFloors] of floors) {
-      // markdown is doc-only — it declares an empty object deliberately.
-      if (lang === "markdown") continue;
+      // markdown and yaml are doc-only — they declare an empty object deliberately.
+      if (lang === "markdown" || lang === "yaml") continue;
       for (const signal of MASS_SIGNALS) {
         expect(Object.keys(langFloors), `${lang} is missing floors for ${signal}`).toContain(signal);
       }
     }
   });
 
-  it("leaves markdown empty rather than absent — an explicit no-floors decision", () => {
+  it("leaves markdown and yaml empty rather than absent — an explicit no-floors decision", () => {
     expect(floors.get("markdown")).toEqual({});
+    expect(floors.get("yaml")).toEqual({});
   });
 
   it("keeps every signal's floors monotone, so raised thresholds cannot cross", () => {
