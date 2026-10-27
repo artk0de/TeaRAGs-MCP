@@ -93,7 +93,7 @@ export function registerProjectResources(server: McpServer, app: App): void {
     {
       title: "Project Digest",
       description:
-        "Agent digest of a registered project: alias + collection, `codegraph off` only when off, actionable " +
+        "Agent digest of a registered project: alias + collection, actionable " +
         "freshness. ?view=full = human digest (drift, languages, infra)",
       mimeType: "text/markdown",
     },

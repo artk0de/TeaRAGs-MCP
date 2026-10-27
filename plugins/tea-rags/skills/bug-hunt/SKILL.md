@@ -175,10 +175,10 @@ A plan names these calls; "later" / "not in this run" never drops one.
    Codegraph off + stack trace → probe b (fresh) gets
    `pathPattern="{<frame path 1>,<frame path 2>,…}"` + `modifiedAfter` +
    `rerank="bugHunt"` (a: no pathPattern; c: step-0 paths); say "no static path
-   tool". Off is decided, not checked, when THIS request or the session digest
-   says so (`codegraph off` line; silent digest = on): print
-   `codegraph off (source: <request|digest>) — no static path tool available` as
-   a statement, never "if codegraph is off" / "check the registry".
+   tool". Off is decided, not checked, when THIS request says so or graph tools
+   are absent from your tool list: print
+   `codegraph off (source: <request|tool list>) — no static path tool available`
+   as a statement, never "if codegraph is off" / "check the registry".
 
 !`tea-rags resource "tea-rags://project/{alias}/metrics?section=thresholds,resolve" --path "$PWD" || true`
 

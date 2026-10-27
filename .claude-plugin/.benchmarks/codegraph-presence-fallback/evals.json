@@ -1,7 +1,7 @@
 {
   "skill_name": "codegraph-presence-fallback",
   "description": "Cross-cutting eval: skills must detect codegraph availability from their tool list (graph tools registered or not) and route to non-codegraph fallbacks (or honest 'unavailable') when codegraph is OFF, while still using codegraph tools when ON. Bead tea-rags-mcp-3hkuy.",
-  "detection_signal": "SessionStart agent digest (tea-rags prime --agent, bd tea-rags-mcp-nknkg.1): a `codegraph off` line => OFF; digest present without it => ON (silence = on, no probe call). Graph tools in the tool list => ON. No digest and no tool-list evidence => metrics `codegraph on|off` (tea-rags://project/<alias>/metrics?section=registry).",
+  "detection_signal": "The session tool list (owner decision 2026-10-28; the agent digest prints no codegraph line): graph tools (get_callers, get_callees, trace_path, find_cycles, get_naming_lexicon) present => ON, no probe call; absent => OFF. Explicit request statement wins; no tool-list evidence => metrics `codegraph on|off` (tea-rags://project/<alias>/metrics?section=registry).",
   "results": {
     "harness": "honest-v2 (raw prime block, per-ENV tool list, graph tools ABSENT in ENV-A; contaminated-v1 archived under workspace/iteration-1/contaminated-v1)",
     "without_rule_baseline": {
@@ -299,14 +299,14 @@
     {
       "id": 14,
       "name": "digest-silent-means-codegraph-on",
-      "audit_finding": "nknkg.1 agent digest: silence = on",
+      "audit_finding": "owner decision 2026-10-28: digest has no codegraph line = on",
       "codegraph": "ON (digest silent)",
       "prompt": "[SessionStart digest:\n# tea-rags digest — shop\nproject `shop` · collection `code_shop` — pass `project: \"shop\"` + `path` on tea-rags calls] [main session, cwd /work/shop] Who calls OrderService#submit (app/services/order_service.rb)? Plan the calls only.",
-      "expected": "Digest without a `codegraph off` line = codegraph ON. Plans find_symbol for the id, then get_callers(symbolId) + the usages-row literal search, with project=\"shop\" + path. No probe call (no metrics?section=registry read, no tool-list check stated as missing) before the graph step.",
+      "expected": "Digest carries no codegraph line (it never does) and graph tools are available = codegraph ON. Plans find_symbol for the id, then get_callers(symbolId) + the usages-row literal search, with project=\"shop\" + path. No probe call (no metrics?section=registry read, no tool-list check stated as missing) before the graph step.",
       "failure_mode": "Treats the digest's silence as unknown/off: reads the metrics registry section first, or skips get_callers.",
       "assertions": [
         {
-          "text": "states or acts on codegraph ON from the digest's silence (no `codegraph off` line)",
+          "text": "states or acts on codegraph ON from the digest's silence (the digest has no codegraph line)",
           "passed": null
         },
         {
@@ -317,12 +317,12 @@
     },
     {
       "id": 15,
-      "name": "digest-codegraph-off-line-means-off",
-      "audit_finding": "nknkg.1 agent digest: `codegraph off` line",
-      "codegraph": "OFF (digest line)",
-      "prompt": "[SessionStart digest:\n# tea-rags digest — shop\nproject `shop` · collection `code_shop` — pass `project: \"shop\"` + `path` on tea-rags calls\ncodegraph off] [main session, cwd /work/shop] Who calls OrderService#submit (app/services/order_service.rb)? Plan the calls only.",
-      "expected": "`codegraph off` line = OFF. No get_callers/trace_path; usages row: default code search tool literal `-l` for \"submit\" in app/ → find_symbol outline of the hits. Says callers come from text search (lower bound), not graph edges.",
-      "failure_mode": "Plans get_callers or probes the registry despite the explicit off line.",
+      "name": "no-graph-tools-in-tool-list-means-off",
+      "audit_finding": "owner decision 2026-10-28: absent graph tools = codegraph off",
+      "codegraph": "OFF (tool list)",
+      "prompt": "[SessionStart digest:\n# tea-rags digest — shop\nproject `shop` · collection `code_shop` — pass `project: \"shop\"` + `path` on tea-rags calls] [Session tool list: find_symbol, semantic_search, hybrid_search, find_similar, review_changes, get_index_status, index_codebase; no get_callers / get_callees / trace_path] [main session, cwd /work/shop] Who calls OrderService#submit (app/services/order_service.rb)? Plan the calls only.",
+      "expected": "No get_callers / get_callees / trace_path in the tool list = codegraph OFF. No get_callers/trace_path; usages row: default code search tool literal `-l` for \"submit\" in app/ → find_symbol outline of the hits. Says callers come from text search (lower bound), not graph edges.",
+      "failure_mode": "Plans get_callers or probes the registry although the graph tools are absent from the tool list.",
       "assertions": [
         {
           "text": "takes the codegraph-off branch: no get_callers / get_callees / trace_path call planned",

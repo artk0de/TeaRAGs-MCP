@@ -190,22 +190,18 @@ loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 **Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
 wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
-an earlier request never carries over — re-decide per request. SessionStart
-digest `codegraph off` line = OFF; digest present without it = ON (source
-`digest`) — no probe call. Context listing `codegraph.symbols` or
-`get_naming_lexicon` available = explicit ON (source `request`) — no registry
-read first. No statement → a graph tool you SEE in your tool list
-(`get_callers`, `trace_path`, … under any prefix — `mcp__tea-rags__`,
-`mcp__tea_rags__`) → on. No digest, not seen → read
-`tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
-decides. "Not in my tool list" alone never selects the off route — not checked ≠
-absent. Plan line 1, copied:
-`Codegraph: on|off — <request | tool seen | registry>`. Never `unknown`: scan
-your tool list before writing it. Never call a graph tool to probe; an
-unregistered tool is not an empty result — never read it as "no callers" / "no
-cycles". Codegraph off → content-matching table: TRACE covers usage, EXPLAIN
-covers architecture. Broad orientation / structure ("introduce me", row 4) →
-ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+an earlier request never carries over — re-decide per request. Context listing
+`codegraph.symbols` or `get_naming_lexicon` available = explicit ON (source
+`request`) — no registry read first. No statement → a graph tool you SEE in your
+tool list (`get_callers`, `trace_path`, … under any prefix — `mcp__tea-rags__`,
+`mcp__tea_rags__`) → on; none of them in the tool list → off (the tool list is
+the signal, no probe call). Plan line 1, copied:
+`Codegraph: on|off — <request | tool list>`. Never `unknown`: scan your tool
+list before writing it. Never call a graph tool to probe; an unregistered tool
+is not an empty result — never read it as "no callers" / "no cycles". Codegraph
+off → content-matching table: TRACE covers usage, EXPLAIN covers architecture.
+Broad orientation / structure ("introduce me", row 4) → ORIENT
+`rerank="onboarding"`; "where X starts" (row 3) →
 `references/entry-point-pattern.md` off procedure (relevance, drop tiny
 `chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own

@@ -126,9 +126,9 @@ diff's → `review_changes` verdicts, nothing after.
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
   `3. shell grep -rl "<name>" (literal)` — callers the index lacks. No
-  graph retry. Digest `codegraph off` → no graph tools, callers = usages row,
-  never "no cycles"; silent digest = on, no probe; on + empty `find_cycles` =
-  DAG.
+  graph retry. Graph tools absent from your tool list → codegraph off: callers =
+  usages row, never "no cycles"; present → on, no probe call; on + empty
+  `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` (status/index/empty Rust graph answer) → tell user

@@ -17,9 +17,9 @@ its suggestion.
 Every call: `path=<checkout>` (SKILL Phase 0).
 
 Codegraph gating: graph tools (`get_callers`, `find_cycles`, …) in tool list
-(unsure → digest: `codegraph off` line = off, silent = on) → D1 + D7 + D8 run on
-graph. Off → D7, D8 skipped ("not assessed" in summary, no substitute); D1
-name-match mode (its block). D5 follows tests-as-context preflight.
+(absent = off) → D1 + D7 + D8 run on graph. Off → D7, D8 skipped ("not assessed"
+in summary, no substitute); D1 name-match mode (its block). D5 follows
+tests-as-context preflight.
 
 ## D1 blast-radius (codegraph-gated, with name-match fallback)
 

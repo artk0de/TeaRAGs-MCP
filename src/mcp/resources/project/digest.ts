@@ -19,8 +19,8 @@ const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 /**
  * The agent-facing digest (`tea-rags://project/<alias>/digest`, SessionStart
  * hooks via `tea-rags prime --agent`; bd tea-rags-mcp-nknkg.1): addressing,
- * `codegraph off` only when off (silence = on), and a freshness line only when
- * it names an action. Drift, holes, infra and the rustc driver surface at their
+ * and a freshness line only when it names an action. No codegraph line: graph
+ * tools absent from the tool list are the off signal. Drift, holes, infra and the rustc driver surface at their
  * trigger instead — `get_index_status` / `index_codebase` answers, degraded
  * search answers, empty graph answers.
  */
@@ -37,7 +37,6 @@ export function formatAgentDigest(data: ProjectDigestData, now: Date): string {
       ? `project \`${data.projectName}\` · ${collection} — pass \`project: "${data.projectName}"\` + \`path\` on tea-rags calls`
       : collection,
   );
-  if (data.registry?.codegraphEnabled === false) lines.push("codegraph off");
   lines.push(...formatAgentFreshnessLines(data, alias, now));
   return `${lines.join("\n")}\n`;
 }

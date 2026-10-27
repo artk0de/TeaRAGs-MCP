@@ -117,9 +117,8 @@ identifiable — proceeding without tea-rags enrichment".
 
 **2.0 — decide codegraph state FIRST, state it in output before the block:**
 graph tools (`get_callers`, `trace_path`, …) in your tool list → print the
-`codegraph on` line of the block below; absent → its `codegraph off` line.
-Unsure → SessionStart digest: `codegraph off` line = off, silent = on — no probe
-call. No stated decision = Step 2 not started.
+`codegraph on` line of the block below; absent → its `codegraph off` line. No
+probe call. No stated decision = Step 2 not started.
 
 Plan-only with the state not given in the prompt → print BOTH lines, each branch
 complete (the off line is never implied by the on line):
@@ -149,13 +148,13 @@ never appended after): A–D `mcp__tea-rags__semantic_search`, each
 | D — Backbone   | `"architecturalHub"`                | **Codegraph only** — structural hubs (high `fanIn` / `isHub`) the design must respect; a change to a backbone has wide blast radius |
 | E — Vocabulary | `get_naming_lexicon` (not a search) | **Codegraph only** — words the project already uses for the area; SAME parallel block as A–D                                        |
 
-Call D ONLY when codegraph on = digest without `codegraph off` line, context
-listing `codegraph.symbols`, or `get_naming_lexicon` available (explicit, no
-further check), or graph tools (`get_callers`, `trace_path`, …) in tool list;
-unsure → digest: `codegraph off` line = off, silent = on. Off → A/B/C only, note
-backbone not assessed (NEVER pass similarity-ranked list off as "the hubs"). →
-`tea-rags://guide/navigation` "Graph navigation" — for the on/off read only; its
-after-search `find_symbol` depth step does not apply to enrichment rows.
+Call D ONLY when codegraph on = context listing `codegraph.symbols`, or
+`get_naming_lexicon` available (explicit, no further check), or graph tools
+(`get_callers`, `trace_path`, …) in tool list; absent = off. Off → A/B/C only,
+note backbone not assessed (NEVER pass similarity-ranked list off as "the
+hubs"). → `tea-rags://guide/navigation` "Graph navigation" — for the on/off read
+only; its after-search `find_symbol` depth step does not apply to enrichment
+rows.
 
 **Call E — vocabulary (codegraph only, same parallel block — MANDATORY when
 codegraph on; A–D without E = incomplete Step 2):**

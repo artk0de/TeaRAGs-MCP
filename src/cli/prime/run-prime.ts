@@ -178,7 +178,7 @@ export async function runPrime(input: {
   full?: boolean;
   /**
    * `--agent` (SessionStart hooks): the agent digest alone — addressing,
-   * `codegraph off`, actionable freshness. Default = the full human digest.
+   * actionable freshness. Default = the full human digest.
    */
   agent?: boolean;
   /** Test seam — production checks npm through buildUpdateService. */

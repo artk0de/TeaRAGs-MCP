@@ -35,8 +35,7 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
       .option("agent", {
         type: "boolean",
         default: false,
-        describe:
-          "Agent digest for SessionStart hooks: alias + collection, `codegraph off` only when off, actionable freshness.",
+        describe: "Agent digest for SessionStart hooks: alias + collection, actionable freshness.",
       }),
   handler: async (argv) => {
     // The in-process server logs through console; stdout carries only the digest.

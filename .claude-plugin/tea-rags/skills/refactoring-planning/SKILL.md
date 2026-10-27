@@ -48,10 +48,9 @@ Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
 
 ## Phase 0 — GATE
 
-Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list; unsure
-→ digest: `codegraph off` line = off, silent = on. Off → "refactoring planning
-needs codegraph", stop. Any plan-mode answer `unavailable: "noCodegraph"` →
-stop, same line.
+Codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool list; absent
+= off. Off → "refactoring planning needs codegraph", stop. Any plan-mode answer
+`unavailable: "noCodegraph"` → stop, same line.
 
 ## Phase 1 — REPORT
 

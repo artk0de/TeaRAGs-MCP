@@ -55,11 +55,11 @@ describe("formatAgentDigest — the agent-facing digest (bd tea-rags-mcp-nknkg.1
     expect(out).not.toContain("metrics?language");
   });
 
-  it("is silent about codegraph when it is on (or unrecorded) and says `codegraph off` only when off", () => {
+  it("never carries a codegraph line, whatever the registry state (absent graph tools are the off signal)", () => {
     expect(formatAgentDigest(data(), NOW)).not.toMatch(/codegraph/);
     const off = data();
     off.registry = { ...off.registry!, codegraphEnabled: false };
-    expect(formatAgentDigest(off, NOW).split("\n")).toContain("codegraph off");
+    expect(formatAgentDigest(off, NOW)).not.toMatch(/codegraph/);
     const on = data();
     on.registry = { ...on.registry!, codegraphEnabled: true };
     expect(formatAgentDigest(on, NOW)).not.toMatch(/codegraph/);

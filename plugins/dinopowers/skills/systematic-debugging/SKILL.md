@@ -260,9 +260,8 @@ query, never promote healthy files, never fall back to direct `semantic_search`.
 Bug-hunt = **flat** list. Have **entry/repro point** (failing test, request
 handler, CLI entry, top user-code stack frame) → promote prime suspect to
 **chain**: `mcp__tea-rags__trace_path` entry → suspect. **Requires codegraph**:
-on = graph tools (`get_callers`, `trace_path`, …) in your tool list; unsure →
-digest: `codegraph off` line = off, silent = on. Off → `trace_path` not
-registered — skip, stay with flat list.
+on = graph tools (`get_callers`, `trace_path`, …) in your tool list; absent =
+off. Off → `trace_path` not registered — skip, stay with flat list.
 
 ```
 mcp__tea-rags__trace_path(
