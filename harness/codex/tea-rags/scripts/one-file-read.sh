@@ -150,7 +150,7 @@ except Exception:
 if count >= 2:
     sys.stderr.write(
         "tea-rags: read ONE file per command — this command prints %d .md files and output past "
-        "~10k tokens loses its middle. Re-run with one file per command (sed -n ranges for long files).\n" % count
+        "~10k tokens loses its middle. Re-run with one file per command (sed -n ranges for long files; an indexed file → find_symbol(relativePath:) instead).\n" % count
     )
     sys.exit(2)
 sys.exit(0)

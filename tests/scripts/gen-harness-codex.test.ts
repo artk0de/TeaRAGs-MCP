@@ -561,7 +561,10 @@ describe("renderCodexHarness", () => {
     expect(hooks.PreToolUse).toEqual([
       {
         matcher: "^(Bash|shell|exec_command)$",
-        hooks: [{ type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 }],
+        hooks: [
+          { type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 },
+          { type: "command", command: `\${PLUGIN_ROOT}/scripts/deny-indexed-read.sh`, timeout: 10 },
+        ],
       },
     ]);
     const script = rendered.get("tea-rags/scripts/one-file-read.sh") ?? "";
@@ -591,6 +594,26 @@ describe("renderCodexHarness", () => {
   });
 
   // Codex T22 r3: one `cat` of three skills (50 KB) lost its middle to the ~10k-token exec-output cap; the model filled the gap.
+  // bd tea-rags-mcp-mqhlr: Codex has no Read tool — an indexed file is read through shell `sed -n` / `cat`.
+  it("ships a PreToolUse shell hook that denies reading an indexed file and points at find_symbol", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const script = rendered.get("tea-rags/scripts/deny-indexed-read.sh") ?? "";
+
+    expect(script).toMatch(/^#!\/bin\/bash\n/);
+    expect(script).toContain('project indexed --command "$COMMAND" --cwd "$CWD" --json');
+    expect(script).toContain('find_symbol(relativePath: \\"$REL\\")');
+    expect(script).toContain("find_symbol(symbols: [<the method ids you need>])");
+    expect(script).toContain("exit 2");
+    expect(script).not.toContain("CLAUDE_");
+  });
+
+  it("the one-file-read deny names find_symbol for an indexed file, so its sed -n advice never contradicts the indexed-read deny", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const script = rendered.get("tea-rags/scripts/one-file-read.sh") ?? "";
+
+    expect(script).toMatch(/sed -n ranges[^\n]*indexed file[^\n]*find_symbol/);
+  });
+
   it("tells the core to read one file per command and to re-read a truncated one in ranges", async () => {
     const rendered = await renderCodexHarness(ROOT);
 
