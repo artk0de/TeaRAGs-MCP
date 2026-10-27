@@ -74,6 +74,19 @@
   rule is `../../trajectory/codegraph/CLAUDE.md`). Why: "reuse the pool, it
   already has these methods" is the obvious move and it silently sabotages
   another process.
+- **A stale generation of a LIVE project is purged by physical name, never by
+  its alias.** `CollectionFootprintPurger#purge(logical)` takes every
+  `^<logical>(_v\d+)?$` collection plus the alias target, so pointing it at the
+  alias of `code_x_v1` while `code_x` → `code_x_v2` destroys the live project.
+  `#purgeGeneration` runs only the physical half, and runs it with the
+  generation standing in for `logicalName` too, because `QdrantArtifact#remove`
+  drops the alias named by `ctx.target.logicalName` first. It refuses the alias
+  target, a non-`_vN` name, and an unreadable alias list. `census.ts`
+  (`classifyCollectionFootprints`, behind `tea-rags doctor --footprints`) is
+  what decides which of the two a finding gets: a `collection` action only for a
+  logical name nothing live answers to, a `generation` action otherwise. Why:
+  the 2026-10-28 cleanup nearly ran `unregister --collection code_3bf044a6
+  --purge` to drop an orphan `_v1` of a live project.
 - **A codegraph generation is more than its `.duckdb`.** The cross-pass input
   spill (`CodegraphDbFiles#inputSpillPathFor`, under `.xpass`) is keyed by the
   same physical name, so `CodegraphDbFiles#removeFiles` unlinks it with the

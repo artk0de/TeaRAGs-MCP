@@ -23,6 +23,7 @@ import {
 } from "../index-progress/worker-sweep.js";
 import { createColorizer, type Colorizer } from "../infra/color.js";
 import { statusTag } from "../infra/status-tag.js";
+import { runFootprintDoctor } from "./doctor-footprints.js";
 import { listOrphanPhysicalCollections } from "./projects.js";
 
 interface DoctorArgs {
@@ -34,6 +35,8 @@ interface DoctorArgs {
   "include-stalled"?: boolean;
   "dry-run"?: boolean;
   restart?: boolean;
+  footprints?: boolean;
+  fix?: boolean;
 }
 
 /**
@@ -483,6 +486,18 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
         default: false,
         describe: "With --sweep-workers: report what would be stopped without stopping anything",
       })
+      .option("footprints", {
+        type: "boolean",
+        default: false,
+        describe:
+          "List unused collection footprints (dead registrations, unregistered aliases, stale generations, " +
+          "orphan codegraph files, store leftovers) as a table; removes nothing without --fix",
+      })
+      .option("fix", {
+        type: "boolean",
+        default: false,
+        describe: "With --footprints: purge every listed footprint not marked kept",
+      })
       .option("restart", {
         type: "boolean",
         default: false,
@@ -501,6 +516,10 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
         includeStalled: Boolean(argv["include-stalled"]),
         dryRun: Boolean(argv["dry-run"]),
       });
+      return;
+    }
+    if (argv.footprints) {
+      await runFootprintDoctor({ json: argv.json, fix: Boolean(argv.fix) });
       return;
     }
     if (argv.quarantine) {
