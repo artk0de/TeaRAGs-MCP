@@ -345,9 +345,13 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     relativePaths: string[],
     _options?: { batchSize?: number; concurrency?: number },
     _progressCallback?: (progress: { processed: number; total: number; batchNumber: number }) => void,
-  ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
+  ): Promise<{ deletedPaths: number; deletedPoints: number; batchCount: number; durationMs: number }> {
+    const paths = new Set(relativePaths);
+    const deletedPoints = (this.points.get(this.resolve(collectionName)) || []).filter((p) =>
+      paths.has(p.payload?.relativePath),
+    ).length;
     await this.deletePointsByPaths(collectionName, relativePaths);
-    return { deletedPaths: relativePaths.length, batchCount: 1, durationMs: 0 };
+    return { deletedPaths: relativePaths.length, deletedPoints, batchCount: 1, durationMs: 0 };
   }
 
   async scrollFiltered(

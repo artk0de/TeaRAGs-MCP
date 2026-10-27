@@ -1,4 +1,5 @@
 import {
+  formatIndexHolesLine,
   formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
@@ -42,6 +43,10 @@ export function formatSlimDigest(data: ProjectDigestData, now: Date): string {
   }
 
   lines.push("", "## Drift", data.drift ?? "none");
+  // Snapshot files without points — drift between the snapshot and Qdrant (bd tea-rags-mcp-muj77).
+  if (data.status.indexHoles && data.status.indexHoles.count > 0) {
+    lines.push(formatIndexHolesLine(data.status.indexHoles.count));
+  }
 
   const { languages, primaries } = languageSplit(data.metrics);
   if (languages.length > 1) {

@@ -150,3 +150,23 @@ describe("index_codebase — rustc driver line (s3i8m T9)", () => {
     expect(text).not.toContain("rustc driver");
   });
 });
+
+describe("index_codebase — runtime-skipped files warning (bd tea-rags-mcp-muj77)", () => {
+  const cleanRun: IndexStats = { ...seededRun, worktreeSeed: undefined };
+
+  it("warns in one line that runtime-skipped files hold no points and are retried next run", async () => {
+    const { handler } = harness({ ...cleanRun, runtimeSkippedFiles: 3 });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text.split("\n").filter((l) => l.includes("runtime error"))).toEqual([
+      "⚠ 3 files skipped on a runtime error — no points yet; retried on the next index_codebase run",
+    ]);
+  });
+
+  it("says nothing for a run without runtime skips", async () => {
+    const { handler } = harness(cleanRun);
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).not.toContain("runtime error");
+  });
+});

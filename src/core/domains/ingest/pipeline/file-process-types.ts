@@ -41,6 +41,8 @@ export interface FileProcessorOptions {
    * file skipped by the secrets gate, the compiled-bundle gate, or for blank
    * content is recorded with its content hash; a path that later ingests with
    * chunks is cleared. Never retried — the verdict is a function of content.
+   * A non-quarantinable failure is recorded here as a retryable `runtimeError`
+   * (bd tea-rags-mcp-muj77); the pipelines keep it out of the saved snapshot.
    */
   skippedFileStore?: SkippedFileStore;
   /**

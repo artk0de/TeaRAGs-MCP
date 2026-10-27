@@ -302,6 +302,8 @@ export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../../co
 export { formatWorktreeSeedReport } from "../../contracts/worktree-seed-report.js";
 export { formatRustcDriverLine } from "../../contracts/rustc-driver-status.js";
 export type { RustcDriverStatus } from "../../contracts/rustc-driver-status.js";
+// `get_index_status` and the prime digest share one index-holes wording (bd tea-rags-mcp-muj77).
+export { formatIndexHolesLine } from "../../contracts/index-holes.js";
 
 // ── SchemaBuilderPort (used by mcp tool registration) ─────────────────
 // mcp writes against the PORT; bootstrap constructs the internal

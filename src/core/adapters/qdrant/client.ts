@@ -438,7 +438,7 @@ export class QdrantManager
       concurrency: number;
       onProgress?: (deleted: number, total: number) => void;
     },
-  ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
+  ): Promise<{ deletedPaths: number; deletedPoints: number; batchCount: number; durationMs: number }> {
     return this.points.deletePointsByPathsBatched(collectionName, relativePaths, options);
   }
 

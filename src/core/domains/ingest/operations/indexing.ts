@@ -318,7 +318,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
             absolutePath,
             modelInfo: leg.modelInfo,
             promote: async () => this.finalizeAlias(aliasCollectionName, setup),
-            persist: async () => this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion),
+            persist: async () => this.saveSnapshot(synchronizer, files, stats, skippedFileStore, setup.aliasVersion),
           },
           () => {
             this.logPipelineCompletion(ctx);
@@ -697,15 +697,27 @@ export class IndexPipeline extends BaseIndexingPipeline {
    * holding the hashes computed before the pipeline started, so the snapshot is
    * written from them instead of re-reading and re-hashing the whole corpus
    * (bd tea-rags-mcp-o317j).
+   *
+   * A runtime-skipped path (`SkippedFileStore#retryablePaths`) is retained as
+   * the previous snapshot had it — and this synchronizer loaded none, so it is
+   * left OUT. The next incremental pass then reports it as added and re-ingests
+   * it; stamping it from the disk scan made the hole permanent (bd
+   * tea-rags-mcp-muj77).
    */
   private async saveSnapshot(
     synchronizer: ParallelFileSynchronizer,
     files: string[],
     stats: IndexStats,
+    skippedFileStore: SkippedFileStore,
     aliasVersion?: number,
   ): Promise<void> {
     try {
-      await synchronizer.updateSnapshot(files, undefined, aliasVersion ? { aliasVersion } : undefined);
+      const runtimeSkipped = await skippedFileStore.retryablePaths();
+      if (runtimeSkipped.size > 0) stats.runtimeSkippedFiles = runtimeSkipped.size;
+      await synchronizer.updateSnapshot(files, undefined, {
+        ...(aliasVersion ? { aliasVersion } : {}),
+        ...(runtimeSkipped.size > 0 ? { retainPrevious: runtimeSkipped } : {}),
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Failed to save snapshot:", errorMessage);

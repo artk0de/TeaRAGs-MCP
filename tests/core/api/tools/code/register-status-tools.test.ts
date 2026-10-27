@@ -350,3 +350,36 @@ describe("get_index_status — skipped files line (bd tea-rags-mcp-6xdwe)", () =
     expect(text).not.toContain("skipped files");
   });
 });
+
+describe("get_index_status — runtime skips and index holes (bd tea-rags-mcp-muj77)", () => {
+  function harnessWith(extra: Partial<IndexStatus>) {
+    const { handler, app } = makeStatusHarness(vi.fn().mockResolvedValue(null));
+    vi.mocked(app.getIndexStatus).mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "code_abc",
+      chunksCount: 100,
+      ...extra,
+    });
+    return handler;
+  }
+
+  it("lists runtimeError in the one-line skipped-files reasons", async () => {
+    const handler = harnessWith({ skippedFiles: { count: 3, byReason: { runtimeError: 2, emptyFile: 1 } } });
+
+    const { text } = (await handler({ path: "/repo" }, {})).content[0];
+
+    expect(text).toContain("\n\nskipped files: 3 (runtimeError 2, emptyFile 1)");
+  });
+
+  it("prints index holes as one warning line naming the remedy, never a JSON block", async () => {
+    const handler = harnessWith({ indexHoles: { count: 63 } });
+
+    const { text } = (await handler({ path: "/repo" }, {})).content[0];
+
+    expect(text).toContain(
+      "\n\n⚠ index holes: 63 files in snapshot without points — re-index them: index_codebase forceReindex=true",
+    );
+    expect(text).not.toContain('"indexHoles"');
+  });
+});

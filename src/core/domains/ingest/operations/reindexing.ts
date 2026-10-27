@@ -597,7 +597,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // a removed file never left it, a modified file's re-ingest was skipped
     // by the coordinator. Its snapshot entry stays as the previous run left
     // it, so the next run detects it again and retries (bd tea-rags-mcp-ti1oa).
-    const unreconciled = deletionOutcome?.failed ?? new Set<string>();
+    // A file a non-quarantinable runtime error dropped is unreconciled too: its
+    // entry stays as the previous run saved it (absent for an added file), so
+    // the next run reports it changed and re-ingests it (bd tea-rags-mcp-muj77).
+    const runtimeSkipped = await skippedFileStore.retryablePaths();
+    if (runtimeSkipped.size > 0) stats.runtimeSkippedFiles = runtimeSkipped.size;
+    const unreconciled = new Set([...(deletionOutcome?.failed ?? []), ...runtimeSkipped]);
     await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime, unreconciled);
     return stats;
   }

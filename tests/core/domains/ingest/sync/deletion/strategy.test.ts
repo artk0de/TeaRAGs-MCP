@@ -119,6 +119,25 @@ describe("performDeletion", () => {
     });
   });
 
+  describe("chunksDeleted counts the deleted points, not the collection delta (bd tea-rags-mcp-muj77)", () => {
+    it("is not cancelled by an added file's upsert landing during the delete window", async () => {
+      const original = qdrant.deletePointsByPathsBatched.bind(qdrant);
+      vi.spyOn(qdrant, "deletePointsByPathsBatched").mockImplementation(async (name, paths, options) => {
+        const result = await original(name, paths, options);
+        // Level 1 runs the added files beside the delete: their points land in the same window.
+        await qdrant.addPoints(collectionName, [
+          { id: "4", vector: new Array(384).fill(0.1), payload: { relativePath: "new-1.ts" } },
+          { id: "5", vector: new Array(384).fill(0.1), payload: { relativePath: "new-2.ts" } },
+        ]);
+        return result;
+      });
+
+      const outcome = await performDeletion(qdrant as any, collectionName, ["a.ts", "b.ts", "c.ts"], deleteConfig);
+
+      expect(outcome.chunksDeleted).toBe(3);
+    });
+  });
+
   describe("L1 bulk fallback success", () => {
     it("is full success when L0 throws but L1 recovers atomically", async () => {
       vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("L0 timeout"));

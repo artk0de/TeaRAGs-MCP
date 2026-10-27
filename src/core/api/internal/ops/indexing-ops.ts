@@ -1928,6 +1928,7 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
     enrichmentDurationMs: changeStats.enrichmentDurationMs,
     enrichmentMetrics: changeStats.enrichmentMetrics,
     migrations: changeStats.migrations,
+    ...(changeStats.runtimeSkippedFiles ? { runtimeSkippedFiles: changeStats.runtimeSkippedFiles } : {}),
     changeDetails: {
       filesAdded: changeStats.filesAdded,
       filesModified: changeStats.filesModified,

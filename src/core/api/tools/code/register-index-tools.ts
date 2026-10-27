@@ -111,6 +111,13 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
       }
 
+      // Files a runtime error dropped hold no points; a clean-looking result
+      // hid them (bd tea-rags-mcp-muj77). They stay out of the snapshot, so the
+      // next run retries them.
+      if (stats.status !== "failed" && stats.runtimeSkippedFiles) {
+        statusMessage += `\n\n${formatRuntimeSkippedFilesLine(stats.runtimeSkippedFiles)}`;
+      }
+
       // The run's rustc driver line (bd s3i8m T9), filled once by IndexingOps —
       // the CLI renders the same field.
       if (stats.status !== "failed" && stats.rustcDriver) {
@@ -123,6 +130,11 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       };
     },
   );
+}
+
+/** One warning line for the files a runtime error left without points (bd tea-rags-mcp-muj77). */
+function formatRuntimeSkippedFilesLine(count: number): string {
+  return `⚠ ${count} files skipped on a runtime error — no points yet; retried on the next index_codebase run`;
 }
 
 /**

@@ -160,6 +160,13 @@ export interface IndexStats {
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * Files a non-quarantinable runtime error dropped and that still hold no
+   * points after this run (skip record, reason `runtimeError`). They are kept
+   * out of the saved snapshot, so the next run retries them. Omitted when zero
+   * (bd tea-rags-mcp-muj77).
+   */
+  runtimeSkippedFiles?: number;
   /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
   rustcDriver?: RustcDriverStatus;
 }
@@ -172,6 +179,8 @@ export interface ChangeStats {
   filesNewlyIgnored: number;
   /** Files added to index because they no longer match ignore patterns */
   filesNewlyUnignored: number;
+  /** Mirrors `IndexStats.runtimeSkippedFiles`; omitted when zero. */
+  runtimeSkippedFiles?: number;
   /** Previously-quarantined files re-attempted this pass (unchanged content). */
   filesRetried: number;
   chunksAdded: number;
@@ -556,12 +565,33 @@ export interface CodegraphResolveKindRow {
  */
 export type DeterministicSkipReason = "secretsGate" | "compiled" | "emptyFile";
 
-/** Whole-index summary of the deterministically skipped files. */
+/**
+ * A file dropped by a NON-quarantinable run-time failure (an `IngestError` /
+ * `InfraError`, e.g. a chunker worker timeout). Retryable: the file is kept out
+ * of the sync snapshot, so the next incremental pass re-ingests it (bd
+ * tea-rags-mcp-muj77).
+ */
+export type RuntimeSkipReason = "runtimeError";
+
+/** Every reason a file can sit in the skip record. */
+export type SkippedFileReason = DeterministicSkipReason | RuntimeSkipReason;
+
+/** Whole-index summary of the skipped files (deterministic and runtime). */
 export interface SkippedFilesSummary {
   count: number;
-  byReason: Partial<Record<DeterministicSkipReason, number>>;
+  byReason: Partial<Record<SkippedFileReason, number>>;
   /** First paths by path order — set only by the CLI `--json` result (≤10). */
-  sample?: { path: string; reason: DeterministicSkipReason }[];
+  sample?: { path: string; reason: SkippedFileReason }[];
+}
+
+/**
+ * Files the sync snapshot lists that hold NO points and are neither a
+ * deterministic skip nor quarantined — lost files (bd tea-rags-mcp-muj77).
+ * A count-level probe: snapshot file count minus the persisted distinct-path
+ * count of the points (`Distributions.totalFiles`, recomputed after every run).
+ */
+export interface IndexHolesSummary {
+  count: number;
 }
 
 export interface IndexStatus {
@@ -599,6 +629,12 @@ export interface IndexStatus {
    * attaches one.
    */
   skippedFiles?: SkippedFilesSummary;
+  /**
+   * Snapshot-vs-points consistency probe: files the snapshot says are indexed
+   * that hold no points. Omitted when none, or when the persisted stats predate
+   * the snapshot (no verdict). Remedy: a force re-index of those files.
+   */
+  indexHoles?: IndexHolesSummary;
   /**
    * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
    * Reported separately from the Qdrant collection size
