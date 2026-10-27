@@ -57,7 +57,8 @@ const CODEX_DIALECT: HarnessDialect = {
   projectDirVar: "$PWD",
   readResourceTool: "read_mcp_resource",
   listResourcesTool: "list_mcp_resources",
-  codeSearchTool: "shell grep -rn",
+  codeSearchTool: "shell grep -rl",
+  codeReadTool: "shell file reads",
 };
 
 /**
@@ -81,8 +82,8 @@ own folder.
 the next step still serves the user's request (search / \`$explore\` over the
 code they asked about). Graph answer with \`changedFiles\` > 0 and no
 \`codegraph\` floor → edges touching changed files are the index's: re-check
-changed-file callers via \`find_symbol\`, find missing ones via the client's
-standard code search tool (literal) — never a bare retry of the graph call.
+changed-file callers via \`find_symbol\`, find missing ones via shell grep -rl
+(literal) — never a bare retry of the graph call.
 `;
 
 /**

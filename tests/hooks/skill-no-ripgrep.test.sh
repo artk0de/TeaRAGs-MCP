@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/hooks/skill-no-ripgrep.test.sh — plugin skills and rules never prescribe
 # ripgrep: users' clients may not have it. Literal text search is named as the
-# client's standard code search tool. Prohibitions (`never rg --files`) and
+# default code search tool. Prohibitions (`never rg --files`) and
 # ripgrep as a measured corpus name stay allowed.
 set -u
 ROOT="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"

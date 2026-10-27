@@ -72,10 +72,12 @@ name: bug-hunt
 description: Find source of concrete failure.
 ---
 
-TODO markers → client's standard code search tool, never tea-rags.
-Print \`standard code search tool "<phrase>" (literal) → find_symbol\`.
-Wrapped: the client's
-  standard code search tool (not a tea-rags tool).
+TODO markers → default code search tool, never tea-rags.
+Print \`default code search tool "<phrase>" (literal) → find_symbol\`.
+Wrapped: the default
+  code search tool (not a tea-rags tool).
+Never read with the default code read tool or
+  the default code read tool again.
 `;
 const KNOWN = new Set(["bug-hunt", "data-driven-generation", "explore", "test-first"]);
 
@@ -193,13 +195,14 @@ describe("toCodexSkill", () => {
     expect(out).toContain(`Run \${PLUGIN_ROOT}/scripts/x.sh in "$PWD".`);
   });
 
-  it("names Codex's shell grep for the client's standard code search tool, wrapped lines included", () => {
+  it("names Codex's shell grep for the default code search tool and shell file reads for the default code read tool, wrapped lines included", () => {
     const text = toCodexSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
 
-    expect(text).toContain("TODO markers → shell grep -rn, never tea-rags.");
-    expect(text).toContain('Print `shell grep -rn "<phrase>" (literal) → find_symbol`.');
-    expect(text).toContain("Wrapped: shell grep -rn (not a tea-rags tool).");
-    expect(text).not.toMatch(/standard\s+code\s+search\s+tool/);
+    expect(text).toContain("TODO markers → shell grep -rl, never tea-rags.");
+    expect(text).toContain('Print `shell grep -rl "<phrase>" (literal) → find_symbol`.');
+    expect(text).toContain("Wrapped: shell grep -rl (not a tea-rags tool).");
+    expect(text).toContain("Never read with shell file reads or\n  shell file reads again.");
+    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/);
   });
 
   it("falls back to the folder name and a body-derived description", () => {
@@ -486,11 +489,19 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("Codex lag follow-ups find missing callers the way core does: the client's standard code search tool", async () => {
+  it("Codex lag follow-ups find missing callers the way core does: a bounded shell grep -rl", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
-    expect(codexRules).toContain("find missing ones via the client's standard code search tool");
+    expect(codexRules).toContain("find missing ones via shell grep -rl");
     expect(codexRules).not.toContain("`hybrid_search` metaOnly");
+  });
+
+  it("no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    for (const [path, text] of rendered) {
+      expect(text, path).not.toMatch(/(?:standard|default)\s+code\s+(?:search|read)\s+tool/);
+      expect(text, path).not.toContain("shell grep -rn");
+    }
   });
 
   it("ships no dinopowers skill, every skill named after its folder", async () => {

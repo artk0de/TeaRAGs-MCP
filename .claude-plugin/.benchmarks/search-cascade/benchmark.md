@@ -1030,7 +1030,7 @@ merges every part — the epic's target.
   for a pure "what is in <dir>" question. Not in case 14's `not` list, graded
   PASS; a leak of the routing-row wording to re-check next round.
 
-## 2026-10-27 — bounded occurrence search, no shell reads of indexed code (urs4z, tea-rags 0.47.31)
+## 2026-10-27 — bounded occurrence search, no shell reads of indexed code (urs4z, tea-rags 0.47.32)
 
 - Defect: occurrence searches without a files-with-matches mode or line cap (46
   of 88 standard-search calls, 135k chars, largest 24k), shell reads of indexed
@@ -1078,3 +1078,36 @@ merges every part — the epic's target.
   expands into a recursive, uncapped command; the final owner terminology
   ("default code search tool" / "default code read tool") needs the transform
   updated in the same change.
+
+## 2026-10-27 — repair round: bounded Codex dialect, owner terminology (urs4z, tea-rags 0.47.32)
+
+- Root cause on Codex: `scripts/harness/transform.ts` mapped the tool phrase to
+  `shell grep -rn`, so every row rendered a recursive, uncapped command. The
+  dialect now maps "default code search tool" → `shell grep -rl` (Cursor
+  `Grep tool`) and the new "default code read tool" → `shell file reads` (Cursor
+  `Read tool`); "client's standard code search tool" is gone from sources, and a
+  generator test fails on any role phrase or `shell grep -rn` in the rendered
+  Codex harness.
+- core.md: the ban names the two roles; scope clause "in the anchor's dir when
+  known, else the source root — never the repo root or
+  hybrid_search/semantic_search for a dir"; row 1 batch "(N–M: ids spanning
+  it)"; callers row "every call / all callers". explore SKILL.md and
+  `usage-pattern.md` carry the occurrence route (no `hybrid_search` for
+  exact-name usages). core.md 8875 chars, Codex `core.txt` 9241, Cursor
+  `tea-rags-core.mdc` 9044.
+
+| Case | Round 1 Codex | Round 1 Claude | Round 2 Codex | Round 2 Claude |
+| ---- | ------------- | -------------- | ------------- | -------------- |
+| G1   | 2/3           | 1/1            | 3/3           | 1/1            |
+| G2   | 2/3           | 1/1            | 3/3           | 1/1            |
+| R1   | 3/3           | 1/1            | 3/3           | 1/1            |
+| R2   | 2/3           | 1/1            | 3/3           | 1/1            |
+| R3   | 3/3           | 1/1            | 3/3           | 1/1            |
+| 8    | 3/3           | 1/1            | 3/3           | 1/1            |
+
+- Round 1 (mapping + terminology + scope clause): every Codex search was
+  `grep -rl`. Fails: G1 r2 scoped to the repo root, G2 r1 skipped the range
+  batch, R2 r1 matched the usages row and dropped `get_callers`.
+- Round 2 (+ "never the repo root", range batch, "every call" in the callers
+  row): all green. Watch: with no anchor, runs now scope to `app/` (Claude also
+  runs `lib/`/`spec/` separately); recall outside the source dirs is the cost.

@@ -53,6 +53,7 @@ const CURSOR_DIALECT: HarnessDialect = {
   readResourceTool: "FetchMcpResource",
   listResourcesTool: "ListMcpResources",
   codeSearchTool: "Grep tool",
+  codeReadTool: "Read tool",
 };
 
 /**

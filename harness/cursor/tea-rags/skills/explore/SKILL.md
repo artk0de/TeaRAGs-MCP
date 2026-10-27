@@ -25,19 +25,23 @@ Checked first, before this table: structure phrasing ("organized", "end to end",
 "structure", "architecture", "backbone", "walk me through") → codegraph row 4
 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
-used" / "callers of X" → decide codegraph first (plan line below); on →
+used" / every occurrence of an exact name, constant or string → occurrence
+route, any codegraph state: Grep tool `"<X>" <dir>` (literal, `-l`; `<dir>` =
+the anchor's dir when known, else the source root — never a search to find it) →
+`find_symbol` outline → batch of only the needed methods; never `hybrid_search`
+for it. "Callers of X" → decide codegraph first (plan line below); on →
 `Strategy: codegraph row 2` (`get_callers`), never TRACE-only `hybrid_search`.
 Off (or off branch of an unknown state) → TRACE loop, copied, ≥ 2 calls:
 `hybrid_search(query="<X>", metaOnly=true)` → per caller hit
 `hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
 fail.
 
-| User intent contains                                                                                         | Strategy | Skip if                                                                                      |
-| ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------- |
-| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt; structure phrasing → codegraph row 4 |
-| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct           |
-| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | plan request ("draft a plan to add X") → writing-plans; mid-refactor → executing-plans       |
-| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)                         |
+| User intent contains                                                                                         | Strategy | Skip if                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"                                                             | EXPLAIN  | active bug or bug intent ("find bugs in X") → bug-hunt; structure phrasing → codegraph row 4                                                 |
+| "where is X used", "usages / call sites of X", "imports of X"                                                | TRACE    | exact-name occurrences → occurrence route above; callers, codegraph on → codegraph row 2 (get_callers); structural-only → find_symbol direct |
+| "before I refactor/modify/change X", "I need to add X", "перед тем как менять", "what should I know about Y" | PRE-GEN  | plan request ("draft a plan to add X") → writing-plans; mid-refactor → executing-plans                                                       |
+| "best example of X", "antipatterns in Y", "find all implementations / instances of X"                        | EXEMPLAR | no rerank corpus → hybrid_search (text search only for literal text)                                                                         |
 
 **State it first (MANDATORY):** answer/plan opens with `Strategy: <row>` (or
 risk / change / ownership / codegraph row) + the matched phrase — routing on
@@ -127,8 +131,8 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`; "every / all callers" / "where is X used" →
-  call 3 = `hybrid_search metaOnly:true` on the name (adds recall, never
+  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = Grep tool
+  `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits (adds recall, never
   replaces 2). "How does X reach Y": endpoints named as symbols → `find_symbol`
   each, then `trace_path`; endpoints described in words ("OAuth callback",
   "sign-in") → call 1 = `semantic_search` for that behaviour, call 2 =
@@ -319,10 +323,11 @@ ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
 ### 2. BREADTH
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
-DEFINITION → find_symbol; known/bare name, need USAGES → hybrid_search; symbol
-name + behaviour words ("where hybrid_search handles BM25 scoring") →
-hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
-Known path / symbol → `find_symbol` (outline → body); rationale, copied:
+DEFINITION → find_symbol; known/bare name, need USAGES → Grep tool `"<X>" <dir>`
+(literal, `-l`) → find_symbol, never hybrid_search; symbol name + behaviour
+words ("where hybrid_search handles BM25 scoring") → hybrid_search. Existence
+check ("does X exist") → `find_symbol` `metaOnly=true`. Known path / symbol →
+`find_symbol` (outline → body); rationale, copied:
 `'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
 Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
 first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).

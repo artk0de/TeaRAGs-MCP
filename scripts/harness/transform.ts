@@ -16,8 +16,13 @@ export interface HarnessDialect {
   readResourceTool: string;
   /** Model-side tool listing MCP resources: Codex `list_mcp_resources`, Cursor `ListMcpResources`. */
   listResourcesTool: string;
-  /** The client's own literal text search, named where sources say "client's standard code search tool": Codex `shell grep -rn`, Cursor `Grep tool`. */
+  /**
+   * The client's own literal text search, named where sources say "default code search tool".
+   * Bounded by default — files-with-matches first: Codex `shell grep -rl`, Cursor `Grep tool`.
+   */
   codeSearchTool: string;
+  /** The client's own file reader, named where sources say "default code read tool": Codex `shell file reads`, Cursor `Read tool`. */
+  codeReadTool: string;
   /** Skills list names plugin skills `superpowers:Y` (Codex) — the availability clause keeps that form. */
   listsQualifiedSkills?: boolean;
 }
@@ -150,7 +155,8 @@ export function extractInjectionBlock(md: string): string {
  * 6. Agent-tool passages → "spawn a subagent", `subagent_type:` lines dropped;
  * 7. `AskUserQuestion` → asking the user;
  * 8. `CLAUDE_PLUGIN_ROOT` / `CLAUDE_PROJECT_DIR` → dialect variables;
- * 9. "(the) (client's) standard code search tool", line breaks included → the dialect's text search.
+ * 9. "(the) default code search tool" / "(the) default code read tool", line breaks included →
+ *    the dialect's text search / file reader.
  */
 export function toHarnessText(
   md: string,
@@ -177,7 +183,8 @@ export function toHarnessText(
     .replace(/`?AskUserQuestion`?/g, "ask the user")
     .replace(/\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT\b/g, dialect.pluginRootVar)
     .replace(/\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b/g, dialect.projectDirVar)
-    .replace(/\b(?:the\s+)?(?:client's\s+)?standard\s+code\s+search\s+tool\b/g, dialect.codeSearchTool);
+    .replace(/\b(?:the\s+)?default\s+code\s+search\s+tool\b/g, dialect.codeSearchTool)
+    .replace(/\b(?:the\s+)?default\s+code\s+read\s+tool\b/g, dialect.codeReadTool);
 }
 
 /** Name a dinopowers wrapper ships under outside Claude Code, clear of the superpowers skill it wraps. */

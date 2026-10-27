@@ -11,9 +11,12 @@ tool". Never call/plan `get_callers` / `get_callees` / `trace_path`.
 Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
 call edges), not content matching — no false hits on comments, strings,
 same-named symbols. "Every / all callers of X" (exhaustive) → Step 2's
-`get_callers`, THEN `hybrid_search metaOnly:true query=<name>` — it adds, never
-replaces: graph = resolved edges, hybrid = recall for calls the graph did not
-resolve. Report both, edges first.
+`get_callers`, THEN the occurrence route — default code search tool
+`"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known, else the
+source root) → `find_symbol` on the hits. It adds, never replaces: graph =
+resolved edges, text search = recall for calls the graph did not resolve. Report
+both, edges first. "Where is X used" / every occurrence of an exact name or
+constant → that occurrence route alone, never `hybrid_search` for it.
 
 ## Step 1 — resolve exact symbolId (MANDATORY)
 
