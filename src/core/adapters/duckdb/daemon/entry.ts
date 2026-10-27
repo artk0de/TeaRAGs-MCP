@@ -425,6 +425,13 @@ async function startOwnedDaemon(
   } catch {
     /* no stale socket — fresh spawn */
   }
+  // Refs count connections to that socket, so whatever a predecessor left is
+  // stale — including a bare count with no holder pid to prune.
+  try {
+    unlinkSync(options.paths.refsFile);
+  } catch {
+    /* no stale refs — fresh spawn */
+  }
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

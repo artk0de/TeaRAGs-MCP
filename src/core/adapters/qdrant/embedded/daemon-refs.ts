@@ -1,9 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 /**
- * Who holds the embedded Qdrant daemon. `holders` is a multiset of pids, one
- * entry per attach, so a holder that exits without releasing is pruned on the
- * next read. `anonymous` counts refs with no recorded pid — those written by a
+ * Who holds a daemon — the embedded Qdrant and codegraph daemons share this
+ * file format. `holders` is a multiset of pids, one entry per attach, so a
+ * holder that exits without releasing is pruned on the next read. `anonymous` counts refs with no recorded pid — those written by a
  * build that kept a bare integer — and is never pruned.
  *
  * On disk: the live count on the first line, then one pid per line. An integer
