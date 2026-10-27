@@ -51,7 +51,7 @@ function fakeSession(): InProcessToolSession & { readResource: ReturnType<typeof
     listResourceTemplates: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
     readResource: vi.fn(async (uri: string) => ({
-      contents: [{ uri, mimeType: "text/markdown", text: uri.endsWith("/digest") ? DIGEST : METRICS }],
+      contents: [{ uri, mimeType: "text/markdown", text: uri.includes("/digest") ? DIGEST : METRICS }],
     })),
   };
 }
@@ -92,7 +92,7 @@ describe("runPrime — reads the project digest resource", () => {
       autoUpdateTrigger: { maybeSpawn: () => "disabled" },
     });
 
-    expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/proj/digest");
+    expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/proj/digest?view=full");
     expect(session.readResource).toHaveBeenCalledTimes(1);
     const out = output();
     expect(out.startsWith(DIGEST)).toBe(true);
@@ -119,6 +119,27 @@ describe("runPrime — reads the project digest resource", () => {
     expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/proj/metrics");
     const out = output();
     expect(out.indexOf(METRICS.trimEnd())).toBeGreaterThan(out.indexOf("tea-rags://project/proj/metrics?language"));
+  });
+
+  it("--agent reads the agent digest and prints it alone — no update notice, no refresh line", async () => {
+    pingMock.mockResolvedValue(true);
+    const session = fakeSession();
+
+    await runPrime({
+      path: "/repo/proj",
+      agent: true,
+      createPathCollectionResolver: resolver,
+      registryRuntime: registryRuntime(entry),
+      openSession: async () => session,
+      updateService: updateService(available("1.0.0", "1.1.0")),
+      autoUpdateTrigger: { maybeSpawn: () => "disabled" },
+    });
+
+    expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/proj/digest");
+    const out = output();
+    expect(out).toBe(`${DIGEST.trimEnd()}\n`);
+    expect(out).not.toContain(REFRESH);
+    expect(out).not.toContain("## tea-rags package");
   });
 
   it("prints the qdrant-cold placeholder and opens no session when Qdrant is unreachable", async () => {
@@ -188,6 +209,6 @@ describe("runPrime — reads the project digest resource", () => {
       autoUpdateTrigger: { maybeSpawn: () => "disabled" },
     });
 
-    expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/code_proj/digest");
+    expect(session.readResource).toHaveBeenCalledWith("tea-rags://project/code_proj/digest?view=full");
   });
 });

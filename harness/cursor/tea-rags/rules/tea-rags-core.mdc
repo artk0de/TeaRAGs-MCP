@@ -11,7 +11,7 @@ alwaysApply: true
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
-`path=<this task's cwd>` (tree, re-checks too). Alias: prime `## Project`,
+`path=<this task's cwd>` (tree, re-checks too). Alias: digest `project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
 alone, never ask; only a `collection` → it alone; after either say
 `next: project=<workingTree.project> + path`. No cwd → call now, `project`
@@ -129,9 +129,9 @@ diff's → `review_changes` verdicts, nothing after.
   = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
-- `rustc driver: unavailable` (prime/status/index) → tell user ONCE: Rust edges
-  static-only (lower bound) + install command; never install it or claim "no
-  callers"/"dead code".
+- `rustc driver: unavailable` (status/index/empty Rust graph answer) → tell user
+  ONCE: Rust edges static-only (lower bound) + install command; never install it
+  or claim "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
   unindexed file → Read tool, no confirm ask; indexed → tell user
   the plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CollectionEntry } from "../../../../src/core/api/public/index.js";
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 const NOW = new Date("2026-05-13T00:00:00Z");
@@ -50,9 +50,9 @@ const WINDOW_ENV = {
   TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS: "6",
 };
 
-describe("formatSlimDigest — git walk windows on the enrichment row", () => {
+describe("formatFullDigest — git walk windows on the enrichment row", () => {
   it("keeps the in-progress marker ahead of the window suffix", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       data({
         registry: entry({ env: WINDOW_ENV }),
         status: {

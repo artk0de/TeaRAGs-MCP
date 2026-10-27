@@ -23,6 +23,8 @@ export interface PrimeData {
   autoUpdateOutcome?: AutoUpdateTriggerOutcome | null;
   /** Per-project auto-update log path, shown on failure lines. */
   autoUpdateLogPath?: string;
+  /** `--agent`: print the digest alone — no update notice, auto-update status or refresh line. */
+  agent?: boolean;
 }
 
 /**

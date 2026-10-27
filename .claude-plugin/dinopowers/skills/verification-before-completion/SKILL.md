@@ -38,8 +38,7 @@ reindex), verdict per file, THEN `superpowers:verification-before-completion`.
 itself to the parent.
 
 **Codegraph on?** Graph tools (`get_callers`, `trace_path`, `review_changes`, …)
-in your tool list; unsure → read
-`tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
+in your tool list; unsure → digest: `codegraph off` line = off, silent = on.
 
 **Diff review, same gate** (codegraph on, session edited files) — BEFORE "done"
 / commit: open the tea-rags plugin file `skills/data-driven-generation/SKILL.md`

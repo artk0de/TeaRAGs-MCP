@@ -58,8 +58,8 @@ tea-rags impact enrichment". Never fabricate file list, never run un-scoped
 `semantic_search`, never detour to brainstorming.
 
 **Codegraph on?** Graph tools (`get_callers`, `trace_path`,
-`get_naming_lexicon`, …) in your tool list; unsure → read
-`tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
+`get_naming_lexicon`, …) in your tool list; unsure → digest: `codegraph off`
+line = off, silent = on.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every $dino-X
 redirects $X. NEVER bypass wrapper.

@@ -487,14 +487,14 @@ describe("renderCursorHarness — tea-rags sessionStart script", () => {
     const out = run("{}", { PATH: bin, CURSOR_PROJECT_DIR: "/work/project" });
 
     expect(out.context).toMatch(/^D+$/);
-    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime /work/project");
+    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime --agent /work/project");
   });
 
   it("falls back to the first workspace root on stdin", () => {
     const bin = fakeBin("b");
     run('{"workspace_roots":["/work/other"]}', { PATH: bin });
 
-    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime /work/other");
+    expect(readFileSync(join(bin, "args"), "utf8").trim()).toBe("prime --agent /work/other");
   });
 
   it("answers {} without priming when no project directory is known", () => {

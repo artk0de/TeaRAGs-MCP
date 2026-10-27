@@ -137,8 +137,7 @@ fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw g
 
 **Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn` + churn +
 bugFix) when codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool
-list (unsure → read `tea-rags://project/<alias>/metrics?section=registry`,
-`codegraph on|off`); off →
+list (unsure → digest: `codegraph off` line = off, silent = on); off →
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
 approximate).
 

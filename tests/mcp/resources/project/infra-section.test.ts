@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 const baseStatus = {
@@ -34,9 +34,9 @@ function primeWith(embedding: NonNullable<ProjectDigestData["status"]["infraHeal
 
 const at = new Date("2026-05-13T00:00:00Z");
 
-describe("formatSlimDigest — Infra section (embedding endpoints)", () => {
+describe("formatFullDigest — Infra section (embedding endpoints)", () => {
   it("states why an endpoint is unavailable next to its badge (bd fembu)", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: true,
         provider: "llama-server",
@@ -56,7 +56,7 @@ describe("formatSlimDigest — Infra section (embedding endpoints)", () => {
   });
 
   it("shows primary (unavailable) while fallback stays (available) under failover", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: true,
         provider: "ollama",
@@ -73,9 +73,9 @@ describe("formatSlimDigest — Infra section (embedding endpoints)", () => {
   });
 });
 
-describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => {
+describe("formatFullDigest — Infra section (both-endpoints-down hint)", () => {
   it("appends a get_index_status hint when both primary and fallback ollama are unavailable", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: false,
         provider: "ollama",
@@ -92,7 +92,7 @@ describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => 
   });
 
   it("omits the hint when the fallback is still available under failover", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: true,
         provider: "ollama",
@@ -107,7 +107,7 @@ describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => 
   });
 
   it("omits the hint when the fallback health is unknown (not probed)", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: false,
         provider: "ollama",
@@ -121,7 +121,7 @@ describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => 
   });
 
   it("omits the hint for url-less providers (e.g. onnx) even when unavailable", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWith({
         available: false,
         provider: "onnx",
@@ -134,7 +134,7 @@ describe("formatSlimDigest — Infra section (both-endpoints-down hint)", () => 
 
 // bd tea-rags-mcp-ye5o — the digest only REPORTS a failed optimizer; the recovery
 // is the explicit `tea-rags qdrant recover` command, printed ready to run.
-describe("formatSlimDigest — Infra section (optimizer failure remedy)", () => {
+describe("formatFullDigest — Infra section (optimizer failure remedy)", () => {
   const embedding = { available: true, provider: "onnx" };
 
   function primeWithQdrant(
@@ -145,7 +145,7 @@ describe("formatSlimDigest — Infra section (optimizer failure remedy)", () => 
   }
 
   it("prints the recover command under the qdrant line when the optimizer reports an error", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       primeWithQdrant({ ...baseQdrant, status: "red", optimizerStatus: "error: segment optimization failed" }, "demo"),
       at,
     );
@@ -154,13 +154,13 @@ describe("formatSlimDigest — Infra section (optimizer failure remedy)", () => 
   });
 
   it("addresses the project by path when it has no alias", () => {
-    const out = formatSlimDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "error: boom" }, null), at);
+    const out = formatFullDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "error: boom" }, null), at);
     expect(out).toContain("Run: tea-rags qdrant recover --path /repo");
   });
 
   it("prints no recover command for a healthy or unknown optimizer", () => {
-    expect(formatSlimDigest(primeWithQdrant(baseQdrant, "demo"), at)).not.toContain("qdrant recover");
-    expect(formatSlimDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "unknown" }, "demo"), at)).not.toContain(
+    expect(formatFullDigest(primeWithQdrant(baseQdrant, "demo"), at)).not.toContain("qdrant recover");
+    expect(formatFullDigest(primeWithQdrant({ ...baseQdrant, optimizerStatus: "unknown" }, "demo"), at)).not.toContain(
       "qdrant recover",
     );
   });

@@ -149,13 +149,12 @@ visibility" below); suffix not part of id — drop before drilling.
 ### Graph navigation — get_callers / get_callees / trace_path
 
 Requires codegraph. **Availability signal:** graph tools present in the tool
-list = codegraph on; unsure →
-`tea-rags://project/<alias>/metrics?section=registry`. Off → the graph tools
-(`get_callers`, `get_callees`, `find_cycles`, `trace_path`,
-`get_architecture_report`) are **not registered** — never appear in tool list.
-Off-signal is an _absent tool_, not an empty result; check the tool list first
-rather than calling a tool to discover it's missing. Precedence — start cheap,
-escalate only if needed:
+list = codegraph on; unsure → digest: `codegraph off` line = off, silent = on.
+Off → the graph tools (`get_callers`, `get_callees`, `find_cycles`,
+`trace_path`, `get_architecture_report`) are **not registered** — never appear
+in tool list. Off-signal is an _absent tool_, not an empty result; check the
+tool list first rather than calling a tool to discover it's missing. Precedence
+— start cheap, escalate only if needed:
 
 1. **`get_callers` / `get_callees`** — "who calls X" / "what X calls". Default
    for impact, dependency and "how does X work" questions. Flow / impact →

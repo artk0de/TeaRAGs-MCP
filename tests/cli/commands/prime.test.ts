@@ -36,11 +36,13 @@ describe("primeCommand", () => {
     expect(positionalCaptured).toHaveLength(1);
     expect(positionalCaptured[0].name).toBe("path");
     expect(positionalCaptured[0].opts.type).toBe("string");
-    expect(optionCaptured).toHaveLength(2);
+    expect(optionCaptured).toHaveLength(3);
     expect(optionCaptured[0].name).toBe("project");
     expect(optionCaptured[0].opts.type).toBe("string");
     expect(optionCaptured[1].name).toBe("full");
     expect(optionCaptured[1].opts.type).toBe("boolean");
+    expect(optionCaptured[2].name).toBe("agent");
+    expect(optionCaptured[2].opts.type).toBe("boolean");
   });
 
   it("forwards path, project, --full and the session opener to runPrime when the handler runs", async () => {

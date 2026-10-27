@@ -10,6 +10,7 @@ interface PrimeArgs {
   path?: string;
   project?: string;
   full?: boolean;
+  agent?: boolean;
 }
 
 export const primeCommand: CommandModule<object, PrimeArgs> = {
@@ -30,6 +31,12 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
         type: "boolean",
         default: false,
         describe: "Append the metrics resource (signal thresholds, labelMap, resolve breakdown) for humans.",
+      })
+      .option("agent", {
+        type: "boolean",
+        default: false,
+        describe:
+          "Agent digest for SessionStart hooks: alias + collection, `codegraph off` only when off, actionable freshness.",
       }),
   handler: async (argv) => {
     // The in-process server logs through console; stdout carries only the digest.
@@ -42,6 +49,7 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
         path: argv.path,
         project: argv.project,
         full: argv.full,
+        agent: argv.agent,
         createPathCollectionResolver,
         registryRuntime: primeRegistryRuntime(),
         openSession: openInProcessMcpSession,
