@@ -210,6 +210,10 @@ describe("renderCursorHarness", () => {
       "beforeReadFile",
       "beforeShellExecution",
       "afterShellExecution",
+      "beforeSubmitPrompt",
+      "postToolUse",
+      "preToolUse",
+      "afterMCPExecution",
     ]);
     const [{ command, timeout }] = hooks.hooks.sessionStart;
     expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`);

@@ -248,7 +248,13 @@ describe("renderCodexHarness", () => {
       args: ["server"],
     });
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
-    expect(Object.keys(hooks).sort()).toEqual(["PreToolUse", "SessionStart", "SubagentStart"]);
+    expect(Object.keys(hooks).sort()).toEqual([
+      "PostToolUse",
+      "PreToolUse",
+      "SessionStart",
+      "SubagentStart",
+      "UserPromptSubmit",
+    ]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
     // Core hook only cats a file; a cold `tea-rags prime` boots the server (measured 12–26 s).
     expect(hooks.SessionStart[0].hooks[0].timeout).toBe(10);
@@ -564,6 +570,7 @@ describe("renderCodexHarness", () => {
         hooks: [
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 },
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/deny-indexed-read.sh`, timeout: 10 },
+          { type: "command", command: `\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex`, timeout: 10 },
         ],
       },
     ]);
