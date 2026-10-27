@@ -59,8 +59,8 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 
 - Never `Read` after `find_symbol` — method = full body; small file
   (`kind: "file"`) = full text, the read itself, nothing after; outline
-  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; every id or file
-  you will read → ONE `find_symbol(symbols: [<ids or paths>])`, never one per
+  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; every id you will
+  read from one answer → ONE `find_symbol(symbols: [<ids>])`, never one id per
   turn. After a search, or a file/id already known: `find_symbol` next — another
   search is the "Curiosity search" anti-pattern; never re-search/`Read`.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any

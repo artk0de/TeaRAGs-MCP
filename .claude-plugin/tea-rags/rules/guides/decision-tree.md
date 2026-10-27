@@ -133,9 +133,9 @@ filter or pathPattern to exclude non-code files.
 
 Research / planning question (understand X before a change, map an area, answer
 a design question) → find its row, run that call; never `ls` / `cat` / `grep` /
-`git ls-files` to explore. After the first hit: every id or file you will read →
-ONE `find_symbol(symbols: [<ids or paths>])`. Files outside the index (`db/`,
-`*.yml`, `*.json`, generated) → client's tools, say so.
+`git ls-files` to explore. After the first hit: every id you will read → ONE
+`find_symbol(symbols: [<ids>])`. Files outside the index (`db/`, `*.yml`,
+`*.json`, generated) → client's tools, say so.
 
 | Question                                                     | Call                                                                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
@@ -224,9 +224,8 @@ working directory as `path`; the hook supplies the repository's `project` alias
   or addressable outline (class / doc)
 - **Grep / Read a saved find_symbol dump or an outline** — lines are ids; drill
   `find_symbol(symbol: <id>)` instead
-- **One `find_symbol` call per id or file** — 2+ known ids or files (outline
-  members, hits, paths) → ONE `find_symbol(symbols: [<ids or paths>])`; misses
-  come back in `missing[]`
+- **One `find_symbol` call per id** — 2+ known ids (outline members, hits) → ONE
+  `find_symbol(symbols: [<ids>])`; misses come back in `missing[]`
 - **`ls` / glob / `find` to list a directory** —
   `find_symbol(relativePath: "<dir>")` returns its files with their top-level
   symbols
