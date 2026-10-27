@@ -29,6 +29,9 @@ interface FootprintVerdictRow {
   verdict: FootprintVerdict;
 }
 
+/** Store leftovers cleared between two progress lines on stderr. */
+const STORE_LEFTOVER_PROGRESS_EVERY = 1000;
+
 /** Rows printed per class before the table folds the rest into a count. */
 const FOOTPRINT_ROWS_PER_CLASS = 20;
 
@@ -158,10 +161,15 @@ async function purgeFootprints(
 ): Promise<FootprintVerdictRow[]> {
   const { createCollectionFootprintPurger } = await import("../../bootstrap/footprint-purge.js");
   const purger = createCollectionFootprintPurger({ qdrant, registry, appDataDir });
-  const verdicts: FootprintVerdictRow[] = [];
+  const verdictOf = new Map<FootprintCensusRow, FootprintVerdict>();
+  const leftovers: FootprintCensusRow[] = [];
   for (const row of rows) {
     if (row.blockedBy) {
-      verdicts.push({ row, verdict: `kept — ${row.blockedBy}` });
+      verdictOf.set(row, `kept — ${row.blockedBy}`);
+      continue;
+    }
+    if (row.findingClass === "store-leftover") {
+      leftovers.push(row);
       continue;
     }
     const { action } = row;
@@ -171,11 +179,27 @@ async function purgeFootprints(
         : await purger.purge({ logicalName: action.logicalName, ...(action.path ? { path: action.path } : {}) });
     const [failure] = report.failures;
     if (failure) {
-      verdicts.push({ row, verdict: `failed — ${failure.artifact} ${failure.target}: ${failure.reason}` });
+      verdictOf.set(row, `failed — ${failure.artifact} ${failure.target}: ${failure.reason}`);
       continue;
     }
     if (action.kind === "collection" && action.registryEntry) registry.remove(action.registryEntry);
-    verdicts.push({ row, verdict: "purged" });
+    verdictOf.set(row, "purged");
   }
-  return verdicts;
+
+  // Store-only leftovers go in one batch: Qdrant is read once, not per name.
+  if (leftovers.length > 0) {
+    const report = await purger.purgeStoreLeftovers(
+      leftovers.map((row) => row.logicalName),
+      {
+        progressEvery: STORE_LEFTOVER_PROGRESS_EVERY,
+        onProgress: (done, total) => process.stderr.write(`store leftovers: ${done}/${total}\n`),
+      },
+    );
+    const failureOf = new Map(report.failures.map((f) => [f.target, f]));
+    for (const row of leftovers) {
+      const failure = failureOf.get(row.logicalName);
+      verdictOf.set(row, failure ? `failed — ${failure.artifact} ${failure.target}: ${failure.reason}` : "purged");
+    }
+  }
+  return rows.map((row) => ({ row, verdict: verdictOf.get(row) ?? "purged" }));
 }

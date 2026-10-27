@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import yargs from "yargs";
 
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
@@ -150,5 +151,126 @@ describe("doctor --footprints", () => {
     expect(qdrant.live.has("code_stray_v1")).toBe(true);
     expect(out).toMatch(/unregistered-alias\s+code_stray_v1\s+code_stray\s.*kept — in use: working-tree overlay/);
     expect(out).toContain("Purged 4 · kept 1 · failed 0");
+  });
+
+  it("reads a store entry's logical name past dots inside the name", async () => {
+    file("snapshots", "code.old.stats.json");
+    file("snapshots", "code.dir", "meta.json");
+
+    const parsed = JSON.parse(await run({ json: true }, fakeQdrant()));
+
+    const leftovers = parsed.findings
+      .filter((f: { findingClass: string }) => f.findingClass === "store-leftover")
+      .map((f: { logicalName: string }) => f.logicalName)
+      .sort();
+    expect(leftovers).toEqual(["code.dir", "code.old", "code_old"]);
+  });
+
+  it("--fix clears store leftovers in one batch with a running count, not a Qdrant round-trip each", async () => {
+    for (let i = 0; i < 1200; i++) writeFileSync(join(dir, "snapshots", `code_l${i}.json`), "{}");
+    const qdrant = fakeQdrant();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let progress: string;
+    try {
+      const out = await run({ fix: true }, qdrant);
+      progress = stderr.mock.calls.map((c) => String(c[0])).join("");
+      expect(out).toContain("Purged 1205 · kept 0 · failed 0");
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(existsSync(join(dir, "snapshots", "code_l0.json"))).toBe(false);
+    expect(existsSync(join(dir, "snapshots", "code_l1199.json"))).toBe(false);
+    expect(existsSync(join(dir, "snapshots", "code_live", "meta.json"))).toBe(true);
+    expect(qdrant.listCollections.mock.calls.length).toBeLessThan(15);
+    expect(progress).toContain("store leftovers: 1000/1201");
+    expect(progress).toContain("store leftovers: 1201/1201");
+    expect(progress.split("\n").filter(Boolean)).toHaveLength(2);
+  });
+});
+
+describe("doctor command routing to --footprints", () => {
+  afterEach(() => {
+    vi.doUnmock("../../../src/cli/commands/doctor-footprints.js");
+    vi.resetModules();
+  });
+
+  it.each([
+    [{ footprints: true }, { json: false, fix: false }],
+    [
+      { footprints: true, fix: true, json: true },
+      { json: true, fix: true },
+    ],
+  ])("routes %o to runFootprintDoctor", async (flags, expected) => {
+    const runFootprintDoctor = vi.fn(async () => undefined);
+    vi.resetModules();
+    vi.doMock("../../../src/cli/commands/doctor-footprints.js", () => ({ runFootprintDoctor }));
+    const { doctorCommand } = await import("../../../src/cli/commands/doctor.js");
+
+    await doctorCommand.handler({ json: false, ...flags, _: [], $0: "tea-rags" });
+
+    expect(runFootprintDoctor).toHaveBeenCalledWith(expected);
+  });
+
+  it("declares --footprints and --fix as boolean options", async () => {
+    const { doctorCommand } = await import("../../../src/cli/commands/doctor.js");
+    const argv = await (doctorCommand.builder as (y: ReturnType<typeof yargs>) => ReturnType<typeof yargs>)(
+      yargs(["--footprints", "--fix"]),
+    ).parseAsync();
+
+    expect(argv.footprints).toBe(true);
+    expect(argv.fix).toBe(true);
+  });
+});
+
+describe("doctor --footprints without injected deps", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cli-doc-fp-default-"));
+    process.env.TEA_RAGS_DATA_DIR = dir;
+  });
+
+  afterEach(() => {
+    vi.doUnmock("../../../src/bootstrap/config/index.js");
+    vi.doUnmock("../../../src/core/adapters/qdrant/embedded/daemon.js");
+    vi.doUnmock("../../../src/core/adapters/qdrant/client.js");
+    vi.resetModules();
+    delete process.env.TEA_RAGS_DATA_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("builds its Qdrant client from the app config", async () => {
+    const { resolveRegistryEnvCodeDefaults } =
+      await import("../../../src/bootstrap/config/registry-env-code-defaults.js");
+    const constructed: string[] = [];
+    vi.resetModules();
+    vi.doMock("../../../src/bootstrap/config/index.js", () => ({
+      parseAppConfig: () => ({ qdrantUrl: "http://stub", qdrantApiKey: undefined, paths: { appData: dir } }),
+      resolveRegistryEnvCodeDefaults,
+    }));
+    vi.doMock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
+      resolveQdrantUrl: async () => ({ mode: "external", url: "http://resolved" }),
+    }));
+    vi.doMock("../../../src/core/adapters/qdrant/client.js", () => ({
+      QdrantManager: class {
+        constructor(url: string) {
+          constructed.push(url);
+        }
+        listCollections = vi.fn(async () => []);
+        aliases = { listAliases: vi.fn(async () => []) };
+        getPoint = vi.fn(async () => null);
+        countPoints = vi.fn(async () => 0);
+      },
+    }));
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      const { runFootprintDoctor } = await import("../../../src/cli/commands/doctor-footprints.js");
+      await runFootprintDoctor({});
+      expect(stdout.mock.calls.map((c) => String(c[0])).join("")).toContain("(no unused collection footprints)");
+    } finally {
+      stdout.mockRestore();
+    }
+    expect(constructed).toEqual(["http://resolved"]);
   });
 });

@@ -87,6 +87,14 @@
   logical name nothing live answers to, a `generation` action otherwise. Why:
   the 2026-10-28 cleanup nearly ran `unregister --collection code_3bf044a6
   --purge` to drop an orphan `_v1` of a live project.
+- **Store-only leftovers are swept in one batch.** `#purgeStoreLeftovers` reads
+  Qdrant collections and aliases ONCE, refuses any name that still has an
+  alias or a generation, then runs only the logical half per name through a
+  small worker pool. Going through `purge` per name would list Qdrant per name,
+  which is minutes on a store holding ~130k leftovers. `SnapshotArtifact#remove`
+  also unlinks the pre-sharded `<logical>.json`, `.json.backup`,
+  `.checkpoint.json` and `.checkpoint.json.tmp`. Why: without them the purge
+  "cleared" a collection whose legacy snapshot and checkpoint files stayed.
 - **A codegraph generation is more than its `.duckdb`.** The cross-pass input
   spill (`CodegraphDbFiles#inputSpillPathFor`, under `.xpass`) is keyed by the
   same physical name, so `CodegraphDbFiles#removeFiles` unlinks it with the

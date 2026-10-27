@@ -524,4 +524,69 @@ describe("CollectionFootprintPurger", () => {
       ]);
     });
   });
+
+  describe("purgeStoreLeftovers", () => {
+    // Store-only leftovers are swept in one pass: Qdrant is read once for the
+    // whole batch, not once per logical name as `purge` would.
+    it("clears the alias-keyed stores of every leftover with one Qdrant read for the batch", async () => {
+      const qdrant = fakeQdrant([]);
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_x", "code_y"]);
+
+      expect(result.purged).toEqual(["code_x", "code_y"]);
+      expect(result.failures).toEqual([]);
+      expect(stores.snapshotDeleted).toEqual(["code_x", "code_y"]);
+      expect(stores.statsInvalidated).toEqual(["code_x", "code_y"]);
+      expect(stores.quarantineCleared).toEqual(["code_x", "code_y"]);
+      expect(stores.skippedCleared).toEqual(["code_x", "code_y"]);
+      expect(stores.lockTornDown).toEqual(["code_x", "code_y"]);
+      expect(qdrant.listCollections).toHaveBeenCalledTimes(1);
+      expect(qdrant.aliases.listAliases).toHaveBeenCalledTimes(1);
+      expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+    });
+
+    it("refuses a logical name that still has an alias or a Qdrant generation", async () => {
+      const qdrant = fakeQdrant(["code_g_v3"], [{ aliasName: "code_a", collectionName: "code_b_v1" }]);
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_a", "code_g", "code_x"]);
+
+      expect(result.purged).toEqual(["code_x"]);
+      expect(stores.snapshotDeleted).toEqual(["code_x"]);
+      expect(result.failures).toEqual([
+        { artifact: "snapshot", target: "code_a", reason: "alias 'code_a' is live — not a store leftover" },
+        { artifact: "snapshot", target: "code_g", reason: "Qdrant still holds code_g_v3 — not a store leftover" },
+      ]);
+    });
+
+    it("refuses the whole batch when Qdrant cannot be read", async () => {
+      const qdrant = fakeQdrant([]);
+      qdrant.listCollections.mockRejectedValueOnce(new Error("connection refused"));
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_x"]);
+
+      expect(result.purged).toEqual([]);
+      expect(stores.snapshotDeleted).toEqual([]);
+      expect(result.failures).toEqual([
+        { artifact: "snapshot", target: "code_x", reason: "cannot read Qdrant (connection refused) — refusing" },
+      ]);
+    });
+
+    it("reports progress as a running count", async () => {
+      const { purger } = buildPurger();
+      const progress: [number, number][] = [];
+
+      await purger.purgeStoreLeftovers(["a", "b", "c"], {
+        progressEvery: 2,
+        onProgress: (d, t) => progress.push([d, t]),
+      });
+
+      expect(progress).toEqual([
+        [2, 3],
+        [3, 3],
+      ]);
+    });
+  });
 });

@@ -66,11 +66,33 @@ function sizeOf(path: string): number {
   return listNames(path).reduce((sum, name) => sum + sizeOf(join(path, name)), 0);
 }
 
-/** Store entries in the snapshot dir grouped by the logical name they belong to (`<logical>` or `<logical>.<suffix>`). */
+/**
+ * The file suffixes the alias-keyed stores write beside `<logical>`; the shortest
+ * prefix they complete is the logical name, so a name containing a dot survives.
+ */
+const STORE_FILE = new RegExp(
+  "^(.+?)(\\.checkpoint\\.json(?:\\.tmp)?|\\.json\\.backup|\\.stats\\.json|\\.quarantine\\.json|" +
+    "\\.skipped\\.json|\\.indexing\\.lock|\\.recovery-complete|\\.json)(?:\\.tmp\\.\\d+)?$",
+);
+
+/** Logical name a snapshot-dir entry belongs to: a directory is the sharded snapshot itself. */
+export function logicalNameOfStoreEntry(entry: string, isDirectory: boolean): string {
+  if (isDirectory) return entry;
+  return STORE_FILE.exec(entry)?.[1] ?? entry.split(".")[0] ?? entry;
+}
+
+/** Store entries in the snapshot dir grouped by the logical name they belong to. */
 function groupStoreEntries(snapshotDir: string): Map<string, string[]> {
   const byLogical = new Map<string, string[]>();
-  for (const entry of listNames(snapshotDir)) {
-    const logical = entry.split(".")[0] ?? entry;
+  let dirents;
+  try {
+    dirents = readdirSync(snapshotDir, { withFileTypes: true });
+  } catch {
+    return byLogical;
+  }
+  for (const dirent of dirents) {
+    const entry = dirent.name;
+    const logical = logicalNameOfStoreEntry(entry, dirent.isDirectory());
     if (logical.length === 0) continue;
     const entries = byLogical.get(logical) ?? [];
     entries.push(entry);
