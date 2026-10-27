@@ -36,6 +36,7 @@ import type {
   CodegraphResolveLanguageRow,
   CodegraphResolveSummary,
   EdgeKindBreakdown,
+  IndexHolesSummary,
   IndexStatus,
   SkippedFilesSummary,
 } from "../../../types.js";
@@ -45,7 +46,7 @@ import {
   STALE_INDEXING_THRESHOLD_MS,
   type IndexingLockLivenessProbe,
 } from "../infra/index.js";
-import { ParallelFileSynchronizer, QuarantineStore, SkippedFileStore } from "../sync/index.js";
+import { ParallelFileSynchronizer, QuarantineStore, ShardedSnapshotManager, SkippedFileStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 
 // The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
@@ -759,6 +760,34 @@ export class StatusModule {
   }
 
   /**
+   * Snapshot-vs-points consistency probe (bd tea-rags-mcp-muj77): files the
+   * snapshot lists as indexed that hold no points and are neither a
+   * deterministic skip nor quarantined. Runtime skips never count — the
+   * pipelines keep them out of the snapshot.
+   *
+   * Cheap by construction: `meta.json` gives the snapshot file count, and the
+   * point side is the distinct-relativePath count the post-run stats scroll
+   * already persisted (`Distributions.totalFiles`) — the per-generation cache,
+   * so status never scrolls Qdrant. That count is only comparable when it was
+   * written after the snapshot; older stats give no verdict rather than a false
+   * one. Count-level by design: an orphan point path outside the snapshot would
+   * mask one hole.
+   */
+  private async probeIndexHoles(
+    reportedName: string,
+    pointFileCount: number,
+    quarantinedCount: number,
+  ): Promise<IndexHolesSummary | undefined> {
+    if (!this.snapshotDir) return undefined;
+    const snapshot = await new ShardedSnapshotManager(this.snapshotDir, reportedName).readSummary();
+    const statsWrittenAt = new StatsCache(this.snapshotDir).lastWrittenAt(reportedName);
+    if (!snapshot || statsWrittenAt === undefined || statsWrittenAt < snapshot.timestamp) return undefined;
+    const deterministicSkips = (await new SkippedFileStore(this.snapshotDir, reportedName).paths()).size;
+    const holes = snapshot.fileCount - pointFileCount - deterministicSkips - quarantinedCount;
+    return holes > 0 ? { count: holes } : undefined;
+  }
+
+  /**
    * Distinct-file count from the persisted collection stats
    * (DistinctPathsAccumulator → Distributions.totalFiles), keyed by public alias.
    * Undefined when no snapshot dir or no stats cached.
@@ -864,20 +893,23 @@ export class StatusModule {
     }
 
     if (marker?.indexingComplete) {
+      const filesCount = this.readFileCount(reportedName);
+      const quarantine = await this.loadQuarantineSummary(reportedName);
       return {
         isIndexed: true,
         status: "indexed",
         collectionName: reportedName,
         chunksCount: actualChunksCount,
-        filesCount: this.readFileCount(reportedName),
+        filesCount,
         embeddingModel: marker.embeddingModel,
         qdrantUrl: this.qdrant.url,
         sparseVersion,
         lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
         ...(await this.readCodegraphReport(sourceCollection)),
-        quarantine: await this.loadQuarantineSummary(reportedName),
+        quarantine,
         skippedFiles: await this.loadSkippedFilesSummary(reportedName),
+        indexHoles: await this.probeIndexHoles(reportedName, filesCount ?? 0, quarantine?.count ?? 0),
       };
     }
 

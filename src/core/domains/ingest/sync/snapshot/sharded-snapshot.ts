@@ -273,6 +273,20 @@ export class ShardedSnapshotManager {
   }
 
   /**
+   * File count and save time from `meta.json` alone — no shard is read. Null
+   * when there is no snapshot or its meta is unreadable. For status probes that
+   * must stay cheap (bd tea-rags-mcp-muj77).
+   */
+  async readSummary(): Promise<{ timestamp: number; fileCount: number } | null> {
+    try {
+      const meta = JSON.parse(await fs.readFile(join(this.snapshotDir, "meta.json"), "utf-8")) as SnapshotMeta;
+      return { timestamp: meta.timestamp, fileCount: meta.shards.reduce((sum, shard) => sum + shard.fileCount, 0) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Check if snapshot exists
    */
   async exists(): Promise<boolean> {

@@ -5,6 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  formatIndexHolesLine,
   formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
@@ -67,7 +68,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
         return formatMcpText(text);
       }
 
-      const { enrichment, infraHealth, skippedFiles, ...rest } = status;
+      const { enrichment, infraHealth, skippedFiles, indexHoles, ...rest } = status;
       const response: Record<string, unknown> = { ...rest };
       if (enrichment) {
         response.enrichment = enrichment;
@@ -86,6 +87,8 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
       // Deliberate no-points files ride as one line, never a JSON block.
       if (skippedFiles && skippedFiles.count > 0) text += `\n\n${formatSkippedFilesLine(skippedFiles)}`;
+      // Snapshot files without points (bd tea-rags-mcp-muj77): one line, no paths.
+      if (indexHoles && indexHoles.count > 0) text += `\n\n${formatIndexHolesLine(indexHoles.count)}`;
 
       const details = formatCollectionDetails(infraHealth?.qdrant);
       if (details) text += `\n\n${details}`;
@@ -138,7 +141,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
   );
 }
 
-/** `skipped files: 7 (secretsGate 4, emptyFile 3)` — the whole-index deterministic-skip count, reasons by size. */
+/** `skipped files: 7 (secretsGate 4, runtimeError 3)` — the whole-index skip count (deterministic + runtime), reasons by size. */
 export function formatSkippedFilesLine(skippedFiles: NonNullable<IndexStatus["skippedFiles"]>): string {
   const reasons = Object.entries(skippedFiles.byReason)
     .filter(([, n]) => (n ?? 0) > 0)

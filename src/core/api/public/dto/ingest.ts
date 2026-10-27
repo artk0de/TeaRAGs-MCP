@@ -19,6 +19,7 @@ import type {
   EnrichmentMetrics,
   EnrichmentProgressCallback,
   EnrichmentProgressEvent,
+  IndexHolesSummary,
   IndexingStatus,
   ProgressUpdate,
   SkippedFilesSummary,
@@ -197,6 +198,13 @@ export interface IndexStats {
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * Files a non-quarantinable runtime error dropped and that still hold no
+   * points after this run (skip record, reason `runtimeError`). They are kept
+   * out of the saved snapshot, so the next run retries them. Omitted when zero
+   * (bd tea-rags-mcp-muj77).
+   */
+  runtimeSkippedFiles?: number;
   /** How the rustc call-site driver settled for this run (bd s3i8m T9); rendered as one line. */
   rustcDriver?: RustcDriverStatus;
 }
@@ -209,6 +217,8 @@ export interface ChangeStats {
   filesNewlyIgnored: number;
   /** Files added to index because they no longer match ignore patterns */
   filesNewlyUnignored: number;
+  /** Mirrors `IndexStats.runtimeSkippedFiles`; omitted when zero. */
+  runtimeSkippedFiles?: number;
   /** Previously-quarantined files re-attempted this pass (unchanged content). */
   filesRetried: number;
   chunksAdded: number;
@@ -284,9 +294,16 @@ export interface IndexStatus {
    * Files the index holds NO points for by design (secrets gate, compiled
    * bundle, blank content), counted by reason over the whole index (bd
    * tea-rags-mcp-6xdwe). Omitted when none. `sample` is attached only by the
-   * CLI `index-codebase --json` result, never by `get_index_status`.
+   * CLI `index-codebase --json` result, never by `get_index_status`. Also
+   * counts the retryable `runtimeError` skips (bd tea-rags-mcp-muj77).
    */
   skippedFiles?: SkippedFilesSummary;
+  /**
+   * Snapshot files that hold no points and are neither skipped nor quarantined
+   * (bd tea-rags-mcp-muj77). Omitted when none or when the stats predate the
+   * snapshot.
+   */
+  indexHoles?: IndexHolesSummary;
   /**
    * Minimal per-run enrichment metrics (matched/missed/durations).
    * Omitted at status-read time: full EnrichmentMetrics is in-memory per-run only;

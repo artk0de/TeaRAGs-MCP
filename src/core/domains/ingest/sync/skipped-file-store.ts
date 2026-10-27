@@ -2,21 +2,29 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import type { DeterministicSkipReason, SkippedFilesSummary } from "../../../types.js";
+import type { DeterministicSkipReason, SkippedFileReason, SkippedFilesSummary } from "../../../types.js";
 
 /*
- * Reasons (`DeterministicSkipReason`, declared beside the status DTO): only a
- * content change (re-ingest) or a rebuild clears an entry.
+ * Reasons (`SkippedFileReason`, declared beside the status DTO).
+ * Deterministic (`DeterministicSkipReason`) — only a content change (re-ingest)
+ * or a rebuild clears an entry:
  * - `secretsGate` — credential-looking content in a non-test file.
  * - `compiled` — a compiled JS bundle that slipped past the path ignores.
  * - `emptyFile` — blank (whitespace-only) content, so no chunk exists.
+ * Retryable (`RuntimeSkipReason`, bd muj77):
+ * - `runtimeError` — a non-quarantinable failure (IngestError / InfraError).
+ *   The pipelines keep the path out of the snapshot, so the next pass retries it.
  */
 
-/** One deliberately skipped file. Stable on-disk contract. */
+/** One skipped file. Stable on-disk contract. */
 export interface SkippedFileEntry {
-  reason: DeterministicSkipReason;
-  /** sha256 of the content the verdict was taken on (`fileContentHash`). */
-  contentHash: string;
+  reason: SkippedFileReason;
+  /** sha256 of the content a deterministic verdict was taken on (`fileContentHash`); absent on a runtime skip. */
+  contentHash?: string;
+  /** Short error class of a runtime skip (`WorkerTimeoutError`). */
+  errorClass?: string;
+  /** Set on a runtime skip: the next pass re-ingests the path. */
+  retryable?: true;
   recordedAt: string;
 }
 
@@ -71,15 +79,32 @@ export class SkippedFileStore {
     }
   }
 
-  /** Deliberately-skipped relative paths — what a snapshot-vs-points probe subtracts before calling a file lost. */
+  /**
+   * Deterministically-skipped relative paths — what a snapshot-vs-points probe
+   * subtracts before calling a file lost. Runtime skips are not here: they are
+   * kept out of the snapshot, so the probe never counts them.
+   */
   async paths(): Promise<Set<string>> {
-    return new Set((await this.load()).keys());
+    return this.pathsWhere((skippedFileEntry) => skippedFileEntry.retryable !== true);
   }
 
-  /** Record (or overwrite) one skipped path. */
+  /** Runtime-skipped relative paths — the pipelines keep these out of the saved snapshot so the next pass retries them. */
+  async retryablePaths(): Promise<Set<string>> {
+    return this.pathsWhere((skippedFileEntry) => skippedFileEntry.retryable === true);
+  }
+
+  /** Record (or overwrite) one deterministically skipped path. */
   async record(path: string, reason: DeterministicSkipReason, contentHash: string): Promise<void> {
     await this.mutate((entries) => {
       entries.set(path, { reason, contentHash, recordedAt: new Date().toISOString() });
+      return true;
+    });
+  }
+
+  /** Record (or overwrite) one path a non-quarantinable failure dropped; retryable. */
+  async recordRuntimeError(path: string, errorClass: string): Promise<void> {
+    await this.mutate((entries) => {
+      entries.set(path, { reason: "runtimeError", errorClass, retryable: true, recordedAt: new Date().toISOString() });
       return true;
     });
   }
@@ -123,7 +148,7 @@ export class SkippedFileStore {
   async summarize(opts: { sampleLimit?: number } = {}): Promise<SkippedFilesSummary | undefined> {
     const entries = await this.load();
     if (entries.size === 0) return undefined;
-    const byReason: Partial<Record<DeterministicSkipReason, number>> = {};
+    const byReason: Partial<Record<SkippedFileReason, number>> = {};
     for (const { reason } of entries.values()) byReason[reason] = (byReason[reason] ?? 0) + 1;
     const summary: SkippedFilesSummary = { count: entries.size, byReason };
     const sampleLimit = opts.sampleLimit ?? 0;
@@ -134,6 +159,12 @@ export class SkippedFileStore {
         .map(([path, { reason }]) => ({ path, reason }));
     }
     return summary;
+  }
+
+  private async pathsWhere(admits: (skippedFileEntry: SkippedFileEntry) => boolean): Promise<Set<string>> {
+    const admitted = new Set<string>();
+    for (const [path, skippedFileEntry] of await this.load()) if (admits(skippedFileEntry)) admitted.add(path);
+    return admitted;
   }
 
   private async enqueue<T>(op: () => Promise<T>): Promise<T> {

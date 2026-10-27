@@ -465,11 +465,11 @@ export class QdrantPointStore {
       concurrency: number;
       onProgress?: (deleted: number, total: number) => void;
     },
-  ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
+  ): Promise<{ deletedPaths: number; deletedPoints: number; batchCount: number; durationMs: number }> {
     const startTime = Date.now();
 
     if (relativePaths.length === 0) {
-      return { deletedPaths: 0, batchCount: 0, durationMs: 0 };
+      return { deletedPaths: 0, deletedPoints: 0, batchCount: 0, durationMs: 0 };
     }
 
     const { batchSize, concurrency, onProgress } = options;
@@ -479,7 +479,12 @@ export class QdrantPointStore {
 
     if (ids.length === 0) {
       onProgress?.(relativePaths.length, relativePaths.length);
-      return { deletedPaths: relativePaths.length, batchCount: 0, durationMs: Date.now() - startTime };
+      return {
+        deletedPaths: relativePaths.length,
+        deletedPoints: 0,
+        batchCount: 0,
+        durationMs: Date.now() - startTime,
+      };
     }
 
     // Phase 2: parallel delete-by-IDs with concurrency cap.
@@ -519,6 +524,7 @@ export class QdrantPointStore {
 
     return {
       deletedPaths: relativePaths.length,
+      deletedPoints: ids.length,
       batchCount: chunks.length,
       durationMs: Date.now() - startTime,
     };

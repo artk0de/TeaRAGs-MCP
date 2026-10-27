@@ -71,6 +71,11 @@ export async function performDeletion(
     message: `Deleting old chunks for ${filesToDelete.length} files...`,
   });
 
+  // L0 knows exactly how many points it removed (it collects their ids first).
+  // The collection-size delta below is only the fallback count: the added files
+  // upsert in the same window (Level 1), which cancelled out deletions and
+  // reported a replace as a pure add (bd tea-rags-mcp-muj77).
+  let exactPointsDeleted: number | undefined;
   try {
     const deleteResult = await qdrant.deletePointsByPathsBatched(collectionName, filesToDelete, {
       batchSize: deleteConfig.batchSize,
@@ -86,6 +91,7 @@ export async function performDeletion(
       },
     });
 
+    exactPointsDeleted = deleteResult.deletedPoints;
     if (isDebug()) {
       console.error(
         `[Reindex] Deleted ${deleteResult.deletedPaths} paths in ${deleteResult.batchCount} batches (${deleteResult.durationMs}ms)`,
@@ -146,6 +152,10 @@ export async function performDeletion(
     }
   }
 
+  if (exactPointsDeleted !== undefined) {
+    outcome.chunksDeleted = exactPointsDeleted;
+    return outcome;
+  }
   const totalAfter = (await qdrant.getCollectionInfo(collectionName)).pointsCount;
   outcome.chunksDeleted = Math.max(0, totalBefore - totalAfter);
   return outcome;

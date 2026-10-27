@@ -25,21 +25,34 @@ pipeline, operations and enrichment halves each carry their own.
   drop the explicit `clearAll` on the assumption that snapshot deletion reaps
   it, and quarantine state leaks across a collection delete, hiding files from
   the next index.
-- **`skipped.json` sits beside `quarantine.json` for the same reason, and is
-  NEVER a retry list.** `SkippedFileStore` (`sync/skipped-file-store.ts`)
-  records the deliberate no-points verdicts — secrets gate, compiled bundle,
-  blank content (`DeterministicSkipReason`) — written from
-  `SourceFileIngestor#ingest` with the content hash, cleared there when the path
-  next ingests with chunks, pruned by `ReindexPipeline#detectChangesAndRetries`
-  for deleted / newly ignored paths, and wiped on a forced rebuild
-  (`IndexPipeline#openRunSkippedFileStore`) and by `StatusModule#clearIndex`.
-  `SkippedFileStore#paths` is the set a snapshot-vs-points consistency check
-  subtracts before calling a file lost (bd muj77). Why: folding these into the
-  quarantine would retry every secrets-gated file on every pass for a verdict
-  that is a pure function of its content; leaving them unrecorded made a
-  deliberate skip indistinguishable from a lost file (bd 6xdwe). An index built
-  before the store existed has no entries for its old skips until those files
-  change or a `--force` re-judges them.
+- **`skipped.json` sits beside `quarantine.json` for the same reason, and its
+  deterministic entries are NEVER a retry list.** `SkippedFileStore`
+  (`sync/skipped-file-store.ts`) records the deliberate no-points verdicts —
+  secrets gate, compiled bundle, blank content (`DeterministicSkipReason`) —
+  written from `SourceFileIngestor#ingest` with the content hash, cleared there
+  when the path next ingests with chunks, pruned by
+  `ReindexPipeline#detectChangesAndRetries` for deleted / newly ignored paths,
+  and wiped on a forced rebuild (`IndexPipeline#openRunSkippedFileStore`) and by
+  `StatusModule#clearIndex`. `SkippedFileStore#paths` is the set a
+  snapshot-vs-points consistency check subtracts before calling a file lost (bd
+  muj77). Why: folding these into the quarantine would retry every secrets-gated
+  file on every pass for a verdict that is a pure function of its content;
+  leaving them unrecorded made a deliberate skip indistinguishable from a lost
+  file (bd 6xdwe). An index built before the store existed has no entries for
+  its old skips until those files change or a `--force` re-judges them.
+- **A non-quarantinable failure never enters the snapshot as indexed.**
+  `SourceFileIngestor#recordFailure` records an `IngestError` / `InfraError`
+  drop as a retryable `runtimeError` (`SkippedFileStore#recordRuntimeError`);
+  both seals pass `SkippedFileStore#retryablePaths` as `retainPrevious`
+  (`IndexPipeline#saveSnapshot`, `ReindexPipeline#executeChangesLeg`), so the
+  saved entry stays as the previous run had it — absent on a first or forced
+  index, whose synchronizer loads no previous snapshot. The next pass sees the
+  path as added/modified and re-ingests it; success clears the entry. The
+  snapshot stays the single source of truth for the work set — no side list like
+  the quarantine retry. Why: stamping the scanned hash made every skip a
+  permanent hole (bd muj77: nav93 lost 63/2018 files, incl. a benchmark gold
+  file). `StatusModule#probeIndexHoles` reports the pre-fix holes still in old
+  snapshots.
 
 ## Boundaries
 

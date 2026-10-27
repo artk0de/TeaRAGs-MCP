@@ -125,4 +125,30 @@ describe("SkippedFileStore", () => {
       ]);
     });
   });
+  describe("runtime skips (bd tea-rags-mcp-muj77)", () => {
+    it("records a runtimeError entry as retryable with the short error class", async () => {
+      await store.recordRuntimeError("lib/slow.rb", "WorkerTimeoutError");
+
+      const entry = (await new SkippedFileStore(snapshotDir, collectionName).load()).get("lib/slow.rb");
+      expect(entry).toMatchObject({ reason: "runtimeError", errorClass: "WorkerTimeoutError", retryable: true });
+    });
+
+    it("paths() keeps deterministic skips only; retryablePaths() holds the runtime ones", async () => {
+      await store.record("a.ts", "secretsGate", "h1");
+      await store.recordRuntimeError("b.ts", "PipelineNotStartedError");
+
+      const reread = new SkippedFileStore(snapshotDir, collectionName);
+      expect(await reread.paths()).toEqual(new Set(["a.ts"]));
+      expect(await reread.retryablePaths()).toEqual(new Set(["b.ts"]));
+    });
+
+    it("counts runtimeError in the by-reason summary and clears like any entry", async () => {
+      await store.record("a.ts", "emptyFile", "h1");
+      await store.recordRuntimeError("b.ts", "WorkerTimeoutError");
+
+      expect(await store.summarize()).toEqual({ count: 2, byReason: { emptyFile: 1, runtimeError: 1 } });
+      await store.clear("b.ts");
+      expect(await store.retryablePaths()).toEqual(new Set());
+    });
+  });
 });

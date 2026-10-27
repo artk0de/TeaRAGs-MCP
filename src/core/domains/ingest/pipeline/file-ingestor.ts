@@ -244,6 +244,11 @@ export class SourceFileIngestor {
     const quarantinable = options.quarantineStore ? classifyQuarantinable(error, relativePath) : null;
     if (options.quarantineStore && quarantinable) {
       await options.quarantineStore.markFailed(relativePath, quarantinable);
+    } else {
+      // Not quarantined, so nothing else would retry it: the record keeps the
+      // path out of the saved snapshot until it ingests (bd tea-rags-mcp-muj77).
+      const errorClass = error instanceof Error ? error.constructor.name : typeof error;
+      await options.skippedFileStore?.recordRuntimeError(relativePath, errorClass);
     }
 
     this.report({

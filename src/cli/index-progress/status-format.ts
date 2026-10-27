@@ -185,6 +185,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
   if (status.skippedFiles) {
     base.skippedFiles = status.skippedFiles;
   }
+  // Snapshot files without points (bd tea-rags-mcp-muj77) — a run must not read as clean over them.
+  if (status.indexHoles) {
+    base.indexHoles = status.indexHoles;
+  }
 
   if (extra.overallMs !== undefined) {
     base.overallMs = extra.overallMs;

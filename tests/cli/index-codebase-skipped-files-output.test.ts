@@ -78,4 +78,16 @@ describe("skipped files in the index-codebase output", () => {
     expect(json.skippedFiles).toEqual(skippedFiles);
     expect(formatIndexStatusJson(base, { path: "/repo" })).not.toHaveProperty("skippedFiles");
   });
+
+  it("carries index holes verbatim and nothing when there are none (bd tea-rags-mcp-muj77)", () => {
+    const base: IndexStatus = { isIndexed: true, status: "indexed", collectionName };
+
+    const json = formatIndexStatusJson({ ...base, indexHoles: { count: 4 } }, { path: "/repo" }) as Record<
+      string,
+      unknown
+    >;
+
+    expect(json.indexHoles).toEqual({ count: 4 });
+    expect(formatIndexStatusJson(base, { path: "/repo" })).not.toHaveProperty("indexHoles");
+  });
 });

@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { WorkerTimeoutError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import type { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
 import type { ChunkerPool } from "../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
 import { processFiles } from "../../../../../src/core/domains/ingest/pipeline/file-processor.js";
+import { QuarantineStore } from "../../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { SkippedFileStore } from "../../../../../src/core/domains/ingest/sync/skipped-file-store.js";
 import { fileContentHash } from "../../../../../src/core/primitives/ids/content-hash.js";
 
@@ -99,5 +101,24 @@ describe("processFiles — deterministic-skip record", () => {
     expect((await new SkippedFileStore(join(baseDir, "snapshots"), "test-collection").load()).has("fixed.ts")).toBe(
       false,
     );
+  });
+
+  it("records a non-quarantinable chunker rejection as a retryable runtimeError (bd muj77)", async () => {
+    const file = await write("slow.rb", "class Slow; end\n");
+    const rejectingPool = {
+      processFile: async () => {
+        throw new WorkerTimeoutError("chunker", "slow.rb", 120_000);
+      },
+    } as unknown as ChunkerPool;
+
+    const result = await processFiles([file], baseDir, rejectingPool, chunkPipeline, {
+      enableGitMetadata: false,
+      quarantineStore: new QuarantineStore(join(baseDir, "snapshots"), "test-collection"),
+      skippedFileStore: store,
+    });
+
+    expect(result.filesProcessed).toBe(0);
+    const entry = (await new SkippedFileStore(join(baseDir, "snapshots"), "test-collection").load()).get("slow.rb");
+    expect(entry).toMatchObject({ reason: "runtimeError", errorClass: "WorkerTimeoutError", retryable: true });
   });
 });

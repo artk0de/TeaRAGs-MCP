@@ -231,7 +231,7 @@ export interface QdrantPointWriter {
       concurrency: number;
       onProgress?: (deleted: number, total: number) => void;
     },
-  ) => Promise<{ deletedPaths: number; batchCount: number; durationMs: number }>;
+  ) => Promise<{ deletedPaths: number; deletedPoints: number; batchCount: number; durationMs: number }>;
   /** Update payload fields on existing points WITHOUT re-uploading vectors. */
   setPayload: (
     collectionName: string,
