@@ -216,9 +216,12 @@ export { resolveDomainEnvCodeDefaults } from "./internal/domain-env-code-default
 
 // maintenance — footprint, database migrations, worktree provisioning
 export {
+  classifyCollectionFootprints,
   CollectionFootprintFactory,
   CollectionFootprintPurger,
   type CodegraphDaemonLiveness,
+  type FootprintFinding,
+  type FootprintInventory,
 } from "../domains/maintenance/footprint/index.js";
 export {
   createDatabaseMigrationApplier,

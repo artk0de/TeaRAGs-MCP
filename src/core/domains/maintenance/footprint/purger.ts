@@ -42,6 +42,25 @@ export interface CollectionPurgeInput {
   path?: string;
 }
 
+export interface CollectionGenerationPurgeInput {
+  /** The alias the generation belongs to, e.g. `code_8b243ffe`. */
+  logicalName: string;
+  /** The stale generation itself, e.g. `code_8b243ffe_v1`. */
+  physicalName: PhysicalCollectionName;
+}
+
+export interface StoreLeftoverPurgeReport {
+  /** Logical names whose every alias-keyed store was cleared. */
+  purged: string[];
+  /** Refusals and per-store failures; a name listed here is not in `purged`. */
+  failures: CollectionPurgeFailure[];
+}
+
+const GENERATION_SUFFIX = /_v\d+$/;
+
+/** Store leftovers swept at once — independent file I/O per name. */
+const STORE_LEFTOVER_CONCURRENCY = 32;
+
 export interface CollectionPurgeFailure {
   artifact: ArtifactId;
   /** Physical generation for `physical` artifacts, logical name for the rest. */
@@ -143,6 +162,147 @@ export class CollectionFootprintPurger {
       kept: this.describeKept(logical, input.path),
       failures,
     };
+  }
+
+  /**
+   * Removes ONE stale generation of a collection whose alias stays live — the
+   * `code_a_v1` left behind while `code_a` points at `code_a_v2`. Only the
+   * physical half of the saga runs, and it runs with the generation standing in
+   * for the logical name too: `QdrantArtifact#remove` drops the alias named by
+   * `logicalName` before the collection, so handing it the real alias would cut
+   * the live project loose. The alias-keyed stores are never touched.
+   *
+   * Refuses — records a failure and removes nothing — when the name is not a
+   * `_vN` generation of `logicalName`, when it is the alias target, or when the
+   * aliases cannot be read and the generation therefore cannot be proven dead.
+   */
+  async purgeGeneration(input: CollectionGenerationPurgeInput): Promise<CollectionPurgeReport> {
+    const { logicalName, physicalName } = input;
+    const failures: CollectionPurgeFailure[] = [];
+    const report = (aliasTarget: PhysicalCollectionName | null, qdrantCollections: string[], codegraph: string[]) => ({
+      collectionName: logicalName,
+      qdrantAlias: aliasTarget,
+      qdrantCollections,
+      codegraphDatabases: codegraph,
+      clearedStores: [] as ArtifactId[],
+      kept: [] as string[],
+      failures,
+    });
+
+    if (!new RegExp(`^${escapeRegExp(logicalName)}_v\\d+$`).test(physicalName)) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `'${physicalName}' is not a versioned generation of '${logicalName}'`,
+      });
+      return report(null, [], []);
+    }
+
+    let aliasTarget: PhysicalCollectionName | null;
+    try {
+      const aliases = await this.deps.qdrant.aliases.listAliases();
+      aliasTarget = aliases.find((a) => a.aliasName === logicalName)?.collectionName ?? null;
+    } catch (err) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `cannot read aliases (${describe(err)}) — refusing`,
+      });
+      return report(null, [], []);
+    }
+    if (aliasTarget === physicalName) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `live generation of '${logicalName}' — refusing to purge it`,
+      });
+      return report(aliasTarget, [], []);
+    }
+
+    const onDisk = this.enumerateCodegraph(logicalName, failures).includes(physicalName);
+    await this.removeArtifacts("physical", this.contextFor(physicalName, physicalName), physicalName, failures);
+    return report(
+      aliasTarget,
+      await this.verifyQdrantGone([physicalName], failures),
+      onDisk ? this.verifyCodegraphGone(logicalName, [physicalName], failures) : [],
+    );
+  }
+
+  /**
+   * Clears the alias-keyed stores (snapshot, stats, quarantine, skip record,
+   * a dead run's lock, residual verdicts) of collections that have nothing left
+   * in Qdrant — one logical half of the saga per name, with Qdrant read ONCE for
+   * the whole batch. `purge` would list collections and aliases per name, which
+   * on a store polluted with ~130k leftovers is minutes of round-trips.
+   *
+   * A name that still has an alias or a `^<name>(_v\d+)?$` collection is not a
+   * leftover and is refused, as is every name when Qdrant cannot be read.
+   */
+  async purgeStoreLeftovers(
+    logicalNames: readonly string[],
+    options: {
+      progressEvery?: number;
+      onProgress?: (done: number, total: number) => void;
+      /** Snapshot-dir entries per logical name, already listed by the caller (see `knownStoreEntries`). */
+      storeEntries?: ReadonlyMap<string, readonly string[]>;
+    } = {},
+  ): Promise<StoreLeftoverPurgeReport> {
+    const failures: CollectionPurgeFailure[] = [];
+    const purged: string[] = [];
+    let aliasNames: Set<string>;
+    const generationByBase = new Map<string, string>();
+    try {
+      const [collections, aliases] = await Promise.all([
+        this.deps.qdrant.listCollections(),
+        this.deps.qdrant.aliases.listAliases(),
+      ]);
+      aliasNames = new Set(aliases.map((a) => a.aliasName));
+      for (const name of collections) generationByBase.set(name.replace(GENERATION_SUFFIX, ""), name);
+    } catch (err) {
+      const reason = `cannot read Qdrant (${describe(err)}) — refusing`;
+      return { purged, failures: logicalNames.map((target) => ({ artifact: "snapshot", target, reason })) };
+    }
+
+    const total = logicalNames.length;
+    const every = options.progressEvery ?? 1000;
+    // Per-name outcomes land in input order whatever order the pool finishes in.
+    const outcomes = new Array<{ purged: boolean; failures: CollectionPurgeFailure[] }>(total);
+    let done = 0;
+    let next = 0;
+    const sweepOne = async (logical: string): Promise<{ purged: boolean; failures: CollectionPurgeFailure[] }> => {
+      const generation = generationByBase.get(logical);
+      if (aliasNames.has(logical)) {
+        const reason = `alias '${logical}' is live — not a store leftover`;
+        return { purged: false, failures: [{ artifact: "snapshot", target: logical, reason }] };
+      }
+      if (generation !== undefined) {
+        const reason = `Qdrant still holds ${generation} — not a store leftover`;
+        return { purged: false, failures: [{ artifact: "snapshot", target: logical, reason }] };
+      }
+      const own: CollectionPurgeFailure[] = [];
+      const { storeEntries } = options;
+      const context = {
+        ...this.contextFor(logical, resolvePhysicalCollection(logical, [])),
+        ...(storeEntries ? { knownStoreEntries: storeEntries.get(logical) ?? [] } : {}),
+      };
+      await this.removeArtifacts("logical", context, logical, own);
+      return { purged: own.length === 0, failures: own };
+    };
+    const worker = async (): Promise<void> => {
+      while (next < total) {
+        const index = next++;
+        outcomes[index] = await sweepOne(logicalNames[index] ?? "");
+        done += 1;
+        if (options.onProgress && (done % every === 0 || done === total)) options.onProgress(done, total);
+      }
+    };
+    // Every name is independent file I/O; a small pool overlaps the syscalls.
+    await Promise.all(Array.from({ length: Math.min(STORE_LEFTOVER_CONCURRENCY, total) }, worker));
+    outcomes.forEach((outcome, index) => {
+      if (outcome.purged) purged.push(logicalNames[index] ?? "");
+      failures.push(...outcome.failures);
+    });
+    return { purged, failures };
   }
 
   /**

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import { CodegraphDbFiles } from "../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
@@ -446,6 +447,146 @@ describe("CollectionFootprintPurger", () => {
       const report = await purger.purge({ logicalName: "code_a" });
 
       expect(report.kept.join("\n")).not.toMatch(/daemon/i);
+    });
+  });
+
+  describe("purgeGeneration", () => {
+    // An orphan generation of a LIVE project (`code_a_v1` while alias `code_a`
+    // points at `code_a_v2`) is addressed by its physical name alone. Routing it
+    // through the logical-name `purge` would take the live generation, the
+    // alias and every alias-keyed store with it.
+    function liveProject() {
+      const qdrant = fakeQdrant(["code_a_v1", "code_a_v2"], [{ aliasName: "code_a", collectionName: "code_a_v2" }]);
+      const codegraph = fakeCodegraphStore(["code_a_v1", "code_a_v2"]);
+      return { qdrant, codegraph, ...buildPurger({ qdrant, codegraph }) };
+    }
+
+    it("drops the orphan generation and leaves the live generation, the alias and the stores", async () => {
+      const { purger, qdrant, codegraph, stores } = liveProject();
+
+      const report = await purger.purgeGeneration({
+        logicalName: "code_a",
+        physicalName: fixturePhysicalCollectionName("code_a_v1"),
+      });
+
+      expect([...qdrant.live]).toEqual(["code_a_v2"]);
+      expect(await qdrant.aliases.listAliases()).toEqual([{ aliasName: "code_a", collectionName: "code_a_v2" }]);
+      expect([...codegraph.files]).toEqual(["code_a_v2"]);
+      expect(stores.snapshotDeleted).toEqual([]);
+      expect(stores.statsInvalidated).toEqual([]);
+      expect(stores.lockTornDown).toEqual([]);
+      expect(report.qdrantCollections).toEqual(["code_a_v1"]);
+      expect(report.codegraphDatabases).toEqual(["code_a_v1"]);
+      expect(report.qdrantAlias).toBe("code_a_v2");
+      expect(report.failures).toEqual([]);
+    });
+
+    it("refuses the generation the alias points at and removes nothing", async () => {
+      const { purger, qdrant, codegraph } = liveProject();
+
+      const report = await purger.purgeGeneration({
+        logicalName: "code_a",
+        physicalName: fixturePhysicalCollectionName("code_a_v2"),
+      });
+
+      expect([...qdrant.live].sort()).toEqual(["code_a_v1", "code_a_v2"]);
+      expect([...codegraph.files].sort()).toEqual(["code_a_v1", "code_a_v2"]);
+      expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+      expect(report.failures).toEqual([
+        { artifact: "qdrant", target: "code_a_v2", reason: "live generation of 'code_a' — refusing to purge it" },
+      ]);
+    });
+
+    it("refuses a name that is not a generation of the logical collection", async () => {
+      const { purger, qdrant } = liveProject();
+
+      const report = await purger.purgeGeneration({
+        logicalName: "code_a",
+        physicalName: fixturePhysicalCollectionName("code_a"),
+      });
+
+      expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+      expect(report.failures.map((f) => f.reason)).toEqual(["'code_a' is not a versioned generation of 'code_a'"]);
+    });
+
+    it("refuses when the alias cannot be read, since the generation cannot be proven dead", async () => {
+      const { purger, qdrant } = liveProject();
+      qdrant.aliases.listAliases.mockRejectedValueOnce(new Error("connection refused"));
+
+      const report = await purger.purgeGeneration({
+        logicalName: "code_a",
+        physicalName: fixturePhysicalCollectionName("code_a_v1"),
+      });
+
+      expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+      expect(report.failures).toEqual([
+        { artifact: "qdrant", target: "code_a_v1", reason: "cannot read aliases (connection refused) — refusing" },
+      ]);
+    });
+  });
+
+  describe("purgeStoreLeftovers", () => {
+    // Store-only leftovers are swept in one pass: Qdrant is read once for the
+    // whole batch, not once per logical name as `purge` would.
+    it("clears the alias-keyed stores of every leftover with one Qdrant read for the batch", async () => {
+      const qdrant = fakeQdrant([]);
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_x", "code_y"]);
+
+      expect(result.purged).toEqual(["code_x", "code_y"]);
+      expect(result.failures).toEqual([]);
+      expect(stores.snapshotDeleted).toEqual(["code_x", "code_y"]);
+      expect(stores.statsInvalidated).toEqual(["code_x", "code_y"]);
+      expect(stores.quarantineCleared).toEqual(["code_x", "code_y"]);
+      expect(stores.skippedCleared).toEqual(["code_x", "code_y"]);
+      expect(stores.lockTornDown).toEqual(["code_x", "code_y"]);
+      expect(qdrant.listCollections).toHaveBeenCalledTimes(1);
+      expect(qdrant.aliases.listAliases).toHaveBeenCalledTimes(1);
+      expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+    });
+
+    it("refuses a logical name that still has an alias or a Qdrant generation", async () => {
+      const qdrant = fakeQdrant(["code_g_v3"], [{ aliasName: "code_a", collectionName: "code_b_v1" }]);
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_a", "code_g", "code_x"]);
+
+      expect(result.purged).toEqual(["code_x"]);
+      expect(stores.snapshotDeleted).toEqual(["code_x"]);
+      expect(result.failures).toEqual([
+        { artifact: "snapshot", target: "code_a", reason: "alias 'code_a' is live — not a store leftover" },
+        { artifact: "snapshot", target: "code_g", reason: "Qdrant still holds code_g_v3 — not a store leftover" },
+      ]);
+    });
+
+    it("refuses the whole batch when Qdrant cannot be read", async () => {
+      const qdrant = fakeQdrant([]);
+      qdrant.listCollections.mockRejectedValueOnce(new Error("connection refused"));
+      const { purger, stores } = buildPurger({ qdrant });
+
+      const result = await purger.purgeStoreLeftovers(["code_x"]);
+
+      expect(result.purged).toEqual([]);
+      expect(stores.snapshotDeleted).toEqual([]);
+      expect(result.failures).toEqual([
+        { artifact: "snapshot", target: "code_x", reason: "cannot read Qdrant (connection refused) — refusing" },
+      ]);
+    });
+
+    it("reports progress as a running count", async () => {
+      const { purger } = buildPurger();
+      const progress: [number, number][] = [];
+
+      await purger.purgeStoreLeftovers(["a", "b", "c"], {
+        progressEvery: 2,
+        onProgress: (d, t) => progress.push([d, t]),
+      });
+
+      expect(progress).toEqual([
+        [2, 3],
+        [3, 3],
+      ]);
     });
   });
 });
