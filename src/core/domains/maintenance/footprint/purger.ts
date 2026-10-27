@@ -240,7 +240,12 @@ export class CollectionFootprintPurger {
    */
   async purgeStoreLeftovers(
     logicalNames: readonly string[],
-    options: { progressEvery?: number; onProgress?: (done: number, total: number) => void } = {},
+    options: {
+      progressEvery?: number;
+      onProgress?: (done: number, total: number) => void;
+      /** Snapshot-dir entries per logical name, already listed by the caller (see `knownStoreEntries`). */
+      storeEntries?: ReadonlyMap<string, readonly string[]>;
+    } = {},
   ): Promise<StoreLeftoverPurgeReport> {
     const failures: CollectionPurgeFailure[] = [];
     const purged: string[] = [];
@@ -275,7 +280,11 @@ export class CollectionFootprintPurger {
         return { purged: false, failures: [{ artifact: "snapshot", target: logical, reason }] };
       }
       const own: CollectionPurgeFailure[] = [];
-      const context = this.contextFor(logical, resolvePhysicalCollection(logical, []));
+      const { storeEntries } = options;
+      const context = {
+        ...this.contextFor(logical, resolvePhysicalCollection(logical, [])),
+        ...(storeEntries ? { knownStoreEntries: storeEntries.get(logical) ?? [] } : {}),
+      };
       await this.removeArtifacts("logical", context, logical, own);
       return { purged: own.length === 0, failures: own };
     };

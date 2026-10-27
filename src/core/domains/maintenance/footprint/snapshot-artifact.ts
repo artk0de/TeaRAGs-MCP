@@ -1,11 +1,28 @@
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { SnapshotArtifactStoreFactory } from "../../../contracts/index.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
-/** Pre-sharded snapshot files beside the sharded directory: legacy v1/v2 snapshot, its migration backup, checkpoints. */
-const LEGACY_SNAPSHOT_SUFFIXES = [".json", ".json.backup", ".checkpoint.json", ".checkpoint.json.tmp"] as const;
+/**
+ * Files beside the sharded directory: the legacy v1/v2 snapshot, its migration
+ * backup, checkpoints, and the recovery marker older builds wrote.
+ */
+const LEGACY_SNAPSHOT_SUFFIXES = [
+  ".json",
+  ".json.backup",
+  ".checkpoint.json",
+  ".checkpoint.json.tmp",
+  ".recovery-complete",
+] as const;
+
+/**
+ * Temp entries an interrupted write leaves: the sharded swap dir
+ * `<logical>.tmp.<ts>` and the legacy snapshot's `<logical>.json.tmp.<ts>.<rand>`.
+ */
+function isInterruptedWrite(entry: string, logicalName: string): boolean {
+  return entry.startsWith(`${logicalName}.tmp.`) || entry.startsWith(`${logicalName}.json.tmp.`);
+}
 
 export class SnapshotArtifact implements CollectionArtifact {
   readonly id = "snapshot" as const;
@@ -22,10 +39,11 @@ export class SnapshotArtifact implements CollectionArtifact {
   async remove(ctx: FootprintContext): Promise<void> {
     const { logicalName } = ctx.target;
     await this.makeStore(this.baseDir, logicalName).delete();
-    await Promise.all(
-      LEGACY_SNAPSHOT_SUFFIXES.map(async (suffix) =>
-        rm(join(this.baseDir, `${logicalName}${suffix}`), { force: true }),
-      ),
-    );
+    const entries = ctx.knownStoreEntries ?? (await readdir(this.baseDir).catch(() => []));
+    const doomed = [
+      ...LEGACY_SNAPSHOT_SUFFIXES.map((suffix) => `${logicalName}${suffix}`),
+      ...entries.filter((entry) => isInterruptedWrite(entry, logicalName)),
+    ];
+    await Promise.all(doomed.map(async (entry) => rm(join(this.baseDir, entry), { recursive: true, force: true })));
   }
 }

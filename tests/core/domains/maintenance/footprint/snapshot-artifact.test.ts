@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,5 +46,32 @@ describe("SnapshotArtifact", () => {
 
     expect(store.delete).toHaveBeenCalledOnce();
     expect(files.filter((name) => existsSync(join(root, name)))).toEqual(["code_b.json"]);
+  });
+
+  it("removes interrupted-write temp entries and the retired recovery marker", async () => {
+    mkdirSync(join(root, "code_a.tmp.1772810315425"));
+    writeFileSync(join(root, "code_a.tmp.1772810315425", "shard-0.json"), "{}");
+    writeFileSync(join(root, "code_a.json.tmp.1772810315425.k3j2h1x"), "{}");
+    writeFileSync(join(root, "code_a.recovery-complete"), "");
+    writeFileSync(join(root, "code_ab.tmp.1"), "{}");
+    const store = { cloneTo: vi.fn(), delete: vi.fn(async () => undefined) };
+
+    await new SnapshotArtifact(root, () => store).remove({ source: resolved("code_a"), target: resolved("code_a") });
+
+    expect(readdirSync(root)).toEqual(["code_ab.tmp.1"]);
+  });
+
+  it("removes from the entries the caller already listed instead of scanning the directory", async () => {
+    writeFileSync(join(root, "code_a.tmp.1"), "{}");
+    writeFileSync(join(root, "code_a.tmp.2"), "{}");
+    const store = { cloneTo: vi.fn(), delete: vi.fn(async () => undefined) };
+
+    await new SnapshotArtifact(root, () => store).remove({
+      source: resolved("code_a"),
+      target: resolved("code_a"),
+      knownStoreEntries: ["code_a.tmp.1"],
+    });
+
+    expect(readdirSync(root)).toEqual(["code_a.tmp.2"]);
   });
 });

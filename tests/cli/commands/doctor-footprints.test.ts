@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -164,6 +164,40 @@ describe("doctor --footprints", () => {
       .map((f: { logicalName: string }) => f.logicalName)
       .sort();
     expect(leftovers).toEqual(["code.dir", "code.old", "code_old"]);
+  });
+
+  it("groups temp entries and the recovery marker under their collection", async () => {
+    mkdirSync(join(dir, "snapshots", "code_old.tmp.1772810315425"));
+    file("snapshots", "code_old.json.tmp.1772810315425.k3j2h1x");
+    file("snapshots", "code_old.recovery-complete");
+
+    const parsed = JSON.parse(await run({ json: true }, fakeQdrant()));
+
+    const leftovers = parsed.findings
+      .filter((f: { findingClass: string }) => f.findingClass === "store-leftover")
+      .map((f: { logicalName: string }) => f.logicalName);
+    expect(leftovers).toEqual(["code_old"]);
+  });
+
+  it("--fix clears every store file of a leftover, temp entries and recovery marker included", async () => {
+    mkdirSync(join(dir, "snapshots", "code_old.tmp.1772810315425"));
+    file("snapshots", "code_old.json.tmp.1772810315425.k3j2h1x");
+    file("snapshots", "code_old.recovery-complete");
+
+    const out = await run({ fix: true }, fakeQdrant());
+
+    expect(readdirSync(join(dir, "snapshots")).filter((n) => n.startsWith("code_old"))).toEqual([]);
+    expect(out).toMatch(/store-leftover\s+-\s+code_old\s.*purged/);
+  });
+
+  it("--fix does not call a row purged while a file of its collection remains", async () => {
+    file("snapshots", "code_old.unknown-store");
+
+    const out = await run({ fix: true }, fakeQdrant());
+
+    expect(existsSync(join(dir, "snapshots", "code_old.unknown-store"))).toBe(true);
+    expect(out).toMatch(/store-leftover\s+-\s+code_old\s.*failed — left 1 file\(s\): code_old\.unknown-store/);
+    expect(out).toContain("Purged 4 · kept 0 · failed 1");
   });
 
   it("--fix clears store leftovers in one batch with a running count, not a Qdrant round-trip each", async () => {

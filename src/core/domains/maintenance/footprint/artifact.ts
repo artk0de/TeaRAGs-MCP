@@ -45,6 +45,12 @@ export interface FootprintContext {
    * clone carries the source's marker unchanged (`WorktreeProvisioner#create`).
    */
   targetIndexingMarkerPatch?: Readonly<Record<string, unknown>>;
+  /**
+   * Snapshot-dir entry names the caller already listed for the TARGET's logical
+   * name. A batch sweep passes them so a file-pattern teardown does not rescan a
+   * directory of ~10^5 entries once per collection; omitted → the artifact lists.
+   */
+  knownStoreEntries?: readonly string[];
 }
 
 export interface CollectionArtifact {

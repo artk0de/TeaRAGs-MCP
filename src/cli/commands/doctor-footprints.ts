@@ -160,6 +160,7 @@ async function purgeFootprints(
   appDataDir: string,
 ): Promise<FootprintVerdictRow[]> {
   const { createCollectionFootprintPurger } = await import("../../bootstrap/footprint-purge.js");
+  const { readStoreEntries } = await import("../../bootstrap/footprint-census.js");
   const purger = createCollectionFootprintPurger({ qdrant, registry, appDataDir });
   const verdictOf = new Map<FootprintCensusRow, FootprintVerdict>();
   const leftovers: FootprintCensusRow[] = [];
@@ -193,6 +194,7 @@ async function purgeFootprints(
       {
         progressEvery: STORE_LEFTOVER_PROGRESS_EVERY,
         onProgress: (done, total) => process.stderr.write(`store leftovers: ${done}/${total}\n`),
+        storeEntries: readStoreEntries(appDataDir),
       },
     );
     const failureOf = new Map(report.failures.map((f) => [f.target, f]));
@@ -201,5 +203,14 @@ async function purgeFootprints(
       verdictOf.set(row, failure ? `failed — ${failure.artifact} ${failure.target}: ${failure.reason}` : "purged");
     }
   }
-  return rows.map((row) => ({ row, verdict: verdictOf.get(row) ?? "purged" }));
+  // A row is purged only when no store file of its collection is left — read
+  // back once, not trusted from the artifacts that reported success.
+  const remaining = readStoreEntries(appDataDir);
+  return rows.map((row) => {
+    const verdict = verdictOf.get(row) ?? "purged";
+    const left = row.action.kind === "collection" ? remaining.get(row.action.logicalName) : undefined;
+    if (verdict !== "purged" || !left || left.length === 0) return { row, verdict };
+    const sample = [...left].sort().slice(0, 3).join(", ");
+    return { row, verdict: `failed — left ${left.length} file(s): ${sample}${left.length > 3 ? ", …" : ""}` };
+  });
 }

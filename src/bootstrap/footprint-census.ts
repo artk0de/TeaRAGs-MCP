@@ -75,13 +75,22 @@ const STORE_FILE = new RegExp(
     "\\.skipped\\.json|\\.indexing\\.lock|\\.recovery-complete|\\.json)(?:\\.tmp\\.\\d+)?$",
 );
 
+/** An interrupted write: the sharded swap dir `<logical>.tmp.<ts>` or the legacy `<logical>.json.tmp.<ts>.<rand>`. */
+const INTERRUPTED_WRITE = /^(.+?)(?:\.json)?\.tmp\.\d+(?:\.[a-z0-9]+)?$/;
+
 /** Logical name a snapshot-dir entry belongs to: a directory is the sharded snapshot itself. */
 export function logicalNameOfStoreEntry(entry: string, isDirectory: boolean): string {
+  const interrupted = INTERRUPTED_WRITE.exec(entry);
+  if (interrupted?.[1]) return interrupted[1];
   if (isDirectory) return entry;
   return STORE_FILE.exec(entry)?.[1] ?? entry.split(".")[0] ?? entry;
 }
 
 /** Store entries in the snapshot dir grouped by the logical name they belong to. */
+export function readStoreEntries(appDataDir: string): Map<string, string[]> {
+  return groupStoreEntries(join(appDataDir, "snapshots"));
+}
+
 function groupStoreEntries(snapshotDir: string): Map<string, string[]> {
   const byLogical = new Map<string, string[]>();
   let dirents;

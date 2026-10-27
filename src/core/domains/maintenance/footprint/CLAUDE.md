@@ -93,8 +93,13 @@
   small worker pool. Going through `purge` per name would list Qdrant per name,
   which is minutes on a store holding ~130k leftovers. `SnapshotArtifact#remove`
   also unlinks the pre-sharded `<logical>.json`, `.json.backup`,
-  `.checkpoint.json` and `.checkpoint.json.tmp`. Why: without them the purge
-  "cleared" a collection whose legacy snapshot and checkpoint files stayed.
+  `.checkpoint.json`, `.checkpoint.json.tmp`, the retired `.recovery-complete`
+  marker and interrupted-write temp entries (`<logical>.tmp.<ts>`,
+  `<logical>.json.tmp.<ts>.<rand>`). The temp entries need a directory listing;
+  a batch passes `FootprintContext.knownStoreEntries` so it is read once, not per
+  name. `doctor --footprints --fix` re-reads the snapshot dir afterwards and
+  reports a row `purged` only when no file of that collection is left. Why:
+  without both, the purge "cleared" collections whose files stayed.
 - **A codegraph generation is more than its `.duckdb`.** The cross-pass input
   spill (`CodegraphDbFiles#inputSpillPathFor`, under `.xpass`) is keyed by the
   same physical name, so `CodegraphDbFiles#removeFiles` unlinks it with the
