@@ -11,6 +11,7 @@ import {
   resolveDomainEnvCodeDefaults,
   type CollectionEntry,
 } from "../../core/api/index.js";
+import { runProjectIndexed, type ProjectIndexedArgs } from "./project-indexed.js";
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -114,9 +115,44 @@ const existCommand: CommandModule<object, ProjectExistArgs> = {
   },
 };
 
+/**
+ * Registered for help and completion only: `src/cli/index.ts` dispatches
+ * `project indexed` to `runProjectIndexedArgv` before yargs loads.
+ */
+const indexedCommand: CommandModule<object, Omit<ProjectIndexedArgs, "paths"> & { path?: string[] }> = {
+  command: "indexed",
+  describe:
+    "Check whether a file is in the index snapshot serving its working tree (exit 0 = indexed, 1 = not, 2 = usage)",
+  builder: (y) =>
+    y
+      .option("path", { type: "string", array: true, describe: "File to check (repeatable)" })
+      .option("command", {
+        type: "string",
+        describe: "Shell command whose cat/sed/head/tail/less/more operands to check",
+      })
+      .option("cwd", { type: "string", describe: "Directory --command's relative operands resolve against" })
+      .option("json", {
+        type: "boolean",
+        default: false,
+        describe: "Emit {indexed,project,collectionName,relativePath} as JSON",
+      })
+      .check((a) => {
+        if (!a.path?.length && a.command === undefined) throw new Error("Provide --path or --command");
+        return true;
+      }),
+  handler: async (argv) => {
+    process.exitCode = await runProjectIndexed({
+      paths: argv.path ?? [],
+      command: argv.command,
+      cwd: argv.cwd,
+      json: argv.json,
+    });
+  },
+};
+
 export const projectCommand: CommandModule = {
   command: "project",
-  describe: "Query a single registered project (exist)",
-  builder: (y) => y.command(existCommand).demandCommand(1),
+  describe: "Query a single registered project (exist, indexed)",
+  builder: (y) => y.command(existCommand).command(indexedCommand).demandCommand(1),
   handler: () => {},
 };

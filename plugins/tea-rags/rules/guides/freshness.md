@@ -156,6 +156,15 @@ and tree, never "index unusable". Thousands of changed files included.
 - Bash `cat` / `sed -n` / `head` / `grep` / `rg` / `git show` over code = same
   downgrade as `Read` / Grep — harness "use Bash" note does not override.
   Exception: user explicitly asks for manual read.
+- Claude Code: PreToolUse hook `deny-indexed-read.sh` denies `Read`, and Bash
+  `cat`/`sed`/`head`/`tail`/`less`/`more` (compounds too), of a file the index
+  snapshot lists (`tea-rags project indexed --path <file>` /
+  `--command <cmd> --cwd <dir>`, exit 0) → `find_symbol(relativePath:)`.
+  Unindexed / unregistered / pipe over command output / unparsable command / any
+  error → allowed. File created after last index run = not indexed → allowed.
+  Hook sees the call, not the chat: user's manual-read order ("with Read",
+  "руками") still denied — say so, quote the deny, ask user to read it or
+  disable the hook; never route around via another reader.
 
 ## Worktree clone — teardown only
 
