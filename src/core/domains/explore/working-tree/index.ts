@@ -42,11 +42,13 @@ export {
   type WorkingTreeDenseVectorSourceDeps,
   type WorkingTreeRecommendStrategy,
 } from "./dense-floor.js";
+export { WorkingTreeChangeClock, type WorkingTreeChangeClockDeps } from "./change-clock.js";
 export {
   createWorkingTreeDeltaReader,
   type WorkingTreeDelta,
   type WorkingTreeDeltaRead,
   type WorkingTreeDeltaReader,
+  type WorkingTreeDeltaReaderDeps,
 } from "./delta.js";
 export {
   createWorkingTreeFileWriter,

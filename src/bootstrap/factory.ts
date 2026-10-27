@@ -104,6 +104,7 @@ import {
   TrajectoryVersionDriftMonitor,
   WorkerPoolEnrichmentExecutor,
   WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS,
+  WorkingTreeChangeClock,
   WorkingTreeContentHashes,
   WorkingTreeDeltaWarmer,
   WorkingTreeDenseVectorSource,
@@ -1469,6 +1470,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeChunkLayer,
     workingTreeDeltaWarmer,
     workingTreeWatcher,
+    workingTreeChangeClock,
     workingTreeGraphCache,
     workingTreeOverlay,
     readWorkingTreeFileChunks,
@@ -1623,6 +1625,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeChunkLayer,
     workingTreeDeltaWarmer,
     workingTreeWatcher,
+    workingTreeChangeClock,
     workingTreeGraphCache,
     stopWorkingTreeChunkSweep,
     stopWorkingTreeGitSignalSweep,
@@ -1671,6 +1674,7 @@ interface WorkingTreeSection {
   workingTreeChunkLayer: ReturnType<typeof createWorkingTreeChunkLayer>;
   workingTreeDeltaWarmer: WorkingTreeDeltaWarmer;
   workingTreeWatcher: WorkingTreeWatcher | undefined;
+  workingTreeChangeClock: WorkingTreeChangeClock | undefined;
   workingTreeGraphCache: WorkingTreeGraphCache;
   workingTreeOverlay: WorkingTreeOverlay;
   /**
@@ -1770,6 +1774,16 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
         },
       })
     : undefined;
+  // Likewise only the long-lived server keeps a change clock (bd
+  // tea-rags-mcp-4qdj0): a tree it vouches for as unchanged is answered without
+  // a `git status`. A one-shot CLI call measures, as before.
+  const workingTreeChangeClock: WorkingTreeChangeClock | undefined = options?.watchWorkingTrees
+    ? new WorkingTreeChangeClock({
+        log: (message) => {
+          pipelineLog.step({ component: "WorkingTreeChangeClock" }, message);
+        },
+      })
+    : undefined;
   // The working tree's codegraph (bd tea-rags-mcp-xi2r9, WTO-7): built per
   // delta in a child process over a snapshot of the base graph, published
   // under `<appData>/working-tree/<collection>/graph/`. Constructed before the
@@ -1815,7 +1829,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
     registry: collectionRegistry,
-    deltaReader: createWorkingTreeDeltaReader(),
+    deltaReader: createWorkingTreeDeltaReader(workingTreeChangeClock ? { changeClock: workingTreeChangeClock } : {}),
     createFileFilter: workingTreeFileFilter,
     // Only AST-chunked changed files are re-read; the rest answer from the index.
     admitsToDelta: createWorkingTreeDeltaAdmission(),
@@ -1879,6 +1893,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     workingTreeChunkLayer,
     workingTreeDeltaWarmer,
     workingTreeWatcher,
+    workingTreeChangeClock,
     workingTreeGraphCache,
     workingTreeOverlay,
     readWorkingTreeFileChunks: async (tree, relPaths) => {
@@ -2380,6 +2395,7 @@ function createAppContextCleanup(deps: {
   workingTreeChunkLayer: ReturnType<typeof createWorkingTreeChunkLayer>;
   workingTreeDeltaWarmer: WorkingTreeDeltaWarmer;
   workingTreeWatcher: WorkingTreeWatcher | undefined;
+  workingTreeChangeClock: WorkingTreeChangeClock | undefined;
   workingTreeGraphCache: WorkingTreeGraphCache;
   stopWorkingTreeChunkSweep: ReturnType<typeof scheduleWorkingTreeChunkSweep>;
   stopWorkingTreeGitSignalSweep: ReturnType<typeof scheduleWorkingTreeGitSignalSweep>;
@@ -2394,6 +2410,7 @@ function createAppContextCleanup(deps: {
     workingTreeChunkLayer,
     workingTreeDeltaWarmer,
     workingTreeWatcher,
+    workingTreeChangeClock,
     workingTreeGraphCache,
     stopWorkingTreeChunkSweep,
     stopWorkingTreeGitSignalSweep,
@@ -2433,6 +2450,7 @@ function createAppContextCleanup(deps: {
     workingTreeGraphCache.abandonInFlightBuilds();
     // Watcher first (no more prewarms), then the queue (no more batches), then the layer under it.
     workingTreeWatcher?.close();
+    workingTreeChangeClock?.close();
     workingTreeDeltaWarmer.dispose();
     void workingTreeChunkLayer.dispose().catch(() => undefined);
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns

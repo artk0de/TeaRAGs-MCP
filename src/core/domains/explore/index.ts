@@ -68,6 +68,7 @@ export {
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
   WorkingTreeWatcher,
+  WorkingTreeChangeClock,
 } from "./working-tree/index.js";
 export type {
   WorkingTreeChunkerPool,

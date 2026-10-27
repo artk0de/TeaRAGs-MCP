@@ -196,6 +196,7 @@ export {
   WorkingTreeOverlay,
   WorkingTreeTouchedBasePoints,
   WorkingTreeWatcher,
+  WorkingTreeChangeClock,
 } from "../domains/explore/index.js";
 
 // trajectory — codegraph worker wiring, temporal commit buffer, static payload
