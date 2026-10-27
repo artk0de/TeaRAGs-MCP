@@ -7,16 +7,15 @@ description: >-
   debugging; a user asking for test patterns / conventions wants the dinopowers
   TDD wrapper, not this recipe. NOT user-invocable: user names this skill or
   asks which tests cover X → say agent-only, run explore's ONE
-  hybrid_search(testFile:"only", query=<module/symbol names>).
-  Five recipes: tests-at-risk (scenarios under threat for edited source),
-  fixture-lookup (reuse existing setup before drafting new),
-  regression-archaeology (when was the test for X added), test-flakiness
-  (unstable test zones and infra), spec-extraction (living docs from test
-  TOC). Cross-language safe — recipes emit runner-agnostic output. Skipped
-  automatically when DSL test chunks absent from index. Invoked from
-  dinopowers wrappers (test-driven-development, requesting-code-review,
-  verification-before-completion, receiving-code-review) and direct
-  use-cases.md callouts; never in the slash command list.
+  hybrid_search(testFile:"only", query=<module/symbol names>). Five recipes:
+  tests-at-risk (scenarios under threat for edited source), fixture-lookup
+  (reuse existing setup before drafting new), regression-archaeology (when was
+  the test for X added), test-flakiness (unstable test zones and infra),
+  spec-extraction (living docs from test TOC). Cross-language safe — recipes
+  emit runner-agnostic output. Skipped automatically when DSL test chunks absent
+  from index. Invoked from dinopowers wrappers (test-driven-development,
+  requesting-code-review, verification-before-completion, receiving-code-review)
+  and direct use-cases.md callouts; never in the slash command list.
 ---
 
 # tests-as-context
@@ -64,8 +63,8 @@ digest) → FIRST call = read
 `list_projects` before it). Resource unreadable → ONE probe instead:
 `semantic_search(chunkType: "test", language: <lang>, limit: 1, metaOnly: true)`
 — ≥1 row = present → recipe; 0 rows = absent → the SKIP block below. Both carry
-`project` + `path`. Test corpus **present** if ≥1 `git.chunk.*` row
-has numbers (or `=src`) in `test ≥`, e.g.
+`project` + `path`. Test corpus **present** if ≥1 `git.chunk.*` row has numbers
+(or `=src`) in `test ≥`, e.g.
 
 ```
 | signal | bands | source ≥ | test ≥ |

@@ -269,6 +269,13 @@ Hook headers (`<lang>/test-scope-chunker.ts`, `<lang>/rspec-scope-chunker.ts`)
 also carry same pointer block in JSDoc — keep aligned. 3-skill update = part of
 language-add work, not follow-up: language not "supported" until consumers know.
 
+## Non-test DSLs
+
+Rake (`.rake`) reuses the kernel scope machinery through `ScopeChunkVocabulary`
+and the Ruby reader through `RubyDslScopeVocabulary`, but emits `function` /
+`block` chunks, never `test` / `test_setup`, and `.rake` is not a test file. The
+three-skills checklist above does not apply to a non-test DSL.
+
 ## Known limitations (do NOT work around silently)
 
 - **Dynamic-describe in loops** (`for (...) describe(name, ...)` /

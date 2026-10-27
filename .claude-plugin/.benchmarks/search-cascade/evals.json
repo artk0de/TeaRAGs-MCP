@@ -402,6 +402,32 @@
         "the client's standard code search tool / shell grep",
         "hybrid_search"
       ]
+    },
+    {
+      "id": "R-rake-1",
+      "audit_finding": "k0602: a Rake task is addressed by its Rake name, no Rake-specific guidance",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. The repo has Rake tasks under lib/tasks/.",
+      "prompt": "Show the rake task billing:sync.",
+      "expected": "find_symbol(symbol: 'billing:sync') as the first lookup — the task body",
+      "not": [
+        "hybrid_search first",
+        "the client's standard code search tool / shell grep",
+        "Read / cat of a lib/tasks file",
+        "find_symbol with a Ruby-style id (Billing#sync, Billing.sync, Billing::sync)"
+      ]
+    },
+    {
+      "id": "R-rake-2",
+      "audit_finding": "k0602: call edges of a Rake task by its Rake name",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. The repo has Rake tasks under lib/tasks/.",
+      "prompt": "What does the rake task billing:sync run?",
+      "expected": "get_callees(symbolId: 'billing:sync') — directly or after find_symbol(symbol: 'billing:sync') (body) — answering from its callees",
+      "not": [
+        "hybrid_search first",
+        "the client's standard code search tool / shell grep",
+        "Read / cat of a lib/tasks file",
+        "a symbolId other than 'billing:sync' for the task"
+      ]
     }
   ],
   "results": {

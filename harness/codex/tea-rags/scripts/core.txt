@@ -34,8 +34,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   three lines, never stop at the hit:
   `shell grep -rn "<phrase>" (literal)` →
   `find_symbol(relativePath: <hit file>)` outline →
-  `find_symbol(symbol: <enclosing symbolId>)` body. A code name, even called a
-  "pattern"/"glob" → the usages row below, never `rg --files`. Command output,
+  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
+  name, even a "pattern"/"glob" → usages row, not `rg --files`. Command output,
   failing tests, counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
 - every/all callers of X → `get_callers` AND shell grep -rn

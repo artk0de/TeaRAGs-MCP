@@ -916,3 +916,75 @@ merges every part — the epic's target.
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-10-27 — Rake task addressing without Rake guidance (k0602)
+
+- Question: do agents address a Rake task by its Rake name (`billing:sync`) with
+  no Rake-specific guidance — only the one language-neutral "DSL entry blocks"
+  line in the navigation guide's symbolId conventions?
+- Cases: R-rake-1, R-rake-2 (new), neighbours R6, R7, R9; all five in ONE
+  session per run, plan-only, hypothetical `shop` project, ×3 per client.
+- Codex: codex-cli 0.162.1, gpt-6-luna medium, scratch `CODEX_HOME`, tea-rags
+  0.47.26 from the branch's `harness/codex`, MCP = worktree build, `prime`
+  stubbed silent.
+- Claude: `claude -p` sonnet, `--setting-sources project` (no user plugins),
+  `--plugin-dir .claude-plugin/tea-rags`, `--strict-mcp-config` = worktree
+  build, `prime` stubbed silent.
+
+| Case     | Codex | Claude |
+| -------- | ----- | ------ |
+| R-rake-1 | 0/3   | 0/3    |
+| R-rake-2 | 0/3   | 0/3    |
+| R6       | 3/3   | 3/3    |
+| R7       | 3/3   | 3/3    |
+| R9       | 0/3   | 3/3    |
+
+- Failure mode, both clients, every run: `billing:sync` is read as DSL text, not
+  an identifier → literal grep for `billing:sync` / `task :sync` →
+  `find_symbol(relativePath:)` outline → body; R-rake-2 adds explore, never
+  `get_callees(symbolId: "billing:sync")` first.
+- No session opened `tea-rags://guide/navigation` before planning (Codex listed
+  it as a later step; Claude made no tool calls), so the guide line was never
+  seen — practice #33. Codex package context is byte-identical to the base
+  commit apart from the version (guides are served by MCP), so the Codex R9 0/3
+  (grep for `PaymentGateway` before `find_symbol`) is pre-existing, not caused
+  by this change.
+- Not repaired (parent decision: no further guidance without review).
+
+### Follow-up — DSL name in core's routing sentence (k0602, tea-rags 0.47.27)
+
+- Change: core's non-identifier-text row now says
+  ``DSL `ns:task` = symbol; code name, even a "pattern"/"glob" → usages row, not `rg --files`.``
+  The navigation guide's "DSL entry blocks" line is removed (one fact, one
+  place). core.md 8899/8900 chars; Codex `core.txt` 9482 bytes (hook budget
+  9650).
+- Slice: R-rake-1, R-rake-2, R6, R7, R9 plus the rows the edited sentence sits
+  in or points to (R1, R3, R4, case 8); all nine in ONE session per run, same
+  stand as above, ×3 per client.
+- Round 0
+  (``A code/DSL name (`ns:task`) = symbol; "pattern"/"glob" → usages row``):
+  R-rake-1/2 3/3 both; Codex R1 2/3 (one run planned `find_symbol` →
+  `get_callers` for a constant's usages) → reworded to keep code names on the
+  usages row explicitly.
+- Round 1 (shipped):
+
+| Case     | Codex | Claude |
+| -------- | ----- | ------ |
+| R-rake-1 | 3/3   | 3/3    |
+| R-rake-2 | 3/3   | 3/3    |
+| R6       | 3/3   | 3/3    |
+| R7       | 3/3   | 3/3    |
+| R9       | 1/3   | 3/3    |
+| R1       | 3/3   | 3/3    |
+| R3       | 3/3   | 3/3    |
+| R4       | 0/3   | 3/3    |
+| 8        | 3/3   | 3/3    |
+
+- Codex R9 is pre-existing (0/3 before this change): run 2 greps
+  `PaymentGateway` first, run 3 opens with `hybrid_search(metaOnly)`. Not
+  repaired here.
+- Codex R4 is pre-existing: every run plans
+  `grep -rn "Alpha::Beta|Gamma::Delta"` as ONE literal string ("treat `|` as a
+  character"), so the alternation never matches. Baseline check on the 0.47.26
+  package (R1/R3/R4/8 slice, ×3): same literal-pipe plan 3/3, R1/R3/8 3/3. Not
+  repaired here.
