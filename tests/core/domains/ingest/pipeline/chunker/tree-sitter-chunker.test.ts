@@ -3426,11 +3426,13 @@ class DataProcessor {
       expect(chunks[0].metadata.name).toBeUndefined();
     });
 
-    it("should return empty array for headingless markdown under 50 chars", async () => {
+    it("should keep headingless markdown under 50 chars as one documentation chunk", async () => {
       const code = "Short text.";
 
       const chunks = await chunker.chunk(code, "tiny.md", "markdown");
-      expect(chunks.length).toBe(0);
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].content).toBe("Short text.");
+      expect(chunks[0].metadata.isDocumentation).toBe(true);
     });
   });
 
