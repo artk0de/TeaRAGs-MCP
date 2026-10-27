@@ -40,13 +40,14 @@ carries both.
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.
 
 **Area context required:** files, pathPattern, per-symbol overlay labels in
-conversation. Labels from `find_symbol(rerank=<preset>, metaOnly=false)` on
-target symbols — explore PRE-GEN PG-2 (SIGNAL LOOKUP); no full risk-assessment
-scan. Hotfix (location + fix named) → exempt, no PRE-GEN, no STRATEGY: Step 0
-MODIFY, first line `HOTFIX → MODIFY: STRATEGY + blame STYLE skipped`. Otherwise
-missing → STOP, say "area context missing"; plan step 1, by name: invoke
-`/explore` (PRE-GEN) for target area, then resume — never own `semantic_search`
-instead; approved design ≠ area context. Explore output here → use it.
+conversation. Labels from ONE
+`find_symbol(symbols=[<target ids>], rerank=<preset>, metaOnly=false)` — explore
+PRE-GEN PG-2 (SIGNAL LOOKUP); no full risk-assessment scan. Hotfix (location +
+fix named) → exempt, no PRE-GEN, no STRATEGY: Step 0 MODIFY, first line
+`HOTFIX → MODIFY: STRATEGY + blame STYLE skipped`. Otherwise missing → STOP, say
+"area context missing"; plan step 1, by name: invoke `/explore` (PRE-GEN) for
+target area, then resume — never own `semantic_search` instead; approved design
+≠ area context. Explore output here → use it.
 
 **Session-context reuse:** outlines, bodies, search hits fetched here = source
 of truth for their file until it is edited. Before any search or `find_symbol`,
@@ -70,7 +71,8 @@ Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 ## Step 0: MODE
 
 Target's file outline / body already in the conversation and unedited since →
-that IS the probe, no call; print
+that IS the probe, no call; their labels = Step 1 signal, no label call either;
+print
 `REUSE <file> — unedited since fetch; in-context outline/body stand, no find_symbol`.
 Otherwise `find_symbol(metaOnly=true)` on named target, zero guessing:
 
@@ -220,7 +222,9 @@ edge) → Step 7 gate judges placement, no pre-write simulation.
 1. Enumerate general-purpose blocks in about-to-write code: retry, validation,
    caching, parsing, error wrapping, logging, serialization… ≤5 searches,
    `metaOnly: true`.
-2. Per block: `hybrid_search` / `find_symbol` for existing helper.
+2. Per block: `hybrid_search` / `find_symbol` for existing helper. Candidate
+   helpers named (hits, context) → bodies in ONE
+   `find_symbol(symbols=[<helper ids>])` (core Invariants), never one call each.
 3. **Gate — import helper IF** helper file in L1/L2 of target (locality per
    `extract-project-patterns`) **OR** its `fanIn` label `popular`/`hub`.
    **ELSE** follow its approach, do NOT import — no new cross-boundary coupling.
@@ -350,7 +354,7 @@ INTRODUCED <family> <edge|symbol> — repair: <concrete operation>      (per non
 FALSE-POSITIVE <family> <edge> — counter-evidence: <quoted hunk | find_symbol absence> — issue <id | [planned; not run] filing call>   (per accepted false positive, replaces its INTRODUCED line)
 REMEDY-APPLIED <family> <edge|symbol> — preExisting, server remedy applied: <remedy operation>   (per preExisting WITH remedy — never optional)
 REPORT-ONLY <family> <edge|symbol> — preExisting, left unchanged — bead: <suggested title naming the finding>   (per preExisting, no remedy)
-PARTNER <path> — edited in this diff: <contract it depends on> | not touched because <checkable reason citing a symbol>   (per incompleteChange / silentCoupling partner)
+PARTNER <path> — edited in this diff: <contract it depends on> | not touched because <checkable reason citing a symbol>   (per incompleteChange / silentCoupling partner, after find_symbol inspects it; several → ONE symbols=[…])
 PARTNER <manifest path> — version manifest: known noise per repair/silentCoupling.md (detector drops manifests; bump follows the versioning rule), no coupling edit   (per plugin.json / package.json / lockfile partner)
 GATE review_changes: introduced=<INTRODUCED lines>, partial=<true|false>
 RE-REVIEW same review_changes + targeted tests: target gone, no new finding
@@ -392,10 +396,11 @@ GATE review_changes: introduced=0, partial=false
 
 Checks:
 
-1. Symbol risks — `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`
-   on called / changed symbols, ≤ 5, most central first; read
-   `rankingOverlay.chunk.<field>.label`. Not `get_callers`, not existence sweep,
-   not `dangerous`.
+1. Symbol risks — ONE
+   `find_symbol(symbols: [<called / changed ids>], rerank: "criticalPath", metaOnly: true)`,
+   ≤ 5, most central first; read `rankingOverlay.chunk.<field>.label`. Ids
+   already labelled in context drop out of the list; the call still runs on the
+   rest. Not `get_callers`, not existence sweep, not `dangerous`.
 2. N-th-way `find_similar` (`positiveCode` = generated code) — every mode.
 3. MODIFY: `tests-at-risk` scenarios + 6a pins re-run green.
 4. **GATE `review_changes` before EVERY commit** — ONE call, ALL five sections

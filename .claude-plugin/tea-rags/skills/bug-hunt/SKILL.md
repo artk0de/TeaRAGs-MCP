@@ -28,7 +28,8 @@ argument-hint: [bug description or symptom]
   call preceded by its decision-tree line, printed in the answer (prose "I'll
   use X" ≠ the line):
   - `consulting decision tree → find_symbol because study known symbol` →
-    `find_symbol(path=<cwd>, symbol=<name>)` body
+    `find_symbol(path=<cwd>, symbol=<name>)` body; several named → ONE
+    `find_symbol(path=<cwd>, symbols=[<names>])`
   - `consulting decision tree → get_callers because callers of known symbol` →
     `get_callers(symbolId=<id from find_symbol>)`
   - codegraph off / callers missed →
@@ -141,16 +142,16 @@ A plan names these calls; "later" / "not in this run" never drops one.
    whole file" → Routing row 1, both lines. Row with `treeState` = index's
    PRE-EDIT copy (text + lines stale) — say so; it stays the **uncommitted
    suspect**, no symptom needed: `healthy` history never clears uncommitted
-   code. Next call = `find_symbol(path=<cwd>, symbol=<id>)` — never a re-run of
-   probes a/b/c.
+   code. Next call = `find_symbol(path=<cwd>, symbol=<id>)`; several suspects /
+   hits → ONE `find_symbol(path=<cwd>, symbols=[<ids>])` (core Invariants),
+   never one call each — never a re-run of probes a/b/c.
 7. **Call path** (codegraph on). Stack trace / symptom names an entry AND the
    failure site (outermost frame = from, failing frame = to) → this branch
-   first, never `get_callers`; the plan prints these four lines verbatim, frame
+   first, never `get_callers`; the plan prints these three lines verbatim, frame
    ids filled — the triage line is its own line, never folded into the call:
 
    ```
-   find_symbol(path=<cwd>, symbol=<entry frame>) → <entry id>
-   find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
+   find_symbol(path=<cwd>, symbols=[<entry frame>, <failure frame>]) → <entry id>, <failure id>
    trace_path(from=<entry id>, to=<failure id>, rerank="bugHunt")
    two-class triage of EVERY step's dangerOverlay: step ageDays recent = fresh suspect even at bugFixRate healthy and behind an old dangerRanking[0]
    ```
@@ -161,7 +162,7 @@ A plan names these calls; "later" / "not in this run" never drops one.
    ```
    find_symbol(path=<cwd>, symbol=<failure frame>) → <failure id>
    get_callers(symbolId=<failure id>)
-   find_symbol(path=<cwd>, symbol=<caller id>, rerank="bugHunt") — per caller: get_callers carries no git overlay
+   find_symbol(path=<cwd>, symbols=[<caller ids>], rerank="bugHunt") — ONE call for all callers: get_callers carries no git overlay
    ```
 
    Codegraph off + stack trace → probe b (fresh) gets
@@ -393,7 +394,8 @@ below; never read an absent tool as a fact.
   `semantic_search rerank="entryPoint" pathPattern=<scope>` surfaces flow
   entries (high fan-out / low fan-in drivers); pick one reaching the failure.
 - **failure site** = innermost in-project frame, or suspect from triage.
-- Resolve each to exact symbolId with `find_symbol` first (`Class#method` vs
+- Resolve both to exact symbolIds in ONE
+  `find_symbol(symbols: [<entry>, <failure site>])` first (`Class#method` vs
   `Class.method`); search chunk already carries `symbolId` + `relativePath`.
   Entry `find_symbol` cannot resolve (anonymous test block) → first named frame
   it calls.
@@ -407,8 +409,9 @@ precedence):
      up.
    - `get_callees symbolId=<entry or suspect>` — what it drives; where corrupted
      state propagates next, to pick the next checkpoint.
-   - Hops carry no git overlay → triage a hop with
-     `find_symbol(symbol: <id>, rerank: "bugHunt")` (attaches `rankingOverlay`).
+   - Hops carry no git overlay → triage the hops in ONE
+     `find_symbol(symbols: [<hop ids>], rerank: "bugHunt")` (attaches
+     `rankingOverlay`).
 2. **Both endpoints known + whole route matters → trace.**
 
    ```text

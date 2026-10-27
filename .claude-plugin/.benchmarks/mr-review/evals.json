@@ -63,6 +63,24 @@
         ]
       },
       "failureMode": "Agent reviews the local working tree instead of the MR's diff"
+    },
+    {
+      "id": "batch-map-and-blast",
+      "category": "phase2-map-d1-batch",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. Local review on branch feature/fleet-hold, base main. The diff touches two files: app/services/fleet/dispatcher.rb (changes Fleet::Dispatcher#assign and Fleet::Dispatcher#release) and app/services/fleet/route_planner.rb (changes Fleet::RoutePlanner#plan).",
+      "prompt": "Сделай ревью ветки feature/fleet-hold.",
+      "expected": {
+        "mustDo": [
+          "Phase 2 MAP as ONE find_symbol(symbols: ['app/services/fleet/dispatcher.rb', 'app/services/fleet/route_planner.rb'], rerank: 'hotspots') call (project + path) — outline per file",
+          "D1: get_callers per changed symbol, then ONE find_symbol(symbols: ['Fleet::Dispatcher#assign', 'Fleet::Dispatcher#release', 'Fleet::RoutePlanner#plan'], rerank: 'blastRadius', metaOnly: true) for all three"
+        ],
+        "mustNotDo": [
+          "One find_symbol(relativePath: ...) call per touched file",
+          "One find_symbol(symbol: ...) call per changed method",
+          "Read / cat of the touched files"
+        ]
+      },
+      "failureMode": "Agent maps the diff and reads the changed symbols one find_symbol call per file / per method instead of batched symbols[] calls"
     }
   ]
 }

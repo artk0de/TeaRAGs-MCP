@@ -531,3 +531,19 @@ boundary against regression rather than measuring a delta.
     leakingAbstraction.md/facade retarget and no introduced=1 -> 0 gate line
   - `prewrite-sim-move-files` — no get_architecture_report restructure
     move{files,toComponent} before moving (regression vs R3)
+
+## 2026-10-27 — 1k059 follow-up: batched Step 7 risk call (Codex + Claude)
+
+- Subject: tea-rags 0.47.29; Codex (scratch CODEX_HOME, prime silenced) and
+  Claude `-p --plugin-dir` (sonnet), plan-only; one session per suite per run,
+  ×3 each. Slice: `reuse-batch-candidates`, `verify-symbol-risk`,
+  `session-reuse-unedited`, `step7-fix-cochange-verdict`.
+- Fix 1 (Step 7 check 1, SKILL.md + `references/step-7-verify.md`): "Ids already
+  labelled in context drop out of the list; the call still runs on the rest." —
+  the failing run had dropped check 1 when Gateway#charge's label was in
+  context.
+- Fix 2 (Step 0 REUSE): "their labels = Step 1 signal, no label call either" —
+  wording round 1 left `session-reuse-unedited` Codex at 1/3 (a
+  `find_symbol(symbols: [Reranker])` / conditional label lookup for Step 1).
+- Final round: every case 3/3 on Codex and 3/3 on Claude. `verify-symbol-risk`
+  runs list only the unlabelled id (`Billing::Ledger#post`).

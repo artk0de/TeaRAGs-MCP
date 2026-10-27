@@ -14,10 +14,12 @@ No per-identifier existence sweep — specs and the type-checker catch a
 hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 1. **Symbol risks** — symbols the new code calls or changes, ≤ 5, most central
-   first: `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`. Its
-   chunk mask labels `codegraph.chunk.pageRank`, `codegraph.chunk.fanIn`,
-   `codegraph.chunk.fanOut`, `bugFixRate`, `commitCount` — read
-   `rankingOverlay.chunk.<field>.label`.
+   first, in ONE
+   `find_symbol(symbols: [<ids>], rerank: "criticalPath", metaOnly: true)`. Ids
+   already labelled in context drop out of the list; the call still runs on the
+   rest. Its chunk mask labels `codegraph.chunk.pageRank`,
+   `codegraph.chunk.fanIn`, `codegraph.chunk.fanOut`, `bugFixRate`,
+   `commitCount` — read `rankingOverlay.chunk.<field>.label`.
    - Callee `bugFixRate` critical → call it defensively (guard its inputs,
      handle its failure mode); confirm a test pins the scenario you rely on,
      else report it unpinned.
@@ -191,13 +193,14 @@ now. ONLY families that have a finding — never preload the directory.
 
 **Co-change partner verdict** (incompleteChange / `silentCoupling`): inspect
 each untouched partner (`find_symbol` outline/body — reuse it if already in
-context). Depends on the changed contract (test, doc, registry, mirror) → edit
-it in this diff. Else one line `not touched because <reason>` with a CHECKABLE
-reason citing the symbol: a named test that already pins the seam, or why the
-file cannot change with this edit. "Not needed" / "unrelated" without evidence =
-fail → edit it or ask. Partner is a version manifest
-(`.claude-plugin/**/plugin.json`, `package.json`, lockfile) → its manifest
-`PARTNER` line from the answer block, verbatim.
+context; several partners → ONE `find_symbol(symbols: [<partners>])`). Depends
+on the changed contract (test, doc, registry, mirror) → edit it in this diff.
+Else one line `not touched because <reason>` with a CHECKABLE reason citing the
+symbol: a named test that already pins the seam, or why the file cannot change
+with this edit. "Not needed" / "unrelated" without evidence = fail → edit it or
+ask. Partner is a version manifest (`.claude-plugin/**/plugin.json`,
+`package.json`, lockfile) → its manifest `PARTNER` line from the answer block,
+verbatim.
 
 **Report:** the answer block, then per class — fixed (remedy / procedure),
 accepted (evidence), false positive (counter-evidence + issue), report-only
