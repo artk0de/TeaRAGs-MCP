@@ -294,8 +294,9 @@
       "expected": {
         "mustCall": [
           "mcp__tea-rags__get_callers symbolId='ReportExporter#serialize' (one hop, cheap) before any trace_path",
-          "find_symbol(symbol: <caller id>, rerank: 'bugHunt') to read a caller's labels (get_callers carries no git overlay)"
+          "ONE find_symbol(symbols: [<caller ids>], rerank: 'bugHunt') to read the callers' labels (get_callers carries no git overlay) — a single symbol= call is fine only when get_callers returns one caller"
         ],
+        "expectation_change": "1k059: per-caller find_symbol(symbol:) became one batched find_symbol(symbols: [...]) — core Invariants read the ids an answer named in ONE call.",
         "mustNotCall": [
           "trace_path with a guessed entry point as the first graph call"
         ]
@@ -361,6 +362,22 @@
         ]
       },
       "failureMode": "Agent lets git status collapse the new untracked directory to one `dir/` entry, the uncommitted probe matches nothing, and the new module is judged clean"
+    },
+    {
+      "id": "eval-22",
+      "category": "batch-read-named-suspects",
+      "prompt": "Bug-hunt по 'ledger total drifts by one cent' уже показал suspects: Ledger::Posting#apply (prime), Ledger::Balance#recalc (fresh), Ledger::Journal#append (secondary), Ledger::Rounding.round_cents (uncommitted). Прочитай их код, чтобы проверить гипотезу.",
+      "expected": {
+        "mustCall": [
+          "ONE mcp__tea-rags__find_symbol(symbols: ['Ledger::Posting#apply', 'Ledger::Balance#recalc', 'Ledger::Journal#append', 'Ledger::Rounding.round_cents']) (project + path) — all four bodies in a single call"
+        ],
+        "mustNotCall": [
+          "Four separate find_symbol(symbol: ...) calls, one per suspect",
+          "Re-run of probes a/b/c, step 0, or any new semantic_search / hybrid_search",
+          "Read / cat of the suspects' files"
+        ]
+      },
+      "failureMode": "Agent reads already-named suspects one find_symbol call each instead of one batched symbols[] call"
     }
   ]
 }

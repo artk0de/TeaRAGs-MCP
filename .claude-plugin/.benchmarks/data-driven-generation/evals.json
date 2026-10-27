@@ -552,7 +552,7 @@
       "prompt": "Код сгенерирован, тесты зелёные. Финализируй.",
       "expected": {
         "mustDo": [
-          "find_symbol(symbol, rerank: criticalPath, metaOnly: true) on the called symbols, ≤ 5, most central first",
+          "ONE find_symbol(symbols: [<called ids>], rerank: criticalPath, metaOnly: true) over the called symbols, ≤ 5, most central first (expectation_change 1k059: was one find_symbol(symbol) per symbol)",
           "Read rankingOverlay.chunk.<field>.label",
           "Call Gateway#charge defensively and confirm a test pins the relied-on scenario (else report unpinned)",
           "N-th-way self-check (find_similar) still runs"
@@ -1239,6 +1239,24 @@
         ]
       },
       "failureMode": "Agent over-applies the simulation trigger and spends calls on an in-file change"
+    },
+    {
+      "id": "reuse-batch-candidates",
+      "category": "step4-reuse-batch-read",
+      "context": "Prime `## Enrichment` lists codegraph.symbols. TypeScript. EXTEND of Courier::Dispatch (src/courier/dispatch.ts); area context present, Steps 0–3 done. Step 4 REUSE hybrid_search(metaOnly: true) for a retry helper returned three rows, no bodies: Courier::Retry.withBackoff (src/courier/retry.ts), Courier::Backoff#nextDelay (src/courier/backoff.ts), Shared::Attempts.run (src/shared/attempts.ts).",
+      "prompt": "Какой из этих трёх хелперов переиспользовать для ретраев? Посмотри их код и реши.",
+      "expected": {
+        "mustDo": [
+          "Read the three candidate bodies in ONE find_symbol(symbols: ['Courier::Retry.withBackoff', 'Courier::Backoff#nextDelay', 'Shared::Attempts.run']) call (project + path)",
+          "Decide with the Step 4 gate: locality L1/L2 of src/courier/ OR fanIn label popular/hub → import; else follow its approach without importing"
+        ],
+        "mustNotDo": [
+          "Three separate find_symbol(symbol: ...) calls, one per candidate",
+          "Re-run hybrid_search / semantic_search for helpers already named",
+          "Read / cat of the helper files"
+        ]
+      },
+      "failureMode": "Agent reads already-named reuse candidates one find_symbol call each instead of one batched symbols[] call"
     }
   ]
 }

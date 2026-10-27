@@ -32,7 +32,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 1. Phase 0 — RESOLVE mode + project + freshness
 2. Phase 1 — ACQUIRE diff + intent
 3. Phase 2 — MAP diff → symbols + overlay working set; plan line, copied:
-   `find_symbol(path=<checkout>, relativePath=<file>)` per touched file
+   `find_symbol(path=<checkout>, symbols=[<touched files>])` — ONE call, all
+   files
 4. Phase 3 — SCAN 9 dimensions (parallel blocks)
 5. Phase 4 — CLASSIFY severity + evidence filter
 6. Phase 5 — DELIVER (chat report | draft-gate → post)
@@ -61,7 +62,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
    session context (CLAUDE.md, `.claude/rules/**` incl. gitignored `.local/**`,
    memory, SessionStart digest, skills) is NEVER evidence in a comment.
 8. **Depth → `find_symbol`, never Read** — `symbol=<symbolId>` for body,
-   `relativePath` for outline.
+   `relativePath` for outline; several named ids / files → ONE `symbols=[<ids>]`
+   (core Invariants), never one call each.
 9. **External posting ALWAYS behind one whole-batch draft-gate confirm** —
    circuit breaker, not decoration. Posted without it → restart Phase 5.
 10. **Never fake skipped dimension** — name it "not assessed" in summary.
@@ -71,7 +73,7 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 ```text
 0. RESOLVE   → mode (URL? external : local) + checkout path + freshness
 1. ACQUIRE   → unified diff + MR title/description/author
-2. MAP       → per touched file find_symbol(path=<checkout>, relativePath=<file>)
+2. MAP       → ONE find_symbol(path=<checkout>, symbols=[<touched files>])
               → hunks × outline → {file, changedSymbols[], chunkUUIDs[], overlay}
 3. SCAN      → 9 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
@@ -109,10 +111,10 @@ MR description = review intent — feeds D6 invariants.
 ## Phase 2: MAP
 
 1. Parse hunks → touched files + changed line ranges (new side).
-2. Per touched source file — cap 15, above → ask user to narrow scope:
-   `find_symbol relativePath=<file> rerank="hotspots" path=<checkout>` →
-   outline. Intersect changed ranges with symbol spans → changed symbols + chunk
-   UUIDs.
+2. Touched source files — cap 15, above → ask user to narrow scope — in ONE
+   `find_symbol symbols=[<file 1>, <file 2>, …] rerank="hotspots" path=<checkout>`
+   → outline per file (rows keyed by `request`, misses in `missing`). Intersect
+   changed ranges with symbol spans → changed symbols + chunk UUIDs.
 3. Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — working
    set every Phase 3 dimension reads. Overlay = labels from
    `rankingOverlay.{file,chunk}.*` + raw values from payload `git.*`,
@@ -132,7 +134,7 @@ row).
 
 | Dimension     | Catches                                                                  | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| blast-radius  | hidden coupling, hub edits                                               | `get_callers` + overlay fanIn/transitiveImpact/isHub                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| blast-radius  | hidden coupling, hub edits                                               | `get_callers` per symbol + ONE `find_symbol(symbols=[<changed ids>], rerank="blastRadius", metaOnly=true)` → overlay fanIn/transitiveImpact/isHub                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | shotgun-twins | co-change siblings untouched in MR                                       | `find_similar` batch on changed chunks + taskIds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | fragile-zone  | edits in panic zones                                                     | overlay bugFixRate/churnVolatility/burst — 0 calls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | silo-style    | non-owner edits silo file                                                | blameDominantAuthor\* + proven neighbors as reference                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -145,11 +147,12 @@ row).
 Gating: codegraph on (graph tools `get_callers` / `find_cycles` in tool list;
 unsure → `tea-rags://project/<alias>/metrics?section=registry`) → D1 + D7 + D8
 run on graph. Off → D7, D8 "not assessed" (no substitute; never "no cycles"); D1
-degrades to name-matched callers (`hybrid_search` symbol name + `find_symbol`),
-every comment on it says callers found by name, not call graph — lower bound,
-never "these are all the callers". tests follows tests-as-context preflight.
+degrades to name-matched callers (`hybrid_search` symbol name + ONE
+`find_symbol` over the hits), every comment on it says callers found by name,
+not call graph — lower bound, never "these are all the callers". tests follows
+tests-as-context preflight.
 
-Call budget: ≤30 tea-rags calls typical MR, ≤49 at every cap (playbook).
+Call budget: ≤20 tea-rags calls typical MR, ≤26 at every cap (playbook).
 Exceeded → narrow scope with user, never silently truncate coverage.
 
 ## Phase 4: CLASSIFY

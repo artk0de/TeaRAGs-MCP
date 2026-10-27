@@ -56,7 +56,7 @@ Codegraph OFF — degrade, do not skip:
 per changed symbol (cap 10):
   hybrid_search query=<bare symbol name> limit=15
                 testFile=exclude metaOnly=true
-  then find_symbol on the promising hits to confirm a real call site
+  then ONE find_symbol symbols=[<promising hit ids>] to confirm real call sites
 severity: confirmed call sites in ≥3 other files → major; else observation
 ```
 
@@ -123,7 +123,8 @@ fix: point at the neighbor's pattern and the concrete edit that matches it.
 ```text
 1. tests-as-context tests-at-risk recipe (skill preflight decides DSL vs
    fallback)
-2. coverage per changed symbol: find_symbol on mirrored test path first;
+2. coverage per changed symbol: ONE find_symbol symbols=[<mirrored test paths>]
+   first (misses in `missing`);
    else hybrid_search query=<symbols of ONE domain cluster> testFile="only"
    metaOnly=true limit=15 — one call per cluster, NEVER one batched call
    (BM25 crowding → fabricated "untested")
@@ -232,9 +233,10 @@ humanize): `../SKILL.md` Phase 4.
 
 ## Call budget
 
-≤30 tea-rags calls typical MR. Caps sum to ≤49: MAP ≤15 find_symbol + D1 ≤20
-(get_callers + find_symbol per symbol, cap 10) + D2 1 find_similar + D4 ≤2 + D5
-≤3 + D6 ≤5 + D7 1 + D8 1 + diff-review 1. D1 in name-match mode costs the same
-≤10 (hybrid_search) plus confirmation find_symbol calls — cap those at 10 too,
-dropping the least-promising hits rather than exceeding. Exceeded → narrow scope
-with user, never silently truncate coverage.
+≤20 tea-rags calls typical MR. Caps sum to ≤26: MAP 1 find_symbol (≤15 files)
+
+- D1 ≤11 (get_callers per symbol, cap 10, + 1 find_symbol) + D2 1 find_similar +
+  D4 ≤2 + D5 ≤3 + D6 ≤5 + D7 1 + D8 1 + diff-review 1. D1 in name-match mode
+  costs the same: ≤10 hybrid_search + 1 confirmation find_symbol over ≤10 hits,
+  dropping the least-promising hits rather than exceeding. Exceeded → narrow
+  scope with user, never silently truncate coverage.
