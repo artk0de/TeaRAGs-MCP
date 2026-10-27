@@ -46,3 +46,24 @@ export function lastNameSegment(symbol: string): string {
   const parts = symbol.split(/[#.]|::/);
   return parts[parts.length - 1] ?? symbol;
 }
+
+/**
+ * The owner a qualified symbolId names: everything before its trailing name
+ * segment, without the separator (`Acme::User#save` → `Acme::User`,
+ * `Foo.bar` → `Foo`). Empty for a bare name.
+ */
+export function qualifiedOwnerOf(symbol: string): string {
+  const tail = lastNameSegment(symbol);
+  return symbol.slice(0, symbol.length - tail.length).replace(/(?:[#.]|::)$/, "");
+}
+
+/**
+ * Whether `candidate` lies under `owner` at a segment boundary — `owner::…`,
+ * `owner.…` or `owner#…`, never a mere string prefix (`Acc` does not own
+ * `Account#x`). The rule a qualified find_symbol request keeps its owner by
+ * (bd tea-rags-mcp-ll0s8, q1g6s.15): a same-tail match under another owner is
+ * never an answer.
+ */
+export function isUnderOwner(candidate: string, owner: string): boolean {
+  return ["::", ".", "#"].some((separator) => candidate.startsWith(`${owner}${separator}`));
+}

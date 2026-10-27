@@ -21,7 +21,7 @@ import type {
   SymbolId,
   SymbolVisibilityRow,
 } from "../../contracts/types/codegraph.js";
-import { lastNameSegment } from "../../primitives/ids/index.js";
+import { lastNameSegment, qualifiedOwnerOf } from "../../primitives/ids/index.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
   CG_SYMBOLS_KEY_COLUMNS,
@@ -301,7 +301,8 @@ export class DuckDbSymbolStore {
     const tail = lastNameSegment(symbolId);
     if (tail.length === 0) return null;
     const likeTail = escapeLikeLiteral(tail);
-    const owner = symbolId.slice(0, symbolId.length - tail.length).replace(/(?:[#.]|::)$/, "");
+    // The SQL rendering of `isUnderOwner` (primitives/ids): owner `::`, `.` or `#`.
+    const owner = qualifiedOwnerOf(symbolId);
     const tailMatch = `( symbol_id LIKE ? ESCAPE '\\'
               OR symbol_id LIKE ? ESCAPE '\\'
               OR symbol_id LIKE ? ESCAPE '\\' )`;

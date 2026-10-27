@@ -81,7 +81,7 @@ import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from ".
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { explainEmptySearch } from "./empty-search-explanation.js";
-import { buildSearchExpansionCalls } from "./search-expansion-calls.js";
+import { buildSearchExpansionCalls, type SearchExpansionScope } from "./search-expansion-calls.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -213,6 +213,8 @@ interface ExploreFinalizeOptions {
    * strategy's rows BEFORE projection — `fields` may drop `relativePath`.
    */
   expansionHints?: boolean;
+  /** What those hints address (q1g6s.15); a search answer's rows by default. */
+  expansionScope?: SearchExpansionScope;
 }
 
 export class ExploreOps {
@@ -403,8 +405,9 @@ export class ExploreOps {
     const answer = await this.executeExplore(strategy, ctx, path, {
       fields: request.fields,
       workingTreeView,
-      // The file the agent committed to is the anchor (q1g6s.2); same gate as search.
+      // The file / symbol the agent committed to is the anchor (q1g6s.2); same gate as search.
       expansionHints: this.expansionHintsEnabled(),
+      expansionScope: request.relativePath ? "file" : "symbol",
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -488,6 +491,7 @@ export class ExploreOps {
       ? buildSearchExpansionCalls(
           answer.rows.map(({ result }) => result),
           workingTree,
+          "symbol",
         )
       : [];
     return {
@@ -619,7 +623,9 @@ export class ExploreOps {
       { metaOnly: ctx.metaOnly === true, reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance" },
     );
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
-    const next = finalize.expansionHints ? buildSearchExpansionCalls(results, workingTree) : [];
+    const next = finalize.expansionHints
+      ? buildSearchExpansionCalls(results, workingTree, finalize.expansionScope)
+      : [];
     return {
       results: projection.results,
       ...(next.length > 0 ? { next } : {}),

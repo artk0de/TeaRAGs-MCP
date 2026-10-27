@@ -4,6 +4,12 @@ import { z } from "zod";
 import type { App, SchemaBuilder } from "../../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../../src/core/api/public/dto/explore.js";
 import { registerSearchTools } from "../../../../src/core/api/tools/explore.js";
+import type { McpToolResult } from "../../../../src/core/api/tools/format.js";
+import {
+  enforceResponseBudget,
+  type ResponseRowsPolicy,
+  type ResponseTruncation,
+} from "../../../../src/core/api/tools/response-budget.js";
 import { TYPED_FILTER_PARAM_NAMES } from "../../../../src/core/api/tools/schemas.js";
 import { recordsOf } from "../../../helpers/column-table.js";
 
@@ -475,6 +481,37 @@ describe("registerSearchTools — next", () => {
     };
 
     expect(result.structuredContent.next).toEqual(next);
+  });
+});
+
+// q1g6s.15: a cut `symbols` batch named no continuation — the policy looked for
+// a `request` column while the tabulated rows carry `payload.request`.
+describe("registerSearchTools — find_symbol batch over the response budget", () => {
+  it("continues with find_symbol(symbols: <the addresses whose rows were cut>), addressed to the tree", async () => {
+    const row = (request: string) => ({
+      id: request,
+      score: 1,
+      payload: { request, symbolId: request, relativePath: "src/a.ts", content: "x".repeat(400) },
+    });
+    const { captured } = makeHarness({
+      findSymbol: vi.fn().mockResolvedValue({
+        results: ["A#a", "B#b", "C#c", "D#d"].map(row),
+        driftWarning: null,
+        workingTree: { tree: "/x", project: "p" },
+      }),
+    });
+    const tool = captured.find((t) => t.name === "find_symbol")!;
+    const args = { project: "p", path: "/x", symbols: ["A#a", "B#b", "C#c", "D#d"] };
+    const result = (await tool.handler(args, {})) as McpToolResult;
+
+    const policy = (tool.config as { responseRows: ResponseRowsPolicy }).responseRows;
+    const cut = enforceResponseBudget(result, "find_symbol", args, policy, 1200);
+    const { truncated } = cut.structuredContent as { truncated: ResponseTruncation };
+
+    expect(truncated.omitted).toBeGreaterThan(0);
+    expect(truncated.next?.tool).toBe("find_symbol");
+    expect(truncated.next?.args.symbols).toEqual(["A#a", "B#b", "C#c", "D#d"].slice(truncated.returned));
+    expect(truncated.next?.args).toMatchObject({ project: "p", path: "/x" });
   });
 });
 

@@ -95,6 +95,55 @@ describe("buildSearchExpansionCalls", () => {
     expect(buildSearchExpansionCalls([], MARKER)).toEqual([]);
   });
 
+  it("addresses get_callees / get_callers by the row's code symbolId — relativePath answers import edges only (q1g6s.15)", () => {
+    const calls = buildSearchExpansionCalls(
+      [hit("src/a.ts", "typescript", { symbolId: "A#run" }), hit("src/b.ts")],
+      MARKER,
+    );
+    const address = { project: "tea-rags", path: "/repo/.claude/worktrees/feature" };
+
+    expect(calls.map((call) => call.tool)).toEqual(["get_callees", "get_callers", "find_co_changed"]);
+    expect(calls[0]?.args).toEqual({ ...address, symbolId: "A#run" });
+    expect(calls[1]?.args).toEqual({ ...address, symbolId: "A#run" });
+    expect(calls[2]?.args).toEqual({ ...address, files: ["src/a.ts", "src/b.ts"] });
+  });
+
+  it("addresses a #partN window by the symbol it splits", () => {
+    const calls = buildSearchExpansionCalls(
+      [hit("src/a.ts", "typescript", { symbolId: "A#run#part2", parentSymbolId: "A#run" })],
+      MARKER,
+    );
+
+    expect(calls[0]?.args.symbolId).toBe("A#run");
+  });
+
+  it("keeps relativePath for a row with no code symbolId", () => {
+    const calls = buildSearchExpansionCalls([hit("src/a.ts", "typescript", { symbolId: "doc:abc123" })], MARKER);
+
+    expect(calls[0]?.args).not.toHaveProperty("symbolId");
+    expect(calls[0]?.args.relativePath).toBe("src/a.ts");
+  });
+
+  it("symbol scope: graph hints on the named symbol only, no file-level co-change", () => {
+    const calls = buildSearchExpansionCalls(
+      [hit("src/a.ts", "typescript", { symbolId: "A#run" }), hit("src/b.ts", "typescript", { symbolId: "B#go" })],
+      MARKER,
+      "symbol",
+    );
+
+    expect(calls.map((call) => [call.tool, call.args.symbolId])).toEqual([
+      ["get_callees", "A#run"],
+      ["get_callers", "A#run"],
+    ]);
+  });
+
+  it("file scope: the file the answer outlines, by relativePath, whatever its rows' ids", () => {
+    const calls = buildSearchExpansionCalls([hit("src/a.ts", "typescript", { symbolId: "A#run" })], MARKER, "file");
+
+    expect(calls[0]?.args.relativePath).toBe("src/a.ts");
+    expect(calls[2]?.args.files).toEqual(["src/a.ts"]);
+  });
+
   it("carries no address when the answer has no working-tree marker", () => {
     const calls = buildSearchExpansionCalls([hit("src/a.ts")], undefined);
 

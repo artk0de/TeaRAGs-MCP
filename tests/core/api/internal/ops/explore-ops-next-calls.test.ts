@@ -137,17 +137,18 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
         ? f.hybridSearch({ collection: "code_x", query: "q", ...extra })
         : f.semanticSearch({ collection: "code_x", query: "q", ...extra });
 
-    it(`${tool}: codegraph on → callees + callers + co-change hints addressed to the answering tree`, async () => {
+    // PIN-UPDATED q1g6s.15: a code row is addressed by its symbolId — relativePath answers import edges only.
+    it(`${tool}: codegraph on → callees + callers on the top symbol + co-change hints addressed to the answering tree`, async () => {
       const response = await call(makeFacade(HITS));
 
       expect(response.next).toEqual([
         expect.objectContaining({
           tool: "get_callees",
-          args: { project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" },
+          args: { project: "tea-rags", path: MARKER.tree, symbolId: "aFn" },
         }),
         expect.objectContaining({
           tool: "get_callers",
-          args: { project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" },
+          args: { project: "tea-rags", path: MARKER.tree, symbolId: "aFn" },
         }),
         expect.objectContaining({
           tool: "find_co_changed",
@@ -184,23 +185,29 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
       expect(response.next?.[2]?.args.files).toEqual(["src/a.ts"]);
     });
 
-    it("symbol mode → anchors = distinct files of the returned rows", async () => {
+    // PIN-UPDATED q1g6s.15: a symbol-addressed answer hints on the ids it names, never file-level edges.
+    it("symbol mode → callees + callers of the first returned symbol, no co-change", async () => {
       const hits = [
         point("a", 0.9, "src/a.ts", { symbolId: "A#run" }),
         point("b", 0.8, "src/b.ts", { symbolId: "B#run" }),
       ];
       const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbol: "run" });
 
-      expect(response.next?.[0]?.args.relativePath).toBe("src/a.ts");
-      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+      expect(response.next?.map((c) => [c.tool, c.args.symbolId])).toEqual([
+        ["get_callees", "A#run"],
+        ["get_callers", "A#run"],
+      ]);
     });
 
-    it("symbols batch → anchors = distinct non-test files of the returned rows, first-seen order", async () => {
+    // PIN-UPDATED q1g6s.15: as above — the first non-test symbol the batch named.
+    it("symbols batch → callees + callers of the first non-test symbol returned", async () => {
       const hits = [point("t", 0.9, "tests/a.test.ts", { isTest: true }), ...HITS];
       const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbols: ["tFn", "aFn", "bFn"] });
 
-      expect(response.next?.[0]?.args.relativePath).toBe("src/a.ts");
-      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts", "src/b.ts"]);
+      expect(response.next?.map((c) => [c.tool, c.args.symbolId])).toEqual([
+        ["get_callees", "aFn"],
+        ["get_callers", "aFn"],
+      ]);
     });
 
     it("relativePath naming a directory → listing commits to no file, no next", async () => {
