@@ -15,6 +15,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { assignNavigationAndDocSymbolId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/chunk-navigation.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import type { CodeChunk } from "../../../../../../src/core/types.js";
@@ -128,6 +129,47 @@ describe("TreeSitterChunker — every non-blank line is chunked", () => {
 
     expect(chunks).toHaveLength(1);
     expect(missingFromContent(code, chunks)).toEqual([]);
+  });
+
+  it("keeps a tiny headingless markdown file as one documentation chunk", async () => {
+    const code = "Short text.\n";
+    const chunks = await chunker.chunk(code, "/repo/tiny.md", "markdown");
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].content).toBe("Short text.");
+    expect(chunks[0].metadata.isDocumentation).toBe(true);
+    expect(chunks[0].metadata.chunkType).toBe("block");
+    expect(chunks[0].metadata.headingPath).toEqual([]);
+    assignNavigationAndDocSymbolId(chunks, "/repo");
+    expect(chunks[0].metadata.symbolId).toMatch(/^doc:[0-9a-f]{12}$/);
+    expect(missingFromContent(code, chunks)).toEqual([]);
+  });
+
+  it("keeps a tiny markdown file holding only a heading line", async () => {
+    const code = "# Title\n";
+    const chunks = await chunker.chunk(code, "/repo/title.md", "markdown");
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.isDocumentation).toBe(true);
+    expect(missingFromContent(code, chunks)).toEqual([]);
+  });
+
+  it("keeps a tiny YAML file as one documentation chunk", async () => {
+    const code = "debug: true\n";
+    const chunks = await chunker.chunk(code, "/repo/config/app.yaml", "yaml");
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.isDocumentation).toBe(true);
+    expect(chunks[0].metadata.chunkType).toBe("block");
+    expect(chunks[0].metadata.headingPath).toEqual([]);
+    assignNavigationAndDocSymbolId(chunks, "/repo");
+    expect(chunks[0].metadata.symbolId).toMatch(/^doc:[0-9a-f]{12}$/);
+    expect(missingFromContent(code, chunks)).toEqual([]);
+  });
+
+  it("still yields no chunk for a blank markdown or YAML file", async () => {
+    expect(await chunker.chunk("\n \n", "/repo/blank.md", "markdown")).toEqual([]);
+    expect(await chunker.chunk("\n", "/repo/config/blank.yaml", "yaml")).toEqual([]);
   });
 
   it("still yields no chunk for a blank file", async () => {

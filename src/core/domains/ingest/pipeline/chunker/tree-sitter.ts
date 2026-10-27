@@ -492,28 +492,38 @@ export class TreeSitterChunker implements CodeChunker {
     if (provider?.chunkerHooks?.isDocumentation && sectionSplitter) {
       const sections = sectionSplitter.split(code, { maxChunkSize: this.config.maxChunkSize });
       return {
-        chunks: this.enforceMaxChunkSize(
-          sections.map((s, chunkIndex) => ({
-            content: s.content,
-            startLine: s.startLine,
-            endLine: s.endLine,
-            metadata: {
-              filePath,
-              language,
-              chunkIndex,
-              chunkType: "block" as const,
-              isDocumentation: true,
-              headingPath: s.headingPath,
-              ...(s.name !== undefined ? { name: s.name } : {}),
-            },
-          })),
+        chunks: this.documentationCoveringFile(
+          this.enforceMaxChunkSize(
+            sections.map((s, chunkIndex) => ({
+              content: s.content,
+              startLine: s.startLine,
+              endLine: s.endLine,
+              metadata: {
+                filePath,
+                language,
+                chunkIndex,
+                chunkType: "block" as const,
+                isDocumentation: true,
+                headingPath: s.headingPath,
+                ...(s.name !== undefined ? { name: s.name } : {}),
+              },
+            })),
+          ),
+          code,
+          filePath,
+          language,
         ),
         tree: null,
       };
     }
     if (provider?.chunkerHooks?.isDocumentation) {
       return {
-        chunks: this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language)),
+        chunks: this.documentationCoveringFile(
+          this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language)),
+          code,
+          filePath,
+          language,
+        ),
         tree: null,
       };
     }
@@ -2048,6 +2058,26 @@ export class TreeSitterChunker implements CodeChunker {
     if (chunks.length > 0) return chunks;
     const whole = wholeFileChunk(code, filePath, language, identity);
     return whole ? this.enforceMaxChunkSize([whole]) : [];
+  }
+
+  /**
+   * Documentation twin of `chunksCoveringFile`: a non-blank doc that produced
+   * no chunk (a headingless note under the section floor, a one-key YAML)
+   * becomes one headingless documentation block, shaped like the whole-document
+   * fallback of `MarkdownChunker`. Its `doc:<hash>` id is assigned downstream
+   * with every other doc chunk's. A blank file stays chunkless.
+   */
+  private documentationCoveringFile(
+    chunks: CodeChunk[],
+    code: string,
+    filePath: string,
+    language: string,
+  ): CodeChunk[] {
+    return this.chunksCoveringFile(chunks, code, filePath, language).map((chunk) =>
+      chunk.metadata.isDocumentation === true
+        ? chunk
+        : { ...chunk, metadata: { ...chunk.metadata, isDocumentation: true, headingPath: [] } },
+    );
   }
 
   /** The chunk identity the min-length gate denied `gated`, as `chunkSingleNode` would have composed it. */
