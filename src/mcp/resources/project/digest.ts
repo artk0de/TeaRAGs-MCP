@@ -158,9 +158,19 @@ function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: stri
 
 const SHORT_REASON_MAX = 40;
 const ERROR_CODE_TOKEN = /\b(E[A-Z0-9]{3,}|HTTP \d{3})\b/;
+/** The note a status probe appends when it read a live down verdict instead of probing (bd sm1ow). */
+const CACHED_VERDICT_NOTE = / \(cached verdict, age \d+ s\)$/;
 
-/** Error-code token when the message carries one, else its first clause capped at {@link SHORT_REASON_MAX}. */
+/**
+ * Error-code token when the message carries one, else its first clause capped
+ * at {@link SHORT_REASON_MAX} — a cached-verdict note kept after either.
+ */
 function shortFailureReason(message: string): string {
+  const note = CACHED_VERDICT_NOTE.exec(message)?.[0] ?? "";
+  return shortProbeFailure(message.slice(0, message.length - note.length)) + note;
+}
+
+function shortProbeFailure(message: string): string {
   const code = ERROR_CODE_TOKEN.exec(message);
   if (code) return code[1];
   const clause = message

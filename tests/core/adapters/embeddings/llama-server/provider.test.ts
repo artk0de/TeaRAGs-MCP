@@ -1301,6 +1301,52 @@ describe("LlamaServerEmbeddings", () => {
           .map((v) => v.url),
       ).toEqual([PEER_A]);
     });
+
+    describe("status probe reads a live verdict instead of re-probing (bd sm1ow)", () => {
+      it("issues no /health to a peer with a live verdict and reports the verdict with its age", async () => {
+        const time = fakeTime();
+        const verdicts = sharedVerdicts(time);
+        const store = verdicts.open();
+        for (const url of [PEER_A, PEER_B]) store.markDown(url, "ETIMEDOUT: connection timed out");
+        time.advance(42_000);
+        const cluster = fakeCluster({ [PEER_A]: healthy(), [PEER_B]: healthy(), [FALLBACK]: healthy() });
+        const provider = makeProvider(cluster, { fallbacks: FALLBACK, time, verdicts: verdicts.open() });
+
+        const [active, primary] = await Promise.all([provider.checkHealth(), provider.checkPrimaryHealth()]);
+
+        expect(active).toBe(true);
+        expect(primary).toBe(false);
+        expect(requestsTo(cluster, PEER_A)).toEqual([]);
+        expect(requestsTo(cluster, PEER_B)).toEqual([]);
+        const reason = provider.getPrimaryUnavailableReason();
+        expect(reason).toContain(`${PEER_A}: ${PEER_A} is unreachable: ETIMEDOUT: connection timed out`);
+        expect(reason).toContain("(cached verdict, age 42 s)");
+      });
+
+      it("probes a peer whose verdict has expired", async () => {
+        const time = fakeTime();
+        const verdicts = sharedVerdicts(time);
+        verdicts.open().markDown(PEER_A, "ETIMEDOUT: connection timed out");
+        time.advance(EMBEDDING_ENDPOINT_DOWN_VERDICT_TTL_MS);
+        const cluster = fakeCluster({ [PEER_A]: healthy() });
+        const provider = makeProvider(cluster, { peers: PEER_A, time, verdicts: verdicts.open() });
+
+        expect(await provider.checkPrimaryHealth()).toBe(true);
+        expect(requestsTo(cluster, PEER_A).map((r) => r.path)).toEqual(["/health"]);
+      });
+
+      it("probes a peer without a verdict, and its live failure carries no cached-verdict note", async () => {
+        const time = fakeTime();
+        const verdicts = sharedVerdicts(time);
+        const cluster = fakeCluster({ [PEER_A]: unreachable(), [PEER_B]: healthy() });
+        const provider = makeProvider(cluster, { time, verdicts: verdicts.open() });
+
+        expect(await provider.checkPrimaryHealth()).toBe(true);
+        expect(requestsTo(cluster, PEER_A).map((r) => r.path)).toEqual(["/health"]);
+        expect(requestsTo(cluster, PEER_B).map((r) => r.path)).toEqual(["/health"]);
+        expect(provider.getPrimaryUnavailableReason()).not.toContain("cached verdict");
+      });
+    });
   });
 
   describe("cross-call slot cap", () => {

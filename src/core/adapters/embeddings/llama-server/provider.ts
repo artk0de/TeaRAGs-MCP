@@ -372,20 +372,21 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   }
 
   async checkHealth(): Promise<boolean> {
-    const peersUp = await this.pool.checkPeersHealth();
-    const healthy = peersUp || (await this.pool.checkFallbacksHealth()) === true;
+    const cached = this.cachedDownReasons();
+    const peersUp = await this.pool.checkPeersHealth(cached);
+    const healthy = peersUp || (await this.pool.checkFallbacksHealth(cached)) === true;
     this.syncProbeTimer();
     return healthy;
   }
 
   async checkPrimaryHealth(): Promise<boolean> {
-    const up = await this.pool.checkPeersHealth();
+    const up = await this.pool.checkPeersHealth(this.cachedDownReasons());
     this.syncProbeTimer();
     return up;
   }
 
   async checkFallbackHealth(): Promise<boolean | undefined> {
-    const up = await this.pool.checkFallbacksHealth();
+    const up = await this.pool.checkFallbacksHealth(this.cachedDownReasons());
     this.syncProbeTimer();
     return up;
   }
@@ -742,6 +743,24 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     if (!this.downVerdicts) return;
     this.downVerdicts.markDown(url, describeConnectFailure(error));
     this.downVerdictUrls.add(url);
+  }
+
+  /**
+   * Status-probe reasons for the endpoints holding a live down verdict: a
+   * status read reports them down from the verdict instead of paying the probe
+   * timeout again (bd sm1ow). The embed path never reads this — it probes.
+   */
+  private cachedDownReasons(): Map<string, string> {
+    const now = this.now();
+    const reasons = new Map<string, string>();
+    for (const verdict of this.downVerdicts?.liveVerdicts() ?? []) {
+      const ageSeconds = Math.round((now - verdict.downAt) / 1000);
+      reasons.set(
+        verdict.url,
+        `${verdict.url} is unreachable: ${verdict.reason} (cached verdict, age ${ageSeconds} s)`,
+      );
+    }
+    return reasons;
   }
 
   private withdrawDownVerdict(url: string): void {

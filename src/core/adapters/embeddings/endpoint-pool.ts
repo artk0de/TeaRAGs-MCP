@@ -92,7 +92,7 @@ export class EmbeddingEndpointPool {
   private readonly probe: (url: string) => Promise<boolean>;
   private readonly now: () => number;
   private readonly ewmaAlpha: number;
-  private readonly tierProbesInFlight = new Map<EmbeddingEndpointTier, Promise<boolean>>();
+  private readonly tierProbesInFlight = new Map<string, Promise<boolean>>();
 
   constructor(config: EmbeddingEndpointPoolConfig) {
     this.peers = [...config.peers];
@@ -204,15 +204,19 @@ export class EmbeddingEndpointPool {
     );
   }
 
-  /** Probe every peer, update its health; true when at least one peer is up. */
-  async checkPeersHealth(): Promise<boolean> {
-    return this.checkTierHealth("peer");
+  /**
+   * Probe every peer, update its health; true when at least one peer is up.
+   * A peer in `cachedDownReasons` (url → probe-failure reason) is not probed:
+   * it is marked failed with that reason (bd sm1ow).
+   */
+  async checkPeersHealth(cachedDownReasons?: ReadonlyMap<string, string>): Promise<boolean> {
+    return this.checkTierHealth("peer", cachedDownReasons);
   }
 
-  /** Probe every fallback, update its health; undefined when none is configured. */
-  async checkFallbacksHealth(): Promise<boolean | undefined> {
+  /** Probe every fallback, update its health; undefined when none is configured. `cachedDownReasons` as for peers. */
+  async checkFallbacksHealth(cachedDownReasons?: ReadonlyMap<string, string>): Promise<boolean | undefined> {
     if (this.fallbacks.length === 0) return undefined;
-    return this.checkTierHealth("fallback");
+    return this.checkTierHealth("fallback", cachedDownReasons);
   }
 
   snapshot(): EmbeddingEndpointState[] {
@@ -224,18 +228,32 @@ export class EmbeddingEndpointPool {
    * each configured tier side by side, and a round against an unreachable host
    * waits out the probe timeout — concurrent askers share it (bd o4p5l).
    */
-  private async checkTierHealth(tier: EmbeddingEndpointTier): Promise<boolean> {
-    const inFlight = this.tierProbesInFlight.get(tier);
+  private async checkTierHealth(
+    tier: EmbeddingEndpointTier,
+    cachedDownReasons: ReadonlyMap<string, string> = new Map(),
+  ): Promise<boolean> {
+    // A round that reads cached verdicts never answers a caller that asked for a real probe.
+    const key = cachedDownReasons.size > 0 ? `${tier}:cached` : tier;
+    const inFlight = this.tierProbesInFlight.get(key);
     if (inFlight) return inFlight;
-    const round = this.probeTier(tier).finally(() => this.tierProbesInFlight.delete(tier));
-    this.tierProbesInFlight.set(tier, round);
+    const round = this.probeTier(tier, cachedDownReasons).finally(() => this.tierProbesInFlight.delete(key));
+    this.tierProbesInFlight.set(key, round);
     return round;
   }
 
-  private async probeTier(tier: EmbeddingEndpointTier): Promise<boolean> {
+  private async probeTier(
+    tier: EmbeddingEndpointTier,
+    cachedDownReasons: ReadonlyMap<string, string>,
+  ): Promise<boolean> {
     const members = this.endpoints.filter((e) => e.tier === tier && !e.retired);
     const results = await Promise.all(
       members.map(async (endpoint) => {
+        const cachedReason = cachedDownReasons.get(endpoint.url);
+        if (cachedReason !== undefined) {
+          endpoint.probeFailureReason = cachedReason;
+          this.markFailed(endpoint);
+          return false;
+        }
         const ok = await this.safeProbe(endpoint);
         if (ok) this.markHealthy(endpoint);
         else this.markFailed(endpoint);

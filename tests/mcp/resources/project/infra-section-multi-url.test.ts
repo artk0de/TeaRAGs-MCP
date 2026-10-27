@@ -61,6 +61,13 @@ describe("formatSlimDigest — multi-URL endpoint tiers (q1g6s.3)", () => {
     );
   });
 
+  it("keeps the cached-verdict age next to the short reason (bd sm1ow)", () => {
+    const cached = (p: number) => `${timedOut(p)} (cached verdict, age 42 s)`;
+    expect(embeddingLine([8091, 8092, 8093, 8094].map(cached).join("; "))).toContain(
+      "(unavailable 4/4: ETIMEDOUT (cached verdict, age 42 s))",
+    );
+  });
+
   it("falls back to the first clause (<=40 chars) when no error code is present", () => {
     const reason = "http://h:8091: http://h:8091 answered with a very long unexpected explanation text here";
     const out = embeddingLine(reason);
