@@ -104,13 +104,15 @@ The embedded Qdrant daemon uses three files for cross-process coordination:
 
 - `~/.tea-rags/qdrant/daemon.pid` — current daemon PID
 - `~/.tea-rags/qdrant/daemon.port` — HTTP port it's listening on
-- `~/.tea-rags/qdrant/daemon.refs` — ref counter (number of attached MCP servers)
+- `~/.tea-rags/qdrant/daemon.refs` — live ref count on the first line, then one holder PID per line (MCP servers and CLI commands)
 
 **Lifecycle:**
 
 1. First `tea-rags` process finds no daemon → spawns one, writes all three files, `refs=1`.
 2. Second process finds files → attaches to existing daemon, `refs=2`.
-3. On shutdown, process decrements `refs`. When `refs=0`, daemon waits 30s then exits (configurable).
+3. On release or process exit, the process removes its PID. A process that crashes or is killed by a signal leaves its PID behind; it is pruned on the next read because the PID is no longer alive. When no live holder remains, daemon waits 30s then exits (configurable).
+
+A bare integer written by an older build carries no PIDs, so it cannot be pruned and holds the daemon until it respawns.
 
 **Invalidation (stale files):** if the daemon crashed, `pid` may point to a dead process. Safe to delete all three files and restart TeaRAGs — next startup spawns a fresh daemon.
 

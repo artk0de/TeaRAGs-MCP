@@ -88,13 +88,13 @@ The embedded Qdrant daemon is managed automatically:
 
 1. **First start** — binary downloaded (if needed), free port selected, process spawned
 2. **Subsequent connections** — existing daemon reused via PID/port file discovery
-3. **Refcounting** — each TeaRAGs instance increments a ref counter on attach, decrements on detach
+3. **Refcounting** — each TeaRAGs process records its PID on attach and removes it on release or exit; refs of processes that died without releasing are pruned on the next read
 4. **Idle shutdown** — when all refs released, daemon waits 30 seconds then terminates via `SIGTERM`
 
 Daemon files are stored in `~/.tea-rags/qdrant/`:
 - `daemon.pid` — process ID
 - `daemon.port` — HTTP port
-- `daemon.refs` — active reference count
+- `daemon.refs` — live reference count on the first line, then one holder PID per line
 
 ---
 

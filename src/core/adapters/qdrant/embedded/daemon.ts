@@ -11,6 +11,13 @@ import { QDRANT_CRASH_LOG_NAME } from "./corruption-recovery.js";
 import { findOrphanedDaemon, readProcessTable, type OrphanedDaemon } from "./daemon-discovery.js";
 import { DaemonLock } from "./daemon-lock.js";
 import {
+  attachDaemonRef,
+  bindDaemonRefRelease,
+  countLiveDaemonRefs,
+  detachDaemonRef,
+  seedDaemonRefs,
+} from "./daemon-refs.js";
+import {
   assertNoDowngrade,
   downloadQdrant,
   getBinaryPath,
@@ -207,19 +214,13 @@ export async function probeDaemonVersion(
 }
 
 function readRefs(paths: DaemonPaths): number {
-  try {
-    return parseInt(readFileSync(paths.refsFile, "utf-8").trim(), 10) || 0;
-  } catch {
-    return 0;
-  }
+  return countLiveDaemonRefs(paths.refsFile);
 }
 
 function incrementRefs(paths: DaemonPaths): number {
   const lock = daemonLock.acquire(paths.lockFile);
   try {
-    const next = readRefs(paths) + 1;
-    writeFileSync(paths.refsFile, String(next), "utf-8");
-    return next;
+    return attachDaemonRef(paths.refsFile);
   } finally {
     if (lock) daemonLock.release(lock.fd);
   }
@@ -228,9 +229,7 @@ function incrementRefs(paths: DaemonPaths): number {
 function decrementRefs(paths: DaemonPaths): number {
   const lock = daemonLock.acquire(paths.lockFile);
   try {
-    const next = Math.max(0, readRefs(paths) - 1);
-    writeFileSync(paths.refsFile, String(next), "utf-8");
-    return next;
+    return detachDaemonRef(paths.refsFile);
   } finally {
     if (lock) daemonLock.release(lock.fd);
   }
@@ -530,10 +529,11 @@ function makeDaemonHandle(
     url,
     pid,
     storagePath: paths.storagePath,
-    release: () => {
+    release: bindDaemonRefRelease(() => {
       const remaining = decrementRefs(paths);
       console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
-    },
+      return remaining;
+    }),
     reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath, lowMemory)).url),
     startupPhase: () => computeStartupPhase(paths),
   };
@@ -636,7 +636,7 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
 
     writeFileSync(paths.pidFile, String(pid), "utf-8");
     writeFileSync(paths.portFile, String(port), "utf-8");
-    writeFileSync(paths.refsFile, "1", "utf-8");
+    seedDaemonRefs(paths.refsFile);
     writeFileSync(paths.startedAtFile, String(Date.now()), "utf-8");
 
     const url = `http://127.0.0.1:${port}`;
