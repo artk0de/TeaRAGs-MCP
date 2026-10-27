@@ -129,7 +129,9 @@ interface RowCollection {
 }
 
 /** Answer of an MCP result as the model reads it, or null when it is not a JSON object. */
-function readAnswer(result: McpToolResult): { answer: Record<string, unknown>; channel: "structured" | "text" } | null {
+export function readAnswer(
+  result: McpToolResult,
+): { answer: Record<string, unknown>; channel: "structured" | "text" } | null {
   if (isRecord(result.structuredContent)) return { answer: result.structuredContent, channel: "structured" };
   const text = result.content[0]?.text;
   if (typeof text !== "string" || !text.startsWith("{")) return null;
