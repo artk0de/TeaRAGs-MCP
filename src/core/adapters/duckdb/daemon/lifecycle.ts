@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
+import { attachDaemonRef, countLiveDaemonRefs, detachDaemonRef } from "../../qdrant/embedded/daemon-refs.js";
 import type {
   CodegraphDaemonClientAddressing,
   CodegraphDaemonClientTarget,
@@ -190,21 +191,17 @@ export function openDaemonLogFd(paths: CodegraphDaemonPaths): number {
   return openSync(paths.logFile, "a");
 }
 
+/** Live client connections; refs of a daemon that has exited read as none. */
 export function readRefs(paths: CodegraphDaemonPaths): number {
-  try {
-    return parseInt(readFileSync(paths.refsFile, "utf-8").trim(), 10) || 0;
-  } catch {
-    return 0;
-  }
+  return countLiveDaemonRefs(paths.refsFile);
 }
 
+/** One ref per socket connection, held under this (daemon) process's pid. */
 export function incrementRefs(paths: CodegraphDaemonPaths): number {
   mkdirSync(dirname(paths.refsFile), { recursive: true });
   const lock = daemonLock.acquire(paths.lockFile);
   try {
-    const next = readRefs(paths) + 1;
-    writeFileSync(paths.refsFile, String(next), "utf-8");
-    return next;
+    return attachDaemonRef(paths.refsFile);
   } finally {
     if (lock) daemonLock.release(lock.fd);
   }
@@ -214,9 +211,7 @@ export function decrementRefs(paths: CodegraphDaemonPaths): number {
   mkdirSync(dirname(paths.refsFile), { recursive: true });
   const lock = daemonLock.acquire(paths.lockFile);
   try {
-    const next = Math.max(0, readRefs(paths) - 1);
-    writeFileSync(paths.refsFile, String(next), "utf-8");
-    return next;
+    return detachDaemonRef(paths.refsFile);
   } finally {
     if (lock) daemonLock.release(lock.fd);
   }

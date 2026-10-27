@@ -30,7 +30,14 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../primitives/diagnostics/index.js";
-import { CodegraphDaemonDrainRefusedError, CodegraphDaemonOwnedElsewhereError } from "../errors.js";
+import { UnknownError } from "../../../primitives/errors/tea-rags-error.js";
+import {
+  CodegraphDaemonDrainRefusedError,
+  CodegraphDaemonMalformedFrameError,
+  CodegraphDaemonOwnedElsewhereError,
+  CodegraphDaemonResponseEncodeError,
+  daemonErrorToWire,
+} from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import { ForeignBuildDaemonLockArbiter } from "./foreign-build-lock-arbiter.js";
@@ -48,7 +55,7 @@ import {
 import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
 import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
 import type { DaemonOpCommandTable } from "./op-commands.js";
-import { encodeFrame, type DaemonRequest } from "./protocol.js";
+import { encodeFrame, type DaemonRequest, type DaemonResponse } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
 
 export interface DaemonRuntimeOptions {
@@ -213,6 +220,33 @@ export function createIdleShutdown(deps: IdleShutdownDeps): () => void {
   };
 }
 
+/** Read one frame as a request; anything without a numeric `id` cannot be answered. */
+function parseDaemonRequest(frame: string): DaemonRequest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(frame);
+  } catch (err) {
+    throw new CodegraphDaemonMalformedFrameError(frame, err as Error);
+  }
+  if (typeof parsed !== "object" || parsed === null || typeof (parsed as { id?: unknown }).id !== "number") {
+    throw new CodegraphDaemonMalformedFrameError(frame);
+  }
+  return parsed as DaemonRequest;
+}
+
+/** Encode one answer; a result JSON cannot carry becomes that request's error. */
+function encodeAnswer(res: DaemonResponse, op: string): string {
+  try {
+    return encodeFrame(res);
+  } catch (err) {
+    return encodeError(res.id, new CodegraphDaemonResponseEncodeError(op, err as Error));
+  }
+}
+
+function encodeError(id: number, err: Error): string {
+  return encodeFrame({ id, ok: false, error: daemonErrorToWire(err) });
+}
+
 /**
  * Build the per-connection `data`/`close` handler pair for a socket. Extracted
  * so tests can drive framing + refcounting without a live `net.Server`.
@@ -241,8 +275,16 @@ export function createConnectionHandler(
     // dropped, and a graph analysis stops at its next phase boundary.
     const connection = new AbortController();
     sock.on("data", (chunk: Buffer) => {
+      if (sock.destroyed) return;
       for (const frame of frames.push(chunk)) {
-        const req = JSON.parse(frame) as DaemonRequest;
+        let req: DaemonRequest;
+        try {
+          req = parseDaemonRequest(frame);
+        } catch (err) {
+          process.stderr.write(`[codegraph-daemon] ${(err as Error).message}\n`);
+          sock.destroy();
+          return;
+        }
         if (req.op === "shutdown") {
           // bd tea-rags-mcp-zgcmo: a drain while ANOTHER connection has writes
           // in flight used to cut them mid-run (the 42hno EPIPE class — a
@@ -263,9 +305,13 @@ export function createConnectionHandler(
           onShutdownRequest?.();
           continue;
         }
-        void server.handle(req, connection.signal).then((res) => {
-          if (!sock.destroyed) sock.write(encodeFrame(res));
-        });
+        void server
+          .handle(req, connection.signal)
+          .then((res) => encodeAnswer(res, req.op))
+          .catch((err: unknown) => encodeError(req.id, err instanceof Error ? err : new UnknownError(err)))
+          .then((frame) => {
+            if (!sock.destroyed) sock.write(frame);
+          });
       }
     });
     sock.on("close", () => {
@@ -424,6 +470,13 @@ async function startOwnedDaemon(
     unlinkSync(options.paths.socketPath);
   } catch {
     /* no stale socket — fresh spawn */
+  }
+  // Refs count connections to that socket, so whatever a predecessor left is
+  // stale — including a bare count with no holder pid to prune.
+  try {
+    unlinkSync(options.paths.refsFile);
+  } catch {
+    /* no stale refs — fresh spawn */
   }
 
   await new Promise<void>((resolve, reject) => {

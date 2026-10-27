@@ -616,6 +616,45 @@ export class CodegraphDaemonRequestAbortedError extends InfraError {
 }
 
 /**
+ * A client sent the daemon a frame that is not a request: not JSON, or no
+ * object carrying a numeric `id`. Without an id there is nothing to answer, so
+ * the daemon closes that one connection and keeps serving the others.
+ */
+export class CodegraphDaemonMalformedFrameError extends InfraError {
+  constructor(frame: string, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_MALFORMED_FRAME",
+      message: `Codegraph daemon closed a connection that sent a malformed frame: ${frame.slice(0, 120)}`,
+      hint:
+        "The client is not speaking the daemon protocol — a foreign tool on the socket, or a client " +
+        "that corrupted its own stream. The daemon and its other connections are unaffected; the " +
+        "client reconnects on its next request.",
+      httpStatus: 400,
+      cause,
+    });
+  }
+}
+
+/**
+ * The daemon ran an op but could not encode its result as a JSON frame — a
+ * BigInt or a circular value in it. That one request is answered with this
+ * error; the connection and the daemon carry on.
+ */
+export class CodegraphDaemonResponseEncodeError extends InfraError {
+  constructor(op: string, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_RESPONSE_ENCODE_FAILED",
+      message: `Codegraph daemon could not encode the result of "${op}" as JSON: ${cause?.message ?? "unknown cause"}`,
+      hint:
+        "A daemon op returned a value JSON cannot carry (a BigInt or a circular structure). This is a " +
+        "tea-rags bug in that op's result shape — run the tea-rags:report-issue skill. Other requests are unaffected.",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/**
  * The codegraph-unavailable family (bd tea-rags-mcp-a43tr) — daemon stale /
  * skewed / wedged / unreachable, or the DuckDB file will not open. Membership is
  * decided by `code` in `contracts/types/codegraph-unavailable.ts`, which domain

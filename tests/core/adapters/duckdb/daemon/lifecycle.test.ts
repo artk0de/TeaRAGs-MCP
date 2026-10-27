@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,18 @@ import {
 } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 
 let dir: string;
+
+/** The pid of a process that has already exited. */
+async function deadPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+  await new Promise<void>((resolve) =>
+    child.once("exit", () => {
+      resolve();
+    }),
+  );
+  return child.pid as number;
+}
+
 afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
@@ -73,6 +86,15 @@ describe("codegraph daemon lifecycle refcount", () => {
     expect(readRefs(p)).toBe(0);
   });
 
+  it("keeps the live count on the first line, so an integer reader agrees", () => {
+    dir = mkdtempSync(join(tmpdir(), "cgl-"));
+    const p = getDaemonPaths(dir);
+    incrementRefs(p);
+    incrementRefs(p);
+    expect(parseInt(readFileSync(p.refsFile, "utf-8"), 10)).toBe(2);
+    expect(readFileSync(p.refsFile, "utf-8").split("\n").slice(1)).toEqual([String(process.pid), String(process.pid)]);
+  });
+
   it("getStorageDir honors the env override, else nests codegraph/ under app data", () => {
     const prev = process.env.TEA_RAGS_CODEGRAPH_DAEMON_DIR;
     delete process.env.TEA_RAGS_CODEGRAPH_DAEMON_DIR;
@@ -122,6 +144,21 @@ describe("scheduleIdleWatcher", () => {
     decrementRefs(p);
     vi.advanceTimersByTime(5_000); // marks idleSince
     vi.advanceTimersByTime(IDLE_SHUTDOWN_MS);
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("shuts down when the only refs belong to a daemon that has exited", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgl-"));
+    const p = getDaemonPaths(dir);
+    const crashed = await deadPid();
+    mkdirSync(p.buildDir, { recursive: true });
+    writeFileSync(p.refsFile, `2\n${crashed}\n${crashed}`, "utf-8");
+    expect(readRefs(p)).toBe(0);
+    vi.useFakeTimers();
+    const onShutdown = vi.fn();
+    scheduleIdleWatcher(p, onShutdown);
+
+    vi.advanceTimersByTime(5_000 + IDLE_SHUTDOWN_MS);
     expect(onShutdown).toHaveBeenCalledTimes(1);
   });
 });

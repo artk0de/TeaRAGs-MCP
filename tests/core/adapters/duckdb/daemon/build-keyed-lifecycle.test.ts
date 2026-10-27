@@ -24,6 +24,7 @@ import {
   getDaemonPaths,
   getLegacyDaemonPaths,
   listDaemonKeyDirs,
+  readRefs,
   sweepOrphanedDaemonKeyDirs,
   unlinkDaemonFiles,
 } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
@@ -130,6 +131,24 @@ describe("per-key cleanup on exit (42hno)", () => {
     for (const f of [other.socketPath, other.pidFile, other.refsFile, other.lockFile]) {
       expect(existsSync(f)).toBe(true);
     }
+  });
+
+  it("a daemon does not inherit the refs a crashed predecessor left in its key dir", async () => {
+    const dir = makeRoot();
+    const own = getDaemonPaths(dir);
+    mkdirSync(own.buildDir, { recursive: true });
+    // A bare count carries no holder pid, so pruning alone cannot drop it.
+    writeFileSync(own.refsFile, "3", "utf-8");
+
+    const { shutdown } = await runDaemon({
+      rootDir: dir,
+      paths: own,
+      migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
+      exit: () => undefined,
+    });
+    shutdowns.push(shutdown);
+
+    expect(readRefs(own)).toBe(0);
   });
 
   it("a real keyed daemon cleans its own files on shutdown and leaves a sibling key intact", async () => {

@@ -515,6 +515,39 @@ describe("daemon-file cleanup never wipes a daemon recorded by another process (
   });
 });
 
+describe("idle watcher and exited ref holders", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "qdrant-idle-refs-"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const DAEMON_PID = 424_242;
+  const EXITED_CLI_PID = 515_151;
+
+  it("shuts the daemon down when every ref belongs to a process that has exited", () => {
+    vi.useFakeTimers();
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid) => {
+      if (pid === DAEMON_PID) return true;
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    });
+    const paths = getDaemonPaths(tempDir);
+    writeFileSync(paths.pidFile, String(DAEMON_PID), "utf-8");
+    writeFileSync(paths.refsFile, `1\n${EXITED_CLI_PID}`, "utf-8");
+
+    scheduleIdleWatcher(paths, DAEMON_PID);
+    vi.advanceTimersByTime(40_000);
+
+    expect(kill).toHaveBeenCalledWith(DAEMON_PID, "SIGTERM");
+  });
+});
+
 describe("adoptOrphanedDaemon", () => {
   let tempDir: string;
 
