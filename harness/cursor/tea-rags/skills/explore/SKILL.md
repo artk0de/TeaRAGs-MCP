@@ -23,15 +23,18 @@ description:
 
 Checked first, before this table: layers / wrong-way dependencies / dependency
 direction of `<dir>` → `get_architecture_report(pathPattern: "<dir>/**")`, not
-row 4. A named symbol or anchor row + flow words ("end to end", "what happens
-when") → EXPLAIN graph walk (route 5), not row 4. A typed directory path and
-none of the structure words below ("how does `<dir>` work", "what's in `<dir>`")
-→ path-first, not row 4, not ORIENT — opening line, copied:
-`Strategy: path-first — "<dir>"`, then `find_symbol(relativePath: "<dir>")`
-outline → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`.
-Then structure phrasing (one of these words in the prompt: "organized", "end to
-end", "structure", "architecture", "backbone", "walk me through") → codegraph
-row 4 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+row 4. A named symbol or anchor row (search rows already in context, an answer
+opening `↳ Anchor =` included) + flow words ("end to end", "what happens when",
+"walk me through", "step by step", "involve") → EXPLAIN graph walk (route 5):
+anchor → `get_callees(symbolId: <anchor>, depth: 2)`, not row 4, no new search.
+A typed directory path and none of the structure words below ("how does `<dir>`
+work", "what's in `<dir>`") → path-first, not row 4, not ORIENT — opening line,
+copied: `Strategy: path-first — "<dir>"`, then
+`find_symbol(relativePath: "<dir>")` outline → ONE
+`find_symbol(symbols: [<Class#method ids from that outline>])`. Then structure
+phrasing (one of these words in the prompt: "organized", "end to end",
+"structure", "architecture", "backbone", "walk me through") → codegraph row 4
+below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
 of X" — callers, below) → occurrence route, any codegraph state: Grep tool
