@@ -1,9 +1,25 @@
 #!/usr/bin/env node
-import { createCli } from "./create-cli.js";
+const argv = process.argv.slice(2);
 
-createCli()
-  .parseAsync()
-  .catch((error: unknown) => {
-    console.error("Fatal error:", error);
-    process.exit(1);
-  });
+/**
+ * `project indexed` is the lean path (bd tea-rags-mcp-ueplg): the plugin's
+ * PreToolUse(Read) hook runs it on every `Read`, and loading yargs plus the
+ * whole command table costs ~0.5 s. `--help` still goes through yargs.
+ */
+const isLeanProjectIndexed =
+  argv[0] === "project" && argv[1] === "indexed" && !argv.includes("--help") && !argv.includes("-h");
+
+async function main(): Promise<void> {
+  if (isLeanProjectIndexed) {
+    const { runProjectIndexedArgv } = await import("./commands/project-indexed.js");
+    process.exitCode = await runProjectIndexedArgv(argv.slice(2));
+    return;
+  }
+  const { createCli } = await import("./create-cli.js");
+  await createCli().parseAsync();
+}
+
+main().catch((error: unknown) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
