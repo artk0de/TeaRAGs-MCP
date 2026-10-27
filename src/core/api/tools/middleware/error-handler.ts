@@ -13,6 +13,7 @@ import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/proto
 import type { ServerNotification, ServerRequest, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 
 import { TeaRagsError, UnknownError } from "../../public/index.js";
+import { withAnswerBanner } from "../answer-banner.js";
 import type { McpToolResult } from "../format.js";
 import { enforceResponseBudget, type ResponseRowsPolicy } from "../response-budget.js";
 
@@ -179,7 +180,7 @@ export function registerToolSafe<
   handler: ToolCallback<InputArgs>,
 ): void {
   const guarded = withResponseBudget(name, config, handler as McpHandler);
-  const wrapped = errorHandlerMiddleware(guarded.handler);
+  const wrapped = errorHandlerMiddleware(withAnswerBanner(name, guarded.handler));
   server.registerTool(name, guarded.sdkConfig, wrapped as unknown as ToolCallback<InputArgs>);
 }
 
@@ -201,7 +202,7 @@ export function createRegisterTool(healthProbes?: HealthProbes) {
     handler: ToolCallback<InputArgs>,
   ): void => {
     const guarded = withResponseBudget(name, config, handler as McpHandler);
-    const wrapped = errorHandlerMiddleware(guarded.handler, healthProbes);
+    const wrapped = errorHandlerMiddleware(withAnswerBanner(name, guarded.handler), healthProbes);
     server.registerTool(name, guarded.sdkConfig, wrapped as unknown as ToolCallback<InputArgs>);
   };
 }
