@@ -32,6 +32,11 @@ export const coreSchema = z.object({
    * injects the full core).
    */
   serverInstructions: z.enum(["core", "pointer"]).default("core"),
+  /**
+   * `EXPERIMENTAL_LOCATE_ENABLE` — registers the hidden experimental `locate`
+   * tool. Off by default; the tool is not part of any plugin guidance.
+   */
+  experimentalLocateEnable: booleanFromEnv,
 });
 
 export const embeddingTuneSchema = z.object({

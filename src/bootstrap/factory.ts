@@ -2505,6 +2505,8 @@ export interface ConfiguredServerOptions {
    * Default `core`; `pointer` sends only the pointer line to `tea-rags://guide/core`.
    */
   instructionsMode?: ServerInstructionsMode;
+  /** Register the hidden experimental `locate` tool (`EXPERIMENTAL_LOCATE_ENABLE`). Default off. */
+  experimentalLocate?: boolean;
 }
 
 export function createConfiguredServer(
@@ -2523,6 +2525,7 @@ export function createConfiguredServer(
     app: ctx.app,
     schemaBuilder: ctx.schemaBuilder,
     healthProbes: ctx.healthProbes,
+    ...(options.experimentalLocate === true ? { experimentalLocate: true } : {}),
     // Auto-update trigger (hpg2): fires on search tools, spawns the detached
     // updater when the freshness verdict allows. Config lives in the registry.
     // The api-side resolvers are injected here (bd tea-rags-mcp-54xwd.3) —

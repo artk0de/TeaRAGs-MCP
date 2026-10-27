@@ -39,6 +39,8 @@ export interface AppConfig {
   promptsConfigFile: string;
   /** `MCP_SERVER_INSTRUCTIONS` — handed to `createConfiguredServer` as `instructionsMode`. */
   serverInstructions: "core" | "pointer";
+  /** `EXPERIMENTAL_LOCATE_ENABLE` — handed to `createConfiguredServer` as `experimentalLocate`. */
+  experimentalLocateEnable: boolean;
   ingestCode: IngestCodeConfig;
   trajectoryIngest: TrajectoryIngestConfig;
   vcs: VcsConfig;
@@ -90,6 +92,7 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
     requestTimeoutMs: zodConfig.core.requestTimeoutMs,
     promptsConfigFile: zodConfig.core.promptsConfigFile,
     serverInstructions: zodConfig.core.serverInstructions,
+    experimentalLocateEnable: zodConfig.core.experimentalLocateEnable,
     ingestCode: {
       chunkSize: zodConfig.ingest.chunkSize,
       chunkOverlap: zodConfig.ingest.chunkOverlap,

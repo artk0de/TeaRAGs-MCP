@@ -111,6 +111,7 @@ describe("parseAppConfigZod", () => {
       "DELETE_FLUSH_TIMEOUT_MS",
       // mcp server
       "MCP_SERVER_INSTRUCTIONS",
+      "EXPERIMENTAL_LOCATE_ENABLE",
       // vcs
       "GIT_ADAPTER",
       // codegraph
@@ -134,6 +135,24 @@ describe("parseAppConfigZod", () => {
 
   afterEach(() => {
     process.env = originalEnv;
+  });
+
+  describe("EXPERIMENTAL_LOCATE_ENABLE", () => {
+    it("is off when unset", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().core.experimentalLocateEnable).toBe(false);
+    });
+
+    it.each([
+      ["true", true],
+      ["1", true],
+      ["false", false],
+      ["0", false],
+    ])("parses %s as %s", async (raw, expected) => {
+      process.env.EXPERIMENTAL_LOCATE_ENABLE = raw;
+      const { parseAppConfigZod } = await freshImport();
+      expect(parseAppConfigZod().core.experimentalLocateEnable).toBe(expected);
+    });
   });
 
   describe("core defaults", () => {

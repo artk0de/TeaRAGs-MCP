@@ -23,8 +23,11 @@ const RELEASE_TIMEOUT_MS = 5_000;
  * bounded so a hanging release cannot keep a one-shot CLI alive.
  */
 export async function openInProcessMcpSession(): Promise<InProcessToolSession> {
-  const { ctx, promptsConfig } = await prepareMcpServerRuntime({ watchWorkingTrees: false });
-  const server = createConfiguredServer(ctx, promptsConfig, { autoUpdate: false });
+  const { config, ctx, promptsConfig } = await prepareMcpServerRuntime({ watchWorkingTrees: false });
+  const server = createConfiguredServer(ctx, promptsConfig, {
+    autoUpdate: false,
+    experimentalLocate: config.experimentalLocateEnable,
+  });
   const session = await connectInProcessClient(server);
 
   let released: Promise<void> | undefined;
