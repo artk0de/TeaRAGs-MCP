@@ -1181,3 +1181,55 @@ merges every part — the epic's target.
   ran `find_symbol(symbol:)` on the constant first and never read the hits.
 - R1 → R2 (usages row literal `"<X>" <dir>` → `"<X>" <src dir>`): A2 3/3, no
   regressions.
+
+## 2026-10-27 — depth call trees replace grep → Read flow mapping (afdpc, tea-rags 0.47.39)
+
+- Benchmark evidence (private corpus): in exploration questions the agent used
+  `get_callers` 2×, `get_callees` 0×, `trace_path` 0×, and mapped flows through
+  grep → Read chains (Q01: 25 calls). The server half of afdpc gave
+  `get_callers` / `get_callees` `depth` (1–3, BFS `tree` rows with `parent`,
+  `seen`, `external`) and `offset` paging with `truncated.next`.
+- New cases T1 (flow from an anchor row in context → `get_callees(depth: 2)` →
+  ONE batch, ≤ 4 calls), T2 (impact → `get_callers(depth: 2)`), T3 (guard:
+  layering stays `get_architecture_report`), T4 (guard: `truncated.next`
+  verbatim). One session per run carries T1–T4, R2, B1; explore 1 and 8 ride a
+  second session.
+- core.md: the graph row moves above the known-symbol row and absorbs the
+  every-call row: how X works / what happens when → `get_callees`; who calls
+  X/impact/where Y is handled → `get_callers` — `symbolId:`, `depth: 2`; every
+  call/all callers → plan both lines (`get_callers` + the usages row); then ONE
+  batch of the needed tree methods. The behaviour row's anchor step says
+  depth-2; the research row narrows `get_architecture_report` to layers /
+  wrong-way deps; `truncated.next` runs verbatim; "grep/rg" → "grep". Same in
+  navigation ("Graph navigation"), decision-tree, overview "## Param reference",
+  explore (pre-table checks, routes 5/6, usage / explain / architecture
+  patterns) and the subagent block. core.md 8838 → 8837 chars, Codex `core.txt`
+  9232 → 9231, Cursor `tea-rags-core.mdc` 9047 → 9046; subagent block 2981 →
+  2979 bytes with the alias line.
+
+| Case      | R1 Codex | R1 Claude | R2 Codex | R2 Claude | R3 Codex | R3 Claude |
+| --------- | -------- | --------- | -------- | --------- | -------- | --------- |
+| T1        | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| T2        | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| T3        | 2/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| T4        | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| R2        | 0/3      | 1/1       | 2/3      | 1/1       | 3/3      | 1/1       |
+| B1        | 3/3      | 1/1       | 3/3      | 1/1       | 2/3      | 1/1       |
+| explore 1 | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| explore 8 | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+
+- R1 fails: R2 ×3 took explore's occurrence route ("every occurrence of an exact
+  name" caught "every call of X") once the merged row dropped "every call"; T3
+  r3 took explore codegraph row 4 (architecturalHub search) for "what layers".
+- R1 → R2: core row says "every call/all callers of X" again; explore's
+  occurrence clause excludes "every call of X" (callers route, plan both lines)
+  and a pre-table check sends layers / wrong-way dependencies to
+  `get_architecture_report`. R2 r3 (no skill, core only) still planned grep
+  alone.
+- R2 → R3: the core row names the literal `get_callers` in "plan both lines"
+  instead of "it". R2 3/3.
+- Open after the 2-round cap: B1 R3 r2 routed through explore codegraph row 4
+  (architecture pattern) and batched the walked symbols with no outline first.
+  B1 was 3/3 in R1 and R2; the row-4 path skipping "path typed first" predates
+  this change. T4 R1 r1 planned an extra literal search after the verbatim
+  `truncated.next` (graded on its first call).

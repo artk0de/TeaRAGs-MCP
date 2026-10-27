@@ -65,8 +65,8 @@ Already have search results for this area?
 │   ├─ Hold outline / TOC, need one member / section / test
 │   │     → find_symbol(symbol: <id from that line>) — never Read / grep
 │   └─ Need graph navigation (codegraph must be enabled)
-│         → guide `navigation` "Graph navigation": get_callers/get_callees (one hop,
-│           default) → find_cycles → trace_path (full A→B chain, escalate only)
+│         → guide `navigation` "Graph navigation": get_callers/get_callees (flow /
+│           impact → depth: 2, one call) → find_cycles → trace_path (A→B chain)
 │
 └─ No (need to search)
 
@@ -158,7 +158,7 @@ locale/data `*.yml`, generated) → client's tools, say so.
 
 | Question                                                     | Call                                                                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Layout / architecture of area `<dir>`                        | `find_symbol(relativePath: "<dir>")` → `get_architecture_report(pathPattern: "<dir>/**")`                        |
+| Layers / wrong-way dependencies of `<dir>` (not exploration) | `find_symbol(relativePath: "<dir>")` → `get_architecture_report(pathPattern: "<dir>/**")`                        |
 | Is the codebase laid out correctly                           | `/tea-rags:architecture-diagnostics`                                                                             |
 | What implements contract / port / base `<P>`                 | `find_symbol(symbol: "<P>")` → `get_callers` + `hybrid_search(query: "<P>", metaOnly: true)`                     |
 | Where `<X>` is registered / resolved / configured / flagged  | `hybrid_search(query: "<X> register config flag", metaOnly: true)` → `find_symbol(symbols: [<hit ids>])`         |

@@ -7,6 +7,8 @@
 Structure EXPLAIN step by what was asked.
 
 - **"How does X work?"** → flow: entry → processing → output. Key files + roles.
+  Codegraph on → `get_callees(symbolId: <anchor id>, depth: 2)` tree → ONE
+  `find_symbol(symbols: [...])` of only the methods the answer needs.
 - **"Architecture of X?"** → components, responsibilities, connections,
   boundaries.
 - **"Where is X used?"** → hybrid_search (BM25 = full recall on exact names,

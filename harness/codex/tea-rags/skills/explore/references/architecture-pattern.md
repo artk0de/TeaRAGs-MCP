@@ -37,9 +37,10 @@ import count); state filter applied.
 
 ## Step 2 — flow walk (codegraph on)
 
-`get_callees symbolId=<top entry id from Step 0>` (exact id via `find_symbol`
-first), repeated on each callee that is a Step 1 hub → the path from entry
-through the backbone. Then `find_symbol` depth on the walked symbols.
+`get_callees symbolId=<top entry id from Step 0> depth=2` (exact id via
+`find_symbol` first) — ONE call, its `tree` is the path from entry through the
+backbone (Step 1 hubs among its rows). Then ONE `find_symbol(symbols: [...])` of
+only the walked symbols the answer needs.
 
 ## Honest fallback (no hubs in scope)
 

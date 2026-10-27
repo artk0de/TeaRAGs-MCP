@@ -30,14 +30,18 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 - file/dir path, lines N–M, doc TOC, how `<dir>` works →
   `find_symbol(relativePath:)` outline first, then ONE batch of the needed ids
-  (N–M: ids spanning it); its imports → `get_callees(relativePath:)`
-  (`imports[]`; a row's `imports` = a count); manual-read order → Invariants
+  (N–M: ids spanning it); "how does `<dir>` work" / "what's in `<dir>`", no
+  structure word (architecture, structure, organized, end to end, backbone, walk
+  me through) → that outline → ONE `find_symbol(symbols:[<Class#method ids>])`,
+  never codegraph row 4 / `get_architecture_report`; its imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
+  manual-read order → Invariants
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
   → `semantic_search` (real ids among them → `hybrid_search(metaOnly)`) → anchor
-  → `get_callees`/`get_callers` → ONE batch of needed methods; never text search
+  → depth-2 callees/callers → ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
   -rl, not tea-rags; phrase/error string → plan these three lines, never stop at
@@ -46,10 +50,12 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
   counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
+- how X works/what happens when → `get_callees`; who calls X/impact/where Y is
+  handled → `get_callers` — `symbolId:`, `depth: 2`; every call/all callers of X
+  (grep named) → plan both lines: `get_callers` + the usages row. Then ONE
+  batch: needed tree methods
 - known symbol / identifier definition/body/outline → `find_symbol(symbol:)`
   `Class#inst`/`C.st`, never text search
-- every call / all callers of X → plan both lines, a named grep/rg too:
-  `get_callers(symbolId:)` + the usages row's search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
   "grep for X" → shell grep -rl `"<X>" <src dir>` (literal, `-l`) →
@@ -58,16 +64,15 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
-- how X works / what happens when → `get_callees`; who calls X/impact/where Y is
-  handled → `get_callers` — `symbolId:` (a row's id)
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review, a diff's names →
   `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
   uncommitted, `{base}` = branch
 - project's embedding/Qdrant/env → `list_projects(project:)`
-- research — layout of `<dir>` → `get_architecture_report(pathPattern)`;
-  implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`; registered/
-  configured `<X>` → `hybrid_search("<X> register config")`; ticket `<T>` →
+- research — layers/wrong-way deps of `<dir>` →
+  `get_architecture_report(pathPattern)`; implements `<P>` → `get_callers` +
+  `hybrid_search(<P>, metaOnly)`; registered/configured `<X>` →
+  `hybrid_search("<X> register config")`; ticket `<T>` →
   `semantic_search(taskId:)`; owners/recent churn/debt/don't-touch →
   `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
@@ -94,7 +99,7 @@ diff's → `review_changes` verdicts, nothing after.
   false lead.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
-- `truncated` → next call = `truncated.next` as given, or narrowed
+- `truncated` → next call = `truncated.next` verbatim, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - `empty.reason: unknownPath` →
   `find_symbol(relativePath: <dir its suggestions share>)`, never one
