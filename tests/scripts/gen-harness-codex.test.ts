@@ -16,9 +16,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  CODEX_CORE_HOOK_BUDGET,
   CODEX_DESCRIPTION_MAX_CHARS,
   CODEX_HARNESS_DIR,
-  CODEX_CORE_HOOK_BUDGET,
   CODEX_HOOK_CONTEXT_BUDGET,
   CODEX_MARKETPLACE_PATH,
   renderCodexHarness,
@@ -249,18 +249,20 @@ describe("renderCodexHarness", () => {
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
     // Core hook only cats a file; a cold `tea-rags prime` boots the server (measured 12–26 s).
     expect(hooks.SessionStart[0].hooks[0].timeout).toBe(10);
-    expect(hooks.SessionStart[1].hooks[0].timeout).toBeGreaterThanOrEqual(60);
+    expect(hooks.SessionStart[1].hooks[0].timeout).toBe(10);
+    expect(hooks.SessionStart[2].hooks[0].timeout).toBeGreaterThanOrEqual(60);
     expect(hooks.SubagentStart[0].hooks[0].timeout).toBeGreaterThanOrEqual(30);
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
     expect(marketplace.plugins[0].source).toEqual({ source: "local", path: "./harness/codex/tea-rags" });
     expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);
   });
 
-  it("SessionStart runs two hooks, core first and the prime digest second; the digest hook is silent without the CLI", async () => {
+  it("SessionStart runs three hooks — core, the Codex-only rules, then the prime digest; the digest hook is silent without the CLI", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
     expect(hooks.SessionStart.map((entry: { hooks: { command: string }[] }) => entry.hooks[0].command)).toEqual([
       `\${PLUGIN_ROOT}/scripts/session-start.sh`,
+      `\${PLUGIN_ROOT}/scripts/session-codex-rules.sh`,
       `\${PLUGIN_ROOT}/scripts/session-digest.sh`,
     ]);
 
@@ -285,6 +287,10 @@ describe("renderCodexHarness", () => {
         const core = contextOf(run("session-start.sh", path));
         expect(core).toContain("# tea-rags core");
         expect(core).not.toContain("PRIME-DIGEST");
+        expect(core).not.toContain("**Skills are not loaded for you");
+        const codexRules = contextOf(run("session-codex-rules.sh", path));
+        expect(codexRules).toContain("**Skills are not loaded for you");
+        expect(codexRules).not.toContain("# tea-rags core");
       }
 
       const digest = JSON.parse(run("session-digest.sh", `${bin}:/usr/bin:/bin`)).hookSpecificOutput;
@@ -303,8 +309,8 @@ describe("renderCodexHarness", () => {
     // TD-93238 Codex sessions (2026-10-27): 14 of 44 pre-search shell reads re-opened
     // skills/tea-rags-core/SKILL.md — the text the SessionStart hook had already injected.
     const rendered = await renderCodexHarness(ROOT);
-    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
-    const skillsRule = core.slice(core.indexOf("**Skills are not loaded for you"));
+    const codexRules = rendered.get("tea-rags/scripts/codex-rules.txt") ?? "";
+    const skillsRule = codexRules.slice(codexRules.indexOf("**Skills are not loaded for you"));
     expect(skillsRule.slice(0, 200)).toMatch(/`\$tea-rags-core` IS this text/);
     expect(skillsRule.slice(0, 200)).toMatch(/never open its `SKILL\.md`/);
   });
@@ -465,7 +471,18 @@ describe("renderCodexHarness", () => {
     const payloads = [...rendered].filter(([path]) => /^[^/]+\/scripts\/[^/]+\.txt$/.test(path));
     expect(payloads.length).toBeGreaterThanOrEqual(4);
     for (const [path, content] of payloads) {
-      expect(content.length, path).toBeLessThanOrEqual(path.endsWith("/core.txt") ? CODEX_CORE_HOOK_BUDGET : CODEX_HOOK_CONTEXT_BUDGET);
+      const prose = path.endsWith("/core.txt") || path.endsWith("/codex-rules.txt");
+      expect(content.length, path).toBeLessThanOrEqual(prose ? CODEX_CORE_HOOK_BUDGET : CODEX_HOOK_CONTEXT_BUDGET);
+    }
+  });
+
+  it("the skill and AGENTS copies still carry the whole Codex core: rules + Codex-only rules in one text", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      const text = rendered.get(path) ?? "";
+      expect(text, path).toContain("# tea-rags core");
+      expect(text, path).toContain("**Skills are not loaded for you");
+      expect(text, path).toContain("**Lag follow-ups.**");
     }
   });
 

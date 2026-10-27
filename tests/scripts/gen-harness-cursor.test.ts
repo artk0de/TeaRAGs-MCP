@@ -311,12 +311,12 @@ describe("renderCursorHarness — core rule", () => {
 
   it("fits a core at its 7,700-char cap, wrapper included, under the rule cap", async () => {
     const line = "Pass project= and path= on every tea-rags read call; see tea-rags://guide/navigation.\n";
-    const core = `# tea-rags core\n\n${line.repeat(Math.ceil(8_100 / line.length))}`.slice(0, 8_100);
+    const core = `# tea-rags core\n\n${line.repeat(Math.ceil(8_500 / line.length))}`.slice(0, 8_500);
     writeFileSync(join(fixtureRoot, PLUGIN_SRC, "rules/core.md"), core);
     const out = await renderCursorHarness(fixtureRoot);
     const rule = out.get("tea-rags/rules/tea-rags-core.mdc") ?? "";
 
-    expect(rule.length).toBeGreaterThan(8_100);
+    expect(rule.length).toBeGreaterThan(8_500);
     expect(rule.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
   });
 });

@@ -69,10 +69,10 @@ reindex). `tree` ≠ the tree you addressed (your working directory, or the
 checkout a skill names) → wrong tree, its rows unusable; re-call with
 `project` + that `path`.
 
-**Lag ≠ unusable (MANDATORY).** Counts above, `floors: []` and drift = distance
-index↔tree, never licence to leave tea-rags — thousands of changed files
-included. Row without `treeState` = current (file unchanged, or a floor read it
-from your tree). First match: (1) subagent → never `index_codebase`, never
+**Lag ≠ unusable (MANDATORY).** Counts above and drift = distance index↔tree,
+never licence to leave tea-rags — thousands of changed files included. Row
+without `treeState` = current (file unchanged, or a floor read it from your
+tree). First match: (1) subagent → never `index_codebase`, never
 `AskUserQuestion` — drift, `--force` `Run:` line, `degraded` remedy go into the
 report to the parent. Main session: (2) linked worktree → no reindex; own
 checkout behind (`changedFiles` > 0, stale banner, unindexed edits, or the
@@ -130,24 +130,21 @@ keeps the reindex rows above: dense vectors of changed files lag otherwise.
 
 ## Lag never licenses leaving tea-rags
 
-Marker counts (`changedFiles`, `deletedFiles`, `pendingFiles`, `floors: []`,
+Marker counts (`changedFiles`, `deletedFiles`, `pendingFiles`,
 `denseUnavailable`, `treeGraphUnavailable`) and drift = DISTANCE between index
 and tree, never "index unusable". Thousands of changed files included.
 
-- Row from a file your tree changed or added, no `treeState` → a floor read it
-  from your tree: `dense` = semantic_search / find_similar / hybrid vector rank,
-  `sparse` = hybrid_search BM25, `chunks` = find_symbol / rank_chunks. Row
-  current. Quote `floors` exactly as the answer lists them, then print
-  `current — <floor> floor covers it`.
+- Row from a file your tree changed or added, no `treeState` → the overlay read
+  it from your tree: row current. Use it.
 - Row without `treeState` from an unchanged file → row current. Use it.
 - Row with `treeState` / file in `pendingFiles` → `find_symbol` (reads tree once
   warm); `pendingFiles` > 0 (a count; your file may be one) → plan both lines:
   `find_symbol(<same params>)` and
   `still in pendingFiles → find_symbol(<same params>) again`. `indexOnlyFiles`
   only → `Read`.
-- `floors: []` on first calls = overlay warming, not failure. Subagent or linked
-  worktree → no reindex, keep calling, later calls read more; main session in
-  the own checkout → incremental `index_codebase` now (table above).
+- `changedFiles` > 0 on first calls = overlay warming, not failure. Subagent or
+  linked worktree → no reindex, keep calling, later calls read more; main
+  session in the own checkout → incremental `index_codebase` now (table above).
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
   changed-file edges, in order: `find_symbol` on the caller in the changed file,
   then `hybrid_search` (`metaOnly`). No graph retry. No grep.

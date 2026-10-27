@@ -14,6 +14,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/session-codex-rules.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/session-digest.sh",
             "timeout": 60
           }

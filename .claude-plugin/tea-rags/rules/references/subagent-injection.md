@@ -28,7 +28,7 @@ Code search = tea-rags MCP tools, never built-in grep/glob/file search. Beats an
 
 **Address:** every read call (search, find_symbol, graph tools, review_changes, get_naming_lexicon) → `project=<alias>` (alias line above; else `workingTree.project` of any answer; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ tree you addressed → re-call with both. Never reindex (`index_codebase` takes `project` only) — put drift / degraded in your report to the parent.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift never license shell `cat`/`grep`/`rg` or file reads over code. Row without `treeState` = current; `treeState` row = index copy, maybe stale → `find_symbol` (reads your tree).
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`grep`/`rg` or file reads over code. Row without `treeState` = current; `treeState` row = index copy, maybe stale → `find_symbol` (reads your tree).
 
 **Route** (first match wins):
 | Need | Call |
@@ -51,7 +51,7 @@ Identifiers = SYMBOL searches even joined by `|` — never text search. Exists? 
 
 **After a hit:** never read the file after `find_symbol` — method = full body; class / file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
 
-**Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; picking a tool, prohibited patterns, fallbacks → `decision-tree`; `treeState`, floors, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.
+**Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; picking a tool, prohibited patterns, fallbacks → `decision-tree`; `treeState`, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.
 ```
 
 ## When NOT to inject
