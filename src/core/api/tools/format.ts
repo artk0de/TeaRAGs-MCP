@@ -40,14 +40,14 @@ export type CompactWorkingTreeMarker = Pick<WorkingTreeMarker, "tree"> &
   Partial<Omit<WorkingTreeMarker, "tree" | "floors" | "indexedCommit" | "treeCommit" | "indexedDirty">>;
 
 /**
- * True when the answer's tree matches its index and no layer fell back: no
- * changed or deleted file, and none of the qualifiers that tell the reader to
- * act is present.
+ * True when every part of the answer is current: the tree matches its index,
+ * or the overlay served the answer from the tree completely — no qualifier
+ * names a part still read from the index. The change counts do not decide it:
+ * an agent that read `changedFiles: 378` on an answer the overlay had fully
+ * served re-read the file from disk (q1g6s.15).
  */
-function isCleanWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
+function isCurrentWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
   return (
-    marker.changedFiles === 0 &&
-    marker.deletedFiles === 0 &&
     marker.degraded === undefined &&
     marker.pendingFiles === undefined &&
     marker.indexOnlyFiles === undefined &&
@@ -59,11 +59,15 @@ function isCleanWorkingTreeMarker(marker: WorkingTreeMarker): boolean {
 }
 
 /**
- * The marker as the MCP output carries it: tree, alias, non-zero counts and
- * the qualifiers that are set. The domain marker is never mutated — internal
- * consumers keep every field; only the wire form is shortened.
+ * The marker as the MCP output carries it: tree and alias when the answer is
+ * current; else also the qualifiers naming what is not, the non-zero counts
+ * beside them as the size of that part. The domain marker is never mutated —
+ * internal consumers keep every field; only the wire form is shortened.
  */
 export function compactWorkingTreeMarker(marker: WorkingTreeMarker): CompactWorkingTreeMarker {
+  if (isCurrentWorkingTreeMarker(marker)) {
+    return { tree: marker.tree, ...(marker.project !== undefined && { project: marker.project }) };
+  }
   const {
     tree,
     floors: _floors,
@@ -223,11 +227,13 @@ export function appendDriftWarning(result: McpToolResult, warning: string | null
 
 /**
  * One-line text render of the `workingTree` marker (bd tea-rags-mcp-xi2r9) for
- * the text-output tools; structured tools carry the object itself.
+ * the text-output tools; structured tools carry the object itself. An answer
+ * that is current renders tree and project only; `showDistance` keeps the
+ * change counts for `get_index_status`, whose question IS that distance.
  */
-export function formatWorkingTreeMarker(marker: WorkingTreeMarker): string {
+export function formatWorkingTreeMarker(marker: WorkingTreeMarker, options: { showDistance?: boolean } = {}): string {
   const project = marker.project ? ` · project ${marker.project}` : "";
-  if (isCleanWorkingTreeMarker(marker)) return `workingTree: ${marker.tree}${project}`;
+  if (!options.showDistance && isCurrentWorkingTreeMarker(marker)) return `workingTree: ${marker.tree}${project}`;
   const treeGraph = marker.treeGraphUnavailable ? ` · tree graph unavailable: ${marker.treeGraphUnavailable}` : "";
   const dense = marker.denseUnavailable ? ` · dense unavailable: ${marker.denseUnavailable.reason}` : "";
   const git = marker.gitUnavailable ? ` · git unavailable: ${marker.gitUnavailable.reason}` : "";

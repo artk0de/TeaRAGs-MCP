@@ -9,11 +9,12 @@ import {
 
 /**
  * bd tea-rags-mcp-45kbu, q1g6s.15: the marker on the MCP output carries only
- * what the reader acts on. A clean answer goes out as `{ tree, project? }`
- * (absent counts = measured clean); a lagging or degraded one keeps its
- * non-zero counts and qualifiers, never `floors`, the commits or
- * `indexedDirty`. A benchmark whose every answer carried the full marker saw
- * the agent stop trusting the index.
+ * what the reader acts on. An answer the overlay fully served — clean tree or
+ * dirty — goes out as `{ tree, project? }`; one that is partly NOT current
+ * names that part (degraded, treeGraphUnavailable, denseUnavailable,
+ * pendingFiles, …) with the non-zero counts beside it. Never `floors`, the
+ * commits or `indexedDirty`. A benchmark whose every answer carried the full
+ * marker saw the agent stop trusting the index.
  */
 const clean: WorkingTreeMarker = {
   tree: "/repo/wt",
@@ -38,8 +39,6 @@ describe("compactWorkingTreeMarker", () => {
   });
 
   const qualifiers: [string, Partial<WorkingTreeMarker>][] = [
-    ["changedFiles", { changedFiles: 2 }],
-    ["deletedFiles", { deletedFiles: 1 }],
     ["degraded", { degraded: { reason: "no stamp", remedy: "reindex" } }],
     ["pendingFiles", { pendingFiles: 1 }],
     ["indexOnlyFiles", { indexOnlyFiles: 1 }],
@@ -55,11 +54,39 @@ describe("compactWorkingTreeMarker", () => {
     expect(compactWorkingTreeMarker(marker)).toStrictEqual({ tree: "/repo/wt", project: "proj", ...override });
   });
 
-  it("should drop a zero count beside a non-zero one", () => {
-    expect(compactWorkingTreeMarker({ ...clean, changedFiles: 4 })).toStrictEqual({
+  // q1g6s.15 (live): an agent read `changedFiles: 378` on an answer the overlay
+  // had served from its tree, decided the file "changed after indexing", and
+  // re-read it from disk. A count alone never goes out.
+  it("should send a dirty tree the overlay fully served as tree and project only", () => {
+    const covered = { ...clean, treeCommit: "f".repeat(40), indexedDirty: true, changedFiles: 378, deletedFiles: 11 };
+
+    expect(compactWorkingTreeMarker({ ...covered, floors: ["chunks", "codegraph"] })).toStrictEqual({
+      tree: "/repo/wt",
+      project: "proj",
+    });
+  });
+
+  it("should send the counts as the size of the uncovered part beside treeGraphUnavailable", () => {
+    const graphFell = { ...clean, changedFiles: 4, floors: ["chunks" as const], treeGraphUnavailable: "building" };
+
+    expect(compactWorkingTreeMarker(graphFell)).toStrictEqual({
       tree: "/repo/wt",
       project: "proj",
       changedFiles: 4,
+      treeGraphUnavailable: "building",
+    });
+  });
+
+  it("should send a degraded marker with the reason that answers come from the index", () => {
+    const reason =
+      "working-tree overlay unavailable (git status failed): answers come from the index at its last indexed commit; " +
+      "uncommitted edits are not reflected";
+    const degraded = { ...clean, degraded: { reason, remedy: "check that /repo/wt is a readable git checkout" } };
+
+    expect(compactWorkingTreeMarker(degraded)).toStrictEqual({
+      tree: "/repo/wt",
+      project: "proj",
+      degraded: degraded.degraded,
     });
   });
 });
@@ -72,14 +99,21 @@ describe("formatMcpResponse — workingTree marker", () => {
     expect(parse({ edges: [], workingTree: clean }).workingTree).toStrictEqual({ tree: "/repo/wt", project: "proj" });
   });
 
-  it("should emit a changed marker without floors, commits or indexedDirty", () => {
-    const changed = { ...clean, changedFiles: 3, floors: ["codegraph" as const] };
+  it("should emit a lagging marker without floors, commits or indexedDirty", () => {
+    const lagging = { ...clean, changedFiles: 3, floors: ["chunks" as const], pendingFiles: 2 };
 
-    expect(parse({ edges: [], workingTree: changed }).workingTree).toStrictEqual({
+    expect(parse({ edges: [], workingTree: lagging }).workingTree).toStrictEqual({
       tree: "/repo/wt",
       project: "proj",
       changedFiles: 3,
+      pendingFiles: 2,
     });
+  });
+
+  it("should emit a changed marker the overlay fully served as tree and project", () => {
+    const covered = { ...clean, changedFiles: 3, floors: ["codegraph" as const] };
+
+    expect(parse({ edges: [], workingTree: covered }).workingTree).toStrictEqual({ tree: "/repo/wt", project: "proj" });
   });
 
   it("should not mutate the answer it serializes", () => {

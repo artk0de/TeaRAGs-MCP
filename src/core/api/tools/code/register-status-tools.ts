@@ -94,7 +94,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       if (status.indexPath !== undefined) {
         const tree = status.workingTree?.tree ?? path;
         text += `\n\nWorking tree ${tree} is read against the index of ${status.indexPath}.`;
-        if (status.workingTree) text += `\n${formatWorkingTreeMarker(status.workingTree)}`;
+        if (status.workingTree) text += `\n${formatWorkingTreeMarker(status.workingTree, { showDistance: true })}`;
       }
 
       // One report over every axis the build can see, under one heading

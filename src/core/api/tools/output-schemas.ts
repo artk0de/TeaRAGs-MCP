@@ -122,7 +122,7 @@ export const SearchResultOutputSchema = {
     .optional()
     .describe(
       "Tree read vs index commit. project = registry alias of the answering index (pass it as project next call); " +
-        "tree + project only = measured clean; changedFiles / deletedFiles = tree edits since the index (rows without treeState are current); " +
+        "tree + project only = every row current; changedFiles / deletedFiles appear only beside a field below (rows without treeState are current); " +
         "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
         "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +
         "unparsed = changed files the tree's rows lack; " +

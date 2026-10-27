@@ -14,8 +14,14 @@ describe("formatWorkingTreeMarker", () => {
     floors: [] as ("chunks" | "sparse")[],
   };
 
-  it("should render a measured marker on one line", () => {
-    expect(formatWorkingTreeMarker(base)).toBe("workingTree: /repo/wt · changed 3 · deleted 1");
+  // PIN-UPDATED q1g6s.15: counts alone on an answer the overlay fully served
+  // read as "stale"; only get_index_status (showDistance) still prints them.
+  it("should render a changed tree the overlay fully served as tree only", () => {
+    expect(formatWorkingTreeMarker(base)).toBe("workingTree: /repo/wt");
+  });
+
+  it("should render the distance on one line when asked for it", () => {
+    expect(formatWorkingTreeMarker(base, { showDistance: true })).toBe("workingTree: /repo/wt · changed 3 · deleted 1");
   });
 
   it("should append the degradation with its remedy, without floors or commits", () => {
@@ -47,7 +53,7 @@ describe("formatWorkingTreeMarker — dense floor", () => {
       denseUnavailable: { reason: "connect ECONNREFUSED 127.0.0.1:1" },
     });
 
-    expect(text).toBe("workingTree: /repo/wt · changed 2" + " · dense unavailable: connect ECONNREFUSED 127.0.0.1:1");
+    expect(text).toBe("workingTree: /repo/wt · changed 2 · dense unavailable: connect ECONNREFUSED 127.0.0.1:1");
   });
 });
 
@@ -65,7 +71,7 @@ describe("formatWorkingTreeMarker — git signals pending", () => {
       gitUnavailable: { reason: "3 rows pending" },
     });
 
-    expect(text).toBe("workingTree: /repo/wt · changed 2" + " · git unavailable: 3 rows pending");
+    expect(text).toBe("workingTree: /repo/wt · changed 2 · git unavailable: 3 rows pending");
   });
 });
 
@@ -133,7 +139,7 @@ describe("formatWorkingTreeMarker — answering alias", () => {
       project: "proj",
     });
 
-    // A changed tree: a clean one renders compact (bd tea-rags-mcp-45kbu).
-    expect(text).toBe("workingTree: /repo/wt · project proj · changed 1");
+    // PIN-UPDATED q1g6s.15: a changed tree the overlay served renders as a clean one.
+    expect(text).toBe("workingTree: /repo/wt · project proj");
   });
 });

@@ -46,13 +46,15 @@ Index resolution priority: `collection > project > path`; the tree comes from
 index that answered (pass it on later calls); `tree` = tree it read (a check
 only: every next call, re-checks included, keeps `path=<your working directory>`
 — never `path=<answer's tree>`); `changedFiles` / `deletedFiles` = files the
-tree changed / deleted since the index, present only when > 0 (a marker of just
-`{tree, project?}` = measured clean). Rows from changed files are read from the
-tree unless they carry `treeState`; `denseUnavailable` / `treeGraphUnavailable`
-name why a layer fell back to the index (no `treeGraphUnavailable` = graph
-answers cover the tree); `gitUnavailable` counts changed-file rows whose git
-signals are still computing — they rank without that history this call, re-call
-later. `pendingFiles` = re-read files not yet warm: their rows are the index's
+tree changed / deleted since the index, present only beside a field below that
+names what the overlay did not serve; a marker of just `{tree, project?}` =
+every row current (tree clean, or the overlay served it — never re-read from
+disk). Rows from changed files are read from the tree unless they carry
+`treeState`; `denseUnavailable` / `treeGraphUnavailable` name why a layer fell
+back to the index (no `treeGraphUnavailable` = graph answers cover the tree);
+`gitUnavailable` counts changed-file rows whose git signals are still computing
+— they rank without that history this call, re-call later. `pendingFiles` =
+re-read files not yet warm: their rows are the index's
 (`treeState: "modified"`), a later call reads more of the tree — re-call for
 current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
 files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
