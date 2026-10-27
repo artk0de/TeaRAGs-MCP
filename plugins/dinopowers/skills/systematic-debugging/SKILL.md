@@ -3,20 +3,21 @@ name: systematic-debugging
 description: >-
   Debug concrete failure: first run tea-rags:bug-hunt for ranked suspect list
   (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space;
-  ends with Cause / Fix / Prevention report. Triggers on
-  "debug X", "fix the bug", "why does Y fail", "test fails", "same bug
-  elsewhere?", "падает", "почему не работает", "ошибка в", "стектрейс", "такой
-  же баг в других местах", "X feels wrong",
-  "which tool next mid-investigation", "final report of a confirmed cause".
-  NOT for code review, a code-health scan with no felt malfunction, or
-  a request to apply a named fix at a named location (→ data-driven-generation).
-  Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
+  ends with Cause / Fix / Prevention report. Triggers on "debug X", "fix the
+  bug", "why does Y fail", "test fails", "same bug elsewhere?", "падает",
+  "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах",
+  "X feels wrong", "which tool next mid-investigation", "final report of a
+  confirmed cause". NOT for code review, a code-health scan with no felt
+  malfunction, or a request to apply a named fix at a named location (→
+  data-driven-generation). Wraps superpowers:systematic-debugging with
+  tea-rags:bug-hunt suspect ranking.
 codex-description: >-
-  Concrete failure — bug-hunt first for ranked suspects. Felt malfunction (zones too) beats explore/risk-assessment. Triggers
-  "debug X", "why Y fails", "test fails", "X feels off", "same bug elsewhere?", "падает", "почему не
-  работает", "стектрейс". NOT code review, health scan, "сколько тестов падает", symbol body/callers w/o
-  failure, named fix at named spot (→ data-driven-generation), empty scan of
-  unindexed edit (→ verification).
+  Concrete failure — bug-hunt first for ranked suspects. Felt malfunction (zones
+  too) beats explore/risk-assessment. Triggers "debug X", "why Y fails", "test
+  fails", "X feels off", "same bug elsewhere?", "падает", "почему не работает",
+  "стектрейс". NOT code review, health scan, "сколько тестов падает", symbol
+  body/callers w/o failure, named fix at named spot (→ data-driven-generation),
+  empty scan of unindexed edit (→ verification).
 ---
 
 # dinopowers: systematic-debugging
@@ -33,7 +34,8 @@ included). Print the line:
   debugging: no bug-hunt, no `git status`, no symptom question, no reindex (cold
   index / drift → report it, read on). Each call preceded by its line:
   - `consulting decision tree → find_symbol because study known symbol` →
-    `find_symbol(path=<cwd>, symbol=<name>)`
+    `find_symbol(path=<cwd>, symbol=<name>)`; several named →
+    `find_symbol(path=<cwd>, symbols=[<names>])`, one call, one line
   - `consulting decision tree → get_callers because callers of known symbol` →
     `get_callers(symbolId=<id>)`
   - codegraph off →
@@ -46,7 +48,9 @@ included). Print the line:
   no step 0, no symptom question; continue in bug-hunt's Routing. Row with
   `treeState` = index's pre-edit copy, still the uncommitted suspect; next call
   `find_symbol(path=<cwd>, symbol=<symbolId>)` for current code — never a
-  re-probe.
+  re-probe. Several suspects named → ONE
+  `find_symbol(path=<cwd>, symbols=[<every named symbolId>])` (core Invariants);
+  a `<file>:<line>` beside an id adds no outline call; never one call per id.
 
 ## Iron Rule
 
@@ -314,10 +318,11 @@ Invoke `Skill` tool with `superpowers:systematic-debugging`. Prepend hypothesis
 block. Handoff:
 
 > "Before forming hypotheses, note these bug-hunt priors: …<block>… Start
-> hypothesis space with prime suspects; escalate to secondary only if primes
-> rule out. SKIP rows stay undrilled unless the user, knowing the verdict,
-> insisted (override noted) or a stack frame / trace step ties one to the
-> symptom. Root cause confirmed → report as Cause / Fix / Prevention block
+> hypothesis space with prime suspects — their bodies in ONE
+> `find_symbol(path=<cwd>, symbols=[<suspect ids>])`; escalate to secondary only
+> if primes rule out. SKIP rows stay undrilled unless the user, knowing the
+> verdict, insisted (override noted) or a stack frame / trace step ties one to
+> the symptom. Root cause confirmed → report as Cause / Fix / Prevention block
 > (wrapper Step 5), Prevention driven by suspect overlay signals.
 >
 > Chaining rule reminder: when you (the inner skill) would next invoke
@@ -333,8 +338,9 @@ asked as "which tools, how do you state the choice"): pick tool from
 `tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE line per
 call, printed in the answer right before it — N calls → N lines, also for a
 `find_symbol` on a symbol whose name the user gave, also in a plan with no call
-run. Prose stating the choice ("I'll fetch it with find_symbol") ≠ the line —
-the line is the stated choice. Template, slots filled:
+run. Several known symbols' bodies = ONE `find_symbol(symbols=[<ids>])` call,
+one line. Prose stating the choice ("I'll fetch it with find_symbol") ≠ the line
+— the line is the stated choice. Template, slots filled:
 
 ```
 consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>

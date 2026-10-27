@@ -292,6 +292,22 @@
         ]
       },
       "failureMode": "Follow-up searches bypass the search-cascade decision tree"
+    },
+    {
+      "id": "eval-18",
+      "category": "batch-named-ids (1k059)",
+      "prompt": "Debugging \"refund total off by one cent\": bug-hunt is done, its prime suspects are `Ledger::Posting#apply` (app/models/ledger/posting.rb:40-88), `Ledger::Reconciler#match` (app/services/ledger/reconciler.rb:12-60) and `Ledger::FeeCalculator#round` (app/services/ledger/fee_calculator.rb:5-31). Read the current code of all three before forming hypotheses — what do you call?",
+      "expected": {
+        "mustDo": [
+          "ONE find_symbol(path=<cwd>, symbols: [\"Ledger::Posting#apply\", \"Ledger::Reconciler#match\", \"Ledger::FeeCalculator#round\"]) reads all three suspect bodies"
+        ],
+        "mustNotDo": [
+          "Three separate find_symbol calls, one id each",
+          "Re-run bug-hunt or its probes",
+          "Read / file outlines of the three files instead of the named symbols"
+        ]
+      },
+      "failureMode": "Named suspect ids read one call each instead of one batch"
     }
   ]
 }

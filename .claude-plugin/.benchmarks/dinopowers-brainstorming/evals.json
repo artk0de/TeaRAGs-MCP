@@ -217,6 +217,24 @@
         ]
       },
       "failureMode": "Design names new symbols without the project vocabulary"
+    },
+    {
+      "id": "eval-15",
+      "category": "batch-named-files (1k059)",
+      "prompt": "Давай обсудим, как переделать резервирование стока в app/services/inventory/. Сначала прочитай файлы app/services/inventory/reservation_job.rb, app/services/inventory/stock_ledger.rb и app/services/inventory/warehouse_client.rb.",
+      "expected": {
+        "mustDo": [
+          "Step 2 enrichment block first (pathPattern over app/services/inventory/), metaOnly",
+          "AFTER the Step 2 block, same answer: ONE find_symbol(symbols: [the three named files]) for the user-asked reads",
+          "Skill(superpowers:brainstorming) with the enrichment block"
+        ],
+        "mustNotDo": [
+          "Three separate find_symbol(relativePath=...) calls, one per file",
+          "User-asked reads inside or before the Step 2 block",
+          "Deferring the reads to a later turn"
+        ]
+      },
+      "failureMode": "User-named files read one call each instead of one batch"
     }
   ]
 }

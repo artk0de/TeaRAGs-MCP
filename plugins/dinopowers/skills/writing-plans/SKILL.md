@@ -15,11 +15,10 @@ description: >-
 codex-description: >-
   Implementation plan + per-file tea-rags signals. Plan ask beats explore
   PRE-GEN (even "add X"/"impact analysis"/"before changing") and
-  data-driven-generation (class-creating Task too). Triggers
-  "write/draft a (sub-)plan", "plan the change to <files>", "plan the refactor",
-  "add Task to plan", "напиши/допиши план", "распиши план/задачи по <files>",
-  "Execute plan step: Draft…". NOT plans w/o files/area, NOT "how is X
-  organized" (explore).
+  data-driven-generation (class-creating Task too). Triggers "write/draft a
+  (sub-)plan", "plan the change to <files>", "plan the refactor", "add Task to
+  plan", "напиши/допиши план", "распиши план/задачи по <files>", "Execute plan
+  step: Draft…". NOT plans w/o files/area, NOT "how is X organized" (explore).
 ---
 
 # dinopowers: writing-plans
@@ -58,7 +57,10 @@ codegraph off → rerank={custom: {imports: 0.5, churn: 0.3, ownership: 0.2}} �
 ```
 
 Content wanted → keep enrichment `metaOnly: true`, then AFTER it
-`find_symbol(relativePath:)` outline → member bodies (core depth rule).
+`find_symbol(relativePath:)` outline → member bodies (core depth rule). Several
+named Task symbols / files → ONE `find_symbol(symbols: [<ids>])` — each named
+symbol's id (body), a file path only where no symbol is named (core Invariants);
+never one call each.
 
 Conceptual plan, no file list derivable (e.g. "plan for migrating to Postgres",
 "no specific files", "без конкретных файлов") → skip enrichment,
