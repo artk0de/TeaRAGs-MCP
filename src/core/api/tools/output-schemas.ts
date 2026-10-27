@@ -149,8 +149,8 @@ export const SearchResultOutputSchema = {
     .array(z.object({ tool: z.string(), args: z.record(z.string(), z.unknown()), why: z.string() }))
     .optional()
     .describe(
-      "hybrid_search / semantic_search / find_symbol, codegraph on: ready calls past the anchor file " +
-        "(its imports, importers, co-changed). args address the answering tree — run verbatim.",
+      "hybrid_search / semantic_search / find_symbol, codegraph on: ready calls past the anchor " +
+        "(top row's callees, callers; file outline adds co-changed). args address the answering tree — run verbatim.",
     ),
   empty: z
     .object({ reason: z.string(), message: z.string(), suggestions: z.array(z.string()).optional() })
