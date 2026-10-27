@@ -61,6 +61,7 @@ export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve
 
 // find_symbol `symbols` batch: the full-text line cap the tool prose states (bd yz10n).
 export { BATCH_FULL_TEXT_MAX_LINES } from "../../contracts/types/symbol-batch.js";
+export { MAX_QUERY_VARIANTS, QUERY_VARIANT_SEPARATOR } from "../../contracts/types/query-variants.js";
 
 // ── Codegraph payload vocabulary ─────────────────────────────────────
 // The provider key the codegraph tool surface gates its registration on.

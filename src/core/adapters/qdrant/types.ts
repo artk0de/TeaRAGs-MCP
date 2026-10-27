@@ -29,6 +29,15 @@ export interface SparseVector {
   values: number[];
 }
 
+/**
+ * One query variant's legs in a fused search: its dense vector, its sparse
+ * vector, or both — each present one becomes its own RRF prefetch.
+ */
+export interface FusedSearchLeg {
+  dense?: number[];
+  sparse?: SparseVector;
+}
+
 export interface QdrantMatchCondition {
   key: string;
   match: { value: unknown } | { any: unknown[] } | { text: string };

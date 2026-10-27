@@ -42,13 +42,17 @@ import {
   EmptyFilterPresetError,
   FileOutlineStrategy,
   IndexMetricsQuery,
+  QUERY_VARIANT_SEPARATOR,
   SimilarSearchStrategy,
+  splitQueryVariants,
   SymbolBatchDrill,
   SymbolMissExplainer,
   SymbolSearchStrategy,
   UnknownFilterPresetError,
+  withoutWorkingTreeFloors,
   type BaseExploreStrategy,
   type ExploreContext,
+  type ExploreQueryVariant,
   type ExploreRequestScope,
   type ExploreResult,
   type RerankerPort,
@@ -159,7 +163,11 @@ interface ResolvedExploreTarget {
  */
 interface ExploreQueryEmbedding {
   target: ResolvedExploreTarget;
+  /** The query text: the request's string, or its variants joined by the separator. */
+  query: string;
   embedding?: number[];
+  /** Two or more variants (bd tea-rags-mcp-2vuz), each with its vector unless `denseUnavailable`. */
+  queryVariants?: ExploreQueryVariant[];
   denseUnavailable?: { reason: string };
 }
 
@@ -625,8 +633,16 @@ export class ExploreOps {
     { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
     scope?: ExploreRequestScope,
   ): Promise<ExploreResponse> {
-    const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional, scope);
-    const { collectionName, workingTreeView, historyAnchorSec } = target;
+    const { target, query, embedding, queryVariants, denseUnavailable } = await this.embedQuery(
+      request,
+      denseLegOptional,
+      scope,
+    );
+    const { collectionName, historyAnchorSec } = target;
+    // Fused variants: RRF scores are ranks (no confidence), and no floor (one query) ranks the tree's rows.
+    const workingTreeView = queryVariants
+      ? target.workingTreeView?.then(withoutWorkingTreeFloors)
+      : target.workingTreeView;
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -634,12 +650,10 @@ export class ExploreOps {
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
     const { filter, presetFilterNotice } = this.buildFilter(request, level, "semantic_search", historyAnchorSec);
-    const ctx = withHistoryClock(
-      buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
-      historyAnchorSec,
-    );
+    const vectorCtx = buildVectorSearchContext(request, query, collectionName, embedding, filter, rerank, level);
+    const ctx = withHistoryClock(queryVariants ? { ...vectorCtx, queryVariants } : vectorCtx, historyAnchorSec);
     const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, {
-      attachConfidence,
+      attachConfidence: attachConfidence && !queryVariants,
       presetFilterNotice,
       fields: request.fields,
       searchTool: true,
@@ -706,6 +720,8 @@ export class ExploreOps {
     denseLegOptional: boolean,
     scope?: ExploreRequestScope,
   ): Promise<ExploreQueryEmbedding> {
+    const variants = splitQueryVariants(request.query);
+    const query = variants.join(` ${QUERY_VARIANT_SEPARATOR} `);
     const { modelGuard, ...target } = await this.resolveTarget(
       request.collection,
       request.path,
@@ -715,12 +731,24 @@ export class ExploreOps {
     );
     try {
       await modelGuard?.ensureMatch(target.collectionName, { failOnProviderOutage: true, ...READ_PATH_EMBED });
-      const { embedding } = await target.embeddings.embed(request.query, READ_PATH_EMBED);
-      return { target, embedding };
+      if (variants.length === 1) {
+        const { embedding } = await target.embeddings.embed(query, READ_PATH_EMBED);
+        return { target, query, embedding };
+      }
+      // Every variant in ONE provider call.
+      const embedded = await target.embeddings.embedBatch(variants, READ_PATH_EMBED);
+      const queryVariants = variants.map((text, i) => ({ query: text, embedding: embedded[i]?.embedding }));
+      return { target, query, embedding: queryVariants[0]?.embedding, queryVariants };
     } catch (error) {
       if (!denseLegOptional || !isEmbeddingProviderUnavailable(error)) throw error;
       await modelGuard?.ensureMatch(target.collectionName, { nameOnly: true });
-      return { target, denseUnavailable: { reason: error.message } };
+      const queryVariants = variants.length > 1 ? variants.map((text) => ({ query: text })) : undefined;
+      return {
+        target,
+        query,
+        denseUnavailable: { reason: error.message },
+        ...(queryVariants ? { queryVariants } : {}),
+      };
     }
   }
 
@@ -1180,6 +1208,7 @@ function withHistoryClock(ctx: ExploreContext, historyAnchorSec: number | undefi
 
 function buildVectorSearchContext(
   request: SemanticSearchRequest | HybridSearchRequest,
+  query: string,
   collectionName: string,
   embedding: number[] | undefined,
   filter: Record<string, unknown> | undefined,
@@ -1188,7 +1217,7 @@ function buildVectorSearchContext(
 ): ExploreContext {
   return {
     collectionName,
-    query: request.query,
+    query,
     embedding,
     limit: request.limit ?? 10,
     offset: request.offset,

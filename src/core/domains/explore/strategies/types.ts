@@ -6,12 +6,21 @@
  */
 
 import type { ExploreResult } from "../../../contracts/types/search-result.js";
+import type { ExploreQueryVariant } from "../query-variants.js";
 import type { WorkingTreeView } from "../working-tree/overlay.js";
 
 export interface ExploreContext {
   collectionName: string;
   query?: string;
   embedding?: number[];
+  /**
+   * Two or more query variants (bd tea-rags-mcp-2vuz), each with its own
+   * vector unless `denseUnavailable`. Set → semantic / hybrid search send one
+   * RRF-fused request, a leg per variant, instead of the single-query one; the
+   * request then carries no working-tree floor (its touched base rows are
+   * flagged with `treeState`). Absent → the single-query path.
+   */
+  queryVariants?: readonly ExploreQueryVariant[];
   sparseVector?: { indices: number[]; values: number[] };
   limit: number;
   filter?: Record<string, unknown>;

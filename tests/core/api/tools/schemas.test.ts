@@ -219,6 +219,30 @@ describe("HybridSearchSchema coercion", () => {
 // project field — exposed on every project-aware tool (T21)
 // ---------------------------------------------------------------------------
 
+describe("SemanticSearchSchema / HybridSearchSchema — query variants", () => {
+  const base = { path: "/tmp" };
+
+  it("accepts a string query, including the 'a ||| b' spelling, unchanged", () => {
+    expect(parseSemanticSearch({ ...base, query: "rate limit" }).query).toBe("rate limit");
+    expect(parseHybridSearch({ ...base, query: "rate limit ||| retry after" }).query).toBe(
+      "rate limit ||| retry after",
+    );
+  });
+
+  it("accepts an array of 1..5 variants", () => {
+    expect(parseSemanticSearch({ ...base, query: ["rate limit", "throttle"] }).query).toEqual([
+      "rate limit",
+      "throttle",
+    ]);
+    expect(parseHybridSearch({ ...base, query: ["a", "b", "c", "d", "e"] }).query).toHaveLength(5);
+  });
+
+  it("rejects an empty array and more than 5 variants", () => {
+    expect(() => parseSemanticSearch({ ...base, query: [] })).toThrow();
+    expect(() => parseHybridSearch({ ...base, query: ["a", "b", "c", "d", "e", "f"] })).toThrow();
+  });
+});
+
 describe("SemanticSearchSchema — project field", () => {
   it("accepts optional project name", () => {
     const result = parseSemanticSearch({ query: "x", project: "alpha" });
