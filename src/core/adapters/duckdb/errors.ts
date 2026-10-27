@@ -636,6 +636,25 @@ export class CodegraphDaemonMalformedFrameError extends InfraError {
 }
 
 /**
+ * The daemon ran an op but could not encode its result as a JSON frame — a
+ * BigInt or a circular value in it. That one request is answered with this
+ * error; the connection and the daemon carry on.
+ */
+export class CodegraphDaemonResponseEncodeError extends InfraError {
+  constructor(op: string, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_RESPONSE_ENCODE_FAILED",
+      message: `Codegraph daemon could not encode the result of "${op}" as JSON: ${cause?.message ?? "unknown cause"}`,
+      hint:
+        "A daemon op returned a value JSON cannot carry (a BigInt or a circular structure). This is a " +
+        "tea-rags bug in that op's result shape — run the tea-rags:report-issue skill. Other requests are unaffected.",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/**
  * The codegraph-unavailable family (bd tea-rags-mcp-a43tr) — daemon stale /
  * skewed / wedged / unreachable, or the DuckDB file will not open. Membership is
  * decided by `code` in `contracts/types/codegraph-unavailable.ts`, which domain

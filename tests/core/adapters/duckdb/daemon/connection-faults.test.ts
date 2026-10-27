@@ -1,7 +1,7 @@
 /**
- * A frame the daemon cannot read is one client's protocol error, not the
- * daemon's: that connection is closed, the daemon and every other connection
- * stay up.
+ * Faults confined to one connection or one request: a frame the daemon cannot
+ * read closes that connection; a response the daemon cannot encode answers that
+ * request with an error. The daemon and every other request stay up.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -13,6 +13,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
+import {
+  DAEMON_OP_COMMANDS,
+  type DaemonOpCommandTable,
+} from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import { DATABASE_MIGRATIONS_MODULE_URL } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 
 let root: string | undefined;
@@ -26,7 +30,7 @@ afterEach(async () => {
   root = undefined;
 });
 
-async function startDaemon(): Promise<CodegraphDaemonPaths> {
+async function startDaemon(opCommands?: DaemonOpCommandTable): Promise<CodegraphDaemonPaths> {
   root = mkdtempSync(join(tmpdir(), "cg-malformed-"));
   const paths = getDaemonPaths(root);
   const { shutdown } = await runDaemon({
@@ -34,6 +38,7 @@ async function startDaemon(): Promise<CodegraphDaemonPaths> {
     paths,
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
     exit: () => undefined,
+    opCommands,
   });
   shutdowns.push(shutdown);
   return paths;
@@ -88,4 +93,55 @@ describe("codegraph daemon: a malformed frame", () => {
       expect(await ping(bystander, 7)).toEqual({ id: 7, ok: true, result: null });
     });
   }
+});
+
+/** Send every request on one connection; resolve with the answers keyed by id. */
+async function exchange(sock: Socket, requests: { id: number; op: string }[]): Promise<Map<number, unknown>> {
+  const answers = new Map<number, unknown>();
+  const done = new Promise<void>((resolve) => {
+    let buffered = "";
+    sock.on("data", (chunk: Buffer) => {
+      buffered += chunk.toString("utf-8");
+      let newline = buffered.indexOf("\n");
+      while (newline !== -1) {
+        const answer = JSON.parse(buffered.slice(0, newline)) as { id: number };
+        answers.set(answer.id, answer);
+        buffered = buffered.slice(newline + 1);
+        newline = buffered.indexOf("\n");
+      }
+      if (answers.size === requests.length) resolve();
+    });
+  });
+  for (const req of requests) sock.write(`${JSON.stringify({ ...req, params: { collection: "" } })}\n`);
+  await done;
+  return answers;
+}
+
+describe("codegraph daemon: a response it cannot encode", () => {
+  it("answers that request with an error; the next request on the connection succeeds", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const paths = await startDaemon({
+      ping: DAEMON_OP_COMMANDS.ping,
+      handshake: { access: "daemon", mutates: false, run: async () => ({ count: 1n }) },
+      releaseIdleCollection: { access: "daemon", mutates: false, run: async () => circular },
+    });
+    const client = await openClient(paths);
+
+    const answers = await exchange(client, [
+      { id: 1, op: "handshake" },
+      { id: 2, op: "releaseIdleCollection" },
+      { id: 3, op: "ping" },
+    ]);
+
+    for (const id of [1, 2]) {
+      expect(answers.get(id)).toMatchObject({
+        id,
+        ok: false,
+        error: { name: "CodegraphDaemonResponseEncodeError" },
+      });
+    }
+    expect(answers.get(3)).toEqual({ id: 3, ok: true, result: null });
+    expect(await ping(await openClient(paths), 4)).toEqual({ id: 4, ok: true, result: null });
+  });
 });

@@ -30,10 +30,13 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../primitives/diagnostics/index.js";
+import { UnknownError } from "../../../primitives/errors/tea-rags-error.js";
 import {
   CodegraphDaemonDrainRefusedError,
   CodegraphDaemonMalformedFrameError,
   CodegraphDaemonOwnedElsewhereError,
+  CodegraphDaemonResponseEncodeError,
+  daemonErrorToWire,
 } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
@@ -52,7 +55,7 @@ import {
 import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
 import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
 import type { DaemonOpCommandTable } from "./op-commands.js";
-import { encodeFrame, type DaemonRequest } from "./protocol.js";
+import { encodeFrame, type DaemonRequest, type DaemonResponse } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
 
 export interface DaemonRuntimeOptions {
@@ -231,6 +234,19 @@ function parseDaemonRequest(frame: string): DaemonRequest {
   return parsed as DaemonRequest;
 }
 
+/** Encode one answer; a result JSON cannot carry becomes that request's error. */
+function encodeAnswer(res: DaemonResponse, op: string): string {
+  try {
+    return encodeFrame(res);
+  } catch (err) {
+    return encodeError(res.id, new CodegraphDaemonResponseEncodeError(op, err as Error));
+  }
+}
+
+function encodeError(id: number, err: Error): string {
+  return encodeFrame({ id, ok: false, error: daemonErrorToWire(err) });
+}
+
 /**
  * Build the per-connection `data`/`close` handler pair for a socket. Extracted
  * so tests can drive framing + refcounting without a live `net.Server`.
@@ -289,9 +305,13 @@ export function createConnectionHandler(
           onShutdownRequest?.();
           continue;
         }
-        void server.handle(req, connection.signal).then((res) => {
-          if (!sock.destroyed) sock.write(encodeFrame(res));
-        });
+        void server
+          .handle(req, connection.signal)
+          .then((res) => encodeAnswer(res, req.op))
+          .catch((err: unknown) => encodeError(req.id, err instanceof Error ? err : new UnknownError(err)))
+          .then((frame) => {
+            if (!sock.destroyed) sock.write(frame);
+          });
       }
     });
     sock.on("close", () => {
