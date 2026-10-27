@@ -80,6 +80,7 @@ function qdrantHolding(rows: Row[] = BASE) {
     retrieveDenseVectors,
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: false, pointsCount: rows.length }),
     scrollFiltered: vi.fn().mockResolvedValue([]),
+    scrollBySymbolIds: vi.fn().mockResolvedValue([]),
   } as unknown as QdrantManager;
   return { qdrant, search, queryGroups, query };
 }

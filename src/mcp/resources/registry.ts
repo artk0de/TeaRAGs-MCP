@@ -5,6 +5,8 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  DEFAULT_META_ONLY_FIELDS,
+  DEFAULT_SEARCH_FIELDS,
   InvalidParameterError,
   type App,
   type PayloadSignalDescriptor,
@@ -19,8 +21,10 @@ import { registerProjectResources } from "./project/register.js";
  * raw fields; BaseExploreStrategy#applyMetaOnly keeps rankingOverlay).
  */
 export const META_ONLY_CONTRACT =
-  "No fields → payload = locator: relativePath, symbolId, startLine, endLine, chunkType, language, " +
-  "signature (first code line, ≤160 chars). Raw git.* / codegraph.* / imports dropped, rerank or not. " +
+  `No fields → search tools' payload = ${DEFAULT_META_ONLY_FIELDS.join(", ")} ` +
+  "(signature = first code line, ≤160 chars; find_symbol adds chunkType, language); " +
+  `content mode = ${DEFAULT_SEARCH_FIELDS.join(", ")}. Search rows carry id / score only when fields is passed; ` +
+  "find_similar positiveIds / negativeIds take a row's symbolId. Raw git.* / codegraph.* / imports / navigation dropped, rerank or not. " +
   "Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when labelled, else raw), " +
   "present whenever rerank ran. Payload never {value,label}. Raw signal → fields with its dot-path " +
   '(["git"] = whole subtree; paths + value forms same as without metaOnly).';

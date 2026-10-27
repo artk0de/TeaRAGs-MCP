@@ -4,7 +4,12 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../public/dto/explore.js";
+import type {
+  ExploreResponse,
+  HybridSearchRequest,
+  SearchResult,
+  SemanticSearchRequest,
+} from "../public/dto/explore.js";
 import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
 import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
@@ -38,6 +43,22 @@ interface SearchToolDef {
   alwaysLoad?: true;
   /** Rows the response budget guard trims (bd tea-rags-mcp-c01gm): always the `results` table. */
   responseRows: ResponseRowsPolicy;
+  /**
+   * A search tool: with `fields` absent its rows carry no point `id` / `score`
+   * (bd tea-rags-mcp-q1g6s.16) — the row is addressed by its symbolId, which
+   * find_similar(positiveIds) accepts too.
+   */
+  searchTool?: true;
+}
+
+/** `fields` absent, empty or all-blank — the default projection answers, as in `projectSearchResultPayloads`. */
+function fieldsAbsent(fields: unknown): boolean {
+  return !Array.isArray(fields) || fields.every((field) => typeof field !== "string" || field.trim() === "");
+}
+
+/** A default search row: payload, overlay and treeState, without the point id and score. */
+function withoutIdAndScore(results: readonly SearchResult[]): object[] {
+  return results.map(({ id: _id, score: _score, ...row }) => row);
 }
 
 const SEARCH_NARROWING = ["limit", "pathPattern", "fields", "metaOnly"] as const;
@@ -75,10 +96,15 @@ const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
  * Rows are compacted (imports counted, floats at 2 significant digits) before
  * they are tabulated — after the App ranked them, so order and scores hold.
  */
-function formatStructuredResult(response: ExploreResponse, compaction: SearchResultCompaction): McpToolResult {
+function formatStructuredResult(
+  response: ExploreResponse,
+  compaction: SearchResultCompaction,
+  omitIdAndScore: boolean,
+): McpToolResult {
+  const rows = compactSearchResults(response.results, compaction);
   return {
     structuredContent: {
-      results: tabulateRecords(compactSearchResults(response.results, compaction)),
+      results: tabulateRecords(omitIdAndScore ? withoutIdAndScore(rows) : rows),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.driftWarning && { driftWarning: response.driftWarning }),
@@ -110,6 +136,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "SemanticSearchSchema",
+    searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, request) => app.semanticSearch(request as unknown as SemanticSearchRequest),
   },
@@ -123,6 +150,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "HybridSearchSchema",
+    searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, request) => app.hybridSearch(request as unknown as HybridSearchRequest),
   },
@@ -137,6 +165,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Examples: tea-rags://schema/search-guide\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "RankChunksSchema",
+    searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
     invoke: async (app, request) => app.rankChunks(request as unknown as Parameters<App["rankChunks"]>[0]),
   },
@@ -147,13 +176,14 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Find code similar to given snippet or previously found chunks. " +
       "Primary: paste code block into positiveCode to discover similar patterns, " +
       "duplicates, related implementations across indexed codebase. " +
-      "Also accepts chunk IDs from previous results. " +
+      "Also accepts symbolIds from previous results. " +
       "Supports negative examples to exclude unwanted patterns. " +
       "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
       'strategy="best_score" to find code maximally UNLIKE negatives — ' +
       "outlier / novelty / refactor-candidate detection.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
+    searchTool: true,
     responseRows: { rows: ["results"], narrowing: SEARCH_NARROWING },
     invoke: async (app, request) => app.findSimilar(request),
   },
@@ -212,9 +242,11 @@ export function registerSearchTools(
         // `includeImports` shapes the answer, not the search: the App never sees it.
         const { includeImports, rerank, ...search } = request as SearchRequest;
         const sanitized = { ...search, rerank: sanitizeRerank(rerank as RerankParam, customWeightSignals) };
-        const result = formatStructuredResult(await tool.invoke(app, sanitized), {
-          includeImports: includeImports === true,
-        });
+        const result = formatStructuredResult(
+          await tool.invoke(app, sanitized),
+          { includeImports: includeImports === true },
+          tool.searchTool === true && fieldsAbsent(search.fields),
+        );
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;
         return appendAutoUpdateHint(result, hint);
       },

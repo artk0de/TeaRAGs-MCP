@@ -17,6 +17,18 @@ import { createHash } from "node:crypto";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The `chunk_<hex>` name ingest gives a chunk (`generateChunkId`). */
+const CHUNK_NAME = /^chunk_[0-9a-f]+$/i;
+
+/**
+ * `id` names a point: a number, a UUID, or a chunk name the store maps. Any
+ * other string is not a point id — find_similar reads it as a symbolId
+ * (bd tea-rags-mcp-q1g6s.16).
+ */
+export function isPointIdentifier(id: string | number): boolean {
+  return typeof id === "number" || UUID.test(id) || CHUNK_NAME.test(id) || /^\d+$/.test(id);
+}
+
 /** A deterministic UUID-shaped id for `id`: sha256-derived for any non-UUID string. */
 export function toQdrantPointId(id: string | number): string | number {
   if (typeof id === "number" || UUID.test(id)) return id;

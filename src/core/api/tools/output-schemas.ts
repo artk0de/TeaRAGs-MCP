@@ -38,8 +38,8 @@ const SearchResultPayloadSchema = z
 
 /** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
 export const SearchResultItemSchema = z.object({
-  id: z.union([z.string(), z.number()]).describe("Chunk ID"),
-  score: z.number().describe("Relevance score"),
+  id: z.union([z.string(), z.number()]).optional().describe("Chunk ID (search tools: only with fields)"),
+  score: z.number().optional().describe("Relevance score (search tools: only with fields)"),
   payload: SearchResultPayloadSchema.optional(),
   rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
   treeState: z
@@ -57,7 +57,7 @@ export const ColumnTableSchema = z
   .describe(
     "One row per result; cell i belongs to columns[i]. Dotted column = payload path " +
       "(payload.relativePath, rankingOverlay.chunk.bugFixRate.label). null = absent; a column null in every row is omitted. " +
-      "Columns: id, score, payload.* (raw values; content omitted when metaOnly), " +
+      "Columns: [id, score], payload.* (raw values; content omitted when metaOnly), " +
       "rankingOverlay.{file,chunk}.* (labels), treeState (modified|deleted: index copy of a file your tree changed, may be stale).",
   );
 

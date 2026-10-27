@@ -174,7 +174,7 @@ export type {
   ReviewSectionResult,
 } from "./review.js";
 
-export { projectSearchResultPayloads } from "./payload-projection.js";
+export { DEFAULT_META_ONLY_FIELDS, DEFAULT_SEARCH_FIELDS, projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";
 
 export { stripInternalFields } from "./sanitize.js";

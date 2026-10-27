@@ -13,6 +13,7 @@ function createMockDeps() {
     hybridSearch: vi.fn().mockResolvedValue([]),
     scrollOrdered: vi.fn().mockResolvedValue([]),
     query: vi.fn().mockResolvedValue([{ id: "r1", score: 0.9, payload: { relativePath: "src/a.ts" } }]),
+    scrollBySymbolIds: vi.fn().mockResolvedValue([]),
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: false }),
   } as unknown as QdrantManager;
 

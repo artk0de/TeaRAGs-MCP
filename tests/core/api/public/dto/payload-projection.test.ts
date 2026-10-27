@@ -20,6 +20,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SearchResult } from "../../../../../src/core/api/public/dto/explore.js";
 import {
+  DEFAULT_META_ONLY_FIELDS,
+  DEFAULT_SEARCH_FIELDS,
   projectSearchResultPayloads,
   type PayloadProjectionOutcome,
 } from "../../../../../src/core/api/public/dto/payload-projection.js";
@@ -299,5 +301,74 @@ describe("projectSearchResultPayloads — default projection by call mode (N4)",
     const outcome = projectSearchResultPayloads([hit], ["git"], { metaOnly: true, reranked: false });
 
     expect(outcome.results[0]?.payload).toEqual({ git: hit.payload?.git });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Search tools' default fields (bd tea-rags-mcp-q1g6s.16)
+//
+// semantic_search / hybrid_search / rank_chunks / find_similar: `fields` absent
+// → the mode's default constant, whatever the rerank. chunkType, language and
+// navigation leave the row; preset signals ride on rankingOverlay. find_symbol
+// (no `searchTool` flag) keeps its own lean default, pinned above.
+// ---------------------------------------------------------------------------
+
+describe("projectSearchResultPayloads — search tools' default fields (q1g6s.16)", () => {
+  const SEARCH = { searchTool: true } as const;
+
+  it("exports one default per mode", () => {
+    expect(DEFAULT_SEARCH_FIELDS).toEqual(["relativePath", "symbolId", "startLine", "endLine", "content"]);
+    expect(DEFAULT_META_ONLY_FIELDS).toEqual(["relativePath", "symbolId", "startLine", "endLine", "signature"]);
+  });
+
+  it("narrows a metaOnly search row to DEFAULT_META_ONLY_FIELDS", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], undefined, {
+      metaOnly: true,
+      reranked: false,
+      ...SEARCH,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: LOCATOR.relativePath,
+      symbolId: LOCATOR.symbolId,
+      startLine: LOCATOR.startLine,
+      endLine: LOCATOR.endLine,
+      signature: LOCATOR.signature,
+    });
+  });
+
+  it("narrows a content search row to DEFAULT_SEARCH_FIELDS — no navigation, chunkType, language", () => {
+    const hit = makeFullHit();
+    const outcome = projectSearchResultPayloads([hit], undefined, { metaOnly: false, reranked: false, ...SEARCH });
+
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: LOCATOR.relativePath,
+      symbolId: LOCATOR.symbolId,
+      startLine: LOCATOR.startLine,
+      endLine: LOCATOR.endLine,
+      content: hit.payload?.content,
+    });
+  });
+
+  it("keeps a reranked content search row lean too; its labels stay on rankingOverlay", () => {
+    const overlay = { preset: "techDebt", file: { commitCount: { value: 12, label: "high" } } };
+    const outcome = projectSearchResultPayloads([makeFullHit({ rankingOverlay: overlay })], undefined, {
+      metaOnly: false,
+      reranked: true,
+      ...SEARCH,
+    });
+
+    expect(Object.keys(outcome.results[0]?.payload ?? {})).toEqual([...DEFAULT_SEARCH_FIELDS]);
+    expect(outcome.results[0]?.rankingOverlay).toEqual(overlay);
+  });
+
+  it("applies explicit fields exactly on a search row — the default never adds back", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], ["chunkType"], {
+      metaOnly: false,
+      reranked: false,
+      ...SEARCH,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual({ chunkType: "function" });
   });
 });

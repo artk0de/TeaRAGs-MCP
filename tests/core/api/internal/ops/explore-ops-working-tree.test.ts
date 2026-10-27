@@ -48,6 +48,7 @@ function makeQdrant(results: unknown[]) {
     hybridSearch: vi.fn().mockResolvedValue(results),
     query: vi.fn().mockResolvedValue(results),
     scrollFiltered: vi.fn().mockResolvedValue(results),
+    scrollBySymbolIds: vi.fn().mockResolvedValue([]),
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: true, pointsCount: 0 }),
     getPoint: vi.fn().mockResolvedValue(null),
     ensurePayloadIndex: vi.fn().mockResolvedValue(undefined),

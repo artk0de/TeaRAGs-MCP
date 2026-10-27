@@ -71,13 +71,16 @@
   and `fanIn` under `git.*`) or turned a stored number into `{value, label}` at
   a path filters and `fields` address as raw. With `fields` absent,
   `payload-projection.ts#projectSearchResultPayloads` then narrows the answer
-  per call mode (bd tea-rags-mcp-r4rl1): metaOnly → locator (raw `git.*` /
-  `codegraph.*` dropped, reranked or not), content → locator + `content` +
-  `navigation`, reranked content → whole payload. It runs LAST in
-  `ExploreOps#executeExplore`, so a strategy, reranker or the working-tree
-  substitution always reads the full payload. The locator's `signature` is
-  derived by `filterMetaOnly` — the only step that still holds the body. Raw
-  signals are reached through `fields` (`["git"]` copies the subtree).
+  per call mode (bd tea-rags-mcp-r4rl1). A search tool (`searchTool` on the
+  finalize options) gets `DEFAULT_SEARCH_FIELDS` / `DEFAULT_META_ONLY_FIELDS`,
+  reranked or not (bd tea-rags-mcp-q1g6s.16); find_symbol keeps its own lean
+  default: metaOnly → locator (raw `git.*` / `codegraph.*` dropped, reranked or
+  not), content → locator + `content` + `navigation`, reranked content → whole
+  payload. It runs LAST in `ExploreOps#executeExplore`, so a strategy, reranker
+  or the working-tree substitution always reads the full payload. The locator's
+  `signature` is derived by `filterMetaOnly` — the only step that still holds
+  the body. Raw signals are reached through `fields` (`["git"]` copies the
+  subtree).
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has

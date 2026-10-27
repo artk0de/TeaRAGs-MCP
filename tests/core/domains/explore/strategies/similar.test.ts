@@ -16,6 +16,8 @@ function createMockQdrant(
 ): QdrantManager {
   return {
     query: vi.fn().mockResolvedValue(queryResults),
+    // No indexed chunk carries the requested symbolId: an id resolves to itself (q1g6s.16).
+    scrollBySymbolIds: vi.fn().mockResolvedValue([]),
   } as unknown as QdrantManager;
 }
 
@@ -475,5 +477,67 @@ describe("SimilarSearchStrategy on a working tree", () => {
 
     expect(readDeltaChunks).not.toHaveBeenCalled();
     expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [TREE_ROW_ID] }));
+  });
+});
+
+// bd tea-rags-mcp-q1g6s.16: search rows no longer carry the point id, so an
+// example is addressed by the symbolId the row does carry. A point id (UUID or
+// number) still passes straight through; a symbolId resolves server-side to the
+// points whose symbolId is exactly it.
+describe("SimilarSearchStrategy — symbolId examples (q1g6s.16)", () => {
+  const POINT_ID = "0b6f9c1e-2d3a-4b5c-8d7e-9f0a1b2c3d4e";
+  const OTHER_POINT_ID = "1c7a0d2f-3e4b-4c6d-9e8f-0a1b2c3d4e5f";
+
+  it("resolves a symbolId positiveId to its point id before the recommend query", async () => {
+    const qdrant = createMockQdrant();
+    (qdrant.scrollBySymbolIds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: POINT_ID, payload: { symbolId: "ExploreOps#findSimilar" } },
+    ]);
+
+    await createStrategy({ qdrant, positiveIds: ["ExploreOps#findSimilar"] }).execute({
+      collectionName: "col",
+      limit: 5,
+    });
+
+    expect(qdrant.scrollBySymbolIds).toHaveBeenCalledWith("col", ["ExploreOps#findSimilar"], expect.any(Number));
+    expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [POINT_ID] }));
+  });
+
+  it("keeps only the points whose symbolId is exactly the one asked for", async () => {
+    const qdrant = createMockQdrant();
+    (qdrant.scrollBySymbolIds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: POINT_ID, payload: { symbolId: "Foo#bar" } },
+      { id: OTHER_POINT_ID, payload: { symbolId: "Foo#barBaz" } },
+    ]);
+
+    await createStrategy({ qdrant, positiveIds: ["Foo#bar"] }).execute({ collectionName: "col", limit: 5 });
+
+    expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [POINT_ID] }));
+  });
+
+  it("resolves a symbolId negativeId the same way", async () => {
+    const qdrant = createMockQdrant();
+    (qdrant.scrollBySymbolIds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: OTHER_POINT_ID, payload: { symbolId: "Legacy#run" } },
+    ]);
+
+    await createStrategy({ qdrant, positiveIds: [POINT_ID], negativeIds: ["Legacy#run"] }).execute({
+      collectionName: "col",
+      limit: 5,
+    });
+
+    expect(qdrant.query).toHaveBeenCalledWith(
+      "col",
+      expect.objectContaining({ positive: [POINT_ID], negative: [OTHER_POINT_ID] }),
+    );
+  });
+
+  it("passes a point id through without a symbolId lookup", async () => {
+    const qdrant = createMockQdrant();
+
+    await createStrategy({ qdrant, positiveIds: [POINT_ID] }).execute({ collectionName: "col", limit: 5 });
+
+    expect(qdrant.scrollBySymbolIds).not.toHaveBeenCalled();
+    expect(qdrant.query).toHaveBeenCalledWith("col", expect.objectContaining({ positive: [POINT_ID] }));
   });
 });

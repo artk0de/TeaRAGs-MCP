@@ -203,6 +203,12 @@ interface ExploreFinalizeOptions {
    */
   fields?: readonly string[];
   /**
+   * A search tool answers: `fields` absent → the search defaults
+   * (`DEFAULT_SEARCH_FIELDS` / `DEFAULT_META_ONLY_FIELDS`, bd
+   * tea-rags-mcp-q1g6s.16) instead of find_symbol's lean default.
+   */
+  searchTool?: boolean;
+  /**
    * Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides
    * on the answer, with the floors the strategy's reads claimed on it (D8).
    */
@@ -334,7 +340,7 @@ export class ExploreOps {
       this.scrollRankStrategy,
       withHistoryClock(buildRankChunksContext(request, collectionName, filter, level), historyAnchorSec),
       path,
-      { presetFilterNotice, fields: request.fields, workingTreeView },
+      { presetFilterNotice, fields: request.fields, searchTool: true, workingTreeView },
     );
   }
 
@@ -386,6 +392,7 @@ export class ExploreOps {
     return this.executeExplore(similar, ctx, path, {
       presetFilterNotice,
       fields: request.fields,
+      searchTool: true,
       workingTreeView,
     });
   }
@@ -619,7 +626,11 @@ export class ExploreOps {
       finalize.fields,
       // N4: `fields` absent → the call mode's default projection; the LAST
       // payload step, after every reader of the full payload ran.
-      { metaOnly: ctx.metaOnly === true, reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance" },
+      {
+        metaOnly: ctx.metaOnly === true,
+        reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance",
+        searchTool: finalize.searchTool === true,
+      },
     );
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
     const next = finalize.expansionHints
@@ -669,6 +680,7 @@ export class ExploreOps {
       attachConfidence,
       presetFilterNotice,
       fields: request.fields,
+      searchTool: true,
       workingTreeView,
       expansionHints: this.expansionHintsEnabled(),
     });
