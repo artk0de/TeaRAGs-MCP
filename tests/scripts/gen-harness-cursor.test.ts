@@ -199,17 +199,67 @@ describe("renderCursorHarness", () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it("registers only documented hook events and injects at sessionStart only", () => {
+  it("registers only documented hook events: every Claude hook Cursor has an event for", () => {
     const hooks = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
 
     expect(hooks.version).toBe(1);
     expect(Object.keys(hooks.hooks).filter((event) => !HOOK_EVENTS.has(event))).toEqual([]);
-    expect(Object.keys(hooks.hooks)).toEqual(["sessionStart"]);
+    expect(Object.keys(hooks.hooks)).toEqual([
+      "sessionStart",
+      "subagentStart",
+      "beforeReadFile",
+      "beforeShellExecution",
+      "afterShellExecution",
+    ]);
     const [{ command, timeout }] = hooks.hooks.sessionStart;
     expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"`);
     // A cold `tea-rags prime` boots the server (measured 12–26 s).
     expect(timeout).toBeGreaterThanOrEqual(60);
     expect(rendered.has("tea-rags/scripts/session-start.sh")).toBe(true);
+  });
+
+  it("wires each tool hook to a shipped script, one entry per event, never fail-closed", () => {
+    const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "") as {
+      hooks: Record<string, { command: string; timeout: number; failClosed?: boolean }[]>;
+    };
+    const scripts: Record<string, string> = {
+      subagentStart: "subagent-start.sh",
+      beforeReadFile: "deny-indexed-read.sh",
+      beforeShellExecution: "deny-indexed-read.sh",
+      afterShellExecution: "after-shell-execution.sh",
+    };
+
+    for (const [event, script] of Object.entries(scripts)) {
+      expect(hooks[event]).toHaveLength(1);
+      const [{ command, timeout, failClosed }] = hooks[event];
+      expect(command).toBe(`bash "\${CURSOR_PLUGIN_ROOT}/scripts/${script}"`);
+      expect(timeout).toBeGreaterThan(0);
+      expect(failClosed).toBeUndefined();
+      expect(rendered.has(`tea-rags/scripts/${script}`)).toBe(true);
+    }
+    // The Claude scripts the adapters run ship verbatim.
+    for (const script of ["cleanup-worktree-clone.sh", "check-build-fresh.sh"]) {
+      expect(rendered.get(`tea-rags/scripts/${script}`)).toBe(
+        readFileSync(join(ROOT, PLUGIN_SRC, "scripts", script), "utf8"),
+      );
+    }
+  });
+
+  it("ships the subagent search block in Cursor's dialect for subagentStart", () => {
+    const block = rendered.get("tea-rags/scripts/subagent-block.txt") ?? "";
+    const script = rendered.get("tea-rags/scripts/subagent-start.sh") ?? "";
+
+    expect(block.length).toBeGreaterThan(200);
+    expect(block).not.toContain("mcp__tea-rags__");
+    expect(block).not.toContain("ReadMcpResourceTool");
+    expect(script).toContain("additional_context");
+    expect(script).toContain('"permission"');
+  });
+
+  it("appends the stale-build warning to the sessionStart digest", () => {
+    const script = rendered.get("tea-rags/scripts/session-start.sh") ?? "";
+
+    expect(script).toContain("check-build-fresh.sh");
   });
 
   it("ships a sessionStart script that answers with additional_context", () => {

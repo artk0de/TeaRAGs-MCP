@@ -6,6 +6,30 @@
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh\"",
         "timeout": 60
       }
+    ],
+    "subagentStart": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/subagent-start.sh\"",
+        "timeout": 30
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/deny-indexed-read.sh\"",
+        "timeout": 10
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/deny-indexed-read.sh\"",
+        "timeout": 10
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/after-shell-execution.sh\"",
+        "timeout": 120
+      }
     ]
   }
 }
