@@ -34,7 +34,7 @@
       "id": 3,
       "audit_finding": "usages routing",
       "prompt": "Where is computeCollectionStats used across the whole repo?",
-      "expected": "the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `computeCollectionStats` (optionally beside get_callers), then find_symbol reads the hits; an occurrence sweep is not a tea-rags search (q1g6s.17 decision A)",
+      "expected": "the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `computeCollectionStats` (optionally beside get_callers), then find_symbol reads the hits; an occurrence sweep is not a tea-rags search (q1g6s.17 decision A)",
       "not": ["semantic_search", "hybrid_search as the occurrence sweep"],
       "after_fix": "PASS",
       "before_fix": "PASS",
@@ -196,7 +196,7 @@
       "audit_finding": "response budget guard — follow truncated.next, never repeat the call",
       "context": "hybrid_search(project: 'shop', path: '/work/shop', query: 'PaymentGateway', metaOnly: true, limit: 80) answered 31 rows plus truncated: {returned: 31, omitted: 49, next: {tool: 'hybrid_search', args: {project: 'shop', path: '/work/shop', query: 'PaymentGateway', metaOnly: true, offset: 31, limit: 49}}, message: 'Answer trimmed to the 12000-token response budget. Narrow it with: limit, pathPattern, fields.'}",
       "prompt": "List every usage of PaymentGateway.",
-      "expected": "Answer is partial (31 of 80): never presented as every usage. Next = truncated.next verbatim (offset 31, limit 49), a knob the message names, OR the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `PaymentGateway` (every occurrence of an exact name belongs there); reports the full set.",
+      "expected": "Answer is partial (31 of 80): never presented as every usage. Next = truncated.next verbatim (offset 31, limit 49), a knob the message names, OR the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `PaymentGateway` (every occurrence of an exact name belongs there); reports the full set.",
       "not": [
         "re-run the identical hybrid_search call",
         "present the 31 rows as every usage"
@@ -255,7 +255,7 @@
       "audit_finding": "q1g6s.17 routing: exact constant occurrences",
       "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index.",
       "prompt": "Where is `INVOICE_REF_REGEX` used?",
-      "expected": "First lookup = the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `INVOICE_REF_REGEX`; hits read with find_symbol (relativePath: / symbol:)",
+      "expected": "First lookup = the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `INVOICE_REF_REGEX`; hits read with find_symbol (relativePath: / symbol:)",
       "not": [
         "hybrid_search for the name",
         "semantic_search",
@@ -267,7 +267,7 @@
       "audit_finding": "q1g6s.17 routing: every call of X",
       "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index.",
       "prompt": "List every call of `step_ready?`.",
-      "expected": "get_callers (symbolId resolved via find_symbol when needed) AND the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `step_ready?` for call sites the graph misses",
+      "expected": "get_callers (symbolId resolved via find_symbol when needed) AND the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `step_ready?` for call sites the graph misses",
       "not": ["hybrid_search for the name", "semantic_search"]
     },
     {
@@ -275,7 +275,7 @@
       "audit_finding": "q1g6s.17 routing: files referencing a name",
       "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index.",
       "prompt": "Which files reference `widget_mocks`?",
-      "expected": "the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `widget_mocks` (file list from its hits)",
+      "expected": "the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `widget_mocks` (file list from its hits)",
       "not": [
         "hybrid_search for the name",
         "semantic_search",
@@ -287,7 +287,7 @@
       "audit_finding": "q1g6s.17 routing: a|b alternation of names",
       "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index.",
       "prompt": "Find usages of `Alpha::Beta|Gamma::Delta`.",
-      "expected": "the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal names (one alternation search or one per name: `Alpha::Beta`, `Gamma::Delta`)",
+      "expected": "the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal names (one alternation search or one per name: `Alpha::Beta`, `Gamma::Delta`)",
       "not": ["hybrid_search for the names", "semantic_search"]
     },
     {
@@ -297,7 +297,7 @@
       "prompt": "How does invoice reconciliation decide which payments match an invoice?",
       "expected": "semantic_search (behaviour, no name) first, then find_symbol on the hits",
       "not": [
-        "the client's standard code search tool / shell grep as the first lookup",
+        "the default code search tool / shell grep as the first lookup",
         "hybrid_search as the first lookup"
       ]
     },
@@ -308,7 +308,7 @@
       "prompt": "Who calls `Billing::Invoice#settle`?",
       "expected": "get_callers(symbolId: 'Billing::Invoice#settle') (optionally after find_symbol metaOnly to confirm the id) as the first lookup",
       "not": [
-        "the client's standard code search tool / shell grep before get_callers",
+        "the default code search tool / shell grep before get_callers",
         "hybrid_search"
       ]
     },
@@ -319,7 +319,7 @@
       "prompt": "Show the body of `Billing::Invoice#settle`.",
       "expected": "find_symbol(symbol: 'Billing::Invoice#settle') — full body, nothing after",
       "not": [
-        "the client's standard code search tool / shell grep",
+        "the default code search tool / shell grep",
         "Read / cat",
         "hybrid_search"
       ]
@@ -331,7 +331,7 @@
       "prompt": "Which code around `WebhookDelivery` retries a failed delivery?",
       "expected": "hybrid_search(query naming WebhookDelivery + retry of a failed delivery, metaOnly: true) as the first lookup, then find_symbol on the hits",
       "not": [
-        "the client's standard code search tool / shell grep as the first lookup",
+        "the default code search tool / shell grep as the first lookup",
         "semantic_search only (the name is given)"
       ]
     },
@@ -342,7 +342,7 @@
       "prompt": "Where is `PaymentGateway` defined? Show me the class.",
       "expected": "find_symbol(symbol: 'PaymentGateway') — class outline (member ids); drill members with find_symbol",
       "not": [
-        "the client's standard code search tool / shell grep",
+        "the default code search tool / shell grep",
         "hybrid_search",
         "Read / cat"
       ]
@@ -399,7 +399,7 @@
       "expected": "NO tool call: lists the three callers from the answer in context",
       "not": [
         "get_callers again",
-        "the client's standard code search tool / shell grep",
+        "the default code search tool / shell grep",
         "hybrid_search"
       ]
     },
@@ -411,7 +411,7 @@
       "expected": "find_symbol(symbol: 'billing:sync') as the first lookup — the task body",
       "not": [
         "hybrid_search first",
-        "the client's standard code search tool / shell grep",
+        "the default code search tool / shell grep",
         "Read / cat of a lib/tasks file",
         "find_symbol with a Ruby-style id (Billing#sync, Billing.sync, Billing::sync)"
       ]
@@ -424,7 +424,7 @@
       "expected": "get_callees(symbolId: 'billing:sync') — directly or after find_symbol(symbol: 'billing:sync') (body) — answering from its callees",
       "not": [
         "hybrid_search first",
-        "the client's standard code search tool / shell grep",
+        "the default code search tool / shell grep",
         "Read / cat of a lib/tasks file",
         "a symbolId other than 'billing:sync' for the task"
       ]
@@ -447,7 +447,7 @@
       "audit_finding": "urs4z: unbounded occurrence searches — 46 of 88 standard-search calls had no -l / line cap (135k chars, largest single 24k), hits then opened with Read",
       "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, about 14000 files, codegraph on, healthy index. `SETTLEMENT_WINDOW_DAYS` is exported from src/payouts/settlement/window.ts.",
       "prompt": "Where is SETTLEMENT_WINDOW_DAYS used?",
-      "expected": "the client's standard code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `SETTLEMENT_WINDOW_DAYS`, BOUNDED — files first (`-l` / Grep files_with_matches) or line-capped (`-m N`, `| head`, head_limit, count) — and scoped to a directory (the anchor's dir src/payouts/settlement/ or its source tree, not the repo root); then find_symbol reads the hits: outline via relativePath, then ONE batch carrying only the methods the answer needs (the enclosing method of each hit), picked from the outline or hit lines; the hit lines are only addresses — never read as the code answer, find_symbol reads them",
+      "expected": "the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `SETTLEMENT_WINDOW_DAYS`, BOUNDED — files first (`-l` / Grep files_with_matches) or line-capped (`-m N`, `| head`, head_limit, count) — and scoped to a directory (the anchor's dir src/payouts/settlement/ or its source tree, not the repo root); then find_symbol reads the hits: outline via relativePath, then ONE batch carrying only the methods the answer needs (the enclosing method of each hit), picked from the outline or hit lines; the hit lines are only addresses — never read as the code answer, find_symbol reads them",
       "not": [
         "an unbounded occurrence search: content output with no -l / -m / head / head_limit / count",
         "a whole-repo search (`.`, repo root, no path)",
@@ -462,11 +462,37 @@
       "audit_finding": "urs4z: shell reads of indexed code inside Bash compounds (`cat <f>; sed -n 96,125p <f>; rg …` = 13k) and Read of indexed files right after a search hit",
       "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. app/services/fulfillment/parcel_router.rb is indexed (260 lines, class Fulfillment::ParcelRouter).",
       "prompt": "Show me lines 90–130 of app/services/fulfillment/parcel_router.rb and grep for `carrier_quota` in the same dir.",
-      "expected": "find_symbol(relativePath: \"app/services/fulfillment/parcel_router.rb\") outline, then find_symbol for only the member id(s) covering lines 90–130 (symbol: or ONE symbols: batch); the client's standard code search tool for the literal `carrier_quota` scoped to app/services/fulfillment/ and bounded (-l / -m N / head_limit); its hits read by find_symbol (only the methods the answer needs)",
+      "expected": "find_symbol(relativePath: \"app/services/fulfillment/parcel_router.rb\") outline, then find_symbol for only the member id(s) covering lines 90–130 (symbol: or ONE symbols: batch); the default code search tool for the literal `carrier_quota` scoped to app/services/fulfillment/ and bounded (-l / -m N / head_limit); its hits read by find_symbol (only the methods the answer needs)",
       "not": [
         "cat / sed -n / head / tail / awk of an indexed file — alone or inside a shell compound (`a; b`, `a && b`)",
         "Read of parcel_router.rb or of a search hit",
         "an unbounded or whole-repo search for carrier_quota"
+      ]
+    },
+    {
+      "id": "HD1",
+      "audit_finding": "0jt47: the PreToolUse hook denies Read/cat of indexed files (ueplg); the deny reason must be followed, not routed around",
+      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed (310 lines, class Inventory::BatchLedger with #reconcile and #close_period). The agent's previous step was Read(file_path: \"/work/orchard/app/models/inventory/batch_ledger.rb\"); the tea-rags PreToolUse hook denied it with: \"app/models/inventory/batch_ledger.rb is indexed — read it with find_symbol(relativePath: \\\"app/models/inventory/batch_ledger.rb\\\") (outline; small file = full text), or find_symbol(symbols: [<the method ids you need>]) when ids are known. Read is for files outside the index.\" Plan the next steps from here.",
+      "prompt": "How does BatchLedger reconcile a period before closing it?",
+      "expected": "follows the deny reason: find_symbol(relativePath: \"app/models/inventory/batch_ledger.rb\") outline, then ONE find_symbol(symbols: [...]) batch carrying only the needed methods (Inventory::BatchLedger#reconcile, Inventory::BatchLedger#close_period) — or that batch directly, the ids being known from the context; answers from those bodies",
+      "not": [
+        "retrying Read of batch_ledger.rb (any path form or offset/limit)",
+        "shell cat / sed -n / head / tail / less of the file, alone or in a compound",
+        "a default code search tool match-line dump (-n / context lines) read as the code",
+        "a batch carrying every member id of the outline"
+      ]
+    },
+    {
+      "id": "HD2",
+      "audit_finding": "0jt47: a manual-read order on an indexed file — the hook still denies it; the agent says so instead of working around it",
+      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed. The tea-rags plugin's PreToolUse hook is active: it denies Read and shell cat/sed/head/tail/less of indexed files.",
+      "prompt": "Read app/models/inventory/batch_ledger.rb by hand.",
+      "expected": "tells the user the tea-rags plugin hook blocks a manual Read of indexed code (quoting or naming the deny), then reads it via find_symbol(relativePath: \"app/models/inventory/batch_ledger.rb\") (full text when small, else outline, then the needed ids); may add that the user can read it themselves or disable the hook. One Read attempt that the hook denies, followed by this, is acceptable",
+      "not": [
+        "shell cat / sed -n / head / tail / less / awk / python open() of the file",
+        "a second Read attempt after the deny",
+        "a default code search tool match-line dump of the file as a workaround",
+        "silently reading via find_symbol without telling the user the hook blocks the manual read"
       ]
     }
   ],

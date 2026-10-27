@@ -54,8 +54,8 @@ not that process for the codegraph flag: `run-prime.ts` re-applies
 (the codegraph-env-parity fix), so prime's composition always carries it and the
 finding can never appear in a prime run — by design, not a defect. Verify that
 one against an MCP server process started without the flag, through
-`get_index_status` or a search `driftWarning`. `TRAJECTORY_GIT_ENABLED` gets no
-such re-apply and fires in prime: exported `false` it prints
+`get_index_status` (read answers carry no drift). `TRAJECTORY_GIT_ENABLED` gets
+no such re-apply and fires in prime: exported `false` it prints
 `TRAJECTORY_GIT_ENABLED: true → false (explains any git.* payload-key drift — restore the flag instead of rebuilding)`,
 and unset it prints nothing, because the default is true.
 

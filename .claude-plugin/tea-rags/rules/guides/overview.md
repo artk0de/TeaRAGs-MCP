@@ -27,9 +27,10 @@ Search rows: `imports` = count (includeImports=true → lists); all-null columns
 - get_index_status → `infraHealth`: qdrant url/status/optimizer, embedding
   url/reachable, per-trajectory enrichment health. First debug point when search
   fails or looks wrong.
-- Any search response may carry `driftWarning`: running build moved past what
-  the index was built with (new payload fields, newer grammar / walker for a held
-  language). Names the one repair command. Surface to user; do NOT auto-reindex.
+- get_index_status / prime carry index drift (search / find_symbol / graph
+  answers never do): running build moved past what the index was built with (new
+  payload fields, newer grammar / walker for a held language). Names the one
+  repair command. Surface to user; do NOT auto-reindex.
 - Search naming a rerank preset may return `presetFilterNotice`: preset's DEFAULT
   filter (most: production = no tests/docs/block) narrowed the set unasked. Names
   preset, constrained payload keys, clearing param. Read before concluding the

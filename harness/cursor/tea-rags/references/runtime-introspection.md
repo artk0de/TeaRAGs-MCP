@@ -4,9 +4,9 @@
 > resource tool, or the read fails), run
 > `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
 
-Read when: search returned `driftWarning`; custom rerank, weight keys unknown;
-embedding/qdrant unreachable → health report; `rankingOverlay` to interpret.
-Base contract (infraHealth / driftWarning / presetFilterNotice / overlay) →
+Read when: get_index_status / prime reports index drift; custom rerank, weight
+keys unknown; embedding/qdrant unreachable → health report; `rankingOverlay` to
+interpret. Base contract (infraHealth / drift / presetFilterNotice / overlay) →
 `tea-rags://guide/overview` "Observability hooks". Here: details only.
 
 ## Resources
@@ -82,10 +82,12 @@ table: `section=thresholds`). Use when:
   `>= labelMap.high`)
 - overlay `value/label` surprises — verify bucket for that language scope
 
-## driftWarning — details
+## Index drift — details
 
-Hint, not error. Fires when index stamp ≠ running build (payload keys, language
-versions, indexing env, indexed commit).
+Hint, not error. Reported ONLY by `get_index_status` and prime (digest
+`## Drift`) when index stamp ≠ running build (payload keys, language versions,
+indexing env, indexed commit). Read answers (search, `find_symbol`, graph) never
+carry it — a read answer never triggers a repair.
 
 - Surface to user. Lists moved axes + ONE `Run:` line = cheapest repair
   (`--force-enrichments <scope>` enrichment-owned drift; `--force` only when
@@ -96,11 +98,10 @@ versions, indexing env, indexed commit).
 - Enable-flag rows (`CODEGRAPH_ENABLED` / `TRAJECTORY_GIT_ENABLED`) describe
   process READING index — each surface answers for own process. Digest
   re-applies `CODEGRAPH_ENABLED` from registry → row never appears there,
-  absence says nothing about server. Codegraph flag → `get_index_status` /
-  `driftWarning` (server answers for itself) or `metrics?section=registry`.
-- Same report without consuming: digest `## Drift` + `get_index_status`.
-  `driftWarning` spent once per collection per DISTINCT REPORT per server
-  session; re-armed after each index run.
+  absence says nothing about server. Codegraph flag → `get_index_status` (server
+  answers for itself) or `metrics?section=registry`.
+- Re-read freely: digest `## Drift` and `get_index_status` report the current
+  stamp on every call, nothing is consumed; clears after the index run.
 - tea-rags self-test only: full reset via `force_reindex` (project CLAUDE.md MCP
   testing section).
 

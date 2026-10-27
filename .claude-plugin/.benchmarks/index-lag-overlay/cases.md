@@ -20,7 +20,8 @@ copy):
 MARKER-COLD = "workingTree":{"tree":"/work/acme","indexedCommit":"cbb76f5","treeCommit":"d569ae8",
   "indexedDirty":true,"changedFiles":1833,"deletedFiles":184,"floors":[],"pendingFiles":1577,
   "denseUnavailable":{"reason":"104 rows pending"}}
-DRIFT-FORCE = "driftWarning":"Language versions:\n  *.chunking: 4 → 5\n  *.walker: 6 → 7\nWorking tree:\n
+DRIFT-FORCE = session digest `## Drift` text (same in get_index_status; read answers carry no drift):
+  "Language versions:\n  *.chunking: 4 → 5\n  *.walker: 6 → 7\nWorking tree:\n
   fix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\n
   Run: tea-rags index-codebase --project acme --force"
 ```
@@ -28,10 +29,10 @@ DRIFT-FORCE = "driftWarning":"Language versions:\n  *.chunking: 4 → 5\n  *.wal
 E1 [main session, inside dinopowers:brainstorming enrichment step, Ruby/Rails]
 Your three semantic_search calls (hotspots/ownership/techDebt, metaOnly) and one
 find_symbol(relativePath: app/controllers/auth_controller.rb) all came back with
-MARKER-COLD and DRIFT-FORCE. Result rows carry NO `treeState` field. Next you
-must (a) read AuthController#create and three other files named in the ticket
-and (b) find "who else redirects to new_session_url(location_after_sign_in:
-...)". What are your next actions?
+MARKER-COLD; the session digest `## Drift` showed DRIFT-FORCE. Result rows carry
+NO `treeState` field. Next you must (a) read AuthController#create and three
+other files named in the ticket and (b) find every other caller of
+new_session_url(location_after_sign_in: ...). What are your next actions?
 
 E2 [main session, same state as E1, ten minutes later] You already decided the
 index is "behind by 1833 files". You now need the body of
@@ -53,16 +54,17 @@ and search with grep through Bash] Index healthy (changedFiles 0). Task: "find
 every caller of build_after_sign_in_url". Next actions?
 
 E6 [main session, auto mode] Same harness note as E5. MARKER-COLD on the
-previous answer. Task: "understand what TokenAuthenticable#authenticate! does".
-Next actions?
+previous answer; no `## Drift` in the session digest. Task: "understand what
+TokenAuthenticable#authenticate! does". Next actions?
 
 E7 [main session, inside dinopowers:test-driven-development Step 2 — find test
 conventions for spec/requests/auth_controller_spec.rb] Previous answer carried
-MARKER-COLD + DRIFT-FORCE. Next actions?
+MARKER-COLD; the session digest `## Drift` shows DRIFT-FORCE. Next actions?
 
 E8 [subagent: task-agent, cwd /work/acme, dispatched by a parent to implement a
-fix] Your first find_symbol returned MARKER-COLD + DRIFT-FORCE. You need the
-body of Clusters::Login#oauth_redirect? and its callers. Next actions?
+fix] Your first find_symbol returned MARKER-COLD; a get_index_status call showed
+DRIFT-FORCE. You need the body of Clusters::Login#oauth_redirect? and its
+callers. Next actions?
 
 E9 [subagent: explore, cwd /work/acme] Prime digest at session start showed
 `## Drift ... Run: tea-rags index-codebase --project acme --force`. Task: "how
@@ -71,8 +73,8 @@ does OAuth callback reach sign-in?". Next actions?
 E10 [control, main session] Task: "list all TODO and FIXME comments under
 lib/middleware". Next actions?
 
-E11 [control, main session] DRIFT-FORCE showed up (no content lag: changedFiles
-0). User asked nothing about indexing. Do you run
+E11 [control, main session] The session digest `## Drift` shows DRIFT-FORCE (no
+content lag: changedFiles 0). User asked nothing about indexing. Do you run
 `tea-rags index-codebase --project acme --force`? Next actions?
 
 E12 [control, main session] A LIVE get_index_status reports

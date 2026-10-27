@@ -1111,3 +1111,41 @@ merges every part — the epic's target.
 - Round 2 (+ "never the repo root", range batch, "every call" in the callers
   row): all green. Watch: with no anchor, runs now scope to `app/` (Claude also
   runs `lib/`/`spec/` separately); recall outside the source dirs is the cost.
+
+## 2026-10-27 — indexed-read deny hook, read answers without drift/next (0jt47, tea-rags 0.47.33)
+
+- New cases HD1 (the hook's deny reason in the context, the agent must follow
+  it) and HD2 (manual-read order of an indexed file). IDs `HD*` because
+  `H1`–`H5` are the q1g6s.17 re-read cases. The stand runs plan-only, so the
+  deny is scripted in HD1's context.
+- core.md: drift (3) names its only sources (status / prime / index, never a
+  read answer); "no `workingTree` on project+path = current" in the treeState
+  invariant; manual-read row splits unindexed (default code read tool) vs
+  indexed (tell the user the plugin hook blocks it, read via `find_symbol` now,
+  never shell `cat`/`sed`). core.md 8876 chars, Codex `core.txt` 9244, Cursor
+  `tea-rags-core.mdc` 9047.
+- Neighbours: G2 (this suite), index-lag E11 (drift `--force` ask) and E13
+  (Russian manual-read order on a lagging index; expectation updated from "Read"
+  to the hook route). explore 1 / 8 / 14 expectations moved to the occurrence
+  route (default code search tool `-l` → `find_symbol`; every caller adds
+  `get_callers`).
+
+| Case       | R1 Codex | R1 Claude | R2 Codex | R2 Claude | R3 Codex | R3 Claude |
+| ---------- | -------- | --------- | -------- | --------- | -------- | --------- |
+| HD1        | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| HD2        | 3/3      | 1/1       | 2/3      | 1/1       | 3/3      | 1/1       |
+| G2         | 2/3      | 1/1       | 3/3      | 1/1       | 2/3      | 1/1       |
+| explore 1  | 3/3      | 1/1       | —        | —         | 3/3      | 1/1       |
+| explore 8  | 3/3      | 1/1       | —        | —         | 3/3      | 1/1       |
+| explore 14 | 3/3      | 1/1       | —        | —         | 2/3      | 1/1       |
+| E11        | 3/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+| E13        | 2/3      | 1/1       | 3/3      | 1/1       | 3/3      | 1/1       |
+
+- R1 → R2 ("say hook blocks it" → "tell user the plugin hook blocks it"): E13 r3
+  had read via `find_symbol` without naming the hook.
+- R2 → R3 ("then `find_symbol`" → "read it via `find_symbol` now"): HD2 r1 had
+  only offered the `find_symbol` read.
+- Open after the 2-round cap: G2 r1 (R1, R3) reports grep hit paths without a
+  `find_symbol` read of the hits — the request is "grep for", so the case's
+  "hits read by find_symbol" is ambiguous; explore 14 R3 r3 dropped
+  `get_callers` for "all callers" (callers row unchanged since R1 3/3).
