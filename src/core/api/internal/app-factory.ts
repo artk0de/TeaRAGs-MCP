@@ -28,7 +28,11 @@ import type {
   QdrantPointWriter,
 } from "../../adapters/qdrant/ports.js";
 import type { RerankerPort } from "../../domains/explore/reranker-port.js";
-import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
+import {
+  formatConsumedIndexDriftReport,
+  formatIndexDriftReport,
+  type IndexDriftReporter,
+} from "../../domains/maintenance/drift/index.js";
 import type { App } from "../public/app.js";
 import type { IndexStatus, PresetDetail, WorkingTreeIndexTarget } from "../public/dto/index.js";
 import {
@@ -256,16 +260,20 @@ export function createApp(deps: AppDeps): App {
 
     // -- Drift monitoring --
     checkIndexDrift: async ({ path, collection, consume }) => {
-      const report = path
-        ? consume
-          ? await deps.driftReporter.checkAndConsume(path)
-          : await deps.driftReporter.checkByPath(path)
+      if (!consume) {
+        const report = path
+          ? await deps.driftReporter.checkByPath(path)
+          : collection
+            ? deps.driftReporter.checkByCollectionName(collection)
+            : null;
+        return report && formatIndexDriftReport(report);
+      }
+      const consumed = path
+        ? await deps.driftReporter.checkAndConsume(path)
         : collection
-          ? consume
-            ? deps.driftReporter.checkAndConsumeByCollectionName(collection)
-            : deps.driftReporter.checkByCollectionName(collection)
+          ? deps.driftReporter.checkAndConsumeByCollectionName(collection)
           : null;
-      return report && formatIndexDriftReport(report);
+      return consumed && formatConsumedIndexDriftReport(consumed);
     },
 
     // -- Project registry — delegate to ProjectRegistryOps --

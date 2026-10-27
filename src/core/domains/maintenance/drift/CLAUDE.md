@@ -18,7 +18,8 @@
   compute one.
 - **`IndexDriftReporter` owns consumption.** The two consuming checks —
   `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
-  them search — show a collection once per REPORT SIGNATURE per process, so a
+  them search — show a collection in full once per REPORT SIGNATURE per process
+  and return `repeat: true` after (rendered as a one-line digest pointer), so a
   clean check spends nothing and a report that grew a finding warns again;
   `IndexingOps` calls `reset(collectionName)` after every run's stamps, which
   clears every signature recorded for it. A monitor never tracks "already

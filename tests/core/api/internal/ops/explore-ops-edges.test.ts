@@ -156,7 +156,7 @@ describe("ExploreOps drift warning — collection-only path", () => {
     // It consumes: a collection-addressed search is a search, and a warning it
     // renders is one the reader has now been shown.
     const driftReporter = makeMockDriftReporter({
-      checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
+      checkAndConsumeByCollectionName: vi.fn().mockReturnValue({ report: driftReport, repeat: false }),
     });
     const facade = new ExploreFacade({
       qdrant: makeMockQdrant(),

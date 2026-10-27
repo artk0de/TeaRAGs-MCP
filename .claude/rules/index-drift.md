@@ -39,8 +39,10 @@ fold with each other through `combineRechunkSelectors` (a superset, never
 narrower); any unscoped `force` absorbs them all back into the plain `--force`.
 Coverage — which scope a finished run may claim — is `chunk-set-scope.ts`, the
 one judgement the monitor and `IndexingOps#stampRechunkedChunkSet` share. The
-search path shows each report once per collection per REPORT SIGNATURE per
-process, so a clean check consumes nothing and a changed report warns again.
+search path shows each report in full once per collection per REPORT SIGNATURE
+per process, later answers carry a one-line pointer to the digest
+(`formatConsumedIndexDriftReport`), so a clean check consumes nothing and a
+changed report warns again in full.
 
 ## An enable-flag finding is about the process that READS the index
 

@@ -10,6 +10,7 @@ import type {
   IndexDriftMonitor,
 } from "../../../../../src/core/domains/maintenance/drift/monitor.js";
 import {
+  formatConsumedIndexDriftReport,
   formatIndexDriftReport,
   IndexDriftReporter,
 } from "../../../../../src/core/domains/maintenance/drift/report.js";
@@ -87,18 +88,18 @@ describe("IndexDriftReporter", () => {
   it("reset makes checkAndConsume report the collection again", async () => {
     const reporter = new IndexDriftReporter([fixed([keyFinding])]);
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
     reporter.reset(resolveCollectionName(await validatePath("/tmp/test-project")));
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
   });
 
   // Moved from schema-drift-monitor.test.ts — consumption now lives here.
-  it("checkAndConsume reports the SAME report once per process", async () => {
+  it("checkAndConsume reports the SAME report in full once per process, then as a repeat", async () => {
     const reporter = new IndexDriftReporter([fixed([keyFinding])]);
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
-    expect(await reporter.checkAndConsume("/tmp/test-project")).toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(true);
   });
 
   it("checkByPath reports without consuming — a later checkAndConsume still fires", async () => {
@@ -106,7 +107,7 @@ describe("IndexDriftReporter", () => {
 
     expect(await reporter.checkByPath("/tmp/test-project")).not.toBeNull();
     expect(await reporter.checkByPath("/tmp/test-project")).not.toBeNull();
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
   });
 
   it("checkByPath swallows an invalid path", async () => {
@@ -150,20 +151,20 @@ describe("IndexDriftReporter — consumption keyed by (collection, report signat
     expect(await reporter.checkAndConsume("/tmp/test-project")).toBeNull();
     state.findings = [keyFinding];
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
   });
 
   it("warns again when the report itself changes", async () => {
     const state = { findings: [keyFinding] };
     const reporter = new IndexDriftReporter([mutable(state)]);
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
-    expect(await reporter.checkAndConsume("/tmp/test-project")).toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(true);
     // A new commit moved HEAD: same collection, different report.
     state.findings = [keyFinding, commitFinding];
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
-    expect(await reporter.checkAndConsume("/tmp/test-project")).toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(true);
   });
 
   it("reset clears EVERY signature recorded for the collection", async () => {
@@ -177,26 +178,26 @@ describe("IndexDriftReporter — consumption keyed by (collection, report signat
     reporter.reset(collectionName);
 
     // Both signatures are re-armed, not just the most recent one.
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
     state.findings = [keyFinding];
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
   });
 
   it("keeps one collection's signatures out of another's", async () => {
     const reporter = new IndexDriftReporter([fixed([keyFinding])]);
 
-    expect(reporter.checkAndConsumeByCollectionName("code_a")).not.toBeNull();
-    expect(reporter.checkAndConsumeByCollectionName("code_b")).not.toBeNull();
-    expect(reporter.checkAndConsumeByCollectionName("code_a")).toBeNull();
+    expect(reporter.checkAndConsumeByCollectionName("code_a")?.repeat).toBe(false);
+    expect(reporter.checkAndConsumeByCollectionName("code_b")?.repeat).toBe(false);
+    expect(reporter.checkAndConsumeByCollectionName("code_a")?.repeat).toBe(true);
   });
 
   it("checkAndConsumeByCollectionName consumes the same set the path variant does", async () => {
     const reporter = new IndexDriftReporter([fixed([keyFinding])]);
     const collectionName = resolveCollectionName(await validatePath("/tmp/test-project"));
 
-    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    expect((await reporter.checkAndConsume("/tmp/test-project"))?.repeat).toBe(false);
 
-    expect(reporter.checkAndConsumeByCollectionName(collectionName)).toBeNull();
+    expect(reporter.checkAndConsumeByCollectionName(collectionName)?.repeat).toBe(true);
   });
 
   it("checkByCollectionName stays non-consuming", () => {
@@ -204,7 +205,7 @@ describe("IndexDriftReporter — consumption keyed by (collection, report signat
 
     expect(reporter.checkByCollectionName("code_a")).not.toBeNull();
     expect(reporter.checkByCollectionName("code_a")).not.toBeNull();
-    expect(reporter.checkAndConsumeByCollectionName("code_a")).not.toBeNull();
+    expect(reporter.checkAndConsumeByCollectionName("code_a")?.repeat).toBe(false);
   });
 });
 
@@ -250,13 +251,13 @@ describe("IndexDriftReporter — path resolution", () => {
   it("checkAndConsume consumes under the injected resolver's collection", async () => {
     const reporter = relocated([fixed([keyFinding])]);
 
-    expect(await reporter.checkAndConsume(PROJECT_PATH)).not.toBeNull();
+    expect((await reporter.checkAndConsume(PROJECT_PATH))?.repeat).toBe(false);
 
     // Consumption landed on the registry's collection: the collection-addressed
     // search sees it spent, and the index run's reset of that same name re-arms it.
-    expect(reporter.checkAndConsumeByCollectionName(RELOCATED)).toBeNull();
+    expect(reporter.checkAndConsumeByCollectionName(RELOCATED)?.repeat).toBe(true);
     reporter.reset(RELOCATED);
-    expect(await reporter.checkAndConsume(PROJECT_PATH)).not.toBeNull();
+    expect((await reporter.checkAndConsume(PROJECT_PATH))?.repeat).toBe(false);
   });
 
   it("keeps resolving by path hash when no resolver is injected", async () => {
@@ -351,5 +352,37 @@ describe("IndexDriftReporter — every axis at once", () => {
       "Indexing env:",
       "Working tree:",
     ]);
+  });
+});
+
+/**
+ * q1g6s.15: the long-lived MCP server shows a report in full once; every later
+ * answer that rides the SAME report carries a one-line pointer, so the drift
+ * stays visible without re-sending the whole warning.
+ */
+describe("formatConsumedIndexDriftReport", () => {
+  it("renders a first sighting as the full report", async () => {
+    const reporter = new IndexDriftReporter([fixed([keyFinding])], () => "proj");
+    const consumed = (await reporter.checkAndConsume("/tmp/test-project"))!;
+
+    expect(formatConsumedIndexDriftReport(consumed)).toBe(formatIndexDriftReport(consumed.report));
+  });
+
+  it("renders a repeat as a pointer to the project digest", async () => {
+    const reporter = new IndexDriftReporter([fixed([keyFinding])], () => "proj");
+    await reporter.checkAndConsume("/tmp/test-project");
+
+    expect(formatConsumedIndexDriftReport((await reporter.checkAndConsume("/tmp/test-project"))!)).toBe(
+      "index drift unchanged — see tea-rags://project/proj/digest",
+    );
+  });
+
+  it("points a repeat without an alias at get_index_status", () => {
+    const reporter = new IndexDriftReporter([fixed([keyFinding])]);
+    reporter.checkAndConsumeByCollectionName("code_a");
+
+    expect(formatConsumedIndexDriftReport(reporter.checkAndConsumeByCollectionName("code_a")!)).toBe(
+      "index drift unchanged — see get_index_status",
+    );
   });
 });

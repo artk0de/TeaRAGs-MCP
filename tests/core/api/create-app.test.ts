@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
-import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
-import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
+import {
+  createApp,
+  type AppDeps,
+  type ExploreFacade,
+  type IngestFacade,
+  type ProjectRegistryOps,
+} from "../../../src/core/api/index.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 import type { IndexDriftReport, IndexDriftReporter } from "../../../src/core/domains/maintenance/drift/index.js";
 
@@ -441,7 +446,10 @@ describe("createApp", () => {
     });
 
     it("renders the report from a path-based check", async () => {
-      (deps.driftReporter.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
+      (deps.driftReporter.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue({
+        report: payloadKeyReport,
+        repeat: false,
+      });
 
       const app = createApp(deps);
       const result = await app.checkIndexDrift({ path: "/foo", consume: true });

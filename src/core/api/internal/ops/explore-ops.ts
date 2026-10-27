@@ -49,20 +49,19 @@ import {
   UnknownFilterPresetError,
   type BaseExploreStrategy,
   type ExploreContext,
+  type ExploreRequestScope,
   type ExploreResult,
+  type RerankerPort,
   type SearchConfidenceInput,
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
-import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
-import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
-import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
-import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
+import { formatConsumedIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
+import { compileFilterPreset, type TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
   projectSearchResultPayloads,
   stripInternalFields,
@@ -960,12 +959,12 @@ export class ExploreOps {
    */
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
     if (!this.driftReporter) return null;
-    const report = path
+    const consumed = path
       ? await this.driftReporter.checkAndConsume(path)
       : collectionName
         ? this.driftReporter.checkAndConsumeByCollectionName(collectionName)
         : null;
-    return report && formatIndexDriftReport(report);
+    return consumed && formatConsumedIndexDriftReport(consumed);
   }
 }
 
