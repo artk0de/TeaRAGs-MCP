@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import type { WorkingTreeMarker } from "../../../../src/core/api/public/dto/working-tree.js";
 import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
 import { compactWorkingTreeMarker } from "../../../../src/core/api/tools/format.js";
 import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
@@ -242,7 +243,7 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("validates a measured marker and a degraded one", () => {
-    const measured = {
+    const measured: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: null,
@@ -251,14 +252,18 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
       deletedFiles: 0,
       floors: [],
     };
-    const degraded = {
+    const degraded: WorkingTreeMarker = {
       ...measured,
       indexedCommit: null,
       degraded: { reason: "index has no indexedCommit stamp", remedy: "tea-rags index-codebase --project p" },
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: measured }).workingTree).toEqual(measured);
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: degraded }).workingTree).toEqual(degraded);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(measured) }).workingTree).toEqual(
+      compactWorkingTreeMarker(measured),
+    );
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(degraded) }).workingTree).toEqual(
+      compactWorkingTreeMarker(degraded),
+    );
   });
 
   // bd tea-rags-mcp-45kbu: a clean answer's marker is compacted at the MCP
@@ -278,8 +283,17 @@ describe("SearchResultOutputSchema — workingTree (xi2r9.1)", () => {
     expect(schema.parse({ results: EMPTY_TABLE, workingTree: compact }).workingTree).toEqual({
       tree: "/repo/wt",
       project: "p",
-      changedFiles: 0,
     });
+  });
+});
+
+describe("SearchResultOutputSchema — workingTree wire keys (q1g6s.15)", () => {
+  it("declares no floors, commits or indexedDirty and leaves changedFiles optional", () => {
+    const marker = SearchResultOutputSchema.workingTree.unwrap();
+    const keys = Object.keys(marker.shape);
+
+    expect(keys.filter((key) => ["floors", "indexedCommit", "treeCommit", "indexedDirty"].includes(key))).toEqual([]);
+    expect(marker.shape.changedFiles.isOptional()).toBe(true);
   });
 });
 
@@ -287,7 +301,7 @@ describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("validates the dense floor and the reason some rows were ranked without it", () => {
-    const marker = {
+    const marker: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: "b".repeat(40),
@@ -298,7 +312,9 @@ describe("SearchResultOutputSchema — workingTree dense floor (WTO-5)", () => {
       denseUnavailable: { reason: "3 rows pending" },
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(marker) }).workingTree).toEqual(
+      compactWorkingTreeMarker(marker),
+    );
   });
 });
 
@@ -306,7 +322,7 @@ describe("SearchResultOutputSchema — workingTree git signals pending", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("keeps gitUnavailable on the marker", () => {
-    const marker = {
+    const marker: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: "b".repeat(40),
@@ -317,7 +333,9 @@ describe("SearchResultOutputSchema — workingTree git signals pending", () => {
       gitUnavailable: { reason: "1 row pending" },
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(marker) }).workingTree).toEqual(
+      compactWorkingTreeMarker(marker),
+    );
   });
 });
 
@@ -325,7 +343,7 @@ describe("SearchResultOutputSchema — workingTree index-only files", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("keeps indexOnlyFiles on the marker", () => {
-    const marker = {
+    const marker: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: "b".repeat(40),
@@ -336,7 +354,9 @@ describe("SearchResultOutputSchema — workingTree index-only files", () => {
       indexOnlyFiles: 3,
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(marker) }).workingTree).toEqual(
+      compactWorkingTreeMarker(marker),
+    );
   });
 });
 
@@ -344,7 +364,7 @@ describe("SearchResultOutputSchema — workingTree pending files", () => {
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("keeps pendingFiles on the marker", () => {
-    const marker = {
+    const marker: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: "b".repeat(40),
@@ -355,7 +375,9 @@ describe("SearchResultOutputSchema — workingTree pending files", () => {
       pendingFiles: 2,
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(marker) }).workingTree).toEqual(
+      compactWorkingTreeMarker(marker),
+    );
   });
 });
 
@@ -390,7 +412,7 @@ describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () 
   const schema = z.object(SearchResultOutputSchema).strict();
 
   it("keeps project on the marker", () => {
-    const marker = {
+    const marker: WorkingTreeMarker = {
       tree: "/repo/wt",
       indexedCommit: "a".repeat(40),
       treeCommit: "b".repeat(40),
@@ -401,7 +423,9 @@ describe("SearchResultOutputSchema — workingTree answering alias (iqx9x)", () 
       project: "proj",
     };
 
-    expect(schema.parse({ results: EMPTY_TABLE, workingTree: marker }).workingTree).toEqual(marker);
+    expect(schema.parse({ results: EMPTY_TABLE, workingTree: compactWorkingTreeMarker(marker) }).workingTree).toEqual(
+      compactWorkingTreeMarker(marker),
+    );
   });
 });
 

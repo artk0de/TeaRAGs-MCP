@@ -190,7 +190,7 @@ describe("registerSearchTools", () => {
       ],
     });
     expect(result.structuredContent.driftWarning).toBe("stale");
-    expect(result.structuredContent.workingTree).toEqual(workingTree);
+    expect(result.structuredContent.workingTree).toEqual({ tree: "/x", changedFiles: 1 });
   });
 });
 
@@ -367,7 +367,7 @@ describe("registerSearchTools — workingTree", () => {
         structuredContent: { workingTree?: unknown };
       };
 
-      expect(result.structuredContent.workingTree).toEqual(marker);
+      expect(result.structuredContent.workingTree).toEqual({ tree: "/repo/wt", changedFiles: 3, deletedFiles: 1 });
     },
   );
 
@@ -381,7 +381,7 @@ describe("registerSearchTools — workingTree", () => {
   // bd tea-rags-mcp-45kbu: a clean tree's marker goes out compact, and the
   // output schema the SDK validates every answer against accepts that shape.
   it.each(Object.keys(appMethods) as (keyof typeof appMethods)[])(
-    "%s emits a clean marker as tree, project and changedFiles 0",
+    "%s emits a clean marker as tree and project",
     async (toolName) => {
       const clean = { ...marker, changedFiles: 0, deletedFiles: 0, project: "proj" };
       const { captured } = makeHarness({
@@ -396,7 +396,6 @@ describe("registerSearchTools — workingTree", () => {
       expect(result.structuredContent.workingTree).toStrictEqual({
         tree: "/repo/wt",
         project: "proj",
-        changedFiles: 0,
       });
       expect(() => z.object(tool!.config.outputSchema as z.ZodRawShape).parse(result.structuredContent)).not.toThrow();
     },

@@ -15,12 +15,10 @@ describe("formatWorkingTreeMarker", () => {
   };
 
   it("should render a measured marker on one line", () => {
-    expect(formatWorkingTreeMarker(base)).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 3 · deleted 1 · floors none",
-    );
+    expect(formatWorkingTreeMarker(base)).toBe("workingTree: /repo/wt · changed 3 · deleted 1");
   });
 
-  it("should list floors and append the degradation with its remedy", () => {
+  it("should append the degradation with its remedy, without floors or commits", () => {
     const text = formatWorkingTreeMarker({
       ...base,
       indexedCommit: null,
@@ -29,7 +27,7 @@ describe("formatWorkingTreeMarker", () => {
     });
 
     expect(text).toBe(
-      "workingTree: /repo/wt · index @none · tree @fedcba9 · changed 3 · deleted 1 · floors chunks,sparse" +
+      "workingTree: /repo/wt · changed 3 · deleted 1" +
         " · degraded: index has no indexedCommit stamp → tea-rags index-codebase --project p",
     );
   });
@@ -37,7 +35,7 @@ describe("formatWorkingTreeMarker", () => {
 
 /** The dense floor's line parts (bd tea-rags-mcp-xi2r9, WTO-5). */
 describe("formatWorkingTreeMarker — dense floor", () => {
-  it("should list the dense floor and say why some rows were ranked without a vector", () => {
+  it("should say why some rows were ranked without a vector", () => {
     const text = formatWorkingTreeMarker({
       tree: "/repo/wt",
       indexedCommit: "0123456789abcdef0123456789abcdef01234567",
@@ -49,10 +47,7 @@ describe("formatWorkingTreeMarker — dense floor", () => {
       denseUnavailable: { reason: "connect ECONNREFUSED 127.0.0.1:1" },
     });
 
-    expect(text).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 2 · deleted 0 · floors chunks,dense" +
-        " · dense unavailable: connect ECONNREFUSED 127.0.0.1:1",
-    );
+    expect(text).toBe("workingTree: /repo/wt · changed 2" + " · dense unavailable: connect ECONNREFUSED 127.0.0.1:1");
   });
 });
 
@@ -70,10 +65,7 @@ describe("formatWorkingTreeMarker — git signals pending", () => {
       gitUnavailable: { reason: "3 rows pending" },
     });
 
-    expect(text).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 2 · deleted 0 · floors chunks,sparse" +
-        " · git unavailable: 3 rows pending",
-    );
+    expect(text).toBe("workingTree: /repo/wt · changed 2" + " · git unavailable: 3 rows pending");
   });
 });
 
@@ -91,9 +83,7 @@ describe("formatWorkingTreeMarker — index-only files", () => {
       indexOnlyFiles: 2,
     });
 
-    expect(text).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (2 index-only) · deleted 0 · floors chunks",
-    );
+    expect(text).toBe("workingTree: /repo/wt · changed 5 (2 index-only)");
   });
 });
 
@@ -110,14 +100,12 @@ describe("formatWorkingTreeMarker — pending files", () => {
   };
 
   it("should name how many changed files are still warming", () => {
-    expect(formatWorkingTreeMarker({ ...base, pendingFiles: 3 })).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (3 pending) · deleted 0 · floors chunks",
-    );
+    expect(formatWorkingTreeMarker({ ...base, pendingFiles: 3 })).toBe("workingTree: /repo/wt · changed 5 (3 pending)");
   });
 
   it("should name index-only and pending files together", () => {
     expect(formatWorkingTreeMarker({ ...base, indexOnlyFiles: 2, pendingFiles: 3 })).toBe(
-      "workingTree: /repo/wt · index @0123456 · tree @fedcba9 · changed 5 (2 index-only, 3 pending) · deleted 0 · floors chunks",
+      "workingTree: /repo/wt · changed 5 (2 index-only, 3 pending)",
     );
   });
 });
@@ -146,8 +134,6 @@ describe("formatWorkingTreeMarker — answering alias", () => {
     });
 
     // A changed tree: a clean one renders compact (bd tea-rags-mcp-45kbu).
-    expect(text).toBe(
-      "workingTree: /repo/wt · project proj · index @0123456 · tree @fedcba9 · changed 1 · deleted 0 · floors none",
-    );
+    expect(text).toBe("workingTree: /repo/wt · project proj · changed 1");
   });
 });

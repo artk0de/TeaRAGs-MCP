@@ -23,6 +23,11 @@ import {
 import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
+/** q1g6s.15: every degraded reason says the answer still comes from the index. */
+const overlayUnavailable = (cause: string): string =>
+  `working-tree overlay unavailable (${cause}): answers come from the index at its last indexed commit; ` +
+  "uncommitted edits are not reflected";
+
 /**
  * `WorkingTreeOverlay#view` (bd tea-rags-mcp-xi2r9.1): the marker every read
  * answer carries. The index is commit A recorded for the main checkout; the
@@ -231,7 +236,7 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       const view = await overlayWith().view(workingTree(), "proj");
 
       expect(view.marker.degraded).toEqual({
-        reason: "index built from a dirty tree; its dirty files are unknown",
+        reason: overlayUnavailable("index built from a dirty tree; its dirty files are unknown"),
         remedy: "tea-rags index-codebase --project proj",
       });
       expect(view.touchedPaths.size).toBe(0);
@@ -244,7 +249,9 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
 
       const view = await overlayWith().view(workingTree(), "proj");
 
-      expect(view.marker.degraded?.reason).toBe("index built from a dirty tree whose dirty files were not listed");
+      expect(view.marker.degraded?.reason).toBe(
+        overlayUnavailable("index built from a dirty tree whose dirty files were not listed"),
+      );
       expect(view.marker.degraded?.remedy).toBe("tea-rags index-codebase --project proj");
       expect(view.touchedPaths.size).toBe(0);
     });
@@ -316,10 +323,25 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
 
     expect(view.marker).toMatchObject({ tree, indexedCommit: null, changedFiles: 0, deletedFiles: 0 });
     expect(view.marker.degraded).toEqual({
-      reason: "index has no indexedCommit stamp",
+      reason: overlayUnavailable("index has no indexedCommit stamp"),
       remedy: "tea-rags index-codebase --project proj",
     });
     expect(view.touchedPaths.size).toBe(0);
+  });
+
+  // q1g6s.15: a benchmark stand that blocked git degraded every answer; the
+  // reason must say the answer still comes from the index, so the agent keeps it.
+  it("should degrade with a reason saying answers come from the index when the delta read fails", async () => {
+    record({ indexedCommit, indexedDirty: false });
+    const failing: WorkingTreeDeltaReader = {
+      read: async () => Promise.reject(new Error("status failed: permission denied\nstack")),
+    };
+
+    const view = await overlayWith(failing).view(workingTree(), "proj");
+
+    expect(view.marker.degraded?.reason).toBe(
+      overlayUnavailable("cannot read the working tree delta: status failed: permission denied"),
+    );
   });
 
   it("should fall back to the registry alias when the caller named none", async () => {
