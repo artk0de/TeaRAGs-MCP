@@ -31,9 +31,14 @@ instance, `Class.method` static, `functionName` top-level). Bare
 
 - **"Who uses X?" / "who calls X?" / "callers of X"** →
   `get_callers symbolId=<id>` → invoking symbols + `call_expression` preview +
-  `file:line`.
+  `file:line`. Impact / "who ends up calling X" → `depth: 2` in the same call.
 - **"What does X call?" / "callees of X" / "what does X use"** →
-  `get_callees symbolId=<id>` → invoked symbols + `file:line`.
+  `get_callees symbolId=<id>` → invoked symbols + `file:line`. Flow ("how X
+  works", "what happens when") → `depth: 2`, never one call per hop.
+- **`depth` > 1** → `tree` rows in BFS order: read by `parent`; `seen` = listed
+  above, `external` = unresolved-call count. Then ONE
+  `find_symbol(symbols: [...])` of only the tree methods the answer needs.
+  `truncated.next` → run it verbatim.
 - **"Who imports this file?" / "what does this file depend on?"** — target =
   FILE: skip Step 1, pass `relativePath=<path>` (repo-relative) instead of
   `symbolId`. `get_callers` → `importers[]`, `get_callees` → `imports[]`; each

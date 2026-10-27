@@ -15,7 +15,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 | symbol + intent | `hybrid_search` |
 | a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
 | code like a chunk in hand | `find_similar(positiveIds:)` |
-| how X works / who calls X | `get_callees` / `get_callers` (`symbolId:` from a row) |
+| how X works / who calls X | `get_callees`/`get_callers(symbolId:<id>, depth: 2)` |
 | chain A→B ("how does X reach Y") | `find_symbol` both ids → `trace_path` |
 | diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | Grep tool (literal) |

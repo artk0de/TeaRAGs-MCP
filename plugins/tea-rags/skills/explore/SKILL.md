@@ -25,24 +25,29 @@ argument-hint: [what to explore — feature, module, or question]
 
 ## Intent Classification (REQUIRED — pick ONE row before any tool call)
 
-Checked first, before this table: structure phrasing ("organized", "end to end",
-"structure", "architecture", "backbone", "walk me through") → codegraph row 4
-below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
-Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
-used" / every occurrence of an exact name, constant or string → occurrence
-route, any codegraph state: default code search tool `"<X>" <dir>` (literal,
-`-l`; `<dir>` = the anchor's dir when known, else the source root — never a
-search to find it) → `find_symbol` outline → batch of only the needed methods;
-never `hybrid_search` for it. Concept words, synonyms or spellings, even one
-`<a>|<b>|<c>` regex, are not an exact name → EXPLAIN: `semantic_search`
+Checked first, before this table: layers / wrong-way dependencies / dependency
+direction of `<dir>` → `get_architecture_report(pathPattern: "<dir>/**")`, not
+row 4. A named symbol or anchor row + flow words ("end to end", "what happens
+when") → EXPLAIN graph walk (route 5), not row 4. Then structure phrasing
+("organized", "end to end", "structure", "architecture", "backbone", "walk me
+through") → codegraph row 4 below, even worded "how is/does X …" — never
+EXPLAIN, never an axis split. Opening line, copied:
+`Strategy: codegraph row 4 — "<phrase>"`. "Where is X used" / every occurrence
+of an exact name, constant or string (not "every call of X" — callers, below) →
+occurrence route, any codegraph state: default code search tool `"<X>" <dir>`
+(literal, `-l`; `<dir>` = the anchor's dir when known, else the source root —
+never a search to find it) → `find_symbol` outline → batch of only the needed
+methods; never `hybrid_search` for it. Concept words, synonyms or spellings,
+even one `<a>|<b>|<c>` regex, are not an exact name → EXPLAIN: `semantic_search`
 (`hybrid_search(metaOnly)` when real ids are among them) → anchor →
-`get_callees`/`get_callers` → ONE batch of only the needed methods; never a
-text-search alternation. "Callers of X" → decide codegraph first (plan line
-below); on → `Strategy: codegraph row 2` (`get_callers`), never TRACE-only
-`hybrid_search`. Off (or off branch of an unknown state) → TRACE loop, copied, ≥
-2 calls: `hybrid_search(query="<X>", metaOnly=true)` → per caller hit
-`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
-fail.
+`get_callees`/`get_callers(symbolId:, depth: 2)` → ONE batch of only the needed
+methods; never a text-search alternation. "Callers of X" → decide codegraph
+first (plan line below); on → `Strategy: codegraph row 2` (`get_callers`; "every
+call / all callers of X" → plan both lines: it + that occurrence route), never
+TRACE-only `hybrid_search`. Off (or off branch of an unknown state) → TRACE
+loop, copied, ≥ 2 calls: `hybrid_search(query="<X>", metaOnly=true)` → per
+caller hit `hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels.
+One call = fail.
 
 | User intent contains                                                                                         | Strategy | Skip if                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -260,12 +265,18 @@ Apply tables above, first match:
    (own overlay signals, no risk-assessment delegation) → PG-3 `find_symbol` on
    1–2 symbols only (e.g. base error classes), never call chains.
 5. EXPLAIN → Explore Flow below, format per
-   [references/explain-pattern.md](./references/explain-pattern.md). Named
-   component ("the <name> adapter") → Scope extraction probe FIRST, then
+   [references/explain-pattern.md](./references/explain-pattern.md). Codegraph
+   on + anchor id (named symbol or a row) → copied, ≤ 4 calls:
+   `get_callees(symbolId: <anchor id>, depth: 2)` →
+   `find_symbol(symbols: [<only the tree methods the answer needs>])`; never one
+   `get_callees` per hop, never a grep → read chain. Named component ("the
+   <name> adapter") → Scope extraction probe FIRST, then
    `semantic_search(query=<behaviour>, pathPattern="**/<name>/**")` — the
    component word in query text alone is NOT scope. Skip ORIENT ≠ skip probe.
 6. TRACE → Explore Flow below, format per
-   [references/trace-pattern.md](./references/trace-pattern.md).
+   [references/trace-pattern.md](./references/trace-pattern.md). Codegraph on →
+   `get_callers(symbolId: <id>, depth: 2)` (impact / who ends up calling X) →
+   ONE batch of only the needed callers; `truncated.next` → run it verbatim.
 
 ### Scope extraction
 

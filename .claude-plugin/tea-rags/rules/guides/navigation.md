@@ -157,10 +157,16 @@ Off-signal is an _absent tool_, not an empty result; check the tool list first
 rather than calling a tool to discover it's missing. Precedence — start cheap,
 escalate only if needed:
 
-1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
-   Default for impact, dependency and "how does X work" questions; instant, no
-   traversal. Pass `symbolId` for call edges — a search row's `symbolId` as-is;
-   a typed `Class#method` → `find_symbol` first (an unknown id answers
+1. **`get_callers` / `get_callees`** — "who calls X" / "what X calls". Default
+   for impact, dependency and "how does X work" questions. Flow / impact →
+   `depth: 2` (≤ 3) in ONE call, never one call per hop and never a grep → read
+   chain: `tree` rows in BFS order, read by `parent` (the edge's source); `seen`
+   = a symbol already listed above, not expanded again; `external` = count of
+   unresolved calls (out of project / unresolved), not rows. Then ONE
+   `find_symbol(symbols: [...])` of only the tree methods the answer needs —
+   never every row. `truncated.next` = the next-page call (offset advanced) →
+   run it verbatim. Pass `symbolId` for call edges — a search row's `symbolId`
+   as-is; a typed `Class#method` → `find_symbol` first (an unknown id answers
    `empty.reason: "unknownSymbol"` + `suggestions`) — OR `relativePath` (imports
    only, never call edges) (repo-relative file, no `symbolId`) for FILE scope:
    `get_callers` → `importers[]` (files importing it), `get_callees` →

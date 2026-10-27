@@ -123,6 +123,9 @@ Default false; rank_chunks default true (analytics — false to include code).
 ### Codegraph tools
 - get_callers includeAmbiguous: ambiguous dispatch sites whose member matches target — call MAY reach
   target among candidateCount candidates; not materialized as edges. Default false.
+- get_callers / get_callees depth (1–3, symbolId only): >1 → `tree` rows in BFS order (`parent` = edge source,
+  `seen` = back-reference already listed, `external` = unresolved-call count), in-project only, 40 rows default.
+  offset pages either mode; `truncated.next` = the next-page call, run verbatim.
 - find_cycles pathPattern: cycle kept if ≥1 member resolves to matching file → cross-boundary cycles retained.
 - trace_path fromPath / toPath: top-level symbols share bare ids; omitted → trace from all, candidates as namesakes.
 

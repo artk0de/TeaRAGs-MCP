@@ -518,6 +518,58 @@
         "an unbounded content search",
         "cat / Read of hit files"
       ]
+    },
+    {
+      "id": "T1",
+      "audit_finding": "afdpc: exploration questions mapped flows through grep → Read chains (benchmark Q01: 25 calls; get_callees 0×, trace_path 0×, get_callers 2× across the run)",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. An earlier semantic_search in this session returned the row `src/payouts/settlement/payout-settler.ts` · `PayoutSettler#settle` (lines 40–96) — the anchor; no other code has been read yet.",
+      "prompt": "How does PayoutSettler settle a payout end to end?",
+      "expected": "get_callees(symbolId: \"PayoutSettler#settle\", depth: 2) on the anchor row (one call, the depth tree) → ONE find_symbol(symbols: [...]) batch carrying only the methods from the tree the answer needs; ≤ 4 calls total",
+      "not": [
+        "a default code search tool → Read / find_symbol chain to map the flow",
+        "one get_callees call per hop (depth 1 repeated on each callee)",
+        "a batch of every tree row, or a whole-file / whole-outline batch",
+        "get_architecture_report",
+        "a new semantic_search for the anchor already in context"
+      ]
+    },
+    {
+      "id": "T2",
+      "audit_finding": "afdpc: impact questions answered by grep → Read instead of the caller tree",
+      "context": "Project alias `tollgate`, cwd /work/tollgate (its own checkout), Ruby/Rails, codegraph on, healthy index. `Payments::AmountValidator#check` is defined in app/services/payments/amount_validator.rb (seen in an earlier find_symbol row).",
+      "prompt": "Who ends up calling Payments::AmountValidator#check — what breaks if I change it?",
+      "expected": "get_callers(symbolId: \"Payments::AmountValidator#check\", depth: 2) — the reverse call tree in one call; a bounded occurrence search (default code search tool for a literal, `-l` or line cap, source dir) for callers the graph lacks (DSL, jobs, config) is fine; then at most ONE find_symbol batch of the callers the answer needs",
+      "not": [
+        "a grep → Read chain as the primary caller map",
+        "one get_callers call per hop",
+        "semantic_search / hybrid_search for the name",
+        "cat / Read of hit files"
+      ]
+    },
+    {
+      "id": "T3",
+      "audit_finding": "afdpc guard: narrowing the research row to layering keeps get_architecture_report for dependency-direction questions",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index.",
+      "prompt": "What layers does src/billing/ have, and does anything depend the wrong way?",
+      "expected": "get_architecture_report(pathPattern: \"src/billing/**\") (a find_symbol(relativePath: \"src/billing\") frame before it is fine); the layer stack and wrong-way / back-edge findings come from that report",
+      "not": [
+        "get_callees / get_callers trees as the layering answer",
+        "a default code search tool scan of imports",
+        "semantic_search as the main answer"
+      ]
+    },
+    {
+      "id": "T4",
+      "audit_finding": "afdpc guard: a paged graph answer continues with truncated.next verbatim",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The previous call was get_callers(symbolId: \"LedgerEntry#post\", depth: 2); its answer listed 40 tree rows and ended with `truncated: { returned: 40, next: { tool: \"get_callers\", args: { project: \"ledger\", path: \"/work/ledger\", symbolId: \"LedgerEntry#post\", depth: 2, offset: 40 } } }`.",
+      "prompt": "Keep going — I need the rest of the callers.",
+      "expected": "the next call is exactly truncated.next: get_callers(project: \"ledger\", path: \"/work/ledger\", symbolId: \"LedgerEntry#post\", depth: 2, offset: 40) — verbatim, no edited params",
+      "not": [
+        "re-running the same call without offset",
+        "a different depth / limit / symbolId",
+        "a default code search tool search for the rest",
+        "find_symbol before the next page"
+      ]
     }
   ],
   "results": {
