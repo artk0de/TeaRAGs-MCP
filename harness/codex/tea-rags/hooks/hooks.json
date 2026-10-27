@@ -48,6 +48,11 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/one-file-read.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/deny-indexed-read.sh",
+            "timeout": 10
           }
         ]
       }
