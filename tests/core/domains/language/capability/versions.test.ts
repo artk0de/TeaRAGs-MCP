@@ -101,7 +101,9 @@ describe("resolveLanguageCodeVersions", () => {
     // shared behaviour-free fold over class bodies.
     // walker 7: bd tea-rags-mcp-2g2og.28 — extraction merges preserve own
     // prototype-named keys in local bindings and nested maps.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 7, codegraphSchema: 2 });
+    // walker 8: bd tea-rags-mcp-q1g6s.10 — union fan-out confidence is the
+    // arm share; a class method's bare self reads are no self-dispatch hooks.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 8, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -111,7 +113,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(7);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(8);
   });
 });
 
@@ -537,11 +539,13 @@ describe("seeded support versions", () => {
       // includers, framework-override members stop constraining, `x.class` gets class members.
       // ruby 28: bd tea-rags-mcp-2m83f.55 — schema-column readers answer class questions, and an
       // all-column site moves to noInProjectDef (`schemaAttribute`).
+      // ruby 11: bd tea-rags-mcp-q1g6s.10 — `method(:x)` edges to `#x`, framework verbs on self
+      // skip unrelated namesakes, `perform_async_<x>` wrappers dispatch to the worker's run.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
         ["javascript", 5],
         ["python", 12],
-        ["ruby", 10],
+        ["ruby", 11],
         ["java", 4],
         // rust 11: bd tea-rags-mcp-s3i8m.2 (macro symbolKind) + 2g2og.24 slice 1
         // (tuple and nested-arg struct fields recorded) + s3i8m.3 (primitive /

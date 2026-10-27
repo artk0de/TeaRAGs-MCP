@@ -8,8 +8,10 @@ import {
   type DispatchFanoutOutcome,
   type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
-import type { ResolverConfig } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
-import { RubyUnionDispatchResolver } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-union-dispatch.js";
+import {
+  RubyUnionDispatchResolver,
+  type ResolverConfig,
+} from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
@@ -175,7 +177,7 @@ describe("RubyUnionDispatchResolver (Task 1.7 — union receiver cone fan-out)",
       targetRelPath: "app/repositories/repository.rb",
       targetSymbolId: "Repository#process",
       edgeKind: "cone",
-      confidence: 1,
+      confidence: 0.5,
     });
   });
 

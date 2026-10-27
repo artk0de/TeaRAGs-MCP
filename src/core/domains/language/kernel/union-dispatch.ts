@@ -18,7 +18,7 @@
  *     is no `poly-base` collapse; the dynamic resolver downstream handles it.
  */
 import type { CallContext, CallRef, DispatchEdge, DispatchFanoutOutcome } from "../../../contracts/types/codegraph.js";
-import type { DispatchResolverComponent } from "../../../contracts/types/language.js";
+import type { DispatchResolverComponent, TypeRef } from "../../../contracts/types/language.js";
 import { hasReceiver, type ReceiverTypingPorts } from "./receiver-typed-strategies.js";
 import type { TypeMemberLookup } from "./type-member-lookup.js";
 
@@ -43,27 +43,45 @@ export class UnionDispatchResolver implements DispatchResolverComponent {
     const type = this.ports.typeOfReceiver(call, ctx);
     if (type?.form !== "union") return [];
 
-    const seen = new Set<string>();
-    const targets: { targetRelPath: string; targetSymbolId: string }[] = [];
-    for (const arm of type.members) {
+    const arms = distinctNominalArms(type.members);
+    const targets = new Map<string, { targetRelPath: string; targetSymbolId: string; arms: number }>();
+    for (const arm of arms) {
       const target = this.lookup.findMember(arm, call.member, ctx);
       if (!target) continue;
       if (!this.ports.ownsPath(target.targetRelPath)) continue;
       if (target.targetSymbolId === null) continue;
-      if (seen.has(target.targetSymbolId)) continue;
-      seen.add(target.targetSymbolId);
-      targets.push({ targetRelPath: target.targetRelPath, targetSymbolId: target.targetSymbolId });
+      const known = targets.get(target.targetSymbolId);
+      if (known !== undefined) known.arms++;
+      else targets.set(target.targetSymbolId, { ...target, targetSymbolId: target.targetSymbolId, arms: 1 });
     }
 
-    const n = targets.length;
+    const n = targets.size;
     if (n === 0 || n > this.coneMax) return [];
-    const confidence = 1 / n;
-    return targets.map((target) => ({
+    // A target's share is the ARMS reaching it over every nominal arm, not one
+    // over the targets that resolved (bd tea-rags-mcp-q1g6s.10): an arm whose
+    // lookup missed (an AR column, a gem method) still receives the call at
+    // runtime, so `[Owner, Employee, Client]` with only `Client#firm_id` found is
+    // a 1-in-3 edge, never confidence 1.
+    return [...targets.values()].map((target) => ({
       sourceSymbolId: null,
       targetRelPath: target.targetRelPath,
       targetSymbolId: target.targetSymbolId,
       edgeKind: "cone",
-      confidence,
+      confidence: target.arms / arms.length,
     }));
   }
+}
+
+/** Distinct class / instance arms of a union — the runtime types the call may land on. */
+function distinctNominalArms(members: readonly TypeRef[]): TypeRef[] {
+  const seen = new Set<string>();
+  const arms: TypeRef[] = [];
+  for (const arm of members) {
+    if (arm.form !== "class" && arm.form !== "instance") continue;
+    const key = `${arm.form}:${arm.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    arms.push(arm);
+  }
+  return arms;
 }

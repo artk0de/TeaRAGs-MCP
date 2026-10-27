@@ -122,7 +122,11 @@ export const sharedVersions: LanguageSupportVersions = {
   // bump their own walker too; go and rust keep their reading.
   // walker 7, bd tea-rags-mcp-2g2og.28: extraction merges preserve own
   // prototype-named keys in local bindings and nested maps across languages.
-  walker: 7,
+  // walker 8, bd tea-rags-mcp-q1g6s.10: a union fan-out edge's confidence is
+  // the arms reaching its target over every nominal arm (a missed arm no
+  // longer lifts a lone hit to 1), and a class method's bare self reads are no
+  // self-dispatch hooks.
+  walker: 8,
   codegraphSchema: 2,
 };
 

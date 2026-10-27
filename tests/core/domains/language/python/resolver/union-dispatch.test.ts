@@ -115,11 +115,11 @@ describe("PythonCallResolver.resolveDispatch — union receiver (K2, m99j1.1.22)
     expect(dispatchTargets(call("self.pick()", "run"), ctx).map((e) => e.target)).toEqual(["A#run", "B#run"]);
   });
 
-  it("keeps only the arms that define the member — `A | C` → one A#run edge", () => {
+  it("keeps only the arms that define the member — `A | C` → one A#run edge at the 1-in-2 arm share", () => {
     const ctx = ctxReturning(union(instance("A"), instance("C")), {
       callResultBindings: { x: [{ callee: "make", line: 5 }] },
     });
-    expect(dispatchTargets(call("x", "run"), ctx)).toEqual([{ target: "A#run", kind: "cone", confidence: 1 }]);
+    expect(dispatchTargets(call("x", "run"), ctx)).toEqual([{ target: "A#run", kind: "cone", confidence: 0.5 }]);
   });
 
   it("does not claim `Optional[A]` — the nil arm collapses it to a plain receiver", () => {

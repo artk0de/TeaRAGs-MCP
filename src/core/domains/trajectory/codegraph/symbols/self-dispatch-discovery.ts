@@ -157,6 +157,7 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
     const hooks = new Set<string>();
     let superDelegates = false;
     for (const call of chunk.calls) {
+      if (split.classForm && isClassSideSelfRead(call.receiver, call.member)) continue;
       if (isSelfReceiver(call.receiver)) hooks.add(call.member);
       else if (isSuperReceiver(call.receiver) && call.member === split.member) superDelegates = true;
     }
@@ -172,6 +173,17 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
     }
   }
   return methods;
+}
+
+/**
+ * Inside a CLASS method, a bare / `self` call runs on the class itself, so it
+ * is no hook an instance-form narrowing may answer (bd tea-rags-mcp-q1g6s.10:
+ * the `#{name}` read in `Declarations.perform_async_operation` narrowed every
+ * entry to an unrelated `Worker#name`). `new` stays: it is the self-instantiation
+ * `collectSelfInstantiatingClassMethods` keys on.
+ */
+function isClassSideSelfRead(receiver: string | null, member: string): boolean {
+  return isSameSelf(receiver) && member !== "new";
 }
 
 /** The SAME instance a method runs on (`H` / `self.H`) — the receivers a `send` template dispatches on. */

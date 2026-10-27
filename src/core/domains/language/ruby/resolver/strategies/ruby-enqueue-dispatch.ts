@@ -1,8 +1,8 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { catalogueFor } from "../../dsl/index.js";
-import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
+import { resolveSelfDispatchHookTarget, resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
 
 /**
  * Background-job enqueue dispatch (bd tea-rags-mcp-of2sl). A framework
@@ -32,9 +32,46 @@ export class RubyEnqueueDispatchSymbolResolutionStrategy implements SymbolResolu
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver === null) return CONTINUE; // bare call — no worker class to route to
     // Gem-gated enqueue verb → `#perform` entrypoint, composed for this project.
-    const entrypoint = catalogueFor(ctx.declaredDependencies).enqueueDispatch[call.member];
+    const dispatch = catalogueFor(ctx.declaredDependencies).enqueueDispatch;
+    const entrypoint = enqueueEntrypoint(dispatch, call.member);
     if (entrypoint === undefined) return CONTINUE; // not an enqueue verb
     const target = resolveTypeInstanceMethod(call.receiver, entrypoint, ctx, this.cfg.mode);
-    return target ? resolved(target) : CONTINUE;
+    if (target === null) return CONTINUE;
+    // A wrapper is a project method: a file-only entrypoint would replace the
+    // method edge the `constant` pass lands on it, so only a pinned run wins.
+    if (dispatch[call.member] === undefined && target.targetSymbolId === null) return CONTINUE;
+    return resolved(this.narrowInheritedEntrypoint(target, call.receiver, ctx));
   }
+
+  /**
+   * An INHERITED entrypoint that is a self-dispatch template (`Base#perform`
+   * calling an abstract `perform_operation`) narrows to the worker's own hook —
+   * the KindOfService entry shape, applied to the job the verb enqueues (bd
+   * tea-rags-mcp-q1g6s.10). The redirect after the chain cannot do it: it types
+   * the receiver, and a bare constant carries no receiver type.
+   */
+  private narrowInheritedEntrypoint(
+    target: SymbolResolutionTarget,
+    worker: string,
+    ctx: CallContext,
+  ): SymbolResolutionTarget {
+    const hook = target.targetSymbolId === null ? undefined : ctx.selfDispatchTemplates?.[target.targetSymbolId];
+    if (hook === undefined) return target;
+    return resolveSelfDispatchHookTarget(worker, hook, ctx, this.cfg.mode) ?? target;
+  }
+}
+
+/**
+ * The entrypoint an enqueue verb runs — the catalogue's own verb, or a project
+ * WRAPPER named after one (`perform_async_operation` → `perform_async`'s
+ * `perform`, bd tea-rags-mcp-q1g6s.10): such a wrapper hands the class to the
+ * same queue, and the run it starts is the worker's entrypoint, which the
+ * self-dispatch redirect then narrows (`#perform` → the concrete
+ * `#perform_operation`).
+ */
+function enqueueEntrypoint(dispatch: Readonly<Record<string, string>>, member: string): string | undefined {
+  const direct = dispatch[member];
+  if (direct !== undefined) return direct;
+  const verb = Object.keys(dispatch).find((candidate) => member.startsWith(`${candidate}_`));
+  return verb === undefined ? undefined : dispatch[verb];
 }
