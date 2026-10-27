@@ -17,6 +17,8 @@ import {
   readManifest,
   readSkills,
   selectSkills,
+  SHARED_HOOK_SCRIPTS,
+  TURN_ROUTING_SOURCE,
   walk,
   writePackage,
   writeRootFile,
@@ -155,6 +157,9 @@ exit 0
 
 /** Codex tool names a shell command arrives under at PreToolUse. */
 const SHELL_TOOL_MATCHER = "^(Bash|shell|exec_command)$";
+
+/** Codex tool names of the tea-rags MCP server's tools (`mcp__<server>__<tool>`) at PostToolUse. */
+const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea-rags.*__";
 
 /**
  * Codex PreToolUse hook: exit 2 (reason on stderr) for a shell command that
@@ -586,7 +591,11 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
   PreToolUse (\`${SHELL_TOOL_MATCHER}\`) \`\${PLUGIN_ROOT}/scripts/one-file-read.sh\` — exit 2 for a shell command that prints
   two or more \`.md\` files (one file per command keeps a skill's output contract in view); then
   \`\${PLUGIN_ROOT}/scripts/deny-indexed-read.sh\` — exit 2 for a \`cat\` / \`sed\` / \`head\` / \`tail\` read of a file
-  the index serves (\`tea-rags project indexed --command\`), pointing at \`find_symbol\`.
+  the index serves (\`tea-rags project indexed --command\`), pointing at \`find_symbol\`; then
+  \`\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex\` — exit 2 once after 3 text searches, 3 indexed-code
+  reads or 4 mixed with no tea-rags call (one deny per 120 s), reset by PostToolUse (\`${TEA_RAGS_MCP_TOOL_MATCHER}\`).
+  UserPromptSubmit \`\${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex\` — the routing lines of
+  \`scripts/turn-routing.txt\` as \`hookSpecificOutput.additionalContext\` every user turn.
 - \`tea-rags/skills/\` — curated tea-rags skills (below).
 - \`tea-rags/repair/\`, \`tea-rags/rules/references/\` — plugin files the skills link to by relative path.
 ${core}
@@ -765,6 +774,11 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   files.set(`${PLUGIN_NAME}/scripts/subagent-block.sh`, SUBAGENT_SCRIPT);
   files.set(`${PLUGIN_NAME}/scripts/one-file-read.sh`, ONE_FILE_READ_SCRIPT);
   files.set(`${PLUGIN_NAME}/scripts/deny-indexed-read.sh`, DENY_INDEXED_READ_SCRIPT);
+  for (const script of SHARED_HOOK_SCRIPTS) {
+    files.set(`${PLUGIN_NAME}/scripts/${script}`, readFileSync(join(pluginRoot, "scripts", script), "utf8"));
+  }
+  const turnRouting = extractInjectionBlock(readFileSync(join(pluginRoot, TURN_ROUTING_SOURCE), "utf8"));
+  files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${toHarnessText(turnRouting, CODEX_DIALECT, skillNames)}\n`);
   files.set(`${PLUGIN_NAME}/scripts/session-start.sh`, proseHookScript("core.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-codex-rules.sh`, proseHookScript("codex-rules.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-digest.sh`, SESSION_DIGEST_SCRIPT);
@@ -801,12 +815,28 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
         SubagentStart: [
           { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`, timeout: 30 }] },
         ],
+        UserPromptSubmit: [
+          {
+            hooks: [
+              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/turn-routing.sh --harness codex`, timeout: 5 },
+            ],
+          },
+        ],
         PreToolUse: [
           {
             matcher: SHELL_TOOL_MATCHER,
             hooks: [
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/one-file-read.sh`, timeout: 10 },
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/deny-indexed-read.sh`, timeout: 10 },
+              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 10 },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            matcher: TEA_RAGS_MCP_TOOL_MATCHER,
+            hooks: [
+              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
             ],
           },
         ],

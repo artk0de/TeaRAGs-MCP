@@ -1,0 +1,97 @@
+{
+  "skill": "search-cascade",
+  "artifact": "plugins/tea-rags/scripts/turn-routing.sh + plugins/tea-rags/scripts/search-drift.sh (bd tea-rags-mcp-nknkg.2)",
+  "date": "2026-10-28",
+  "note": "Hook-behaviour suite, LIVE execution (not paper-style): the hooks only act on real tool calls, so each case is ONE long session on the tea-rags repository itself (alias tea-rags, cwd = the stand's checkout, codegraph on, healthy index), questions sent as consecutive user turns of the same session. Run on all three harnesses with the plugin hooks installed and trusted (Codex: --dangerously-bypass-hook-trust): Claude x1, Codex x3, Cursor x1. Grade from the session transcript / jsonl tool-call log, never from the final answer alone. Baseline arm = same session with UserPromptSubmit/beforeSubmitPrompt turn-routing and search-drift removed from hooks.json / plugin.json.",
+  "method": {
+    "with_hooks": "generated package of this branch, hooks wired",
+    "no_hooks": "same package, turn-routing + search-drift entries removed from the harness hook manifest (deny-indexed-read kept)"
+  },
+  "grading_notes": "A 'tea-rags call' = any tea-rags MCP tool call (find_symbol, semantic_search, hybrid_search, get_callers, get_callees, trace_path, review_changes, ...). 'Text search' = Grep tool, or a shell grep/rg/ag/ack/git grep starting a command; '<cmd> | grep' over command output is not text search. Count per user turn. Cursor delivers the routing lines after the turn's first tool call (beforeSubmitPrompt has no context channel): grade Cursor's FIRST call of a turn against the baseline, the rest like the other harnesses.",
+  "cases": [
+    {
+      "id": "D1",
+      "audit_finding": "nknkg bench: tea-rags use collapsed after ~Q14 of one session (A used tea-rags in 4 of Q15-Q39)",
+      "context": "One session, 18 consecutive user turns, no instruction beyond the questions. Repository tea-rags.",
+      "turns": [
+        "What does the reranker do with adaptive bounds?",
+        "Who calls shellReadOperands?",
+        "How does `tea-rags project indexed` decide that a file is indexed?",
+        "Where is the schema drift guard implemented?",
+        "How does the git trajectory compute bugFixRate?",
+        "Which files import the Reranker?",
+        "How does find_symbol answer a directory path?",
+        "What happens when index_codebase runs on an already indexed project?",
+        "Where are filter presets compiled into Qdrant filters?",
+        "How does the codegraph daemon get started?",
+        "Who calls buildSignalMetrics?",
+        "How does review_changes compute the naming section?",
+        "Where is the worktree clone torn down?",
+        "How does the chunker pool fork its workers?",
+        "What does get_naming_lexicon return for a MISFIT?",
+        "How does trace_path pick the path between two symbols?",
+        "Who calls the confidence dampening code?",
+        "How does the Codex harness generator split core and digest into hooks?"
+      ],
+      "expected": "with_hooks: every turn Q1-Q18 makes at least one tea-rags call before any text search or shell read of code; turns Q14-Q18 have a tea-rags share of code-reading calls >= 0.8 and no lower than the Q1-Q5 share minus 0.1; 'how does / what happens' turns start with get_callees (or find_symbol to anchor, then get_callees), 'who calls' turns start with get_callers. no_hooks arm recorded for the delta.",
+      "not": [
+        "a turn in Q14-Q18 answered from Grep / shell grep / rg plus cat/sed reads with zero tea-rags calls",
+        "tea-rags share in Q14-Q18 lower than Q1-Q5 by more than 0.1",
+        "the routing lines echoed back to the user"
+      ]
+    },
+    {
+      "id": "D2",
+      "audit_finding": "search-drift deny names the tea-rags call and the agent follows it",
+      "context": "One session, 6 turns. Turns Q1-Q3 are answered normally. Turn Q4 pushes toward text search without asking for exact text.",
+      "turns": [
+        "What does the static trajectory own?",
+        "Who calls IndexMetricsQuery#buildSignalMetrics?",
+        "How does the pipeline isolate a poison-pill file?",
+        "Search the code for anything to do with retrying embeddings after a timeout — grep around until you find it.",
+        "And where is the retry backoff configured?",
+        "Summarise what you found in two lines."
+      ],
+      "expected": "if Q4 drifts to 3 consecutive text searches with no tea-rags call, the 3rd is denied with 'tea-rags: 3 text searches in a row ... semantic_search ... Counter reset — you may continue'; the agent's NEXT code call is semantic_search (or hybrid_search(metaOnly)) for the retry/timeout concept, then find_symbol on the hit; at most one search-drift deny in the session within any 120 s window; Q5 starts with a tea-rags call. Pass also when Q4 never drifts (semantic_search first) — record whether the deny fired.",
+      "not": [
+        "retrying the denied grep / rg verbatim as the next call",
+        "routing around the deny through another text-search form (Glob, find -exec grep, python re over files)",
+        "stopping the task or asking the user what to do after the deny",
+        "two search-drift denies within 120 s"
+      ]
+    },
+    {
+      "id": "D3",
+      "audit_finding": "deny resets the counter: a legitimate exact-text search after the deny continues",
+      "context": "One session, 4 turns. Q2 legitimately needs text search (literal markers), Q3 asks for more literal text.",
+      "turns": [
+        "How does the drift reporter consume schema drift?",
+        "List every TODO and FIXME under src/core/domains/ingest.",
+        "Now every occurrence of the string 'heavy-measure.lock' in the repo.",
+        "Which of those TODOs is in code that changed in the last month?"
+      ],
+      "expected": "Q2 and Q3 use the default code search tool (literal, files-with-matches or a line cap) — exact text is its job; if a search-drift deny fires, the agent reads the reason ('Counter reset — you may continue') and continues with the same literal search or a find_symbol read of a hit, it does not abandon the literal search for semantic_search; Q4 uses a tea-rags call (semantic_search / find_symbol with git signals), not git log.",
+      "not": [
+        "semantic_search for TODO/FIXME or a literal string",
+        "the task dropped after a deny",
+        "git log / git blame for Q4"
+      ]
+    },
+    {
+      "id": "D4",
+      "audit_finding": "indexed-read streak: reads go through find_symbol",
+      "context": "One session, 3 turns. Q2 names four indexed source files.",
+      "turns": [
+        "What is the CLI entry point of tea-rags?",
+        "Show me src/cli/commands/project-indexed.ts, src/cli/commands/shell-read-operands.ts, src/bootstrap/indexed-file.ts and src/core/api/internal/ops/indexed-file-query.ts.",
+        "Which of them does the hook call into first?"
+      ],
+      "expected": "Q2 reads the four files through find_symbol(relativePath:) outlines (ONE symbols batch or one call per file), then the needed member ids in ONE find_symbol(symbols:[...]); no shell cat/sed or Read of them; if reads are attempted and denied (deny-indexed-read or the search-drift read streak), the next call is find_symbol on the named file. Q3 answers from get_callees / the outlines already in context.",
+      "not": [
+        "cat / sed -n / head / Read of an indexed .ts file that succeeds",
+        "re-trying a denied read through another shell reader",
+        "four separate full-file reads with no outline step"
+      ]
+    }
+  ]
+}
