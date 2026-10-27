@@ -171,6 +171,67 @@ describe("SymbolBatchDrill", () => {
     expect(answer.missing[0].suggestions).toContain("create");
   });
 
+  describe("a member miss under a container that exists (m9wrp)", () => {
+    const CLIENT = "app/clients/vendor/base_client.rb";
+    const ruby = (id: string, symbolId: string, parentSymbolId: string | undefined, relativePath: string) =>
+      codeRow(id, {
+        symbolId,
+        name: symbolId.split(/[#.]|::/).pop(),
+        ...(parentSymbolId ? { parentSymbolId } : {}),
+        relativePath,
+        language: "ruby",
+        content: `${symbolId} body`,
+      });
+    const vendorIndex = [
+      codeRow("vc", {
+        symbolId: "Vendor::BaseClient",
+        name: "BaseClient",
+        chunkType: "class",
+        relativePath: CLIENT,
+        language: "ruby",
+        content: "class Vendor::BaseClient",
+      }),
+      ruby("v1", "Vendor::BaseClient#request", "Vendor::BaseClient", CLIENT),
+      ruby("v2", "Vendor::BaseClient#headers", "Vendor::BaseClient", CLIENT),
+      ruby("v3", "Vendor::BaseClient#build_connection", "Vendor::BaseClient", CLIENT),
+      ruby("v4", "Vendor::Pool#connection", "Vendor::Pool", "app/clients/vendor/pool.rb"),
+      ruby("a1", "Admin::Tasks::SyncTask#connection", "Admin::Tasks::SyncTask", "app/admin/tasks/sync_task.rb"),
+    ];
+
+    it("says the container has no such member and lists its member ids, similar names first", async () => {
+      indexHolds(vendorIndex);
+
+      const answer = await run(["Vendor::BaseClient#connection"]);
+
+      expect(answer.rows).toEqual([]);
+      const [miss] = answer.missing;
+      expect(miss.message).toContain("Vendor::BaseClient has no #connection");
+      expect(miss.suggestions?.[0]).toBe("Vendor::BaseClient#build_connection");
+      expect(miss.suggestions).toEqual(
+        expect.arrayContaining(["Vendor::BaseClient#request", "Vendor::BaseClient#headers"]),
+      );
+      expect(miss.suggestions).not.toContain("Admin::Tasks::SyncTask#connection");
+    });
+
+    it("ranks a same-namespace namesake first and drops a cross-domain one when the container is unknown", async () => {
+      indexHolds(vendorIndex);
+
+      const answer = await run(["Vendor::Missing#connection"]);
+
+      expect(answer.missing[0].suggestions).toEqual(["Vendor::Pool#connection"]);
+    });
+
+    it("keeps every namesake when none shares the address's namespace", async () => {
+      indexHolds(vendorIndex);
+
+      const answer = await run(["Billing::Missing#connection"]);
+
+      expect(answer.missing[0].suggestions).toEqual(
+        expect.arrayContaining(["Vendor::Pool#connection", "Admin::Tasks::SyncTask#connection"]),
+      );
+    });
+  });
+
   it("still outlines a qualified class through members whose parentSymbolId is its local name", async () => {
     indexHolds([
       codeRow("k1", {

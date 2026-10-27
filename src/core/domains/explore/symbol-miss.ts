@@ -14,11 +14,19 @@
  */
 
 import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
+import {
+  containerMemberMessage,
+  findContainerMembers,
+  rankByNamespaceProximity,
+  type NamesakeCandidate,
+} from "./member-miss.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
 import type { ExploreContext } from "./strategies/types.js";
 import { swapSeparator, UNKNOWN_SYMBOL_HINT } from "./symbol-batch.js";
 
 const MAX_SUGGESTIONS = 5;
+/** How many same-named ids are ranked by namespace proximity before the first MAX_SUGGESTIONS are kept. */
+const NAMESAKE_POOL = 50;
 const PART_SUFFIX = /^(.+)#part\d+$/;
 
 export class SymbolMissExplainer {
@@ -39,9 +47,21 @@ export class SymbolMissExplainer {
         };
       }
     }
+    const container = await findContainerMembers(address, this.strategyFor, ctx);
+    if (container) {
+      return {
+        reason: "unknownSymbol",
+        message: `${address} is not an indexed symbol id; ${containerMemberMessage(container)}.`,
+        suggestions: container.memberIds,
+      };
+    }
     const shortName = /([^#.:]+)$/.exec(address)?.[1];
-    const named = shortName && shortName !== address ? await this.symbolIds(shortName, probeCtx) : [];
-    const suggestions = named.filter((id) => id !== address).slice(0, MAX_SUGGESTIONS);
+    const named =
+      shortName && shortName !== address ? await this.namesakes(shortName, { ...probeCtx, limit: NAMESAKE_POOL }) : [];
+    const suggestions = rankByNamespaceProximity(
+      address,
+      named.filter((namesake) => namesake.symbolId !== address),
+    ).slice(0, MAX_SUGGESTIONS);
     return {
       reason: "unknownSymbol",
       message:
@@ -54,10 +74,20 @@ export class SymbolMissExplainer {
 
   /** Distinct symbolIds the strategy answers `symbol` with; a failing probe yields none. */
   private async symbolIds(symbol: string, ctx: ExploreContext): Promise<string[]> {
+    return [...new Set((await this.namesakes(symbol, ctx)).map((namesake) => namesake.symbolId))];
+  }
+
+  /** The ids the strategy answers `symbol` with, each with its file; a failing probe yields none. */
+  private async namesakes(symbol: string, ctx: ExploreContext): Promise<NamesakeCandidate[]> {
     try {
       const rows = await this.strategyFor(symbol).execute(ctx);
-      const ids = rows.map((r) => r.payload?.symbolId).filter((id): id is string => typeof id === "string");
-      return [...new Set(ids)];
+      return rows.flatMap((row) => {
+        const symbolId = row.payload?.symbolId;
+        const relativePath = row.payload?.relativePath;
+        return typeof symbolId === "string"
+          ? [{ symbolId, ...(typeof relativePath === "string" ? { relativePath } : {}) }]
+          : [];
+      });
     } catch {
       return [];
     }

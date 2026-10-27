@@ -72,4 +72,48 @@ describe("SymbolMissExplainer", () => {
     expect(empty.suggestions).toEqual(expect.arrayContaining(["Foo.create", "Other#create"]));
     expect(empty.suggestions!.length).toBeLessThanOrEqual(5);
   });
+
+  it("a member missing from a class that exists lists the class's member ids, similar names first (m9wrp)", async () => {
+    const CLIENT = "src/payments/payment-client.ts";
+    const member = (id: string, symbolId: string) =>
+      codeRow(id, {
+        symbolId,
+        name: symbolId.split("#").pop(),
+        parentSymbolId: "PaymentClient",
+        relativePath: CLIENT,
+        content: `${symbolId} body`,
+      });
+    indexHolds([
+      codeRow("pc", {
+        symbolId: "PaymentClient",
+        name: "PaymentClient",
+        chunkType: "class",
+        relativePath: CLIENT,
+        content: "class PaymentClient",
+      }),
+      member("p1", "PaymentClient#send"),
+      member("p2", "PaymentClient#openConnection"),
+      row("o1", "QueueWorker#connection"),
+    ]);
+
+    const empty = await explain("PaymentClient#connection");
+
+    expect(empty.reason).toBe("unknownSymbol");
+    expect(empty.message).toContain("PaymentClient has no #connection");
+    expect(empty.suggestions).toEqual(["PaymentClient#openConnection", "PaymentClient#send"]);
+  });
+
+  it("an unknown container ranks namesakes sharing the longest namespace prefix first (m9wrp)", async () => {
+    const ruby = (id: string, symbolId: string, relativePath: string) =>
+      codeRow(id, { symbolId, name: "refund", relativePath, language: "ruby", content: `${symbolId} body` });
+    indexHolds([
+      ruby("r1", "Admin::Jobs::RefundJob#refund", "app/admin/jobs/refund_job.rb"),
+      ruby("r2", "Billing::Invoice#refund", "app/billing/invoice.rb"),
+      ruby("r3", "Billing::Ledger::Entry#refund", "app/billing/ledger/entry.rb"),
+    ]);
+
+    const empty = await explain("Billing::Ledger::Missing#refund");
+
+    expect(empty.suggestions).toEqual(["Billing::Ledger::Entry#refund", "Billing::Invoice#refund"]);
+  });
 });

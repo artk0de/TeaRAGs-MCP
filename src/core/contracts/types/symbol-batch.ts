@@ -16,6 +16,10 @@ export interface SymbolBatchMiss {
   request: string;
   message: string;
   treeState?: WorkingTreeState;
-  /** An unknown PATH entry: the nearest indexed paths, as `empty.suggestions` of `relativePath:` carries them. */
+  /**
+   * An unknown PATH entry: the nearest indexed paths, as `empty.suggestions` of
+   * `relativePath:` carries them. An unknown SYMBOL: the members of its
+   * container when that resolves, else same-named ids, closest namespace first.
+   */
   suggestions?: string[];
 }
