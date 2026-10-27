@@ -406,3 +406,52 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-10-27 — yz10n regression check (db40fc338, tea-rags 0.47.30)
+
+- Trigger: db40fc338 added explore ORIENT "Path typed first", core routing row 1
+  "how `<dir>` works → find_symbol(relativePath:) outline first, then ONE batch
+  of its member ids", and the core Invariants batch line (ids only).
+- Subjects: Codex (gpt-6-luna, medium) ×3 + Claude (sonnet, `--plugin-dir`,
+  strict MCP config = worktree build) ×3, plan-only, one session per run, prime
+  silenced. Stand `/tmp/1k059-stand-tr`, prompt `prompt-ex.txt`.
+- Cases (path / area / structure / files-matching / which-tests routes): 4, 5,
+  6, 12, 16, 17, 19, 21, 22, 25, plus search-cascade 14 as a probe.
+- Baseline for every case under 3/3: the 65c0e3839 package (core, guides,
+  explore SKILL.md, Codex core.txt / tea-rags-core, server agent-context)
+  rebuilt into a scratch copy, same stand.
+
+| Case | Codex HEAD | Claude HEAD | Claude 65c0e3839 | Verdict      |
+| ---- | ---------- | ----------- | ---------------- | ------------ |
+| 4    | 3/3        | 3/3         | —                | pass         |
+| 5    | 3/3        | 0/3         | 0/3              | pre-existing |
+| 6    | 3/3        | 3/3         | —                | pass         |
+| 12   | 3/3        | 3/3         | —                | pass         |
+| 16   | 3/3        | 3/3         | —                | pass         |
+| 17   | 3/3        | 0/3         | 0/3              | pre-existing |
+| 19   | 3/3        | 0/3         | 0/3              | pre-existing |
+| 21   | 3/3        | 0/3         | 0/3              | pre-existing |
+| 22   | 3/3        | 3/3         | —                | pass         |
+| 25   | 3/3        | 0/3         | 0/3              | pre-existing |
+
+- Claude misses: 5 picks `recent` / `hotspots` / `bugHunt`, not `codeReview`; 17
+  and 25 skip the `entryPoint` ORIENT (25 also reads the digest); 19 skips
+  `onboarding`; 21's sources axis is an outline, not a filtered search.
+- Codex at 65c0e3839 on 5/17/19/21/25: 3/3 each, same as HEAD.
+- Verdict: no regression from db40fc338. The five Claude failures reproduce on
+  the parent commit: plan-only Claude names `Skill(tea-rags:explore)` but never
+  loads it, so ORIENT / per-axis steps never reach its context and it plans from
+  core routing alone.
+- Drift, not graded: on 17/19/21/25 Claude at 65c0e3839 led with
+  `get_architecture_report` (research row) in 11 of 12 plans; at HEAD it leads
+  with `find_symbol(relativePath:)` + one member batch (row 1 now matches "how
+  is `<dir>` organized"). Both miss the case expectations equally.
+- Case 25 caveat: the shared fixture states "codegraph on", so "availability
+  from own tool list" was graded as "not from prime".
+- Search-cascade 14 probe ("What is in `<dir>`?"): every run starts with the
+  directory frame (case passes). An extra member-id batch: Codex HEAD 2/3 (4/6
+  with the earlier yz green round), Codex 65c0e3839 1/3 (conditional); Claude
+  0/3 unconditional at both. The batch carries ids, never paths, and case 14's
+  `not` list does not forbid it, so it does not break the case's intent (listing
+  via find_symbol instead of ls / Glob / Read). It is an over-read, not the
+  yz10n path-batch defect; no wording change.
