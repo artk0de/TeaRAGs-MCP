@@ -13,6 +13,7 @@
 
 import type { SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
+import { lastNameSegment } from "../../primitives/ids/index.js";
 import type { FileOutlineStrategy } from "./strategies/file-outline.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
 import type { ExploreContext, ExploreResult } from "./strategies/types.js";
@@ -168,10 +169,24 @@ export class SymbolBatchDrill {
         return { request: address, message: "deleted in the working tree", treeState: "deleted" };
       }
     }
+    const suggestions = await this.sameTailIds(address, ctx);
     return {
       request: address,
       message: `unknown symbol — ${UNKNOWN_SYMBOL_HINT}`,
+      ...(suggestions.length > 0 ? { suggestions } : {}),
     };
+  }
+
+  /**
+   * A qualified miss never takes another owner's same-named symbol as its
+   * answer (q1g6s.15) — those ids are offered instead, for the caller to pick.
+   */
+  private async sameTailIds(address: string, ctx: ExploreContext): Promise<string[]> {
+    const tail = lastNameSegment(address);
+    if (tail === address || tail.length === 0) return [];
+    const rows = await this.strategyFor(tail).execute({ ...ctx, metaOnly: true });
+    const ids = rows.map((row) => row.payload?.symbolId).filter((id): id is string => typeof id === "string");
+    return [...new Set(ids)].slice(0, MAX_MATCHES_PER_ADDRESS);
   }
 }
 

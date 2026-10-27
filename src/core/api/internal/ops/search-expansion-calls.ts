@@ -17,7 +17,7 @@
 
 import type { SuggestedToolCall } from "../../../contracts/types/suggested-tool-call.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import { toolCallAddressFromWorkingTree } from "../../../domains/explore/index.js";
+import { splitFragmentBase, toolCallAddressFromWorkingTree } from "../../../domains/explore/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { isTestPayload } from "../../../domains/trajectory/static/index.js";
 
@@ -25,43 +25,84 @@ import { isTestPayload } from "../../../domains/trajectory/static/index.js";
 const ANCHOR_FILES = 2;
 
 /**
- * The hints for an answer: `get_callees` and `get_callers` on its top distinct
- * code file, then `find_co_changed` on the top two. Rows are taken in answer
- * order (the ranking, or find_symbol's row order); a file's chunks collapse to
- * one anchor; doc and test rows never anchor. Empty when no row is left — the
- * caller then omits `next`.
+ * What the graph hints address (q1g6s.15). `relativePath` answers IMPORT edges
+ * only, so a hint on a code row by its file never reaches the call graph:
+ *
+ * - `row` (search answers): the top row's code symbolId, else its file; plus
+ *   co-change of the top two files.
+ * - `symbol` (find_symbol `symbol` / `symbols`): the first symbol the answer
+ *   names, call edges only — no file-level hint the agent did not ask about.
+ * - `file` (find_symbol `relativePath`): the file the answer outlines.
+ */
+export type SearchExpansionScope = "row" | "symbol" | "file";
+
+type ExpansionRow = { payload?: Record<string, unknown> };
+
+/**
+ * The hints for an answer: `get_callees` and `get_callers` on its top anchor,
+ * then (row / file scope) `find_co_changed` on the top two distinct files.
+ * Rows are taken in answer order (the ranking, or find_symbol's row order);
+ * doc and test rows never anchor. Empty when no row is left — the caller then
+ * omits `next`.
  */
 export function buildSearchExpansionCalls(
-  results: readonly { payload?: Record<string, unknown> }[],
+  results: readonly ExpansionRow[],
   workingTree: WorkingTreeMarker | undefined,
+  scope: SearchExpansionScope = "row",
 ): SuggestedToolCall[] {
+  const rows = results.flatMap(({ payload }) => (isAnchorRow(payload) ? [payload] : []));
+  const address = toolCallAddressFromWorkingTree(workingTree);
+  if (scope === "symbol") {
+    const symbolId = rows.map(codeSymbolIdOf).find((id) => id !== undefined);
+    return symbolId === undefined ? [] : graphCalls(address, { symbolId }, symbolId);
+  }
   const anchors: string[] = [];
-  for (const { payload } of results) {
-    const relativePath = payload?.relativePath;
-    if (typeof relativePath !== "string" || !isAnchorRow(payload) || anchors.includes(relativePath)) continue;
+  for (const payload of rows) {
+    const { relativePath } = payload;
+    if (typeof relativePath !== "string" || anchors.includes(relativePath)) continue;
     anchors.push(relativePath);
     if (anchors.length === ANCHOR_FILES) break;
   }
   if (anchors.length === 0) return [];
-  const address = toolCallAddressFromWorkingTree(workingTree);
   const [top] = anchors;
+  const topSymbolId = scope === "row" ? codeSymbolIdOf(rows[0]) : undefined;
   return [
-    {
-      tool: "get_callees",
-      args: { ...address, relativePath: top },
-      why: `files ${top} imports — change candidates`,
-    },
-    {
-      tool: "get_callers",
-      args: { ...address, relativePath: top },
-      why: `files importing ${top} — callers to update`,
-    },
+    ...(topSymbolId === undefined
+      ? graphCalls(address, { relativePath: top }, top)
+      : graphCalls(address, { symbolId: topSymbolId }, topSymbolId)),
     {
       tool: "find_co_changed",
       args: { ...address, files: anchors },
       why: `files co-edited with ${anchors.join(", ")} in git history`,
     },
   ];
+}
+
+/** `get_callees` then `get_callers` on one target: a symbol's call edges, or a file's import edges. */
+function graphCalls(
+  address: ReturnType<typeof toolCallAddressFromWorkingTree>,
+  target: { symbolId: string } | { relativePath: string },
+  name: string,
+): SuggestedToolCall[] {
+  const why =
+    "symbolId" in target
+      ? { out: `what ${name} calls — change candidates`, in: `callers of ${name} — callers to update` }
+      : { out: `files ${name} imports — change candidates`, in: `files importing ${name} — callers to update` };
+  return [
+    { tool: "get_callees", args: { ...address, ...target }, why: why.out },
+    { tool: "get_callers", args: { ...address, ...target }, why: why.in },
+  ];
+}
+
+/**
+ * The graph id a row names: its symbolId, a `#partN` window read as the symbol
+ * it splits; undefined for a doc section (`doc:<hash>`) or a row with none.
+ */
+function codeSymbolIdOf(payload: Record<string, unknown> | undefined): string | undefined {
+  if (!payload) return undefined;
+  const { symbolId } = payload;
+  if (typeof symbolId !== "string" || symbolId.length === 0 || symbolId.startsWith("doc:")) return undefined;
+  return splitFragmentBase(payload) ?? symbolId;
 }
 
 /** A code row of production code: neither a doc chunk nor a test file. */

@@ -14,6 +14,7 @@ export type { RerankerPort, RerankOptions } from "./reranker-port.js";
 export { historyClockRerankOption } from "./history-clock.js";
 export { OrderByFieldResolver, RankModule, type RankOptions } from "./rank-module.js";
 export { toolCallAddressFromWorkingTree } from "./tool-call-address.js";
+export { splitFragmentBase } from "./chunk-grouping/index.js";
 export { computeSearchConfidence } from "./confidence.js";
 export type { SearchConfidence, SearchConfidenceInput } from "./confidence.js";
 export {

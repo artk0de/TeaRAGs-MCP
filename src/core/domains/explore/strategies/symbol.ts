@@ -76,6 +76,7 @@ import type {
 import type { RerankMode } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
+import { isUnderOwner } from "../../../primitives/ids/index.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { isTestExampleChunk, memberOwnerOf, splitFragmentBase, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
@@ -520,8 +521,12 @@ function filterByExactSymbolId(
     const parentSymbolId = c.payload.parentSymbolId as string | undefined;
     // Member-of-container path: parentSymbolId can carry either the full
     // FQN (e.g. `Foo::Bar`) or just the local class name (e.g. `Bar`),
-    // depending on language. Accept both forms.
-    if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
+    // depending on language. Accept both forms — the local name only for a
+    // member that lies under the queried FQN itself: the local name alone is
+    // the FQN's TAIL, which any other owner's namesake carries too (q1g6s.15:
+    // `Billing::Invoice.create` answered by JS `create#CallExpression`).
+    if (parentSymbolId === fqn) return true;
+    if (parentSymbolId === containerName && symbolId !== undefined && isUnderOwner(symbolId, fqn)) return true;
     // A `#partN` window of an oversized test example names the EXAMPLE as its
     // parent, not the scope; it stands for an example of the queried scope
     // when its base id extends the scope id (bd tea-rags-mcp-msv3l). An example
@@ -529,9 +534,9 @@ function filterByExactSymbolId(
     // `memberOwnerOf`'s last-separator split.
     if (isTestExampleChunk(c)) return splitFragmentBase(c.payload)?.startsWith(`${fqn}.`) === true;
     // A member split into `#partN` parts names the member as its parent; the
-    // container is the member id's owner (bd tea-rags-mcp-y5vx4).
-    const owner = splitPartOwner(c.payload);
-    return owner !== undefined && (owner === fqn || owner === containerName);
+    // container is the member id's owner (bd tea-rags-mcp-y5vx4) — the FQN
+    // itself; its bare tail would admit another owner's namesake (q1g6s.15).
+    return splitPartOwner(c.payload) === fqn;
   });
 }
 

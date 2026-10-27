@@ -57,10 +57,12 @@ const FIND_SYMBOL_ROWS: ResponseRowsPolicy = {
   rows: ["results"],
   continuation: (args, cut) => {
     if (!Array.isArray(args.symbols)) return offsetContinuation()(args, cut);
-    const requestColumn = cut.columns?.indexOf("request") ?? -1;
+    // Rows are tabulated from `payload.request` (q1g6s.15: a bare `request` lookup never matched).
+    const requestColumn = cut.columns?.indexOf("payload.request") ?? -1;
     if (requestColumn < 0) return undefined;
     const symbols = [...new Set(cut.omittedRows.map((row) => (row as unknown[])[requestColumn]))];
-    return { ...args, symbols };
+    const { offset: _offset, ...rest } = args;
+    return { ...rest, symbols };
   },
   narrowing: SEARCH_NARROWING,
 };

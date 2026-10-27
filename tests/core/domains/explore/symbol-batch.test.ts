@@ -147,6 +147,48 @@ describe("SymbolBatchDrill", () => {
     expect(answer.missing[0].treeState).toBeUndefined();
   });
 
+  // q1g6s.15 live repro: a qualified Ruby id came back as three JS eslint
+  // `create` functions — their inner rows name `create` as parentSymbolId, the
+  // FQN's tail — with `missing: []`.
+  it("never answers a qualified address with members of another owner's same-named container", async () => {
+    const JS = "app/javascript/eslint-local-rules/rules/no-restricted-paths.ts";
+    indexHolds([
+      codeRow("j1", { symbolId: "create", name: "create", relativePath: JS, language: "typescript", content: "c" }),
+      codeRow("j2", {
+        symbolId: "create#CallExpression",
+        name: "CallExpression",
+        parentSymbolId: "create",
+        relativePath: JS,
+        language: "typescript",
+        content: "c",
+      }),
+    ]);
+
+    const answer = await run(["Billing::Invoice.create"]);
+
+    expect(answer.rows).toEqual([]);
+    expect(answer.missing).toEqual([expect.objectContaining({ request: "Billing::Invoice.create" })]);
+    expect(answer.missing[0].suggestions).toContain("create");
+  });
+
+  it("still outlines a qualified class through members whose parentSymbolId is its local name", async () => {
+    indexHolds([
+      codeRow("k1", {
+        symbolId: "Billing::Invoice#total",
+        name: "total",
+        parentSymbolId: "Invoice",
+        relativePath: "app/models/invoice.rb",
+        language: "ruby",
+        content: "def total",
+      }),
+    ]);
+
+    const answer = await run(["Billing::Invoice"]);
+
+    expect(answer.missing).toEqual([]);
+    expect(answer.rows).toHaveLength(1);
+  });
+
   describe("on a linked working tree", () => {
     it("answers a modified symbol with the tree's body", async () => {
       indexHolds(index);
