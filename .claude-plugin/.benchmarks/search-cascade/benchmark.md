@@ -988,3 +988,44 @@ merges every part — the epic's target.
   character"), so the alternation never matches. Baseline check on the 0.47.26
   package (R1/R3/R4/8 slice, ×3): same literal-pipe plan 3/3, R1/R3/8 3/3. Not
   repaired here.
+
+## 2026-10-27 — `find_symbol(symbols:)` batch as `cat` (yz10n, tea-rags 0.47.30)
+
+- Finding: in the benchmark, agents used a `symbols` batch to dump code — 88
+  batch entries, 52 file paths + 12 directories + 24 ids; the path entries
+  carried 190k of 197k chars. The server half (65c0e3839) answers a batched file
+  as an outline and a directory as `missing`; this is the rule half.
+- Change: core routing row 1 now reads
+  ``file/dir path, doc TOC, how `<dir>` works → `find_symbol(relativePath:)` outline first, then ONE batch of its member ids``;
+  the Invariants batch line reads
+  ``Read the `Class#method` ids an answer NAMED (rows, outline, graph edges) in ONE `find_symbol(symbols: [<ids>])` — never file/dir paths.``
+  explore ORIENT gets a "Path typed first" line (relativePath outline is call 1;
+  a `symbols` batch never carries a file / dir path). navigation + decision-tree
+  guides aligned. core.md 8897/8900 chars; Codex `core.txt` 9478 bytes (hook
+  budget 9650).
+- New case B1 (invented area `src/telemetry/sampling/`). Slice: B1 + the
+  batching / outline neighbours 6, 13, 14, 15; all five in ONE session per run,
+  ×3 per client, stand `/tmp/1k059-stand-tr` (Codex scratch `CODEX_HOME`, Claude
+  `--plugin-dir`, sonnet).
+- Round 0 (Invariants line only): B1 Codex 1/3 — the explore ORIENT branch
+  (semantic `entryPoint` search for a directory target) and the core research
+  row (`get_architecture_report`) won over the Invariants line.
+- Round 1 (+ explore "Path typed first"): B1 Codex 2/3 — a run that opened no
+  file planned from core alone and took the research row.
+- Round 2 (shipped, + core routing row 1):
+
+| Case | Red Codex | Red Claude | Green Codex | Green Claude |
+| ---- | --------- | ---------- | ----------- | ------------ |
+| B1   | 2/3       | 2/3        | 3/3         | 3/3          |
+| 6    | 2/3       | 3/3        | 3/3         | 3/3          |
+| 13   | 3/3       | 3/3        | 3/3         | 3/3          |
+| 14   | 3/3       | 3/3        | 3/3         | 3/3          |
+| 15   | 3/3       | 3/3        | 3/3         | 3/3          |
+
+- Red Claude B1 run 1 batched all six file paths
+  (`symbols: ["src/telemetry/sampling/head-sampler.ts", …]`) — the defect
+  itself. Red Codex 6 run 1 opened with `hybrid_search` (pre-existing, also seen
+  in round 1).
+- Watch: green Codex 14 runs 2–3 add a member-id batch after the directory frame
+  for a pure "what is in <dir>" question. Not in case 14's `not` list, graded
+  PASS; a leak of the routing-row wording to re-check next round.

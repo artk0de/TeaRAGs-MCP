@@ -287,6 +287,12 @@ find_similar with code as input → EXPLAIN similarities.
 
 ### 1. ORIENT (broad scope ONLY)
 
+**Path typed first.** The prompt names a directory or file path → call 1 =
+`find_symbol(relativePath: <that path>)` outline (adds — ORIENT / BREADTH
+follow); bodies → ONE
+`find_symbol(symbols: [<Class#method ids from that outline or a row>])`, never a
+file / dir path in `symbols`.
+
 **Gate by target.** System / domain / directory ("introduce me to the project",
 "full picture of X", "walk me through domain Y") → ORIENT first. Named symbol /
 narrow question ("what does Reranker#rerank do", "where is X used") → SKIP to

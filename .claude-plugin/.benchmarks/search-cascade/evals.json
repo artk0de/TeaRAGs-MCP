@@ -428,6 +428,19 @@
         "Read / cat of a lib/tasks file",
         "a symbolId other than 'billing:sync' for the task"
       ]
+    },
+    {
+      "id": "B1",
+      "audit_finding": "yz10n: a find_symbol(symbols:) batch used as `cat` — 88 benchmark batch entries, 52 file paths + 12 directories = 190k of 197k chars",
+      "context": "Project alias `tea-rags`, cwd /work/tea-rags (its own checkout), TypeScript, codegraph on, healthy index. src/telemetry/sampling/ holds six TypeScript files (head-sampler.ts, tail-sampler.ts, rate-budget.ts, sampling-policy.ts, policy-loader.ts, index.ts), each 80–300 lines with one or two classes.",
+      "prompt": "How does src/telemetry/sampling/ work? What's in that directory, and which code decides whether a span is kept?",
+      "expected": "find_symbol(relativePath: \"src/telemetry/sampling\") (directory frame) — or a file/class outline via find_symbol(relativePath: <file>) / find_symbol(symbol: <Class>) — BEFORE any batch; then ONE find_symbol(symbols: [<Class#method / function ids taken from those outline lines>]) for the members the answer needs. get_callees / get_architecture_report alongside are fine",
+      "not": [
+        "a find_symbol(symbols: [...]) entry that is a file path or a directory path",
+        "Read / cat / ls / Glob / rg --files",
+        "one find_symbol(symbol:) call per member id",
+        "a symbols batch before any outline"
+      ]
     }
   ],
   "results": {

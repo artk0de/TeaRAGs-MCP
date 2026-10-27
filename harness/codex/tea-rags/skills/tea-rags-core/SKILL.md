@@ -31,7 +31,8 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
-- file/dir path, doc TOC → `find_symbol(relativePath:)`; its imports →
+- file/dir path, doc TOC, how `<dir>` works → `find_symbol(relativePath:)`
+  outline first, then ONE batch of its member ids; its imports →
   `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
   user's manual-read order → `Read` (Invariants)
 - code history — when X appeared/changed, "посмотри через git" → never
@@ -83,11 +84,10 @@ search; its occurrences → the usages row. A name's fit → lexicon
   question. A new search only for code not yet seen ("Curiosity search"
   anti-pattern).
 - Never `Read` after `find_symbol` — method = full body; small file
-  (`kind: "file"`) = full text, nothing after; outline → drill. Read the ids an
-  answer NAMED (rows, outline, graph edges) in ONE
-  `find_symbol(symbols: [<ids>])` — bodies, not files; a path only for a file
-  ≤60 lines or a DSL/vocabulary question; never a directory dump. After a
-  search: `find_symbol` next.
+  (`kind: "file"`) = full text, nothing after; outline → drill. Read the
+  `Class#method` ids an answer NAMED (rows, outline, graph edges) in ONE
+  `find_symbol(symbols: [<ids>])` — never file/dir paths. After a search:
+  `find_symbol` next.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
   it better → it becomes the anchor. Which files change / every place → in
