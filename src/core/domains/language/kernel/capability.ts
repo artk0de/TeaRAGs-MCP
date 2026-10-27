@@ -92,7 +92,12 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunking 5: Rust attribute and nested-impl context are now preserved by
   // the shared tree-sitter chunker (tea-rags-mcp-2g2og.8), alongside the
   // existing release-wide chunking changes above.
-  chunking: 5,
+  // chunking 6, bd tea-rags-mcp-6xdwe: a non-blank file never yields zero
+  // chunks — a small file the 50-char gate emptied becomes ONE whole-file
+  // chunk — and a remainder under the floor rides in its nearest chunk instead
+  // of being dropped. Only small files and files with tiny top-level / member
+  // statements move, but no narrower scope can name them, so plain `--force`.
+  chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
   // tea-rags-mcp-r8hme.12: the resolution runner resolves `typeOnlyImports`

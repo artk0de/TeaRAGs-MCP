@@ -34,7 +34,16 @@ import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors/index.js"
 import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
-import { planContainerRemainder, type ContainerRemainderPart } from "./container-remainder.js";
+import {
+  planContainerRemainder,
+  type ContainerRemainderInput,
+  type ContainerRemainderPart,
+} from "./container-remainder.js";
+import {
+  absorbRemainderIntoNeighbourChunk,
+  wholeFileChunk,
+  type WholeFileChunkIdentity,
+} from "./file-text-coverage.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 import type { LanguageConfig } from "./language-config/index.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
@@ -512,7 +521,12 @@ export class TreeSitterChunker implements CodeChunker {
     const langConfig = await this.getLanguageConfig(language, extname(filePath));
     if (!langConfig) {
       return {
-        chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+        chunks: this.chunksCoveringFile(
+          this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+          code,
+          filePath,
+          language,
+        ),
         tree: null,
       };
     }
@@ -544,6 +558,9 @@ export class TreeSitterChunker implements CodeChunker {
       imports = langConfig.readImportSpecifiers?.(root);
 
       const chunks: CodeChunk[] = [];
+      // Nodes the min-length gate kept from becoming chunks of their own — the
+      // identity source of a small file's whole-file chunk (bd tea-rags-mcp-6xdwe).
+      const gated: { node: AstNode; index: number }[] = [];
       const nodes = this.findChunkableNodes(root, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
 
       for (const [index, node] of nodes.entries()) {
@@ -555,7 +572,10 @@ export class TreeSitterChunker implements CodeChunker {
         // classifier `emit` decision bypasses it — these are top-level NAMED
         // symbols `find_symbol` must resolve (e.g. Go type aliases; replaces the
         // former `isGoNamedType` carve-out). bd tea-rags-mcp-iiq6.
-        if (content.length < 50 && decision.kind !== "emit") continue;
+        if (content.length < 50 && decision.kind !== "emit") {
+          gated.push({ node, index });
+          continue;
+        }
 
         const hasChildTypes = langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0;
         const isTooLarge = content.length > this.config.maxChunkSize;
@@ -577,7 +597,13 @@ export class TreeSitterChunker implements CodeChunker {
         const withRemainder =
           merged.length > 0 ? this.withModuleRemainder(merged, root, langConfig, code, filePath, language) : merged;
         return {
-          chunks: this.enforceMaxChunkSize(withRemainder),
+          chunks: this.chunksCoveringFile(
+            this.enforceMaxChunkSize(withRemainder),
+            code,
+            filePath,
+            language,
+            gated.length === 1 ? this.gatedNodeIdentity(gated[0], langConfig, code, filePath, language) : undefined,
+          ),
           tree: materializedTree,
           ...(imports ? { imports } : {}),
         };
@@ -603,7 +629,12 @@ export class TreeSitterChunker implements CodeChunker {
     // (classified as a generic FileParseError downstream).
     try {
       return {
-        chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+        chunks: this.chunksCoveringFile(
+          this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
+          code,
+          filePath,
+          language,
+        ),
         tree: materializedTree,
         ...(imports ? { imports } : {}),
       };
@@ -1926,18 +1957,20 @@ export class TreeSitterChunker implements CodeChunker {
       for (let { row } = child.startPosition; row <= child.endPosition.row; row++) coveredRows.add(row);
     }
 
-    const parts = planContainerRemainder({
-      codeLines: ctx.codeLines,
-      containerStartRow: containerNode.startPosition.row,
-      leadingStartRow,
-      containerEndRow: containerNode.endPosition.row,
-      coveredRows,
-      containerHeader: this.extractContainerHeader(containerNode, ctx.code),
-      containerHeaderRow: this.containerHeaderRow(containerNode),
-      hierarchyPrefix: this.buildHierarchyPrefix(hierarchyHeaders),
-      maxChunkSize: this.config.maxChunkSize,
-      minContentLength: 50,
-    });
+    const parts = this.planRemainderKeepingText(
+      {
+        codeLines: ctx.codeLines,
+        containerStartRow: containerNode.startPosition.row,
+        leadingStartRow,
+        containerEndRow: containerNode.endPosition.row,
+        coveredRows,
+        containerHeader: this.extractContainerHeader(containerNode, ctx.code),
+        containerHeaderRow: this.containerHeaderRow(containerNode),
+        hierarchyPrefix: this.buildHierarchyPrefix(hierarchyHeaders),
+        maxChunkSize: this.config.maxChunkSize,
+      },
+      chunks,
+    );
 
     chunks.push(
       ...this.remainderChunks(
@@ -1980,6 +2013,58 @@ export class TreeSitterChunker implements CodeChunker {
         ...(part.lineRanges.length > 1 ? { lineRanges: part.lineRanges } : {}),
       },
     }));
+  }
+
+  /**
+   * A remainder's parts, with the 50-char noise floor applied WITHOUT losing
+   * text (bd tea-rags-mcp-6xdwe): a remainder at or above the floor is planned
+   * as before; one below it is folded into the nearest chunk of `chunks`
+   * (mutated in place) and only the parts no chunk can host come back, to be
+   * emitted as chunks of their own.
+   */
+  private planRemainderKeepingText(
+    input: Omit<ContainerRemainderInput, "minContentLength">,
+    chunks: CodeChunk[],
+  ): ContainerRemainderPart[] {
+    const parts = planContainerRemainder({ ...input, minContentLength: 50 });
+    if (parts.length > 0) return parts;
+    const belowFloor = planContainerRemainder({ ...input, minContentLength: 1 });
+    if (belowFloor.length === 0) return [];
+    return absorbRemainderIntoNeighbourChunk(belowFloor, chunks, input.codeLines, this.config.maxChunkSize);
+  }
+
+  /**
+   * `chunks`, or — when chunking produced none for a non-blank file — the one
+   * whole-file chunk that keeps the file's text searchable (bd
+   * tea-rags-mcp-6xdwe). A blank file stays chunkless.
+   */
+  private chunksCoveringFile(
+    chunks: CodeChunk[],
+    code: string,
+    filePath: string,
+    language: string,
+    identity?: WholeFileChunkIdentity,
+  ): CodeChunk[] {
+    if (chunks.length > 0) return chunks;
+    const whole = wholeFileChunk(code, filePath, language, identity);
+    return whole ? this.enforceMaxChunkSize([whole]) : [];
+  }
+
+  /** The chunk identity the min-length gate denied `gated`, as `chunkSingleNode` would have composed it. */
+  private gatedNodeIdentity(
+    gated: { node: AstNode; index: number },
+    langConfig: LanguageConfig,
+    code: string,
+    filePath: string,
+    language: string,
+  ): WholeFileChunkIdentity | undefined {
+    const chunks: CodeChunk[] = [];
+    this.chunkSingleNode(gated.node, langConfig, gated.index, code, filePath, language, chunks, {
+      kind: "passthrough",
+    });
+    if (chunks.length !== 1) return undefined;
+    const { chunkType, name, symbolId, parentSymbolId, parentType } = chunks[0].metadata;
+    return { chunkType, name, symbolId, parentSymbolId, parentType };
   }
 
   /**
@@ -2033,17 +2118,19 @@ export class TreeSitterChunker implements CodeChunker {
     const outsideRows = new Set<number>();
     for (let row = firstRow; row <= lastRow; row++) if (!remainderRows.has(row)) outsideRows.add(row);
 
-    const parts = planContainerRemainder({
-      codeLines: code.split("\n"),
-      containerStartRow: firstRow,
-      containerEndRow: lastRow,
-      coveredRows: outsideRows,
-      containerHeader: "",
-      containerHeaderRow: -1,
-      hierarchyPrefix: "",
-      maxChunkSize: this.config.maxChunkSize,
-      minContentLength: 50,
-    });
+    const parts = this.planRemainderKeepingText(
+      {
+        codeLines: code.split("\n"),
+        containerStartRow: firstRow,
+        containerEndRow: lastRow,
+        coveredRows: outsideRows,
+        containerHeader: "",
+        containerHeaderRow: -1,
+        hierarchyPrefix: "",
+        maxChunkSize: this.config.maxChunkSize,
+      },
+      chunks,
+    );
     if (parts.length === 0) return chunks;
 
     const statements = candidates.filter((node) => !this.isCommentNode(node));

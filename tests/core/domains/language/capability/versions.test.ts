@@ -103,7 +103,9 @@ describe("resolveLanguageCodeVersions", () => {
     // prototype-named keys in local bindings and nested maps.
     // walker 8: bd tea-rags-mcp-q1g6s.10 — union fan-out confidence is the
     // arm share; a class method's bare self reads are no self-dispatch hooks.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 5, walker: 8, codegraphSchema: 2 });
+    // chunking 6: bd tea-rags-mcp-6xdwe — a non-blank file never yields zero
+    // chunks; a below-floor remainder rides in its nearest chunk.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 6, walker: 8, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();

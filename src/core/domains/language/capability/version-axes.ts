@@ -54,6 +54,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${CHUNKER_ROOT}/symbol-id-disambiguator.ts`,
       `${CHUNKER_ROOT}/chunk-navigation.ts`,
       `${CHUNKER_ROOT}/container-remainder.ts`,
+      `${CHUNKER_ROOT}/file-text-coverage.ts`,
       `${CHUNKER_ROOT}/utils/chunk-id.ts`,
       // The static `imports` payload every chunk of a file carries: written at
       // chunk upsert, never by an enrichment, so only a re-chunk rewrites it
