@@ -35,6 +35,7 @@ import {
   readWorkingTreeChanges,
   rebaseGitPathsOntoRoot,
 } from "../../../adapters/vcs/index.js";
+import type { WorkingTreeChangeClock } from "./change-clock.js";
 
 export interface WorkingTreeDelta {
   /** root-relative, includes untracked files and rename targets */
@@ -57,6 +58,11 @@ export type WorkingTreeDeltaRead =
 
 /** Remedies carry `{alias}` / `{tree}` tokens the overlay fills in. */
 export const WORKING_TREE_REINDEX_REMEDY = "tea-rags index-codebase --project {alias}";
+
+export interface WorkingTreeDeltaReaderDeps {
+  /** Vouches that a tree is unchanged since a generation; absent = measure every read. */
+  changeClock?: Pick<WorkingTreeChangeClock, "settledGeneration">;
+}
 
 export interface WorkingTreeDeltaReader {
   read: (
@@ -161,8 +167,12 @@ async function measureDelta(
 }
 
 /** A reader with its own per-tree cache; one per process is the intended use. */
-export function createWorkingTreeDeltaReader(): WorkingTreeDeltaReader {
+export function createWorkingTreeDeltaReader(deps: WorkingTreeDeltaReaderDeps = {}): WorkingTreeDeltaReader {
   const cache = new Map<string, { fingerprint: string; read: WorkingTreeDeltaRead }>();
+  // The hot cache (bd tea-rags-mcp-4qdj0): a read whose tree the change clock
+  // vouches for — same generation, same indexed commit — skips `git status`.
+  const hot = new Map<string, { generation: number; indexedCommit: string; read: WorkingTreeDeltaRead }>();
+  const { changeClock } = deps;
 
   return {
     read: async (root, indexedCommit, accepts) => {
@@ -170,19 +180,28 @@ export function createWorkingTreeDeltaReader(): WorkingTreeDeltaReader {
         return { kind: "degraded", reason: "index has no indexedCommit stamp", remedy: WORKING_TREE_REINDEX_REMEDY };
       }
       const gitToplevel = findGitToplevel(root) ?? root;
+      // Asked BEFORE measuring: an event during the measurement moves the
+      // generation past the one stored with it, so the next read re-measures.
+      const generation = changeClock ? await changeClock.settledGeneration(gitToplevel) : undefined;
+      const known = hot.get(root);
+      if (generation !== undefined && known?.generation === generation && known.indexedCommit === indexedCommit) {
+        return known.read;
+      }
       const prefix = gitPathPrefix(gitToplevel, root);
       const status = await readStatusPorcelain(gitToplevel);
       const snapshot = parseStatusPorcelain(status);
       const fingerprint = await fingerprintOf(gitToplevel, indexedCommit, status, snapshot);
 
       const cached = cache.get(root);
-      if (cached?.fingerprint === fingerprint) return cached.read;
-
       const read: WorkingTreeDeltaRead =
-        snapshot.paths.length === 0 && snapshot.head === indexedCommit
-          ? { kind: "measured", delta: { changed: [], deleted: [], renamedFrom: new Map(), fingerprint } }
-          : await measureDelta(gitToplevel, prefix, indexedCommit, accepts, fingerprint);
+        cached?.fingerprint === fingerprint
+          ? cached.read
+          : snapshot.paths.length === 0 && snapshot.head === indexedCommit
+            ? { kind: "measured", delta: { changed: [], deleted: [], renamedFrom: new Map(), fingerprint } }
+            : await measureDelta(gitToplevel, prefix, indexedCommit, accepts, fingerprint);
       cache.set(root, { fingerprint, read });
+      if (generation === undefined) hot.delete(root);
+      else hot.set(root, { generation, indexedCommit, read });
       return read;
     },
   };

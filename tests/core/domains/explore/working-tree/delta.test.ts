@@ -215,6 +215,85 @@ describe("WorkingTreeDeltaReader", () => {
     if (first.kind !== "measured" || second.kind !== "measured") throw new Error("expected measured reads");
     expect(second.delta.fingerprint).not.toBe(first.delta.fingerprint);
   });
+
+  /**
+   * The hot cache (bd tea-rags-mcp-4qdj0): a change clock that vouches for an
+   * unchanged generation lets a read skip `git status` entirely; any other
+   * generation, or no vouching, measures as before.
+   */
+  describe("with a change clock", () => {
+    const clockOf = (...generations: (number | undefined)[]) => {
+      const asked: string[] = [];
+      return {
+        asked,
+        changeClock: {
+          settledGeneration: async (gitToplevel: string): Promise<number | undefined> => {
+            asked.push(gitToplevel);
+            return generations.length > 1 ? generations.shift() : generations[0];
+          },
+        },
+      };
+    };
+
+    it("should answer a settled, unchanged tree without running git status", async () => {
+      write("src/keep.ts", "export const keep = 8;\n");
+      const { changeClock } = clockOf(7);
+      const reader = createWorkingTreeDeltaReader({ changeClock });
+      const status = vi.spyOn(gitClient, "readStatusPorcelain");
+
+      const first = await reader.read(tree, indexedCommit, accepts);
+      const second = await reader.read(tree, indexedCommit, accepts);
+
+      expect(status).toHaveBeenCalledTimes(1);
+      expect(second).toBe(first);
+    });
+
+    it("should re-measure once the clock's generation moves", async () => {
+      const { changeClock } = clockOf(1, 2);
+      const reader = createWorkingTreeDeltaReader({ changeClock });
+      const status = vi.spyOn(gitClient, "readStatusPorcelain");
+      const first = await reader.read(tree, indexedCommit, accepts);
+
+      write("src/fresh.ts", "export const fresh = 1;\n");
+      const second = await reader.read(tree, indexedCommit, accepts);
+
+      expect(status).toHaveBeenCalledTimes(2);
+      expect(measured(first)).toEqual({ changed: [], deleted: [] });
+      expect(measured(second)).toEqual({ changed: ["src/fresh.ts"], deleted: [] });
+    });
+
+    it("should measure every read when the clock cannot vouch", async () => {
+      const { changeClock } = clockOf(undefined);
+      const reader = createWorkingTreeDeltaReader({ changeClock });
+      const status = vi.spyOn(gitClient, "readStatusPorcelain");
+      await reader.read(tree, indexedCommit, accepts);
+
+      write("src/fresh.ts", "export const fresh = 2;\n");
+      const second = await reader.read(tree, indexedCommit, accepts);
+
+      expect(status).toHaveBeenCalledTimes(2);
+      expect(measured(second)).toEqual({ changed: ["src/fresh.ts"], deleted: [] });
+    });
+
+    it("should not answer a read against another indexed commit from the hot cache", async () => {
+      const { changeClock } = clockOf(3);
+      const reader = createWorkingTreeDeltaReader({ changeClock });
+      await reader.read(tree, indexedCommit, accepts);
+
+      const other = await reader.read(tree, "0123456789abcdef0123456789abcdef01234567", accepts);
+
+      expect(other.kind).toBe("degraded");
+    });
+
+    it("should ask the clock about the git toplevel of a subdirectory root", async () => {
+      const { changeClock, asked } = clockOf(4);
+      write("src/keep.ts", "export const keep = 9;\n");
+
+      await createWorkingTreeDeltaReader({ changeClock }).read(join(tree, "src"), indexedCommit, accepts);
+
+      expect(asked).toEqual([tree]);
+    });
+  });
 });
 
 /**
