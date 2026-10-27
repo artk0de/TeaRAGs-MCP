@@ -139,8 +139,9 @@ Research / planning question (understand X before a change, map an area, answer
 a design question) → find its row, run that call; never `ls` / `cat` / `grep` /
 `git ls-files` to explore. After the first hit: how it works →
 `get_callees(symbolId:)`, who uses it → `get_callers(symbolId:)` (id from the
-row); the ids an answer NAMED → ONE `find_symbol(symbols: [<ids>])` — bodies,
-not files; a 2nd search needs a new noun. Files outside the index (`*.json`,
+row); the ids an answer NAMED → ONE `find_symbol(symbols: [<ids>])` — member
+ids, never file/dir paths (area/dir → `find_symbol(relativePath:)` outline
+first); a 2nd search needs a new noun. Files outside the index (`*.json`,
 locale/data `*.yml`, generated) → client's tools, say so.
 
 | Question                                                     | Call                                                                                                             |
