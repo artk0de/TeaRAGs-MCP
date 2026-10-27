@@ -38,8 +38,12 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 - file/dir path, lines N–M, doc TOC, how `<dir>` works →
   `find_symbol(relativePath:)` outline first, then ONE batch of the needed ids
-  (N–M: ids spanning it); its imports → `get_callees(relativePath:)`
-  (`imports[]`; a row's `imports` = a count); manual-read order → Invariants
+  (N–M: ids spanning it); "how does `<dir>` work" / "what's in `<dir>`", no
+  structure word (architecture, structure, organized, end to end, backbone, walk
+  me through) → that outline → ONE `find_symbol(symbols:[<Class#method ids>])`,
+  never codegraph row 4 / `get_architecture_report`; its imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
+  manual-read order → Invariants
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
