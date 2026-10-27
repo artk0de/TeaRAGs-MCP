@@ -10,8 +10,10 @@ tool) — for exact text: occurrences of an identifier / constant / string ("whe
 is X used", "every call of X", "files containing X", even `a|b` alternation or a
 name the user calls a "pattern"), regex syntax, TODO/FIXME/HACK/NOTE markers,
 phrases, error strings, import path strings; also the fallback when tea-rags is
-unavailable. Then the hit's enclosing symbol → find_symbol, never Read/cat. A
-KNOWN definition → find_symbol. Glob — never for code discovery.
+unavailable. Then the hit's enclosing symbol → find_symbol, never Read/cat. An
+identifier's DEFINITION / body / outline is a SYMBOL lookup → find_symbol, never
+text search; only its OCCURRENCES go to the standard search. Glob — never for
+code discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for meaning and reads.
 

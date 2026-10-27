@@ -10,7 +10,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 |---|---|
 | file/dir: outline / doc TOC | `find_symbol(relativePath:)` |
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
-| every occurrence of a name / constant / string | shell grep -rn (literal) → `find_symbol` |
+| every occurrence of a name/constant/string | shell grep -rn (literal) → `find_symbol` |
 | symbol + intent | `hybrid_search` |
 | behaviour, no name | `semantic_search` only |
 | a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
@@ -20,9 +20,9 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 | diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | shell grep -rn (literal) |
 
-Names joined by `|` → the occurrence row; every caller → `get_callers` + that row. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
+Identifier definition/body = `find_symbol`; occurrences (even `a|b`) → that row; every caller → `get_callers` + it. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
 
-**Shell:** `cat`/`sed`/`head` to read code → `find_symbol`. grep stays for exact names, regex, comments, command output.
+**Shell:** `cat`/`sed`/`head` to read code → `find_symbol`. grep stays for exact text, regex, command output.
 
 **After a hit:** never read the file after `find_symbol` — method = full body; class / file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
 

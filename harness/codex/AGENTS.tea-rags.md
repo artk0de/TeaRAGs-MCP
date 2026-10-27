@@ -61,8 +61,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
   `rerank: "proven"`
 
-Never `cat`/`sed`/`Read`, Glob or `rg --files` to locate or read code; text
-search only for exact text, never behaviour/intent. A name's fit → lexicon
+Never `cat`/`sed`/`Read`, Glob or `rg --files` to locate or read code. An
+identifier's definition/body/outline = SYMBOL lookup (`find_symbol`), never text
+search; its occurrences → the usages row. A name's fit → lexicon
 `names:[{name,kind}]`, naming a T value → `types:[T]`; a diff's →
 `review_changes` verdicts, nothing after.
 
