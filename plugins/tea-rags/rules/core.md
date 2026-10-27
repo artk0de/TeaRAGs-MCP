@@ -13,12 +13,11 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 
 Indexed code is never READ with the default code read tool, shell
 `cat`/`sed`/`head` (even in `a; b`) or default code search tool match lines. The
-default code search tool only LOCATES exact text — files-with-matches first
-(`-l`) or a line cap — in the anchor's dir when known, else the source root —
-never the repo root or hybrid_search/semantic_search for a dir; then
-`find_symbol` reads the needed methods. No find/Glob to locate code. Shell /
-default code read tool only for files outside the index (`*.json`, locale/data
-`*.yml`) — say so.
+default code search tool only LOCATES exact text — `-l` first or a line cap, in
+the anchor's dir when known, else the source root, never the repo root or a
+search for the dir; then `find_symbol` reads the needed methods. No find/Glob to
+locate code. Shell / default code read tool only for files outside the index
+(`*.json`, locale/data `*.yml`) — say so.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
@@ -39,34 +38,35 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
   counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
-- known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
-- every call / all callers of X → `get_callers` AND the usages row's search
+- known symbol / identifier definition/body/outline → `find_symbol(symbol:)`
+  `Class#inst`/`C.st`, never text search
+- every call / all callers of X → plan both lines, a named grep/rg too:
+  `get_callers(symbolId:)` + the usages row's search
 - where X is used/referenced, every occurrence, who constructs X, files
-  containing X (exact name/constant/string, even `a|b`) → default code search
-  tool `"<X>" <dir>` (literal, `-l`) → `find_symbol` outline → batch of only the
-  needed methods
+  containing X (exact name/constant/string, even `a|b`), "grep for X" → default
+  code search tool `"<X>" <dir>` (literal, `-l`) → `find_symbol` outline → batch
+  of only the needed methods, never stop at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - behaviour/intent, no name → `semantic_search` only, no `hybrid_search`
 - code like a chunk in hand → `find_similar(positiveIds:)`
-- how X works / what happens when → `get_callees`; who calls X / impact / where
-  Y is handled → `get_callers` — `symbolId:` (id from a row)
+- how X works / what happens when → `get_callees`; who calls X/impact/where Y is
+  handled → `get_callers` — `symbolId:` (id from a row)
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review, a diff's names →
   `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
   uncommitted, `{base}` = branch; one name → `get_naming_lexicon`
 - project's embedding/Qdrant/env → `list_projects(project:)`
 - research — layout of `<dir>` → `get_architecture_report(pathPattern)`;
-  implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`; registered
-  / configured `<X>` → `hybrid_search("<X> register config")`; ticket `<T>` →
-  `semantic_search(taskId:)`; owners / recent churn / debt / don't-touch →
+  implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`; registered/
+  configured `<X>` → `hybrid_search("<X> register config")`; ticket `<T>` →
+  `semantic_search(taskId:)`; owners/recent churn/debt/don't-touch →
   `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
   `rerank: "proven"`
 
-Identifier definition/body/outline = `find_symbol`, never text search. A name's
-fit → lexicon `names:[{name,kind}]`, naming a T value → `types:[T]`; a diff's →
-`review_changes` verdicts, nothing after.
+A name's fit → lexicon `names:[{name,kind}]`, naming a T value → `types:[T]`; a
+diff's → `review_changes` verdicts, nothing after.
 
 **Invariants.**
 
@@ -119,9 +119,9 @@ fit → lexicon `names:[{name,kind}]`, naming a T value → `types:[T]`; a diff'
   = DAG.
 - Docs = hypothesis, verify in code; doc is the subject ("README says?") →
   as-is, no code pass.
-- `rustc driver: unavailable` (prime, status, index) → tell user ONCE per
-  session: Rust edges static-only (lower bound) + its install command; never
-  install it, never claim "no callers"/"dead code" from them.
+- `rustc driver: unavailable` (prime/status/index) → tell user ONCE per session:
+  Rust edges static-only (lower bound) + its install command; never install it,
+  never claim "no callers"/"dead code" from them.
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
   unindexed file → default code read tool, no confirm ask; indexed → tell user
   the plugin hook blocks it, read it via `find_symbol` now, never shell
@@ -138,8 +138,8 @@ pick, fallbacks, research questions → `decision-tree`; stale banner, drift,
 `denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`, labels →
 `presets`, `signals`, `signal-labels`; graph/AST, other language →
 `language-capability`; architecture report / `review_changes` answer →
-`architecture` / `review`; no prime digest →
-`tea-rags://project/<alias>/digest`; numeric filter value not given or bare raw
-number, no label → `…/metrics?language=<lang>&section=thresholds`.
+`architecture`/`review`; no prime digest → `tea-rags://project/<alias>/digest`;
+numeric filter value not given or bare raw number, no label →
+`…/metrics?language=<lang>&section=thresholds`.
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.
