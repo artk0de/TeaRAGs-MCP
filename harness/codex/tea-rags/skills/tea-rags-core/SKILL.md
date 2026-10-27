@@ -50,7 +50,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - usages; who constructs X; files named X → `hybrid_search(metaOnly)`
 - behaviour/intent, no name → `semantic_search` only, no `hybrid_search`
 - code like a chunk in hand → `find_similar(positiveIds:)`
-- who calls X / impact → `find_symbol` → `get_callers`/`get_callees`
+- how X works / what happens when → `get_callees`; who calls X / impact / where
+  Y is handled → `get_callers` — `symbolId:` (id from a row)
 - how does X reach Y / A→B → `find_symbol` ids → `trace_path`
 - diff review, a diff's names →
   `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
@@ -72,19 +73,19 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
 **Invariants.**
 
 - Never `Read` after `find_symbol` — method = full body; small file
-  (`kind: "file"`) = full text, the read itself, nothing after; outline
-  (class/large file/doc) → drill `find_symbol(symbol: <id>)`; every id you will
-  read from one answer → ONE `find_symbol(symbols: [<ids>])`, never one id per
-  turn. After a search, or a file/id already known: `find_symbol` next — another
-  search is the "Curiosity search" anti-pattern; never re-search/`Read`.
+  (`kind: "file"`) = full text, nothing after; outline → drill. Read the ids an
+  answer NAMED (rows, outline, graph edges) in ONE
+  `find_symbol(symbols: [<ids>])` — bodies, not files; a path only for a file
+  ≤60 lines or a DSL/vocabulary question; never a directory dump; in context →
+  answer from it. After a search: `find_symbol` next — a 2nd search needs a new
+  noun ("Curiosity search" anti-pattern).
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
   it better → it becomes the anchor. Which files change / every place → in
   order, before any new search: `1. find_symbol(symbol: <anchor id>)`
-  `2. get_callers/get_callees/find_co_changed` on the anchor's file (`next` as
-  given only when its `relativePath` is that file); never a re-query of the same
-  intent. Before answering: every row that named the behaviour is in the answer,
-  or say why it is a false lead.
+  `2. get_callers/get_callees(symbolId: <anchor id>)`, `find_co_changed`; never
+  a re-query of the same intent. Before answering: every row that named the
+  behaviour is in the answer, or say why it is a false lead.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - Answer has `truncated` → next call = `truncated.next` as given, or narrowed
@@ -107,13 +108,13 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   checkout is behind, plus ONE line ask the user: run <Run: line>? — --force not
   run; reads continue meanwhile`, never awaited, never "won't proceed"; next =
   the task's read call.
-- Empty `get_callers` at low resolve ≠ no callers → `hybrid_search`. Edges at
-  changed files, no `codegraph` floor (timeout, `floors: []`) → all 3 steps, in
-  order, none dropped (a `--force` ask rides beside them, never takes a slot):
-  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)
-  `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` — callers the
-  index lacks. No graph retry. Codegraph off → never claim "no cycles"; on +
-  empty `find_cycles` = DAG.
+- Empty `get_callers` ≠ no callers (jobs, DSL, config) → `hybrid_search`. Edges
+  at changed files, no `codegraph` floor (timeout, `floors: []`) → all 3 steps,
+  in order, none dropped (a `--force` ask rides beside them, never takes a
+  slot): `1. index_codebase(project=)` (main own checkout; linked/subagent →
+  skip) `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` —
+  callers the index lacks. No graph retry. Codegraph off → never claim "no
+  cycles"; on + empty `find_cycles` = DAG.
 - Docs = hypothesis; verify in code — unless the doc is the subject ("what does
   README say") → report it as-is, no code pass.
 - `rustc driver: unavailable` (prime / `get_index_status` / `index_codebase`) →

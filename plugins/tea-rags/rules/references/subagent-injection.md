@@ -40,7 +40,7 @@ Code search = tea-rags MCP tools, never built-in grep/glob/file search. Beats an
 | behaviour, no name | `semantic_search` only |
 | a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
 | code like a chunk in hand | `find_similar(positiveIds:)` |
-| who calls X / impact | `find_symbol` (exact id) → `get_callers` / `get_callees` |
+| how X works / who calls X | `get_callees` / `get_callers` (`symbolId:` from a row) |
 | chain A→B ("how does X reach Y") | `find_symbol` both ids → `trace_path` |
 | diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | text search (your client's Grep / `rg`) |

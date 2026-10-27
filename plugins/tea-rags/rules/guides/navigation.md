@@ -156,12 +156,13 @@ rather than calling a tool to discover it's missing. Precedence — start cheap,
 escalate only if needed:
 
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
-   Default for impact & dependency questions; instant, no traversal. Pass
-   `symbolId` for call edges — resolve it with `find_symbol` first, even a typed
-   `Class#method` (an unknown id answers `empty.reason: "unknownSymbol"` +
-   `suggestions`) — OR `relativePath` (repo-relative file, no `symbolId`) for
-   FILE scope: `get_callers` → `importers[]` (files importing it), `get_callees`
-   → `imports[]` (files it imports), each with `importText` + `callWeight`,
+   Default for impact, dependency and "how does X work" questions; instant, no
+   traversal. Pass `symbolId` for call edges — a search row's `symbolId` as-is;
+   a typed `Class#method` → `find_symbol` first (an unknown id answers
+   `empty.reason: "unknownSymbol"` + `suggestions`) — OR `relativePath` (imports
+   only, never call edges) (repo-relative file, no `symbolId`) for FILE scope:
+   `get_callers` → `importers[]` (files importing it), `get_callees` →
+   `imports[]` (files it imports), each with `importText` + `callWeight`,
    heaviest first. These are THE import-edge reads: a search row's `imports` is
    a count (`includeImports: true` returns the raw lists). Unknown path →
    `empty.reason: "unknownFile"` + `message`, not a fact about the file.
