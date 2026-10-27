@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import type { SchemaBuilder } from "../../../src/core/api/index.js";
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
+import {
+  DEFAULT_META_ONLY_FIELDS,
+  DEFAULT_SEARCH_FIELDS,
+} from "../../../src/core/api/public/dto/payload-projection.js";
 import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../src/core/api/tools/schemas.js";
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import { gitPayloadSignalDescriptors } from "../../../src/core/domains/trajectory/git/payload-signals.js";
@@ -157,6 +161,11 @@ describe("Resource builders", () => {
         expect(md).toContain("### metaOnly");
         expect(md).toContain(META_ONLY_CONTRACT);
         expect(META_ONLY_CONTRACT).toContain("rankingOverlay");
+      });
+
+      it("states the search tools' default fields from the constants (q1g6s.16)", () => {
+        expect(META_ONLY_CONTRACT).toContain(DEFAULT_META_ONLY_FIELDS.join(", "));
+        expect(buildOverview()).toContain(DEFAULT_SEARCH_FIELDS.join(", "));
       });
 
       it("states when a rerank preset's default filter is skipped and how to clear it", () => {

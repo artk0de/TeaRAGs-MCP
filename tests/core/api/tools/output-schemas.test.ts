@@ -41,9 +41,21 @@ describe("SearchResultOutputSchema", () => {
     ]);
   });
 
-  it("requires id and score on every item", () => {
-    expect(() => items.parse([{ score: 0.8 }])).toThrow();
-    expect(() => items.parse([{ id: "a" }])).toThrow();
+  // PIN-UPDATED q1g6s.16: a search tool's default row carries no id / score, so neither is required.
+  it("accepts an item without id and score — a search tool's default row", () => {
+    const row = { payload: { relativePath: "src/a.ts", symbolId: "A#run", startLine: 1, endLine: 9 } };
+    expect(items.parse([row])).toEqual([row]);
+    expect(() => items.parse([{ id: { nested: true } }])).toThrow();
+  });
+
+  it("accepts the column table of default search rows, every row a valid item", () => {
+    const table = overTheWire(
+      toColumns([{ payload: { relativePath: "src/a.ts", symbolId: "A#run", startLine: 1, endLine: 9, content: "x" } }]),
+    );
+
+    const parsed = schema.parse({ results: table });
+
+    expect(items.parse(rowsOf(asTable(parsed.results)))).toHaveLength(1);
   });
 
   it("validates a minimal search result", () => {

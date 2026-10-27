@@ -53,7 +53,30 @@ const MAX_SUGGESTION_DEPTH = 5;
 export interface PayloadProjectionMode {
   metaOnly: boolean;
   reranked: boolean;
+  /**
+   * A search tool (semantic_search, hybrid_search, rank_chunks, find_similar)
+   * answers: its default is {@link DEFAULT_SEARCH_FIELDS} /
+   * {@link DEFAULT_META_ONLY_FIELDS} whatever the rerank (bd
+   * tea-rags-mcp-q1g6s.16). Absent → find_symbol's lean per-mode default.
+   */
+  searchTool?: boolean;
 }
+
+/**
+ * A search tool's content-mode default `fields` (bd tea-rags-mcp-q1g6s.16): the
+ * row an agent reads, and the address it drills from with find_symbol. Preset
+ * signals ride on `rankingOverlay`; anything else is named through `fields`.
+ */
+export const DEFAULT_SEARCH_FIELDS: readonly string[] = ["relativePath", "symbolId", "startLine", "endLine", "content"];
+
+/** A search tool's metaOnly default `fields`: the locator plus the first code line. */
+export const DEFAULT_META_ONLY_FIELDS: readonly string[] = [
+  "relativePath",
+  "symbolId",
+  "startLine",
+  "endLine",
+  "signature",
+];
 
 /**
  * What a row needs to be drilled: where it is, what it is, its first code line.
@@ -79,7 +102,8 @@ const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols", "
  * `rankingOverlay`), content → locator + `content` + `navigation`, reranked
  * content → whole payload. Raw `git.*`, `codegraph.*`, `imports` and
  * `enrichedAt` stay reachable through `fields` (`["git"]` copies the subtree).
- * Without a `mode` the input array returns by identity.
+ * A search tool (`mode.searchTool`) gets the search defaults instead, reranked
+ * or not. Without a `mode` the input array returns by identity.
  */
 export function projectSearchResultPayloads(
   results: SearchResult[],
@@ -107,8 +131,8 @@ export function projectSearchResultPayloads(
 
 /** The default projection of `mode`; a missing key is simply absent, never warned about. */
 function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): SearchResult[] {
-  if (!mode.metaOnly && mode.reranked) return results;
-  const keys = mode.metaOnly ? LOCATOR_FIELDS : CONTENT_FIELDS;
+  if (!mode.searchTool && !mode.metaOnly && mode.reranked) return results;
+  const keys = defaultKeysOf(mode);
   return results.map((result) => {
     const { payload } = result;
     if (!payload) return result;
@@ -118,6 +142,11 @@ function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): Se
     }
     return { ...result, payload: projected };
   });
+}
+
+function defaultKeysOf(mode: PayloadProjectionMode): readonly string[] {
+  if (mode.searchTool) return mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+  return mode.metaOnly ? LOCATOR_FIELDS : CONTENT_FIELDS;
 }
 
 /** Trim, drop blanks, de-duplicate — order of first appearance is kept for the warning. */

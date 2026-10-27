@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import type { SchemaBuilder } from "../../../../src/core/api/index.js";
 import {
+  DEFAULT_META_ONLY_FIELDS,
+  DEFAULT_SEARCH_FIELDS,
+} from "../../../../src/core/api/public/dto/payload-projection.js";
+import {
   CreateCollectionSchema,
   createSearchSchemas,
   IndexCodebaseSchema,
@@ -338,6 +342,23 @@ describe("contributor typed filter", () => {
 // (bd tea-rags-mcp-ewg2s) — pinned in tests/mcp/resources/resources.test.ts.
 // The inline hint keeps the one fact a caller must not miss: level also
 // scopes the level-aware filters.
+describe("fields hint names the search defaults (q1g6s.16)", () => {
+  const { FindSimilarSchema, FindSymbolSchema } = createSearchSchemas(mockSchemaBuilder);
+  const hintOf = (schema: Record<string, unknown>) => (schema.fields as z.ZodTypeAny).description ?? "";
+
+  it("every search tool's fields hint interpolates both default constants", () => {
+    for (const schema of [SemanticSearchSchema, HybridSearchSchema, RankChunksSchema, FindSimilarSchema]) {
+      const hint = hintOf(schema);
+      expect(hint).toContain(`[${DEFAULT_SEARCH_FIELDS.join(",")}]`);
+      expect(hint).toContain(`[${DEFAULT_META_ONLY_FIELDS.join(",")}]`);
+    }
+  });
+
+  it("find_symbol keeps its own lean-default hint", () => {
+    expect(hintOf(FindSymbolSchema)).not.toContain(DEFAULT_SEARCH_FIELDS.join(","));
+  });
+});
+
 describe("level hint", () => {
   it("states that level scopes level-aware filters", () => {
     const description = (SemanticSearchSchema.level as z.ZodTypeAny).description ?? "";

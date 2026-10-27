@@ -182,15 +182,59 @@ describe("registerSearchTools", () => {
       structuredContent: { results: unknown; driftWarning?: string; workingTree?: unknown };
     };
 
+    // PIN-UPDATED q1g6s.16: a search tool's default row carries no point id / score columns.
     expect(result.structuredContent.results).toEqual({
-      columns: ["id", "score", "payload.relativePath", "payload.symbolId"],
+      columns: ["payload.relativePath", "payload.symbolId"],
       rows: [
-        ["a", 0.9, "src/a.ts", "A#run"],
-        ["b", 0.4, "src/b.ts", null],
+        ["src/a.ts", "A#run"],
+        ["src/b.ts", null],
       ],
     });
     expect(result.structuredContent.driftWarning).toBe("stale");
     expect(result.structuredContent.workingTree).toEqual(workingTree);
+  });
+});
+
+describe("registerSearchTools — default rows drop id and score (q1g6s.16)", () => {
+  const rows = [
+    { id: "a", score: 0.9, payload: { relativePath: "src/a.ts", symbolId: "A#run" } },
+    { id: "b", score: 0.4, payload: { relativePath: "src/b.ts", symbolId: "B#run" } },
+  ];
+  const respond = () => vi.fn().mockResolvedValue({ results: rows, driftWarning: null });
+  const columnsOf = async (toolName: string, args: Record<string, unknown>) => {
+    const { captured } = makeHarness({
+      semanticSearch: respond(),
+      hybridSearch: respond(),
+      rankChunks: respond(),
+      findSimilar: respond(),
+      findSymbol: respond(),
+    });
+    const tool = captured.find((t) => t.name === toolName);
+    const result = (await tool!.handler({ path: "/x", ...args }, {})) as {
+      structuredContent: { results: { columns: string[] } };
+    };
+    return result.structuredContent.results.columns;
+  };
+
+  for (const name of ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"]) {
+    it(`${name}: no fields → no id / score column`, async () => {
+      const columns = await columnsOf(name, { query: "q" });
+
+      expect(columns).not.toContain("id");
+      expect(columns).not.toContain("score");
+    });
+
+    it(`${name}: explicit fields → id / score stay as before`, async () => {
+      const columns = await columnsOf(name, { query: "q", fields: ["relativePath"] });
+
+      expect(columns.slice(0, 2)).toEqual(["id", "score"]);
+    });
+  }
+
+  it("find_symbol keeps id / score — out of scope", async () => {
+    const columns = await columnsOf("find_symbol", { symbol: "run" });
+
+    expect(columns.slice(0, 2)).toEqual(["id", "score"]);
   });
 });
 
@@ -597,19 +641,21 @@ describe("registerSearchTools — compact result rows", () => {
     }
   });
 
+  // PIN-UPDATED q1g6s.16: id / score ride a search row only when fields is passed (the App mock ignores it).
   it("ranks identically with and without includeImports: same order, same scores", async () => {
     const { tool } = hybridHarness();
-    const lean = await recordsFrom(tool, {});
-    const full = await recordsFrom(tool, { includeImports: true });
+    const lean = await recordsFrom(tool, { fields: ["relativePath"] });
+    const full = await recordsFrom(tool, { fields: ["relativePath"], includeImports: true });
 
     expect(lean.map((r) => r.id)).toEqual(["a", "b"]);
     expect(lean.map((r) => [r.id, r.score])).toEqual(full.map((r) => [r.id, r.score]));
     expect(lean.map((r) => r.payload.imports)).not.toEqual(full.map((r) => r.payload.imports));
   });
 
+  // PIN-UPDATED q1g6s.16: score is on the row only with fields passed.
   it("rounds non-integer numbers to 2 significant digits and passes integers through", async () => {
     const { tool } = hybridHarness();
-    const [a, b] = await recordsFrom(tool, {});
+    const [a, b] = await recordsFrom(tool, { fields: ["relativePath"] });
 
     expect(a.score).toBe(0.91);
     expect((a.payload.codegraph as { symbols: { chunk: { pageRank: number } } }).symbols.chunk.pageRank).toBe(0.000052);
@@ -633,6 +679,7 @@ describe("registerSearchTools — compact result rows", () => {
       structuredContent: { results: { columns: string[] } };
     };
 
-    expect(result.structuredContent.results.columns).toEqual(["id", "score", "payload.relativePath"]);
+    // PIN-UPDATED q1g6s.16: a default search row carries no id / score.
+    expect(result.structuredContent.results.columns).toEqual(["payload.relativePath"]);
   });
 });

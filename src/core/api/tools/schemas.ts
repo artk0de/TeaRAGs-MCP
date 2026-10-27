@@ -20,7 +20,12 @@
 
 import { z } from "zod";
 
-import { PROJECT_NAME_RE, type SchemaBuilderPort } from "../public/index.js";
+import {
+  DEFAULT_META_ONLY_FIELDS,
+  DEFAULT_SEARCH_FIELDS,
+  PROJECT_NAME_RE,
+  type SchemaBuilderPort,
+} from "../public/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
@@ -352,19 +357,28 @@ const META_ONLY_HINT =
   "raw signals via fields. Contract: tea-rags://schema/overview.";
 
 /**
+ * A search tool's `fields` default, interpolated from the constants the
+ * projection applies (bd tea-rags-mcp-q1g6s.16) — never hand-typed.
+ */
+const SEARCH_FIELDS_OMITTED_HINT = `Omitted → [${DEFAULT_SEARCH_FIELDS.join(",")}]; metaOnly → [${DEFAULT_META_ONLY_FIELDS.join(",")}]. `;
+
+/** find_symbol keeps its own lean per-mode default. */
+const LOOKUP_FIELDS_OMITTED_HINT = "Omitted → lean default per mode. ";
+
+/**
  * Shared payload allow-list. Every tool that returns payload-bearing results
  * accepts it, so an agent never has to remember which one does
  * (bd tea-rags-mcp-l2lix).
  */
-function fieldsField() {
+function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
   return {
     fields: z
       .array(z.string())
       .optional()
       .describe(
-        "Payload dot-path allow-list, e.g. ['relativePath', 'git.file.commitCount']. EXACT: nothing added back. " +
-          "Omitted → lean default per mode. " +
-          "Paths: tea-rags://schema/signals.",
+        `Payload dot-path allow-list, e.g. ['relativePath', 'git.file.commitCount']. EXACT: nothing added back. ${
+          omittedHint
+        }Paths: tea-rags://schema/signals.`,
       ),
     ...includeImportsField(),
   };
@@ -511,7 +525,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
     rerank: semanticSearchRerankSchema
       .optional()
       .describe("Preset or {custom: {<signal>: number}} (tea-rags://guide/signals) — attaches rankingOverlay."),
-    ...fieldsField(),
+    ...fieldsField(LOOKUP_FIELDS_OMITTED_HINT),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
     offset: coerceNumber().optional().describe(OFFSET_HINT),
   };

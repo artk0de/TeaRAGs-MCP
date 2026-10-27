@@ -230,6 +230,7 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
     });
   });
 
+  // PIN-UPDATED q1g6s.16: the metaOnly search default is DEFAULT_META_ONLY_FIELDS — chunkType / language left the row.
   it("hybrid_search metaOnly without rerank → payload is the locator with its signature", async () => {
     const response = await makeFacade(HITS).hybridSearch({ collection: "code_x", query: "q", metaOnly: true });
 
@@ -238,8 +239,6 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
       symbolId: "aFn",
       startLine: 1,
       endLine: 9,
-      chunkType: "function",
-      language: "typescript",
       signature: "export function aFn() {",
     });
   });
@@ -251,5 +250,23 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
     expect(payload.content).toContain("export function aFn()");
     expect(payload).not.toHaveProperty("git");
     expect(payload).not.toHaveProperty("imports");
+  });
+
+  it("semantic_search content default is exactly DEFAULT_SEARCH_FIELDS (q1g6s.16)", async () => {
+    const response = await makeFacade(HITS).semanticSearch({ collection: "code_x", query: "q" });
+
+    expect(Object.keys(response.results[0]?.payload ?? {})).toEqual([
+      "relativePath",
+      "symbolId",
+      "startLine",
+      "endLine",
+      "content",
+    ]);
+  });
+
+  it("find_symbol keeps its own lean default — chunkType stays (q1g6s.16 scope)", async () => {
+    const response = await makeFacade(HITS).findSymbol({ collection: "code_x", symbol: "aFn", metaOnly: true });
+
+    expect(response.results[0]?.payload).toHaveProperty("chunkType", "function");
   });
 });
