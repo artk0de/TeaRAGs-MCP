@@ -21,7 +21,7 @@ function flattenInto(record: Record<string, unknown>, prefix: string, cells: Map
  * A column null in EVERY row is omitted (bd tea-rags-mcp-e6es3): null already means absent, so it is pure
  * header cost — e.g. the `rankingOverlay: undefined` every non-reranked row carries.
  */
-export function toColumns(records: readonly object[]): ColumnTable {
+export function toColumns(records: readonly object[], columnOrder: readonly string[] = []): ColumnTable {
   const flat = records.map((record) => {
     const cells = new Map<string, unknown>();
     flattenInto(record as Record<string, unknown>, "", cells);
@@ -29,6 +29,14 @@ export function toColumns(records: readonly object[]): ColumnTable {
   });
   const columns: string[] = [];
   const seen = new Set<string>();
+  // Pinned columns lead in the tool's own order, whatever the first row carries: first-seen order alone
+  // lets a null-valued key in row 1 move its column behind the rest.
+  for (const key of columnOrder) {
+    if (flat.some((row) => row.get(key) !== null && row.get(key) !== undefined)) {
+      seen.add(key);
+      columns.push(key);
+    }
+  }
   for (const row of flat) {
     for (const [key, cell] of row) {
       if (cell !== null && cell !== undefined && !seen.has(key)) {
@@ -49,13 +57,15 @@ export function tabulateRecords<T extends object>(records: readonly T[]): Column
 }
 
 /** Every array of two or more plain objects, at any depth, becomes a ColumnTable. */
-export function tabulateRecordArrays(value: unknown): unknown {
+export function tabulateRecordArrays(value: unknown, columnOrder: readonly string[] = []): unknown {
   if (Array.isArray(value)) {
-    if (value.length >= MIN_TABLE_ROWS && value.every(isPlainObject)) return toColumns(value);
-    return value.map(tabulateRecordArrays);
+    if (value.length >= MIN_TABLE_ROWS && value.every(isPlainObject)) return toColumns(value, columnOrder);
+    return value.map((inner) => tabulateRecordArrays(inner, columnOrder));
   }
   if (!isPlainObject(value)) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, tabulateRecordArrays(inner)]));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [key, tabulateRecordArrays(inner, columnOrder)]),
+  );
 }
 
 export function isColumnTable(value: Record<string, unknown>): value is ColumnTable & Record<string, unknown> {

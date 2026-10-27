@@ -64,10 +64,37 @@ const RESOLVED_SYMBOL_ID_CONTRACT =
 
 /** Empty-answer contract shared by get_callers / get_callees (agent turn economy N6). */
 const EMPTY_GRAPH_ANSWER_CONTRACT =
-  "Wrong separator (Foo.bar for instance member) → swapped id answered, named in resolvedSymbolId. " +
+  "Wrong separator (Foo.bar for instance member), or the queried form has no edges and the other has → " +
+  "other form answered, named in resolvedSymbolId. " +
   "Empty answer carries empty {reason, message, suggestions?}: unknownSymbol (no node; suggestions = ids " +
-  "with same short name), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
+  "with same short name), testChunk (id is an indexed test chunk; tests are not graph nodes), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
   "unknownFile.";
+
+/**
+ * Pinned column order of the symbol-scope edge tables, so two answers of one tool never disagree on it. Keys an
+ * answer lacks drop out; keys not listed (file-scope tables) follow in first-seen order.
+ */
+const CALLER_COLUMN_ORDER = [
+  "sourceSymbolId",
+  "sourceRelPath",
+  "callExpression",
+  "visibility",
+  "origin",
+  "model",
+  "p",
+] as const;
+const CALLEE_COLUMN_ORDER = [
+  "targetSymbolId",
+  "targetRelPath",
+  "callExpression",
+  "count",
+  "visibility",
+  "edgeKind",
+  "confidence",
+  "origin",
+  "model",
+  "p",
+] as const;
 
 const GetCallersInputShape = {
   ...collectionPathFields(),
@@ -484,7 +511,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       `unknown file → empty importers + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callers",
     responseRows: { narrowing: ["limit", "includeAmbiguous"] },
-    invoke: async (app, request) => formatMcpResponse(await app.getCallers(request as GetCallersRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(await app.getCallers(request as GetCallersRequest), CALLER_COLUMN_ORDER),
   },
   {
     name: "get_callees",
@@ -492,13 +520,16 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     description:
       `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
       "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
+      "Calls whose target symbol the resolver could not pin are not rows: unresolved = their count, " +
+      "unresolvedCalls = up to 5 distinct call expressions. One row per target symbol; count = call sites folded in. " +
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
       `unknown file → empty imports + message. ${EMPTY_GRAPH_ANSWER_CONTRACT}`,
     schemaKey: "get_callees",
     responseRows: { narrowing: ["limit"] },
-    invoke: async (app, request) => formatMcpResponse(await app.getCallees(request as GetCalleesRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(await app.getCallees(request as GetCalleesRequest), CALLEE_COLUMN_ORDER),
   },
   {
     name: "find_cycles",
@@ -578,7 +609,9 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "model-only hop carries origin:'model', model, p; such a path carries minP (its weakest p). " +
       "Backed by codegraph DuckDB. " +
       "from/to: host-class id with no node of its own → traced via the member's first definer up " +
-      "hierarchy in MRO order; resolvedEndpoints names the id traced.",
+      "hierarchy in MRO order; resolvedEndpoints names the id traced. " +
+      "Empty paths with empty {reason, message, suggestions?} = an endpoint is unknown (unknownSymbol) or " +
+      "narrowed away by fromPath/toPath (noMatch); paths [] without empty = both known, no path.",
     schemaKey: "trace_path",
     responseRows: { narrowing: ["maxPaths", "maxDepth", "fromPath", "toPath"] },
     // `TracePathRequest.rerank` is the string preset name the curated enum

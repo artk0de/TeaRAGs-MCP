@@ -17,10 +17,13 @@ export interface McpToolResult {
  * Compact JSON; every array of two or more records goes out as a ColumnTable,
  * and a clean `workingTree` marker goes out compact.
  */
-export function formatMcpResponse(data: unknown): McpToolResult {
+export function formatMcpResponse(data: unknown, columnOrder: readonly string[] = []): McpToolResult {
   return {
     content: [
-      { type: "text", text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(withCompactWorkingTree(data)))) },
+      {
+        type: "text",
+        text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(withCompactWorkingTree(data), columnOrder))),
+      },
     ],
   };
 }
