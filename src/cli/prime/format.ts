@@ -6,12 +6,22 @@ const REFRESH_LINE = '→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh 
 /**
  * The `tea-rags prime` output: the digest resource text, then the CLI-only
  * lines, the metrics resource text under `--full`, and the refresh line.
+ * `--agent` prints the agent digest alone (bd tea-rags-mcp-nknkg.1).
  */
 export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
   if ("kind" in input) {
     return formatFailure(input);
   }
   const blocks: string[] = [input.digest.trimEnd()];
+  if (input.agent === true) {
+    // The agent digest is the whole hook payload; only an auto-update pause names an action.
+    if (input.autoUpdateOutcome === "branch-mismatch") {
+      const autoUpdateLine = formatAutoUpdateLine(input, now);
+      if (autoUpdateLine !== null) blocks.push(autoUpdateLine);
+    }
+    if (input.metrics !== undefined) blocks.push(input.metrics.trimEnd());
+    return `${blocks.join("\n")}\n`;
+  }
 
   const autoUpdateLine = formatAutoUpdateLine(input, now);
   if (autoUpdateLine !== null) blocks.push(autoUpdateLine);

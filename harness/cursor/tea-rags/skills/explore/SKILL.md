@@ -190,12 +190,13 @@ loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 **Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
 wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
-an earlier request never carries over — re-decide per request. The digest never
-states it — no codegraph line there means nothing, never read it as OFF. Context
-/ digest listing `codegraph.symbols` or `get_naming_lexicon` available =
-explicit ON (source `request`) — no registry read first. No statement → a graph
-tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefix
-— `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
+an earlier request never carries over — re-decide per request. SessionStart
+digest `codegraph off` line = OFF; digest present without it = ON (source
+`digest`) — no probe call. Context listing `codegraph.symbols` or
+`get_naming_lexicon` available = explicit ON (source `request`) — no registry
+read first. No statement → a graph tool you SEE in your tool list
+(`get_callers`, `trace_path`, … under any prefix — `mcp__tea-rags__`,
+`mcp__tea_rags__`) → on. No digest, not seen → read
 `tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
 decides. "Not in my tool list" alone never selects the off route — not checked ≠
 absent. Plan line 1, copied:

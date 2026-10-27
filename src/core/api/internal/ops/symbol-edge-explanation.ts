@@ -20,6 +20,7 @@
  */
 
 import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
+import { formatRustcDriverLine } from "../../../contracts/rustc-driver-status.js";
 import type { GraphDbClient, ResolveRunStatsRow, SymbolId } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import { detectLanguage } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
@@ -35,7 +36,11 @@ export interface SymbolEdgeRead<E> {
 export type SymbolEdgeExplanationGraph = Pick<
   GraphDbClient,
   "getSymbolVisibilities" | "lookupSymbolIdsByShortName" | "getRunStats"
->;
+> &
+  Partial<Pick<GraphDbClient, "getRustcDriverStatus">>;
+
+/** What a lower-bound note tells the agent to do instead of claiming the symbol is unused. */
+const LOWER_BOUND_NEXT = 'confirm with a literal text search for the name; never report "no callers".';
 
 /** Resolve rate under which a zero-edge answer is reported as a lower bound. */
 export const LOW_RESOLVE_RATE = 0.9;
@@ -129,14 +134,26 @@ async function noEdges(
 ): Promise<EmptyAnswerExplanation> {
   const message = `${symbolId} is in the codegraph with no ${edgeNoun}.`;
   const language = detectLanguage(relPath);
+  const driverNote = language === "rust" ? await attempt(async () => rustcDriverNote(graph), null) : null;
+  if (driverNote !== null) return { reason: "noEdges", message: `${message} ${driverNote}` };
   const rate = await attempt(async () => languageResolveRate(graph, language), null);
   if (rate === null || rate >= LOW_RESOLVE_RATE) return { reason: "noEdges", message };
   return {
     reason: "noEdges",
     message:
       `${message} The ${language} resolve rate is ${rate.toFixed(2)}, so this is a lower bound — ` +
-      "unresolved call sites may reach it; confirm with hybrid_search.",
+      `unresolved call sites may reach it; ${LOWER_BOUND_NEXT}`,
   };
+}
+
+/**
+ * The rustc-driver note (bd tea-rags-mcp-nknkg.1): a driver that did not index
+ * leaves Rust edges static-only. Null when the driver indexed or reported nothing.
+ */
+async function rustcDriverNote(graph: SymbolEdgeExplanationGraph): Promise<string | null> {
+  const record = graph.getRustcDriverStatus ? await graph.getRustcDriverStatus() : null;
+  if (!record || record.status.outcome === "indexed") return null;
+  return `${formatRustcDriverLine(record.status)} — Rust edges static-only, so this is a lower bound; ${LOWER_BOUND_NEXT}`;
 }
 
 /** `resolved / (resolved + resolveRateMiss)` over the language's persisted rows; null when nothing was scored. */

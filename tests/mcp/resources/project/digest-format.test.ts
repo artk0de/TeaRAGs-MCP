@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IndexStatus } from "../../../../src/core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../../../src/core/api/public/dto/metrics.js";
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 
 const NOW = new Date("2026-05-11T12:00:00Z");
 
@@ -43,10 +43,10 @@ function metricsFixture(): IndexMetrics {
   };
 }
 
-describe("formatSlimDigest", () => {
+describe("formatFullDigest", () => {
   describe("status section", () => {
     it("emits 'not indexed' message with /tea-rags:index hint", () => {
-      const out = formatSlimDigest(
+      const out = formatFullDigest(
         {
           path: "/p",
           projectName: null,
@@ -60,7 +60,7 @@ describe("formatSlimDigest", () => {
     });
 
     it("emits 'stale indexing marker' message", () => {
-      const out = formatSlimDigest(
+      const out = formatFullDigest(
         {
           path: "/p",
           projectName: null,
@@ -75,7 +75,7 @@ describe("formatSlimDigest", () => {
     });
 
     it("emits 'indexing in progress' with chunks count and skips metrics block", () => {
-      const out = formatSlimDigest(
+      const out = formatFullDigest(
         {
           path: "/p",
           projectName: null,
@@ -91,7 +91,7 @@ describe("formatSlimDigest", () => {
     });
 
     it("emits indexed status line with chunks count and collection name", () => {
-      const out = formatSlimDigest(
+      const out = formatFullDigest(
         {
           path: "/p",
           projectName: null,
@@ -111,7 +111,7 @@ describe("formatSlimDigest", () => {
   });
 });
 
-describe("formatSlimDigest — drift", () => {
+describe("formatFullDigest — drift", () => {
   const baseData = {
     path: "/p",
     projectName: null,
@@ -126,13 +126,13 @@ describe("formatSlimDigest — drift", () => {
   };
 
   it("emits 'none' when drift is null", () => {
-    const out = formatSlimDigest(baseData, NOW);
+    const out = formatFullDigest(baseData, NOW);
     expect(out).toContain("## Drift");
     expect(out).toContain("none");
   });
 
   it("includes drift warning text when drift is non-null", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         ...baseData,
         drift: "New fields: navigation. Run index_codebase with forceReindex=true.",
@@ -145,12 +145,12 @@ describe("formatSlimDigest — drift", () => {
   });
 
   it("omits drift section when status is not 'indexed'", () => {
-    const out = formatSlimDigest({ ...baseData, status: statusFixture({ status: "not_indexed" }) }, NOW);
+    const out = formatFullDigest({ ...baseData, status: statusFixture({ status: "not_indexed" }) }, NOW);
     expect(out).not.toContain("## Drift");
   });
 
   it("renders one ## Drift section with the report, or none", () => {
-    const withDrift = formatSlimDigest(
+    const withDrift = formatFullDigest(
       {
         ...baseData,
         drift:
@@ -162,11 +162,11 @@ describe("formatSlimDigest — drift", () => {
     expect(withDrift).toContain("Run: tea-rags index-codebase");
     expect(withDrift).not.toContain("## Schema drift");
     expect(withDrift).not.toContain("## Language versions");
-    expect(formatSlimDigest({ ...baseData, drift: null }, NOW)).toContain("## Drift\nnone");
+    expect(formatFullDigest({ ...baseData, drift: null }, NOW)).toContain("## Drift\nnone");
   });
 });
 
-describe("formatSlimDigest — staleness (lastUpdated)", () => {
+describe("formatFullDigest — staleness (lastUpdated)", () => {
   function indexedFixture(lastUpdated?: Date): IndexStatus {
     return statusFixture({
       isIndexed: true,
@@ -179,7 +179,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("renders 'last indexed: 2h ago' when lastUpdated is 2h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -188,7 +188,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("renders 'last indexed: 5d ago' when lastUpdated is 5d before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -197,7 +197,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("renders 'last indexed: 30m ago' when lastUpdated is 30 minutes before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 30 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -206,7 +206,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("does NOT emit stale warning when lastUpdated is ≤24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 23 * 60 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -216,7 +216,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("emits stale warning recommending index_codebase when lastUpdated > 24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -226,7 +226,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
 
   it("places stale warning AFTER Status block and BEFORE Drift", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(lastUpdated), metrics: null, drift: null },
       NOW,
     );
@@ -236,7 +236,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
   });
 
   it("omits 'last indexed' line entirely when lastUpdated is undefined", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       { path: "/p", projectName: null, status: indexedFixture(undefined), metrics: null, drift: null },
       NOW,
     );
@@ -245,7 +245,7 @@ describe("formatSlimDigest — staleness (lastUpdated)", () => {
   });
 });
 
-describe("formatSlimDigest — infra-health and enrichment", () => {
+describe("formatFullDigest — infra-health and enrichment", () => {
   function indexedStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
     return statusFixture({
       isIndexed: true,
@@ -257,7 +257,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   }
 
   it("omits ## Infra section when infraHealth is undefined", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -271,7 +271,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 
   it("appends 'background optimization in progress' suffix when qdrant status is yellow", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -292,7 +292,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 
   it("appends 'UNAVAILABLE, search will fail' suffix when qdrant status is red", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -312,7 +312,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 
   it("renders embedding as 'unavailable' when infraHealth.embedding.available is false", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -331,7 +331,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 
   it("omits ## Enrichment section when enrichment is undefined", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -345,7 +345,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 
   it("appends '(in progress)' suffix when any sub-status is 'in_progress'", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -366,7 +366,7 @@ describe("formatSlimDigest — infra-health and enrichment", () => {
   });
 });
 
-describe("formatSlimDigest — filesCount", () => {
+describe("formatFullDigest — filesCount", () => {
   function indexedStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
     return statusFixture({
       isIndexed: true,
@@ -378,7 +378,7 @@ describe("formatSlimDigest — filesCount", () => {
   }
 
   it("renders filesCount alongside chunks when filesCount is present", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -392,7 +392,7 @@ describe("formatSlimDigest — filesCount", () => {
   });
 
   it("falls back to chunks-only when filesCount is undefined", () => {
-    const out = formatSlimDigest(
+    const out = formatFullDigest(
       {
         path: "/p",
         projectName: null,
@@ -407,7 +407,7 @@ describe("formatSlimDigest — filesCount", () => {
   });
 });
 
-describe("formatSlimDigest — codegraph resolve (7m5xz)", () => {
+describe("formatFullDigest — codegraph resolve (7m5xz)", () => {
   function indexed(overrides: Partial<IndexStatus> = {}): IndexStatus {
     return statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 1, ...overrides });
   }
@@ -459,7 +459,7 @@ describe("formatSlimDigest — codegraph resolve (7m5xz)", () => {
     }
 
     function render(codegraphResolve: ResolveSummary): string {
-      return formatSlimDigest(
+      return formatFullDigest(
         {
           path: "/p",
           projectName: null,

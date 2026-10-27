@@ -277,7 +277,7 @@ describe("renderCodexHarness", () => {
         if (!path.startsWith("tea-rags/scripts/")) continue;
         writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
       }
-      writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $2"\n', { mode: 0o755 });
+      writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $3 ($2)"\n', { mode: 0o755 });
       const run = (script: string, path: string): string =>
         execFileSync("bash", [join(pluginRoot, "scripts", script)], {
           env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: path },
@@ -298,7 +298,7 @@ describe("renderCodexHarness", () => {
 
       const digest = JSON.parse(run("session-digest.sh", `${bin}:/usr/bin:/bin`)).hookSpecificOutput;
       expect(digest.hookEventName).toBe("SessionStart");
-      expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)}`);
+      expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)} (--agent)`);
       expect(digest.additionalContext).not.toContain("# tea-rags core");
 
       expect(run("session-digest.sh", "/usr/bin:/bin")).toBe("");

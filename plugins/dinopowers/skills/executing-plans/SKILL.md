@@ -12,11 +12,11 @@ description: >-
   git-signal verdicts and tea-rags:data-driven-generation cascade.
 codex-description: >-
   Execute plan / tracker issue whose Tasks edit code — per-Task
-  SAFE/CAUTION/UNSAFE verdict + data-driven-generation cascade. Plan/issue/quoted
-  Task beats data-driven-generation. Triggers "execute the plan", "start Task
-  N", "run the plan", "implement the plan steps", "выполни план", "начни
-  задачу". NOT one-off edits (→ data-driven-generation), NOT drafting a
-  (sub-)plan, even "Execute plan step: Draft…" (→ writing-plans).
+  SAFE/CAUTION/UNSAFE verdict + data-driven-generation cascade.
+  Plan/issue/quoted Task beats data-driven-generation. Triggers "execute the
+  plan", "start Task N", "run the plan", "implement the plan steps", "выполни
+  план", "начни задачу". NOT one-off edits (→ data-driven-generation), NOT
+  drafting a (sub-)plan, even "Execute plan step: Draft…" (→ writing-plans).
 ---
 
 # dinopowers: executing-plans
@@ -151,8 +151,7 @@ fields:      ["relativePath", "imports", "git"]   ← metaOnly alone drops raw g
 
 **Codegraph gating for `rerank`:** `"blastRadius"` (real `fanIn` + churn +
 bugFix) when codegraph on = graph tools (`get_callers`, `trace_path`, …) in tool
-list (unsure → read `tea-rags://project/<alias>/metrics?section=registry`,
-`codegraph on|off`); off →
+list (unsure → digest: `codegraph off` line = off, silent = on); off →
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
 approximate).
 

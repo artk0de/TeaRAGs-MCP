@@ -176,6 +176,11 @@ export async function runPrime(input: {
   openSession: () => Promise<InProcessToolSession>;
   /** `--full`: append the metrics resource (thresholds, labelMap, resolve) after the digest. */
   full?: boolean;
+  /**
+   * `--agent` (SessionStart hooks): the agent digest alone — addressing,
+   * `codegraph off`, actionable freshness. Default = the full human digest.
+   */
+  agent?: boolean;
   /** Test seam — production checks npm through buildUpdateService. */
   updateService?: Pick<UpdateCheckService, "checkForUpdate">;
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
@@ -285,7 +290,7 @@ export async function runPrime(input: {
 
   try {
     const [digest, metrics] = await Promise.all([
-      readText(session, `tea-rags://project/${alias}/digest`),
+      readText(session, `tea-rags://project/${alias}/digest${input.agent === true ? "" : "?view=full"}`),
       input.full === true ? readText(session, `tea-rags://project/${alias}/metrics`) : undefined,
     ]);
 
@@ -302,6 +307,7 @@ export async function runPrime(input: {
         update: await updateRequest,
         autoUpdateOutcome,
         autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
+        ...(input.agent === true ? { agent: true } : {}),
       }),
     );
   } catch (error) {

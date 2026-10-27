@@ -1,18 +1,14 @@
 # Step 3.5 — Trace call route the change rides
 
-> **Resources in Cursor:** if a `tea-rags://` resource cannot be read (no
-> resource tool, or the read fails), run
-> `tea-rags resource "<uri>" --path "$PWD"` in the terminal — same content.
-
 Read when review comment names **relationship between two symbols** ("change how
 `X` calls `Y`", "this method should not reach `Z`", "route this through `W`
 instead"). Change rides a **call route**, not one symbol → promote Step 2's
 single fanIn to actual PATH: `trace_path` between named endpoints → route +
 highest-impact chokepoint.
 
-**Requires codegraph** — `trace_path` in tool list (unsure → read
-`tea-rags://project/<alias>/metrics?section=registry`, `codegraph on|off`). Off
-→ stay with Step 2 fanIn, note route view unavailable.
+**Requires codegraph** — `trace_path` in tool list (unsure → digest:
+`codegraph off` line = off, silent = on). Off → stay with Step 2 fanIn, note
+route view unavailable.
 
 ```
 trace_path(

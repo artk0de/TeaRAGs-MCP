@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IndexMetrics } from "../../../../src/core/api/public/dto/metrics.js";
 import type { IndexStatus, LanguageCapability } from "../../../../src/core/api/public/index.js";
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 // Fixture tiers, deliberately NOT the shipped ones: the digest must render
@@ -71,7 +71,7 @@ function data(overrides: Partial<ProjectDigestData> = {}, status: Partial<IndexS
 const NOW = new Date("2026-05-13T00:00:00Z");
 
 function render(d: ProjectDigestData): string {
-  return formatSlimDigest(d, NOW);
+  return formatFullDigest(d, NOW);
 }
 
 function section(out: string): string[] {
@@ -82,7 +82,7 @@ function section(out: string): string[] {
   return lines.slice(start, end < 0 ? undefined : end);
 }
 
-describe("formatSlimDigest — language capability tiers (xip6g)", () => {
+describe("formatFullDigest — language capability tiers (xip6g)", () => {
   it("renders one tier line per language present in the index, in index order", () => {
     const lines = section(render(data()));
     expect(lines[0]).toBe("## Language capability — ceiling tier · realized resolve");

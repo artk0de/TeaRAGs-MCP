@@ -3,13 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { connectInProcessClient, type InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import { TeaRagsError, type App } from "../../../src/core/api/public/index.js";
-import { registerAllResources } from "../../../src/mcp/resources/index.js";
-import { formatSlimDigest } from "../../../src/mcp/resources/project/digest.js";
+import { formatAgentDigest, formatFullDigest, registerAllResources } from "../../../src/mcp/resources/index.js";
 import { FIXTURE_ENTRY, fixtureApp, fixtureData, NOW } from "./project/fixture.js";
 
-describe("formatSlimDigest", () => {
+describe("formatFullDigest", () => {
   it("stays within the digest budget on a 4-language index with full thresholds buckets", () => {
-    const out = formatSlimDigest(fixtureData(), NOW);
+    const out = formatFullDigest(fixtureData(), NOW);
 
     expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(2500);
     expect(out).toContain("## Drift");
@@ -17,24 +16,24 @@ describe("formatSlimDigest", () => {
   });
 
   it("opens with the alias and closes with the metrics pointer", () => {
-    const lines = formatSlimDigest(fixtureData(), NOW).trimEnd().split("\n");
+    const lines = formatFullDigest(fixtureData(), NOW).trimEnd().split("\n");
 
     expect(lines[0]).toBe("# tea-rags digest — fixture");
     expect(lines.at(-1)).toBe("→ thresholds / labelMap: tea-rags://project/fixture/metrics?language=<lang>");
   });
 
   it("raises the stale banner when the index is 3 days old", () => {
-    expect(formatSlimDigest(fixtureData(), NOW)).toContain("⚠ Index is stale (last updated 3d ago)");
+    expect(formatFullDigest(fixtureData(), NOW)).toContain("⚠ Index is stale (last updated 3d ago)");
   });
 
   it("adds the auto-update cure line to the stale banner when auto-update is off", () => {
-    expect(formatSlimDigest(fixtureData(), NOW)).toContain(
+    expect(formatFullDigest(fixtureData(), NOW)).toContain(
       "enable auto-update: `tea-rags auto-update enable --project fixture`",
     );
   });
 
   it("keeps only the codegraph resolve warnings", () => {
-    const out = formatSlimDigest(fixtureData(), NOW);
+    const out = formatFullDigest(fixtureData(), NOW);
 
     expect(out).toContain("⚠ ruby: 7 calls like `Service.call(...)`");
     expect(out).not.toContain("resolve rate:");
@@ -53,7 +52,7 @@ describe("formatSlimDigest", () => {
       },
     };
 
-    const out = formatSlimDigest(data, NOW);
+    const out = formatFullDigest(data, NOW);
 
     expect(out).not.toContain("## Infra");
     expect(out).not.toContain("## Enrichment");
@@ -72,7 +71,7 @@ describe("formatSlimDigest", () => {
       },
     };
 
-    const out = formatSlimDigest(data, NOW);
+    const out = formatFullDigest(data, NOW);
 
     expect(out).toContain("## Infra");
     expect(out).toContain("## Enrichment");
@@ -82,7 +81,7 @@ describe("formatSlimDigest", () => {
     const data = fixtureData();
     data.status = { isIndexed: false, status: "not_indexed" };
 
-    const out = formatSlimDigest(data, NOW);
+    const out = formatFullDigest(data, NOW);
 
     expect(out).toContain("not indexed");
     expect(out).not.toContain("## Drift");
@@ -107,11 +106,12 @@ describe("tea-rags://project/{alias}/digest template", () => {
     return "text" in first ? first.text : "";
   }
 
-  it("serves the slim digest of a registered project", async () => {
+  it("serves the agent digest of a registered project, the full one under ?view=full", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
 
-    expect(await textOf("tea-rags://project/fixture/digest")).toBe(formatSlimDigest(fixtureData(), NOW));
+    expect(await textOf("tea-rags://project/fixture/digest")).toBe(formatAgentDigest(fixtureData(), NOW));
+    expect(await textOf("tea-rags://project/fixture/digest?view=full")).toBe(formatFullDigest(fixtureData(), NOW));
   });
 
   it("reads the metrics without the working-tree marker it never renders (bd o4p5l)", async () => {
@@ -162,7 +162,7 @@ describe("tea-rags://project/{alias}/digest template", () => {
     const { name: _name, ...nameless } = FIXTURE_ENTRY;
     const app = { ...fixtureApp(), listProjects: async () => Promise.resolve({ projects: [nameless] }) } as App;
 
-    const out = await textOf("tea-rags://project/code_fixture/digest", app);
+    const out = await textOf("tea-rags://project/code_fixture/digest?view=full", app);
 
     expect(out).toContain("# tea-rags digest — code_fixture");
     expect(out).toContain("tea-rags://project/code_fixture/metrics?language=<lang>");
@@ -176,7 +176,7 @@ describe("tea-rags://project/{alias}/digest template", () => {
     expect(resources.some((resource) => resource.uri.startsWith("tea-rags://project/"))).toBe(false);
     expect(templates.map((template) => template.uriTemplate)).toEqual(
       expect.arrayContaining([
-        "tea-rags://project/{alias}/digest",
+        "tea-rags://project/{alias}/digest{?view}",
         "tea-rags://project/{alias}/metrics{?language,section}",
       ]),
     );

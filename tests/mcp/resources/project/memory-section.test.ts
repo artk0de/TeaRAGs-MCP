@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../../../src/core/api/public/index.js";
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 // The digest reports ONE disk figure. On embedded Qdrant it is the allocated
@@ -79,23 +79,23 @@ function primeWith(overrides: { memory?: CollectionMemoryMetrics | null; qdrant?
 
 const at = new Date("2026-09-18T00:00:00Z");
 
-describe("formatSlimDigest — one disk figure", () => {
+describe("formatFullDigest — one disk figure", () => {
   it("embedded: Status carries the allocated on-disk size and the report's file-size total appears nowhere", () => {
-    const out = formatSlimDigest(primeWith(), at);
+    const out = formatFullDigest(primeWith(), at);
 
     expect(out).toContain("1936 files / 30000 chunks · 1.2 GB on disk · turbo (8x) quant");
     expect(out).not.toContain("1.9 GB");
   });
 
   it("external Qdrant: no allocated size to measure, so Status carries the report's total labelled apparent", () => {
-    const out = formatSlimDigest(primeWith({ qdrant: { indexSizeBytes: undefined } }), at);
+    const out = formatFullDigest(primeWith({ qdrant: { indexSizeBytes: undefined } }), at);
 
     expect(out).toContain("1936 files / 30000 chunks · 1.9 GB apparent size · turbo (8x) quant");
     expect(out).not.toContain("on disk");
   });
 
   it("external Qdrant without a memory report shows no size at all", () => {
-    const out = formatSlimDigest(primeWith({ qdrant: { indexSizeBytes: undefined }, memory: null }), at);
+    const out = formatFullDigest(primeWith({ qdrant: { indexSizeBytes: undefined }, memory: null }), at);
 
     expect(out).toContain("1936 files / 30000 chunks · turbo (8x) quant");
     expect(out).not.toContain("apparent");

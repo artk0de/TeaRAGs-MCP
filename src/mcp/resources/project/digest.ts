@@ -17,11 +17,51 @@ type EnrichmentMap = NonNullable<IndexStatus["enrichment"]>;
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The per-session project digest: what an agent needs before its first
- * tea-rags call. Thresholds, label maps and the resolve breakdown live in the
- * metrics resource the closing line names.
+ * The agent-facing digest (`tea-rags://project/<alias>/digest`, SessionStart
+ * hooks via `tea-rags prime --agent`; bd tea-rags-mcp-nknkg.1): addressing,
+ * `codegraph off` only when off (silence = on), and a freshness line only when
+ * it names an action. Drift, holes, infra and the rustc driver surface at their
+ * trigger instead — `get_index_status` / `index_codebase` answers, degraded
+ * search answers, empty graph answers.
  */
-export function formatSlimDigest(data: ProjectDigestData, now: Date): string {
+export function formatAgentDigest(data: ProjectDigestData, now: Date): string {
+  const alias = data.projectName ?? data.registry?.collectionName ?? data.path;
+  const lines: string[] = [`# tea-rags digest — ${alias}`];
+  if (data.status.status !== "indexed") {
+    lines.push(formatStatusLine(data.status, now, null));
+    return `${lines.join("\n")}\n`;
+  }
+  const collection = `collection \`${data.status.collectionName ?? "unknown"}\``;
+  lines.push(
+    data.projectName
+      ? `project \`${data.projectName}\` · ${collection} — pass \`project: "${data.projectName}"\` + \`path\` on tea-rags calls`
+      : collection,
+  );
+  if (data.registry?.codegraphEnabled === false) lines.push("codegraph off");
+  lines.push(...formatAgentFreshnessLines(data, alias, now));
+  return `${lines.join("\n")}\n`;
+}
+
+/** Freshness lines that carry an action; a fresh, drift-free index prints none. */
+function formatAgentFreshnessLines(data: ProjectDigestData, alias: string, now: Date): string[] {
+  const lines: string[] = [];
+  const staleness = computeStaleness(data.status.lastUpdated, now);
+  if (staleness?.stale) {
+    lines.push(`index behind (last indexed ${staleness.ago} ago) → index_codebase(project="${alias}")`);
+  }
+  const holes = (data.status.indexHoles?.count ?? 0) > 0;
+  if (data.drift !== null || holes) {
+    lines.push(`index drift → get_index_status(project="${alias}") names the remedy`);
+  }
+  return lines;
+}
+
+/**
+ * The full human digest (`tea-rags prime` in a terminal, `?view=full`): every
+ * block — status, drift, capability, infra, enrichment. Thresholds, label maps
+ * and the resolve breakdown live in the metrics resource the closing line names.
+ */
+export function formatFullDigest(data: ProjectDigestData, now: Date): string {
   const alias = data.projectName ?? data.registry?.collectionName ?? data.path;
   const lines: string[] = [`# tea-rags digest — ${alias}`, formatStatusLine(data.status, now, data.memory ?? null)];
   if (data.projectName) {
