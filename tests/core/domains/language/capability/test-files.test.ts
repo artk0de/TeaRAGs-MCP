@@ -163,8 +163,8 @@ describe("test-file masks are owned by the language that declares them (bd tea-r
 
   it("a vertical declares test-file masks unless its tests tier says it has no test convention to match", () => {
     const withoutMasks = [...native.values()].filter((c) => !c.testFiles).map((c) => c.language);
-    // bash: bats / shunit are not recognized; markdown is a documentation language.
-    expect(withoutMasks.sort()).toEqual(["bash", "markdown"]);
+    // bash: bats / shunit are not recognized; markdown and yaml are documentation languages.
+    expect(withoutMasks.sort()).toEqual(["bash", "markdown", "yaml"]);
   });
 
   it("the fallback bucket holds only languages with no vertical, and never shadows one", () => {

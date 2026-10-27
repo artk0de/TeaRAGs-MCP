@@ -6,8 +6,10 @@ import type { IgnoredDirectoryMarker } from "../../../contracts/types/ingest-con
  * configs, minified bundles, and data/serialization formats (json/yaml —
  * fixtures, cassettes, config) that are universally undesirable for
  * semantic search/indexing. Signal-bearing JSON manifests (package.json,
- * tsconfig.json, *.config.json, …) are re-included via negation; YAML is
- * fully ignored. Users override either way via .contextignore.
+ * tsconfig.json, *.config.json, …) are re-included via negation, and so is
+ * YAML under `config/` and `.github/` (Rails/app config, CI workflows — bd
+ * tea-rags-mcp-q1g6s.7) except `config/locales/` (i18n strings, the bulk of
+ * config YAML bytes). Users override either way via .contextignore.
  *
  * Patterns follow .gitignore syntax — directory names with trailing slash
  * match anywhere in tree; glob patterns like `*.min.js` work via the
@@ -107,16 +109,22 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
 
   // Data / serialization formats (not code — fixtures, VCR cassettes, CI/config).
   // A code RAG should not embed recorded HTTP responses or config blobs. Keep
-  // signal-bearing JSON manifests via negation; YAML is fully ignored.
+  // signal-bearing JSON manifests and config/CI YAML via negation; locales
+  // come LAST so they win over the config re-include.
   "*.json",
   "*.yaml",
   "*.yml",
+  "!**/config/**/*.yml",
+  "!**/config/**/*.yaml",
+  "!.github/**/*.yml",
+  "!.github/**/*.yaml",
   "!package.json",
   "!tsconfig.json",
   "!tsconfig.*.json",
   "!*.config.json",
   "!composer.json",
   "!deno.json",
+  "**/config/locales/",
 ];
 
 /**

@@ -12,6 +12,7 @@ import { capability as rubyCapability } from "../ruby/capability.js";
 import { capability as rustCapability } from "../rust/capability.js";
 import { capability as swiftCapability } from "../swift/capability.js";
 import { capability as typescriptCapability } from "../typescript/capability.js";
+import { capability as yamlCapability } from "../yaml/capability.js";
 import { aggregateIngestIgnoreContributions } from "./ingest-ignore.js";
 import { aggregateTestFileConventions } from "./test-files.js";
 
@@ -35,6 +36,7 @@ export function nativeLanguageCapabilities(): Map<string, LanguageCapability> {
     ["bash", bashCapability],
     ["swift", swiftCapability],
     ["markdown", markdownCapability],
+    ["yaml", yamlCapability],
   ]);
 }
 

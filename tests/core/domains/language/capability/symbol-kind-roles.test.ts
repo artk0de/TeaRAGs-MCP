@@ -56,6 +56,7 @@ const EXPECTED: Record<string, Row> = {
   },
   bash: { callee: ["function"], receiver: ["function"] },
   markdown: { callee: [], receiver: [] },
+  yaml: { callee: [], receiver: [] },
 };
 
 const sorted = (kinds: Iterable<SymbolDefinitionKind>): SymbolDefinitionKind[] => [...kinds].sort();

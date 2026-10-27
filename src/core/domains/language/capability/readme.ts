@@ -15,6 +15,7 @@ const DISPLAY: readonly (readonly [string, string])[] = [
   ["bash", "Bash"],
   ["swift", "Swift"],
   ["markdown", "Markdown"],
+  ["yaml", "YAML"],
 ];
 
 /**

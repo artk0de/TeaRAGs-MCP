@@ -414,6 +414,32 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.endsWith("docker-compose.yml"))).toBe(false);
       expect(files.some((f) => f.endsWith("config.yaml"))).toBe(false);
     });
+
+    it("re-includes config/ and .github/ yaml, keeps locales and cassettes ignored", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-yaml-config-"));
+      mkdirSync(join(tmpDir, "config", "locales"), { recursive: true });
+      mkdirSync(join(tmpDir, "config", "environments"), { recursive: true });
+      mkdirSync(join(tmpDir, ".github", "workflows"), { recursive: true });
+      mkdirSync(join(tmpDir, "spec", "cassettes"), { recursive: true });
+      writeFileSync(join(tmpDir, "config", "database.yml"), "default: 1");
+      writeFileSync(join(tmpDir, "config", "environments", "sidekiq.yaml"), "queues: []");
+      writeFileSync(join(tmpDir, ".github", "workflows", "ci.yml"), "on: push");
+      writeFileSync(join(tmpDir, "config", "locales", "en.yml"), "en: {}");
+      writeFileSync(join(tmpDir, "spec", "cassettes", "x.yml"), "http_interactions: []");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".yaml", ".yml"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = (await localScanner.scanDirectory(tmpDir)).map((f) => f.slice(tmpDir.length + 1));
+
+      expect(files).toContain(join("config", "database.yml"));
+      expect(files).toContain(join("config", "environments", "sidekiq.yaml"));
+      expect(files).toContain(join(".github", "workflows", "ci.yml"));
+      expect(files).not.toContain(join("config", "locales", "en.yml"));
+      expect(files).not.toContain(join("spec", "cassettes", "x.yml"));
+    });
   });
 
   // gitignore-style whitelist: keep ONLY a chosen language, drop everything

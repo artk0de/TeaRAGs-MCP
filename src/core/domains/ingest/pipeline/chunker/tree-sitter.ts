@@ -474,13 +474,34 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
   ): Promise<{ chunks: CodeChunk[]; tree: MaterializedTree | null; imports?: string[] }> {
-    // Documentation languages (markdown) skip tree-sitter entirely and route to
-    // the remark-based MarkdownChunker. `isDocumentation` is the gate: markdown
-    // is the only documentation language and the only one carrying the legacy
-    // `skipTreeSitter` flag (which is not part of the LanguageChunkerHooks
-    // contract — the two were always co-set), so gating on `isDocumentation`
-    // alone is behaviour-identical to the old `skipTreeSitter && isDocumentation`.
+    // Documentation languages skip tree-sitter entirely. One that cuts its own
+    // sections (YAML, bd tea-rags-mcp-q1g6s.7) declares a `sectionSplitter`;
+    // the engine only maps its sections onto documentation block chunks. Any
+    // other (markdown) routes to the remark-based MarkdownChunker.
     const provider = this.tryGetProvider(language);
+    const sectionSplitter = provider?.chunkerHooks?.sectionSplitter;
+    if (provider?.chunkerHooks?.isDocumentation && sectionSplitter) {
+      const sections = sectionSplitter.split(code, { maxChunkSize: this.config.maxChunkSize });
+      return {
+        chunks: this.enforceMaxChunkSize(
+          sections.map((s, chunkIndex) => ({
+            content: s.content,
+            startLine: s.startLine,
+            endLine: s.endLine,
+            metadata: {
+              filePath,
+              language,
+              chunkIndex,
+              chunkType: "block" as const,
+              isDocumentation: true,
+              headingPath: s.headingPath,
+              ...(s.name !== undefined ? { name: s.name } : {}),
+            },
+          })),
+        ),
+        tree: null,
+      };
+    }
     if (provider?.chunkerHooks?.isDocumentation) {
       return {
         chunks: this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language)),

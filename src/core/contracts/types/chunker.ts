@@ -339,3 +339,32 @@ export interface TestScope {
   examples: TestExample[];
   children: TestScope[];
 }
+
+/**
+ * One section of a documentation file that is not markdown (YAML config, bd
+ * tea-rags-mcp-q1g6s.7), as its language's {@link DocumentSectionSplitter}
+ * cut it. The chunker turns each into a documentation block chunk;
+ * `headingPath` is the section's key path, so the doc-id pass hashes
+ * `relPath#production > redis` — the windows of one oversized section repeat
+ * the same path and therefore share one `doc:<hash>` id. `name` is absent on
+ * sections that have no key (whole file, unstructured windows).
+ */
+export interface DocumentSection {
+  content: string;
+  /** 1-based, inclusive. */
+  startLine: number;
+  /** 1-based, inclusive. */
+  endLine: number;
+  headingPath: { depth: number; text: string }[];
+  name?: string;
+}
+
+/**
+ * Cuts a documentation source into sections no larger than `maxChunkSize`
+ * (one line longer than the limit is the only exception — the engine's size
+ * guard splits it). Never throws on malformed input: an unparseable file is
+ * still cut, into key-less windows.
+ */
+export interface DocumentSectionSplitter {
+  split: (code: string, options: { maxChunkSize: number }) => DocumentSection[];
+}

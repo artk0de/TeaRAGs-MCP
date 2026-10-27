@@ -18,6 +18,7 @@ import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.j
 import { RustLanguage } from "../../../../src/core/domains/language/rust/index.js";
 import { SwiftLanguage } from "../../../../src/core/domains/language/swift/index.js";
 import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
+import { YamlLanguage } from "../../../../src/core/domains/language/yaml/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 /**
@@ -31,9 +32,21 @@ import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajecto
  * `UnsupportedLanguageError`.
  */
 describe("LanguageFactory", () => {
-  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, markdown)", () => {
+  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, markdown, yaml)", () => {
     expect(new Set(new LanguageFactory().supported())).toEqual(
-      new Set(["ruby", "typescript", "javascript", "python", "go", "java", "rust", "bash", "swift", "markdown"]),
+      new Set([
+        "ruby",
+        "typescript",
+        "javascript",
+        "python",
+        "go",
+        "java",
+        "rust",
+        "bash",
+        "swift",
+        "markdown",
+        "yaml",
+      ]),
     );
   });
 
@@ -88,6 +101,15 @@ describe("LanguageFactory", () => {
 
   it("create() builds the native markdown provider itself", () => {
     expect(new LanguageFactory().create("markdown")).toBeInstanceOf(MarkdownLanguage);
+  });
+
+  it("create() builds the native yaml provider: doc-only, sections from its own splitter", () => {
+    const yaml = new LanguageFactory().create("yaml");
+    expect(yaml).toBeInstanceOf(YamlLanguage);
+    expect(yaml.chunkerHooks?.isDocumentation).toBe(true);
+    expect(yaml.chunkerHooks?.sectionSplitter).toBeDefined();
+    expect(yaml.walker).toBeUndefined();
+    expect(yaml.resolver).toBeUndefined();
   });
 
   it("the native markdown provider is doc-only — chunkerHooks but no walker/resolver", () => {

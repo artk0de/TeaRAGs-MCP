@@ -33,6 +33,8 @@ import { SwiftLanguage } from "./swift/index.js";
 import { signalFloors as swiftSignalFloors } from "./swift/signal-floors.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 import { signalFloors as typescriptSignalFloors } from "./typescript/signal-floors.js";
+import { YamlLanguage } from "./yaml/index.js";
+import { signalFloors as yamlSignalFloors } from "./yaml/signal-floors.js";
 
 /**
  * Languages the factory builds NATIVELY from a `domains/language/<lang>`
@@ -54,6 +56,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "bash",
   "swift",
   "markdown",
+  "yaml",
 ]);
 
 /**
@@ -209,8 +212,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     }
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
     if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
-    // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.
+    // Markdown and YAML are DOC-ONLY — no resolver, so no `mode` is threaded.
     if (lang === "markdown") return new MarkdownLanguage();
+    if (lang === "yaml") return new YamlLanguage();
     throw new UnsupportedLanguageError(lang);
   }
 
@@ -233,7 +237,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * Per-language structural-signal floors, keyed by language. Lightweight in
    * the same way as `capabilities()` — one const import per language, no
    * provider constructed, no grammar loaded. Every entry in `supported()`
-   * appears here (`markdown` deliberately empty), which is what stops a new
+   * appears here (the doc-only languages deliberately empty), which is what stops a new
    * language from shipping without a decision about its floors.
    */
   signalFloors(): Map<string, SignalFloors> {
@@ -248,6 +252,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       ["bash", bashSignalFloors],
       ["swift", swiftSignalFloors],
       ["markdown", markdownSignalFloors],
+      ["yaml", yamlSignalFloors],
     ]);
   }
 }
