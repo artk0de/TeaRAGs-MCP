@@ -307,6 +307,23 @@ describe("runCall — results and exit codes", () => {
     expect(JSON.parse(h.stdout[0])).toEqual(empty);
   });
 
+  it("--format json drops the structuredContent banner key: a structured answer stays the bare answer (nknkg.3)", async () => {
+    const body = { payload: { symbolId: "Reranker#rerank", content: "rerank(results) {\n  return results;\n}" } };
+    const h = harness(makeApp({ findSymbol: vi.fn().mockResolvedValue({ results: [body] }) }));
+
+    const code = await call(h, {
+      tool: "find_symbol",
+      params: '{"project":"tea-rags","symbol":"Reranker#rerank"}',
+      format: "json",
+    });
+
+    expect(code).toBe(0);
+    expect(h.stdout).toHaveLength(1);
+    const printed = JSON.parse(h.stdout[0]) as Record<string, unknown>;
+    expect(printed).not.toHaveProperty("banner");
+    expect(printed.results).toEqual([body]);
+  });
+
   it("--format json prints the answer alone, its column tables folded back into records", async () => {
     const records = [
       { id: "p1", score: 1, payload: { symbolId: "Reranker#rerank", relativePath: "src/reranker.ts" } },

@@ -231,9 +231,15 @@ function renderContent(result: CallToolResult): string[] {
   return [...banners, ...structured, ...blocks];
 }
 
-/** The tool's answer: structuredContent, else its text blocks — JSON parsed where they hold JSON; banners are not answer. */
+/**
+ * The tool's answer: structuredContent (minus its `banner` key), else its text blocks —
+ * JSON parsed where they hold JSON; banners are not answer.
+ */
 function answerOf(result: CallToolResult): unknown {
-  if (result.structuredContent !== undefined) return result.structuredContent;
+  if (result.structuredContent !== undefined) {
+    const { banner, ...answer } = result.structuredContent;
+    return typeof banner === "string" && isAnswerBanner(banner) ? answer : result.structuredContent;
+  }
   const texts = result.content.flatMap((block) =>
     block.type === "text" && !isAnswerBanner(block.text) ? [parseOrKeep(block.text)] : [],
   );

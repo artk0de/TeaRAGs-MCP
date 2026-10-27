@@ -191,7 +191,7 @@ describe("registered tools carry the banner as the FIRST content item", () => {
     return server.registerTool.mock.calls[0][2] as (args: unknown, extra: unknown) => Promise<McpToolResult>;
   };
 
-  it("search: banner first, existing content after, structuredContent unchanged", async () => {
+  it("search: banner first, existing content after; structuredContent opens with the same banner", async () => {
     const original = {
       structuredContent: structuredClone(searchRows),
       content: [{ type: "text" as const, text: "dense down" }],
@@ -201,7 +201,33 @@ describe("registered tools carry the banner as the FIRST content item", () => {
       { type: "text", text: SEARCH_ANCHOR_BANNER },
       { type: "text", text: "dense down" },
     ]);
-    expect(result.structuredContent).toEqual(searchRows);
+    expect(result.structuredContent).toEqual({ banner: SEARCH_ANCHOR_BANNER, ...searchRows });
+  });
+
+  // Claude Code renders structuredContent INSTEAD of content when both exist, so a
+  // content-only banner never reached the model there (live, 2026-10-28).
+  it("structured answers: banner is the FIRST structuredContent key, data keys follow in order", async () => {
+    const search = await register("hybrid_search", structured(structuredClone(searchRows)))({ query: "q" }, {});
+    expect(Object.keys(search.structuredContent ?? {})).toEqual(["banner", "results"]);
+
+    const body = await register("find_symbol", structured(structuredClone(methodBody)))({ symbol: "S#m" }, {});
+    expect(JSON.stringify(body.structuredContent)).toBe(
+      JSON.stringify({ banner: BODY_SHOWN_BANNER, results: methodBody.results }),
+    );
+  });
+
+  it("no decision point → structuredContent byte-identical, no banner key", async () => {
+    const outline = await register("find_symbol", structured(structuredClone(classOutline)))({ symbol: "E" }, {});
+    expect(JSON.stringify(outline.structuredContent)).toBe(JSON.stringify(classOutline));
+
+    const empty = { results: [] };
+    const search = await register("semantic_search", structured(structuredClone(empty)))({ query: "q" }, {});
+    expect(JSON.stringify(search.structuredContent)).toBe(JSON.stringify(empty));
+  });
+
+  it("text-channel answers stay text-only: no structuredContent is invented", async () => {
+    const result = await register("get_callers", textJson(noEdges))({ symbolId: "Checkout::Flow#step_ready?" }, {});
+    expect(result.structuredContent).toBeUndefined();
   });
 
   it("graph: banner precedes the JSON text answer", async () => {

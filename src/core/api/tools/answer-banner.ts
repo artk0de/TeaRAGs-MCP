@@ -10,8 +10,10 @@
  * a concrete row.
  *
  * Banners fire at three decision points only — search rows, empty graph
- * answers for a symbol, find_symbol bodies — and never on errors. They are
- * content text only: `structuredContent` stays the schema-validated answer.
+ * answers for a symbol, find_symbol bodies — and never on errors. A structured
+ * answer also carries the banner as its FIRST key, `banner`: Claude Code hands
+ * the model `structuredContent` instead of `content` when both exist (live,
+ * 2026-10-28), so a content-only banner never reached it there.
  */
 import { foldColumnTables } from "./columns.js";
 import type { McpToolResult } from "./format.js";
@@ -61,7 +63,11 @@ export function answerBannerFor(tool: string, args: unknown, result: McpToolResu
   return undefined;
 }
 
-/** Wraps a tool handler so its answer opens with the banner {@link answerBannerFor} picks. */
+/**
+ * Wraps a tool handler so its answer opens with the banner {@link answerBannerFor} picks:
+ * the first content item AND, on a structured answer, the first `structuredContent` key
+ * (`banner`) — Claude Code shows the model structuredContent instead of content.
+ */
 export function withAnswerBanner<A, E>(
   tool: string,
   handler: (args: A, extra: E) => Promise<McpToolResult>,
@@ -69,7 +75,12 @@ export function withAnswerBanner<A, E>(
   return async (args, extra) => {
     const result = await handler(args, extra);
     const banner = answerBannerFor(tool, args, result);
-    return banner === undefined ? result : { ...result, content: [{ type: "text", text: banner }, ...result.content] };
+    if (banner === undefined) return result;
+    const content = [{ type: "text" as const, text: banner }, ...result.content];
+    const structured = result.structuredContent;
+    return isRecord(structured)
+      ? { ...result, content, structuredContent: { banner, ...structured } }
+      : { ...result, content };
   };
 }
 
