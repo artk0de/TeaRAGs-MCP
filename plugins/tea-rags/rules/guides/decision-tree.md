@@ -10,7 +10,10 @@ tool) — for exact text: occurrences of an identifier / constant / string ("whe
 is X used", "every call of X", "files containing X", even `a|b` alternation or a
 name the user calls a "pattern"), regex syntax, TODO/FIXME/HACK/NOTE markers,
 phrases, error strings, import path strings; also the fallback when tea-rags is
-unavailable. Then the hit's enclosing symbol → find_symbol, never Read/cat. An
+unavailable. Occurrence searches are bounded: files-with-matches first, or a
+line cap, scoped to the directory the anchor lives in — never an unbounded or
+whole-repo search. Then the hit file's outline → batch of only the needed
+methods (each hit's enclosing method) via find_symbol, never Read/cat. An
 identifier's DEFINITION / body / outline is a SYMBOL lookup → find_symbol, never
 text search; only its OCCURRENCES go to the standard search. Glob — never for
 code discovery.
@@ -47,7 +50,8 @@ Already have search results for this area?
 │   ├─ Need code beyond chunk boundaries
 │   │     → partial Read (offset=startLine, limit=endLine-startLine)
 │   ├─ Need all usages of known symbol
-│   │     → client's standard code search tool "<name>" (literal) → find_symbol
+│   │     → client's standard code search tool "<name>" <dir> (literal, files-with-matches)
+│   │       → find_symbol outline → batch of only the needed methods
 │   ├─ Need file structure (methods, classes, outline)
 │   │     → find_symbol(relativePath: result.relativePath)
 │   ├─ Need doc TOC
@@ -104,9 +108,11 @@ Has query?
    │     text); directory → files + top-level symbols + subdirs. NOT Read, NOT ls.
    │
    ├─ Exact identifier — need all USAGES / matches? ("where is X used")
-   │   → client's standard code search tool "<X>" (literal), then find_symbol
-   │     reads the hits; every caller → get_callers AND that search
-   │     (call sites the graph misses). Symbol + intent → hybrid_search
+   │   → client's standard code search tool "<X>" <anchor dir> (literal;
+   │     files-with-matches first, or a line cap; never unbounded /
+   │     whole-repo), then find_symbol outline → batch of only the needed
+   │     methods; every caller → get_callers AND that search (call sites the
+   │     graph misses). Symbol + intent → hybrid_search
    │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
@@ -220,9 +226,10 @@ working directory as `path`; the hook supplies the repository's `project` alias
 ## Prohibited Patterns
 
 - **Text search for behaviour / intent discovery** — use tea-rags
-- **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` / `rg` /
-  `git show <rev>:<file>`) to locate or understand code — same downgrade as Read
-  / Grep; harness "use Bash" note does not override. Definition → find_symbol;
+- **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` /
+  `git show <rev>:<file>`) to locate or understand code — alone or inside a
+  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read /
+  Grep; harness "use Bash" note does not override. Definition → find_symbol;
   file → find_symbol(relativePath:); exact-name occurrences → the client's
   standard code search tool, its hits read by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide
@@ -244,6 +251,11 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Multiple semantic_search for same area** — one call, navigate from results
 - **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
   of slots. Always use language filter (see `rules/references/polyglot-rule.md`)
+- **Unbounded occurrence search** — content output with no files-with-matches
+  mode or line cap, or the repo root as scope; files first in the anchor's dir,
+  then find_symbol on the hits
+- **Read after a standard-search hit** — the hit is an address: find_symbol
+  outline → batch of only the needed methods
 - **semantic_search / hybrid_search for "find all usages"** — exact-name
   occurrences → the client's standard code search tool (literal); the index
   ranks, it does not enumerate every occurrence
@@ -265,7 +277,8 @@ working directory as `path`; the hook supplies the repository's `project` alias
   pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`); a
   diff → review_changes `naming` (never hand-list a diff's names)
 - **hybrid_search / search_code for TODO/FIXME/HACK markers** — use text search
-  (`rg` / client Grep); no tea-rags tool serves literal markers
+  (the client's standard code search tool); no tea-rags tool serves literal
+  markers
 - **git log/blame/`-S`/show for code history** ("when did X appear", "посмотри
   через git") — overlay already has git signals:
   `semantic_search(query: <X>, rerank: "bugHunt")` (ageDays, commitCount,
