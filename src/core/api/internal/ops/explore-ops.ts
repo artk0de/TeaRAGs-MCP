@@ -60,7 +60,6 @@ import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
-import { formatConsumedIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import { compileFilterPreset, type TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
   projectSearchResultPayloads,
@@ -80,7 +79,6 @@ import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from ".
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { explainEmptySearch } from "./empty-search-explanation.js";
-import { buildSearchExpansionCalls, type SearchExpansionScope } from "./search-expansion-calls.js";
 
 export interface ExploreOpsDeps {
   qdrant: QdrantManager;
@@ -89,7 +87,6 @@ export interface ExploreOpsDeps {
   registry: TrajectoryRegistry;
   collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
-  driftReporter?: IndexDriftReporter;
   payloadSignals: PayloadSignalDescriptor[];
   essentialKeys: string[];
   modelGuard?: EmbeddingModelGuardPort;
@@ -213,13 +210,6 @@ interface ExploreFinalizeOptions {
    * on the answer, with the floors the strategy's reads claimed on it (D8).
    */
   workingTreeView?: Promise<WorkingTreeView>;
-  /**
-   * Attach `next` expansion hints (N5, bd tea-rags-mcp-r4rl1). Read from the
-   * strategy's rows BEFORE projection — `fields` may drop `relativePath`.
-   */
-  expansionHints?: boolean;
-  /** What those hints address (q1g6s.15); a search answer's rows by default. */
-  expansionScope?: SearchExpansionScope;
 }
 
 export class ExploreOps {
@@ -229,7 +219,6 @@ export class ExploreOps {
   private readonly registry: TrajectoryRegistry;
   private readonly collectionRegistry: RegistryLookup;
   private readonly statsCache?: StatsCache;
-  private readonly driftReporter?: IndexDriftReporter;
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private readonly essentialKeys: string[];
   private readonly modelGuard?: EmbeddingModelGuardPort;
@@ -252,7 +241,6 @@ export class ExploreOps {
     this.registry = deps.registry;
     this.collectionRegistry = deps.collectionRegistry;
     this.statsCache = deps.statsCache;
-    this.driftReporter = deps.driftReporter;
     this.payloadSignals = deps.payloadSignals;
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
@@ -324,7 +312,7 @@ export class ExploreOps {
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     // Scroll + rerank: no query vector, so the guard checks the model name only.
-    const { collectionName, path, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
+    const { collectionName, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
@@ -339,13 +327,12 @@ export class ExploreOps {
     return this.executeExplore(
       this.scrollRankStrategy,
       withHistoryClock(buildRankChunksContext(request, collectionName, filter, level), historyAnchorSec),
-      path,
       { presetFilterNotice, fields: request.fields, searchTool: true, workingTreeView },
     );
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const { collectionName, path, workingTreeView, embeddings, historyAnchorSec } = await this.resolveAndGuard(
+    const { collectionName, workingTreeView, embeddings, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
@@ -361,7 +348,6 @@ export class ExploreOps {
     return this.executeExplore(
       this.vectorStrategy,
       withHistoryClock(buildSearchCodeContext(request, collectionName, embedding, filter), historyAnchorSec),
-      path,
       { presetFilterNotice, workingTreeView },
     );
   }
@@ -375,7 +361,7 @@ export class ExploreOps {
     // answers with the provider down; one that embeds code fails fast on its
     // own embed (the strategy holds it to the same read budget).
     const target = await this.resolveAndGuard(request.collection, request.path, request.project, READ_PATH_EMBED);
-    const { collectionName, path, workingTreeView, historyAnchorSec } = target;
+    const { collectionName, workingTreeView, historyAnchorSec } = target;
     const similar = strategy ?? this.buildSimilarStrategy(request, target.embeddings);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -389,7 +375,7 @@ export class ExploreOps {
     // are calibrated on prose queries, so applying them here labels every
     // find_similar response "high". Needs its own calibration corpus first.
     const ctx = withHistoryClock(buildFindSimilarContext(request, collectionName, filter, level), historyAnchorSec);
-    return this.executeExplore(similar, ctx, path, {
+    return this.executeExplore(similar, ctx, {
       presetFilterNotice,
       fields: request.fields,
       searchTool: true,
@@ -399,21 +385,18 @@ export class ExploreOps {
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
     // Lookup by symbol: no query vector, so the guard checks the model name only.
-    const { collectionName, path, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
+    const { collectionName, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,
       request.path,
       request.project,
       { nameOnly: true },
     );
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
-    if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, path, workingTreeView);
+    if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, workingTreeView);
     const strategy = this.buildFindSymbolStrategy(request);
-    const answer = await this.executeExplore(strategy, ctx, path, {
+    const response = await this.executeExplore(strategy, ctx, {
       fields: request.fields,
       workingTreeView,
-      // The file / symbol the agent committed to is the anchor (q1g6s.2); same gate as search.
-      expansionHints: this.expansionHintsEnabled(),
-      expansionScope: request.relativePath ? "file" : "symbol",
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
@@ -422,8 +405,6 @@ export class ExploreOps {
     // A directory path is answered by its listing (N2), an unknown path by the
     // nearest indexed paths (N6 `unknownPath`).
     const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
-    // A directory listing names many files and commits to none — no anchor.
-    const response = directory ? withoutNext(answer) : answer;
     const empty =
       strategy instanceof FileOutlineStrategy
         ? strategy.emptyAnswer
@@ -464,7 +445,6 @@ export class ExploreOps {
     request: FindSymbolRequest,
     symbols: readonly string[],
     ctx: ExploreContext,
-    path: string | undefined,
     pendingView: Promise<WorkingTreeView | undefined> | undefined,
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
@@ -475,7 +455,6 @@ export class ExploreOps {
         this.buildFileOutlineStrategy(relativePath, request.language, fullTextMaxLines),
     );
     const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
-    const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const leanFields = request.metaOnly ? BATCH_LEAN_FIELDS.filter((f) => f !== "content") : BATCH_LEAN_FIELDS;
     const fields = request.fields ?? (request.rerank ? undefined : leanFields);
     const projection = projectSearchResultPayloads(
@@ -493,29 +472,14 @@ export class ExploreOps {
       return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...row.payload } };
     });
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
-    // Anchors from the full rows, before projection — the lean fields keep relativePath, `fields` may not.
-    const next = this.expansionHintsEnabled()
-      ? buildSearchExpansionCalls(
-          answer.rows.map(({ result }) => result),
-          workingTree,
-          "symbol",
-        )
-      : [];
     return {
       results,
-      ...(next.length > 0 ? { next } : {}),
-      driftWarning,
       missing: answer.missing,
       ...(request.fields && projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
       ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
       ...(answer.batchNotice ? { batchNotice: answer.batchNotice } : {}),
       ...(workingTree ? { workingTree } : {}),
     };
-  }
-
-  /** Gate for `next` expansion hints: codegraph wired — the signal find_symbol's codegraphWarning reads. */
-  private expansionHintsEnabled(): boolean {
-    return this.chunkResolver !== undefined;
   }
 
   /**
@@ -595,7 +559,8 @@ export class ExploreOps {
   // ---------------------------------------------------------------------------
 
   /**
-   * Unified pipeline: ensureStats → strategy.execute → shape → drift warning.
+   * Unified pipeline: ensureStats → strategy.execute → shape. No drift warning:
+   * get_index_status / index_codebase / prime report drift (bd tea-rags-mcp-68jud).
    *
    * `attachConfidence` is opt-in per operation rather than global. Confidence
    * reads score MAGNITUDE against the collection's similarity scale, so it only
@@ -607,13 +572,11 @@ export class ExploreOps {
   private async executeExplore(
     strategy: BaseExploreStrategy,
     ctx: ExploreContext,
-    path?: string,
     finalize: ExploreFinalizeOptions = {},
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const workingTreeView = await finalize.workingTreeView;
     const results = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
-    const driftWarning = await this.checkDrift(path, ctx.collectionName);
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;
@@ -635,13 +598,8 @@ export class ExploreOps {
       },
     );
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
-    const next = finalize.expansionHints
-      ? buildSearchExpansionCalls(results, workingTree, finalize.expansionScope)
-      : [];
     return {
       results: projection.results,
-      ...(next.length > 0 ? { next } : {}),
-      driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
       ...(confidence ? { confidence } : {}),
       ...(finalize.presetFilterNotice ? { presetFilterNotice: finalize.presetFilterNotice } : {}),
@@ -666,7 +624,7 @@ export class ExploreOps {
     scope?: ExploreRequestScope,
   ): Promise<ExploreResponse> {
     const { target, embedding, denseUnavailable } = await this.embedQuery(request, denseLegOptional, scope);
-    const { collectionName, path, workingTreeView, historyAnchorSec } = target;
+    const { collectionName, workingTreeView, historyAnchorSec } = target;
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -678,13 +636,12 @@ export class ExploreOps {
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       historyAnchorSec,
     );
-    const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, path, {
+    const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, {
       attachConfidence,
       presetFilterNotice,
       fields: request.fields,
       searchTool: true,
       workingTreeView,
-      expansionHints: this.expansionHintsEnabled(),
     });
     // N6: the diagnosis counts run ONLY on an empty answer, and a failed
     // count leaves the explanation out instead of failing the search.
@@ -967,22 +924,6 @@ export class ExploreOps {
     } catch {
       // Stats loading failure must not prevent search.
     }
-  }
-
-  /**
-   * BOTH branches consume: a request that names its collection outright is
-   * still a search riding a warning along with an answer, not an inspection.
-   * The non-consuming check belongs to `get_index_status` and `prime`, which
-   * reach the reporter through `App#checkIndexDrift` instead.
-   */
-  private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
-    if (!this.driftReporter) return null;
-    const consumed = path
-      ? await this.driftReporter.checkAndConsume(path)
-      : collectionName
-        ? this.driftReporter.checkAndConsumeByCollectionName(collectionName)
-        : null;
-    return consumed && formatConsumedIndexDriftReport(consumed);
   }
 }
 
@@ -1332,11 +1273,6 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
  */
 function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
   return { ...view.marker, floors: [...view.marker.floors] };
-}
-
-function withoutNext(response: ExploreResponse): ExploreResponse {
-  const { next: _next, ...rest } = response;
-  return rest;
 }
 
 /**

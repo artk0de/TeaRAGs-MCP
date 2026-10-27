@@ -156,7 +156,7 @@ describe("NamingLexiconOps", () => {
     db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
-    semanticSearch = vi.fn(async () => ({ results: [], driftWarning: null }));
+    semanticSearch = vi.fn(async () => ({ results: [] }));
     ops = build();
   });
 
@@ -336,7 +336,6 @@ describe("NamingLexiconOps", () => {
 
     it("searches the concept alone with the spec's parameters under the L2 domain and extracts terms", async () => {
       semanticSearch.mockResolvedValue({
-        driftWarning: null,
         results: [1, 2, 3, 4, 5].map((i) =>
           holder(`TaxPreparation::TaxAutomations::Document#sync_${i}`, "app/services/tax_automations/document.rb", 1),
         ),
@@ -370,7 +369,7 @@ describe("NamingLexiconOps", () => {
     });
 
     it("widens to the project when the L2 domain yields under 5 holders", async () => {
-      semanticSearch.mockResolvedValueOnce({ driftWarning: null, results: [holder("A#b", "app/a.rb", 1)] });
+      semanticSearch.mockResolvedValueOnce({ results: [holder("A#b", "app/a.rb", 1)] });
       await ops.getNamingLexicon({ collection: "c", language: "ruby", concept: "x", pathPattern: "app/services/**" });
       expect(semanticSearch).toHaveBeenCalledTimes(2);
       expect(semanticSearch.mock.calls[1][0]).not.toHaveProperty("pathPattern");
@@ -914,7 +913,6 @@ describe("NamingLexiconOps", () => {
 
     it("aligns terms through a concept search of the draft's own words; nothing found is a plain NEW_TERM", async () => {
       semanticSearch.mockResolvedValueOnce({
-        driftWarning: null,
         results: [
           holder("PredefinedTemplate#render", "src/templates/predefined.ts"),
           holder("PredefinedField#value", "src/fields/predefined.ts"),
@@ -990,7 +988,6 @@ describe("NamingLexiconOps", () => {
         );
         // The concept code of both drafts holds `IndexMetrics`: the candidate is grounded.
         semanticSearch.mockResolvedValue({
-          driftWarning: null,
           results: [holder("IndexMetrics#total", "src/dto/metrics.ts")],
         });
         await db.replaceTypeDeclarationsBulk([
@@ -1044,7 +1041,6 @@ describe("NamingLexiconOps", () => {
             ]);
           }
           semanticSearch.mockResolvedValue({
-            driftWarning: null,
             results: [holder("IndexTally#count", "src/dto/tally.ts")],
           });
         });
@@ -1117,7 +1113,6 @@ describe("NamingLexiconOps", () => {
             { relPath: "src/tax_preparation.ts", rows: [decl("TaxPreparation", "module")] },
           ]);
           semanticSearch.mockResolvedValue({
-            driftWarning: null,
             results: [holder("TaxPreparation::RunStatus#check", "src/run/status.ts")],
           });
         });
@@ -1475,7 +1470,6 @@ describe("NamingLexiconOps", () => {
     it("a collision names the symbols it collides with — never the draft's own", async () => {
       await symbol("app/policies/a_policy.rb", "APolicy#same_firm?", "same_firm?");
       const findSymbol = vi.fn(async () => ({
-        driftWarning: null,
         results: [
           { id: 1, score: 1, payload: { symbolId: "APolicy#same_firm?", relativePath: "app/policies/a_policy.rb" } },
           { id: 2, score: 1, payload: { symbolId: "OwnPolicy#same_firm?", relativePath: "app/policies/own.rb" } },

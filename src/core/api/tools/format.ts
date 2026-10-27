@@ -15,17 +15,31 @@ export interface McpToolResult {
 
 /**
  * Compact JSON; every array of two or more records goes out as a ColumnTable,
- * and a clean `workingTree` marker goes out compact.
+ * and a `workingTree` marker goes out compact — or not at all when the call's
+ * `address` makes it say nothing ({@link compactWorkingTreeMarkerForCall}).
+ * No `address` → the compact marker is kept.
  */
-export function formatMcpResponse(data: unknown, columnOrder: readonly string[] = []): McpToolResult {
+export function formatMcpResponse(
+  data: unknown,
+  columnOrder: readonly string[] = [],
+  address?: WorkingTreeCallAddress,
+): McpToolResult {
   return {
     content: [
       {
         type: "text",
-        text: makeStrictJsonSafe(JSON.stringify(tabulateRecordArrays(withCompactWorkingTree(data), columnOrder))),
+        text: makeStrictJsonSafe(
+          JSON.stringify(tabulateRecordArrays(withCompactWorkingTree(data, address), columnOrder)),
+        ),
       },
     ],
   };
+}
+
+/** The addressing params of the call an answer replies to — raw tool args, so `unknown`. */
+export interface WorkingTreeCallAddress {
+  project?: unknown;
+  path?: unknown;
 }
 
 /**
@@ -87,12 +101,46 @@ export function compactWorkingTreeMarker(marker: WorkingTreeMarker): CompactWork
   };
 }
 
-/** A top-level `workingTree` marker of an answer DTO, compacted; anything else as is. */
-function withCompactWorkingTree(data: unknown): unknown {
+/**
+ * The marker an answer carries for the call that asked (bd tea-rags-mcp-icujw):
+ * the compact marker, or `undefined` when it would say nothing. A benchmark saw
+ * the clean `{ tree, project }` on 43/43 read answers with no action taken on
+ * it. It is dropped only when it is current AND the call named both the index
+ * (`project`) and the tree (`path`) it got back — then neither field is news.
+ * Kept for a path-only call (`project` is how it learns the alias), a
+ * project-only call and a tree ≠ `path` (`tree` says which checkout answered:
+ * rows from another tree are unusable).
+ */
+export function compactWorkingTreeMarkerForCall(
+  marker: WorkingTreeMarker,
+  address: WorkingTreeCallAddress,
+): CompactWorkingTreeMarker | undefined {
+  const compact = compactWorkingTreeMarker(marker);
+  const saysNothing =
+    isCurrentWorkingTreeMarker(marker) &&
+    typeof address.project === "string" &&
+    address.project !== "" &&
+    typeof address.path === "string" &&
+    stripTrailingSlash(address.path) === stripTrailingSlash(marker.tree);
+  return saysNothing ? undefined : compact;
+}
+
+function stripTrailingSlash(path: string): string {
+  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+}
+
+/**
+ * A top-level `workingTree` marker of an answer DTO, compacted — or removed
+ * when the call's `address` makes it say nothing; anything else as is.
+ */
+function withCompactWorkingTree(data: unknown, address: WorkingTreeCallAddress | undefined): unknown {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return data;
-  const { workingTree } = data as { workingTree?: unknown };
+  const { workingTree, ...rest } = data as { workingTree?: unknown };
   if (!isWorkingTreeMarker(workingTree)) return data;
-  return { ...data, workingTree: compactWorkingTreeMarker(workingTree) };
+  const compact = address
+    ? compactWorkingTreeMarkerForCall(workingTree, address)
+    : compactWorkingTreeMarker(workingTree);
+  return compact ? { ...data, workingTree: compact } : rest;
 }
 
 function isWorkingTreeMarker(value: unknown): value is WorkingTreeMarker {
@@ -218,13 +266,6 @@ export function sanitizeRerank(
   return { custom: cleaned };
 }
 
-export function appendDriftWarning(result: McpToolResult, warning: string | null): McpToolResult {
-  if (!warning || result.content.length === 0) return result;
-  const last = result.content[result.content.length - 1];
-  last.text += `\n\n${warning}`;
-  return result;
-}
-
 /**
  * One-line text render of the `workingTree` marker (bd tea-rags-mcp-xi2r9) for
  * the text-output tools; structured tools carry the object itself. An answer
@@ -293,9 +334,9 @@ export function formatWorkingTreeTouchedFiles(
 }
 
 /**
- * Append auto-update hint (hpg2) as its own text entry. Unlike
- * appendDriftWarning it works on structuredContent results whose `content`
- * is empty — the hint becomes the sole text entry. Null hint = no-op.
+ * Append auto-update hint (hpg2) as its own text entry. It works on
+ * structuredContent results whose `content` is empty — the hint becomes the
+ * sole text entry. Null hint = no-op.
  */
 export function appendAutoUpdateHint(result: McpToolResult, hint: string | null): McpToolResult {
   if (!hint) return result;

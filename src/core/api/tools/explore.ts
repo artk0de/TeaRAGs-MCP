@@ -20,10 +20,11 @@ import { tabulateRecords } from "./columns.js";
 import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
 import {
   appendAutoUpdateHint,
-  compactWorkingTreeMarker,
+  compactWorkingTreeMarkerForCall,
   formatDenseUnavailable,
   sanitizeRerank,
   type McpToolResult,
+  type WorkingTreeCallAddress,
 } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
@@ -100,25 +101,28 @@ const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
  * Format ExploreResponse as structuredContent for outputSchema-enabled tools.
  * Rows are compacted (imports counted, floats at 2 significant digits) before
  * they are tabulated — after the App ranked them, so order and scores hold.
+ * The `workingTree` marker is dropped when the call's `address` makes it say
+ * nothing (`compactWorkingTreeMarkerForCall`). No drift, no `next` hint list:
+ * a search answer carries neither (bd tea-rags-mcp-68jud, icujw).
  */
 function formatStructuredResult(
   response: ExploreResponse,
   compaction: SearchResultCompaction,
   omitIdAndScore: boolean,
+  address: WorkingTreeCallAddress,
 ): McpToolResult {
   const rows = compactSearchResults(response.results, compaction);
+  const workingTree = response.workingTree && compactWorkingTreeMarkerForCall(response.workingTree, address);
   return {
     structuredContent: {
       results: tabulateRecords(omitIdAndScore ? withoutIdAndScore(rows) : rows),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
-      ...(response.driftWarning && { driftWarning: response.driftWarning }),
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
       ...(response.presetFilterNotice && { presetFilterNotice: response.presetFilterNotice }),
       ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
-      ...(response.workingTree && { workingTree: compactWorkingTreeMarker(response.workingTree) }),
+      ...(workingTree && { workingTree }),
       ...(response.denseUnavailable && { denseUnavailable: response.denseUnavailable }),
-      ...(response.next && { next: response.next }),
       ...(response.empty && { empty: response.empty }),
       ...(response.missing && { missing: response.missing }),
       ...(response.batchNotice && { batchNotice: response.batchNotice }),
@@ -252,6 +256,7 @@ export function registerSearchTools(
           await tool.invoke(app, sanitized),
           { includeImports: includeImports === true },
           tool.searchTool === true && fieldsAbsent(search.fields),
+          search,
         );
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;
         return appendAutoUpdateHint(result, hint);

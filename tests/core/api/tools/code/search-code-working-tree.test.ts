@@ -40,7 +40,6 @@ describe("search_code — workingTree line", () => {
   it("should append the marker line to a result listing", async () => {
     const text = await invoke({
       results: [{ id: "1", score: 0.9, payload: { relativePath: "a.ts", content: "x" } }],
-      driftWarning: null,
       workingTree: marker,
     });
 
@@ -48,7 +47,7 @@ describe("search_code — workingTree line", () => {
   });
 
   it("should append the marker line to an empty answer", async () => {
-    const text = await invoke({ results: [], driftWarning: null, workingTree: marker });
+    const text = await invoke({ results: [], workingTree: marker });
 
     expect(text).toContain("No results found");
     expect(text).toContain(line);
@@ -70,7 +69,6 @@ describe("search_code — workingTree line", () => {
     it("should tag each result of a modified or deleted file, and leave the others untagged", async () => {
       const text = await invoke({
         results: [hit("src/a.ts", "modified"), hit("src/b.ts"), hit("src/gone.ts", "deleted")],
-        driftWarning: null,
         workingTree: { ...marker, changedFiles: 1, deletedFiles: 1 },
       });
 
@@ -82,7 +80,6 @@ describe("search_code — workingTree line", () => {
     it("should list the touched files of the answer once each in the footer", async () => {
       const text = await invoke({
         results: [hit("src/a.ts", "modified"), hit("src/a.ts", "modified"), hit("src/gone.ts", "deleted")],
-        driftWarning: null,
         workingTree: { ...marker, changedFiles: 1, deletedFiles: 1 },
       });
 
@@ -91,14 +88,14 @@ describe("search_code — workingTree line", () => {
 
     it("should bound the footer list to ten files and count the rest", async () => {
       const results = Array.from({ length: 13 }, (_, i) => hit(`src/f${String(i)}.ts`, "modified"));
-      const text = await invoke({ results, driftWarning: null, workingTree: { ...marker, changedFiles: 13 } });
+      const text = await invoke({ results, workingTree: { ...marker, changedFiles: 13 } });
 
       expect(text).toContain("src/f9.ts (modified) … 3 more");
       expect(text).not.toContain("src/f10.ts (modified)");
     });
 
     it("should print no footer list when no result belongs to a touched file", async () => {
-      const text = await invoke({ results: [hit("src/b.ts")], driftWarning: null, workingTree: marker });
+      const text = await invoke({ results: [hit("src/b.ts")], workingTree: marker });
 
       expect(text).not.toContain("Index copies");
     });

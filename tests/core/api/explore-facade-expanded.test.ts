@@ -95,7 +95,6 @@ const driftReport = {
   ],
   remedy: { kind: "force" },
 };
-const driftReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 function makeMockRegistry() {
   return {
@@ -171,7 +170,7 @@ describe("ExploreFacade — expanded methods", () => {
       expect(embeddings.embed).toHaveBeenCalledWith("find me", { maxRecoveryWaitMs: 0 });
       expect(qdrant.search).toHaveBeenCalledWith("test_col", [0.1, 0.2, 0.3], expect.any(Number), undefined);
       expect(result.results).toHaveLength(2);
-      expect(result.driftWarning).toBeNull();
+      expect(result).not.toHaveProperty("driftWarning"); // PIN-UPDATED 68jud
     });
 
     it("resolves collection name from path", async () => {
@@ -215,45 +214,24 @@ describe("ExploreFacade — expanded methods", () => {
       expect(result.results).toBeDefined();
     });
 
-    it("returns drift warning from path-based check", async () => {
+    // PIN-UPDATED 68jud: a search never carries drift — a benchmark saw the report on
+    // 43/43 read answers and no call it triggered. get_index_status / index_codebase /
+    // prime report it; a search neither renders nor spends it, by path or collection.
+    it.each([
+      ["path", { path: "/tmp/test-project" }],
+      ["collection", { collection: "test_col" }],
+    ])("a %s-addressed search consults no drift reporter and carries no driftWarning", async (_by, address) => {
       const driftReporter = makeMockDriftReporter({
         checkAndConsume: vi.fn().mockResolvedValue({ report: driftReport, repeat: false }),
-      });
-      const { facade } = makeFacade({ driftReporter });
-
-      const result = await facade.semanticSearch({
-        path: "/tmp/test-project",
-        query: "test",
-      });
-
-      expect(result.driftWarning).toBe(driftReportText);
-    });
-
-    // q1g6s.15: a report this process already showed rides as one line, not the full text.
-    it("returns a one-line pointer when the reporter has shown the same report", async () => {
-      const driftReporter = makeMockDriftReporter({
-        checkAndConsume: vi.fn().mockResolvedValue({ report: { ...driftReport, projectAlias: "proj" }, repeat: true }),
-      });
-      const { facade } = makeFacade({ driftReporter });
-
-      const result = await facade.semanticSearch({ path: "/tmp/test-project", query: "test" });
-
-      expect(result.driftWarning).toBe("index drift unchanged — see tea-rags://project/proj/digest");
-    });
-
-    it("returns drift warning from collection-based check", async () => {
-      // Consuming: a collection-addressed search is still a search.
-      const driftReporter = makeMockDriftReporter({
         checkAndConsumeByCollectionName: vi.fn().mockReturnValue({ report: driftReport, repeat: false }),
       });
       const { facade } = makeFacade({ driftReporter });
 
-      const result = await facade.semanticSearch({
-        collection: "test_col",
-        query: "test",
-      });
+      const result = await facade.semanticSearch({ ...address, query: "test" });
 
-      expect(result.driftWarning).toBe(driftReportText);
+      expect(result).not.toHaveProperty("driftWarning");
+      expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
+      expect(driftReporter.checkAndConsumeByCollectionName).not.toHaveBeenCalled();
     });
 
     it("passes filter to qdrant search", async () => {
@@ -370,7 +348,7 @@ describe("ExploreFacade — expanded methods", () => {
         undefined,
       );
       expect(result.results).toHaveLength(1);
-      expect(result.driftWarning).toBeNull();
+      expect(result).not.toHaveProperty("driftWarning"); // PIN-UPDATED 68jud
     });
 
     it("throws when hybrid not enabled on collection", async () => {
@@ -446,7 +424,7 @@ describe("ExploreFacade — expanded methods", () => {
 
       expect(reranker.getPreset).toHaveBeenCalledWith("techDebt", "rank_chunks");
       expect(result.results).toBeDefined();
-      expect(result.driftWarning).toBeNull();
+      expect(result).not.toHaveProperty("driftWarning"); // PIN-UPDATED 68jud
     });
 
     it("uses custom weights when provided", async () => {
@@ -563,10 +541,11 @@ describe("ExploreFacade — expanded methods", () => {
       expect(result.results).toHaveLength(2);
       expect(result.results[0]).toHaveProperty("score");
       expect(result.results[0]).toHaveProperty("payload");
-      expect(result.driftWarning).toBeNull();
+      expect(result).not.toHaveProperty("driftWarning"); // PIN-UPDATED 68jud
     });
 
-    it("returns drift warning when present", async () => {
+    // PIN-UPDATED 68jud: search_code is a search — no drift, reporter untouched.
+    it("carries no drift warning even when the index drifted", async () => {
       const driftReporter = makeMockDriftReporter({
         checkAndConsume: vi.fn().mockResolvedValue({ report: driftReport, repeat: false }),
       });
@@ -577,7 +556,8 @@ describe("ExploreFacade — expanded methods", () => {
         query: "test",
       });
 
-      expect(result.driftWarning).toBe(driftReportText);
+      expect(result).not.toHaveProperty("driftWarning");
+      expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
     });
   });
 });

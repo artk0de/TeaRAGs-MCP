@@ -109,7 +109,6 @@ describe("ExploreOps workingTree marker", () => {
       reranker: makeReranker(),
       registry: makeTrajectoryRegistry(),
       collectionRegistry,
-      driftReporter: makeDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
       workingTreeOverlay: overlay,
@@ -212,7 +211,6 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
       reranker: makeReranker(),
       registry: makeTrajectoryRegistry(),
       collectionRegistry,
-      driftReporter: makeDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
       workingTreeOverlay: { view: vi.fn().mockResolvedValue(view) },
@@ -355,7 +353,7 @@ describe("ExploreOps working-tree floors (bd tea-rags-mcp-xi2r9.3)", () => {
   });
 });
 
-describe("ExploreOps drift check reads the INDEX root, never the tree", { timeout: 60_000 }, () => {
+describe("ExploreOps read of a linked worktree: base index, no drift check", { timeout: 60_000 }, () => {
   let fixture: GitWorkingTreeFixture;
   let registryDir: string;
   let collectionRegistry: CollectionRegistry;
@@ -395,31 +393,32 @@ describe("ExploreOps drift check reads the INDEX root, never the tree", { timeou
       reranker: makeReranker(),
       registry: makeTrajectoryRegistry(),
       collectionRegistry,
-      driftReporter,
       payloadSignals: [],
       essentialKeys: [],
       workingTreeOverlay: stubOverlay(),
     });
 
-  it("should check drift at the main checkout when path is a linked worktree", async () => {
+  // PIN-UPDATED 68jud: a read no longer checks drift at all (get_index_status /
+  // index_codebase / prime own it, at the index root); it still reads the main index.
+  it("should read the main checkout's index for a linked worktree path, consulting no drift reporter", async () => {
     const driftReporter = makeDriftReporter();
     const qdrant = makeQdrant([HIT]);
 
-    await makeFacade(driftReporter, qdrant).semanticSearch({ path: tree, query: "q" });
+    const response = await makeFacade(driftReporter, qdrant).semanticSearch({ path: tree, query: "q" });
 
     expect(qdrant.collectionExists).toHaveBeenCalledWith("code_main");
-    expect(driftReporter.checkAndConsume).toHaveBeenCalledWith(fixture.mainRoot);
-    expect(driftReporter.checkAndConsume).not.toHaveBeenCalledWith(tree);
+    expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
+    expect(response).not.toHaveProperty("driftWarning");
   });
 
-  it("should check drift at the index root for a sub-read addressed by collection plus tree path", async () => {
-    // naming-lexicon-ops `addressedRequest` shape: explicit collection, the tree as `path`.
+  // PIN-UPDATED 68jud: as above, for the naming-lexicon-ops `addressedRequest` shape.
+  it("should consult no drift reporter for a sub-read addressed by collection plus tree path", async () => {
     const driftReporter = makeDriftReporter();
 
     await makeFacade(driftReporter).findSymbol({ collection: "code_main", path: tree, symbol: "x" });
 
-    expect(driftReporter.checkAndConsume).toHaveBeenCalledWith(fixture.mainRoot);
-    expect(driftReporter.checkAndConsume).not.toHaveBeenCalledWith(tree);
+    expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
+    expect(driftReporter.checkAndConsumeByCollectionName).not.toHaveBeenCalled();
   });
 
   // Live D10: a read tool handed a worktree path answers for its base index.

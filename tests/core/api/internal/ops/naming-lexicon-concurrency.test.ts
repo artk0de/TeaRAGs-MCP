@@ -33,7 +33,7 @@ const NAMING = new Map<string, IdentifierNamingConvention>([
   ["typescript", typescriptCapability.naming as IdentifierNamingConvention],
 ]);
 
-const EMPTY: ExploreResponse = { results: [], driftWarning: null };
+const EMPTY: ExploreResponse = { results: [] };
 
 /** A promise the test resolves from inside a mock — an awaited barrier instead of a polled wall-clock wait. */
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -256,7 +256,6 @@ describe("NamingLexiconOps — concurrent remote reads", () => {
         await lookup.fn(req);
         const symbolId = `Model#${req.symbol}`;
         return {
-          driftWarning: null,
           results: [{ id: symbolId, score: 1, payload: { symbolId, relativePath: `app/models/${req.symbol}.rb` } }],
         };
       });

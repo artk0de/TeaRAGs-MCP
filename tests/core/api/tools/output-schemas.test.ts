@@ -215,12 +215,9 @@ describe("SearchResultOutputSchema", () => {
     expect(result.level).toBe("file");
   });
 
-  it("validates response with driftWarning", () => {
-    const result = schema.parse({
-      results: EMPTY_TABLE,
-      driftWarning: "Index is 5 days old",
-    });
-    expect(result.driftWarning).toBe("Index is 5 days old");
+  // PIN-UPDATED 68jud: search answers carry no drift — get_index_status / prime report it.
+  it("declares no driftWarning", () => {
+    expect(SearchResultOutputSchema).not.toHaveProperty("driftWarning");
   });
 
   it("validates empty results", () => {
@@ -403,20 +400,12 @@ describe("SearchResultOutputSchema — dense leg unavailable", () => {
   });
 });
 
-// N5 (bd tea-rags-mcp-r4rl1): ready-made expansion calls on a search answer.
+// PIN-UPDATED icujw: N5 (bd tea-rags-mcp-r4rl1) expansion hints retired — followed 0 of 18 times.
+// Pagination keeps `truncated.next`; the top-level hint list is gone.
 describe("SearchResultOutputSchema — next expansion hints", () => {
-  const schema = z.object(SearchResultOutputSchema).strict();
-
-  it("validates next calls with their tree address", () => {
-    const next = [
-      {
-        tool: "find_co_changed",
-        args: { project: "tea-rags", path: "/repo/wt", files: ["src/a.ts"] },
-        why: "files usually edited together with the top results",
-      },
-    ];
-
-    expect(schema.parse({ results: EMPTY_TABLE, next }).next).toEqual(next);
+  it("declares no top-level next, keeps truncated.next", () => {
+    expect(SearchResultOutputSchema).not.toHaveProperty("next");
+    expect(SearchResultOutputSchema.truncated.unwrap().shape).toHaveProperty("next");
   });
 });
 

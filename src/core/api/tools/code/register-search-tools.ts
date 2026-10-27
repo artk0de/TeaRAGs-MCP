@@ -7,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, SchemaBuilderPort } from "../../public/index.js";
 import {
-  appendDriftWarning,
+  compactWorkingTreeMarkerForCall,
   formatMcpText,
   formatWorkingTreeMarker,
   formatWorkingTreeStateTag,
@@ -48,7 +48,11 @@ export function registerSearchTools(
         ),
       });
 
-      const workingTreeLine = response.workingTree ? `\n\n${formatWorkingTreeMarker(response.workingTree)}` : "";
+      // A marker that says nothing to this call (icujw) renders no line.
+      const workingTreeLine =
+        response.workingTree && compactWorkingTreeMarkerForCall(response.workingTree, rest)
+          ? `\n\n${formatWorkingTreeMarker(response.workingTree)}`
+          : "";
       if (response.results.length === 0) {
         return formatMcpText(`No results found for query: "${rest.query}"${workingTreeLine}`);
       }
@@ -75,7 +79,7 @@ export function registerSearchTools(
       const touchedFiles = formatWorkingTreeTouchedFiles(response.results);
       const touchedLine = touchedFiles ? `\n${touchedFiles}` : "";
       const text = `Found ${response.results.length} result(s):\n${formattedResults}${workingTreeLine}${touchedLine}`;
-      return appendDriftWarning(formatMcpText(text), response.driftWarning);
+      return formatMcpText(text);
     },
   );
 }

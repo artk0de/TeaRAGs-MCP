@@ -21,7 +21,7 @@ function makeHarness(autoUpdate?: McpAutoUpdateTrigger) {
     captured.set(name, handler);
   });
 
-  const emptyResponse: ExploreResponse = { results: [], driftWarning: null };
+  const emptyResponse: ExploreResponse = { results: [] };
   const app = {
     semanticSearch: vi.fn().mockResolvedValue(emptyResponse),
     hybridSearch: vi.fn().mockResolvedValue(emptyResponse),

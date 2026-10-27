@@ -98,10 +98,6 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       reranker,
       registry,
       collectionRegistry,
-      driftReporter: {
-        checkAndConsume: vi.fn().mockResolvedValue(null),
-        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
-      } as any,
       payloadSignals: [],
       essentialKeys: [],
       ...(view ? { workingTreeOverlay: { view: vi.fn().mockResolvedValue(view) } } : {}),

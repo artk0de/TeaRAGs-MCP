@@ -6,7 +6,6 @@ import type { DirectoryOutline } from "../../../contracts/types/directory-outlin
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
-import type { SuggestedToolCall } from "../../../contracts/types/suggested-tool-call.js";
 import type { SymbolBatchMiss } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
@@ -241,7 +240,6 @@ export interface PresetFilterNotice {
 
 export interface ExploreResponse {
   results: SearchResult[];
-  driftWarning: string | null;
   /** Effective signal level used for scoring and grouping. Present when level was explicitly resolved. */
   level?: SignalLevel;
   /**
@@ -317,12 +315,6 @@ export interface ExploreResponse {
    * working-tree marker apply to them unchanged.
    */
   directory?: DirectoryOutline;
-  /**
-   * Ready-to-run expansion calls from the top result files (N5): co-change
-   * partners and importers. Present on hybrid_search / semantic_search when
-   * codegraph is on and a code result exists; args address the answering tree.
-   */
-  next?: SuggestedToolCall[];
 }
 
 // ---------------------------------------------------------------------------
