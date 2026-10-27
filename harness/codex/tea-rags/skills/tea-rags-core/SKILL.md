@@ -48,8 +48,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
-  → `semantic_search` (real ids among them → `hybrid_search(metaOnly)`) → anchor
-  → depth-2 callees/callers → ONE batch; never text search
+  → ONE `semantic_search(query: "a ||| b ||| c")` (≤5 phrasings fused; real ids
+  among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
+  ONE batch; never text search, never one call per phrasing
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
   -rl, not tea-rags; phrase/error string → plan these three lines, never stop at

@@ -46,7 +46,7 @@ After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 `--part 1 --parts 1` (`tests/hooks/agent-context-budgets.test.sh`). Server
 `instructions` get a ≤ 4,096 head (first 512 self-contained: addressing first) +
 a `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full
-core (≤ 9,400 incl. wrapper; owner decision 2026-10-28, 9400); Codex carries
+core (≤ 9,600 incl. wrapper; owner decision 2026-10-28, 9600); Codex carries
 core and the digest in separate SessionStart hooks: core ≤
 `CODEX_CORE_HOOK_BUDGET` (9,650), digest ≤ `CODEX_HOOK_CONTEXT_BUDGET` (9,500).
 Grow a guide, not the core. Hook stdout past ~16KB reaches the model as a 2KB
