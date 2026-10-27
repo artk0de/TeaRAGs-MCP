@@ -25,8 +25,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 1. Phase 0 — RESOLVE mode + project + freshness
 2. Phase 1 — ACQUIRE diff + intent
 3. Phase 2 — MAP diff → symbols + overlay working set; plan line, copied:
-   `find_symbol(path=<checkout>, symbols=[<touched files>])` — ONE call, all
-   files
+   `find_symbol(project=<alias>, path=<checkout>, symbols=[<touched files>], rerank="hotspots")`
+   — ONE call, all files
 4. Phase 3 — SCAN 9 dimensions (parallel blocks)
 5. Phase 4 — CLASSIFY severity + evidence filter
 6. Phase 5 — DELIVER (chat report | draft-gate → post)
@@ -66,7 +66,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 ```text
 0. RESOLVE   → mode (URL? external : local) + checkout path + freshness
 1. ACQUIRE   → unified diff + MR title/description/author
-2. MAP       → ONE find_symbol(path=<checkout>, symbols=[<touched files>])
+2. MAP       → ONE find_symbol(project=<alias>, path=<checkout>, symbols=[<touched files>],
+                rerank="hotspots")
               → hunks × outline → {file, changedSymbols[], chunkUUIDs[], overlay}
 3. SCAN      → 9 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
@@ -105,7 +106,7 @@ MR description = review intent — feeds D6 invariants.
 
 1. Parse hunks → touched files + changed line ranges (new side).
 2. Touched source files — cap 15, above → ask user to narrow scope — in ONE
-   `find_symbol symbols=[<file 1>, <file 2>, …] rerank="hotspots" path=<checkout>`
+   `find_symbol project=<alias> path=<checkout> symbols=[<file 1>, <file 2>, …] rerank="hotspots"`
    → outline per file (rows keyed by `request`, misses in `missing`). Intersect
    changed ranges with symbol spans → changed symbols + chunk UUIDs.
 3. Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — working

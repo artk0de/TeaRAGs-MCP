@@ -113,3 +113,18 @@
   - `naming-diff-changes` — separate review_changes sections=["naming"] OK, but
     no conforming/novel summary line, no relPath:line, COLLISION not tied to
     existing declaration's file, plain-language comment rule absent
+
+## 2026-10-27 — 1k059 follow-up: copy-safe MAP plan line (Codex + Claude)
+
+- Subject: tea-rags 0.47.29; Codex (scratch CODEX_HOME, prime silenced) and
+  Claude `-p --plugin-dir` (sonnet), plan-only; one session per run, ×3 each.
+  Slice: `batch-map-and-blast`, `naming-diff-changes`, `naming-external-names`.
+- Fix: the Phase Order and Flow MAP lines and Phase 2 step 2 carry the same
+  literal
+  `find_symbol(project=<alias>, path=<checkout>, symbols=[<touched files>], rerank="hotspots")`
+  — Claude copied the plan line without `rerank`, Codex copied it without
+  `project`.
+- Final round: `batch-map-and-blast` 3/3 Codex, 3/3 Claude. Naming cases 3/3
+  both, with two strict-grading notes: Codex r2 wrote `review_changes` for D8
+  without inline `project`/`path`, and Claude's external `get_naming_lexicon`
+  carries no `pathPattern` (same as the HEAD baseline).

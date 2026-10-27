@@ -71,7 +71,8 @@ Meanings: `tea-rags://guide/signal-labels`. Raw value needs label → read
 ## Step 0: MODE
 
 Target's file outline / body already in the conversation and unedited since →
-that IS the probe, no call; print
+that IS the probe, no call; their labels = Step 1 signal, no label call either;
+print
 `REUSE <file> — unedited since fetch; in-context outline/body stand, no find_symbol`.
 Otherwise `find_symbol(metaOnly=true)` on named target, zero guessing:
 
@@ -397,8 +398,9 @@ Checks:
 
 1. Symbol risks — ONE
    `find_symbol(symbols: [<called / changed ids>], rerank: "criticalPath", metaOnly: true)`,
-   ≤ 5, most central first; read `rankingOverlay.chunk.<field>.label`. Not
-   `get_callers`, not existence sweep, not `dangerous`.
+   ≤ 5, most central first; read `rankingOverlay.chunk.<field>.label`. Ids
+   already labelled in context drop out of the list; the call still runs on the
+   rest. Not `get_callers`, not existence sweep, not `dangerous`.
 2. N-th-way `find_similar` (`positiveCode` = generated code) — every mode.
 3. MODIFY: `tests-at-risk` scenarios + 6a pins re-run green.
 4. **GATE `review_changes` before EVERY commit** — ONE call, ALL five sections

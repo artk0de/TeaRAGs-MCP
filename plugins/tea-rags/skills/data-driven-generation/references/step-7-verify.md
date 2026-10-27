@@ -15,10 +15,11 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 
 1. **Symbol risks** — symbols the new code calls or changes, ≤ 5, most central
    first, in ONE
-   `find_symbol(symbols: [<ids>], rerank: "criticalPath", metaOnly: true)`. Its
-   chunk mask labels `codegraph.chunk.pageRank`, `codegraph.chunk.fanIn`,
-   `codegraph.chunk.fanOut`, `bugFixRate`, `commitCount` — read
-   `rankingOverlay.chunk.<field>.label`.
+   `find_symbol(symbols: [<ids>], rerank: "criticalPath", metaOnly: true)`. Ids
+   already labelled in context drop out of the list; the call still runs on the
+   rest. Its chunk mask labels `codegraph.chunk.pageRank`,
+   `codegraph.chunk.fanIn`, `codegraph.chunk.fanOut`, `bugFixRate`,
+   `commitCount` — read `rankingOverlay.chunk.<field>.label`.
    - Callee `bugFixRate` critical → call it defensively (guard its inputs,
      handle its failure mode); confirm a test pins the scenario you rely on,
      else report it unpinned.
