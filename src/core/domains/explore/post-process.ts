@@ -272,7 +272,7 @@ const COMMENT_LINE = /^(?:\/\/|\/\*|\*|#(?![[!]))/;
  * (`TreeSitterChunker#composeBodyChunkContent`): a leading line naming one of
  * the `parentSymbolId` segments is that prefix, not the member's own line.
  */
-function chunkSignature(payload: Record<string, unknown>): string | undefined {
+export function chunkSignature(payload: Record<string, unknown>): string | undefined {
   const { content, parentSymbolId, symbolId } = payload;
   if (typeof content !== "string") return undefined;
   const isDoc = payload.isDocumentation === true;

@@ -99,6 +99,27 @@ export function offsetContinuation(carry: readonly string[] = []): ResponseConti
   };
 }
 
+/**
+ * A page the TOOL cut at `limit` (bd tea-rags-mcp-afdpc): the answer's
+ * `truncated: { returned, omitted }` gains `next` — the same call, `offset`
+ * advanced by `returned`, `limit` kept, addressed at the answer's tree — the
+ * shape the budget guard's continuation has, so one reader follows both. An
+ * answer without that block, or one whose `next` is already set, is returned
+ * unchanged.
+ */
+export function withPageContinuation<T>(tool: string, args: Record<string, unknown>, answer: T): T {
+  if (!isRecord(answer) || !isRecord(answer.truncated)) return answer;
+  const { truncated } = answer;
+  if (truncated.next !== undefined || typeof truncated.returned !== "number") return answer;
+  const offset = typeof args.offset === "number" ? args.offset : 0;
+  const next: SuggestedToolCall = {
+    tool,
+    args: { ...args, offset: offset + truncated.returned, ...toolCallAddressFromWorkingTree(workingTreeOf(answer)) },
+    why: "the rows past this page's limit",
+  };
+  return { ...answer, truncated: { ...truncated, next } };
+}
+
 interface RowCollection {
   /** Reads the collection's rows. */
   rows: readonly unknown[];

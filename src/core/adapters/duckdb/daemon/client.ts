@@ -450,6 +450,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return this.graphReads.getCallees(symbolId);
   }
 
+  async getCallersBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CallerEdge[]>> {
+    return this.graphReads.getCallersBulk(symbolIds);
+  }
+
+  async getCalleesBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CalleeEdge[]>> {
+    return this.graphReads.getCalleesBulk(symbolIds);
+  }
+
   async getAmbiguousCallersByMember(member: string, limit?: number): Promise<AmbiguousCallerSite[]> {
     return this.graphReads.getAmbiguousCallersByMember(member, limit);
   }

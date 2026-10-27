@@ -464,6 +464,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.methodEdges.getCallees(symbolId);
   }
 
+  async getCallersBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CallerEdge[]>> {
+    return this.methodEdges.getCallersBulk(symbolIds);
+  }
+
+  async getCalleesBulk(symbolIds: readonly SymbolId[]): Promise<Map<SymbolId, CalleeEdge[]>> {
+    return this.methodEdges.getCalleesBulk(symbolIds);
+  }
+
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
     return this.methodEdges.getCalleeEdges(symbolIds);
   }

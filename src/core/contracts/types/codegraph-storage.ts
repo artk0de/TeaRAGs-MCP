@@ -1266,6 +1266,19 @@ export interface CodegraphGraphReadStore {
   getCallers: (symbolId: SymbolId) => Promise<CallerEdge[]>;
   getCallees: (symbolId: SymbolId) => Promise<CalleeEdge[]>;
   /**
+   * Frontier form of {@link getCallers} (bd tea-rags-mcp-afdpc): per target in
+   * `symbolIds`, exactly the edges `getCallers` answers for it, poly-base
+   * callers included — in one read per call, for a call tree's BFS level.
+   * Targets with no caller are absent from the map.
+   */
+  getCallersBulk: (symbolIds: readonly SymbolId[]) => Promise<Map<SymbolId, CallerEdge[]>>;
+  /**
+   * Frontier form of {@link getCallees} (bd tea-rags-mcp-afdpc): per source in
+   * `symbolIds`, exactly the edges `getCallees` answers for it, file-only edges
+   * and poly-base subtypes included. Sources with no callee are absent.
+   */
+  getCalleesBulk: (symbolIds: readonly SymbolId[]) => Promise<Map<SymbolId, CalleeEdge[]>>;
+  /**
    * Lazy ambiguous-group expansion (bd tea-rags-mcp-f2jsb A4). Reads the
    * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
    * member segment — call sites whose over-cap candidate set plausibly

@@ -391,6 +391,9 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   ]),
   getCallees: read(async (graphDb, p) => graphDb.getCallees(p.symbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+  getCallersBulk: read(async (graphDb, p) => [...(await graphDb.getCallersBulk(p.symbolIds)).entries()]),
+  getCalleesBulk: read(async (graphDb, p) => [...(await graphDb.getCalleesBulk(p.symbolIds)).entries()]),
+  // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getCalleeEdges: read(async (graphDb, p) => [...(await graphDb.getCalleeEdges(p.symbolIds)).entries()]),
   // File-scoped twin (bd tea-rags-mcp-oxnvl) — a SEPARATE op, so a daemon still
   // running from an older build never receives `getCalleeEdges` with a payload

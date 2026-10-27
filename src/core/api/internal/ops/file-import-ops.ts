@@ -5,14 +5,20 @@
  * table: the files importing it, and symmetrically the files it imports. Both
  * are one `cg_symbols_edges_file` read through the collection's graph handle;
  * this class only shapes the rows — the other endpoint of each edge, heaviest
- * call weight first, `limit` applied after ordering — and turns "the graph has
+ * call weight first, `offset` / `limit` applied after ordering — and turns "the graph has
  * no such file" into a message instead of a bare empty list, which would read
  * as "nothing imports it".
  */
 
 import type { FileImportEdge, GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
-import type { FileImportersResponse, FileImportResult, FileImportsResponse } from "../../public/dto/graph.js";
+import type {
+  FileImportersResponse,
+  FileImportResult,
+  FileImportsResponse,
+  GraphPageTruncation,
+} from "../../public/dto/graph.js";
+import { pageGraphRows } from "./call-tree-ops.js";
 
 type FileImportReader = Pick<GraphDbClient, "getFileImporters" | "getFileImports">;
 
@@ -22,28 +28,40 @@ export function normalizeRelativePath(relativePath: string): RelPath {
 }
 
 export class FileImportOps {
-  async importers(graphDb: FileImportReader, relativePath: RelPath, limit: number): Promise<FileImportersResponse> {
+  async importers(
+    graphDb: FileImportReader,
+    relativePath: RelPath,
+    limit: number,
+    offset?: number,
+  ): Promise<FileImportersResponse> {
     const lookup = await graphDb.getFileImporters(relativePath);
-    const { results, total, message } = shape(
+    const { results, total, message, truncated } = shape(
       lookup.edges,
       (e) => e.sourceRelPath,
       lookup.fileKnown,
       relativePath,
       limit,
+      offset,
     );
-    return { relativePath, importers: results, total, ...unknownFileFields(message) };
+    return { relativePath, importers: results, total, ...unknownFileFields(message), ...(truncated && { truncated }) };
   }
 
-  async imports(graphDb: FileImportReader, relativePath: RelPath, limit: number): Promise<FileImportsResponse> {
+  async imports(
+    graphDb: FileImportReader,
+    relativePath: RelPath,
+    limit: number,
+    offset?: number,
+  ): Promise<FileImportsResponse> {
     const lookup = await graphDb.getFileImports(relativePath);
-    const { results, total, message } = shape(
+    const { results, total, message, truncated } = shape(
       lookup.edges,
       (e) => e.targetRelPath,
       lookup.fileKnown,
       relativePath,
       limit,
+      offset,
     );
-    return { relativePath, imports: results, total, ...unknownFileFields(message) };
+    return { relativePath, imports: results, total, ...unknownFileFields(message), ...(truncated && { truncated }) };
   }
 
   /** The answer for a collection with no graph database: nothing indexed, nothing to report. */
@@ -70,7 +88,8 @@ function shape(
   fileKnown: boolean,
   relativePath: RelPath,
   limit: number,
-): { results: FileImportResult[]; total: number; message?: string } {
+  offset: number | undefined,
+): { results: FileImportResult[]; total: number; message?: string; truncated?: GraphPageTruncation } {
   const results = edges
     .map((e) => ({
       relativePath: otherEnd(e),
@@ -85,5 +104,6 @@ function shape(
       ? `No codegraph file matches relativePath "${relativePath}". Pass a repo-relative path ` +
         "(e.g. src/app.ts — no absolute path) of a file in a language the codegraph walks."
       : undefined;
-  return { results: results.slice(0, limit), total: results.length, message };
+  const page = pageGraphRows(results, offset, limit);
+  return { results: page.rows, total: results.length, message, truncated: page.truncated };
 }
