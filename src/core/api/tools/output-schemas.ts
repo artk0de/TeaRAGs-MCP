@@ -174,6 +174,7 @@ export const SearchResultOutputSchema = {
     .describe(
       "find_symbol symbols only: addresses nothing answered; ambiguous → qualify with Class# or pathPattern; unknown path → suggestions = nearest paths.",
     ),
+  batchNotice: z.string().optional().describe("find_symbol symbols: a path outlined, not read, or a dir refused."),
   directory: z
     .object({
       kind: z.literal("directory"),

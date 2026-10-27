@@ -57,6 +57,9 @@ export {
 } from "../../contracts/resolve-rate.js";
 export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
 
+// find_symbol `symbols` batch: the full-text line cap the tool prose states (bd yz10n).
+export { BATCH_FULL_TEXT_MAX_LINES } from "../../contracts/types/symbol-batch.js";
+
 // ── Codegraph payload vocabulary ─────────────────────────────────────
 // The provider key the codegraph tool surface gates its registration on.
 // Re-exported because mcp/ may not import contracts/ directly (dependency-

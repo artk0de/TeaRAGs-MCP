@@ -470,4 +470,10 @@ describe("SearchResultOutputSchema — find_symbol batch, directory and empty an
 
     expect(schema.parse({ results: EMPTY_TABLE, missing }).missing).toEqual(missing);
   });
+
+  it("validates the batch notice of a downgraded or refused path entry (yz10n)", () => {
+    const batchNotice = "paths answer as outline in a batch";
+
+    expect(schema.parse({ results: EMPTY_TABLE, batchNotice }).batchNotice).toBe(batchNotice);
+  });
 });

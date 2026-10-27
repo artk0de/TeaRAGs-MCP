@@ -11,7 +11,7 @@
  * reported as `resolvedAs`, an ambiguity cap, and the misses.
  */
 
-import type { SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
+import { BATCH_FULL_TEXT_MAX_LINES, type SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
 import type { FileOutlineStrategy } from "./strategies/file-outline.js";
@@ -24,6 +24,11 @@ export const UNKNOWN_SYMBOL_HINT = "retry a partial address (Class or bare name)
 
 /** The next step an unknown path entry calls for. */
 const UNKNOWN_PATH_HINT = "retry a suggested path, or find_symbol(relativePath: <dir>)";
+
+/** Said once per batch answer in which a path entry was outlined instead of read, or a directory refused. */
+const BATCH_PATH_NOTICE =
+  `paths answer as outline in a batch (full text only ≤${BATCH_FULL_TEXT_MAX_LINES} lines; ` +
+  "a directory → missing) — read bodies by the member ids";
 
 /**
  * Extensions a bare root-level name (`README.md`, `package.json`) is read as a
@@ -81,16 +86,19 @@ export interface SymbolBatchAnswer {
   missing: SymbolBatchMiss[];
   /** The first codegraph skip notice any address's strategy recorded. */
   codegraphWarning?: string;
+  /** Present only when a path entry was outlined where `relativePath:` reads it, or a directory entry refused. */
+  batchNotice?: string;
 }
 
 export class SymbolBatchDrill {
   /**
-   * `outlineFor` answers a path entry (q1g6s.4) the way a single
-   * `relativePath:` does; without it every entry is a symbol address.
+   * `outlineFor` answers a path entry (q1g6s.4) under a strict full-text line
+   * cap — a file outline, not the text a single `relativePath:` may return
+   * (yz10n); without it every entry is a symbol address.
    */
   constructor(
     private readonly strategyFor: (symbol: string) => SymbolSearchStrategy,
-    private readonly outlineFor?: (relativePath: string) => FileOutlineStrategy,
+    private readonly outlineFor?: (relativePath: string, fullTextMaxLines: number) => FileOutlineStrategy,
   ) {}
 
   async execute(addresses: readonly string[], ctx: ExploreContext): Promise<SymbolBatchAnswer> {
@@ -109,14 +117,22 @@ export class SymbolBatchDrill {
       rows: answers.flatMap((a) => a.rows),
       missing: answers.flatMap((a) => (a.miss ? [a.miss] : [])),
       ...firstWarning(answers),
+      ...(answers.some((a) => a.pathDowngraded) ? { batchNotice: BATCH_PATH_NOTICE } : {}),
     };
   }
 
   private async resolve(address: string, ctx: ExploreContext): Promise<AddressAnswer> {
     if (this.outlineFor && isFilePathAddress(address)) {
-      const outline = this.outlineFor(address);
+      const outline = this.outlineFor(address, BATCH_FULL_TEXT_MAX_LINES);
       const results = await outline.execute(ctx);
-      if (results.length > 0) return { rows: results.map((result) => ({ request: address, result })) };
+      // A directory listing is a whole-tree read: refused here, answered by `relativePath:` alone.
+      if (outline.directory) return { rows: [], miss: directoryEntryMiss(address), pathDowngraded: true };
+      if (results.length > 0) {
+        return {
+          rows: results.map((result) => ({ request: address, result })),
+          pathDowngraded: outline.fullTextWithheld,
+        };
+      }
       // A bare root-level name that is no file may still be a symbol id; a slashed one is a path.
       if (address.includes("/")) return { rows: [], miss: unknownPathMiss(address, outline.emptyAnswer?.suggestions) };
     }
@@ -194,6 +210,8 @@ interface AddressAnswer {
   rows: SymbolBatchRow[];
   miss?: SymbolBatchMiss;
   warning?: string;
+  /** A path entry answered short of what `relativePath:` gives: outline for text, or a refused directory. */
+  pathDowngraded?: boolean;
 }
 
 function firstWarning(answers: readonly AddressAnswer[]): { codegraphWarning?: string } {
@@ -211,6 +229,11 @@ export function isFilePathAddress(address: string): boolean {
   if (address.includes("/")) return true;
   const extension = /^[\w.-]+\.([a-z0-9]+)$/.exec(address)?.[1];
   return extension !== undefined && BARE_FILE_EXTENSIONS.has(extension);
+}
+
+function directoryEntryMiss(address: string): SymbolBatchMiss {
+  const dir = address.replace(/\/+$/, "");
+  return { request: address, message: `directory — call find_symbol(relativePath: ${dir}) on its own` };
 }
 
 function unknownPathMiss(address: string, suggestions: readonly string[] | undefined): SymbolBatchMiss {

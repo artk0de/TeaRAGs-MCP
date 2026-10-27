@@ -10,7 +10,12 @@ import type {
   SearchResult,
   SemanticSearchRequest,
 } from "../public/dto/explore.js";
-import type { App, McpAutoUpdateTrigger, SchemaBuilderPort } from "../public/index.js";
+import {
+  BATCH_FULL_TEXT_MAX_LINES,
+  type App,
+  type McpAutoUpdateTrigger,
+  type SchemaBuilderPort,
+} from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
 import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
 import {
@@ -116,6 +121,7 @@ function formatStructuredResult(
       ...(response.next && { next: response.next }),
       ...(response.empty && { empty: response.empty }),
       ...(response.missing && { missing: response.missing }),
+      ...(response.batchNotice && { batchNotice: response.batchNotice }),
       ...(response.directory && { directory: response.directory }),
     },
     // A degraded ranking is said in text too: a reader of the text channel
@@ -198,7 +204,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "relativePath mode: small code file (≤150 lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; " +
       "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
       "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
-      "symbols mode: 1-20 symbol ids and/or file paths one call (a path answers as relativePath mode), " +
+      `symbols mode: 1-20 symbol ids / file paths (file → outline, text ≤${BATCH_FULL_TEXT_MAX_LINES} lines; dir → missing), ` +
       "rows keyed by `request`, misses in `missing` (unknown path → `suggestions`), lean payload unless fields/rerank. " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +

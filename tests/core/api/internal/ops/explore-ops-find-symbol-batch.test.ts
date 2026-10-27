@@ -219,6 +219,58 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       ]);
     });
 
+    // bd tea-rags-mcp-yz10n: a batch is not `cat` — a path entry answers its
+    // outline (member ids to drill), only a file of ≤60 lines its text.
+    describe("path entries answer outlines, not text (yz10n)", () => {
+      const linesOf = (n: number): string =>
+        `${Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join("\n")}\n`;
+
+      it("answers a file over 60 lines with its outline, though relativePath mode answers its text", async () => {
+        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } });
+
+        const batch = await facade(view()).findSymbol({ collection: "code_x", symbols: ["src/lib/h.ts"] });
+        const single = await facade(view()).findSymbol({ collection: "code_x", relativePath: "src/lib/h.ts" });
+
+        expect(batch.results).toHaveLength(1);
+        expect(batch.results[0].payload?.kind).toBeUndefined();
+        expect(batch.results[0].payload?.content).toContain("helper");
+        expect(batch.results[0].payload?.content).not.toContain("export const v0");
+        expect(single.results[0].payload?.kind).toBe("file");
+        expect(batch.batchNotice).toMatch(/outline/);
+      });
+
+      it("answers a file of exactly 60 lines with its full text and no notice", async () => {
+        const text = linesOf(60);
+        const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": text } })).findSymbol({
+          collection: "code_x",
+          symbols: ["src/lib/h.ts"],
+        });
+
+        expect(response.results[0].payload).toMatchObject({ kind: "file", content: text, endLine: 60 });
+        expect(response.batchNotice).toBeUndefined();
+      });
+
+      it("refuses a directory entry into missing with a relativePath hint, answering the rest", async () => {
+        const response = await facade().findSymbol({ collection: "code_x", symbols: ["src/lib", "helper"] });
+
+        expect(response.results.map((r) => r.payload?.request)).toEqual(["helper"]);
+        expect(response.missing).toEqual([
+          {
+            request: "src/lib",
+            message: "directory — call find_symbol(relativePath: src/lib) on its own",
+          },
+        ]);
+        expect(response.directory).toBeUndefined();
+        expect(response.batchNotice).toMatch(/directory/);
+      });
+
+      it("adds no notice to a batch of symbol ids", async () => {
+        const response = await facade().findSymbol({ collection: "code_x", symbols: ["helper", "Foo#bar"] });
+
+        expect(response.batchNotice).toBeUndefined();
+      });
+    });
+
     it("keeps FQN entries with ::, # or . as symbols", async () => {
       const response = await facade().findSymbol({ collection: "code_x", symbols: ["Foo.bar", "A::B#c"] });
 

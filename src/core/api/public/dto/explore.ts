@@ -303,6 +303,13 @@ export interface ExploreResponse {
    */
   missing?: SymbolBatchMiss[];
   /**
+   * find_symbol `symbols` batch only, and only when a path entry answered
+   * short of `relativePath:` — a file outlined instead of read (over 60 lines),
+   * or a directory refused into `missing` (bd tea-rags-mcp-yz10n). One line,
+   * never per entry.
+   */
+  batchNotice?: string;
+  /**
    * find_symbol only, when `relativePath` names a directory of indexed files:
    * what the `results` rows (one per file: relativePath, language, top-level
    * symbols) are a listing of, and the subdirectories one level down. The
