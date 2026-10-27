@@ -202,6 +202,20 @@
   logs the completion marker and throws on the pending-seed rewrite. A new
   waited write reads the returned `QdrantUpdateStatus`; it never grows a second
   loop (bd tea-rags-mcp-wjyaf).
+- **A collection's disk floor is segments × payload indexes, not points.** On
+  Qdrant 1.18.2 every APPENDABLE segment stores each payload index in gridstore
+  whatever its `on_disk` flag (`StructPayloadIndex::selector`: `on_disk` only
+  picks mmap-vs-RAM in sealed segments), preallocating a 4 MB page + 1 MB
+  tracker per map/numeric index, and a `-null` sub-index (2 × 1 MiB
+  `DynamicMmapFlags`, `MINIMAL_MMAP_SIZE`) that `build_field_indexes` adds to
+  EVERY field index unconditionally — no index param removes it, and it is what
+  answers the `is_empty` / `is_null` filters the enrichment scans issue. None of
+  those sizes is configurable, so the one lever is the segment count:
+  `QdrantCollectionAdmin#createCollection` sends `default_segment_number: 1`
+  (measured with the 59-field set, 500 points: CPU default — 6 created, 4 once
+  the optimizer settled — 1.45 GB; 2 segments 731 MB; 1 segment 368 MB). It
+  applies at creation only; a live collection keeps its segments until rebuilt
+  or until its optimizer config is updated (bd tea-rags-mcp-zd63a).
 
 ## Gotchas
 
