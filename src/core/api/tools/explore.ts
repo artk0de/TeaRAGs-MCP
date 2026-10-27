@@ -176,7 +176,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Find code similar to given snippet or previously found chunks. " +
       "Primary: paste code block into positiveCode to discover similar patterns, " +
       "duplicates, related implementations across indexed codebase. " +
-      "Also accepts chunk IDs from previous results. " +
+      "Also accepts symbolIds from previous results. " +
       "Supports negative examples to exclude unwanted patterns. " +
       "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
       'strategy="best_score" to find code maximally UNLIKE negatives — ' +

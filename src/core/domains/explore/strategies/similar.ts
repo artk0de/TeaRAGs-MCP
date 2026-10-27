@@ -23,7 +23,7 @@
 
 import { READ_PATH_EMBEDDING_RECOVERY_WAIT_MS, type EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
-import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
+import { isPointIdentifier, toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type {
   QdrantCollectionCatalog,
   QdrantPayloadIndexAdmin,
@@ -44,6 +44,9 @@ import { recordWorkingTreeDenseState } from "../working-tree/tree-graph-marker.j
 import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
+
+/** Points a symbolId example may resolve to — a symbol split into many chunks stays bounded. */
+const SYMBOL_EXAMPLE_SCROLL_LIMIT = 64;
 
 export interface SimilarSearchInput {
   positiveIds?: string[];
@@ -78,10 +81,17 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     //    when the dense floor has it, else their content to embed.
     const floor = await this.readWorkingTreeDenseFloor(ctx);
     const dense = await floor?.dense;
-    const treeContent = await this.readWorkingTreeContent(ctx);
+    const deltaRows = await this.readWorkingTreeRows(ctx);
+    const treeContent = new Map(
+      deltaRows.map((row) => [String(row.id), typeof row.payload.content === "string" ? row.payload.content : ""]),
+    );
     const treeVectors = dense?.vectors ?? new Map<string, readonly number[]>();
-    const positiveExamples = splitWorkingTreeIds(this.input.positiveIds, treeContent, treeVectors);
-    const negativeExamples = splitWorkingTreeIds(this.input.negativeIds, treeContent, treeVectors);
+    const [positiveIds, negativeIds] = await this.resolveSymbolExamples(ctx, deltaRows, [
+      this.input.positiveIds,
+      this.input.negativeIds,
+    ]);
+    const positiveExamples = splitWorkingTreeIds(positiveIds, treeContent, treeVectors);
+    const negativeExamples = splitWorkingTreeIds(negativeIds, treeContent, treeVectors);
 
     // 1. Collect code blocks to embed (filter empty strings)
     const positiveCodeBlocks = [...(this.input.positiveCode ?? []), ...positiveExamples.treeCode].filter(
@@ -161,6 +171,7 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
               negative: [...negativeExamples.treeVectors, ...negativeVectors],
               positiveIds: positiveExamples.ids,
               negativeIds: negativeExamples.ids,
+              allIds: [...(positiveIds ?? []), ...(negativeIds ?? [])],
             }),
             ctx.level === "file" ? Number.POSITIVE_INFINITY : Math.max(fetchLimit, results.length),
           )
@@ -189,6 +200,8 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
       negative: readonly (readonly number[])[];
       positiveIds: readonly string[];
       negativeIds: readonly string[];
+      /** Every example id, symbolIds already resolved — none is its own result. */
+      allIds: readonly string[];
     },
   ): Promise<ExploreResult[]> {
     const baseIds = [...examples.positiveIds, ...examples.negativeIds];
@@ -216,10 +229,7 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     // file — by its tree counterpart, the current copy of that symbol (live
     // round-3 D2).
     const exampleIds = new Set([
-      ...[...(this.input.positiveIds ?? []), ...(this.input.negativeIds ?? [])].flatMap((id) => [
-        id,
-        String(toQdrantPointId(id)),
-      ]),
+      ...examples.allIds.flatMap((id) => [id, String(toQdrantPointId(id))]),
       ...workingTreeCounterpartIds(
         view,
         rows,
@@ -244,16 +254,43 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
   }
 
   /**
-   * Content of the tree's rows by stored id; empty when the request reads no
-   * tree, the tree touched nothing, or no chunk layer can read its rows.
+   * The tree's rows; empty when the request reads no tree, the tree touched
+   * nothing, or no chunk layer can read its rows.
    */
-  private async readWorkingTreeContent(ctx: ExploreContext): Promise<ReadonlyMap<string, string>> {
+  private async readWorkingTreeRows(ctx: ExploreContext): Promise<readonly ScrollChunk[]> {
     const view = ctx.workingTreeView;
-    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return new Map();
-    const rows = await view.readDeltaChunks();
-    return new Map(
-      rows.map((row) => [String(row.id), typeof row.payload.content === "string" ? row.payload.content : ""]),
-    );
+    if (!view?.readDeltaChunks || view.touchedPaths.size === 0) return [];
+    return view.readDeltaChunks();
+  }
+
+  /**
+   * Each id list with its symbolIds replaced by the ids of the points that
+   * carry exactly that symbolId (bd tea-rags-mcp-q1g6s.16): search rows are
+   * addressed by symbolId, not by point id. The tree's own rows answer first;
+   * the index answers the rest in one scroll. A point id passes through, and a
+   * string nothing carries stays as given — the store's id mapping decides it.
+   */
+  private async resolveSymbolExamples(
+    ctx: ExploreContext,
+    deltaRows: readonly ScrollChunk[],
+    idLists: readonly (readonly string[] | undefined)[],
+  ): Promise<(string[] | undefined)[]> {
+    const symbolIds = [...new Set(idLists.flatMap((ids) => (ids ?? []).filter((id) => !isPointIdentifier(id))))];
+    if (symbolIds.length === 0) return idLists.map((ids) => (ids ? [...ids] : undefined));
+    const pointsBySymbol = new Map<string, string[]>();
+    const collect = (rows: readonly { id: string | number; payload: Record<string, unknown> }[]): void => {
+      for (const row of rows) {
+        const { symbolId } = row.payload;
+        if (typeof symbolId !== "string" || !symbolIds.includes(symbolId)) continue;
+        pointsBySymbol.set(symbolId, [...(pointsBySymbol.get(symbolId) ?? []), String(row.id)]);
+      }
+    };
+    collect(deltaRows);
+    const unresolved = symbolIds.filter((symbolId) => !pointsBySymbol.has(symbolId));
+    if (unresolved.length > 0) {
+      collect(await this.qdrant.scrollBySymbolIds(ctx.collectionName, unresolved, SYMBOL_EXAMPLE_SCROLL_LIMIT));
+    }
+    return idLists.map((ids) => ids && [...new Set(ids.flatMap((id) => pointsBySymbol.get(id) ?? [id]))]);
   }
 
   private buildFilter(

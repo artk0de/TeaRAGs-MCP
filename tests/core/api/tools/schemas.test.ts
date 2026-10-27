@@ -354,6 +354,11 @@ describe("fields hint names the search defaults (q1g6s.16)", () => {
     }
   });
 
+  it("find_similar's example ids take the symbolId a default row carries", () => {
+    expect((FindSimilarSchema.positiveIds as z.ZodTypeAny).description).toMatch(/symbolId/);
+    expect((FindSimilarSchema.negativeIds as z.ZodTypeAny).description).toMatch(/symbolId/);
+  });
+
   it("find_symbol keeps its own lean-default hint", () => {
     expect(hintOf(FindSymbolSchema)).not.toContain(DEFAULT_SEARCH_FIELDS.join(","));
   });

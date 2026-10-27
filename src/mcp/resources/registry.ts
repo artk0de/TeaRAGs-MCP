@@ -24,7 +24,7 @@ export const META_ONLY_CONTRACT =
   `No fields → search tools' payload = ${DEFAULT_META_ONLY_FIELDS.join(", ")} ` +
   "(signature = first code line, ≤160 chars; find_symbol adds chunkType, language); " +
   `content mode = ${DEFAULT_SEARCH_FIELDS.join(", ")}. Search rows carry id / score only when fields is passed; ` +
-  "Raw git.* / codegraph.* / imports / navigation dropped, rerank or not. " +
+  "find_similar positiveIds / negativeIds take a row's symbolId. Raw git.* / codegraph.* / imports / navigation dropped, rerank or not. " +
   "Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when labelled, else raw), " +
   "present whenever rerank ran. Payload never {value,label}. Raw signal → fields with its dot-path " +
   '(["git"] = whole subtree; paths + value forms same as without metaOnly).';

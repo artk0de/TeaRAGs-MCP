@@ -254,7 +254,7 @@ describe("SimilarSearchStrategy — exact pathPattern", () => {
   const embeddings = { embedBatch: vi.fn() } as unknown as EmbeddingProvider;
 
   function similarWith(query: ReturnType<typeof vi.fn>) {
-    const qdrant = { query } as unknown as QdrantManager;
+    const qdrant = { query, scrollBySymbolIds: vi.fn().mockResolvedValue([]) } as unknown as QdrantManager;
     return new SimilarSearchStrategy(qdrant, identityReranker, [], [], embeddings, { positiveIds: ["seed"] });
   }
 

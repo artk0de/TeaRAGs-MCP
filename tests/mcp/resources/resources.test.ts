@@ -166,6 +166,7 @@ describe("Resource builders", () => {
       it("states the search tools' default fields from the constants (q1g6s.16)", () => {
         expect(META_ONLY_CONTRACT).toContain(DEFAULT_META_ONLY_FIELDS.join(", "));
         expect(buildOverview()).toContain(DEFAULT_SEARCH_FIELDS.join(", "));
+        expect(META_ONLY_CONTRACT).toMatch(/positiveIds[^.]*symbolId/);
       });
 
       it("states when a rerank preset's default filter is skipped and how to clear it", () => {

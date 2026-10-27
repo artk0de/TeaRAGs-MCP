@@ -469,12 +469,15 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
   const FindSimilarSchema = {
     ...collectionPathFields(),
     ...levelField(),
-    positiveIds: z.array(z.string()).optional().describe("Chunk IDs from previous search results to find similar code"),
+    positiveIds: z
+      .array(z.string())
+      .optional()
+      .describe("symbolIds (or point ids) from previous results to find similar code"),
     positiveCode: z
       .array(z.string())
       .optional()
       .describe("Code snippets to match — one example per string, embedded on the fly."),
-    negativeIds: z.array(z.string()).optional().describe("Chunk IDs to push results away from"),
+    negativeIds: z.array(z.string()).optional().describe("symbolIds (or point ids) to push results away from"),
     negativeCode: z.array(z.string()).optional().describe("Code snippets to push results away from."),
     strategy: z
       .enum(["best_score", "average_vector", "sum_scores"])
