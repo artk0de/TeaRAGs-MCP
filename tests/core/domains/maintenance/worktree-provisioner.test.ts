@@ -444,6 +444,10 @@ describe("WorktreeProvisioner.remove indexing lock", () => {
         cloneTo: vi.fn(async () => undefined),
         clearAll: vi.fn(async () => undefined),
       }),
+      skippedFileStoreFactory: () => ({
+        cloneTo: vi.fn(async () => undefined),
+        clearAll: vi.fn(async () => undefined),
+      }),
       indexingLockStoreFactory: (baseDir, logicalName) => ({
         removeIfStale: async () =>
           new CollectionIndexingLock({ lockDir: baseDir, isProcessAlive: (pid) => pid !== DEAD_PID }).removeIfStale(

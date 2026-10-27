@@ -48,11 +48,19 @@ function fakeCodegraphStore(dbNames: string[]) {
 function fakeStores(over: { statsInvalidateThrows?: string } = {}) {
   const snapshotDeleted: string[] = [];
   const quarantineCleared: string[] = [];
+  const skippedCleared: string[] = [];
   const statsInvalidated: string[] = [];
   const lockTornDown: string[] = [];
   return {
     snapshotDeleted,
     quarantineCleared,
+    skippedCleared,
+    skippedFileStoreFactory: (_base: string, logical: string) => ({
+      cloneTo: vi.fn(async () => undefined),
+      clearAll: vi.fn(async () => {
+        skippedCleared.push(logical);
+      }),
+    }),
     statsInvalidated,
     lockTornDown,
     indexingLockStoreFactory: (_base: string, logical: string) => ({
@@ -104,6 +112,7 @@ function buildPurger(over: PurgerHarnessOverrides = {}) {
     snapshotBaseDir: "/snap",
     snapshotStoreFactory: stores.snapshotStoreFactory,
     quarantineStoreFactory: stores.quarantineStoreFactory,
+    skippedFileStoreFactory: stores.skippedFileStoreFactory,
     indexingLockStoreFactory: (over.indexingLockStoreFactory ?? stores.indexingLockStoreFactory) as never,
     ...(over.residualVerdictFile ? { residualVerdictFile: over.residualVerdictFile } : {}),
   });
@@ -220,6 +229,7 @@ describe("CollectionFootprintPurger", () => {
             snapshotBaseDir: "/snap",
             snapshotStoreFactory: stores.snapshotStoreFactory,
             quarantineStoreFactory: stores.quarantineStoreFactory,
+            skippedFileStoreFactory: stores.skippedFileStoreFactory,
             indexingLockStoreFactory: stores.indexingLockStoreFactory,
           }),
           listCodegraphDbs: (base) => files.listCollectionGenerationNames(base),
@@ -247,9 +257,16 @@ describe("CollectionFootprintPurger", () => {
 
       expect(stores.snapshotDeleted).toEqual(["code_a"]);
       expect(stores.quarantineCleared).toEqual(["code_a"]);
+      expect(stores.skippedCleared).toEqual(["code_a"]);
       expect(stores.statsInvalidated).toEqual(["code_a"]);
       expect(stores.lockTornDown).toEqual(["code_a"]);
-      expect(report.clearedStores.sort()).toEqual(["indexing-lock", "quarantine", "snapshot", "stats"]);
+      expect(report.clearedStores.sort()).toEqual([
+        "indexing-lock",
+        "quarantine",
+        "skipped-files",
+        "snapshot",
+        "stats",
+      ]);
     });
 
     it("clears the alias-keyed stores even when the collection has no Qdrant generation left", async () => {
@@ -301,7 +318,7 @@ describe("CollectionFootprintPurger", () => {
 
       expect(report.failures.map((f) => f.artifact)).toContain("stats");
       expect(report.failures.find((f) => f.artifact === "stats")?.reason).toContain("stats file busy");
-      expect(report.clearedStores.sort()).toEqual(["indexing-lock", "quarantine", "snapshot"]);
+      expect(report.clearedStores.sort()).toEqual(["indexing-lock", "quarantine", "skipped-files", "snapshot"]);
       expect(stores.snapshotDeleted).toEqual(["code_a"]);
       expect(stores.quarantineCleared).toEqual(["code_a"]);
     });

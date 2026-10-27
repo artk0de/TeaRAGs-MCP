@@ -10,6 +10,7 @@ export type ArtifactId =
   | "snapshot"
   | "stats"
   | "quarantine"
+  | "skipped-files"
   | "indexing-lock"
   | "residual-verdicts";
 

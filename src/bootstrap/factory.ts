@@ -97,6 +97,7 @@ import {
   SchemaBuilder,
   SchemaDriftMonitor,
   ShardedSnapshotManager,
+  SkippedFileStore,
   StaticPayloadBuilder,
   StatsContractDriftMonitor,
   TracePathOps,
@@ -2149,6 +2150,7 @@ function createIngestSection(deps: {
     // the footprint domain depends only on the contracts interfaces, never ingest.
     snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
     quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+    skippedFileStoreFactory: (baseDir, logicalName) => new SkippedFileStore(baseDir, logicalName),
     indexingLockStoreFactory: (baseDir, logicalName) => ({
       removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
     }),

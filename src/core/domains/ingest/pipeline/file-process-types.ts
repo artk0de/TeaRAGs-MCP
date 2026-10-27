@@ -9,7 +9,7 @@
 import type { FileExtraction } from "../../../contracts/types/codegraph.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
-import type { QuarantineStore } from "../sync/index.js";
+import type { QuarantineStore, SkippedFileStore } from "../sync/index.js";
 
 export interface FileProcessorOptions {
   enableGitMetadata: boolean;
@@ -36,6 +36,13 @@ export interface FileProcessorOptions {
    * so the common (never-failed) case pays no extra write.
    */
   quarantinedRetry?: Set<string>;
+  /**
+   * Optional deterministic-skip record (bd tea-rags-mcp-6xdwe). When set, a
+   * file skipped by the secrets gate, the compiled-bundle gate, or for blank
+   * content is recorded with its content hash; a path that later ingests with
+   * chunks is cleared. Never retried — the verdict is a function of content.
+   */
+  skippedFileStore?: SkippedFileStore;
   /**
    * yl9tv cross-pass. When set (codegraph enabled), the chunker worker also
    * emits a codegraph `FileExtraction` from the SAME parse it chunks with, and

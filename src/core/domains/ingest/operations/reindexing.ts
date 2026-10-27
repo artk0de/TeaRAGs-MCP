@@ -28,8 +28,7 @@ import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
-import { QuarantineStore } from "../sync/index.js";
-import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { QuarantineStore, SkippedFileStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { selectRechunkWorkSet } from "./rechunk-work-set.js";
 import { executeReindexPipelines } from "./reindex-parallel-executor.js";
@@ -117,7 +116,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       if (overrides?.rechunk) {
         stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
       }
-      const { changes, retryPaths, quarantineStore } = await this.detectChangesAndRetries(ctx, stats, progressCallback);
+      const { changes, retryPaths, quarantineStore, skippedFileStore } = await this.detectChangesAndRetries(
+        ctx,
+        stats,
+        progressCallback,
+      );
       const recomputeDeferral = overrides?.recomputeDeferral;
       const deferredProviderKeys = recomputeDeferral
         ? this.enrichment.resolveRecomputeDeferredProviderKeys(recomputeDeferral, [
@@ -163,7 +166,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         ctx,
         changes,
         retryPaths,
-        quarantineStore,
+        { quarantineStore, skippedFileStore },
         deferredChunkHandoff,
         stats,
         startTime,
@@ -376,7 +379,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     ctx: ReindexContext,
     stats: ChangeStats,
     progressCallback?: ProgressCallback,
-  ): Promise<{ changes: FileChanges; retryPaths: string[]; quarantineStore: QuarantineStore }> {
+  ): Promise<{
+    changes: FileChanges;
+    retryPaths: string[];
+    quarantineStore: QuarantineStore;
+    skippedFileStore: SkippedFileStore;
+  }> {
     const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
 
     this.reportScanProgress(progressCallback, resumeFromCheckpoint);
@@ -398,7 +406,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
     const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
     stats.filesRetried = retryPaths.length;
-    return { changes, retryPaths, quarantineStore };
+    // Deterministic skips are never retried; a path that left the index (deleted
+    // or newly ignored) leaves the skip record too, even on a deletion-only pass.
+    const skippedFileStore = new SkippedFileStore(this.snapshotDir, ctx.collectionName);
+    await skippedFileStore.clearMany([...changes.deleted, ...changes.newlyIgnored]);
+    return { changes, retryPaths, quarantineStore, skippedFileStore };
   }
 
   // ── Store repair ─────────────────────────────────────────
@@ -531,7 +543,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     ctx: ReindexContext,
     changes: FileChanges,
     retryPaths: string[],
-    quarantineStore: QuarantineStore,
+    stores: { quarantineStore: QuarantineStore; skippedFileStore: SkippedFileStore },
     deferredChunkHandoff: DeferredChunkRecoveryHandoff,
     stats: ChangeStats,
     startTime: number,
@@ -539,6 +551,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     chunkSizeOverride?: number,
   ): Promise<ChangeStats> {
     this.startHeartbeat(ctx.targetCollection);
+    const { quarantineStore, skippedFileStore } = stores;
     const processingCtx = this.initChangesProcessing(
       ctx,
       [...changes.added, ...changes.modified, ...retryPaths].length,
@@ -560,6 +573,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       changes,
       retryPaths,
       quarantineStore,
+      skippedFileStore,
       processingCtx,
       deleteConfig: this.deleteConfig,
       enableGitMetadata: this.config.enableGitMetadata === true,

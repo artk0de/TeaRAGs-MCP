@@ -8,3 +8,4 @@ export {
   type SymbolTableFactory,
 } from "./pool.js";
 export { ResidualVerdictStore } from "./residual-verdict-store.js";
+export { CodegraphDbFiles } from "./codegraph-db-files.js";

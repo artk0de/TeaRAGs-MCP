@@ -4,6 +4,7 @@ import type {
   CollectionFootprintPort,
   IndexingLockArtifactStoreFactory,
   QuarantineArtifactStoreFactory,
+  SkippedFilesArtifactStoreFactory,
   SnapshotArtifactStoreFactory,
 } from "../../../contracts/index.js";
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
@@ -13,6 +14,7 @@ import { IndexingLockArtifact } from "./indexing-lock-artifact.js";
 import { QdrantArtifact, type QdrantArtifactSurface } from "./qdrant-artifact.js";
 import { QuarantineArtifact } from "./quarantine-artifact.js";
 import { ResidualVerdictsArtifact } from "./residual-verdicts-artifact.js";
+import { SkippedFilesArtifact } from "./skipped-files-artifact.js";
 import { SnapshotArtifact } from "./snapshot-artifact.js";
 import { StatsArtifact } from "./stats-artifact.js";
 
@@ -26,6 +28,8 @@ export interface FootprintDeps {
   snapshotStoreFactory: SnapshotArtifactStoreFactory;
   /** Builds the per-collection quarantine store — concrete is wired by the composition root (DIP, keeps footprint out of ingest). */
   quarantineStoreFactory: QuarantineArtifactStoreFactory;
+  /** Builds the per-collection deterministic-skip record — concrete is wired by the composition root (DIP, keeps footprint out of ingest). */
+  skippedFileStoreFactory: SkippedFilesArtifactStoreFactory;
   /** Builds the per-collection indexing-lock store — concrete is wired by the composition root (DIP, keeps footprint out of ingest). */
   indexingLockStoreFactory: IndexingLockArtifactStoreFactory;
   /** Verdict-store file of a logical collection; absent → the artifact is not registered. */
@@ -59,6 +63,7 @@ export class CollectionFootprintFactory implements CollectionFootprintPort {
       snapshotBaseDir,
       snapshotStoreFactory,
       quarantineStoreFactory,
+      skippedFileStoreFactory,
       indexingLockStoreFactory,
       residualVerdictFile,
     } = this.deps;
@@ -69,6 +74,7 @@ export class CollectionFootprintFactory implements CollectionFootprintPort {
       new SnapshotArtifact(snapshotBaseDir, snapshotStoreFactory),
       new StatsArtifact(statsCache),
       new QuarantineArtifact(snapshotBaseDir, quarantineStoreFactory),
+      new SkippedFilesArtifact(snapshotBaseDir, skippedFileStoreFactory),
       new IndexingLockArtifact(snapshotBaseDir, indexingLockStoreFactory),
       ...(residualVerdictFile === undefined ? [] : [new ResidualVerdictsArtifact(residualVerdictFile)]),
     ];

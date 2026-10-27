@@ -3,6 +3,8 @@ export { ParallelFileSynchronizer } from "./parallel-synchronizer.js";
 export type { SynchronizerTuning } from "./parallel-synchronizer.js";
 export { QuarantineStore } from "./quarantine-store.js";
 export type { QuarantineEntry } from "./quarantine-store.js";
+export { SkippedFileStore } from "./skipped-file-store.js";
+export type { SkippedFileEntry } from "./skipped-file-store.js";
 export { classifyQuarantinable, classifyEmbeddingQuarantinable } from "./quarantine-classifier.js";
 export * from "./snapshot/index.js";
 export * from "./deletion/index.js";

@@ -9,14 +9,14 @@
   alias, and every artifact states its side in `readonly addressing`
   (`ArtifactAddressing`, `artifact.ts`). Qdrant points and the codegraph DuckDB
   file are `"physical"` (the versioned `_vN`, so one exists PER GENERATION); the
-  file-hash snapshot, the stats cache, the quarantine store, the indexing lock
-  and the residual verdict store are `"logical"` (the stable alias, one per
-  collection, surviving a version bump). A new artifact picks its side in that
-  field, not by convention. Why: getting it wrong diverges silently rather than
-  erroring — the measured case is the shadow-DuckDB defect (bd 6goqa), told in
-  full by `../../ingest/operations/CLAUDE.md` — and the field is what lets
-  `CollectionFootprintPurger` sweep every generation without re-encoding the
-  split as a list of artifact ids somewhere else.
+  file-hash snapshot, the stats cache, the quarantine store, the skip record,
+  the indexing lock and the residual verdict store are `"logical"` (the stable
+  alias, one per collection, surviving a version bump). A new artifact picks its
+  side in that field, not by convention. Why: getting it wrong diverges silently
+  rather than erroring — the measured case is the shadow-DuckDB defect (bd
+  6goqa), told in full by `../../ingest/operations/CLAUDE.md` — and the field is
+  what lets `CollectionFootprintPurger` sweep every generation without
+  re-encoding the split as a list of artifact ids somewhere else.
 
 ## Mechanics
 

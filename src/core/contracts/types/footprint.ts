@@ -22,6 +22,12 @@ export interface QuarantineArtifactStore {
   clearAll: () => Promise<void>;
 }
 
+/** Per-collection deterministic-skip record the skipped-files artifact clones / clears. */
+export interface SkippedFilesArtifactStore {
+  cloneTo: (targetLogicalName: string) => Promise<void>;
+  clearAll: () => Promise<void>;
+}
+
 /**
  * The codegraph DuckDB surface the footprint saga drives.
  *
@@ -71,6 +77,9 @@ export type SnapshotArtifactStoreFactory = (baseDir: string, logicalName: string
 
 /** Builds a {@link QuarantineArtifactStore} bound to (baseDir, logicalName). */
 export type QuarantineArtifactStoreFactory = (baseDir: string, logicalName: string) => QuarantineArtifactStore;
+
+/** Builds a {@link SkippedFilesArtifactStore} bound to (baseDir, logicalName). */
+export type SkippedFilesArtifactStoreFactory = (baseDir: string, logicalName: string) => SkippedFilesArtifactStore;
 
 /** A collection resolved for footprint work: the logical alias plus the physical generation it currently fronts. */
 export interface ResolvedCollection {

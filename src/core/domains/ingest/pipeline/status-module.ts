@@ -37,6 +37,7 @@ import type {
   CodegraphResolveSummary,
   EdgeKindBreakdown,
   IndexStatus,
+  SkippedFilesSummary,
 } from "../../../types.js";
 import {
   MIN_LANGUAGE_SHARE,
@@ -44,7 +45,7 @@ import {
   STALE_INDEXING_THRESHOLD_MS,
   type IndexingLockLivenessProbe,
 } from "../infra/index.js";
-import { ParallelFileSynchronizer, QuarantineStore } from "../sync/index.js";
+import { ParallelFileSynchronizer, QuarantineStore, SkippedFileStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 
 // The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
@@ -723,9 +724,11 @@ export class StatusModule {
       const dir = this.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
       const synchronizer = new ParallelFileSynchronizer(absolutePath, aliasCollectionName, dir);
       await synchronizer.deleteSnapshot();
-      // The quarantine and stats caches live as siblings of the snapshot dir, so
-      // the snapshot delete above does not reach them — drop them explicitly.
+      // The quarantine, skip record and stats caches live as siblings of the
+      // snapshot dir, so the snapshot delete above does not reach them — drop
+      // them explicitly.
       await new QuarantineStore(dir, aliasCollectionName).clearAll();
+      await new SkippedFileStore(dir, aliasCollectionName).clearAll();
       new StatsCache(dir).invalidate(aliasCollectionName);
     } catch (_error) {
       // Ignore snapshot deletion errors
@@ -743,6 +746,16 @@ export class StatusModule {
     if (!this.snapshotDir) return undefined;
     const count = await new QuarantineStore(this.snapshotDir, reportedName).count();
     return count > 0 ? { count } : undefined;
+  }
+
+  /**
+   * Whole-index deterministic-skip summary (bd tea-rags-mcp-6xdwe) — count by
+   * reason only. Paths stay out of the status surface; the CLI `--json` result
+   * attaches its own bounded sample.
+   */
+  private async loadSkippedFilesSummary(reportedName: string): Promise<SkippedFilesSummary | undefined> {
+    if (!this.snapshotDir) return undefined;
+    return new SkippedFileStore(this.snapshotDir, reportedName).summarize();
   }
 
   /**
@@ -864,6 +877,7 @@ export class StatusModule {
         enrichment,
         ...(await this.readCodegraphReport(sourceCollection)),
         quarantine: await this.loadQuarantineSummary(reportedName),
+        skippedFiles: await this.loadSkippedFilesSummary(reportedName),
       };
     }
 

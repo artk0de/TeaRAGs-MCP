@@ -25,6 +25,21 @@ pipeline, operations and enrichment halves each carry their own.
   drop the explicit `clearAll` on the assumption that snapshot deletion reaps
   it, and quarantine state leaks across a collection delete, hiding files from
   the next index.
+- **`skipped.json` sits beside `quarantine.json` for the same reason, and is
+  NEVER a retry list.** `SkippedFileStore` (`sync/skipped-file-store.ts`)
+  records the deliberate no-points verdicts — secrets gate, compiled bundle,
+  blank content (`DeterministicSkipReason`) — written from
+  `SourceFileIngestor#ingest` with the content hash, cleared there when the path
+  next ingests with chunks, pruned by `ReindexPipeline#detectChangesAndRetries`
+  for deleted / newly ignored paths, and wiped on a forced rebuild
+  (`IndexPipeline#openRunSkippedFileStore`) and by `StatusModule#clearIndex`.
+  `SkippedFileStore#paths` is the set a snapshot-vs-points consistency check
+  subtracts before calling a file lost (bd muj77). Why: folding these into the
+  quarantine would retry every secrets-gated file on every pass for a verdict
+  that is a pure function of its content; leaving them unrecorded made a
+  deliberate skip indistinguishable from a lost file (bd 6xdwe). An index built
+  before the store existed has no entries for its old skips until those files
+  change or a `--force` re-judges them.
 
 ## Boundaries
 

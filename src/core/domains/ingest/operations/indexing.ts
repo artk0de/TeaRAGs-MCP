@@ -32,7 +32,7 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import { QuarantineStore, type ParallelFileSynchronizer } from "../sync/index.js";
+import { QuarantineStore, SkippedFileStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { computeNewVersion, findAliasTarget, resolvePhysicalCollection } from "./version-resolver.js";
 
@@ -68,6 +68,7 @@ interface IndexLegContext {
   synchronizer: ParallelFileSynchronizer;
   ctx: ProcessingContext;
   quarantineStore: QuarantineStore;
+  skippedFileStore: SkippedFileStore;
   modelInfo?: { model: string; contextLength: number; dimensions: number };
 }
 
@@ -123,6 +124,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       }
 
       const quarantineStore = await this.openRunQuarantineStore(aliasCollectionName, options?.forceReindex === true);
+      const skippedFileStore = await this.openRunSkippedFileStore(aliasCollectionName, options?.forceReindex === true);
       const { synchronizer, contentHashes } = await this.hashRunCorpus(absolutePath, aliasCollectionName, files);
 
       const ctx = this.initProcessing(
@@ -148,6 +150,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
           synchronizer,
           ctx,
           quarantineStore,
+          skippedFileStore,
           modelInfo: overrides?.modelInfo,
         },
         stats,
@@ -220,6 +223,22 @@ export class IndexPipeline extends BaseIndexingPipeline {
     return quarantineStore;
   }
 
+  /**
+   * The deterministic-skip record, alias-keyed like the quarantine. A full
+   * rebuild (forceReindex, schema drift) starts it empty: every file is
+   * re-judged on this pass, so a stale verdict would only overstate the skips.
+   */
+  private async openRunSkippedFileStore(
+    aliasCollectionName: CollectionAlias,
+    forceReindex: boolean,
+  ): Promise<SkippedFileStore> {
+    const skippedFileStore = new SkippedFileStore(this.snapshotDir, aliasCollectionName);
+    if (forceReindex) {
+      await skippedFileStore.clearAll();
+    }
+    return skippedFileStore;
+  }
+
   private async hashRunCorpus(
     absolutePath: string,
     aliasCollectionName: CollectionAlias,
@@ -252,7 +271,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
     startTime: number,
     progressCallback: ProgressCallback | undefined,
   ): Promise<IndexStats> {
-    const { files, absolutePath, aliasCollectionName, setup, synchronizer, ctx, quarantineStore } = leg;
+    const { files, absolutePath, aliasCollectionName, setup, synchronizer, ctx, quarantineStore, skippedFileStore } =
+      leg;
     const heartbeat = new HeartbeatGuard({
       start: () => {
         this.startHeartbeat(setup.targetCollection);
@@ -268,7 +288,13 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
       // harmless here (no deletes during initial index).
       return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
-        const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
+        const result = await this.processAndTrack(
+          files,
+          absolutePath,
+          ctx,
+          { quarantineStore, skippedFileStore },
+          progressCallback,
+        );
         stats.filesIndexed = result.filesProcessed;
         stats.chunksCreated = result.chunksCreated;
         if (result.errors.length > 0) {
@@ -541,9 +567,10 @@ export class IndexPipeline extends BaseIndexingPipeline {
     files: string[],
     absolutePath: string,
     ctx: ProcessingContext,
-    quarantineStore: QuarantineStore,
+    stores: { quarantineStore: QuarantineStore; skippedFileStore: SkippedFileStore },
     progressCallback?: ProgressCallback,
   ) {
+    const { quarantineStore, skippedFileStore } = stores;
     let filesProcessed = 0;
     let chunksQueued = 0;
 
@@ -573,6 +600,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         maxTotalChunks: this.config.maxTotalChunks,
         concurrency: this.tuning.fileConcurrency,
         quarantineStore,
+        skippedFileStore,
         // yl9tv Task 5b cross-pass tee: on the full-index path, forward each
         // file's codegraph FileExtraction (from the chunker's single parse) to
         // the coordinator → MAIN-thread provider's acceptExtraction, which

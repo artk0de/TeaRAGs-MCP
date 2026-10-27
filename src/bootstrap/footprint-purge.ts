@@ -12,7 +12,6 @@
 
 import { join } from "node:path";
 
-import { CodegraphDbFiles } from "../core/adapters/duckdb/codegraph-db-files.js";
 import {
   DaemonDatabaseFileReplacer,
   getStorageDir,
@@ -20,7 +19,7 @@ import {
   readRefs,
   resolveDaemonClientTarget,
 } from "../core/adapters/duckdb/daemon/index.js";
-import { ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
+import { CodegraphDbFiles, ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
 import { StatsCache } from "../core/adapters/filesystem/stats-cache.js";
 import type {
   QdrantAliasAccess,
@@ -35,6 +34,7 @@ import {
   CollectionIndexingLock,
   QuarantineStore,
   ShardedSnapshotManager,
+  SkippedFileStore,
   type CodegraphDaemonLiveness,
   type CollectionRegistry,
 } from "../core/api/index.js";
@@ -106,6 +106,7 @@ export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): Colle
     snapshotBaseDir,
     snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
     quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+    skippedFileStoreFactory: (baseDir, logicalName) => new SkippedFileStore(baseDir, logicalName),
     indexingLockStoreFactory: (baseDir, logicalName) => ({
       removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
     }),

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StatsCache } from "../../../src/core/adapters/filesystem/stats-cache.js";
 import { IngestFacade } from "../../../src/core/api/index.js";
 import { QuarantineStore } from "../../../src/core/domains/ingest/sync/quarantine-store.js";
+import { SkippedFileStore } from "../../../src/core/domains/ingest/sync/skipped-file-store.js";
 import { ShardedSnapshotManager } from "../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { CollectionFootprintFactory } from "../../../src/core/domains/maintenance/footprint/factory.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
@@ -216,6 +217,7 @@ describe("IngestFacade — first index of a git worktree seeded from its indexed
         snapshotBaseDir: snapshotDir,
         snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
         quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+        skippedFileStoreFactory: (baseDir, logicalName) => new SkippedFileStore(baseDir, logicalName),
         indexingLockStoreFactory: () => ({ removeIfStale: async () => Promise.resolve({ status: "absent" as const }) }),
       }),
     });

@@ -14,6 +14,8 @@ import { readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { snapshotsDir } from "../../bootstrap/config/index.js";
+import { SkippedFileStore } from "../../core/api/index.js";
 import { isEnrichmentRecompute, type App, type IndexOptions, type IndexStatus } from "../../core/api/public/index.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
 import { installParentDeathGuard } from "./parent-death-guard.js";
@@ -84,6 +86,22 @@ export function resolveCodegraphSizeBytes(collectionName: string | undefined): n
   const walPath = `${dbPath}.wal`;
   const size = computeFileSize(dbPath) + computeFileSize(walPath);
   return size > 0 ? size : undefined;
+}
+
+/** Paths the `--json` result names per skipped-files summary; the count and reasons cover the rest. */
+export const SKIPPED_FILES_SAMPLE_LIMIT = 10;
+
+/**
+ * The status's skipped-files summary with a bounded path sample read from the
+ * collection's skip record — the CLI result is the one surface that names paths
+ * (`get_index_status` keeps counts only). Empty when the status reports none.
+ */
+export async function resolveSkippedFilesWithSample(status: IndexStatus): Promise<Pick<IndexStatus, "skippedFiles">> {
+  if (!status.skippedFiles || !status.collectionName) return {};
+  const withSample = await new SkippedFileStore(snapshotsDir(), status.collectionName).summarize({
+    sampleLimit: SKIPPED_FILES_SAMPLE_LIMIT,
+  });
+  return { skippedFiles: withSample ?? status.skippedFiles };
 }
 
 /** Classify per-provider enrichment health into failed / degraded provider keys. */
@@ -197,6 +215,7 @@ export async function runIndexWorker(
       ...worktreeSeed,
       ...rustcDriver,
       ...scopedRechunk,
+      ...(await resolveSkippedFilesWithSample(earlyStatus)),
       ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
   });
@@ -224,6 +243,7 @@ export async function runIndexWorker(
     ...worktreeSeed,
     ...rustcDriver,
     ...scopedRechunk,
+    ...(await resolveSkippedFilesWithSample(finalStatus)),
     ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };
   send({ type: "status", status: enrichedFinalStatus });

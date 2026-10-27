@@ -8,6 +8,7 @@ import { fixturePhysicalCollectionName } from "../../__helpers__/collection-iden
 import { INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
 import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
+import { SkippedFileStore } from "../../../../src/core/domains/ingest/sync/skipped-file-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { IndexingLockHeldError } from "../../../../src/core/domains/maintenance/errors.js";
 import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
@@ -15,6 +16,7 @@ import { CollectionFootprintFactory } from "../../../../src/core/domains/mainten
 import { IndexingLockArtifact } from "../../../../src/core/domains/maintenance/footprint/indexing-lock-artifact.js";
 import { QdrantArtifact } from "../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
 import { QuarantineArtifact } from "../../../../src/core/domains/maintenance/footprint/quarantine-artifact.js";
+import { SkippedFilesArtifact } from "../../../../src/core/domains/maintenance/footprint/skipped-files-artifact.js";
 import { SnapshotArtifact } from "../../../../src/core/domains/maintenance/footprint/snapshot-artifact.js";
 import { StatsArtifact } from "../../../../src/core/domains/maintenance/footprint/stats-artifact.js";
 
@@ -39,6 +41,7 @@ describe("CollectionFootprintFactory", () => {
     snapshotBaseDir: "/snap",
     snapshotStoreFactory: (b: string, l: string) => new ShardedSnapshotManager(b, l),
     quarantineStoreFactory: (b: string, l: string) => new QuarantineStore(b, l),
+    skippedFileStoreFactory: (b: string, l: string) => new SkippedFileStore(b, l),
     indexingLockStoreFactory: (b: string, l: string) => ({
       removeIfStale: async () => new CollectionIndexingLock({ lockDir: b }).removeIfStale(l),
     }),
@@ -56,8 +59,10 @@ describe("CollectionFootprintFactory", () => {
       "snapshot",
       "stats",
       "quarantine",
+      "skipped-files",
       "indexing-lock",
     ]);
+    expect(artifacts.find((a) => a.id === "skipped-files")?.addressing).toBe("logical");
     expect(context.target.logicalName).toBe("code_dst");
   });
 });
@@ -355,6 +360,43 @@ describe("QuarantineArtifact", () => {
     };
     await artifact.remove(ctx);
     expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(false);
+  });
+});
+
+describe("SkippedFilesArtifact", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "skip-art-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const artifact = () => new SkippedFilesArtifact(dir, (b, l) => new SkippedFileStore(b, l));
+  const ctx = (source: string) => ({
+    source: { ...resolved(), logicalName: source },
+    target: { ...resolved(), logicalName: "code_dst" },
+  });
+
+  it("clone: the target alias gets the source's skip record", async () => {
+    await new SkippedFileStore(dir, "code_src").record("creds.ts", "secretsGate", "h");
+
+    await artifact().clone(ctx("code_src"));
+
+    expect((await new SkippedFileStore(dir, "code_dst").paths()).has("creds.ts")).toBe(true);
+  });
+
+  it("clone: is a no-op when the source has no skip record", async () => {
+    await artifact().clone(ctx("code_missing"));
+
+    expect(existsSync(join(dir, "code_dst.skipped.json"))).toBe(false);
+  });
+
+  it("remove: drops the TARGET's skip record", async () => {
+    await new SkippedFileStore(dir, "code_dst").record("creds.ts", "secretsGate", "h");
+
+    await artifact().remove(ctx("code_src"));
+
+    expect(existsSync(join(dir, "code_dst.skipped.json"))).toBe(false);
   });
 });
 

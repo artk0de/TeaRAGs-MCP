@@ -339,6 +339,60 @@ describe("StatusModule", () => {
         expect(status.quarantine).toBeUndefined();
       });
 
+      describe("skippedFiles (bd tea-rags-mcp-6xdwe)", () => {
+        const skippedPath = (collectionName: string | undefined) =>
+          join(process.env.TEA_RAGS_DATA_DIR!, "snapshots", `${collectionName}.skipped.json`);
+
+        it("counts the deterministically skipped files by reason, with no sample paths", async () => {
+          await createTestFile(codebaseDir, "real.ts", "export const real = 1;\nconsole.log('kept');");
+          await createTestFile(codebaseDir, "creds.ts", `export const password = "hunter2hunter2";\n`);
+          await createTestFile(codebaseDir, "blank.ts", "\n   \n");
+
+          await ingest.indexCodebase(codebaseDir);
+          const status = await ingest.getIndexStatus(codebaseDir);
+
+          expect(status.skippedFiles).toEqual({ count: 2, byReason: { secretsGate: 1, emptyFile: 1 } });
+        });
+
+        it("omits skippedFiles when every file produced points", async () => {
+          await createTestFile(codebaseDir, "real.ts", "export const real = 2;\nconsole.log('kept');");
+          await ingest.indexCodebase(codebaseDir);
+
+          expect((await ingest.getIndexStatus(codebaseDir)).skippedFiles).toBeUndefined();
+        });
+
+        it("a forced rebuild drops verdicts it no longer reaches", async () => {
+          await createTestFile(codebaseDir, "real.ts", "export const real = 3;\nconsole.log('kept');");
+          await ingest.indexCodebase(codebaseDir);
+          const indexed = await ingest.getIndexStatus(codebaseDir);
+          await fs.writeFile(
+            skippedPath(indexed.collectionName),
+            JSON.stringify({
+              version: 1,
+              updatedAt: "t",
+              files: { "ghost.ts": { reason: "secretsGate", contentHash: "h", recordedAt: "t" } },
+            }),
+            "utf-8",
+          );
+
+          await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+          expect((await ingest.getIndexStatus(codebaseDir)).skippedFiles).toBeUndefined();
+        });
+
+        it("an incremental pass drops the verdict of a deleted file", async () => {
+          await createTestFile(codebaseDir, "real.ts", "export const real = 4;\nconsole.log('kept');");
+          await createTestFile(codebaseDir, "creds.ts", `export const password = "hunter2hunter2";\n`);
+          await ingest.indexCodebase(codebaseDir);
+          expect((await ingest.getIndexStatus(codebaseDir)).skippedFiles?.count).toBe(1);
+
+          await fs.rm(join(codebaseDir, "creds.ts"));
+          await ingest.reindexChanges(codebaseDir);
+
+          expect((await ingest.getIndexStatus(codebaseDir)).skippedFiles).toBeUndefined();
+        });
+      });
+
       // Task 6 (Workstream E): indexSizeBytes / enrichmentMetrics / projectName
       // on IndexStatus DTO. All three fields are OPTIONAL — this test verifies:
       // 1. chunksCount is still populated (real source: Qdrant points_count).
@@ -1173,6 +1227,19 @@ describe("StatusModule", () => {
         );
       expect(await exists(quarantinePath)).toBe(false);
       expect(await exists(statsPath)).toBe(false);
+    });
+
+    it("removes the deterministic-skip sibling file on clear", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const c = 2;\nconsole.log('skip cleanup');");
+      await createTestFile(codebaseDir, "creds.ts", `export const password = "hunter2hunter2";\n`);
+      await ingest.indexCodebase(codebaseDir);
+      const indexed = await ingest.getIndexStatus(codebaseDir);
+      const skippedPath = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots", `${indexed.collectionName}.skipped.json`);
+      await fs.access(skippedPath);
+
+      await ingest.clearIndex(codebaseDir);
+
+      await expect(fs.access(skippedPath)).rejects.toThrow();
     });
   });
 

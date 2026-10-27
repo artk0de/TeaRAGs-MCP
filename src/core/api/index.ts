@@ -177,9 +177,9 @@ export {
   WorkerPoolEnrichmentExecutor,
 } from "../domains/ingest/pipeline/index.js";
 
-// ingest/infra + ingest/sync — the indexing lock, quarantine and snapshot stores
+// ingest/infra + ingest/sync — the indexing lock, quarantine, skip record and snapshot stores
 export { CollectionIndexingLock } from "../domains/ingest/infra/index.js";
-export { QuarantineStore, ShardedSnapshotManager } from "../domains/ingest/sync/index.js";
+export { QuarantineStore, ShardedSnapshotManager, SkippedFileStore } from "../domains/ingest/sync/index.js";
 
 // explore — the working-tree overlay and its stores, readers and sweeps
 export {

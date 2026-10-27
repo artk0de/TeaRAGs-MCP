@@ -21,6 +21,7 @@ import type {
   EnrichmentProgressEvent,
   IndexingStatus,
   ProgressUpdate,
+  SkippedFilesSummary,
 } from "../../../types.js";
 import type { CollectionIdentifier } from "./common.js";
 import type { WorkingTreeMarker } from "./working-tree.js";
@@ -279,6 +280,13 @@ export interface IndexStatus {
    * absent.
    */
   codegraphSizeBytes?: number;
+  /**
+   * Files the index holds NO points for by design (secrets gate, compiled
+   * bundle, blank content), counted by reason over the whole index (bd
+   * tea-rags-mcp-6xdwe). Omitted when none. `sample` is attached only by the
+   * CLI `index-codebase --json` result, never by `get_index_status`.
+   */
+  skippedFiles?: SkippedFilesSummary;
   /**
    * Minimal per-run enrichment metrics (matched/missed/durations).
    * Omitted at status-read time: full EnrichmentMetrics is in-memory per-run only;

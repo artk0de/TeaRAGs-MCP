@@ -10,7 +10,8 @@
  *
  * Reasons:
  *   - `emptyFile`  — the file has no non-blank text (nothing grep could find);
- *   - `secrets` / `compiled` — the pre-parse content gate rejected the file;
+ *   - `secretsGate` / `compiled` — the pre-parse content gate rejected the file
+ *     (the names the ingest skip record, `<collection>.skipped.json`, persists);
  *   - `zeroChunks` — non-blank text, no gate, and still no chunk (the defect);
  *   - `parseError` — `chunkWithTree` threw (the run would quarantine it);
  *   - `missing`    — the listed path does not exist under the root.
@@ -32,7 +33,7 @@ import type * as LanguageModule from "../../src/core/domains/language/index.js";
 // `--build <dir>` points at another checkout's `build/` (a before/after comparison).
 const BUILD = join(argValue("--build") ?? join(import.meta.dirname, "..", "..", "build"), "core");
 
-type ZeroChunkReason = "emptyFile" | "secrets" | "compiled" | "zeroChunks" | "parseError" | "missing";
+type ZeroChunkReason = "emptyFile" | "secretsGate" | "compiled" | "zeroChunks" | "parseError" | "missing";
 
 function argValue(flag: string): string | undefined {
   const at = process.argv.indexOf(flag);
@@ -80,7 +81,9 @@ async function main(): Promise<void> {
       const language = detectLanguage(filePath);
       if (code.trim() === "") reason = "emptyFile";
       else {
-        reason = sourceContentSkipReason(filePath, relativePath, code, language);
+        // Report the gate under the name the skip record persists (`secretsGate`).
+        const gate = sourceContentSkipReason(filePath, relativePath, code, language);
+        reason = gate === "secrets" ? "secretsGate" : gate;
         if (!reason) {
           try {
             const { chunks } = await chunker.chunkWithTree(code, filePath, language);

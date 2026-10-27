@@ -321,3 +321,32 @@ describe("get_index_status — rustc driver line (s3i8m T9)", () => {
     expect(text).not.toContain("rustc driver");
   });
 });
+
+describe("get_index_status — skipped files line (bd tea-rags-mcp-6xdwe)", () => {
+  function harnessWith(skippedFiles: IndexStatus["skippedFiles"]) {
+    const { handler, app } = makeStatusHarness(vi.fn().mockResolvedValue(null));
+    vi.mocked(app.getIndexStatus).mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "code_abc",
+      chunksCount: 100,
+      ...(skippedFiles ? { skippedFiles } : {}),
+    });
+    return handler;
+  }
+
+  it("prints one compact line instead of a JSON block", async () => {
+    const handler = harnessWith({ count: 7, byReason: { secretsGate: 4, emptyFile: 3 } });
+
+    const { text } = (await handler({ path: "/repo" }, {})).content[0];
+
+    expect(text).toContain("\n\nskipped files: 7 (secretsGate 4, emptyFile 3)");
+    expect(text).not.toContain('"skippedFiles"');
+  });
+
+  it("prints nothing when no file is skipped", async () => {
+    const { text } = (await harnessWith(undefined)({ path: "/repo" }, {})).content[0];
+
+    expect(text).not.toContain("skipped files");
+  });
+});

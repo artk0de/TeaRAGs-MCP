@@ -67,7 +67,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
         return formatMcpText(text);
       }
 
-      const { enrichment, infraHealth, ...rest } = status;
+      const { enrichment, infraHealth, skippedFiles, ...rest } = status;
       const response: Record<string, unknown> = { ...rest };
       if (enrichment) {
         response.enrichment = enrichment;
@@ -83,6 +83,9 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
           }
         }
       }
+
+      // Deliberate no-points files ride as one line, never a JSON block.
+      if (skippedFiles && skippedFiles.count > 0) text += `\n\n${formatSkippedFilesLine(skippedFiles)}`;
 
       const details = formatCollectionDetails(infraHealth?.qdrant);
       if (details) text += `\n\n${details}`;
@@ -133,6 +136,15 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       return formatMcpResponse(metrics);
     },
   );
+}
+
+/** `skipped files: 7 (secretsGate 4, emptyFile 3)` — the whole-index deterministic-skip count, reasons by size. */
+export function formatSkippedFilesLine(skippedFiles: NonNullable<IndexStatus["skippedFiles"]>): string {
+  const reasons = Object.entries(skippedFiles.byReason)
+    .filter(([, n]) => (n ?? 0) > 0)
+    .sort(([, a], [, b]) => (b ?? 0) - (a ?? 0))
+    .map(([reason, n]) => `${reason} ${n}`);
+  return `skipped files: ${skippedFiles.count} (${reasons.join(", ")})`;
 }
 
 /**

@@ -180,6 +180,12 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
     base.codegraphSizeBytes = status.codegraphSizeBytes;
   }
 
+  // Files the index holds no points for by design, with the worker's bounded
+  // path sample — what a snapshot-vs-points check subtracts (bd 6xdwe).
+  if (status.skippedFiles) {
+    base.skippedFiles = status.skippedFiles;
+  }
+
   if (extra.overallMs !== undefined) {
     base.overallMs = extra.overallMs;
   }

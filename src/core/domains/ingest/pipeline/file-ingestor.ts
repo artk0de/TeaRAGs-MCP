@@ -14,7 +14,8 @@
 
 import { promises as fs } from "node:fs";
 
-import type { CodeChunk } from "../../../types.js";
+import { fileContentHash } from "../../../primitives/ids/index.js";
+import type { CodeChunk, DeterministicSkipReason } from "../../../types.js";
 import { classifyQuarantinable } from "../sync/index.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import { toChunkPointInput } from "./chunk-point-payload.js";
@@ -30,6 +31,15 @@ import { pipelineLog, type FileIngestRecord } from "./infra/debug-log/index.js";
 
 /** Reasons a file is dropped BEFORE it is parsed — cheapest gates first. */
 type PreParseSkipReason = Extract<FileIngestRecord["skipReason"], "delete-failed" | "secrets" | "compiled">;
+
+/**
+ * Pre-parse skips that are a function of content alone, under their persisted
+ * name. `delete-failed` is absent: it is a run-state barrier, not a verdict.
+ */
+const DETERMINISTIC_SKIP_REASONS: Partial<Record<PreParseSkipReason, DeterministicSkipReason>> = {
+  secrets: "secretsGate",
+  compiled: "compiled",
+};
 
 /** What submitting one file's chunks to the pipeline produced. */
 interface FileChunkSubmissionOutcome {
@@ -70,6 +80,8 @@ export class SourceFileIngestor {
         if (skipReason === "secrets") {
           result.errors.push(`Skipped ${filePath}: potential secrets detected`);
         }
+        const recordedReason = DETERMINISTIC_SKIP_REASONS[skipReason];
+        if (recordedReason) await this.recordDeterministicSkip(relativePath, recordedReason, code);
         this.report({ path: relativePath, language, bytes, chunks: 0, parseMs: 0, skipped: true, skipReason });
         return;
       }
@@ -125,6 +137,13 @@ export class SourceFileIngestor {
       // A previously-quarantined file that now succeeds is un-quarantined.
       if (options.quarantineStore && options.quarantinedRetry?.has(relativePath)) {
         await options.quarantineStore.clear(relativePath);
+      }
+      // Blank content is the one deterministic skip the chunker decides: no
+      // chunk, nothing to store. Any chunk at all clears a stale skip record.
+      if (chunksToAdd.length === 0 && code.trim() === "") {
+        await this.recordDeterministicSkip(relativePath, "emptyFile", code);
+      } else if (chunksToAdd.length > 0) {
+        await options.skippedFileStore?.clear(relativePath);
       }
       callbacks?.onFileProcessed?.(filePath, chunksToAdd.length);
       this.report({ path: relativePath, language, bytes, chunks: chunksToAdd.length, parseMs });
@@ -236,6 +255,15 @@ export class SourceFileIngestor {
       skipped: true,
       skipReason: quarantinable ? "quarantined" : "error",
     });
+  }
+
+  /** Persist a deliberate no-points verdict so a snapshot-vs-points check reads it as a skip, not a loss. */
+  private async recordDeterministicSkip(
+    relativePath: string,
+    reason: DeterministicSkipReason,
+    code: string,
+  ): Promise<void> {
+    await this.deps.options.skippedFileStore?.record(relativePath, reason, fileContentHash(code));
   }
 
   private report(record: FileIngestRecord): void {

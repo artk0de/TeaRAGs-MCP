@@ -26,7 +26,7 @@ import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
-import type { QuarantineStore } from "../sync/index.js";
+import type { QuarantineStore, SkippedFileStore } from "../sync/index.js";
 
 export interface ReindexExecutionParams {
   qdrant: QdrantOptimizerControl & QdrantCollectionCatalog & QdrantPointWriter;
@@ -37,6 +37,8 @@ export interface ReindexExecutionParams {
   /** Quarantined paths re-attempted this pass; they join the added bucket. */
   retryPaths: string[];
   quarantineStore: QuarantineStore;
+  /** Deterministic-skip record (bd tea-rags-mcp-6xdwe); absent → skips go unrecorded. */
+  skippedFileStore?: SkippedFileStore;
   processingCtx: ProcessingContext;
   deleteConfig: DeletionConfig;
   enableGitMetadata: boolean;
@@ -83,6 +85,7 @@ interface ReindexExecutionPlan {
     concurrency: number;
     quarantineStore?: QuarantineStore;
     quarantinedRetry?: Set<string>;
+    skippedFileStore?: SkippedFileStore;
   };
   parallelStart: number;
 }
@@ -152,6 +155,7 @@ function planReindexExecution(params: ReindexExecutionParams): ReindexExecutionP
     concurrency: params.fileConcurrency,
     quarantineStore: params.quarantineStore,
     quarantinedRetry: new Set(retryPaths),
+    skippedFileStore: params.skippedFileStore,
   };
 
   const parallelStart = Date.now();

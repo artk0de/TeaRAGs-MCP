@@ -550,6 +550,20 @@ export interface CodegraphResolveKindRow {
   resolveSuccessRate: number | null;
 }
 
+/**
+ * Why a file deterministically produced NO points. The same content yields the
+ * same verdict on every pass, so these are never retried (unlike quarantine).
+ */
+export type DeterministicSkipReason = "secretsGate" | "compiled" | "emptyFile";
+
+/** Whole-index summary of the deterministically skipped files. */
+export interface SkippedFilesSummary {
+  count: number;
+  byReason: Partial<Record<DeterministicSkipReason, number>>;
+  /** First paths by path order — set only by the CLI `--json` result (≤10). */
+  sample?: { path: string; reason: DeterministicSkipReason }[];
+}
+
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
@@ -577,6 +591,14 @@ export interface IndexStatus {
    * `tea-rags doctor <project> --quarantine`, not exposed here.
    */
   quarantine?: { count: number };
+  /**
+   * Files the index holds NO points for by design — secrets gate, compiled
+   * bundle, blank content — read from `<collection>.skipped.json`, so it covers
+   * the whole index, not only the last run. Omitted when nothing is skipped.
+   * `sample` is never set here: only the CLI `index-codebase --json` result
+   * attaches one.
+   */
+  skippedFiles?: SkippedFilesSummary;
   /**
    * On-disk size of the codegraph database in bytes, when CODEGRAPH_ENABLED.
    * Reported separately from the Qdrant collection size
