@@ -21,7 +21,11 @@ used" / every occurrence of an exact name, constant or string → occurrence
 route, any codegraph state: shell grep -rl `"<X>" <dir>` (literal, `-l`; `<dir>`
 = the anchor's dir when known, else the source root — never a search to find it)
 → `find_symbol` outline → batch of only the needed methods; never
-`hybrid_search` for it. "Callers of X" → decide codegraph first (plan line
+`hybrid_search` for it. Concept words, synonyms or spellings, even one
+`<a>|<b>|<c>` regex, are not an exact name → EXPLAIN: `semantic_search`
+(`hybrid_search(metaOnly)` when real ids are among them) → anchor →
+`get_callees`/`get_callers` → ONE batch of only the needed methods; never a
+text-search alternation. "Callers of X" → decide codegraph first (plan line
 below); on → `Strategy: codegraph row 2` (`get_callers`), never TRACE-only
 `hybrid_search`. Off (or off branch of an unknown state) → TRACE loop, copied, ≥
 2 calls: `hybrid_search(query="<X>", metaOnly=true)` → per caller hit

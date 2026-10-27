@@ -1149,3 +1149,35 @@ merges every part — the epic's target.
   `find_symbol` read of the hits — the request is "grep for", so the case's
   "hits read by find_symbol" is ambiguous; explore 14 R3 r3 dropped
   `get_callers` for "all callers" (callers row unchanged since R1 3/3).
+
+## 2026-10-27 — concept alternations are behaviour questions (c9aft, tea-rags 0.47.37)
+
+- Benchmark evidence: early text searches were concept searches written as a
+  regex alternation of synonyms and spellings; core's usages row licensed them
+  ("files containing X …, even `a|b`").
+- New cases A1 (throttling behaviour named by concept words, no identifier seen)
+  and A2 (guard: an exact constant still takes the bounded occurrence search).
+  One session per run carries A1, A2, G1, R1, R2, R3, 8.
+- core.md: the behaviour row moves above the non-identifier text row and takes
+  concept words / synonyms / spellings, even as `a|b` → `semantic_search` (real
+  ids among them → `hybrid_search(metaOnly)`) → anchor →
+  `get_callees`/`get_callers` → ONE batch; the usages row keeps an exact name
+  you know, `a|b` only of seen ids. Same split in decision-tree, navigation,
+  explore and the subagent block. core.md 8879 → 8838 chars, Codex `core.txt`
+  9247 → 9232, Cursor `tea-rags-core.mdc` 9050 → 9047; subagent block 2993 bytes
+  with the alias line.
+
+| Case | R1 Codex | R1 Claude | R2 Codex | R2 Claude |
+| ---- | -------- | --------- | -------- | --------- |
+| A1   | 3/3      | 1/1       | 3/3      | 1/1       |
+| A2   | 1/3      | 1/1       | 3/3      | 1/1       |
+| G1   | 3/3      | 1/1       | 3/3      | 1/1       |
+| R1   | 3/3      | 1/1       | 3/3      | 1/1       |
+| R2   | 3/3      | 1/1       | 3/3      | 1/1       |
+| R3   | 3/3      | 1/1       | 3/3      | 1/1       |
+| 8    | 3/3      | 1/1       | 3/3      | 1/1       |
+
+- R1 fails: A2 r1 searched the repo root (`/work/tollgate`, no anchor); A2 r2
+  ran `find_symbol(symbol:)` on the constant first and never read the hits.
+- R1 → R2 (usages row literal `"<X>" <dir>` → `"<X>" <src dir>`): A2 3/3, no
+  regressions.

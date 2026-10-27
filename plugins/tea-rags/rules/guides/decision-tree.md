@@ -7,17 +7,22 @@ start with tea-rags (semantic_search, hybrid_search for symbol + intent,
 find_symbol, find_similar, get_callers / get_callees / trace_path, rerank
 presets). Text search — your default code search tool (not a tea-rags tool) —
 for exact text: occurrences of an identifier / constant / string ("where is X
-used", "every call of X", "files containing X", even `a|b` alternation or a name
-the user calls a "pattern"), regex syntax, TODO/FIXME/HACK/NOTE markers,
-phrases, error strings, import path strings; also the fallback when tea-rags is
-unavailable. Occurrence searches are bounded: files-with-matches first, or a
-line cap (`-l`), scoped to the anchor's dir when known, else the source root —
-never hybrid_search / semantic_search to find a dir for it, never an unbounded
-search. Then the hit file's outline → batch of only the needed methods (each
-hit's enclosing method) via find_symbol, never the default code read tool or
-`cat`. An identifier's DEFINITION / body / outline is a SYMBOL lookup →
-find_symbol, never text search; only its OCCURRENCES go to the default code
-search tool. Glob — never for code discovery.
+used", "every call of X", "files containing X", a name the user calls a
+"pattern", or an `a|b` of exact identifiers already seen in an answer), regex
+syntax, TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path
+strings; also the fallback when tea-rags is unavailable. Occurrence searches are
+bounded: files-with-matches first, or a line cap (`-l`), scoped to the anchor's
+dir when known, else the source root — never hybrid_search / semantic_search to
+find a dir for it, never an unbounded search. Then the hit file's outline →
+batch of only the needed methods (each hit's enclosing method) via find_symbol,
+never the default code read tool or `cat`. An identifier's DEFINITION / body /
+outline is a SYMBOL lookup → find_symbol, never text search; only its
+OCCURRENCES go to the default code search tool. An alternation of concept words,
+synonyms or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not
+exact text: semantic_search (hybrid_search with metaOnly when real identifiers
+are among the words) → the anchor row → get_callees / get_callers → ONE
+find_symbol batch of only the needed methods — never a text-search alternation.
+Glob — never for code discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for meaning and reads.
 
