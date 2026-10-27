@@ -77,7 +77,6 @@ export const SearchResultOutputSchema = {
       "Advisory — never filters results. semantic_search / find_similar only; " +
       "absent on hybrid_search, rank_chunks, find_symbol, and on indexes with no measured scale (reindex fills it).",
   ),
-  driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
   fieldsWarning: z
     .string()
     .optional()
@@ -122,7 +121,7 @@ export const SearchResultOutputSchema = {
     .optional()
     .describe(
       "Tree read vs index commit. project = registry alias of the answering index (pass it as project next call); " +
-        "tree + project only = every row current; changedFiles / deletedFiles appear only beside a field below (rows without treeState are current); " +
+        "absent (call had project + path = tree) or tree + project only = every row current; changedFiles / deletedFiles appear only beside a field below (rows without treeState are current); " +
         "degraded = run remedy; indexOnlyFiles = changed non-code files whose rows are the index's (treeState); " +
         "pendingFiles = changed code files still warming, answered from the index this call (treeState); " +
         "unparsed = changed files the tree's rows lack; " +
@@ -144,13 +143,6 @@ export const SearchResultOutputSchema = {
       "Optional codegraph lookup skipped — codegraph unreachable from this server (stale daemon build, " +
         "build skew, daemon down, lock held). Names error code + remedy; results may miss collapsed symbols. " +
         "Surface to user.",
-    ),
-  next: z
-    .array(z.object({ tool: z.string(), args: z.record(z.string(), z.unknown()), why: z.string() }))
-    .optional()
-    .describe(
-      "hybrid_search / semantic_search / find_symbol, codegraph on: ready calls past the anchor " +
-        "(top row's callees, callers; file outline adds co-changed). args address the answering tree — run verbatim.",
     ),
   empty: z
     .object({ reason: z.string(), message: z.string(), suggestions: z.array(z.string()).optional() })

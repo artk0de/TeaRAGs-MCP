@@ -134,15 +134,13 @@ export interface App {
    * `consume` has no default, on purpose: forgetting it would silently spend a
    * warning that belongs to someone else, so every caller states which it is.
    *
-   * Nothing reaching this method consumes today. The once-per-report warning
-   * belongs to the SEARCH path, which takes it from the reporter directly
-   * (`ExploreOps#checkDrift`) so each distinct report rides exactly one
-   * response per server session until an index run resets it. Both callers
-   * here are inspections a reader runs on purpose — `get_index_status` and the
-   * prime digest — and both pass `consume: false`: asking twice must report
-   * twice, and neither may spend the search path's warning. `consume` decides
-   * it on BOTH branches: a collection-addressed request is no more an
-   * inspection than a path-addressed one.
+   * Nothing reaching this method consumes today. Drift is reported only where
+   * a reader asks about the index — `get_index_status`, `index_codebase` and
+   * the prime digest; search / find_symbol / graph / review answers carry none
+   * (bd tea-rags-mcp-68jud: a benchmark saw it on 43/43 read answers, acted on
+   * 0). Both callers here pass `consume: false`: asking twice must report
+   * twice. `consume` decides it on BOTH branches: a collection-addressed
+   * request is no more an inspection than a path-addressed one.
    */
   checkIndexDrift: (req: { path?: string; collection?: string; consume: boolean }) => Promise<string | null>;
 

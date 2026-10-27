@@ -124,6 +124,40 @@ describe("formatMcpResponse — workingTree marker", () => {
   });
 });
 
+// icujw: a graph / review answer to a call that named both the index and the tree it got back drops the clean marker.
+describe("formatMcpResponse — workingTree marker against the call's address", () => {
+  const parse = (data: unknown, address: { project?: unknown; path?: unknown }): Record<string, unknown> =>
+    JSON.parse(formatMcpResponse(data, [], address).content[0].text) as Record<string, unknown>;
+
+  it("should drop a current marker when the call passed project and path = tree", () => {
+    expect(parse({ edges: [], workingTree: clean }, { project: "proj", path: "/repo/wt" })).not.toHaveProperty(
+      "workingTree",
+    );
+  });
+
+  it("should keep a current marker for a path-only call (alias discovery)", () => {
+    expect(parse({ edges: [], workingTree: clean }, { path: "/repo/wt" }).workingTree).toStrictEqual({
+      tree: "/repo/wt",
+      project: "proj",
+    });
+  });
+
+  it("should keep a current marker when the tree is not the path the call named", () => {
+    expect(parse({ edges: [], workingTree: clean }, { project: "proj", path: "/repo" }).workingTree).toStrictEqual({
+      tree: "/repo/wt",
+      project: "proj",
+    });
+  });
+
+  it("should keep a lagging marker whatever the address", () => {
+    const lagging = { ...clean, changedFiles: 3, pendingFiles: 2 };
+
+    expect(parse({ edges: [], workingTree: lagging }, { project: "proj", path: "/repo/wt" }).workingTree).toStrictEqual(
+      { tree: "/repo/wt", project: "proj", changedFiles: 3, pendingFiles: 2 },
+    );
+  });
+});
+
 describe("formatWorkingTreeMarker — clean marker", () => {
   it("should render a clean marker as tree and project only", () => {
     expect(formatWorkingTreeMarker(clean)).toBe("workingTree: /repo/wt · project proj");

@@ -1571,7 +1571,6 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     statsCache,
     composition,
     essentialTrajectoryFields,
-    driftReporter,
     codegraphContext,
     projectIngestFactory,
     workingTreeOverlay,
@@ -2231,7 +2230,6 @@ function createExploreSection(deps: {
   statsCache: StatsCache;
   composition: CompositionContext;
   essentialTrajectoryFields: ReturnType<CompositionContext["registry"]["getEssentialPayloadKeys"]>;
-  driftReporter: IndexDriftReporter;
   codegraphContext: CodegraphContext | undefined;
   projectIngestFactory: ProjectIngestFactory;
   workingTreeOverlay: WorkingTreeOverlay;
@@ -2250,7 +2248,6 @@ function createExploreSection(deps: {
     statsCache,
     composition,
     essentialTrajectoryFields,
-    driftReporter,
     codegraphContext,
     projectIngestFactory,
     workingTreeOverlay,
@@ -2267,7 +2264,6 @@ function createExploreSection(deps: {
     registry: composition.registry,
     collectionRegistry,
     statsCache,
-    driftReporter,
     payloadSignals: composition.allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,

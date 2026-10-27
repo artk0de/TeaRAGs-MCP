@@ -1,11 +1,8 @@
 /**
- * ExploreOps — `next` expansion hints and the lean default payload on the read
- * path (agent turn economy N4 + N5, bd tea-rags-mcp-r4rl1).
- *
- * `next` rides on hybrid_search / semantic_search / find_symbol answers, only when
- * codegraph is wired (the gate the find_symbol `codegraphWarning` reads), and
- * its args name the tree that answered. The default projection runs last, so
- * the anchors are chosen from the full rows even when the payload is narrowed.
+ * ExploreOps — no `next` expansion hints (N5 retired, bd tea-rags-mcp-icujw) and
+ * the lean default payload on the read path (agent turn economy N4, bd
+ * tea-rags-mcp-r4rl1). Pagination's `truncated.next` is the response budget's,
+ * not tested here.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -121,108 +118,34 @@ describe("ExploreOps — next expansion hints (N5) and lean default payload (N4)
       reranker: makeReranker(),
       registry: makeTrajectoryRegistry(),
       collectionRegistry,
-      driftReporter: {
-        checkAndConsume: vi.fn().mockResolvedValue(null),
-        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
-      } as any,
       payloadSignals: LOCATOR_SIGNALS,
       essentialKeys: [],
       workingTreeOverlay: stubOverlay(),
       ...(codegraph ? { chunkResolver: { resolveSymbolChunk: vi.fn().mockResolvedValue(null) } } : {}),
     });
 
+  // PIN-UPDATED icujw: `next` expansion hints left every read answer — a benchmark
+  // carried them on 18/43 answers (11.2k chars) and the agent followed 0. Codegraph
+  // on, rows with anchors, every mode: the answer names no next call.
   for (const tool of ["hybrid_search", "semantic_search"] as const) {
-    const call = async (f: ExploreFacade, extra: Record<string, unknown> = {}) =>
-      tool === "hybrid_search"
-        ? f.hybridSearch({ collection: "code_x", query: "q", ...extra })
-        : f.semanticSearch({ collection: "code_x", query: "q", ...extra });
-
-    // PIN-UPDATED q1g6s.15: a code row is addressed by its symbolId — relativePath answers import edges only.
-    // PIN-UPDATED q1g6s.15: a benchmark offered 348 next hints and the agent followed 1 —
-    // a search answer carries at most the two graph hints on its top row, no co-change.
-    it(`${tool}: codegraph on → only callees + callers on the top symbol, addressed to the answering tree`, async () => {
-      const response = await call(makeFacade(HITS));
-
-      expect(response.next).toEqual([
-        expect.objectContaining({
-          tool: "get_callees",
-          args: { project: "tea-rags", path: MARKER.tree, symbolId: "aFn" },
-        }),
-        expect.objectContaining({
-          tool: "get_callers",
-          args: { project: "tea-rags", path: MARKER.tree, symbolId: "aFn" },
-        }),
-      ]);
-    });
-
-    it(`${tool}: the anchor is chosen from the full rows even when fields drops symbolId`, async () => {
-      const response = await call(makeFacade(HITS), { fields: ["relativePath"] });
-
-      expect(response.next?.[0]?.args.symbolId).toBe("aFn");
-    });
-
-    it(`${tool}: codegraph off → no next`, async () => {
-      const response = await call(makeFacade(HITS, { codegraph: false }));
-
-      expect(response).not.toHaveProperty("next");
-    });
-
-    it(`${tool}: empty answer → no next`, async () => {
-      const response = await call(makeFacade([]));
+    it(`${tool}: codegraph on, anchored rows → no next`, async () => {
+      const facade = makeFacade(HITS);
+      const response =
+        tool === "hybrid_search"
+          ? await facade.hybridSearch({ collection: "code_x", query: "q" })
+          : await facade.semanticSearch({ collection: "code_x", query: "q" });
 
       expect(response).not.toHaveProperty("next");
     });
   }
 
-  describe("find_symbol — the anchor the agent committed to carries the same hints", () => {
-    it("relativePath (file outline) → anchor = that file", async () => {
-      const response = await makeFacade(HITS).findSymbol({ collection: "code_x", relativePath: "src/a.ts" });
-
-      expect(response.next?.map((c) => c.tool)).toEqual(["get_callees", "get_callers", "find_co_changed"]);
-      expect(response.next?.[0]?.args).toEqual({ project: "tea-rags", path: MARKER.tree, relativePath: "src/a.ts" });
-      expect(response.next?.[2]?.args.files).toEqual(["src/a.ts"]);
-    });
-
-    // PIN-UPDATED q1g6s.15: a symbol-addressed answer hints on the ids it names, never file-level edges.
-    it("symbol mode → callees + callers of the first returned symbol, no co-change", async () => {
-      const hits = [
-        point("a", 0.9, "src/a.ts", { symbolId: "A#run" }),
-        point("b", 0.8, "src/b.ts", { symbolId: "B#run" }),
-      ];
-      const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbol: "run" });
-
-      expect(response.next?.map((c) => [c.tool, c.args.symbolId])).toEqual([
-        ["get_callees", "A#run"],
-        ["get_callers", "A#run"],
-      ]);
-    });
-
-    // PIN-UPDATED q1g6s.15: as above — the first non-test symbol the batch named.
-    it("symbols batch → callees + callers of the first non-test symbol returned", async () => {
-      const hits = [point("t", 0.9, "tests/a.test.ts", { isTest: true }), ...HITS];
-      const response = await makeFacade(hits).findSymbol({ collection: "code_x", symbols: ["tFn", "aFn", "bFn"] });
-
-      expect(response.next?.map((c) => [c.tool, c.args.symbolId])).toEqual([
-        ["get_callees", "aFn"],
-        ["get_callers", "aFn"],
-      ]);
-    });
-
-    it("relativePath naming a directory → listing commits to no file, no next", async () => {
-      const response = await makeFacade(HITS).findSymbol({ collection: "code_x", relativePath: "src" });
-
-      expect(response.directory).toBeDefined();
-      expect(response).not.toHaveProperty("next");
-    });
-
-    it("codegraph off → no next", async () => {
-      const response = await makeFacade(HITS, { codegraph: false }).findSymbol({ collection: "code_x", symbol: "aFn" });
-
-      expect(response).not.toHaveProperty("next");
-    });
-
-    it("no anchor left (empty answer) → no next key", async () => {
-      const response = await makeFacade([]).findSymbol({ collection: "code_x", symbol: "aFn" });
+  describe("find_symbol — codegraph on, no mode carries next", () => {
+    it.each([
+      ["relativePath", { relativePath: "src/a.ts" }],
+      ["symbol", { symbol: "run" }],
+      ["symbols batch", { symbols: ["tFn", "aFn", "bFn"] }],
+    ])("%s → no next", async (_mode, address) => {
+      const response = await makeFacade(HITS).findSymbol({ collection: "code_x", ...address });
 
       expect(response).not.toHaveProperty("next");
     });

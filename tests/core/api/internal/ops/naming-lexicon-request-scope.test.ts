@@ -28,7 +28,7 @@ const NAMING = new Map<string, IdentifierNamingConvention>([
   ["typescript", typescriptCapability.naming as IdentifierNamingConvention],
 ]);
 
-const EMPTY: ExploreResponse = { results: [], driftWarning: null };
+const EMPTY: ExploreResponse = { results: [] };
 
 const MARKER: WorkingTreeMarker = {
   tree: "",

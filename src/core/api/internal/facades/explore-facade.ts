@@ -22,7 +22,6 @@ import {
 import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
 import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
-import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type {
   ExploreCodeRequest,
@@ -33,8 +32,8 @@ import type {
   IndexMetrics,
   RankChunksRequest,
   SemanticSearchRequest,
+  WorkingTreeIndexTarget,
 } from "../../public/dto/index.js";
-import type { WorkingTreeIndexTarget } from "../../public/dto/working-tree.js";
 import { InvalidParameterError } from "../../public/errors.js";
 import type { CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
@@ -47,7 +46,6 @@ export interface ExploreFacadeDeps {
   registry: TrajectoryRegistry;
   collectionRegistry: RegistryLookup;
   statsCache?: StatsCache;
-  driftReporter?: IndexDriftReporter;
   payloadSignals?: PayloadSignalDescriptor[];
   essentialKeys?: string[];
   modelGuard?: EmbeddingModelGuardPort;
@@ -82,7 +80,6 @@ export class ExploreFacade {
       registry: deps.registry,
       collectionRegistry: deps.collectionRegistry,
       statsCache: deps.statsCache,
-      driftReporter: deps.driftReporter,
       payloadSignals: deps.payloadSignals ?? [],
       essentialKeys: deps.essentialKeys ?? [],
       modelGuard: deps.modelGuard,

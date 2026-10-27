@@ -10,11 +10,8 @@
  *      The IndexMetricsQuery is only constructed when deps.statsCache is
  *      set, so a collection without it can never produce metrics.
  *
- *   2. `checkDrift` collection-only branch — when a request only has a
- *      `collection` (no path) the drift monitor must be queried by
- *      collection name, CONSUMING: a collection-addressed request is still
- *      a search. The path branch is exercised by every existing test; the
- *      collection-name branch is the symmetric case.
+ *   2. No drift check on a collection-only search (bd tea-rags-mcp-68jud):
+ *      a read answer carries no driftWarning; get_index_status / prime own it.
  *
  *   3. `resolveDocRerank` documentation-auto-preset — when no explicit
  *      rerank is given but the caller signals a docs query
@@ -110,7 +107,6 @@ const driftReport = {
   ],
   remedy: { kind: "force" },
 };
-const driftReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 // ---------------------------------------------------------------------------
 // 1. getIndexMetrics without statsCache → NotIndexedError
@@ -141,7 +137,7 @@ describe("ExploreOps.getIndexMetrics", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. checkDrift collection-only branch
+// 2. No drift check on a collection-only search (68jud)
 // ---------------------------------------------------------------------------
 
 describe("ExploreOps drift warning — collection-only path", () => {
@@ -149,12 +145,9 @@ describe("ExploreOps drift warning — collection-only path", () => {
     vi.clearAllMocks();
   });
 
-  it("uses the CONSUMING collection-name check when the request has a collection but no path", async () => {
-    // When the caller passes `collection` directly (not `path`), the drift
-    // monitor's collection-name branch must run — the path branch can't
-    // because there is no path to check against the schema-version registry.
-    // It consumes: a collection-addressed search is a search, and a warning it
-    // renders is one the reader has now been shown.
+  // PIN-UPDATED 68jud: a collection-addressed search no longer spends (or renders)
+  // the drift report — get_index_status / index_codebase / prime own it.
+  it("a collection-addressed search consults no drift check and carries no driftWarning", async () => {
     const driftReporter = makeMockDriftReporter({
       checkAndConsumeByCollectionName: vi.fn().mockReturnValue({ report: driftReport, repeat: false }),
     });
@@ -175,8 +168,8 @@ describe("ExploreOps drift warning — collection-only path", () => {
 
     expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
     expect(driftReporter.checkByCollectionName).not.toHaveBeenCalled();
-    expect(driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
-    expect(result.driftWarning).toBe(driftReportText);
+    expect(driftReporter.checkAndConsumeByCollectionName).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty("driftWarning");
   });
 });
 

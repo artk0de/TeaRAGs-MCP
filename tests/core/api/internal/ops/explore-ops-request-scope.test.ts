@@ -92,10 +92,6 @@ describe("ExploreOps — request-scoped reads", () => {
       reranker: makeReranker(),
       registry: makeTrajectoryRegistry(),
       collectionRegistry,
-      driftReporter: {
-        checkAndConsume: vi.fn().mockResolvedValue(null),
-        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
-      } as any,
       payloadSignals: [],
       essentialKeys: [],
       workingTreeOverlay: overlay,

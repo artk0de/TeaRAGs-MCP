@@ -35,7 +35,7 @@ import {
   type SchemaBuilderPort,
   type TracePathRequest,
 } from "../public/index.js";
-import { formatMcpResponse, type McpToolResult } from "./format.js";
+import { formatMcpResponse, type McpToolResult, type WorkingTreeCallAddress } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
 import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { projectField, WORKING_TREE_PATH_HINT } from "./schemas.js";
@@ -512,7 +512,11 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     schemaKey: "get_callers",
     responseRows: { narrowing: ["limit", "includeAmbiguous"] },
     invoke: async (app, request) =>
-      formatMcpResponse(await app.getCallers(request as GetCallersRequest), CALLER_COLUMN_ORDER),
+      formatMcpResponse(
+        await app.getCallers(request as GetCallersRequest),
+        CALLER_COLUMN_ORDER,
+        request as WorkingTreeCallAddress,
+      ),
   },
   {
     name: "get_callees",
@@ -529,7 +533,11 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     schemaKey: "get_callees",
     responseRows: { narrowing: ["limit"] },
     invoke: async (app, request) =>
-      formatMcpResponse(await app.getCallees(request as GetCalleesRequest), CALLEE_COLUMN_ORDER),
+      formatMcpResponse(
+        await app.getCallees(request as GetCalleesRequest),
+        CALLEE_COLUMN_ORDER,
+        request as WorkingTreeCallAddress,
+      ),
   },
   {
     name: "find_cycles",
@@ -544,7 +552,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "hops inside the cycle only residual-model edges support (absent = all static).",
     schemaKey: "find_cycles",
     responseRows: { narrowing: ["scope", "pathPattern"] },
-    invoke: async (app, request) => formatMcpResponse(await app.findCycles(request as FindCyclesRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(await app.findCycles(request as FindCyclesRequest), [], request as WorkingTreeCallAddress),
   },
   {
     name: "get_architecture_report",
@@ -569,7 +578,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
           : req.plannedEdges
             ? await app.judgePlannedArchitectureEdges(req)
             : await app.getArchitectureReport(req);
-      return formatMcpResponse(answer);
+      return formatMcpResponse(answer, [], request as WorkingTreeCallAddress);
     },
   },
   {
@@ -581,7 +590,12 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "collisions: names equal to other symbols. Ranked, with counts and an example each.",
     schemaKey: "get_ontology_report",
     responseRows: { narrowing: ["sections", "limit", "pathPattern", "language"] },
-    invoke: async (app, request) => formatMcpResponse(await app.getOntologyReport(request as GetOntologyReportRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(
+        await app.getOntologyReport(request as GetOntologyReportRequest),
+        [],
+        request as WorkingTreeCallAddress,
+      ),
   },
   {
     name: "find_co_changed",
@@ -596,7 +610,12 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Before editing a file, surface silent high-strength partners as change-context.",
     schemaKey: "find_co_changed",
     responseRows: { narrowing: ["files", "limit"] },
-    invoke: async (app, request) => formatMcpResponse(await app.findCoChanged(request as FindCoChangedRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(
+        await app.findCoChanged(request as FindCoChangedRequest),
+        [],
+        request as WorkingTreeCallAddress,
+      ),
   },
   {
     name: "trace_path",
@@ -616,14 +635,20 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     responseRows: { narrowing: ["maxPaths", "maxDepth", "fromPath", "toPath"] },
     // `TracePathRequest.rerank` is the string preset name the curated enum
     // (z.ZodTypeAny erases to unknown after .optional()) narrows to.
-    invoke: async (app, request) => formatMcpResponse(await app.tracePath(request as TracePathRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(await app.tracePath(request as TracePathRequest), [], request as WorkingTreeCallAddress),
   },
   {
     name: "get_naming_lexicon",
     title: "Get Naming Lexicon",
     description: NAMING_LEXICON_DESCRIPTION,
     schemaKey: "get_naming_lexicon",
-    invoke: async (app, request) => formatMcpResponse(await app.getNamingLexicon(request as NamingLexiconRequest)),
+    invoke: async (app, request) =>
+      formatMcpResponse(
+        await app.getNamingLexicon(request as NamingLexiconRequest),
+        [],
+        request as WorkingTreeCallAddress,
+      ),
   },
 ];
 

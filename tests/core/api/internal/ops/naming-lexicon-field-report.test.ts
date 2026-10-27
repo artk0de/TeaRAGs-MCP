@@ -92,7 +92,7 @@ describe("NamingLexiconOps — the bjfa0 field report", () => {
       pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
       collectionRegistry: {} as never,
       resolveActiveCollection: async (name: string) => name as never,
-      explore: { semanticSearch: vi.fn(async () => ({ results: [], driftWarning: null })), ...explore },
+      explore: { semanticSearch: vi.fn(async () => ({ results: [] })), ...explore },
       namingConventions: NAMING,
       ontologyLanguages: ontologyLanguageProfiles(),
     });
@@ -205,7 +205,6 @@ describe("NamingLexiconOps — the bjfa0 field report", () => {
       });
       const findSymbol = vi.fn(
         async (): Promise<ExploreResponse> => ({
-          driftWarning: null,
           results: [
             payload("TagPolicy#same_firm?"),
             payload("Crm::ContactPolicy#same_firm?"),

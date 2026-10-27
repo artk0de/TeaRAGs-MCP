@@ -32,7 +32,7 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
     captured.push({ name, config, handler });
   });
 
-  const emptyResponse: ExploreResponse = { results: [], driftWarning: null };
+  const emptyResponse: ExploreResponse = { results: [] };
   const app = {
     semanticSearch: vi.fn().mockResolvedValue(emptyResponse),
     hybridSearch: vi.fn().mockResolvedValue(emptyResponse),
@@ -190,8 +190,47 @@ describe("registerSearchTools", () => {
         ["src/b.ts", null],
       ],
     });
-    expect(result.structuredContent.driftWarning).toBe("stale");
+    // PIN-UPDATED 68jud: drift is reported by get_index_status / index_codebase / prime only.
+    expect(result.structuredContent).not.toHaveProperty("driftWarning");
     expect(result.structuredContent.workingTree).toEqual({ tree: "/x", changedFiles: 1, pendingFiles: 1 });
+  });
+
+  // icujw: a clean marker carries no signal for a caller that addressed both the
+  // index (project) and the tree (path) and got that tree back.
+  describe("workingTree — the clean marker is dropped only when it says nothing", () => {
+    const clean = { tree: "/x", project: "p", changedFiles: 0, deletedFiles: 0, floors: [] };
+    const answer = async (args: Record<string, unknown>, workingTree: Record<string, unknown> = clean) => {
+      const { captured } = makeHarness({ hybridSearch: vi.fn().mockResolvedValue({ results: [], workingTree }) });
+      const tool = captured.find((t) => t.name === "hybrid_search");
+      return ((await tool!.handler({ query: "q", ...args }, {})) as { structuredContent: Record<string, unknown> })
+        .structuredContent;
+    };
+
+    it("project + path naming the answering tree → no workingTree", async () => {
+      expect(await answer({ project: "p", path: "/x" })).not.toHaveProperty("workingTree");
+    });
+
+    it("path alone → kept: workingTree.project is how the caller learns the alias", async () => {
+      expect((await answer({ path: "/x" })).workingTree).toEqual({ tree: "/x", project: "p" });
+    });
+
+    it("project alone → kept: workingTree.tree tells the caller which checkout answered", async () => {
+      expect((await answer({ project: "p" })).workingTree).toEqual({ tree: "/x", project: "p" });
+    });
+
+    it("tree ≠ requested path → kept", async () => {
+      expect((await answer({ project: "p", path: "/y" })).workingTree).toEqual({ tree: "/x", project: "p" });
+    });
+
+    it("a qualifier (pendingFiles) → kept with its counts", async () => {
+      const lagging = { ...clean, changedFiles: 2, pendingFiles: 1 };
+      expect((await answer({ project: "p", path: "/x" }, lagging)).workingTree).toEqual({
+        tree: "/x",
+        project: "p",
+        changedFiles: 2,
+        pendingFiles: 1,
+      });
+    });
   });
 });
 
@@ -200,7 +239,7 @@ describe("registerSearchTools — default rows drop id and score (q1g6s.16)", ()
     { id: "a", score: 0.9, payload: { relativePath: "src/a.ts", symbolId: "A#run" } },
     { id: "b", score: 0.4, payload: { relativePath: "src/b.ts", symbolId: "B#run" } },
   ];
-  const respond = () => vi.fn().mockResolvedValue({ results: rows, driftWarning: null });
+  const respond = () => vi.fn().mockResolvedValue({ results: rows });
   const columnsOf = async (toolName: string, args: Record<string, unknown>) => {
     const { captured } = makeHarness({
       semanticSearch: respond(),
@@ -468,8 +507,8 @@ describe("registerSearchTools — empty answer explanation", () => {
   it("semantic_search and hybrid_search carry empty in structuredContent", async () => {
     const empty = { reason: "filteredOut", message: "filters removed every match", suggestions: ["filter: {}"] };
     const { captured } = makeHarness({
-      semanticSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, empty }),
-      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, empty }),
+      semanticSearch: vi.fn().mockResolvedValue({ results: [], empty }),
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], empty }),
     });
 
     for (const name of ["semantic_search", "hybrid_search"]) {
@@ -488,7 +527,7 @@ describe("registerSearchTools — denseUnavailable", () => {
 
   it("hybrid_search carries denseUnavailable in structuredContent and says so in one text line", async () => {
     const { captured } = makeHarness({
-      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, denseUnavailable: { reason } }),
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], denseUnavailable: { reason } }),
     });
     const tool = captured.find((t) => t.name === "hybrid_search");
 
@@ -515,12 +554,13 @@ describe("registerSearchTools — denseUnavailable", () => {
   });
 });
 
-// N5 (bd tea-rags-mcp-r4rl1): the answer's ready-made next calls reach the client.
+// PIN-UPDATED icujw: N5 (bd tea-rags-mcp-r4rl1) expansion hints were followed 0 times
+// in 18 answers — the tool surface carries no `next` hint list.
 describe("registerSearchTools — next", () => {
-  it("hybrid_search passes next through to structuredContent", async () => {
+  it("hybrid_search never forwards a next hint list", async () => {
     const next = [{ tool: "get_callers", args: { path: "/x", relativePath: "src/a.ts" }, why: "importers" }];
     const { captured } = makeHarness({
-      hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null, next }),
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], next }),
     });
     const tool = captured.find((t) => t.name === "hybrid_search");
 
@@ -528,7 +568,7 @@ describe("registerSearchTools — next", () => {
       structuredContent: Record<string, unknown>;
     };
 
-    expect(result.structuredContent.next).toEqual(next);
+    expect(result.structuredContent).not.toHaveProperty("next");
   });
 });
 
@@ -544,7 +584,6 @@ describe("registerSearchTools — find_symbol batch over the response budget", (
     const { captured } = makeHarness({
       findSymbol: vi.fn().mockResolvedValue({
         results: ["A#a", "B#b", "C#c", "D#d"].map(row),
-        driftWarning: null,
         workingTree: { tree: "/x", project: "p" },
       }),
     });
@@ -583,7 +622,7 @@ describe("registerSearchTools — compact result rows", () => {
   ];
   const hybridHarness = () => {
     const harness = makeHarness({
-      hybridSearch: vi.fn().mockImplementation(async () => ({ results: rankedRows(), driftWarning: null })),
+      hybridSearch: vi.fn().mockImplementation(async () => ({ results: rankedRows() })),
     });
     return { ...harness, tool: harness.captured.find((t) => t.name === "hybrid_search")! };
   };
