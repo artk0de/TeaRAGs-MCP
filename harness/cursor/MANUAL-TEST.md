@@ -47,10 +47,14 @@ pass/fail, the tool calls seen and any deviation next to each check.
 7. **`alwaysApply` rule reaches a subagent** (only once
    `rules/tea-rags-core.mdc` ships) — ask the agent to delegate "find every
    caller of registerAllResources" to a subagent. Expect the subagent to use
-   `hybrid_search` / `get_callers`, not grep. If it greps, the rule did not
-   reach it — record that; Cursor has no subagentStart injection to fall back
-   on.
-8. **dinopowers routing** — with `dinopowers` installed, ask "brainstorm a cache
+   `hybrid_search` / `get_callers`, not grep. If it greps, ask the subagent
+   whether its context names the tea-rags project alias: the `subagentStart`
+   hook sends the search block as `additional_context`, a field Cursor documents
+   only for sessionStart — record whether it arrived.
+8. **Indexed-read deny** — "Read src/cli/index.ts with your file read tool, then
+   with `sed -n 1,40p`." Expect both reads blocked with a reason naming
+   `find_symbol(relativePath: "src/cli/index.ts")`, then a `find_symbol` call.
+9. **dinopowers routing** — with `dinopowers` installed, ask "brainstorm a cache
    for get_index_status" in a fresh chat. Expect `/dino-brainstorming` to load
    and chain into `/brainstorming` (superpowers); without superpowers installed,
    expect the wrapper to stop and ask for the install. Record whether

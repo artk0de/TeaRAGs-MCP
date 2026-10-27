@@ -278,6 +278,32 @@ developers.openai.com/codex/_ 308-redirects to learn.chatgpt.com/docs/_.
   stop: `followup_message` submits next user message.
 - Exit codes: 0 ok (JSON used), 2 = deny, other = fail-open unless failClosed
   [D].
+- Verified 2026-10-27, cursor-agent 2026.10.22-27dcf5f (bd tea-rags-mcp-xkbkv).
+  [L] = captured from a scratch workspace's project `.cursor/hooks.json`, [S] =
+  read from the CLI bundle (`~/.local/share/cursor-agent/versions/<v>/`):
+  - Project hooks fire in `-p` mode, cwd = workspace, env `CURSOR_PROJECT_DIR`,
+    `CURSOR_VERSION`, `CURSOR_USER_EMAIL`, `CURSOR_INVOKED_AS` [L]. Common
+    stdin: `conversation_id`, `generation_id`, `model`, `hook_event_name`,
+    `cursor_version`, `workspace_roots`, `user_email`, `transcript_path` [L].
+    sessionStart adds `session_id`, `is_background_agent` (no `composer_mode` in
+    the CLI) [L]; sessionEnd adds `reason`, `duration_ms`, `final_status` [L].
+  - beforeReadFile: `{file_path, content, attachments: [], tool_use_id}`, run
+    AFTER the read with its content; `permission: "deny"` → the model gets "File
+    read was blocked by a hook: <user_message>" [S]. Docs list no
+    `agent_message` here [D].
+  - beforeShellExecution: `{command, cwd, sandbox, tool_use_id}`; deny →
+    "Command execution was blocked by a hook: <user_message>"; `ask` → approval
+    prompt [S]. Docs add `agent_message` (IDE) [D].
+  - afterShellExecution: `{command, output, duration, sandbox, tool_use_id}`,
+    awaited, no output schema [S][D].
+  - subagentStart: stdin
+    `subagent_id, subagent_type, task, parent_conversation_id, tool_call_id, subagent_model, is_parallel_worker, git_branch`;
+    the CLI maps the response to `{permission, userMessage, additionalContext}`
+    — `additional_context` is forwarded although the docs omit it; delivery into
+    the subagent NOT observed [S]. Response validators check only known fields'
+    types; unknown keys pass [S].
+  - Tool events not captured live: the account's agent usage was exhausted
+    ("You've hit your usage limit"; non-Auto models "unavailable on Free").
 
 ### B.4 mcp.json in plugin
 
