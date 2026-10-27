@@ -489,7 +489,9 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
       .min(1)
       .max(20)
       .optional()
-      .describe("1-20 symbol ids or file paths. Rows carry request; misses → missing. Excludes symbol, relativePath."),
+      .describe(
+        "1-20 symbol ids or file paths (a path answers as relativePath). Rows carry request; misses → missing. Excludes symbol, relativePath.",
+      ),
     relativePath: z
       .string()
       .optional()

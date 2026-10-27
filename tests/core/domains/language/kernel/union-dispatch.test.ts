@@ -81,13 +81,22 @@ describe("UnionDispatchResolver (K2)", () => {
     expect(edgesOf(r, call("x"))).toEqual([cone("app/c.rb", "C.run", 1 / 2), cone("app/a.rb", "A#run", 1 / 2)]);
   });
 
-  it("skips an arm with no definer and splits confidence over the arms that resolved", () => {
+  it("skips an arm with no definer and splits confidence over every nominal arm (q1g6s.10)", () => {
     const r = new UnionDispatchResolver(
       portsTyping(union(instance("A"), instance("Missing"), instance("B"))),
       lookupOver(targets),
       8,
     );
-    expect(edgesOf(r, call("x"))).toEqual([cone("app/a.rb", "A#run", 1 / 2), cone("app/b.rb", "B#run", 1 / 2)]);
+    expect(edgesOf(r, call("x"))).toEqual([cone("app/a.rb", "A#run", 1 / 3), cone("app/b.rb", "B#run", 1 / 3)]);
+  });
+
+  it("never reports a lone resolved arm of a 3-arm union at confidence 1 (q1g6s.10)", () => {
+    const r = new UnionDispatchResolver(
+      portsTyping(union(instance("Owner"), instance("Employee"), instance("A"))),
+      lookupOver(targets),
+      8,
+    );
+    expect(edgesOf(r, call("x"))).toEqual([cone("app/a.rb", "A#run", 1 / 3)]);
   });
 
   it("skips non-nominal arms, file-only targets and targets outside the language population", () => {
@@ -96,7 +105,7 @@ describe("UnionDispatchResolver (K2)", () => {
       lookupOver(targets),
       8,
     );
-    expect(edgesOf(r, call("x"))).toEqual([cone("app/a.rb", "A#run", 1)]);
+    expect(edgesOf(r, call("x"))).toEqual([cone("app/a.rb", "A#run", 1 / 3)]);
   });
 
   it("emits one edge per distinct target symbol", () => {

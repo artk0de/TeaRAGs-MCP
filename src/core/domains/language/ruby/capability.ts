@@ -163,7 +163,11 @@ export const capability: LanguageCapability = {
   // `-> { }` local are typed as core `Proc`, so their `.call` is external; a module's singleton
   // method is never reached through `x.class`, and a `::A::B` receiver reads as a constant; a
   // walker-9 index leaves those calls in the residual.
-  versions: { chunking: 2, walker: 10, codegraphSchema: 2 },
+  // walker 11: bd tea-rags-mcp-q1g6s.10 — `method(:x)` / `public_method(:x)` edge to `#x`;
+  // a class method's bare self reads are no self-dispatch hooks; a framework verb on self
+  // no longer lands on an unrelated project namesake; `perform_async_<x>` wrappers dispatch
+  // to the worker's entrypoint. A walker-10 index keeps the old edges until a recompute.
+  versions: { chunking: 2, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

@@ -43,6 +43,15 @@ import { readScopeResolution } from "./shared/index.js";
 const RUBY_DYNAMIC_DISPATCH = new Set(["send", "public_send", "__send__"]);
 
 /**
+ * `Object#method` / `#public_method` with a LITERAL name reference a method of
+ * the receiver (bd tea-rags-mcp-q1g6s.10): unwrapped exactly like a literal
+ * `send`, so `method(:vendor_error_class)` edges to `#vendor_error_class` and
+ * the Kernel call itself, which no project def answers, is dropped. A
+ * non-literal argument stays a plain call — it names nothing statically.
+ */
+const RUBY_METHOD_REFERENCE = new Set(["method", "public_method"]);
+
+/**
  * `alias new old` keyword form (bd tea-rags-mcp-y2z5). The new alias method
  * delegates to the old one — emit a synthetic CallRef from the alias chunk to
  * the old method so the call graph traces the redirect. Receiver is null
@@ -144,8 +153,10 @@ function emitDynamicSendUnwrap(
   startLine: number,
   out: CallRef[],
 ): "unwrapped" | "dynamic" | "plain" {
-  if (!RUBY_DYNAMIC_DISPATCH.has(method.text)) return "plain";
+  const reference = RUBY_METHOD_REFERENCE.has(method.text);
+  if (!reference && !RUBY_DYNAMIC_DISPATCH.has(method.text)) return "plain";
   const unwrapped = unwrappedSendShape(node, receiver, receiverText);
+  if (reference && unwrapped === null) return "plain";
   if (unwrapped !== null) {
     out.push({ callText: node.text, receiver: unwrapped.receiver, member: unwrapped.member, startLine });
     return "unwrapped";

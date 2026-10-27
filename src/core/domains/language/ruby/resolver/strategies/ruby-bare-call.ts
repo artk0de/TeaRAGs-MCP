@@ -3,6 +3,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { isBlockPassCallText } from "../../block-pass-marker.js";
+import { catalogueFor } from "../../dsl/index.js";
 import {
   callerAncestrySide,
   collectResolvedAncestorChain,
@@ -157,7 +158,28 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       }
     }
     const target = pickSingleCandidate(effective, this.cfg.mode);
-    if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
-    return CONTINUE;
+    if (target === null) return CONTINUE;
+    if (frameworkVerbOutsideAncestry(target, call, ctx, enclosing)) return CONTINUE;
+    return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
   }
+}
+
+/**
+ * bd tea-rags-mcp-q1g6s.10 — the project-wide pick above names ANY def of the
+ * member, so a framework verb on self (`head(:ok)` in a controller) landed on
+ * the one unrelated project `def head`. When an active framework claims the
+ * name and the candidate is not on the caller's own ancestry, the framework's
+ * method is what Ruby dispatches to: leave the call to external classification.
+ */
+function frameworkVerbOutsideAncestry(
+  target: { scope: readonly string[] },
+  call: CallRef,
+  ctx: CallContext,
+  enclosing: string | null,
+): boolean {
+  if (enclosing === null) return false;
+  if (!catalogueFor(ctx.declaredDependencies).isExternalBareCall(call.member)) return false;
+  const owner = target.scope.join("::");
+  const mro = [enclosing, ...collectResolvedAncestorChain(enclosing, ctx, new Set(), callerAncestrySide(ctx))];
+  return !mro.some((klass) => klass === owner || lastConstantSegment(klass) === owner);
 }

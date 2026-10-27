@@ -75,9 +75,38 @@ describe("extractSelfDispatchMethods", () => {
       {
         symbolId: "KindOfService.call",
         enclosingType: "KindOfService",
-        selfHookCandidates: ["perform", "audit", "log"],
+        selfHookCandidates: ["perform"],
       },
     ]);
+  });
+
+  it("keeps an instance method's bare / self hooks, which run on the instance (q1g6s.10)", () => {
+    const chunks: ChunkExtraction[] = [
+      chunk(
+        "BaseProcessor#process",
+        ["BaseProcessor"],
+        [
+          ["self", "audit"],
+          [null, "handle"],
+        ],
+      ),
+    ];
+    expect(extractSelfDispatchMethods(chunks)[0]?.selfHookCandidates).toEqual(["audit", "handle"]);
+  });
+
+  it("drops a class method's class-side reads (`#{name}`) but keeps `new` (q1g6s.10)", () => {
+    const chunks: ChunkExtraction[] = [
+      chunk(
+        "Tech::Async::Declarations.perform_async_operation",
+        ["Tech::Async::Declarations"],
+        [
+          [null, "name"],
+          [null, "step_only?"],
+          [null, "new"],
+        ],
+      ),
+    ];
+    expect(extractSelfDispatchMethods(chunks)[0]?.selfHookCandidates).toEqual(["new"]);
   });
 
   it("captures implicit self-instantiation receivers (`new` / `new(args)` / `self.class.new`)", () => {
