@@ -8,7 +8,7 @@
  * edge: bootstrap → core/api/* (`.claude/rules/domain-boundaries.md`).
  */
 
-import { findFirstIndexedFileInDataDir, type IndexedFileMatch } from "../core/api/internal/ops/indexed-file-query.js";
+import { findFirstIndexedFileInDataDir, type IndexedFileMatch } from "../core/api/entry-points/indexed-file/index.js";
 import { appDataDir, snapshotsDir } from "./config/index.js";
 
 export type { IndexedFileMatch };
