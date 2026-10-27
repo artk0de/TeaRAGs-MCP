@@ -29,6 +29,7 @@ import { join } from "node:path";
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
+  CalleeEdge,
   PersistedSymbolLineRanges,
   RelPath,
   SymbolChunkLocation,
@@ -91,7 +92,7 @@ import { ArchitectureRestructurePlanOps } from "../ops/architecture-restructure-
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
-import { readSymbolEdgesExplained, type SymbolEdgeRead } from "../ops/symbol-edge-explanation.js";
+import { readSymbolEdgesExplained, type SymbolEdgeRead, type TestChunkProbe } from "../ops/symbol-edge-explanation.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
@@ -119,6 +120,12 @@ export interface GraphFacadeDeps {
     collectionName: string,
     relPaths: readonly RelPath[],
   ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
+  /**
+   * Whether `symbolId` is an indexed TEST chunk of the ADDRESSED collection (payload `isTest`). Test code is not
+   * walked into the codegraph, so an id the graph does not hold may still be a real chunk; the empty answer
+   * says so (`testChunk`) instead of `unknownSymbol`. Optional: absent, the answer stays `unknownSymbol`.
+   */
+  readSymbolIsTest?: (collectionName: string, symbolId: SymbolId) => Promise<boolean>;
   /**
    * Every file's `git.file.commitCount`, read from the ADDRESSED collection's
    * payload. The main-sequence detector gates the zone of pain on it
@@ -176,6 +183,9 @@ export interface GraphFacadeDeps {
 }
 
 const DEFAULT_LIMIT = 50;
+
+/** Distinct call expressions an answer names for the callees it could not resolve to a symbol. */
+const MAX_UNRESOLVED_CALL_NAMES = 5;
 
 /** Navigation hides the irreducible untyped-dispatch residual (bd xlnub):
  *  a `dynamic` edge is shown only when uniquely narrowed (confidence 1.0).
@@ -239,6 +249,32 @@ async function readSymbolEdges<E>(
 }
 
 /** `{ empty }` when the symbol answer explained itself (N6), `{}` otherwise. */
+/**
+ * Callee edges with no target symbol are call sites the resolver pinned to a file (or nothing) but to no symbol —
+ * `survivor.present?`, `e.message`, attribute readers. They are not edges an agent can follow, so they leave
+ * `callees` and surface as a count plus a few distinct call expressions.
+ */
+function unresolvedCallsField(edges: readonly CalleeEdge[]): { unresolved?: number; unresolvedCalls?: string[] } {
+  const unresolved = edges.filter((e) => e.targetSymbolId === null);
+  if (unresolved.length === 0) return {};
+  const names = [...new Set(unresolved.map((e) => e.callExpression))].slice(0, MAX_UNRESOLVED_CALL_NAMES);
+  return { unresolved: unresolved.length, unresolvedCalls: names };
+}
+
+/**
+ * Call sites reaching one target symbol are one edge to an agent: the first site's row carries `count` when
+ * more followed, in first-seen order.
+ */
+function collapseCalleesByTarget<E extends CalleeEdge>(edges: readonly E[]): (E & { count?: number })[] {
+  const byTarget = new Map<SymbolId | null, E & { count?: number }>();
+  for (const edge of edges) {
+    const seen = byTarget.get(edge.targetSymbolId);
+    if (seen) seen.count = (seen.count ?? 1) + 1;
+    else byTarget.set(edge.targetSymbolId, { ...edge });
+  }
+  return [...byTarget.values()];
+}
+
 function emptyField(read: { empty?: EmptyAnswerExplanation }): { empty?: EmptyAnswerExplanation } {
   return read.empty === undefined ? {} : { empty: read.empty };
 }
@@ -432,6 +468,14 @@ export class GraphFacade {
     }
   }
 
+  /** The test-chunk probe bound to the addressed collection; absent when the dep is not wired. */
+  private testChunkProbe(req: GetCallersRequest | GetCalleesRequest): TestChunkProbe | undefined {
+    const { readSymbolIsTest } = this.deps;
+    if (!readSymbolIsTest) return undefined;
+    return async (symbolId) =>
+      readSymbolIsTest(resolveWorkingTree(this.deps.collectionRegistry, req).baseIndex.collectionName, symbolId);
+  }
+
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
     const target = graphTarget(req);
     if (target.kind === "file") {
@@ -454,6 +498,7 @@ export class GraphFacade {
           symbolId,
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallers(target)),
           "callers",
+          this.testChunkProbe(req),
         );
         const resolved = { ...resolvedField(read), ...emptyField(read) };
         const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
@@ -504,9 +549,19 @@ export class GraphFacade {
           symbolId,
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallees(target)),
           "callees",
+          this.testChunkProbe(req),
         );
-        const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
-        return { ...resolvedField(read), callees: await decorateCallees(handle.graphDb, visible), ...emptyField(read) };
+        const visible = read.edges.filter(isNavigationVisibleEdge);
+        const resolved = collapseCalleesByTarget(visible.filter((e) => e.targetSymbolId !== null)).slice(
+          0,
+          req.limit ?? DEFAULT_LIMIT,
+        );
+        return {
+          ...resolvedField(read),
+          callees: await decorateCallees(handle.graphDb, resolved),
+          ...unresolvedCallsField(visible),
+          ...emptyField(read),
+        };
       },
       { callees: [] },
     );

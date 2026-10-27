@@ -39,6 +39,7 @@ import {
   type SymbolId,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { DeclaredVisibilityIndex } from "../../../domains/explore/declared-visibility-index.js";
@@ -58,8 +59,10 @@ import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
+import { readPayloadSymbolIsTest } from "../infra/payload-symbol-is-test-reader.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
+import { swapMemberSeparator, unknownOrTestChunk } from "./symbol-edge-explanation.js";
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_PATHS = 10;
@@ -96,6 +99,9 @@ export interface TracePathOpsDeps {
    */
   historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 }
+
+/** Suggestions an empty trace answer carries — the same cap the edge tools use. */
+const MAX_EMPTY_SUGGESTIONS = 5;
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
 
@@ -202,7 +208,8 @@ export class TracePathOps {
         // An endpoint the graph does not know, or narrowed away by an exact
         // path that matches no candidate. Report the real candidates so the
         // caller can correct the request rather than guess.
-        return this.withEndpointFacts({ paths: [], truncated: false }, from, to);
+        const empty = await this.explainEmptyEndpoints(handle, collectionName, req, from, to);
+        return this.withEndpointFacts({ paths: [], truncated: false, empty }, from, to);
       }
       let adjacency: Map<FileScopedSymbolId, FileScopedSymbolId[]>;
       ({ adjacency, modelHops } = await this.buildBoundedAdjacency(handle, from.refs, maxDepth));
@@ -322,10 +329,56 @@ export class TracePathOps {
     exactPath: RelPath | undefined,
   ): Promise<EndpointCandidates> {
     if (paths.length > 0) return candidatesFor(symbolId, paths, exactPath);
+    // The other member separator (`Registry#client_for` vs `Registry.client_for`): same policy as the edge tools.
+    const swapped = swapMemberSeparator(symbolId);
+    if (swapped !== null) {
+      const swappedPaths = (await handle.graphDb.getSymbolRelPaths([swapped])).get(swapped) ?? [];
+      if (swappedPaths.length > 0) {
+        return { ...candidatesFor(swapped, swappedPaths, exactPath), resolvedSymbolId: swapped };
+      }
+    }
     const definer = await resolveInheritedMemberDefiner(handle.graphDb, symbolId).catch(() => null);
     if (definer === null) return candidatesFor(symbolId, paths, exactPath);
     const definerPaths = (await handle.graphDb.getSymbolRelPaths([definer])).get(definer) ?? [];
     return { ...candidatesFor(definer, definerPaths, exactPath), resolvedSymbolId: definer };
+  }
+
+  /**
+   * Why an endpoint-less trace is empty: an endpoint the graph does not know (`unknownSymbol`, or `testChunk`
+   * when the id is an indexed test chunk — the same explanation the edge tools give), or a known one the exact
+   * `fromPath` / `toPath` narrowed away (`noMatch`). `paths: []` without `empty` therefore only ever means
+   * both endpoints exist and no path joins them.
+   */
+  private async explainEmptyEndpoints(
+    handle: CollectionGraphHandle,
+    collectionName: string,
+    req: TracePathRequest,
+    from: EndpointCandidates,
+    to: EndpointCandidates,
+  ): Promise<EmptyAnswerExplanation> {
+    const isTestChunk = async (symbolId: SymbolId): Promise<boolean> =>
+      readPayloadSymbolIsTest(this.deps.qdrant, collectionName, symbolId);
+    const sides = [
+      { endpoint: from, id: req.from, path: req.fromPath, flag: "fromPath" },
+      { endpoint: to, id: req.to, path: req.toPath, flag: "toPath" },
+    ].filter((side) => side.endpoint.refs.length === 0);
+    const explained: EmptyAnswerExplanation[] = [];
+    for (const { endpoint, id, path, flag } of sides) {
+      explained.push(
+        endpoint.allPaths.length === 0
+          ? await unknownOrTestChunk(handle.graphDb, id, swapMemberSeparator(id), isTestChunk)
+          : {
+              reason: "noMatch",
+              message: `${id} is defined in ${endpoint.allPaths.join(", ")}; ${flag} ${path ?? ""} matches none of them.`,
+            },
+      );
+    }
+    const suggestions = [...new Set(explained.flatMap((e) => e.suggestions ?? []))].slice(0, MAX_EMPTY_SUGGESTIONS);
+    return {
+      reason: explained[0].reason,
+      message: explained.map((e) => e.message).join(" "),
+      ...(suggestions.length > 0 ? { suggestions } : {}),
+    };
   }
 
   /**

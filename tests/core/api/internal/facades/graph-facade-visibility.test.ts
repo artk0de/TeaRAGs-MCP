@@ -69,8 +69,10 @@ describe("GraphFacade — declared visibility (bd tea-rags-mcp-sqqkz)", () => {
         },
         { targetSymbolId: "Svc#legacy", targetRelPath: "src/svc.ts", callExpression: "this.legacy()" },
         { targetSymbolId: "Ext#call", targetRelPath: "src/ext.ts", callExpression: "ext.call()" },
-        { targetSymbolId: null, targetRelPath: "src/util.ts", callExpression: "util()" },
       ],
+      // PIN-UPDATED: a null-target edge is an unresolved call, not a row (bd tea-rags-mcp-q1g6s.11).
+      unresolved: 1,
+      unresolvedCalls: ["util()"],
     });
     expect("visibility" in (res as { callees: object[] }).callees[2]).toBe(false);
     expect(getSymbolVisibilities).toHaveBeenCalledTimes(1);

@@ -204,6 +204,8 @@ export interface CalleeResult extends DeclaredVisibilityField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
+  /** Call sites reaching this target, when more than one collapsed into the row (`callExpression` is the first). */
+  count?: number;
   /** `"model"` when a residual-resolution verdict produced the edge; absent means a static edge. */
   origin?: EdgeOrigin;
   /** Provider id of a model edge. */
@@ -213,7 +215,12 @@ export interface CalleeResult extends DeclaredVisibilityField {
 }
 
 export interface SymbolCalleesResponse extends ResolvedSymbolIdField, EmptyAnswerField {
+  /** Callees with a resolved target symbol only. */
   callees: CalleeResult[];
+  /** Call sites the resolver pinned to no target symbol; they are not `callees` rows. Absent when none. */
+  unresolved?: number;
+  /** Up to five distinct call expressions among the `unresolved` sites. */
+  unresolvedCalls?: string[];
 }
 
 // ── Slice 2 / B2 — find_cycles ──
@@ -346,7 +353,7 @@ export interface TracedPath {
   minP?: number;
 }
 
-export interface PathTraceResult extends WorkingTreeMarkerField {
+export interface PathTraceResult extends WorkingTreeMarkerField, EmptyAnswerField {
   /** Sorted by aggregateDanger, most dangerous first. */
   paths: TracedPath[];
   /** True if maxPaths/maxDepth capped enumeration. */

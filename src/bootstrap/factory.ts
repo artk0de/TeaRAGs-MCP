@@ -81,6 +81,7 @@ import {
   QuarantineStore,
   readPayloadFileCommitCounts,
   readPayloadImportSpecifiers,
+  readPayloadSymbolIsTest,
   registerAllTools,
   RequestScopedFileFactsReader,
   RESIDUAL_MODELS,
@@ -818,6 +819,8 @@ export function wireCodegraph(
    * file-level facts (bd tea-rags-mcp-2i7lg) — the same window the review wraps.
    */
   withinRequest?: GraphFacadeDeps["withinRequest"],
+  /** Whether an id is an indexed test chunk (payload `isTest`) — the graph tools say `testChunk` instead of unknownSymbol. */
+  readSymbolIsTest?: GraphFacadeDeps["readSymbolIsTest"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -952,6 +955,7 @@ export function wireCodegraph(
     // tea-rags-mcp-r8hme.52.19) — the same exclusion the manifests feed.
     ...(readIndexedFileImports ? { readTreeFileText } : {}),
     ...(withinRequest ? { withinRequest } : {}),
+    ...(readSymbolIsTest ? { readSymbolIsTest } : {}),
     ...(workingTreeOverlay ? { workingTreeOverlay } : {}),
     ...(indexExists ? { indexExists } : {}),
   });
@@ -1510,6 +1514,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     async (collectionName) => requestFileFacts.readIndexedFileImports(collectionName),
     readTreeDeclaredTestDependencies,
     async (request) => requestFileFacts.withinRequest(request),
+    async (collectionName, symbolId) => readPayloadSymbolIsTest(infra.qdrant, collectionName, symbolId),
   );
   // Swept with the chunk store's schedule (first after 2 min, then every 6 h,
   // unref'd, throttled across processes by a stamp) — here,

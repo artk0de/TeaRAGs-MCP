@@ -41,15 +41,22 @@ export type SymbolEdgeExplanationGraph = Pick<
 export const LOW_RESOLVE_RATE = 0.9;
 const MAX_SUGGESTIONS = 5;
 
+/** Whether an id is an indexed TEST chunk — test code is not walked into the codegraph. */
+export type TestChunkProbe = (symbolId: SymbolId) => Promise<boolean>;
+
 /**
  * `readEdges(symbolId)`, and — when it answered empty — the separator-swapped
  * read or the reason it is empty. `edgeNoun` names the edges in the message.
+ * A node whose own form has no edges while the other separator form has some
+ * (a module function `Registry.client_for` beside an instance `Registry#client_for`)
+ * answers the other form, named in `resolvedSymbolId`.
  */
 export async function readSymbolEdgesExplained<E>(
   graph: SymbolEdgeExplanationGraph,
   symbolId: SymbolId,
   readEdges: (targetSymbolId: SymbolId) => Promise<SymbolEdgeRead<E>>,
   edgeNoun: "callers" | "callees",
+  isTestChunk?: TestChunkProbe,
 ): Promise<SymbolEdgeRead<E> & { empty?: EmptyAnswerExplanation }> {
   const read = await readEdges(symbolId);
   if (read.edges.length > 0) return read;
@@ -61,15 +68,41 @@ export async function readSymbolEdgesExplained<E>(
   );
   if (definitions === null) return read;
   const own = definitions.find((d) => d.symbolId === queried);
-  if (own) return { ...read, empty: await noEdges(graph, queried, own.relPath, edgeNoun) };
   const swappedDefinition = swapped ? definitions.find((d) => d.symbolId === swapped) : undefined;
   if (swapped && swappedDefinition) {
     const swappedRead = await readEdges(swapped);
     const answered = { ...swappedRead, resolvedSymbolId: swappedRead.resolvedSymbolId ?? swapped };
     if (answered.edges.length > 0) return answered;
-    return { ...answered, empty: await noEdges(graph, answered.queriedSymbolId, swappedDefinition.relPath, edgeNoun) };
+    if (!own) {
+      return {
+        ...answered,
+        empty: await noEdges(graph, answered.queriedSymbolId, swappedDefinition.relPath, edgeNoun),
+      };
+    }
   }
-  return { ...read, empty: await unknownSymbol(graph, symbolId, swapped) };
+  if (own) return { ...read, empty: await noEdges(graph, queried, own.relPath, edgeNoun) };
+  return { ...read, empty: await unknownOrTestChunk(graph, symbolId, swapped, isTestChunk) };
+}
+
+/** `unknownSymbol`, or `testChunk` when the probe says the id is an indexed test chunk. */
+export async function unknownOrTestChunk(
+  graph: Pick<SymbolEdgeExplanationGraph, "lookupSymbolIdsByShortName">,
+  symbolId: SymbolId,
+  swapped: SymbolId | null,
+  isTestChunk?: TestChunkProbe,
+): Promise<EmptyAnswerExplanation> {
+  if (isTestChunk) {
+    const ids = swapped ? [symbolId, swapped] : [symbolId];
+    for (const id of ids) {
+      if (await attempt(async () => isTestChunk(id), false)) {
+        return {
+          reason: "testChunk",
+          message: `${id} is a test chunk — test code is not in the codegraph, so it has no callers or callees.`,
+        };
+      }
+    }
+  }
+  return unknownSymbol(graph, symbolId, swapped);
 }
 
 /** A diagnostic read: its failure (rejection or throw) yields `fallback`, never fails the answer. */
@@ -127,7 +160,7 @@ async function languageResolveRate(graph: SymbolEdgeExplanationGraph, language: 
 }
 
 async function unknownSymbol(
-  graph: SymbolEdgeExplanationGraph,
+  graph: Pick<SymbolEdgeExplanationGraph, "lookupSymbolIdsByShortName">,
   symbolId: SymbolId,
   swapped: SymbolId | null,
 ): Promise<EmptyAnswerExplanation> {
