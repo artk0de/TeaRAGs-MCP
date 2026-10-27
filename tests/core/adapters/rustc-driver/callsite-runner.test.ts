@@ -1,4 +1,5 @@
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,8 @@ import type { SupervisedChild } from "../../../../src/core/adapters/process-tree
 import {
   acquireRustcCallSites,
   defaultRustcCallSiteRunnerDeps,
+  lockRustcDriverRunRecord,
+  removeRustcDriverPathInBackground,
   type RustcCallSiteRunnerDeps,
 } from "../../../../src/core/adapters/rustc-driver/callsite-runner.js";
 import type { RustcDriverBuildResult } from "../../../../src/core/adapters/rustc-driver/driver-build.js";
@@ -110,8 +113,18 @@ function host(
     rustcVV?: string;
     cpuCount?: number;
     sources?: RustSourceStamp[];
+    /** Entry names of `${DATA}/rustc-driver/`. */
+    rootEntries?: string[];
+    /** The project lock stays held by another run past the wait. */
+    lockHeldElsewhere?: boolean;
   } = {},
 ) {
+  const rootEntries = [...(init.rootEntries ?? [])];
+  const renamed: [string, string][] = [];
+  /** Paths handed to `removeInBackground`; the fake never settles them. */
+  const backgroundRemovals: string[] = [];
+  const lockWaits: { path: string; waitMs: number }[] = [];
+  const lockTails = new Map<string, Promise<void>>();
   let sources = init.sources ?? [
     { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
     { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
@@ -203,6 +216,19 @@ function host(
       remove: (path) => {
         removed.push(path);
         for (const key of [...texts.keys()]) if (key === path || key.startsWith(`${path}/`)) texts.delete(key);
+        const entry = rootEntries.indexOf(path.slice(`${DATA}/rustc-driver/`.length));
+        if (entry >= 0) rootEntries.splice(entry, 1);
+      },
+      listDir: (path) => (path === `${DATA}/rustc-driver` ? [...rootEntries] : []),
+      rename: (from, to) => {
+        renamed.push([from, to]);
+        const entry = rootEntries.indexOf(from.slice(`${DATA}/rustc-driver/`.length));
+        if (entry >= 0) rootEntries.splice(entry, 1);
+        const top = to.slice(`${DATA}/rustc-driver/`.length).split("/")[0] ?? "";
+        if (!rootEntries.includes(top)) rootEntries.push(top);
+      },
+      removeInBackground: (path) => {
+        backgroundRemovals.push(path);
       },
       stat: (path) => stamps.get(path),
       listRustSources: () => {
@@ -210,6 +236,21 @@ function host(
         return sources;
       },
       realPath: (path) => path,
+    },
+    lockRunRecord: async (path, waitMs) => {
+      lockWaits.push({ path, waitMs });
+      if (init.lockHeldElsewhere) return undefined;
+      const previous = lockTails.get(path) ?? Promise.resolve();
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((done) => {
+        release = done;
+      });
+      lockTails.set(
+        path,
+        previous.then(async () => held),
+      );
+      await previous;
+      return release;
     },
     readCargoManifests: () =>
       [...texts.entries()]
@@ -228,6 +269,10 @@ function host(
     removed,
     written,
     kills,
+    rootEntries,
+    renamed,
+    backgroundRemovals,
+    lockWaits,
     discoverCalls: () => discoverCalls,
     builds: () => builds,
     listings: () => listings,
@@ -247,10 +292,11 @@ const acquire = async (
   options: { cargoArgs?: string; timeoutSec?: number; admission?: RustCallSiteAdmission } = {},
 ) => acquireRustcCallSites(h.deps, { projectRoot: ROOT, ...options });
 
-const envKeyOf = (spawn: SpawnCall | undefined): string => {
-  const out = spawn?.env.TEA_RAGS_RUSTC_DRIVER_OUT ?? "";
-  return out.slice(`${DATA}/rustc-driver/`.length);
-};
+/** The project dir the driver wrote into. */
+const outDirOf = (spawn: SpawnCall | undefined): string => spawn?.env.TEA_RAGS_RUSTC_DRIVER_OUT ?? "";
+
+/** `${DATA}/rustc-driver/projects/<sha256 of the canonical project root>`. */
+const PROJECT_DIR = `${DATA}/rustc-driver/projects/${createHash("sha256").update(ROOT).digest("hex")}`;
 
 const flush = async (): Promise<void> => {
   await new Promise((done) => setTimeout(done, 0));
@@ -280,10 +326,9 @@ describe("acquireRustcCallSites — gating", () => {
 describe("acquireRustcCallSites — child environment", () => {
   it("forces the pin's toolchain and the data-dir target and output dirs", async () => {
     const h = host({ env: { RUSTC_WRAPPER: "sccache", RUSTC_WORKSPACE_WRAPPER: "clippy-driver" } });
-    await acquire(h);
+    const result = await acquire(h);
     const spawn = h.spawns[0];
-    const envKey = envKeyOf(spawn);
-    expect(envKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.diagnostics.envKey).toMatch(/^[0-9a-f]{64}$/);
     expect(spawn?.command).toBe(DRIVER);
     expect(spawn?.cwd).toBe(ROOT);
     expect(spawn?.env).toMatchObject({
@@ -291,8 +336,8 @@ describe("acquireRustcCallSites — child environment", () => {
       RUSTC: `${SYSROOT}/bin/rustc`,
       SYSROOT,
       PATH: `${SYSROOT}/bin:/usr/bin`,
-      CARGO_TARGET_DIR: `${DATA}/rustc-driver/${envKey}/target`,
-      TEA_RAGS_RUSTC_DRIVER_OUT: `${DATA}/rustc-driver/${envKey}`,
+      CARGO_TARGET_DIR: `${PROJECT_DIR}/target`,
+      TEA_RAGS_RUSTC_DRIVER_OUT: PROJECT_DIR,
       TEA_RAGS_RUSTC_DRIVER_CARGO_ARGS: "--workspace --all-targets",
       CARGO_NET_OFFLINE: "true",
       CMAKE_POLICY_VERSION_MINIMUM: "3.5",
@@ -339,8 +384,8 @@ describe("acquireRustcCallSites — child environment", () => {
 describe("acquireRustcCallSites — envKey", () => {
   const keyFor = async (init: Parameters<typeof host>[0], cargoArgs?: string): Promise<string> => {
     const h = host(init);
-    await acquire(h, cargoArgs ? { cargoArgs } : {});
-    return envKeyOf(h.spawns[0]);
+    const result = await acquire(h, cargoArgs ? { cargoArgs } : {});
+    return result.diagnostics.envKey ?? "";
   };
   const files = (over: Record<string, string> = {}): Record<string, string> => ({
     [`${ROOT}/Cargo.lock`]: "lock-v1",
@@ -366,6 +411,138 @@ describe("acquireRustcCallSites — envKey", () => {
   });
 });
 
+describe("acquireRustcCallSites — one dir per project", () => {
+  const LEGACY_A = "a".repeat(64);
+  const LEGACY_B = "0123456789abcdef".repeat(4);
+
+  it("keys the output dir by the canonical project root, the same for every environment", async () => {
+    const first = host();
+    const firstResult = await acquire(first);
+    const second = host({ files: { [`${ROOT}/Cargo.lock`]: "lock-v2" } });
+    const secondResult = await acquire(second);
+    expect(outDirOf(first.spawns[0])).toBe(PROJECT_DIR);
+    expect(outDirOf(second.spawns[0])).toBe(PROJECT_DIR);
+    expect(secondResult.diagnostics.envKey).not.toBe(firstResult.diagnostics.envKey);
+
+    const linked = host();
+    linked.deps.fs.realPath = () => "/real/ws";
+    await acquire(linked);
+    expect(outDirOf(linked.spawns[0])).toBe(
+      `${DATA}/rustc-driver/projects/${createHash("sha256").update("/real/ws").digest("hex")}`,
+    );
+  });
+
+  it("records the envKey of the run beside the run record", async () => {
+    const h = host();
+    const result = await acquire(h);
+    expect(JSON.parse(h.texts.get(`${PROJECT_DIR}/env.json`) ?? "{}")).toEqual({ envKey: result.diagnostics.envKey });
+  });
+
+  it("drops the run record of an earlier environment and keeps target/", async () => {
+    const h = host();
+    const first = await acquire(h);
+    h.texts.set(`${ROOT}/Cargo.lock`, "lock-v2");
+    const second = await acquire(h);
+    expect(h.spawns).toHaveLength(2);
+    expect(second.status).toBe("ok");
+    expect(second.diagnostics.envKey).not.toBe(first.diagnostics.envKey);
+    expect(h.removed).toEqual(expect.arrayContaining([`${PROJECT_DIR}/run.json`, `${PROJECT_DIR}/units`]));
+    expect(h.removed).not.toContain(`${PROJECT_DIR}/target`);
+    expect(outDirOf(h.spawns[1])).toBe(PROJECT_DIR);
+    expect(JSON.parse(h.texts.get(`${PROJECT_DIR}/env.json`) ?? "{}")).toEqual({ envKey: second.diagnostics.envKey });
+  });
+
+  it("never serves an earlier environment's run under reuseOnly", async () => {
+    const h = host();
+    await acquire(h);
+    h.texts.set(`${ROOT}/Cargo.lock`, "lock-v2");
+    const result = await acquire(h, { admission: () => "reuseOnly" });
+    expect(result.status).toBe("noCache");
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("drops a latch of an earlier environment", async () => {
+    const h = host();
+    await acquire(h);
+    h.texts.set(`${PROJECT_DIR}/latch.json`, JSON.stringify({ reason: "driverBuild", detail: "old" }));
+    h.texts.set(`${ROOT}/Cargo.lock`, "lock-v2");
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  it("serializes concurrent acquisitions of one project: the second serves the first's run", async () => {
+    const h = host();
+    const results = await Promise.all([acquire(h), acquire(h)]);
+    expect(h.spawns).toHaveLength(1);
+    expect(results.map((result) => result.status)).toEqual(["ok", "reused"]);
+    expect(h.lockWaits).toEqual([
+      { path: `${PROJECT_DIR}/run.lock`, waitMs: 3_600_000 },
+      { path: `${PROJECT_DIR}/run.lock`, waitMs: 3_600_000 },
+    ]);
+  });
+
+  it("answers failed without spawning while another run keeps the project lock", async () => {
+    const h = host({ lockHeldElsewhere: true });
+    const result = await acquire(h, { timeoutSec: 5 });
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.detail).toContain(`${PROJECT_DIR}/run.lock`);
+    expect(h.lockWaits).toEqual([{ path: `${PROJECT_DIR}/run.lock`, waitMs: 5000 }]);
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("moves the legacy per-environment dirs into trash/ and nothing else", async () => {
+    const kept = ["bin", "build-logs", "build-tmp", "projects", "a".repeat(63), `${LEGACY_A}.tmp`, "A".repeat(64)];
+    const h = host({ rootEntries: [LEGACY_A, ...kept, LEGACY_B] });
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.renamed).toEqual([
+      [`${DATA}/rustc-driver/${LEGACY_A}`, `${DATA}/rustc-driver/trash/${LEGACY_A}.0`],
+      [`${DATA}/rustc-driver/${LEGACY_B}`, `${DATA}/rustc-driver/trash/${LEGACY_B}.0`],
+    ]);
+    expect(h.rootEntries).toEqual([...kept, "trash"]);
+  });
+
+  it("hands trash/ to a background delete and answers without waiting for it", async () => {
+    const h = host({ rootEntries: [LEGACY_A] });
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.backgroundRemovals).toEqual([`${DATA}/rustc-driver/trash`]);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/${LEGACY_A}`))).toBe(false);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/trash`))).toBe(false);
+  });
+
+  it("resumes the delete of a trash/ an interrupted sweep left behind", async () => {
+    const h = host({ rootEntries: ["bin", "trash"] });
+    await acquire(h);
+    expect(h.renamed).toEqual([]);
+    expect(h.backgroundRemovals).toEqual([`${DATA}/rustc-driver/trash`]);
+  });
+
+  it("starts no background delete when there is nothing to sweep", async () => {
+    const h = host({ rootEntries: ["bin", "projects"] });
+    await acquire(h);
+    expect(h.backgroundRemovals).toEqual([]);
+  });
+
+  it("leaves a legacy dir whose move failed for the next sweep, without removing it inline", async () => {
+    const h = host({ rootEntries: [LEGACY_A] });
+    h.deps.fs.rename = () => {
+      throw new Error("EBUSY");
+    };
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.rootEntries).toEqual([LEGACY_A]);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/${LEGACY_A}`))).toBe(false);
+  });
+
+  it("sweeps nothing when the driver is disabled", async () => {
+    const h = host({ env: { CODEGRAPH_RUST_DRIVER: "off" }, rootEntries: [LEGACY_A] });
+    await acquire(h);
+    expect(h.removed).toEqual([]);
+  });
+});
+
 describe("acquireRustcCallSites — outcome and latch lattice", () => {
   it("decodes the listed units into a definitionAt index and reports the run", async () => {
     const h = host();
@@ -378,7 +555,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     });
     expect(result.diagnostics).toMatchObject({ ranCargoCheck: true, unitCount: 2, failedCrates: [] });
     expect(result.diagnostics.wallMs).toEqual(expect.any(Number));
-    expect(result.index?.identity.startsWith(envKeyOf(h.spawns[0]))).toBe(true);
+    expect(result.index?.identity.startsWith(`${result.diagnostics.envKey}:`)).toBe(true);
   });
 
   it("changes identity when a unit file changes", async () => {
@@ -488,7 +665,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const result = await acquire(h);
     expect(result.status).toBe("failed");
     expect(result.diagnostics.hint).toMatch(/^cargo fetch --manifest-path /);
-    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/latch.json`)).toBe(false);
+    expect(h.texts.has(`${outDirOf(h.spawns[0])}/latch.json`)).toBe(false);
   });
 
   it("spawns cargo again on the next acquire after an offline-fetch failure with unchanged sources", async () => {
@@ -504,7 +681,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const h = host({ scripts: [allFailedWith("error[E0308]: mismatched types\n")] });
     const result = await acquire(h);
     expect(result.diagnostics.latched?.reason).toBe("allUnitsFailed");
-    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/latch.json`)).toBe(true);
+    expect(h.texts.has(`${outDirOf(h.spawns[0])}/latch.json`)).toBe(true);
     const again = await acquire(h);
     expect(again.diagnostics.ranCargoCheck).toBe(false);
     expect(h.spawns).toHaveLength(1);
@@ -538,7 +715,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const fixed = await acquire(h);
     expect(fixed.status).toBe("ok");
     expect(fixed.diagnostics.latched).toBeUndefined();
-    expect(h.texts.has(`${DATA}/rustc-driver/${envKeyOf(h.spawns[1])}/latch.json`)).toBe(false);
+    expect(h.texts.has(`${outDirOf(h.spawns[1])}/latch.json`)).toBe(false);
     const next = await acquire(h);
     // Unchanged sources after the complete run: served without cargo, not latched.
     expect(next.status).toBe("reused");
@@ -548,7 +725,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
   it("treats an allUnitsFailed latch written without source stamps as stale", async () => {
     const h = host();
     await acquire(h);
-    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    const envDir = `${outDirOf(h.spawns[0])}`;
     h.texts.set(`${envDir}/latch.json`, JSON.stringify({ reason: "allUnitsFailed", detail: "old" }));
     const result = await acquire(h);
     // Not answered failed: the complete earlier run is served (sources unchanged, so without cargo).
@@ -559,7 +736,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
   it("keeps a driverBuild latch regardless of source changes", async () => {
     const h = host();
     await acquire(h);
-    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    const envDir = `${outDirOf(h.spawns[0])}`;
     h.texts.set(`${envDir}/latch.json`, JSON.stringify({ reason: "driverBuild", detail: "cargo build exited 101" }));
     h.setSources([{ relPath: "app/src/main.rs", size: 5, mtimeMs: 42 }]);
     const result = await acquire(h);
@@ -605,8 +782,7 @@ describe("acquireRustcCallSites — outcome and latch lattice", () => {
     const h = host({ scripts: [okScript({ runJson: okRun({ units: [], missing }), units: {} }), okScript()] });
     const result = await acquire(h);
     expect(h.spawns).toHaveLength(2);
-    const envKey = envKeyOf(h.spawns[0]);
-    expect(h.removed).toContain(`${DATA}/rustc-driver/${envKey}/target`);
+    expect(h.removed).toContain(`${outDirOf(h.spawns[0])}/target`);
     expect(result.status).toBe("ok");
     expect(result.diagnostics.retried).toBe(true);
   });
@@ -796,7 +972,7 @@ describe("acquireRustcCallSites — warm incremental spawn and no-op short-circu
   const spawn: RustCallSiteAdmission = () => "spawn";
   /** Marks the target dir of the first spawn's envKey as present on disk. */
   const warmTargetDir = (h: ReturnType<typeof host>): void => {
-    h.stamps.set(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/target`, { size: 64, mtimeMs: 1 });
+    h.stamps.set(`${outDirOf(h.spawns[0])}/target`, { size: 64, mtimeMs: 1 });
   };
   const touched = [
     { relPath: "app/src/main.rs", size: 100, mtimeMs: 1 },
@@ -873,7 +1049,7 @@ describe("acquireRustcCallSites — warm incremental spawn and no-op short-circu
   it("answers noCache under reuseOnly without a previous run even when a target dir exists", async () => {
     const h = host();
     await acquire(h);
-    const envDir = `${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}`;
+    const envDir = `${outDirOf(h.spawns[0])}`;
     h.texts.delete(`${envDir}/run.json`);
     warmTargetDir(h);
     h.setSources(touched);
@@ -905,7 +1081,7 @@ describe("acquireRustcCallSites — warm incremental spawn and no-op short-circu
   it("runs cargo under spawn admission when a unit file the complete run listed is gone", async () => {
     const h = host();
     await acquire(h);
-    h.texts.delete(`${DATA}/rustc-driver/${envKeyOf(h.spawns[0])}/units/app-1.ndjson`);
+    h.texts.delete(`${outDirOf(h.spawns[0])}/units/app-1.ndjson`);
     await acquire(h, { admission: spawn });
     expect(h.spawns).toHaveLength(2);
   });
@@ -923,6 +1099,44 @@ describe("acquireRustcCallSites — warm incremental spawn and no-op short-circu
     expect(h.spawns).toHaveLength(2);
     expect(again.status).toBe("partial");
     expect(again.diagnostics.ranCargoCheck).toBe(true);
+  });
+});
+
+describe("removeRustcDriverPathInBackground — host background delete", () => {
+  it("deletes the tree asynchronously, also when a second delete of it starts meanwhile", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-trash-"));
+    try {
+      const trash = join(dir, "trash");
+      mkdirSync(join(trash, "a".repeat(64), "target"), { recursive: true });
+      writeFileSync(join(trash, "a".repeat(64), "target", "big"), "x");
+      const first = removeRustcDriverPathInBackground(trash);
+      const second = removeRustcDriverPathInBackground(trash);
+      expect(existsSync(trash)).toBe(true);
+      await Promise.all([first, second]);
+      expect(existsSync(trash)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("lockRustcDriverRunRecord — host lock file", () => {
+  it("hands the lock to a second holder only after the first releases it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-run-lock-"));
+    try {
+      const lockPath = join(dir, "projects", "p", "run.lock");
+      const first = await lockRustcDriverRunRecord(lockPath, 0);
+      expect(first).toBeDefined();
+      expect(await lockRustcDriverRunRecord(lockPath, 0)).toBeUndefined();
+      const second = lockRustcDriverRunRecord(lockPath, 10_000);
+      first?.();
+      const release = await second;
+      expect(release).toBeDefined();
+      release?.();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
