@@ -366,8 +366,11 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
   waited for up to the run's wall budget) serializes acquisitions of one project
   across processes; cargo locks `target/` itself, the lock keeps the run record
   writes from interleaving. The per-envKey `<64 hex>/` directories of the
-  earlier layout are removed from the rustc-driver root on every acquisition;
-  `bin/`, `build-logs/` and `build-tmp/` belong to `driver-build.ts`.
+  earlier layout are renamed into `rustc-driver/trash/` on every acquisition
+  (instant), and `trash/` is deleted asynchronously, never awaited by the
+  acquisition; a `trash/` an interrupted delete left behind is deleted again on
+  the next sweep. `bin/`, `build-logs/` and `build-tmp/` belong to
+  `driver-build.ts`.
 - There is no contentKey blob. cargo's fingerprints are the content cache. An
   index run that spawns the driver (warm ≈ seconds) then reads `units/`.
 - No-op short-circuit, under any admission: when the previous run is complete

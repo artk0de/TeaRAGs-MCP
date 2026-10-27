@@ -16,8 +16,8 @@
  * `units/`, `latch.json`. A new envKey drops the record and keeps `target/`
  * (cargo's fingerprints invalidate what the new driver, rustc or Cargo.lock
  * touches). `run.lock` serializes acquisitions of one project across processes.
- * The per-envKey `<64 hex>/` dirs of the earlier layout are swept from the
- * rustc-driver root on every acquisition. A wall and a process-tree RSS budget
+ * The per-envKey `<64 hex>/` dirs of the earlier layout are renamed into
+ * `trash/` on every acquisition and deleted in the background. A wall and a process-tree RSS budget
  * kill the tree on a breach.
  *
  * Cache: cargo's own fingerprints are the content cache, so an acquisition that
@@ -51,6 +51,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { rm } from "node:fs/promises";
 import { availableParallelism, homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,6 +118,8 @@ const RUSTC_DRIVER_DIR = "rustc-driver";
 const PROJECTS_DIR = "projects";
 /** A rustc-driver root entry of the per-envKey layout that preceded `projects/`. */
 const LEGACY_ENV_DIR = /^[0-9a-f]{64}$/;
+/** Where retired legacy dirs wait for their background delete. */
+const TRASH_DIR = "trash";
 /** `{ envKey }` of the environment the project dir's run record belongs to. */
 const ENV_FILE = "env.json";
 /** Held for the whole acquisition so two runs on one project never interleave record writes. */
@@ -220,6 +223,10 @@ export interface RustcCallSiteRunnerDeps extends SupervisedChildHost {
     remove: (path: string) => void;
     /** Entry names of a directory; none when it is unreadable. */
     listDir: (path: string) => readonly string[];
+    /** Atomic rename, creating the target's parent directory; throws on failure. */
+    rename: (from: string, to: string) => void;
+    /** Starts a recursive delete the caller does not wait for; failures are logged, never thrown. */
+    removeInBackground: (path: string) => void;
     stat: (path: string) => { size: number; mtimeMs: number } | undefined;
     listRustSources: (projectRoot: string) => readonly RustSourceStamp[];
     /** Canonical path (symlinks resolved), as cargo reports it in package ids; the input when unresolvable. */
@@ -427,22 +434,30 @@ function rustcDriverProjectDir(dataDir: string, canonicalProjectRoot: string): s
 }
 
 /**
- * Removes the per-envKey dirs (`<64 hex>/` at the rustc-driver root) of the
+ * Retires the per-envKey dirs (`<64 hex>/` at the rustc-driver root) of the
  * layout before one dir per project: nothing reads them any more, and each held
- * a cargo target dir of several GB. Every other entry (`bin/`, `build-logs/`,
- * `build-tmp/`, `projects/`) is left alone. Best-effort: a failed removal is
- * retried on the next acquisition.
+ * a cargo target dir of several GB. Each is renamed into `trash/` (instant), and
+ * `trash/` is handed to a background delete the acquisition never waits for; a
+ * `trash/` an interrupted delete left behind is handed over again. Every other
+ * entry (`bin/`, `build-logs/`, `build-tmp/`, `projects/`) is left alone. A
+ * failed rename leaves the dir for the next acquisition.
  */
 function sweepLegacyEnvironmentDirs(deps: RustcCallSiteRunnerDeps): void {
   const root = join(deps.dataDir, RUSTC_DRIVER_DIR);
+  const trash = join(root, TRASH_DIR);
+  let trashHolds = false;
   for (const name of deps.fs.listDir(root)) {
+    if (name === TRASH_DIR) trashHolds = true;
     if (!LEGACY_ENV_DIR.test(name)) continue;
     try {
-      deps.fs.remove(join(root, name));
+      // A suffix keeps the move clear of a same-named dir an interrupted delete left in trash/.
+      deps.fs.rename(join(root, name), join(trash, `${name}.${deps.clock.now()}`));
+      trashHolds = true;
     } catch {
       // Left for the next acquisition.
     }
   }
+  if (trashHolds) deps.fs.removeInBackground(trash);
 }
 
 /** The run left no failed crate and no missing unit: its units cover the whole workspace. */
@@ -915,6 +930,13 @@ export function defaultRustcCallSiteRunnerDeps(
           return [];
         }
       },
+      rename: (from, to) => {
+        mkdirSync(dirname(to), { recursive: true });
+        renameSync(from, to);
+      },
+      removeInBackground: (path) => {
+        void removeRustcDriverPathInBackground(path);
+      },
       stat: (path) => {
         try {
           const stat = statSync(path);
@@ -935,6 +957,27 @@ export function defaultRustcCallSiteRunnerDeps(
     readCargoManifests: (projectRoot) => readManifestFiles(projectRoot, (fileName) => fileName === "Cargo.toml"),
     lockRunRecord: lockRustcDriverRunRecord,
   };
+}
+
+const backgroundRemovals = new Map<string, Promise<void>>();
+
+/**
+ * Recursive async delete of `path`; a delete of the same path already running in
+ * this process is returned instead of a second one. Never rejects: a failure is
+ * logged, and what is left is picked up by the next sweep.
+ */
+export async function removeRustcDriverPathInBackground(path: string): Promise<void> {
+  const running = backgroundRemovals.get(path);
+  if (running) return running;
+  const removal = rm(path, { recursive: true, force: true })
+    .catch((error: unknown) => {
+      console.error(`[rustc-driver] background delete of ${path} failed:`, error);
+    })
+    .finally(() => {
+      backgroundRemovals.delete(path);
+    });
+  backgroundRemovals.set(path, removal);
+  return removal;
 }
 
 /**

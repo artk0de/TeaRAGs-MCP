@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import {
   acquireRustcCallSites,
   defaultRustcCallSiteRunnerDeps,
   lockRustcDriverRunRecord,
+  removeRustcDriverPathInBackground,
   type RustcCallSiteRunnerDeps,
 } from "../../../../src/core/adapters/rustc-driver/callsite-runner.js";
 import type { RustcDriverBuildResult } from "../../../../src/core/adapters/rustc-driver/driver-build.js";
@@ -119,6 +120,9 @@ function host(
   } = {},
 ) {
   const rootEntries = [...(init.rootEntries ?? [])];
+  const renamed: [string, string][] = [];
+  /** Paths handed to `removeInBackground`; the fake never settles them. */
+  const backgroundRemovals: string[] = [];
   const lockWaits: { path: string; waitMs: number }[] = [];
   const lockTails = new Map<string, Promise<void>>();
   let sources = init.sources ?? [
@@ -216,6 +220,16 @@ function host(
         if (entry >= 0) rootEntries.splice(entry, 1);
       },
       listDir: (path) => (path === `${DATA}/rustc-driver` ? [...rootEntries] : []),
+      rename: (from, to) => {
+        renamed.push([from, to]);
+        const entry = rootEntries.indexOf(from.slice(`${DATA}/rustc-driver/`.length));
+        if (entry >= 0) rootEntries.splice(entry, 1);
+        const top = to.slice(`${DATA}/rustc-driver/`.length).split("/")[0] ?? "";
+        if (!rootEntries.includes(top)) rootEntries.push(top);
+      },
+      removeInBackground: (path) => {
+        backgroundRemovals.push(path);
+      },
       stat: (path) => stamps.get(path),
       listRustSources: () => {
         listings += 1;
@@ -256,6 +270,8 @@ function host(
     written,
     kills,
     rootEntries,
+    renamed,
+    backgroundRemovals,
     lockWaits,
     discoverCalls: () => discoverCalls,
     builds: () => builds,
@@ -475,15 +491,49 @@ describe("acquireRustcCallSites — one dir per project", () => {
     expect(h.spawns).toHaveLength(0);
   });
 
-  it("removes the legacy per-environment dirs at the rustc-driver root and nothing else", async () => {
+  it("moves the legacy per-environment dirs into trash/ and nothing else", async () => {
     const kept = ["bin", "build-logs", "build-tmp", "projects", "a".repeat(63), `${LEGACY_A}.tmp`, "A".repeat(64)];
     const h = host({ rootEntries: [LEGACY_A, ...kept, LEGACY_B] });
     const result = await acquire(h);
     expect(result.status).toBe("ok");
-    expect(h.removed).toEqual(
-      expect.arrayContaining([`${DATA}/rustc-driver/${LEGACY_A}`, `${DATA}/rustc-driver/${LEGACY_B}`]),
-    );
-    expect(h.rootEntries).toEqual(kept);
+    expect(h.renamed).toEqual([
+      [`${DATA}/rustc-driver/${LEGACY_A}`, `${DATA}/rustc-driver/trash/${LEGACY_A}.0`],
+      [`${DATA}/rustc-driver/${LEGACY_B}`, `${DATA}/rustc-driver/trash/${LEGACY_B}.0`],
+    ]);
+    expect(h.rootEntries).toEqual([...kept, "trash"]);
+  });
+
+  it("hands trash/ to a background delete and answers without waiting for it", async () => {
+    const h = host({ rootEntries: [LEGACY_A] });
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.backgroundRemovals).toEqual([`${DATA}/rustc-driver/trash`]);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/${LEGACY_A}`))).toBe(false);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/trash`))).toBe(false);
+  });
+
+  it("resumes the delete of a trash/ an interrupted sweep left behind", async () => {
+    const h = host({ rootEntries: ["bin", "trash"] });
+    await acquire(h);
+    expect(h.renamed).toEqual([]);
+    expect(h.backgroundRemovals).toEqual([`${DATA}/rustc-driver/trash`]);
+  });
+
+  it("starts no background delete when there is nothing to sweep", async () => {
+    const h = host({ rootEntries: ["bin", "projects"] });
+    await acquire(h);
+    expect(h.backgroundRemovals).toEqual([]);
+  });
+
+  it("leaves a legacy dir whose move failed for the next sweep, without removing it inline", async () => {
+    const h = host({ rootEntries: [LEGACY_A] });
+    h.deps.fs.rename = () => {
+      throw new Error("EBUSY");
+    };
+    const result = await acquire(h);
+    expect(result.status).toBe("ok");
+    expect(h.rootEntries).toEqual([LEGACY_A]);
+    expect(h.removed.some((path) => path.startsWith(`${DATA}/rustc-driver/${LEGACY_A}`))).toBe(false);
   });
 
   it("sweeps nothing when the driver is disabled", async () => {
@@ -1049,6 +1099,24 @@ describe("acquireRustcCallSites — warm incremental spawn and no-op short-circu
     expect(h.spawns).toHaveLength(2);
     expect(again.status).toBe("partial");
     expect(again.diagnostics.ranCargoCheck).toBe(true);
+  });
+});
+
+describe("removeRustcDriverPathInBackground — host background delete", () => {
+  it("deletes the tree asynchronously, also when a second delete of it starts meanwhile", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-trash-"));
+    try {
+      const trash = join(dir, "trash");
+      mkdirSync(join(trash, "a".repeat(64), "target"), { recursive: true });
+      writeFileSync(join(trash, "a".repeat(64), "target", "big"), "x");
+      const first = removeRustcDriverPathInBackground(trash);
+      const second = removeRustcDriverPathInBackground(trash);
+      expect(existsSync(trash)).toBe(true);
+      await Promise.all([first, second]);
+      expect(existsSync(trash)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
