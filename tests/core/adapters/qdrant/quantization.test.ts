@@ -28,6 +28,7 @@ describe("QdrantManager.createCollection — quantization", () => {
 
     expect(mockClient.createCollection).toHaveBeenCalledWith("test-col", {
       vectors: { size: 384, distance: "Cosine" },
+      optimizers_config: { default_segment_number: 1 },
       quantization_config: {
         scalar: { type: "int8", always_ram: true },
       },
@@ -40,6 +41,7 @@ describe("QdrantManager.createCollection — quantization", () => {
     expect(mockClient.createCollection).toHaveBeenCalledWith("test-col", {
       vectors: { dense: { size: 384, distance: "Cosine" } },
       sparse_vectors: { text: { modifier: "idf" } },
+      optimizers_config: { default_segment_number: 1 },
       quantization_config: {
         scalar: { type: "int8", always_ram: true },
       },
@@ -51,6 +53,7 @@ describe("QdrantManager.createCollection — quantization", () => {
 
     expect(mockClient.createCollection).toHaveBeenCalledWith("test-col", {
       vectors: { size: 384, distance: "Cosine" },
+      optimizers_config: { default_segment_number: 1 },
     });
   });
 

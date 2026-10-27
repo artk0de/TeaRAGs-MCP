@@ -27,6 +27,16 @@ import type { CollectionInfo, QdrantCollectionMemoryUsage, QdrantMemoryUsage } f
 // Declared in types.ts so ports.ts stays a leaf off the connection/alias graph.
 export type { CollectionInfo, QdrantCollectionMemoryUsage, QdrantMemoryUsage } from "./types.js";
 
+/**
+ * Segments a new collection starts with. Every appendable segment preallocates
+ * a fixed 5 MB per map/numeric payload index and 2 MB per field's null
+ * sub-index whatever its point count (~360 MB for tea-rags' field set), so
+ * Qdrant's CPU-based default (6 on 12 cores) pays it six times. Large
+ * collections still grow: the indexing optimizer seals a full segment and opens
+ * a fresh appendable one.
+ */
+const INITIAL_SEGMENT_NUMBER = 1;
+
 export class QdrantCollectionAdmin {
   constructor(private readonly connection: QdrantConnection) {}
 
@@ -60,6 +70,7 @@ export class QdrantCollectionAdmin {
           modifier: "idf" | "none";
         };
       };
+      optimizers_config: { default_segment_number: number };
       quantization_config?:
         | { scalar: { type: "int8"; always_ram: boolean } }
         | { turbo: { bits: "bits4"; always_ram: boolean } };
@@ -71,6 +82,7 @@ export class QdrantCollectionAdmin {
       metadata?: Record<string, unknown>;
     }
 
+    const optimizersConfig = { default_segment_number: INITIAL_SEGMENT_NUMBER };
     const config: CollectionConfig = enableSparse
       ? {
           vectors: {
@@ -84,12 +96,14 @@ export class QdrantCollectionAdmin {
               modifier: "idf",
             },
           },
+          optimizers_config: optimizersConfig,
         }
       : {
           vectors: {
             size: vectorSize,
             distance,
           },
+          optimizers_config: optimizersConfig,
         };
 
     if (turboQuant) {

@@ -201,7 +201,20 @@ describe("QdrantManager", () => {
           size: 1536,
           distance: "Cosine",
         },
+        optimizers_config: { default_segment_number: 1 },
       });
+    });
+
+    it("creates every collection with a single segment so fixed per-segment index storage is paid once", async () => {
+      await manager.createCollection("plain", 384);
+      await manager.createCollection("hybrid", 384, "Cosine", true, true);
+
+      for (const name of ["plain", "hybrid"]) {
+        expect(mockClient.createCollection).toHaveBeenCalledWith(
+          name,
+          expect.objectContaining({ optimizers_config: { default_segment_number: 1 } }),
+        );
+      }
     });
 
     it("should create a collection with custom distance metric", async () => {
@@ -212,6 +225,7 @@ describe("QdrantManager", () => {
           size: 1536,
           distance: "Euclid",
         },
+        optimizers_config: { default_segment_number: 1 },
       });
     });
 
@@ -230,6 +244,7 @@ describe("QdrantManager", () => {
             modifier: "idf",
           },
         },
+        optimizers_config: { default_segment_number: 1 },
       });
     });
 
@@ -251,6 +266,7 @@ describe("QdrantManager", () => {
 
       expect(mockClient.createCollection).toHaveBeenCalledWith("typed", {
         vectors: { size: 384, distance: "Cosine" },
+        optimizers_config: { default_segment_number: 1 },
         metadata: { documentMetadataSchema: { type: "object" } },
       });
     });
