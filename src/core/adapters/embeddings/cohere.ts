@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import Bottleneck from "bottleneck";
-import { CohereClient } from "cohere-ai";
+import type { CohereClient } from "cohere-ai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { CohereApiError, CohereRateLimitError } from "./cohere/errors.js";
@@ -25,7 +25,10 @@ function isCohereRateLimit(error: unknown): boolean {
 }
 
 export class CohereEmbeddings implements EmbeddingProvider {
-  private readonly client: CohereClient;
+  private readonly apiKey: string;
+  // The SDK (with its AWS/Bedrock utils) is imported on first use: every process
+  // that composes the app loads this module, whichever provider it selects.
+  private clientRequest?: Promise<CohereClient>;
   private readonly model: string;
   private readonly dimensions: number;
   private readonly limiter: Bottleneck;
@@ -40,7 +43,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
     rateLimitConfig?: RateLimitConfig,
     inputType: "search_document" | "search_query" | "classification" | "clustering" = "search_document",
   ) {
-    this.client = new CohereClient({ token: apiKey });
+    this.apiKey = apiKey;
     this.model = model;
     this.inputType = inputType;
 
@@ -58,6 +61,11 @@ export class CohereEmbeddings implements EmbeddingProvider {
       maxConcurrent: 5,
       minTime: Math.floor((60 * 1000) / maxRequestsPerMinute),
     });
+  }
+
+  private async loadClient(): Promise<CohereClient> {
+    this.clientRequest ??= import("cohere-ai").then(({ CohereClient }) => new CohereClient({ token: this.apiKey }));
+    return this.clientRequest;
   }
 
   private async retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
@@ -79,7 +87,9 @@ export class CohereEmbeddings implements EmbeddingProvider {
   async embed(text: string): Promise<EmbeddingResult> {
     return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
-        const response = await this.client.embed({
+        const response = await (
+          await this.loadClient()
+        ).embed({
           texts: [text],
           model: this.model,
           inputType: this.inputType,
@@ -103,7 +113,9 @@ export class CohereEmbeddings implements EmbeddingProvider {
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
-        const response = await this.client.embed({
+        const response = await (
+          await this.loadClient()
+        ).embed({
           texts,
           model: this.model,
           inputType: this.inputType,

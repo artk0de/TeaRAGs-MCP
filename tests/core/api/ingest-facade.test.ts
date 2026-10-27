@@ -367,6 +367,57 @@ describe("IngestFacade", () => {
     );
   });
 
+  it("overlaps the endpoint probes and the Qdrant reads instead of serialising them (bd o4p5l)", async () => {
+    // A probe of an unreachable endpoint waits out its timeout; serialised, the
+    // active, fallback and primary probes stacked those waits in every prime.
+    let settleActive: (healthy: boolean) => void = () => undefined;
+    const activeProbe = new Promise<boolean>((resolve) => {
+      settleActive = resolve;
+    });
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      getCollectionInfo: vi.fn(),
+      aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      url: "http://localhost:6333",
+      getServerVersion: vi.fn().mockResolvedValue("1.18.2"),
+      getCollectionDiskBytes: vi.fn().mockResolvedValue(undefined),
+    };
+    const embeddings = {
+      embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+      checkHealth: vi.fn().mockReturnValue(activeProbe),
+      checkPrimaryHealth: vi.fn().mockResolvedValue(false),
+      checkFallbackHealth: vi.fn().mockResolvedValue(true),
+      getProviderName: vi.fn().mockReturnValue("llama-server"),
+      getBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:8080"),
+      getPrimaryBaseUrl: vi.fn().mockReturnValue("http://192.168.1.71:8081"),
+      getFallbackBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:8080"),
+    };
+    const facade = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings: embeddings as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false },
+    });
+
+    const statusRequest = facade.getIndexStatus("/tmp/test-project");
+    await vi.waitFor(() => {
+      expect(embeddings.checkPrimaryHealth).toHaveBeenCalled();
+      expect(embeddings.checkFallbackHealth).toHaveBeenCalled();
+      expect(qdrant.getServerVersion).toHaveBeenCalled();
+    });
+    settleActive(true);
+    const status = await statusRequest;
+
+    expect(status.infraHealth?.embedding).toMatchObject({
+      available: true,
+      primaryAvailable: false,
+      fallbackAvailable: true,
+      activeUrl: "http://127.0.0.1:8080",
+    });
+    expect(status.infraHealth?.qdrant.version).toBe("1.18.2");
+  });
+
   it("omits embedding.fallbackUrl when getFallbackBaseUrl returns undefined", async () => {
     // Backward compatibility: providers that don't expose a fallback (ONNX,
     // Voyage, Ollama without EMBEDDING_FALLBACK_URL) must not emit the field

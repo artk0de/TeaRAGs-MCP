@@ -70,6 +70,7 @@ import {
   type FindSymbolRequest,
   type HybridSearchRequest,
   type IndexMetrics,
+  type IndexMetricsReadOptions,
   type PresetFilterNotice,
   type RankChunksRequest,
   type SemanticSearchRequest,
@@ -487,7 +488,7 @@ export class ExploreOps {
    * (bd tea-rags-mcp-2kplu): it wins over the path, as it does in every
    * resolver — a worktree path hashes to a collection that does not exist.
    */
-  async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
+  async getIndexMetrics(path: string, collection?: string, options?: IndexMetricsReadOptions): Promise<IndexMetrics> {
     if (!this.indexMetricsQuery) throw new NotIndexedError(path);
     // Same rule the search legs above resolve by, handed the SAME spelling:
     // a project that moved keeps the collection its registry entry recorded, so
@@ -505,7 +506,8 @@ export class ExploreOps {
     // Every read answer carries the marker (bd tea-rags-mcp-xi2r9, live probe
     // P2-4): the metrics describe the INDEX, and the marker says how far the
     // caller's tree is from it. Measured beside the metrics read, never after.
-    const workingTreeView = this.workingTreeOverlay?.view(workingTree, undefined);
+    const workingTreeView =
+      options?.workingTreeMarker === false ? undefined : this.workingTreeOverlay?.view(workingTree, undefined);
     await this.ensureStats(collectionName);
     const metrics = await this.indexMetricsQuery.run(
       collectionName,

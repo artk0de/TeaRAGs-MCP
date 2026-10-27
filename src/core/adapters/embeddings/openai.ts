@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import Bottleneck from "bottleneck";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { OpenAIAuthError, OpenAIRateLimitError } from "./openai/errors.js";
@@ -37,7 +37,10 @@ function getOpenAIRetryAfterMs(error: unknown): number | undefined {
 }
 
 export class OpenAIEmbeddings implements EmbeddingProvider {
-  private readonly client: OpenAI;
+  private readonly apiKey: string;
+  // The SDK is imported on first use: every process that composes the app
+  // loads this module, whichever provider it selects.
+  private clientRequest?: Promise<OpenAI>;
   private readonly model: string;
   private readonly dimensions: number;
   private readonly limiter: Bottleneck;
@@ -50,7 +53,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
   ) {
-    this.client = new OpenAI({ apiKey });
+    this.apiKey = apiKey;
     this.model = model;
 
     this.dimensions = resolveStartingDimensions(model, dimensions, 1536);
@@ -94,10 +97,19 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     }
   }
 
+  private async loadClient(): Promise<OpenAI> {
+    this.clientRequest ??= import("openai").then(
+      ({ default: OpenAIClient }) => new OpenAIClient({ apiKey: this.apiKey }),
+    );
+    return this.clientRequest;
+  }
+
   async embed(text: string): Promise<EmbeddingResult> {
     return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
-        const response = await this.client.embeddings.create({
+        const response = await (
+          await this.loadClient()
+        ).embeddings.create({
           model: this.model,
           input: text,
           dimensions: this.dimensions,
@@ -114,7 +126,9 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
     return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
-        const response = await this.client.embeddings.create({
+        const response = await (
+          await this.loadClient()
+        ).embeddings.create({
           model: this.model,
           input: texts,
           dimensions: this.dimensions,

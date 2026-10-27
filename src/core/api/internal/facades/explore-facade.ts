@@ -30,6 +30,7 @@ import type {
   FindSymbolRequest,
   HybridSearchRequest,
   IndexMetrics,
+  IndexMetricsReadOptions,
   RankChunksRequest,
   SemanticSearchRequest,
   WorkingTreeIndexTarget,
@@ -129,8 +130,8 @@ export class ExploreFacade {
   }
 
   /** `collection`, when given, is the index read — the resolver's priority (collection > path). */
-  async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
-    return this.exploreOps.getIndexMetrics(path, collection);
+  async getIndexMetrics(path: string, collection?: string, options?: IndexMetricsReadOptions): Promise<IndexMetrics> {
+    return this.exploreOps.getIndexMetrics(path, collection, options);
   }
 
   /** The base index a working-tree `path` is read against; undefined for an index's own checkout (D10). */

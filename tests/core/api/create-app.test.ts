@@ -228,7 +228,13 @@ describe("createApp", () => {
     it("delegates getIndexMetrics to ExploreFacade", async () => {
       const app = createApp(deps);
       await app.getIndexMetrics("/foo");
-      expect(deps.explore.getIndexMetrics).toHaveBeenCalledWith("/foo");
+      expect(deps.explore.getIndexMetrics).toHaveBeenCalledWith("/foo", undefined, undefined);
+    });
+
+    it("forwards the metrics read options to ExploreFacade (bd o4p5l)", async () => {
+      const app = createApp(deps);
+      await app.getIndexMetrics("/foo", { workingTreeMarker: false });
+      expect(deps.explore.getIndexMetrics).toHaveBeenCalledWith("/foo", undefined, { workingTreeMarker: false });
     });
   });
 
