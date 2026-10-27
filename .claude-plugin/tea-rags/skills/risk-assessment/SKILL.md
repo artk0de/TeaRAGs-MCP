@@ -5,11 +5,10 @@ description: >-
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
   (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something's
-  off in X" (dinopowers:systematic-debugging), NOT refactoring candidates
-  ("what to refactor in X", "cleanup X" → explore), NOT risks of named
-  `Class#method` symbols (explore PRE-GEN). Answer: phases 0–5,
-  Critical/High tables (Symbol, File:Line, Risk Type, Key Signals, Tests), final
-  Output: line
+  off in X" (dinopowers:systematic-debugging), NOT refactoring candidates ("what
+  to refactor in X", "cleanup X" → explore), NOT risks of named `Class#method`
+  symbols (explore PRE-GEN). Answer: phases 0–5, Critical/High tables (Symbol,
+  File:Line, Risk Type, Key Signals, Tests), final Output: line
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
@@ -94,9 +93,9 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 failed metrics / label-map read never stops the run: Phase 0 still resolves
 `pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / `floors: []` / drift on an
-answer = distance index↔tree, never licence for Bash `cat` / `sed` / `grep` /
-`rg` or `Read` over code. Row without `treeState` = current; `treeState` row →
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
+distance index↔tree, never licence for Bash `cat` / `sed` / `grep` / `rg` or
+`Read` over code. Row without `treeState` = current; `treeState` row →
 `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
 `index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
 awaited; print `--force not run; reads continue`; then keep working); subagent /

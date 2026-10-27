@@ -1,0 +1,17 @@
+**Skills are not loaded for you** — except this core:
+`$tea-rags-core` IS this text, never open its `SKILL.md`. A task a skill covers (`$name` /
+`$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I
+would read the skill" is not reading it), then every reference file or
+`tea-rags://` resource it marks MANDATORY for your case. A skill that hands off
+to another skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`,
+`$data-driven-generation` …) → open that `SKILL.md` too. Plan from that text,
+not from this core. `repair/<family>.md`, `rules/…` in any skill or
+reference = the plugin root (the folder holding `skills/`), never the skill's
+own folder.
+
+**Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
+the next step still serves the user's request (search / `$explore` over the
+code they asked about). Graph answer with `changedFiles` > 0 and no
+`codegraph` floor → edges touching changed files are the index's: re-check
+changed-file callers via `find_symbol`, find missing ones via
+`hybrid_search` metaOnly — never a bare retry of the graph call.
