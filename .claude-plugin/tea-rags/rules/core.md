@@ -1,6 +1,7 @@
 # tea-rags core
 
-**Every code search and code read goes through tea-rags.** Shell, `Read`, Grep
+**Every code read and meaning search goes through tea-rags**; exact-text
+occurrences → the client's standard code search tool (Routing). Shell, `Read`
 only for files outside the index (`*.json`, locale/data `*.yml`) — say so.
 
 **Addressing.** Every read call, each next/planned call you write included
@@ -28,12 +29,16 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `client's standard code search tool "<phrase>" (literal)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. A code name, even called a
-  "pattern"/"glob", is a symbol (→ `hybrid_search`, not `rg --files`). Command
-  output, failing tests, counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`),
-  no skill
+  "pattern"/"glob" → the usages row below, never `rg --files`. Command output,
+  failing tests, counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
 - known symbol body/outline → `find_symbol(symbol:)` `Class#inst`/`C.st`
-- every/all callers of X → `get_callers` AND `hybrid_search(metaOnly)`
-- usages; who constructs X; files named X → `hybrid_search(metaOnly)`
+- every/all callers of X → `get_callers` AND client's standard code search tool
+  `"<X>"` (literal)
+- where X is used/referenced, every occurrence, who constructs X, files
+  containing X (exact name/constant/string, even `a|b`) → client's standard code
+  search tool `"<X>"` (literal) → `find_symbol` reads hits
+- symbol + intent ("the X that does Y"), files named X →
+  `hybrid_search(metaOnly)`
 - behaviour/intent, no name → `semantic_search` only, no `hybrid_search`
 - code like a chunk in hand → `find_similar(positiveIds:)`
 - how X works / what happens when → `get_callees`; who calls X / impact / where
@@ -51,8 +56,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
   `rerank: "proven"`
 
-Never Grep/`rg`/`rg --files`, Glob or `cat`/`sed` to locate or read code —
-identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
+Never `cat`/`sed`/`Read`, Glob or `rg --files` to locate or read code; text
+search only for exact text, never behaviour/intent. A name's fit → lexicon
 `names:[{name,kind}]`, naming a T value → `types:[T]`; a diff's →
 `review_changes` verdicts, nothing after.
 
@@ -101,13 +106,15 @@ identifiers (even `a|b`) are SYMBOL searches. A name's fit → lexicon
   behind, plus ONE line
   `AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`,
   never awaited, never "won't proceed"; next = the task's read call.
-- Empty `get_callers` ≠ no callers (jobs, DSL, config) → `hybrid_search`. Edges
-  at changed files, `treeGraphUnavailable` (graph not overlaid) → all 3 steps,
-  in order, none dropped (a `--force` ask rides beside them, never takes a
-  slot): `1. index_codebase(project=)` (main own checkout; linked/subagent →
-  skip) `2. find_symbol(symbol: <caller>)` `3. hybrid_search(metaOnly)` —
-  callers the index lacks. No graph retry. Codegraph off → never claim "no
-  cycles"; on + empty `find_cycles` = DAG.
+- Empty `get_callers` ≠ no callers (jobs, DSL, config) → client's standard code
+  search tool `"<name>"` (literal). Edges at changed files,
+  `treeGraphUnavailable` (graph not overlaid) → all 3 steps, in order, none
+  dropped (a `--force` ask rides beside them, never takes a slot):
+  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)
+  `2. find_symbol(symbol: <caller>)`
+  `3. client's standard code search tool "<name>" (literal)` — callers the index
+  lacks. No graph retry. Codegraph off → never claim "no cycles"; on + empty
+  `find_cycles` = DAG.
 - Docs = hypothesis; verify in code — unless the doc is the subject ("what does
   README say") → report it as-is, no code pass.
 - `rustc driver: unavailable` (prime / `get_index_status` / `index_codebase`) →

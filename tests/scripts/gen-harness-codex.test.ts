@@ -486,6 +486,13 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  it("Codex lag follow-ups find missing callers the way core does: the client's standard code search tool", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
+    expect(codexRules).toContain("find missing ones via the client's standard code search tool");
+    expect(codexRules).not.toContain("`hybrid_search` metaOnly");
+  });
+
   it("ships no dinopowers skill, every skill named after its folder", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const skills = [...rendered].filter(([path]) => /^tea-rags\/skills\/[^/]+\/SKILL\.md$/.test(path));
