@@ -42,6 +42,13 @@ export interface CollectionPurgeInput {
   path?: string;
 }
 
+export interface CollectionGenerationPurgeInput {
+  /** The alias the generation belongs to, e.g. `code_8b243ffe`. */
+  logicalName: string;
+  /** The stale generation itself, e.g. `code_8b243ffe_v1`. */
+  physicalName: PhysicalCollectionName;
+}
+
 export interface CollectionPurgeFailure {
   artifact: ArtifactId;
   /** Physical generation for `physical` artifacts, logical name for the rest. */
@@ -143,6 +150,70 @@ export class CollectionFootprintPurger {
       kept: this.describeKept(logical, input.path),
       failures,
     };
+  }
+
+  /**
+   * Removes ONE stale generation of a collection whose alias stays live — the
+   * `code_a_v1` left behind while `code_a` points at `code_a_v2`. Only the
+   * physical half of the saga runs, and it runs with the generation standing in
+   * for the logical name too: `QdrantArtifact#remove` drops the alias named by
+   * `logicalName` before the collection, so handing it the real alias would cut
+   * the live project loose. The alias-keyed stores are never touched.
+   *
+   * Refuses — records a failure and removes nothing — when the name is not a
+   * `_vN` generation of `logicalName`, when it is the alias target, or when the
+   * aliases cannot be read and the generation therefore cannot be proven dead.
+   */
+  async purgeGeneration(input: CollectionGenerationPurgeInput): Promise<CollectionPurgeReport> {
+    const { logicalName, physicalName } = input;
+    const failures: CollectionPurgeFailure[] = [];
+    const report = (aliasTarget: PhysicalCollectionName | null, qdrantCollections: string[], codegraph: string[]) => ({
+      collectionName: logicalName,
+      qdrantAlias: aliasTarget,
+      qdrantCollections,
+      codegraphDatabases: codegraph,
+      clearedStores: [] as ArtifactId[],
+      kept: [] as string[],
+      failures,
+    });
+
+    if (!new RegExp(`^${escapeRegExp(logicalName)}_v\\d+$`).test(physicalName)) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `'${physicalName}' is not a versioned generation of '${logicalName}'`,
+      });
+      return report(null, [], []);
+    }
+
+    let aliasTarget: PhysicalCollectionName | null;
+    try {
+      const aliases = await this.deps.qdrant.aliases.listAliases();
+      aliasTarget = aliases.find((a) => a.aliasName === logicalName)?.collectionName ?? null;
+    } catch (err) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `cannot read aliases (${describe(err)}) — refusing`,
+      });
+      return report(null, [], []);
+    }
+    if (aliasTarget === physicalName) {
+      failures.push({
+        artifact: "qdrant",
+        target: physicalName,
+        reason: `live generation of '${logicalName}' — refusing to purge it`,
+      });
+      return report(aliasTarget, [], []);
+    }
+
+    const onDisk = this.enumerateCodegraph(logicalName, failures).includes(physicalName);
+    await this.removeArtifacts("physical", this.contextFor(physicalName, physicalName), physicalName, failures);
+    return report(
+      aliasTarget,
+      await this.verifyQdrantGone([physicalName], failures),
+      onDisk ? this.verifyCodegraphGone(logicalName, [physicalName], failures) : [],
+    );
   }
 
   /**
