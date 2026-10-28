@@ -214,7 +214,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "never Read the file or grep a saved dump. " +
       "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +
       "no suffix = unknown) — drop the suffix before drilling. " +
-      "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline. " +
+      "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
       'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
       "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +

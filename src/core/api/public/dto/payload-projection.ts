@@ -60,6 +60,13 @@ export interface PayloadProjectionMode {
    * tea-rags-mcp-q1g6s.16). Absent → find_symbol's lean per-mode default.
    */
   searchTool?: boolean;
+  /**
+   * The rows are find_symbol `relativePath` answers — file outlines, directory
+   * listings. Their `content` / `symbols` IS the outline, the metadata metaOnly
+   * asks for, so a metaOnly row keeps it beside the locator (bd
+   * tea-rags-mcp-hditp).
+   */
+  outline?: boolean;
 }
 
 /**
@@ -92,6 +99,9 @@ const LOCATOR_FIELDS = ["relativePath", "symbolId", "startLine", "endLine", "chu
  * an outline (bd tea-rags-mcp-03yel); no stored chunk carries it.
  */
 const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols", "kind"];
+
+/** A metaOnly outline row: the locator plus the outline itself. */
+const OUTLINE_META_ONLY_FIELDS = [...LOCATOR_FIELDS, "content", "symbols"];
 
 /**
  * Narrow every result's payload to `fields`, and report the paths that landed
@@ -146,7 +156,8 @@ function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): Se
 
 function defaultKeysOf(mode: PayloadProjectionMode): readonly string[] {
   if (mode.searchTool) return mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
-  return mode.metaOnly ? LOCATOR_FIELDS : CONTENT_FIELDS;
+  if (!mode.metaOnly) return CONTENT_FIELDS;
+  return mode.outline ? OUTLINE_META_ONLY_FIELDS : LOCATOR_FIELDS;
 }
 
 /** Trim, drop blanks, de-duplicate — order of first appearance is kept for the warning. */

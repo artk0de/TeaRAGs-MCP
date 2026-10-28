@@ -154,7 +154,7 @@ describe("FileOutlineStrategy working-tree chunk floor", () => {
       const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: lines(3) } }), { metaOnly: true });
 
       expect(results[0].payload?.kind).toBeUndefined();
-      expect(results[0].payload?.content).toBeUndefined();
+      expect(results[0].payload?.content).toBe("src/foo.ts\n  Foo#bar");
     });
 
     it("falls back to the outline when the tree cannot read the file", async () => {

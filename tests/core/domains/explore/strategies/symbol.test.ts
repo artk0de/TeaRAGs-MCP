@@ -344,7 +344,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "score" } }]),
         }),
-        200,
+        2000,
       );
     });
 
@@ -362,7 +362,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "bar" } }]),
         }),
-        200,
+        2000,
       );
     });
 
@@ -380,7 +380,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "incoming" } }]),
         }),
-        200,
+        2000,
       );
     });
 
@@ -401,7 +401,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "updated" } }]),
         }),
-        200,
+        2000,
       );
     });
 
@@ -419,7 +419,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "valid" } }]),
         }),
-        200,
+        2000,
       );
     });
 
@@ -437,7 +437,7 @@ describe("SymbolSearchStrategy", () => {
         expect.objectContaining({
           must: expect.arrayContaining([{ key: "symbolId", match: { text: "save" } }]),
         }),
-        200,
+        2000,
       );
     });
 

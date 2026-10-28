@@ -304,6 +304,33 @@ describe("projectSearchResultPayloads — default projection by call mode (N4)",
   });
 });
 
+describe("projectSearchResultPayloads — outline rows under metaOnly (hditp)", () => {
+  const outlineRow: SearchResult = {
+    id: "o",
+    score: 1,
+    payload: {
+      relativePath: "lib/billing/ledger.rb",
+      language: "ruby",
+      content: "lib/billing/ledger.rb\n  Billing::Ledger\n  Billing::Ledger#post",
+      git: { file: { commitCount: 4 } },
+    },
+  };
+
+  it("keeps a file outline's text: the outline IS the metadata", () => {
+    const outcome = projectSearchResultPayloads([outlineRow], undefined, {
+      metaOnly: true,
+      reranked: false,
+      outline: true,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: "lib/billing/ledger.rb",
+      language: "ruby",
+      content: "lib/billing/ledger.rb\n  Billing::Ledger\n  Billing::Ledger#post",
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Search tools' default fields (bd tea-rags-mcp-q1g6s.16)
 //
