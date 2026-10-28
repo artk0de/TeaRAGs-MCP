@@ -599,7 +599,13 @@ export class ExploreOps {
   ): Promise<ExploreResponse> {
     if (!finalize.migration) await this.ensureStats(ctx.collectionName);
     const workingTreeView = await finalize.workingTreeView;
-    const results = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const candidates = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const results = finalize.migration
+      ? candidates
+      : candidates.filter((result) => {
+          const path = result.payload?.relativePath;
+          return typeof path !== "string" || !/(?:^|\/)db\/migrate\//.test(path.replaceAll("\\", "/"));
+        });
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;

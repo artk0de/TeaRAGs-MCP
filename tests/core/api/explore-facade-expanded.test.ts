@@ -153,6 +153,35 @@ describe("ExploreFacade — expanded methods", () => {
     vi.clearAllMocks();
   });
 
+  it("excludes legacy migration points from ordinary search but retains migration scope", async () => {
+    const rows = [
+      {
+        id: "legacy",
+        score: 0.9,
+        payload: { relativePath: "db/migrate/1_orders.rb", content: "add_column :orders, :token, :uuid" },
+      },
+      {
+        id: "engine",
+        score: 0.8,
+        payload: { relativePath: "engines/vendors/db/migrate/2_vendors.rb", content: "create_table :vendors" },
+      },
+      { id: "code", score: 0.7, payload: { relativePath: "app/orders.rb", content: "class Orders; end" } },
+    ];
+    const qdrant = makeMockQdrant({
+      search: vi.fn().mockResolvedValue(rows),
+      hybridSearch: vi.fn().mockResolvedValue(rows),
+    });
+    const { facade } = makeFacade({ qdrant });
+    for (const search of [facade.semanticSearch.bind(facade), facade.hybridSearch.bind(facade)]) {
+      const code = await search({ collection: "test_col", query: "orders", filter: {}, limit: 10 });
+      expect(code.results.map((row) => row.payload?.relativePath)).toEqual(["app/orders.rb"]);
+      const migrations = await search({ collection: "test_col", query: "orders", scope: "migrations", limit: 10 });
+      expect(migrations.results.map((row) => row.payload?.relativePath)).toContain("db/migrate/1_orders.rb");
+    }
+    const code = await facade.searchCode({ collection: "test_col", query: "orders", limit: 10 });
+    expect(code.results.map((row) => row.payload?.relativePath)).toEqual(["app/orders.rb"]);
+  });
+
   it("rejects migration searches while the migration corpus is incomplete", async () => {
     const qdrant = makeMockQdrant({ getPoint: vi.fn().mockResolvedValue({ payload: { indexingComplete: false } }) });
     const { facade } = makeFacade({ qdrant });

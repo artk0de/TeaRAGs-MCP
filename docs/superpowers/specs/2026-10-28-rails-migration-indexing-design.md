@@ -153,6 +153,10 @@ local `review_changes` gate before each commit.
   crash.
 - Check an update revision before and after migration search: overlapping
   updates must not return mixed results as a completed corpus.
+- Suppress legacy `db/migrate/**` points in ordinary search results: existing
+  collections remain safe to query until a dedicated cleanup is available.
+  Filtering after candidate retrieval can shorten a page; legacy points may
+  still affect sparse IDF and collection statistics until cleanup.
 
 ## Delivery phases
 
