@@ -150,20 +150,12 @@ and tree, never "index unusable". Thousands of changed files included.
   then Grep tool `"<name>"` (literal). No graph retry.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
-  caller in the changed file + Grep tool `"<name>"` (literal)
-  for callers the index lacks.
-- Bash `cat` / `sed -n` / `head` / `git show` over code = same downgrade as Read tool / Grep tool match lines — harness "use
-  Bash" note does not override. Exception: user explicitly asks for manual read.
-- Claude Code: PreToolUse hook `deny-indexed-read.sh` denies `Read`, and Bash
-  `cat`/`sed`/`head`/`tail`/`less`/`more` (compounds too), of a file the index
-  snapshot lists (`tea-rags project indexed --path <file>` /
-  `--command <cmd> --cwd <dir>`, exit 0) → `find_symbol(relativePath:)`.
-  Unindexed / unregistered / pipe over command output / unparsable command / any
-  error → allowed. File created after last index run = not indexed → allowed.
-  Hook sees the call, not the chat: user's manual-read order ("with Read",
-  "руками") still denied — say so, quote the deny, read it via `find_symbol`
-  (user may read it or disable the hook); never route around via shell
-  `cat`/`sed` or another reader.
+  caller in the changed file + Grep tool `"<name>"` (literal) for callers the
+  index lacks.
+- Standard read/search tools are routed, not forbidden (core routing row 1):
+  config / DSL / routes / migrations / specs, an unindexed file or a
+  `find_symbol` stub → Read tool; other indexed code → `find_symbol`. Lag never
+  changes that choice.
 
 ## Worktree clone — teardown only
 
