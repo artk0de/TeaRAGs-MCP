@@ -12,16 +12,14 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **CRITICAL: `tea-rags://guide/decision-tree` is ONLY tool selection method.**
-   Built-in Search, Glob, Grep tool, `find` PROHIBITED for
-   code discovery. Catch yourself reaching for grep/search — STOP, use
-   `tea-rags://guide/decision-tree` decision tree. ONLY acceptable fallback:
-   text search, only after TeaRAGs tools returned no results, and only for
-   literal text (markers, phrases, regex). Identifiers (class/method/constant)
-   never: empty `find_symbol` → partial name, then `hybrid_search`
-   (`tea-rags://guide/decision-tree`).
-3. **Follow `tea-rags://guide/decision-tree` decision tree** for SEED tool
-   selection.
+2. **CRITICAL: `tea-rags://guide/tool-choice` is ONLY tool selection method.**
+   Built-in Search, Glob, Grep tool, `find` PROHIBITED for code discovery. Catch
+   yourself reaching for grep/search — STOP, use `tea-rags://guide/tool-choice`
+   tree. ONLY acceptable fallback: text search, only after TeaRAGs tools
+   returned no results, and only for literal text (markers, phrases, regex).
+   Identifiers (class/method/constant) never: empty `find_symbol` → partial
+   name, then `hybrid_search` (`tea-rags://guide/tool-choice`).
+3. **Follow `tea-rags://guide/tool-choice` tree** for SEED tool selection.
 4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
 5. **Deduplicate by content overlap** — same directory + >80% overlap → keep
    only the one with richer signals (overlay labels), drop the other. Different
@@ -30,12 +28,13 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 6. **Group output by module/directory** — not flat list.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
-distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool over code. Row without `treeState` = current; `treeState`
-row → `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
-awaited; print `--force not run; reads continue`; then keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool
+over code. Row without `treeState` = current; `treeState` row → `find_symbol`
+re-call. Own checkout with `changedFiles` > 0 → incremental `index_codebase` now
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then keep working); subagent / linked
+worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag never
+licenses leaving tea-rags".
 
 ## Intent Classification
 
@@ -48,11 +47,11 @@ values passed:
 
 ## SEED Tool Selection
 
-**Follow `tea-rags://guide/decision-tree` decision tree** for tool selection. Do
-NOT hard-code tool choice — `tea-rags://guide/decision-tree` determines tool
-from query shape.
+**Follow `tea-rags://guide/tool-choice` tree** for tool selection. Do NOT
+hard-code tool choice — `tea-rags://guide/tool-choice` determines tool from
+query shape.
 
-This skill provides to `tea-rags://guide/decision-tree`:
+This skill provides to `tea-rags://guide/tool-choice`:
 
 - **query**: extracted pattern/entity from $ARGUMENTS
 - **rerank**: from strategy table below
@@ -76,7 +75,7 @@ chunks + churn, techDebt favors age.
 ## Flow
 
 ```
-1. SEED — `tea-rags://guide/decision-tree` tool + strategy rerank + pathPattern
+1. SEED — `tea-rags://guide/tool-choice` tool + strategy rerank + pathPattern
 2. EXPAND — find_similar from seed results (skip already-seen chunks)
 3. DEDUPLICATE — state both branches in any dedup answer: same dir + >80%
    overlap → keep richer-signals one; different dirs → ALWAYS keep both,
@@ -87,7 +86,7 @@ chunks + churn, techDebt favors age.
 
 ### 1. SEED
 
-Apply `tea-rags://guide/decision-tree`; plan names the tool (identifier →
+Apply `tea-rags://guide/tool-choice`; plan names the tool (identifier →
 `hybrid_search`, behaviour → `semantic_search`). Use strategy's rerank preset.
 Set limit by tool:
 
@@ -130,7 +129,7 @@ coverage:
    modules. Finds semantically similar implementations in other domains,
    structurally different.
 3. Polyglot codebases: also run `find_similar` with `language` filter per
-   non-seed language (see Polyglot Rule in `tea-rags://guide/decision-tree`).
+   non-seed language (see `rules/references/polyglot-rule.md`).
 
 Track seen chunk paths. Skip already-seen.
 

@@ -250,7 +250,7 @@ No `## Signal thresholds` table in the output above → read
 
 3. ONLY IF checkpoint incomplete — ONE action for what's missing:
    - Symptom names entry point or failure site → Call path (below).
-   - Otherwise `tea-rags://guide/decision-tree` for tool selection; before
+   - Otherwise `tea-rags://guide/tool-choice` for tool selection; before
      each call print `consulting decision tree → <tool> because <branch>`.
    Go to step 2.
 ```

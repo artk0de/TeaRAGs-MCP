@@ -146,7 +146,7 @@ wins; the plan prints the line):
 | Bug investigation to a subagent / Task (symptom or not)                                         | `bug-hunt runs in this session, not in a subagent — step 0 (git status --porcelain -uall) runs now; send the error / failing behaviour and the three probes run here.` — never "bug-hunt skipped"                    |
 | Demands `hybrid_search` on an error string                                                      | `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.` then Step 2                                                            |
 | Suspect already named by an earlier search + "not sure" / "want to be sure" / "one more search" | `No confirmatory search: confirmatory searches almost never change the answer.` + `Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.` — no bug-hunt Loop, no question |
-| Where is a literal string / error phrase written (no tool demanded)                             | `Grep tool "<phrase>" (literal)` + `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body` — no Loop                              |
+| Where is a literal string / error phrase written (no tool demanded)                             | `Grep tool "<phrase>" (literal)` + `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body` — no Loop                                             |
 | Suspect files named + targeted search over them                                                 | `hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")` — ONE call, paths in full                                                                            |
 | Explain / compare a known file (even "a bug was found there")                                   | `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body` — no search                                                                                    |
 
@@ -327,7 +327,7 @@ not replaces.
 
 **Follow-up searches in cycle** (callers, definition, where X happens — also
 asked as "which tools, how do you state the choice"): pick tool from
-`tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE line per
+`tea-rags://guide/tool-choice` — not ad-hoc `semantic_search`. ONE line per
 call, printed in the answer right before it — N calls → N lines, also for a
 `find_symbol` on a symbol whose name the user gave, also in a plan with no call
 run. Several known symbols' bodies = ONE `find_symbol(symbols=[<ids>])` call,

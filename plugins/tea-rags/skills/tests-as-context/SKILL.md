@@ -337,7 +337,7 @@ three:
 | empty     | preflight passed, no semantic match  | recipe's empty line — not SKIP                                                       |
 
 Return recipe's formatted output. Caller (dinopowers wrapper,
-`tea-rags://guide/decision-tree` direct user, another tea-rags skill) embeds
+`tea-rags://guide/skill-choice` direct user, another tea-rags skill) embeds
 block in its own format — review bundle line, verification ladder annotation,
 debug context paragraph.
 

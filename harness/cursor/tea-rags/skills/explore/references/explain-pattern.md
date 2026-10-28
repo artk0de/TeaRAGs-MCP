@@ -32,7 +32,7 @@ Structure EXPLAIN step by what was asked.
   owner who stopped contributing shows in `blame*`, not `recent*`.
 - **"Is X tested?" / "Show tests for X"** → hybrid_search X with
   `testFile: "only"` — typed filter, convention-agnostic, no test-dir discovery
-  (Glob prohibited — `tea-rags://guide/decision-tree`). `metaOnly=true` =
+  (Glob prohibited — `tea-rags://guide/prohibited-patterns`). `metaOnly=true` =
   existence, `metaOnly=false` = test content. Zero hits → find_symbol X
   `metaOnly=true` to split "exists but untested" from "wrong name".
 

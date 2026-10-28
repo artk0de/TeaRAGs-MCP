@@ -6,9 +6,9 @@ block to subagent prompt. Subagent never invokes this.
 ## Why parent must inject
 
 Subagents (incl. ones spawned by third-party skills) do NOT inherit rules,
-CLAUDE.md, `tea-rags://guide/decision-tree` → default to their client's
-grep/glob, bypass tea-rags. Missing block = silent low-recall text search, no
-warning. Inject unconditionally; block small + harmless for non-search tasks.
+CLAUDE.md, `tea-rags://guide/tool-choice` → default to their client's grep/glob,
+bypass tea-rags. Missing block = silent low-recall text search, no warning.
+Inject unconditionally; block small + harmless for non-search tasks.
 
 ## The block to inject
 
@@ -52,7 +52,7 @@ Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids)
 
 **After a hit:** never read the file after `find_symbol` — method = full body; class / file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
 
-**Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; tool pick, prohibited patterns, fallbacks → `decision-tree`; `treeState`, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.
+**Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; tool pick → `tool-choice`; banned move, fallback → `prohibited-patterns`; `treeState`, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.
 ```
 
 ## When NOT to inject

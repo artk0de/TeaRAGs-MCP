@@ -1,7 +1,7 @@
 # Search Use Cases
 
 By agent task. Each maps to Decision Tree branch in
-`tea-rags://guide/decision-tree`.
+`tea-rags://guide/tool-choice` (skills: `tea-rags://guide/skill-choice`).
 
 ## Discovery (don't know the naming)
 
@@ -126,6 +126,6 @@ per-language support here.
 ## Outside tea-rags
 
 Literal text only (TODO/FIXME, phrase, regex, import-path string) → text search
-(Grep tool). File structure / call-sites / usages stay on
-tea-rags (`find_symbol`, `hybrid_search`, graph tools) — routing:
-`tea-rags://guide/decision-tree`.
+(Grep tool). File structure / call-sites / usages stay on tea-rags
+(`find_symbol`, `hybrid_search`, graph tools) — routing:
+`tea-rags://guide/tool-choice` (skills: `tea-rags://guide/skill-choice`).
