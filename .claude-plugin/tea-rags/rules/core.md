@@ -11,18 +11,18 @@ alone, never ask; only a `collection` → it alone; after either say
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Grep tool: `-l` first or a line cap, in the anchor's dir when
-known, else the source root (`<src dir>`: a dir under cwd, never cwd itself),
-never a search for the dir. No find/Glob to locate code.
+Grep tool: `-l` first or a line cap, in the anchor's dir when known, else
+`<src dir>` (a dir under cwd, never cwd itself), never a search for the dir. No
+find/Glob to locate code.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 - config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
-  Read tool (path unknown → Grep tool first); all X
-  in a known `<dir>`, proving absence ("no X exists") → Grep tool
-  over that dir (empty = proof); table/column exists, `create_table` → that
-  search over `db/` (schema, then migrations; `:<table>` and `"<table>"` before
+  Read tool (path unknown → Grep tool first); all X in a known `<dir>`, proving
+  absence ("no X exists") → Grep tool over that dir (empty = proof); migration
+  `X` → `"X"` over `db/migrate/`; table/column exists, `create_table` → that
+  search over `db/schema.rb`, then `db/migrate/` (`:<table>`, `"<table>"` before
   "absent"), never `semantic_search`. Other file/dir path, lines N–M, doc TOC,
   how `<dir>` works / what's in it → `find_symbol(relativePath:)` outline first,
   then ONE batch of the needed ids (N–M: ids spanning it); no structure word
@@ -37,23 +37,23 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
   ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
-  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool, not tea-rags; phrase/error string → plan these three lines,
-  never stop at the hit:
-  `Grep tool "<phrase>" <dir> (literal, line cap)` →
+  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool,
+  not tea-rags; phrase/error string → plan these three lines, never stop at the
+  hit: `Grep tool "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
   counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
-- how X works/what happens when → `get_callees`; who calls X/impact/where Y is
-  handled → `get_callers` — `symbolId:`, `depth: 2`; every call/all callers of X
-  (grep named) → plan both lines: `get_callers` + the usages row. Then ONE
-  batch: needed tree methods
+- how X works/what happens when → `get_callees` (body unseen → `find_symbol`
+  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,
+  `depth: 2`; every call/all callers of X (grep named) → plan both lines:
+  `get_callers` + the usages row. Then ONE batch: needed tree methods
 - known symbol / identifier definition/body/outline → `find_symbol(symbol:)`
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → Grep tool `"<X>" <src dir>` (literal, `-l`) →
-  `find_symbol` outline → batch of only the needed methods, never stop at the
+  "grep for X" → Grep tool `"<X>" <src dir, e.g. app/ or src/>` (literal, `-l`)
+  → `find_symbol` outline → batch of only the needed methods, never stop at the
   hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
@@ -115,19 +115,19 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none
   dropped (a `--force` ask rides beside, never a slot):
   `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)
-  `2. find_symbol(symbol: <caller>)`
-  `3. Grep tool "<name>" (literal)` — callers the index lacks. No
-  graph retry. Graph tools absent from your tool list → codegraph off: callers =
-  usages row, never "no cycles"; present → on, no probe call; on + empty
-  `find_cycles` = DAG.
+  `2. find_symbol(symbol: <caller>)` `3. Grep tool "<name>" (literal)` — callers
+  the index lacks. No graph retry. Graph tools absent from your tool list →
+  codegraph off: callers = usages row, never "no cycles"; present → on, no probe
+  call; on + empty `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower
   bound) + install command; never install it, never "no callers"/"dead code".
-- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for
-  context"/"lines N–M" of source code without that order → `find_symbol` (hit's
-  `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`
-  Their tool idea ("use Grep/Glob") → keep the routed tool, say why.
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read
+  tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for context"/"lines
+  N–M" of source code without that order → `find_symbol` (hit's `symbolId`, then
+  file outline), print `Chunk coordinates exist. Use them.` Their tool idea
+  ("use Grep/Glob") → keep the routed tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

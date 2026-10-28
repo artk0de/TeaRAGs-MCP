@@ -12,8 +12,8 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
 The default code search tool: `-l` first or a line cap, in the anchor's dir when
-known, else the source root (`<src dir>`: a dir under cwd, never cwd itself),
-never a search for the dir. No find/Glob to locate code.
+known, else `<src dir>` (a dir under cwd, never cwd itself), never a search for
+the dir. No find/Glob to locate code.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
@@ -21,14 +21,15 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
   default code read tool (path unknown → default code search tool first); all X
   in a known `<dir>`, proving absence ("no X exists") → default code search tool
-  over that dir (empty = proof); table/column exists, `create_table` → that
-  search over `db/` (schema, then migrations; `:<table>` and `"<table>"` before
-  "absent"), never `semantic_search`. Other file/dir path, lines N–M, doc TOC,
-  how `<dir>` works / what's in it → `find_symbol(relativePath:)` outline first,
-  then ONE batch of the needed ids (N–M: ids spanning it); no structure word
-  (architecture, structure, organized, end to end, backbone, walk me through) →
-  never codegraph / `get_architecture_report`; its imports →
-  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count)
+  over that dir (empty = proof); migration `X` → `"X"` over `db/migrate/`;
+  table/column exists, `create_table` → that search over `db/schema.rb`, then
+  `db/migrate/` (`:<table>`, `"<table>"` before "absent"), never
+  `semantic_search`. Other file/dir path, lines N–M, doc TOC, how `<dir>` works
+  / what's in it → `find_symbol(relativePath:)` outline first, then ONE batch of
+  the needed ids (N–M: ids spanning it); no structure word (architecture,
+  structure, organized, end to end, backbone, walk me through) → never codegraph
+  / `get_architecture_report`; its imports → `get_callees(relativePath:)`
+  (`imports[]`; a row's `imports` = a count)
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
@@ -45,17 +46,17 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
   counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
-- how X works/what happens when → `get_callees`; who calls X/impact/where Y is
-  handled → `get_callers` — `symbolId:`, `depth: 2`; every call/all callers of X
-  (grep named) → plan both lines: `get_callers` + the usages row. Then ONE
-  batch: needed tree methods
+- how X works/what happens when → `get_callees` (body unseen → `find_symbol`
+  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,
+  `depth: 2`; every call/all callers of X (grep named) → plan both lines:
+  `get_callers` + the usages row. Then ONE batch: needed tree methods
 - known symbol / identifier definition/body/outline → `find_symbol(symbol:)`
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → default code search tool `"<X>" <src dir>` (literal, `-l`) →
-  `find_symbol` outline → batch of only the needed methods, never stop at the
-  hit
+  "grep for X" → default code search tool `"<X>" <src dir, e.g. app/ or src/>`
+  (literal, `-l`) → `find_symbol` outline → batch of only the needed methods,
+  never stop at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`

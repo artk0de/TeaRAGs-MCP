@@ -39,13 +39,16 @@ Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
 of X" — callers, below) → occurrence route, any codegraph state: Grep tool
 `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known, else the
-source root — never a search to find it) → `find_symbol` outline → batch of only
-the needed methods; never `hybrid_search` for it. Concept words, synonyms or
-spellings, even one `<a>|<b>|<c>` regex, are not an exact name → EXPLAIN:
-`semantic_search` (`hybrid_search(metaOnly)` when real ids are among them) →
-anchor → `get_callees`/`get_callers(symbolId:, depth: 2)` → ONE batch of only
-the needed methods; never a text-search alternation. "Callers of X" → decide
-codegraph first (plan line below); on → `Strategy: codegraph row 2`
+source dir, e.g. `app/` or `src/` — a dir under cwd, never cwd itself, never a
+search to find it) → `find_symbol` outline → batch of only the needed methods;
+never `hybrid_search` for it. Proving absence ("no X exists", "tell me if none")
+where the prompt names the declaring dirs or files → Grep tool over exactly
+those (empty = proof), never `semantic_search`, even for concept words. Concept
+words, synonyms or spellings, even one `<a>|<b>|<c>` regex, are not an exact
+name → EXPLAIN: `semantic_search` (`hybrid_search(metaOnly)` when real ids are
+among them) → anchor → `get_callees`/`get_callers(symbolId:, depth: 2)` → ONE
+batch of only the needed methods; never a text-search alternation. "Callers of
+X" → decide codegraph first (plan line below); on → `Strategy: codegraph row 2`
 (`get_callers`; "every call / all callers of X" → plan both lines: it + that
 occurrence route), never TRACE-only `hybrid_search`. Off (or off branch of an
 unknown state) → TRACE loop, copied, ≥ 2 calls:
