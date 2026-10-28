@@ -9,9 +9,9 @@ import {
   answerBannerFor,
   BODY_SHOWN_BANNER,
   emptyGraphBanner,
+  pendingFilesBanner,
   SEARCH_ANCHOR_BANNER,
   symbolShortName,
-  workingTreeBanner,
 } from "../../../../src/core/api/tools/answer-banner.js";
 import type { McpToolResult } from "../../../../src/core/api/tools/format.js";
 import { createRegisterTool } from "../../../../src/core/api/tools/middleware/error-handler.js";
@@ -258,35 +258,34 @@ describe("registered tools carry the banner as the FIRST content item", () => {
  * agents read "index lags" and left for shell reads. The overlay serves the
  * tree; the answer now says so, and names the one part that is not live.
  */
-describe("workingTreeBanner — lagging answers say they are live", () => {
-  it("names the overlaid count, keeps the agent in tea-rags, and adds only the qualifiers present", () => {
-    expect(workingTreeBanner({ tree: "/w", changedFiles: 143, treeGraphUnavailable: "building" })).toBe(
-      "↳ Live: rows = your working tree (143 changed files overlaid) — keep reading with tea-rags; no reindex. Graph edges = last index (tree graph building).",
+describe("pendingFilesBanner — only pending files earn a line", () => {
+  it("pendingFiles > 0 → the exact repeat-the-call line", () => {
+    expect(pendingFilesBanner({ tree: "/w", changedFiles: 12, pendingFiles: 12 })).toBe(
+      "↳ 12 files not re-read yet → repeat this same call; it serves them once warm.",
     );
-    expect(workingTreeBanner({ tree: "/w", changedFiles: 12, pendingFiles: 12 })).toBe(
-      "↳ Live: rows = your working tree (12 changed files overlaid) — keep reading with tea-rags; no reindex. 12 not re-read yet → repeat this same call; it serves them once warm.",
-    );
+    expect(
+      pendingFilesBanner({ tree: "/w", changedFiles: 143, pendingFiles: 3, treeGraphUnavailable: "building" }),
+    ).toBe("↳ 3 files not re-read yet → repeat this same call; it serves them once warm.");
+  });
+
+  it("changedFiles alone or treeGraphUnavailable alone → no banner", () => {
+    expect(pendingFilesBanner({ tree: "/w", changedFiles: 143 })).toBeUndefined();
+    expect(pendingFilesBanner({ tree: "/w", changedFiles: 143, pendingFiles: 0 })).toBeUndefined();
+    expect(pendingFilesBanner({ tree: "/w", treeGraphUnavailable: "building" })).toBeUndefined();
+    expect(pendingFilesBanner({ tree: "/w", changedFiles: 4, treeGraphUnavailable: "failed" })).toBeUndefined();
   });
 
   it("no lag, a degraded overlay, or no marker → no banner", () => {
-    expect(workingTreeBanner({ tree: "/w" })).toBeUndefined();
-    expect(workingTreeBanner({ tree: "/w", changedFiles: 0 })).toBeUndefined();
+    expect(pendingFilesBanner({ tree: "/w" })).toBeUndefined();
     expect(
-      workingTreeBanner({ tree: "/w", changedFiles: 5, degraded: { reason: "no stamp", remedy: "reindex" } }),
+      pendingFilesBanner({
+        tree: "/w",
+        changedFiles: 5,
+        pendingFiles: 5,
+        degraded: { reason: "no stamp", remedy: "reindex" },
+      }),
     ).toBeUndefined();
-    expect(workingTreeBanner(undefined)).toBeUndefined();
-  });
-
-  it("stays one line under the banner prefix", () => {
-    const text = workingTreeBanner({
-      tree: "/w",
-      changedFiles: 1833,
-      pendingFiles: 40,
-      treeGraphUnavailable: "failed",
-    });
-    expect(text?.startsWith("↳ ")).toBe(true);
-    expect(text).not.toContain("\n");
-    expect(text?.length).toBeLessThanOrEqual(240);
+    expect(pendingFilesBanner(undefined)).toBeUndefined();
   });
 });
 
@@ -308,7 +307,7 @@ describe("registered tools carry the working-tree banner after the decision bann
     const result = await register("semantic_search", textJson(answer))({ query: "q" }, {});
     expect(result.content.map((c) => c.text)).toEqual([
       SEARCH_ANCHOR_BANNER,
-      workingTreeBanner(lag),
+      pendingFilesBanner(lag),
       JSON.stringify(answer),
     ]);
   });
@@ -316,7 +315,7 @@ describe("registered tools carry the working-tree banner after the decision bann
   it("an answer with no decision point still opens with the tree banner", async () => {
     const answer = { results: [], workingTree: lag, empty: { reason: "unknownPath", suggestions: [] } };
     const result = await register("find_symbol", textJson(answer))({ relativePath: "a/new.rb" }, {});
-    expect(result.content[0].text).toBe(workingTreeBanner(lag));
+    expect(result.content[0].text).toBe(pendingFilesBanner(lag));
     expect(JSON.parse(result.content[1].text)).toEqual(answer);
   });
 
@@ -325,8 +324,14 @@ describe("registered tools carry the working-tree banner after the decision bann
     const result = await register("hybrid_search", structured(answer))({ query: "q" }, {});
     expect(Object.keys(result.structuredContent ?? {})[0]).toBe("banner");
     expect((result.structuredContent as { banner?: unknown } | undefined)?.banner).toBe(
-      `${SEARCH_ANCHOR_BANNER}\n${workingTreeBanner(lag)}`,
+      `${SEARCH_ANCHOR_BANNER}\n${pendingFilesBanner(lag)}`,
     );
+  });
+
+  it("a lagging tree with nothing pending adds nothing", async () => {
+    const answer = { results: [], workingTree: { tree: "/w", project: "p", changedFiles: 9 } };
+    const result = await register("find_symbol", textJson(answer))({ relativePath: "a.rb" }, {});
+    expect(result.content).toHaveLength(1);
   });
 
   it("a current tree adds nothing", async () => {

@@ -65,7 +65,7 @@ export function answerBannerFor(tool: string, args: unknown, result: McpToolResu
 
 /**
  * Wraps a tool handler so its answer opens with the banner {@link answerBannerFor} picks,
- * then the {@link workingTreeBanner} line: one content item each AND, on a structured
+ * then the {@link pendingFilesBanner} line: one content item each AND, on a structured
  * answer, the first `structuredContent` key (`banner`, the lines joined by a newline) —
  * Claude Code shows the model structuredContent instead of content.
  */
@@ -75,7 +75,7 @@ export function withAnswerBanner<A, E>(
 ): (args: A, extra: E) => Promise<McpToolResult> {
   return async (args, extra) => {
     const result = await handler(args, extra);
-    const banners = [answerBannerFor(tool, args, result), workingTreeBannerFor(result)].filter(
+    const banners = [answerBannerFor(tool, args, result), pendingFilesBannerFor(result)].filter(
       (line): line is string => line !== undefined,
     );
     if (banners.length === 0) return result;
@@ -88,9 +88,9 @@ export function withAnswerBanner<A, E>(
   };
 }
 
-function workingTreeBannerFor(result: McpToolResult): string | undefined {
+function pendingFilesBannerFor(result: McpToolResult): string | undefined {
   if (result.isError === true) return undefined;
-  return workingTreeBanner(readAnswer(result)?.answer.workingTree);
+  return pendingFilesBanner(readAnswer(result)?.answer.workingTree);
 }
 
 function findSymbolBanner(request: Record<string, unknown>, answer: Record<string, unknown>): string | undefined {
@@ -146,30 +146,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The line an answer from a lagging index opens with (bd tea-rags-mcp-u7afw).
- * The compact `workingTree` marker carries `changedFiles` only beside a
- * qualifier, and a bare count read as "index lags" sent agents to shell reads
- * although the overlay had served the tree. Measured 2026-10-28 (plan-only
- * cases quoting a lagging answer, Codex ×6 and Claude ×3 without plugin
- * rules): this wording held Codex at its no-banner level (27/30) where the
- * other four candidates lost 3–5 cases, and turned Claude's pending-file case
- * from 0/3 to 3/3 ("repeat this same call"; "still warming" sent Codex to cat).
- * A degraded overlay serves nothing live, so it gets no banner.
+ * The line an answer opens with while the overlay still has unread files
+ * (bd tea-rags-mcp-u7afw). Fires ONLY when `pendingFiles > 0` on a
+ * non-degraded marker; `changedFiles` alone and `treeGraphUnavailable` alone
+ * say nothing. Owner decision 2026-10-28: read answers had index-state text
+ * removed on purpose (12acdecf1, 68jud/icujw: fields nobody acted on), and
+ * measurement showed only this clause has value — Claude without plugin rules,
+ * pending-new-file case, 0/3 → 3/3 with "repeat this same call"; the general
+ * "Live: rows = your working tree …" line and the "Graph edges = last index"
+ * clause measured no gain (graph rows carry `treeState` since 07b9w). A
+ * degraded overlay serves nothing live, so it gets no banner.
  */
-export function workingTreeBanner(marker: unknown): string | undefined {
+export function pendingFilesBanner(marker: unknown): string | undefined {
   if (!isRecord(marker) || marker.degraded !== undefined) return undefined;
-  const { changedFiles, pendingFiles, treeGraphUnavailable } = marker;
-  if (typeof changedFiles !== "number" || changedFiles <= 0) return undefined;
-  const pending =
-    typeof pendingFiles === "number" && pendingFiles > 0
-      ? ` ${pendingFiles} not re-read yet → repeat this same call; it serves them once warm.`
-      : "";
-  const graph =
-    typeof treeGraphUnavailable === "string" ? ` Graph edges = last index (tree graph ${treeGraphUnavailable}).` : "";
-  return (
-    `${BANNER_PREFIX}Live: rows = your working tree (${changedFiles} changed files overlaid) — ` +
-    `keep reading with tea-rags; no reindex.${pending}${graph}`
-  );
+  const { pendingFiles } = marker;
+  if (typeof pendingFiles !== "number" || pendingFiles <= 0) return undefined;
+  return `${BANNER_PREFIX}${pendingFiles} files not re-read yet → repeat this same call; it serves them once warm.`;
 }
 
 /** True for a content text that is an answer banner, not answer data — readers that want the answer skip it. */
