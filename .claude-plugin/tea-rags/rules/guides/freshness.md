@@ -7,8 +7,8 @@ One rule, every checkout, every read tool — search, `find_symbol`, graph tools
 `review_changes`, `get_naming_lexicon`, analytics. No "which checkout am I in"
 decision.
 
-- **`project` = WHICH INDEX.** Pass always. Alias: prime `## Project` `name:`,
-  the SubagentStart line "tea-rags project alias for this repository", or
+- **`project` = WHICH INDEX.** Pass always. Alias: digest `project` line, the
+  SubagentStart line "tea-rags project alias for this repository", or
   `workingTree.project` of any answer. Survives path moves, pulls registered
   qdrantUrl + embeddingModel. Alone → tree = alias's registered checkout in its
   current state (any branch, uncommitted edits) — WRONG tree from a linked
@@ -105,16 +105,16 @@ answer prints the report line
 `to parent: index behind (changedFiles <N>) — run <Run: line>` (no drift → no
 `run` part).
 
-| Trigger (signal in prime / session)                                                                                                                              | Action                                                                                                                                                                                                                                             | User confirmation          |
+| Trigger (signal in digest / status / session)                                                                                                                    | Action                                                                                                                                                                                                                                             | User confirmation          |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Prime banner `⚠ Index is stale (last updated Nd ago)`                                                                                                            | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
+| Digest `index behind (last indexed Nd ago) → index_codebase(…)` (full prime: `⚠ Index is stale`)                                                                 | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent — parent reindexes), not yet indexed — **alias's own checkout**                         | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Uncommitted edits the index has not seen (`git status` lists paths), before searching them — **alias's own checkout**                                            | `index_codebase` (incremental)                                                                                                                                                                                                                     | no — reindex silently      |
 | Same two rows in a **linked worktree** (working directory under `.claude/worktrees/`, `.git` a file, or not the alias's checkout path)                           | **none** — read tools overlay the tree (`project` + `path=<your working directory>`); never reindex for the tree's own edits                                                                                                                       | —                          |
-| Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                                                                                            | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
-| Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                                    | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
+| `## Drift` (`get_index_status` / index answer; digest says `index drift → get_index_status`) whose `Run:` line is the plain incremental (no flag)                | `tea-rags index-codebase --project <alias>` — exactly that line                                                                                                                                                                                    | no — reindex silently      |
+| `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`                                                                                          | the `Run:` command the section names                                                                                                                                                                                                               | **YES — explicit consent** |
 | Main session, **alias's own checkout** answer with `workingTree.changedFiles` > 0 (HEAD moved, branch switch, pull) — **also when Drift `Run:` needs `--force`** | Subagent: never reindex, report to parent. Main: `index_codebase` (incremental) NOW — closes content lag, not drift; ask for the `Run:` line separately, keep working in tea-rags meanwhile                                                        | no — reindex silently      |
-| Prime `## Drift` seen from a **linked worktree**                                                                                                                 | Drift compares the shared INDEX with the alias's own checkout and the running build — never your tree (your delta = `workingTree.changedFiles`). Run the `Run:` line exactly as printed (`--project <alias>`), never re-aimed at `path=<worktree>` | per the two rows above     |
+| `## Drift` seen from a **linked worktree**                                                                                                                       | Drift compares the shared INDEX with the alias's own checkout and the running build — never your tree (your delta = `workingTree.changedFiles`). Run the `Run:` line exactly as printed (`--project <alias>`), never re-aimed at `path=<worktree>` | per the two rows above     |
 
 ## Linked worktree — overlay, not reindex
 
@@ -147,13 +147,12 @@ and tree, never "index unusable". Thousands of changed files included.
   session in the own checkout → incremental `index_codebase` now (table above).
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
   changed-file edges, in order: `find_symbol` on the caller in the changed file,
-  then the default code search tool `"<name>"` (literal). No graph retry.
+  then Grep tool `"<name>"` (literal). No graph retry.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
-  caller in the changed file + the default code search tool `"<name>"` (literal)
+  caller in the changed file + Grep tool `"<name>"` (literal)
   for callers the index lacks.
-- Bash `cat` / `sed -n` / `head` / `git show` over code = same downgrade as the
-  default code read tool / default code search tool match lines — harness "use
+- Bash `cat` / `sed -n` / `head` / `git show` over code = same downgrade as Read tool / Grep tool match lines — harness "use
   Bash" note does not override. Exception: user explicitly asks for manual read.
 - Claude Code: PreToolUse hook `deny-indexed-read.sh` denies `Read`, and Bash
   `cat`/`sed`/`head`/`tail`/`less`/`more` (compounds too), of a file the index

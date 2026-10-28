@@ -71,6 +71,7 @@ async function lookupRegistryEntry(
   input: { path?: string; project?: string },
   createPathCollectionResolver: App["createPathCollectionResolver"],
   openRegistry: PrimeRegistryRuntime["openRegistry"],
+  resolveBaseIndexEntry?: App["resolveBaseIndexEntry"],
 ): Promise<CollectionEntry | null> {
   const registry = openRegistry();
   if (input.project) {
@@ -81,7 +82,11 @@ async function lookupRegistryEntry(
     // path hash is only its fallback. Hashing here printed "not indexed" for a
     // project whose directory had moved, while its index sat under the
     // collection the entry recorded (bd tea-rags-mcp-dxa9w).
-    return registry.get(await createPathCollectionResolver(registry)(input.path));
+    const entry = registry.get(await createPathCollectionResolver(registry)(input.path));
+    if (entry || !resolveBaseIndexEntry) return entry;
+    // A linked worktree resolves to its repository's base index, as
+    // call/resource/project do (bd tea-rags-mcp-sx13r).
+    return resolveBaseIndexEntry(registry, input.path);
   }
   return null;
 }
@@ -163,6 +168,8 @@ export async function runPrime(input: {
    * itself.
    */
   createPathCollectionResolver: App["createPathCollectionResolver"];
+  /** Maps a linked worktree path to its repository's base index entry, injected by the `prime` command. */
+  resolveBaseIndexEntry?: App["resolveBaseIndexEntry"];
   /**
    * The registry runtime, injected by the `prime` command (k7kmu C3) —
    * `prime/registry-runtime.ts` constructs it from the assembly barrel; this
@@ -176,6 +183,11 @@ export async function runPrime(input: {
   openSession: () => Promise<InProcessToolSession>;
   /** `--full`: append the metrics resource (thresholds, labelMap, resolve) after the digest. */
   full?: boolean;
+  /**
+   * `--agent` (SessionStart hooks): the agent digest alone — addressing,
+   * actionable freshness. Default = the full human digest.
+   */
+  agent?: boolean;
   /** Test seam — production checks npm through buildUpdateService. */
   updateService?: Pick<UpdateCheckService, "checkForUpdate">;
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
@@ -194,6 +206,7 @@ export async function runPrime(input: {
     { path: requestedPath, project: input.project },
     input.createPathCollectionResolver,
     input.registryRuntime.openRegistry,
+    input.resolveBaseIndexEntry,
   );
   const path = registryEntry?.path ?? requestedPath;
 
@@ -285,7 +298,7 @@ export async function runPrime(input: {
 
   try {
     const [digest, metrics] = await Promise.all([
-      readText(session, `tea-rags://project/${alias}/digest`),
+      readText(session, `tea-rags://project/${alias}/digest${input.agent === true ? "" : "?view=full"}`),
       input.full === true ? readText(session, `tea-rags://project/${alias}/metrics`) : undefined,
     ]);
 
@@ -302,6 +315,7 @@ export async function runPrime(input: {
         update: await updateRequest,
         autoUpdateOutcome,
         autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
+        ...(input.agent === true ? { agent: true } : {}),
       }),
     );
   } catch (error) {

@@ -23,15 +23,18 @@ description:
 
 Checked first, before this table: layers / wrong-way dependencies / dependency
 direction of `<dir>` → `get_architecture_report(pathPattern: "<dir>/**")`, not
-row 4. A named symbol or anchor row + flow words ("end to end", "what happens
-when") → EXPLAIN graph walk (route 5), not row 4. A typed directory path and
-none of the structure words below ("how does `<dir>` work", "what's in `<dir>`")
-→ path-first, not row 4, not ORIENT — opening line, copied:
-`Strategy: path-first — "<dir>"`, then `find_symbol(relativePath: "<dir>")`
-outline → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`.
-Then structure phrasing (one of these words in the prompt: "organized", "end to
-end", "structure", "architecture", "backbone", "walk me through") → codegraph
-row 4 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+row 4. A named symbol or anchor row (search rows already in context, an answer
+opening `↳ Anchor =` included) + flow words ("end to end", "what happens when",
+"walk me through", "step by step", "involve") → EXPLAIN graph walk (route 5):
+anchor → `get_callees(symbolId: <anchor>, depth: 2)`, not row 4, no new search.
+A typed directory path and none of the structure words below ("how does `<dir>`
+work", "what's in `<dir>`") → path-first, not row 4, not ORIENT — opening line,
+copied: `Strategy: path-first — "<dir>"`, then
+`find_symbol(relativePath: "<dir>")` outline → ONE
+`find_symbol(symbols: [<Class#method ids from that outline>])`. Then structure
+phrasing (one of these words in the prompt: "organized", "end to end",
+"structure", "architecture", "backbone", "walk me through") → codegraph row 4
+below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
 of X" — callers, below) → occurrence route, any codegraph state: Grep tool
@@ -190,21 +193,18 @@ loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 **Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
 wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
-an earlier request never carries over — re-decide per request. The digest never
-states it — no codegraph line there means nothing, never read it as OFF. Context
-/ digest listing `codegraph.symbols` or `get_naming_lexicon` available =
-explicit ON (source `request`) — no registry read first. No statement → a graph
-tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefix
-— `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
-`tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
-decides. "Not in my tool list" alone never selects the off route — not checked ≠
-absent. Plan line 1, copied:
-`Codegraph: on|off — <request | tool seen | registry>`. Never `unknown`: scan
-your tool list before writing it. Never call a graph tool to probe; an
-unregistered tool is not an empty result — never read it as "no callers" / "no
-cycles". Codegraph off → content-matching table: TRACE covers usage, EXPLAIN
-covers architecture. Broad orientation / structure ("introduce me", row 4) →
-ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+an earlier request never carries over — re-decide per request. Context listing
+`codegraph.symbols` or `get_naming_lexicon` available = explicit ON (source
+`request`) — no registry read first. No statement → a graph tool you SEE in your
+tool list (`get_callers`, `trace_path`, … under any prefix — `mcp__tea-rags__`,
+`mcp__tea_rags__`) → on; none of them in the tool list → off (the tool list is
+the signal, no probe call). Plan line 1, copied:
+`Codegraph: on|off — <request | tool list>`. Never `unknown`: scan your tool
+list before writing it. Never call a graph tool to probe; an unregistered tool
+is not an empty result — never read it as "no callers" / "no cycles". Codegraph
+off → content-matching table: TRACE covers usage, EXPLAIN covers architecture.
+Broad orientation / structure ("introduce me", row 4) → ORIENT
+`rerank="onboarding"`; "where X starts" (row 3) →
 `references/entry-point-pattern.md` off procedure (relevance, drop tiny
 `chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own

@@ -1,7 +1,9 @@
 /**
  * Claude Code package generator: `plugins/<name>/` (already in the Claude Code
  * dialect) → `.claude-plugin/<name>/`, copied verbatim — bytes, executable bits
- * and symlinks kept, minus the Codex-only `codex-description` SKILL.md key, `.claude-plugin/plugin.json` included. The root
+ * and symlinks kept, minus the Codex-only `codex-description` SKILL.md key and with the code tool
+ * roles in Markdown named as Claude Code's own tools ({@link CLAUDE_CODE_TOOLS}),
+ * `.claude-plugin/plugin.json` included. The root
  * `.claude-plugin/marketplace.json` and `.claude-plugin/.benchmarks/` are not
  * packages and stay untouched.
  */
@@ -22,10 +24,25 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { PLUGINS_DIR, walk } from "./harness/package.js";
-import { stripFrontmatterKey } from "./harness/transform.js";
+import { nameCodeTools, stripFrontmatterKey, type CodeToolNames } from "./harness/transform.js";
 
 /** Folder holding the generated Claude Code packages and the root marketplace manifest. */
 export const CLAUDE_PACKAGES_DIR = ".claude-plugin";
+
+/**
+ * Claude Code's built-in tools for the code tool roles (bd tea-rags-mcp-onli7). The Grep tool needs
+ * no system rg, so the Claude Code package never names rg / ripgrep.
+ */
+export const CLAUDE_CODE_TOOLS: CodeToolNames = { codeSearchTool: "Grep tool", codeReadTool: "Read tool" };
+
+/** A package file's bytes: SKILL.md loses `codex-description`; Markdown names the code tools. */
+function renderClaudeFile(path: string, content: Buffer): Buffer {
+  if (!path.endsWith(".md")) return content;
+  const text = content.toString("utf8");
+  return Buffer.from(
+    nameCodeTools(path.endsWith("SKILL.md") ? stripFrontmatterKey(text, "codex-description") : text, CLAUDE_CODE_TOOLS),
+  );
+}
 
 /** One package entry: file bytes + mode (`0o755` / `0o644`), or a symlink target. */
 export interface PackageFile {
@@ -52,11 +69,8 @@ export function renderClaudePackage(root: string, name: string): Map<string, Pac
       files.set(path, { content: Buffer.alloc(0), mode: 0o777, link: readlinkSync(file) });
       continue;
     }
-    const content = readFileSync(file);
     files.set(path, {
-      content: path.endsWith("SKILL.md")
-        ? Buffer.from(stripFrontmatterKey(content.toString("utf8"), "codex-description"))
-        : content,
+      content: renderClaudeFile(path, readFileSync(file)),
       mode: stat.mode & 0o111 ? 0o755 : 0o644,
     });
   }

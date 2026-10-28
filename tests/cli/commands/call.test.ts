@@ -282,6 +282,48 @@ describe("runCall — results and exit codes", () => {
     expect(first.payload.symbolId).toBe("Reranker#rerank");
   });
 
+  it("an answer banner prints BEFORE the structured payload (nknkg.3)", async () => {
+    const body = { payload: { symbolId: "Reranker#rerank", content: "rerank(results) {\n  return results;\n}" } };
+    const h = harness(makeApp({ findSymbol: vi.fn().mockResolvedValue({ results: [body] }) }));
+
+    const code = await call(h, { tool: "find_symbol", params: '{"project":"tea-rags","symbol":"Reranker#rerank"}' });
+
+    expect(code).toBe(0);
+    expect(h.stdout[0]).toBe("↳ Body shown in full — answer from it; do not reopen the file.");
+    expect((JSON.parse(h.stdout[1]) as { results: unknown[] }).results).toEqual([body]);
+  });
+
+  it("--format json drops the answer banner: a text-channel answer stays the parsed answer (nknkg.3)", async () => {
+    const empty = { empty: { reason: "noEdges", message: "X#y is in the codegraph with no callers." }, callers: [] };
+    const h = harness(makeApp({ getCallers: vi.fn().mockResolvedValue(empty) }, true));
+
+    const code = await call(h, {
+      tool: "get_callers",
+      params: '{"project":"tea-rags","symbolId":"X#y"}',
+      format: "json",
+    });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(h.stdout[0])).toEqual(empty);
+  });
+
+  it("--format json drops the structuredContent banner key: a structured answer stays the bare answer (nknkg.3)", async () => {
+    const body = { payload: { symbolId: "Reranker#rerank", content: "rerank(results) {\n  return results;\n}" } };
+    const h = harness(makeApp({ findSymbol: vi.fn().mockResolvedValue({ results: [body] }) }));
+
+    const code = await call(h, {
+      tool: "find_symbol",
+      params: '{"project":"tea-rags","symbol":"Reranker#rerank"}',
+      format: "json",
+    });
+
+    expect(code).toBe(0);
+    expect(h.stdout).toHaveLength(1);
+    const printed = JSON.parse(h.stdout[0]) as Record<string, unknown>;
+    expect(printed).not.toHaveProperty("banner");
+    expect(printed.results).toEqual([body]);
+  });
+
   it("--format json prints the answer alone, its column tables folded back into records", async () => {
     const records = [
       { id: "p1", score: 1, payload: { symbolId: "Reranker#rerank", relativePath: "src/reranker.ts" } },

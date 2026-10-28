@@ -1581,6 +1581,80 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("fusedSearch (query variants, bd tea-rags-mcp-2vuz)", () => {
+    const hybridCollection = {
+      config: {
+        params: { vectors: { dense: { size: 3, distance: "Cosine" } }, sparse_vectors: { text: { modifier: "idf" } } },
+      },
+    };
+    const denseCollection = { config: { params: { vectors: { size: 3, distance: "Cosine" } } } };
+    const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+    const a = [0.1, 0.2, 0.3];
+    const b = [0.4, 0.5, 0.6];
+    const sparseA = { indices: [1], values: [0.5] };
+    const sparseB = { indices: [2], values: [0.7] };
+
+    it("sends ONE query with a dense + sparse prefetch per variant, fused by plain RRF", async () => {
+      mockClient.getCollection.mockResolvedValue(hybridCollection);
+      mockClient.query.mockResolvedValue({ points: [] });
+
+      await manager.fusedSearch(
+        "col",
+        [
+          { dense: a, sparse: sparseA },
+          { dense: b, sparse: sparseB },
+        ],
+        20,
+        filter,
+      );
+
+      expect(mockClient.query).toHaveBeenCalledTimes(1);
+      const [collectionName, body] = mockClient.query.mock.calls[0];
+      const qdrantFilter = withServicePointExclusions(filter);
+      expect(collectionName).toBe("col");
+      expect(body.prefetch).toEqual([
+        { query: a, using: "dense", limit: 20, filter: qdrantFilter, params: RESCORE_PARAMS },
+        { query: sparseA, using: "text", limit: 20, filter: qdrantFilter },
+        { query: b, using: "dense", limit: 20, filter: qdrantFilter, params: RESCORE_PARAMS },
+        { query: sparseB, using: "text", limit: 20, filter: qdrantFilter },
+      ]);
+      expect(body).toMatchObject({ query: { fusion: "rrf" }, limit: 20, filter: qdrantFilter, with_payload: true });
+    });
+
+    it("fuses dense-only legs on an unnamed-vector collection without a `using`", async () => {
+      mockClient.getCollection.mockResolvedValue(denseCollection);
+      mockClient.query.mockResolvedValue({ points: [] });
+
+      await manager.fusedSearch("col", [{ dense: a }, { dense: b }], 10);
+
+      const body = mockClient.query.mock.calls[0][1];
+      expect(body.prefetch).toEqual([
+        { query: a, limit: 10, filter: withServicePointExclusions(undefined), params: RESCORE_PARAMS },
+        { query: b, limit: 10, filter: withServicePointExclusions(undefined), params: RESCORE_PARAMS },
+      ]);
+      expect(body.query).toEqual({ fusion: "rrf" });
+    });
+
+    it("returns the fused points in the order Qdrant ranked them", async () => {
+      mockClient.getCollection.mockResolvedValue(hybridCollection);
+      mockClient.query.mockResolvedValue({
+        points: [
+          { id: "both", score: 0.033, payload: { relativePath: "both.ts" } },
+          { id: "only-a", score: 0.016, payload: { relativePath: "a.ts" } },
+          { id: "only-b", score: 0.015 },
+        ],
+      });
+
+      const results = await manager.fusedSearch("col", [{ dense: a }, { dense: b }], 10);
+
+      expect(results.map((r) => [r.id, r.score])).toEqual([
+        ["both", 0.033],
+        ["only-a", 0.016],
+        ["only-b", 0.015],
+      ]);
+    });
+  });
+
   describe("hybridSearch", () => {
     const denseVector = [0.1, 0.2, 0.3];
     const sparseVector = { indices: [1, 5, 10], values: [0.5, 0.3, 0.2] };

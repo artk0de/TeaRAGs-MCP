@@ -24,6 +24,12 @@ import type { GraphDbClient, ResolveRunStatsRow, SymbolId } from "../../../contr
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import { detectLanguage } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { splitMethodSymbol } from "../../../primitives/ids/index.js";
+import type { GraphNoticesField } from "../../public/dto/graph.js";
+import {
+  rustcDriverLowerBoundLine,
+  rustcDriverLowerBoundStatus,
+  rustSymbolEdgeNotices,
+} from "./rustc-driver-notice.js";
 
 /** Edges read for a symbol target, and the definer id they were read under when it was aliased. */
 export interface SymbolEdgeRead<E> {
@@ -35,7 +41,11 @@ export interface SymbolEdgeRead<E> {
 export type SymbolEdgeExplanationGraph = Pick<
   GraphDbClient,
   "getSymbolVisibilities" | "lookupSymbolIdsByShortName" | "getRunStats"
->;
+> &
+  Partial<Pick<GraphDbClient, "getRustcDriverStatus">>;
+
+/** What a lower-bound note tells the agent to do instead of claiming the symbol is unused. */
+const LOWER_BOUND_NEXT = "confirm with a literal text search for the name.";
 
 /** Resolve rate under which a zero-edge answer is reported as a lower bound. */
 export const LOW_RESOLVE_RATE = 0.9;
@@ -57,9 +67,9 @@ export async function readSymbolEdgesExplained<E>(
   readEdges: (targetSymbolId: SymbolId) => Promise<SymbolEdgeRead<E>>,
   edgeNoun: "callers" | "callees",
   isTestChunk?: TestChunkProbe,
-): Promise<SymbolEdgeRead<E> & { empty?: EmptyAnswerExplanation }> {
+): Promise<SymbolEdgeRead<E> & GraphNoticesField & { empty?: EmptyAnswerExplanation }> {
   const read = await readEdges(symbolId);
-  if (read.edges.length > 0) return read;
+  if (read.edges.length > 0) return withRustNotices(graph, read, edgeNoun);
   const swapped = swapMemberSeparator(symbolId);
   const queried = read.queriedSymbolId;
   const definitions = await attempt(
@@ -72,7 +82,7 @@ export async function readSymbolEdgesExplained<E>(
   if (swapped && swappedDefinition) {
     const swappedRead = await readEdges(swapped);
     const answered = { ...swappedRead, resolvedSymbolId: swappedRead.resolvedSymbolId ?? swapped };
-    if (answered.edges.length > 0) return answered;
+    if (answered.edges.length > 0) return withRustNotices(graph, answered, edgeNoun);
     if (!own) {
       return {
         ...answered,
@@ -82,6 +92,15 @@ export async function readSymbolEdgesExplained<E>(
   }
   if (own) return { ...read, empty: await noEdges(graph, queried, own.relPath, edgeNoun) };
   return { ...read, empty: await unknownOrTestChunk(graph, symbolId, swapped, isTestChunk) };
+}
+
+/** A non-empty read plus the rustc-driver lower-bound notice its Rust symbol earns (bd tea-rags-mcp-nknkg.1). */
+async function withRustNotices<E>(
+  graph: SymbolEdgeExplanationGraph,
+  read: SymbolEdgeRead<E>,
+  edgeNoun: "callers" | "callees",
+): Promise<SymbolEdgeRead<E> & GraphNoticesField> {
+  return { ...read, ...(await rustSymbolEdgeNotices(graph, read.queriedSymbolId, edgeNoun)) };
 }
 
 /** `unknownSymbol`, or `testChunk` when the probe says the id is an indexed test chunk. */
@@ -129,14 +148,25 @@ async function noEdges(
 ): Promise<EmptyAnswerExplanation> {
   const message = `${symbolId} is in the codegraph with no ${edgeNoun}.`;
   const language = detectLanguage(relPath);
+  const driverNote = language === "rust" ? await attempt(async () => rustcDriverNote(graph), null) : null;
+  if (driverNote !== null) return { reason: "noEdges", message: `${message} ${driverNote}` };
   const rate = await attempt(async () => languageResolveRate(graph, language), null);
   if (rate === null || rate >= LOW_RESOLVE_RATE) return { reason: "noEdges", message };
   return {
     reason: "noEdges",
     message:
       `${message} The ${language} resolve rate is ${rate.toFixed(2)}, so this is a lower bound — ` +
-      "unresolved call sites may reach it; confirm with hybrid_search.",
+      `unresolved call sites may reach it; ${LOWER_BOUND_NEXT}`,
   };
+}
+
+/**
+ * The rustc-driver note (bd tea-rags-mcp-nknkg.1): a driver that did not index
+ * leaves Rust edges static-only. Null when the driver indexed or reported nothing.
+ */
+async function rustcDriverNote(graph: SymbolEdgeExplanationGraph): Promise<string | null> {
+  const status = await rustcDriverLowerBoundStatus(graph);
+  return status === null ? null : rustcDriverLowerBoundLine(status, LOWER_BOUND_NEXT);
 }
 
 /** `resolved / (resolved + resolveRateMiss)` over the language's persisted rows; null when nothing was scored. */

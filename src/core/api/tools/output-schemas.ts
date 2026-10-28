@@ -68,6 +68,7 @@ const SearchConfidenceSchema = z.object({
 
 /** Shared output schema for semantic_search, hybrid_search, rank_chunks, find_similar */
 export const SearchResultOutputSchema = {
+  banner: z.string().optional().describe("First key when present: next-step imperative — follow it."),
   results: z
     .union([ColumnTableSchema, z.array(SearchResultItemSchema)])
     .describe("Two or more results: the table. Zero or one: a plain list of result records."),

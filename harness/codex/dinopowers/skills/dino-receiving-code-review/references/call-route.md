@@ -6,9 +6,8 @@ instead"). Change rides a **call route**, not one symbol → promote Step 2's
 single fanIn to actual PATH: `trace_path` between named endpoints → route +
 highest-impact chokepoint.
 
-**Requires codegraph** — `trace_path` in tool list (unsure → read
-`tea-rags://project/<alias>/metrics?section=registry`, `codegraph on|off`). Off
-→ stay with Step 2 fanIn, note route view unavailable.
+**Requires codegraph** — `trace_path` in tool list (absent = off). Off → stay
+with Step 2 fanIn, note route view unavailable.
 
 ```
 trace_path(

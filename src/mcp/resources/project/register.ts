@@ -2,7 +2,7 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import { UriTemplate, type Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
 import { TeaRagsError, type App } from "../../../core/api/public/index.js";
-import { formatSlimDigest } from "./digest.js";
+import { formatAgentDigest, formatFullDigest } from "./digest.js";
 import { formatProjectMetrics } from "./metrics.js";
 import type { ProjectDigestData, ProjectMetricsQuery } from "./types.js";
 
@@ -89,21 +89,26 @@ function describeFailure(error: unknown): string {
 export function registerProjectResources(server: McpServer, app: App): void {
   server.registerResource(
     "project-digest",
-    new ResourceTemplate("tea-rags://project/{alias}/digest", { list: undefined }),
+    new ResourceTemplate(new OptionalQueryUriTemplate(DIGEST_TEMPLATE), { list: undefined }),
     {
       title: "Project Digest",
-      description: "Slim per-session digest of a registered project: status, drift, languages, warnings",
+      description:
+        "Agent digest of a registered project: alias + collection, actionable " +
+        "freshness. ?view=full = human digest (drift, languages, infra)",
       mimeType: "text/markdown",
     },
-    async (uri, { alias }) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "text/markdown",
-          text: await renderProject(app, alias, (data) => formatSlimDigest(data, new Date())),
-        },
-      ],
-    }),
+    async (uri, { alias, view }) => {
+      const format = listOf(view)[0] === "full" ? formatFullDigest : formatAgentDigest;
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "text/markdown",
+            text: await renderProject(app, alias, (data) => format(data, new Date())),
+          },
+        ],
+      };
+    },
   );
 
   server.registerResource(
@@ -131,6 +136,7 @@ export function registerProjectResources(server: McpServer, app: App): void {
   );
 }
 
+const DIGEST_TEMPLATE = "tea-rags://project/{alias}/digest{?view}";
 const METRICS_TEMPLATE = "tea-rags://project/{alias}/metrics{?language,section}";
 
 /**
@@ -140,10 +146,12 @@ const METRICS_TEMPLATE = "tea-rags://project/{alias}/metrics{?language,section}"
  */
 class OptionalQueryUriTemplate extends UriTemplate {
   private readonly advertised: string;
+  private readonly queryNames: string[];
 
   constructor(template: string) {
     super(template.replace(/\{\?[^}]*\}$/, ""));
     this.advertised = template;
+    this.queryNames = /\{\?([^}]*)\}$/.exec(template)?.[1].split(",") ?? [];
   }
 
   override toString(): string {
@@ -159,7 +167,7 @@ class OptionalQueryUriTemplate extends UriTemplate {
 
     const variables: Variables = { ...base };
     const params = new URLSearchParams(uri.slice(queryStart + 1));
-    for (const name of ["language", "section"]) {
+    for (const name of this.queryNames) {
       const values = params.getAll(name);
       if (values.length === 1) variables[name] = values[0];
       else if (values.length > 1) variables[name] = values;

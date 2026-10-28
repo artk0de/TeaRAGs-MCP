@@ -42,17 +42,17 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
-import type { DeclaredVisibilityIndex } from "../../../domains/explore/declared-visibility-index.js";
 import {
   claimWorkingTreeFloors,
   historyClockRerankOption,
   mergedWorkingTreeSymbolRow,
   recordTreeGraphState,
   relativePathOf,
+  type DeclaredVisibilityIndex,
+  type RerankerPort,
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
 import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolvePhysicalCollection } from "../../../primitives/ids/index.js";
@@ -62,6 +62,7 @@ import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.j
 import { readPayloadSymbolIsTest } from "../infra/payload-symbol-is-test-reader.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
+import { rustTracePathNotices } from "./rustc-driver-notice.js";
 import { swapMemberSeparator, unknownOrTestChunk } from "./symbol-edge-explanation.js";
 
 const DEFAULT_MAX_DEPTH = 8;
@@ -216,6 +217,13 @@ export class TracePathOps {
       // 2. Enumerate simple paths over the partial map (pure), once per
       //    candidate pair under one shared budget.
       ({ paths, truncated } = this.enumerateAcrossCandidates(adjacency, from.refs, to.refs, maxDepth, maxPaths));
+      if (paths.length === 0) {
+        // No path between two known endpoints: a lower bound when a Rust
+        // endpoint's edges are static-only (bd tea-rags-mcp-nknkg.1).
+        const endpointRelPaths = [...from.refs, ...to.refs].map((ref) => ref.relPath);
+        const notices = await rustTracePathNotices(handle.graphDb, endpointRelPaths);
+        return this.withEndpointFacts({ paths: [], truncated, ...notices }, from, to);
+      }
       // Declared visibility of the path nodes (bd tea-rags-mcp-sqqkz) — one
       // batched read, while the handle is still open; an empty index on failure.
       visibility = await lookupDeclaredVisibility(
@@ -226,8 +234,6 @@ export class TracePathOps {
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
-
-    if (paths.length === 0) return this.withEndpointFacts({ paths: [], truncated }, from, to);
 
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
     const nodes = [...new Set(paths.flat())];

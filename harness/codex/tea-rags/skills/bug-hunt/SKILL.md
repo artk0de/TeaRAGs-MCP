@@ -61,7 +61,7 @@ description:
   (no step 0, no probes), never cat / sed / Read around the hit; the plan never
   ends at the code-search hit — find_symbol follows it; print this ONE line,
   slots filled:
-  `shell grep -rl "<phrase>" <dir> (literal, line cap) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+  `shell rg -l --hidden --glob '!.git' "<phrase>" <dir> (literal, line cap) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
   both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
   confirmatory search, no refusal:
@@ -163,11 +163,10 @@ A plan names these calls; "later" / "not in this run" never drops one.
    Codegraph off + stack trace → probe b (fresh) gets
    `pathPattern="{<frame path 1>,<frame path 2>,…}"` + `modifiedAfter` +
    `rerank="bugHunt"` (a: no pathPattern; c: step-0 paths); say "no static path
-   tool". Off is decided, not checked, when THIS request or the session digest
-   says so (enrichment lists git only / no `codegraph.symbols`, "codegraph
-   off"): print
-   `codegraph off (source: <request|digest>) — no static path tool available` as
-   a statement, never "if codegraph is off" / "check the registry".
+   tool". Off is decided, not checked, when THIS request says so or graph tools
+   are absent from your tool list: print
+   `codegraph off (source: <request|tool list>) — no static path tool available`
+   as a statement, never "if codegraph is off" / "check the registry".
 
 No `## Signal thresholds` table in the output above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=thresholds,resolve`
@@ -187,8 +186,9 @@ No `## Signal thresholds` table in the output above → read
    user to paste `git log`. `git status --porcelain -uall` allowed: working-tree
    state (file NAMES), not code history or content — feeds Uncommitted probe
    only.
-3. **No text search (shell grep -rl) for code discovery** — TeaRAGs only; text
-   search for literal text, identifiers never — `hybrid_search`.
+3. **No text search (shell rg -l --hidden --glob '!.git') for code discovery** —
+   TeaRAGs only; text search for literal text, identifiers never —
+   `hybrid_search`.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.

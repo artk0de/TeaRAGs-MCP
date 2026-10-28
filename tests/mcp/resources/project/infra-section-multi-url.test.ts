@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSlimDigest } from "../../../../src/mcp/resources/project/digest.js";
+import { formatFullDigest } from "../../../../src/mcp/resources/project/digest.js";
 import type { ProjectDigestData } from "../../../../src/mcp/resources/project/types.js";
 
 const at = new Date("2026-05-13T00:00:00Z");
@@ -36,12 +36,12 @@ function embeddingLine(primaryUnavailableReason: string, withFallback = false): 
     metrics: null,
     drift: null,
   };
-  return formatSlimDigest(data, at)
+  return formatFullDigest(data, at)
     .split("\n")
     .find((l) => l.startsWith("embedding:"));
 }
 
-describe("formatSlimDigest — multi-URL endpoint tiers (q1g6s.3)", () => {
+describe("formatFullDigest — multi-URL endpoint tiers (q1g6s.3)", () => {
   it("lists URLs once and groups an all-down tier under one short reason", () => {
     expect(embeddingLine([8091, 8092, 8093, 8094].map(timedOut).join("; "), true)).toBe(
       "embedding: llama-server · primary http://h:8091,http://h:8092,http://h:8093,http://h:8094 (unavailable 4/4: ETIMEDOUT)" +

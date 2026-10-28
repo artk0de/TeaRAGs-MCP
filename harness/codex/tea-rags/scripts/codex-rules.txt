@@ -7,11 +7,13 @@ to another skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`,
 `$data-driven-generation` …) → open that `SKILL.md` too. Plan from that text,
 not from this core. `repair/<family>.md`, `rules/…` in any skill or
 reference = the plugin root (the folder holding `skills/`), never the skill's
-own folder.
+own folder. Every skill you name in a plan → open its `SKILL.md` with its own command
+first; a plan from memory is not reading it. A skill path you did not open with a
+command in this turn is invalid in a plan — open it first.
 
 **Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
 the next step still serves the user's request (search / `$explore` over the
 code they asked about). Graph answer with `changedFiles` > 0 and no
 `codegraph` floor → edges touching changed files are the index's: re-check
-changed-file callers via `find_symbol`, find missing ones via shell grep -rl
+changed-file callers via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'
 (literal) — never a bare retry of the graph call.

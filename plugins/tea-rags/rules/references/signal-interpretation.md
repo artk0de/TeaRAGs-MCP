@@ -54,10 +54,9 @@ Two ownership families — different questions:
 #### Codegraph signals (only when codegraph is active)
 
 Present only with codegraph on (graph tools — `get_callers`, `trace_path`, … —
-in tool list; unsure → `tea-rags://project/<alias>/metrics?section=registry`
-shows `codegraph on|off`). Real edges **supersede `imports` proxy** — `imports`
-counts import lines, `fanIn` counts graph edges. Keys: `fanIn` / `fanOut`
-(file/chunk), `isHub`, `instability` (`fanOut / (fanIn + fanOut)`),
+in tool list; absent → off). Real edges **supersede `imports` proxy** —
+`imports` counts import lines, `fanIn` counts graph edges. Keys: `fanIn` /
+`fanOut` (file/chunk), `isHub`, `instability` (`fanOut / (fanIn + fanOut)`),
 `connectionCount` (`fanIn + fanOut`, confidence support for `instability`),
 `transitiveImpact` (systemic blast radius beyond 1 hop), `pageRank` (chunk),
 cycle membership (SCC via `find_cycles`, file/chunk).

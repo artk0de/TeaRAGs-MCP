@@ -24,7 +24,9 @@ import {
   BATCH_FULL_TEXT_MAX_LINES,
   DEFAULT_META_ONLY_FIELDS,
   DEFAULT_SEARCH_FIELDS,
+  MAX_QUERY_VARIANTS,
   PROJECT_NAME_RE,
+  QUERY_VARIANT_SEPARATOR,
   type SchemaBuilderPort,
 } from "../public/index.js";
 
@@ -324,7 +326,11 @@ const OFFSET_HINT = "Skip first N results (pagination). Default: 0.";
  */
 function searchCommonFields(filterSchema: z.ZodTypeAny) {
   return {
-    query: z.string().describe("Search query text"),
+    query: z
+      .union([z.string(), z.array(z.string()).min(1).max(MAX_QUERY_VARIANTS)])
+      .describe(
+        `Query text, or up to ${MAX_QUERY_VARIANTS} variants (array or 'a ${QUERY_VARIANT_SEPARATOR} b') fused in one call.`,
+      ),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: filterSchema.optional(),
     pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),

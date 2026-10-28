@@ -40,6 +40,22 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "^(Bash|shell|exec_command)$",
@@ -53,6 +69,23 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/deny-indexed-read.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__.*tea-rags.*__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
+            "timeout": 5
           }
         ]
       }

@@ -78,6 +78,7 @@ Wrapped: the default
   code search tool (not a tea-rags tool).
 Never read with the default code read tool or
   the default code read tool again.
+- **Default code read tool after a hit** — no.
 `;
 const KNOWN = new Set(["bug-hunt", "data-driven-generation", "explore", "test-first"]);
 
@@ -195,14 +196,19 @@ describe("toCodexSkill", () => {
     expect(out).toContain(`Run \${PLUGIN_ROOT}/scripts/x.sh in "$PWD".`);
   });
 
-  it("names Codex's shell grep for the default code search tool and shell file reads for the default code read tool, wrapped lines included", () => {
+  // bd tea-rags-mcp-onli7: rg ships inside Codex; a whole-repo `grep -rl` walks node_modules/.git and never completes.
+  it("names Codex's bundled rg -l for the default code search tool and a one-file sed range for the default code read tool, wrapped and capitalised lines included", () => {
     const text = toCodexSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
+    const read = "shell sed -n '<start>,<end>p' <one file>";
 
-    expect(text).toContain("TODO markers → shell grep -rl, never tea-rags.");
-    expect(text).toContain('Print `shell grep -rl "<phrase>" (literal) → find_symbol`.');
-    expect(text).toContain("Wrapped: shell grep -rl (not a tea-rags tool).");
-    expect(text).toContain("Never read with shell file reads or\n  shell file reads again.");
-    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/);
+    const search = "shell rg -l --hidden --glob '!.git'";
+
+    expect(text).toContain(`TODO markers → ${search}, never tea-rags.`);
+    expect(text).toContain(`Print \`${search} "<phrase>" (literal) → find_symbol\`.`);
+    expect(text).toContain(`Wrapped: ${search} (not a tea-rags tool).`);
+    expect(text).toContain(`Never read with ${read} or\n  ${read} again.`);
+    expect(text).toContain("- **Shell sed -n '<start>,<end>p' <one file> after a hit** — no.");
+    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/i);
   });
 
   it("falls back to the folder name and a body-derived description", () => {
@@ -248,7 +254,13 @@ describe("renderCodexHarness", () => {
       args: ["server"],
     });
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
-    expect(Object.keys(hooks).sort()).toEqual(["PreToolUse", "SessionStart", "SubagentStart"]);
+    expect(Object.keys(hooks).sort()).toEqual([
+      "PostToolUse",
+      "PreToolUse",
+      "SessionStart",
+      "SubagentStart",
+      "UserPromptSubmit",
+    ]);
     expect(JSON.stringify(hooks)).not.toContain("CLAUDE_");
     // Core hook only cats a file; a cold `tea-rags prime` boots the server (measured 12–26 s).
     expect(hooks.SessionStart[0].hooks[0].timeout).toBe(10);
@@ -277,7 +289,7 @@ describe("renderCodexHarness", () => {
         if (!path.startsWith("tea-rags/scripts/")) continue;
         writeFileSync(join(pluginRoot, path.replace(/^tea-rags\//, "")), content, { flag: "w" });
       }
-      writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $2"\n', { mode: 0o755 });
+      writeFileSync(join(bin, "tea-rags"), '#!/bin/bash\necho "PRIME-DIGEST for $3 ($2)"\n', { mode: 0o755 });
       const run = (script: string, path: string): string =>
         execFileSync("bash", [join(pluginRoot, "scripts", script)], {
           env: { ...process.env, PWD: undefined, PLUGIN_ROOT: pluginRoot, PATH: path },
@@ -298,7 +310,7 @@ describe("renderCodexHarness", () => {
 
       const digest = JSON.parse(run("session-digest.sh", `${bin}:/usr/bin:/bin`)).hookSpecificOutput;
       expect(digest.hookEventName).toBe("SessionStart");
-      expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)}`);
+      expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)} (--agent)`);
       expect(digest.additionalContext).not.toContain("# tea-rags core");
 
       expect(run("session-digest.sh", "/usr/bin:/bin")).toBe("");
@@ -489,18 +501,20 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("Codex lag follow-ups find missing callers the way core does: a bounded shell grep -rl", async () => {
+  it("Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
-    expect(codexRules).toContain("find missing ones via shell grep -rl");
+    expect(codexRules).toContain("find missing ones via shell rg -l --hidden --glob '!.git'");
     expect(codexRules).not.toContain("`hybrid_search` metaOnly");
   });
 
   it("no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep", async () => {
     const rendered = await renderCodexHarness(ROOT);
     for (const [path, text] of rendered) {
-      expect(text, path).not.toMatch(/(?:standard|default)\s+code\s+(?:search|read)\s+tool/);
+      expect(text, path).not.toMatch(/(?:standard|default)\s+code\s+(?:search|read)\s+tool/i);
       expect(text, path).not.toContain("shell grep -rn");
+      expect(text, path).not.toContain("shell grep -rl");
+      expect(text, path).not.toContain("shell file reads");
     }
   });
 
@@ -564,6 +578,7 @@ describe("renderCodexHarness", () => {
         hooks: [
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 },
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/deny-indexed-read.sh`, timeout: 10 },
+          { type: "command", command: `\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex`, timeout: 10 },
         ],
       },
     ]);

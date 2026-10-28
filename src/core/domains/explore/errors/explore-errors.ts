@@ -53,11 +53,11 @@ export class HybridNotEnabledError extends ExploreError {
 
 /** The search query is invalid (empty, too long, etc.). */
 export class InvalidQueryError extends ExploreError {
-  constructor(reason: string) {
+  constructor(reason: string, hint = "Provide a non-empty search query") {
     super({
       code: "EXPLORE_INVALID_QUERY",
       message: `Invalid query: ${reason}`,
-      hint: "Provide a non-empty search query",
+      hint,
       httpStatus: 400,
     });
   }

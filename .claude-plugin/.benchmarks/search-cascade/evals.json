@@ -570,6 +570,90 @@
         "a default code search tool search for the rest",
         "find_symbol before the next page"
       ]
+    },
+    {
+      "id": "D1",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — body banner",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The previous call was find_symbol(symbol: \"PayoutSettler#settle\"); its answer was:\n```\n↳ Body shown in full — answer from it; do not reopen the file.\n{\"results\": [{\"payload\": {\"relativePath\": \"src/payouts/settlement/payout-settler.ts\", \"symbolId\": \"PayoutSettler#settle\", \"startLine\": 40, \"endLine\": 96, \"content\": \"async settle(payout: Payout): Promise<Settlement> {\\n  if (payout.amount.isNegative()) throw new NegativePayoutError(payout.id);\\n  const fx = await this.rates.quote(payout.currency);\\n  ... (57 lines of body) ...\\n}\"}}]}\n```",
+      "prompt": "What happens when the payout amount is negative? Check the code to be sure.",
+      "expected": "answer from the quoted body (NegativePayoutError thrown before the FX quote); zero further calls",
+      "not": [
+        "find_symbol / Read / cat of payout-settler.ts again",
+        "a new semantic_search or hybrid_search",
+        "a default code search tool call"
+      ]
+    },
+    {
+      "id": "D2",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — search anchor banner, right anchor is row 1",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The previous call was semantic_search(query: \"how a payout gets settled\", metaOnly: true); its answer was:\n```\n↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).\n{\"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\"], \"rows\": [[\"src/payouts/settlement/payout-settler.ts\", \"PayoutSettler#settle\", 40, 96], [\"src/payouts/settlement/fx-quote.ts\", \"FxQuote#lock\", 12, 40], [\"src/payouts/api/payouts-controller.ts\", \"PayoutsController#create\", 20, 61]]}}\n```",
+      "prompt": "Walk me through how a payout is settled, step by step.",
+      "expected": "get_callees(symbolId: \"PayoutSettler#settle\", depth: 2) → ONE find_symbol(symbols: [needed ids from the tree]); ≤ 3 calls",
+      "not": [
+        "find_symbol per row before the graph call",
+        "a default code search tool → Read chain",
+        "a new semantic_search",
+        "Read / cat of a hit file"
+      ]
+    },
+    {
+      "id": "D3",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — empty graph banner",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. The previous call was get_callers(symbolId: \"Checkout::Flow#step_ready?\"); its answer was:\n```\n↳ Empty ≠ no callers: dynamic/DSL/job call sites are not in the graph — default code search tool \"step_ready?\" <src dir> (literal, -l) before concluding.\n{\"empty\": {\"reason\": \"noEdges\", \"message\": \"Checkout::Flow#step_ready? is in the codegraph with no callers.\"}, \"callers\": []}\n```",
+      "prompt": "So nothing calls step_ready? — can I delete it?",
+      "expected": "default code search tool \"step_ready?\" app/ (literal, -l) — DSL/job/callback call sites — before any delete verdict; hits read via find_symbol",
+      "not": [
+        "answering \"safe to delete\" from the empty graph answer alone",
+        "semantic_search for the name",
+        "Read / cat of hit files"
+      ]
+    },
+    {
+      "id": "D4",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — control: an outline answer carries NO banner (banners fire only on bodies)",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The file is 640 lines. The previous call was find_symbol(relativePath: \"src/refunds/refund-policy.ts\"); its answer was:\n```\n{\"results\": [{\"payload\": {\"relativePath\": \"src/refunds/refund-policy.ts\", \"kind\": \"outline\", \"content\": \"RefundPolicy (class) 12–630\\n  RefundPolicy#constructor 14–30\\n  RefundPolicy#eligible? 32–120\\n  RefundPolicy#window 122–180\\n  RefundPolicy#fees 182–410\\n  RefundPolicy#audit 412–630\"}}]}\n```",
+      "prompt": "Show me how refund eligibility and the refund window are decided.",
+      "expected": "ONE find_symbol(symbols: [\"RefundPolicy#eligible?\", \"RefundPolicy#window\"])",
+      "not": [
+        "Read / cat of the whole file",
+        "one find_symbol call per member",
+        "a new search"
+      ]
+    },
+    {
+      "id": "D5",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — control: text-search hits carry NO banner (not a tea-rags answer)",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. The previous call was the default code search tool `\"retry_after\" app/ (literal, -l)`; its answer was:\n```\napp/services/throttle/backoff.rb\napp/jobs/sync_vendor_job.rb\napp/clients/vendor_client.rb\n```",
+      "prompt": "Show me how retry_after is actually handled in those files.",
+      "expected": "find_symbol(relativePath:) outline of the hit files → ONE find_symbol(symbols: [the methods using retry_after])",
+      "not": [
+        "cat / sed / Read of hit files",
+        "a line-content grep dump as the answer"
+      ]
+    },
+    {
+      "id": "E1",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — search anchor banner, right anchor is NOT row 1 (naming row 1 measured harmful: 2/12)",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The previous call was semantic_search(query: \"how a payout gets settled\", metaOnly: true); its answer was:\n```\n↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).\n{\"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\"], \"rows\": [[\"src/payouts/api/payouts-controller.ts\", \"PayoutsController#create\", 20, 61], [\"src/payouts/settlement/payout-settler.ts\", \"PayoutSettler#settle\", 40, 96], [\"src/payouts/settlement/fx-quote.ts\", \"FxQuote#lock\", 12, 40]]}}\n```",
+      "prompt": "Walk me through how a payout is settled, step by step.",
+      "expected": "get_callees(symbolId: \"PayoutSettler#settle\", depth: 2) — row 2, the row naming the behaviour → ONE find_symbol(symbols: [needed ids])",
+      "not": [
+        "get_callees(symbolId: \"PayoutsController#create\") (row 1)",
+        "find_symbol per row",
+        "a new semantic_search"
+      ]
+    },
+    {
+      "id": "E2",
+      "audit_finding": "nknkg.3: a leading answer banner moves the next call (Codex x12: search -> graph 4/12 -> 11/12, p~0.003); trailing JSON field 3/6, state line no effect — search anchor banner, terse request, anchor row 2",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. The previous call was semantic_search(query: \"payout settlement\", metaOnly: true); its answer was:\n```\n↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).\n{\"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\"], \"rows\": [[\"src/payouts/api/payouts-controller.ts\", \"PayoutsController#create\", 20, 61], [\"src/payouts/settlement/payout-settler.ts\", \"PayoutSettler#settle\", 40, 96], [\"src/payouts/settlement/fx-quote.ts\", \"FxQuote#lock\", 12, 40]]}}\n```",
+      "prompt": "What does settling a payout involve?",
+      "expected": "get_callees(symbolId: \"PayoutSettler#settle\", depth: 2) → ONE find_symbol(symbols: [needed ids])",
+      "not": [
+        "get_callees(symbolId: \"PayoutsController#create\") (row 1)",
+        "find_symbol per row",
+        "a default code search tool → Read chain"
+      ]
     }
   ],
   "results": {

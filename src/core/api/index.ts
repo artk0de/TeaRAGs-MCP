@@ -272,4 +272,5 @@ export { IndexingAlreadyInProgressError } from "../domains/ingest/errors/index.j
 // of tools/ from outside api would be a facade bypass.
 export { registerAllTools } from "./tools/index.js";
 export { foldColumnTables } from "./tools/columns.js";
+export { isAnswerBanner } from "./tools/answer-banner.js";
 export type { HealthProbes } from "./tools/middleware/error-handler.js";

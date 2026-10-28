@@ -22,6 +22,17 @@ export const DINOPOWERS_SRC = `${PLUGINS_DIR}/${DINOPOWERS_NAME}`;
 /** Package folders every harness renders, in marketplace order. */
 export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME];
 
+/**
+ * Hook scripts every harness ships verbatim from `plugins/tea-rags/scripts/` (bd tea-rags-mcp-nknkg.2):
+ * one implementation for Claude Code, Codex and Cursor, the harness picked by `--harness`.
+ * `turn-routing.sh` re-injects the routing lines each user turn; `search-drift.sh` denies once after
+ * a streak of text searches / indexed-code reads with no tea-rags call.
+ */
+export const SHARED_HOOK_SCRIPTS = ["turn-routing.sh", "search-drift.sh"] as const;
+
+/** Single source of the per-turn routing lines (fenced block under "## The block to inject"). */
+export const TURN_ROUTING_SOURCE = "rules/references/turn-routing.md";
+
 export interface SourceSkill {
   name: string;
   dir: string;

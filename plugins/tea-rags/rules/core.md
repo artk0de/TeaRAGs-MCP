@@ -4,7 +4,7 @@
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
-`path=<this task's cwd>` (tree, re-checks too). Alias: prime `## Project`,
+`path=<this task's cwd>` (tree, re-checks too). Alias: digest `project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
 alone, never ask; only a `collection` → it alone; after either say
 `next: project=<workingTree.project> + path`. No cwd → call now, `project`
@@ -33,8 +33,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
-  → `semantic_search` (real ids among them → `hybrid_search(metaOnly)`) → anchor
-  → depth-2 callees/callers → ONE batch; never text search
+  → ONE `semantic_search(query: "a ||| b ||| c")` (≤5 phrasings fused; real ids
+  among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
+  ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → default
   code search tool, not tea-rags; phrase/error string → plan these three lines,
@@ -120,13 +121,14 @@ diff's → `review_changes` verdicts, nothing after.
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
   `3. default code search tool "<name>" (literal)` — callers the index lacks. No
-  graph retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles`
-  = DAG.
+  graph retry. Graph tools absent from your tool list → codegraph off: callers =
+  usages row, never "no cycles"; present → on, no probe call; on + empty
+  `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
-- `rustc driver: unavailable` (prime/status/index) → tell user ONCE: Rust edges
-  static-only (lower bound) + install command; never install it or claim "no
-  callers"/"dead code".
+- `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
+  Rust edges static-only (lower bound) + install command; never install it or
+  claim "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
   unindexed file → default code read tool, no confirm ask; indexed → tell user
   the plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.

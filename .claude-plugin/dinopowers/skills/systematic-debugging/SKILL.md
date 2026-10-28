@@ -146,7 +146,7 @@ wins; the plan prints the line):
 | Bug investigation to a subagent / Task (symptom or not)                                         | `bug-hunt runs in this session, not in a subagent — step 0 (git status --porcelain -uall) runs now; send the error / failing behaviour and the three probes run here.` — never "bug-hunt skipped"                    |
 | Demands `hybrid_search` on an error string                                                      | `hybrid_search on error text finds where the string is logged, not where the bug starts — refused; bug-hunt probes run with semantic_search.` then Step 2                                                            |
 | Suspect already named by an earlier search + "not sure" / "want to be sure" / "one more search" | `No confirmatory search: confirmatory searches almost never change the answer.` + `Confidence note: <what is unverified> — "not sure" ≠ "don't know"; presenting the suspect as is.` — no bug-hunt Loop, no question |
-| Where is a literal string / error phrase written (no tool demanded)                             | `default code search tool "<phrase>" (literal)` + `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body` — no Loop                              |
+| Where is a literal string / error phrase written (no tool demanded)                             | `Grep tool "<phrase>" (literal)` + `then find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body` — no Loop                              |
 | Suspect files named + targeted search over them                                                 | `hybrid_search(query=<symptom or file topic>, pathPattern="{<dir>/<file A>,<dir>/<file B>}", rerank="bugHunt")` — ONE call, paths in full                                                                            |
 | Explain / compare a known file (even "a bug was found there")                                   | `find_symbol(path=<cwd>, relativePath=<known file>) outline → find_symbol(path=<cwd>, symbol=<id from outline>) body` — no search                                                                                    |
 
@@ -253,9 +253,8 @@ query, never promote healthy files, never fall back to direct `semantic_search`.
 Bug-hunt = **flat** list. Have **entry/repro point** (failing test, request
 handler, CLI entry, top user-code stack frame) → promote prime suspect to
 **chain**: `mcp__tea-rags__trace_path` entry → suspect. **Requires codegraph**:
-on = graph tools (`get_callers`, `trace_path`, …) in your tool list; unsure →
-read `tea-rags://project/<alias>/metrics?section=registry` (`codegraph on|off`).
-Off → `trace_path` not registered — skip, stay with flat list.
+on = graph tools (`get_callers`, `trace_path`, …) in your tool list; absent =
+off. Off → `trace_path` not registered — skip, stay with flat list.
 
 ```
 mcp__tea-rags__trace_path(

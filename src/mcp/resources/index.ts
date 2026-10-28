@@ -23,3 +23,4 @@ export {
   serverInstructions,
   type ServerInstructionsMode,
 } from "./instructions.js";
+export { formatAgentDigest, formatFullDigest } from "./project/digest.js";

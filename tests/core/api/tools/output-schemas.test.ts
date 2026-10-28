@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { WorkingTreeMarker } from "../../../../src/core/api/public/dto/working-tree.js";
+import { BODY_SHOWN_BANNER, SEARCH_ANCHOR_BANNER } from "../../../../src/core/api/tools/answer-banner.js";
 import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
 import { compactWorkingTreeMarker } from "../../../../src/core/api/tools/format.js";
 import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
@@ -57,6 +58,19 @@ describe("SearchResultOutputSchema", () => {
     const parsed = schema.parse({ results: table });
 
     expect(items.parse(rowsOf(asTable(parsed.results)))).toHaveLength(1);
+  });
+
+  // nknkg.3: Claude Code shows the model structuredContent instead of content, so a
+  // decision-point answer carries its banner as the FIRST structuredContent key.
+  it("declares the answer banner: kept on parse, first key, strict parse passes", () => {
+    const bannered = { banner: SEARCH_ANCHOR_BANNER, results: [{ payload: { symbolId: "A#run" } }] };
+
+    const parsed = schema.parse(bannered);
+
+    expect(Object.keys(parsed)[0]).toBe("banner");
+    expect(parsed.banner).toBe(SEARCH_ANCHOR_BANNER);
+    expect(schema.strict().safeParse(bannered).success).toBe(true);
+    expect(schema.strict().safeParse({ ...bannered, banner: BODY_SHOWN_BANNER }).success).toBe(true);
   });
 
   it("validates a minimal search result", () => {

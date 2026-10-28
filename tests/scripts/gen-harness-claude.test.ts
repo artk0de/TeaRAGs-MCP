@@ -15,13 +15,14 @@ import { join, relative, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  CLAUDE_CODE_TOOLS,
   CLAUDE_PACKAGES_DIR,
   claudePluginNames,
   renderClaudePackage,
   writeClaudePackages,
 } from "../../scripts/gen-harness-claude.js";
 import { PLUGINS_DIR, walk } from "../../scripts/harness/package.js";
-import { stripFrontmatterKey } from "../../scripts/harness/transform.js";
+import { nameCodeTools, stripFrontmatterKey } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
 
@@ -34,7 +35,7 @@ describe("claudePluginNames", () => {
 });
 
 describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage(%s)", (name) => {
-  it("copies the source verbatim (SKILL.md minus codex-description), executable bits included", () => {
+  it("copies the source verbatim (SKILL.md minus codex-description, Markdown with the code tools named), executable bits included", () => {
     const rendered = renderClaudePackage(ROOT, name);
     const src = join(ROOT, PLUGINS_DIR, name);
 
@@ -45,12 +46,22 @@ describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage
     );
     for (const [path, file] of rendered) {
       const source = readFileSync(join(src, path));
+      const text = source.toString("utf8");
       const expected = path.endsWith("SKILL.md")
-        ? Buffer.from(stripFrontmatterKey(source.toString("utf8"), "codex-description"))
-        : source;
+        ? Buffer.from(nameCodeTools(stripFrontmatterKey(text, "codex-description"), CLAUDE_CODE_TOOLS))
+        : path.endsWith(".md")
+          ? Buffer.from(nameCodeTools(text, CLAUDE_CODE_TOOLS))
+          : source;
       expect(file.content.equals(expected), path).toBe(true);
       if (path.endsWith("SKILL.md")) expect(file.content.toString("utf8"), path).not.toMatch(/^codex-description:/m);
       expect(file.mode & 0o111, path).toBe(statSync(join(src, path)).mode & 0o111);
+    }
+  });
+
+  it("names Claude Code's Grep tool / Read tool, never a code tool by role nor ripgrep", () => {
+    for (const [path, file] of renderClaudePackage(ROOT, name)) {
+      if (!path.endsWith(".md")) continue;
+      expect(file.content.toString("utf8"), path).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/i);
     }
   });
 
@@ -98,6 +109,54 @@ describe("renderClaudePackage — codex-description", () => {
     expect(skill).toBe(
       "---\nname: s\ndescription:\n  Full text, all triggers.\nuser-invocable: true\n---\n\n# S\n\ncodex-description: stays in the body.\n",
     );
+  });
+});
+
+describe("renderClaudePackage — code tools (bd tea-rags-mcp-onli7)", () => {
+  let fixtureRoot: string;
+
+  beforeAll(() => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), "harness-claude-tools-"));
+    const plugin = join(fixtureRoot, PLUGINS_DIR, "p");
+    mkdirSync(join(plugin, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(plugin, "rules"), { recursive: true });
+    mkdirSync(join(plugin, "scripts"), { recursive: true });
+    writeFileSync(join(plugin, ".claude-plugin/plugin.json"), '{"name":"p"}\n');
+    writeFileSync(
+      join(plugin, "rules/core.md"),
+      [
+        "TODO markers → default code search tool, never tea-rags.",
+        'Print `default code search tool "<phrase>" (literal) → find_symbol`.',
+        "Wrapped: the default",
+        "  code search tool (not a tea-rags tool).",
+        "Never read with the default code read tool or",
+        "  the default code read tool again.",
+        "- **Default code read tool after a hit** — no.",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(plugin, "scripts/x.sh"), "# the default code search tool stays in a script\n");
+  });
+
+  afterAll(() => {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  });
+
+  it("names the Grep tool and the Read tool in Markdown, wrapped and capitalised lines included", () => {
+    const text = renderClaudePackage(fixtureRoot, "p").get("rules/core.md")?.content.toString("utf8") ?? "";
+
+    expect(text).toContain("TODO markers → Grep tool, never tea-rags.");
+    expect(text).toContain('Print `Grep tool "<phrase>" (literal) → find_symbol`.');
+    expect(text).toContain("Wrapped: Grep tool (not a tea-rags tool).");
+    expect(text).toContain("Never read with Read tool or\n  Read tool again.");
+    expect(text).toContain("- **Read tool after a hit** — no.");
+    expect(text).not.toMatch(/\b(?:rg|ripgrep)\b/);
+  });
+
+  it("leaves non-Markdown files byte-identical", () => {
+    const script = renderClaudePackage(fixtureRoot, "p").get("scripts/x.sh")?.content.toString("utf8");
+
+    expect(script).toBe("# the default code search tool stays in a script\n");
   });
 });
 

@@ -140,7 +140,8 @@ export interface CallTreeRow {
 }
 
 /** `get_callers` / `get_callees` with `depth > 1`: the reverse / forward call tree of `symbolId`. */
-export interface SymbolCallTreeResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
+export interface SymbolCallTreeResponse
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
   tree: CallTreeRow[];
   /** get_callees: the queried symbol's own call sites pinned to no in-project symbol. Absent when none. */
   unresolved?: number;
@@ -224,7 +225,19 @@ export interface EmptyAnswerField {
   empty?: EmptyAnswerExplanation;
 }
 
-export interface SymbolCallersResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
+/**
+ * Advisory lines on a graph answer that still stands (bd tea-rags-mcp-nknkg.1):
+ * Rust edges read while the rustc driver did not index are static-only, so a
+ * Rust caller/callee list, an empty Rust trace or an empty cycle list over Rust
+ * is a lower bound. Absent when there is nothing to say; an empty symbol answer
+ * says it in `empty.message` instead.
+ */
+export interface GraphNoticesField {
+  notices?: string[];
+}
+
+export interface SymbolCallersResponse
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -279,7 +292,8 @@ export interface CalleeResult extends DeclaredVisibilityField {
   p?: number;
 }
 
-export interface SymbolCalleesResponse extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField {
+export interface SymbolCalleesResponse
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
   /** Callees with a resolved target symbol only. */
   callees: CalleeResult[];
   /** Call sites the resolver pinned to no target symbol; they are not `callees` rows. Absent when none. */
@@ -337,7 +351,7 @@ export interface CycleMemberLocation {
   relativePath: RelPath;
 }
 
-export interface FindCyclesResponse extends WorkingTreeMarkerField {
+export interface FindCyclesResponse extends WorkingTreeMarkerField, GraphNoticesField {
   cycles: CycleResult[];
 }
 
@@ -418,7 +432,7 @@ export interface TracedPath {
   minP?: number;
 }
 
-export interface PathTraceResult extends WorkingTreeMarkerField, EmptyAnswerField {
+export interface PathTraceResult extends WorkingTreeMarkerField, EmptyAnswerField, GraphNoticesField {
   /** Sorted by aggregateDanger, most dangerous first. */
   paths: TracedPath[];
   /** True if maxPaths/maxDepth capped enumeration. */

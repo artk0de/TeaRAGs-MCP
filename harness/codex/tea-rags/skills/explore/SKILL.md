@@ -15,29 +15,32 @@ description:
 
 Checked first, before this table: layers / wrong-way dependencies / dependency
 direction of `<dir>` → `get_architecture_report(pathPattern: "<dir>/**")`, not
-row 4. A named symbol or anchor row + flow words ("end to end", "what happens
-when") → EXPLAIN graph walk (route 5), not row 4. A typed directory path and
-none of the structure words below ("how does `<dir>` work", "what's in `<dir>`")
-→ path-first, not row 4, not ORIENT — opening line, copied:
-`Strategy: path-first — "<dir>"`, then `find_symbol(relativePath: "<dir>")`
-outline → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`.
-Then structure phrasing (one of these words in the prompt: "organized", "end to
-end", "structure", "architecture", "backbone", "walk me through") → codegraph
-row 4 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
+row 4. A named symbol or anchor row (search rows already in context, an answer
+opening `↳ Anchor =` included) + flow words ("end to end", "what happens when",
+"walk me through", "step by step", "involve") → EXPLAIN graph walk (route 5):
+anchor → `get_callees(symbolId: <anchor>, depth: 2)`, not row 4, no new search.
+A typed directory path and none of the structure words below ("how does `<dir>`
+work", "what's in `<dir>`") → path-first, not row 4, not ORIENT — opening line,
+copied: `Strategy: path-first — "<dir>"`, then
+`find_symbol(relativePath: "<dir>")` outline → ONE
+`find_symbol(symbols: [<Class#method ids from that outline>])`. Then structure
+phrasing (one of these words in the prompt: "organized", "end to end",
+"structure", "architecture", "backbone", "walk me through") → codegraph row 4
+below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
-of X" — callers, below) → occurrence route, any codegraph state: shell grep -rl
-`"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known, else the
-source root — never a search to find it) → `find_symbol` outline → batch of only
-the needed methods; never `hybrid_search` for it. Concept words, synonyms or
-spellings, even one `<a>|<b>|<c>` regex, are not an exact name → EXPLAIN:
-`semantic_search` (`hybrid_search(metaOnly)` when real ids are among them) →
-anchor → `get_callees`/`get_callers(symbolId:, depth: 2)` → ONE batch of only
-the needed methods; never a text-search alternation. "Callers of X" → decide
-codegraph first (plan line below); on → `Strategy: codegraph row 2`
-(`get_callers`; "every call / all callers of X" → plan both lines: it + that
-occurrence route), never TRACE-only `hybrid_search`. Off (or off branch of an
-unknown state) → TRACE loop, copied, ≥ 2 calls:
+of X" — callers, below) → occurrence route, any codegraph state: shell rg -l
+--hidden --glob '!.git' `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir
+when known, else the source root — never a search to find it) → `find_symbol`
+outline → batch of only the needed methods; never `hybrid_search` for it.
+Concept words, synonyms or spellings, even one `<a>|<b>|<c>` regex, are not an
+exact name → EXPLAIN: `semantic_search` (`hybrid_search(metaOnly)` when real ids
+are among them) → anchor → `get_callees`/`get_callers(symbolId:, depth: 2)` →
+ONE batch of only the needed methods; never a text-search alternation. "Callers
+of X" → decide codegraph first (plan line below); on →
+`Strategy: codegraph row 2` (`get_callers`; "every call / all callers of X" →
+plan both lines: it + that occurrence route), never TRACE-only `hybrid_search`.
+Off (or off branch of an unknown state) → TRACE loop, copied, ≥ 2 calls:
 `hybrid_search(query="<X>", metaOnly=true)` → per caller hit
 `hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
 fail.
@@ -137,12 +140,12 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = shell grep
-  -rl `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits (adds recall,
-  never replaces 2). "How does X reach Y": endpoints named as symbols →
-  `find_symbol` each, then `trace_path`; endpoints described in words ("OAuth
-  callback", "sign-in") → call 1 = `semantic_search` for that behaviour, call 2
-  = `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
+  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = shell rg -l
+  --hidden --glob '!.git' `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the
+  hits (adds recall, never replaces 2). "How does X reach Y": endpoints named as
+  symbols → `find_symbol` each, then `trace_path`; endpoints described in words
+  ("OAuth callback", "sign-in") → call 1 = `semantic_search` for that behaviour,
+  call 2 = `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
   `find_symbol symbol=`.
 
 - **Rows 3 + 4, call 1 = ORIENT:**
@@ -182,21 +185,18 @@ loop itself ("circular dependency", "dependency loop", "cycles in <scope>").
 **Codegraph availability:** sub-patterns need codegraph. An EXPLICIT statement
 wins: metrics `codegraph off` / `on`, or THIS request stating codegraph is
 disabled or enabled → that, even against your tool list. A statement attached to
-an earlier request never carries over — re-decide per request. The digest never
-states it — no codegraph line there means nothing, never read it as OFF. Context
-/ digest listing `codegraph.symbols` or `get_naming_lexicon` available =
-explicit ON (source `request`) — no registry read first. No statement → a graph
-tool you SEE in your tool list (`get_callers`, `trace_path`, … under any prefix
-— `mcp__tea-rags__`, `mcp__tea_rags__`) → on. Not seen → read
-`tea-rags://project/<alias>/metrics?section=registry` once; its codegraph line
-decides. "Not in my tool list" alone never selects the off route — not checked ≠
-absent. Plan line 1, copied:
-`Codegraph: on|off — <request | tool seen | registry>`. Never `unknown`: scan
-your tool list before writing it. Never call a graph tool to probe; an
-unregistered tool is not an empty result — never read it as "no callers" / "no
-cycles". Codegraph off → content-matching table: TRACE covers usage, EXPLAIN
-covers architecture. Broad orientation / structure ("introduce me", row 4) →
-ORIENT `rerank="onboarding"`; "where X starts" (row 3) →
+an earlier request never carries over — re-decide per request. Context listing
+`codegraph.symbols` or `get_naming_lexicon` available = explicit ON (source
+`request`) — no registry read first. No statement → a graph tool you SEE in your
+tool list (`get_callers`, `trace_path`, … under any prefix — `mcp__tea-rags__`,
+`mcp__tea_rags__`) → on; none of them in the tool list → off (the tool list is
+the signal, no probe call). Plan line 1, copied:
+`Codegraph: on|off — <request | tool list>`. Never `unknown`: scan your tool
+list before writing it. Never call a graph tool to probe; an unregistered tool
+is not an empty result — never read it as "no callers" / "no cycles". Codegraph
+off → content-matching table: TRACE covers usage, EXPLAIN covers architecture.
+Broad orientation / structure ("introduce me", row 4) → ORIENT
+`rerank="onboarding"`; "where X starts" (row 3) →
 `references/entry-point-pattern.md` off procedure (relevance, drop tiny
 `chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own
@@ -233,8 +233,8 @@ name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
 symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
 pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
 "read decision-tree to choose". "Files matching <Name>" is a name pattern, not a
-literal: `hybrid_search(query="<Name>", metaOnly=true)`, never shell grep -rl
-file listing / Glob / `find -name`.
+literal: `hybrid_search(query="<Name>", metaOnly=true)`, never shell rg -l
+--hidden --glob '!.git' file listing / Glob / `find -name`.
 
 Apply tables above, first match:
 
@@ -336,11 +336,11 @@ ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
 ### 2. BREADTH
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
-DEFINITION → find_symbol; known/bare name, need USAGES → shell grep -rl
-`"<X>" <dir>` (literal, `-l`) → find_symbol, never hybrid_search; symbol name +
-behaviour words ("where hybrid_search handles BM25 scoring") → hybrid_search.
-Existence check ("does X exist") → `find_symbol` `metaOnly=true`. Known path /
-symbol → `find_symbol` (outline → body); rationale, copied:
+DEFINITION → find_symbol; known/bare name, need USAGES → shell rg -l --hidden
+--glob '!.git' `"<X>" <dir>` (literal, `-l`) → find_symbol, never hybrid_search;
+symbol name + behaviour words ("where hybrid_search handles BM25 scoring") →
+hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
+Known path / symbol → `find_symbol` (outline → body); rationale, copied:
 `'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
 Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
 first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).

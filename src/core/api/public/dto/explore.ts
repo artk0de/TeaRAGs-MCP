@@ -70,7 +70,8 @@ export interface TypedFilterParams {
  * (e.g., hybrid may gain fusionWeight, sparse boosting params).
  */
 export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams {
-  query: string;
+  /** One query, or 1..5 variants (array, or a string holding "|||") fused by RRF — bd tea-rags-mcp-2vuz. */
+  query: string | string[];
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;
@@ -93,7 +94,8 @@ export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams 
  * (e.g., fusionWeight, sparse boosting params).
  */
 export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
-  query: string;
+  /** One query, or 1..5 variants (array, or a string holding "|||") fused by RRF — bd tea-rags-mcp-2vuz. */
+  query: string | string[];
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;

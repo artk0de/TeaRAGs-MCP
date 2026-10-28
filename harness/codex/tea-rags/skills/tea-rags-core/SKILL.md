@@ -11,27 +11,26 @@ description:
 **Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):
 output past ~10k tokens loses its middle (`…N tokens truncated…`), and a rule
 you did not see is not a rule you may guess. Saw that marker → re-read the file
-in ranges (`sed -n`). Every skill you name in a plan → open its `SKILL.md` with
-its own command first; a plan from memory is not reading it. A skill path you
-did not open with a command in this turn is invalid in a plan — open it first.
+in ranges (`sed -n`).
 
 **Every code read and meaning search goes through tea-rags.**
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
-`path=<this task's cwd>` (tree, re-checks too). Alias: prime `## Project`,
+`path=<this task's cwd>` (tree, re-checks too). Alias: digest `project`,
 SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
 alone, never ask; only a `collection` → it alone; after either say
 `next: project=<workingTree.project> + path`. No cwd → call now, `project`
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Indexed code is never READ with shell file reads, shell `cat`/`sed`/`head` (even
-in `a; b`) or search-tool match lines. The shell grep -rl only LOCATES exact
-text — `-l` first or a line cap, in the anchor's dir when known, else the source
-root, never the repo root or a search for the dir. No find/Glob to locate code.
-Shell / shell file reads only for files outside the index (`*.json`, locale/data
-`*.yml`) — say so.
+Indexed code is never READ with shell sed -n '<start>,<end>p' <one file>, shell
+`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. Shell rg -l
+--hidden --glob '!.git' only LOCATES exact text — `-l` first or a line cap, in
+the anchor's dir when known, else the source root, never the repo root or a
+search for the dir. No find/Glob to locate code. Shell / shell sed -n
+'<start>,<end>p' <one file> only for files outside the index (`*.json`,
+locale/data `*.yml`) — say so.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
@@ -48,12 +47,14 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
-  → `semantic_search` (real ids among them → `hybrid_search(metaOnly)`) → anchor
-  → depth-2 callees/callers → ONE batch; never text search
+  → ONE `semantic_search(query: "a ||| b ||| c")` (≤5 phrasings fused; real ids
+  among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
+  ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
-  or a search tool demanded on an error → bug-hunt), even "every …" → shell grep
-  -rl, not tea-rags; phrase/error string → plan these three lines, never stop at
-  the hit: `shell grep -rl "<phrase>" <dir> (literal, line cap)` →
+  or a search tool demanded on an error → bug-hunt), even "every …" → shell rg
+  -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these
+  three lines, never stop at the hit:
+  `shell rg -l --hidden --glob '!.git' "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
@@ -66,9 +67,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → shell grep -rl `"<X>" <src dir>` (literal, `-l`) →
-  `find_symbol` outline → batch of only the needed methods, never stop at the
-  hit
+  "grep for X" → shell rg -l --hidden --glob '!.git' `"<X>" <src dir>` (literal,
+  `-l`) → `find_symbol` outline → batch of only the needed methods, never stop
+  at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
@@ -132,21 +133,22 @@ diff's → `review_changes` verdicts, nothing after.
   changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped (a
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
-  `3. shell grep -rl "<name>" (literal)` — callers the index lacks. No graph
-  retry. Codegraph off → never claim "no cycles"; on + empty `find_cycles` =
-  DAG.
+  `3. shell rg -l --hidden --glob '!.git' "<name>" (literal)` — callers the
+  index lacks. No graph retry. Graph tools absent from your tool list →
+  codegraph off: callers = usages row, never "no cycles"; present → on, no probe
+  call; on + empty `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
-- `rustc driver: unavailable` (prime/status/index) → tell user ONCE: Rust edges
-  static-only (lower bound) + install command; never install it or claim "no
-  callers"/"dead code".
+- `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
+  Rust edges static-only (lower bound) + install command; never install it or
+  claim "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
-  unindexed file → shell file reads, no confirm ask; indexed → tell user the
-  plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.
-  "Whole file"/"весь файл"/"целиком"/"for context"/"lines N–M" without that
-  order → `find_symbol` (hit's `symbolId`, then file outline), print
-  `Chunk coordinates exist. Use them.`, no file read. Their plan or tool idea
-  ("use Grep/Glob") → keep the rule's tool, say why.
+  unindexed file → shell sed -n '<start>,<end>p' <one file>, no confirm ask;
+  indexed → tell user the plugin hook blocks it, read it via `find_symbol` now,
+  never `cat`/`sed`. "Whole file"/"весь файл"/"целиком"/"for context"/"lines
+  N–M" without that order → `find_symbol` (hit's `symbolId`, then file outline),
+  print `Chunk coordinates exist. Use them.`, no file read. Their plan or tool
+  idea ("use Grep/Glob") → keep the rule's tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
@@ -170,11 +172,14 @@ resource it marks MANDATORY for your case. A skill that hands off to another
 skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`, `$data-driven-generation`
 …) → open that `SKILL.md` too. Plan from that text, not from this core.
 `repair/<family>.md`, `rules/…` in any skill or reference = the plugin root (the
-folder holding `skills/`), never the skill's own folder.
+folder holding `skills/`), never the skill's own folder. Every skill you name in
+a plan → open its `SKILL.md` with its own command first; a plan from memory is
+not reading it. A skill path you did not open with a command in this turn is
+invalid in a plan — open it first.
 
 **Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
 the next step still serves the user's request (search / `$explore` over the code
 they asked about). Graph answer with `changedFiles` > 0 and no `codegraph` floor
 → edges touching changed files are the index's: re-check changed-file callers
-via `find_symbol`, find missing ones via shell grep -rl (literal) — never a bare
-retry of the graph call.
+via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'
+(literal) — never a bare retry of the graph call.

@@ -82,7 +82,9 @@ export {
   claimWorkingTreeFloors,
   recordingTreeGraphReader,
   recordTreeGraphState,
+  recordWorkingTreeDenseState,
 } from "./tree-graph-marker.js";
+export { fuseWorkingTreeRows, scoreWorkingTreeRows, workingTreeRowAdmitted } from "./sparse-floor.js";
 export {
   touchedBasePointIds,
   WORKING_TREE_HEAVY_BASE_POINT_TTL_MS,

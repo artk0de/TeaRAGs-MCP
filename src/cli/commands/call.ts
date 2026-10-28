@@ -23,6 +23,7 @@ import {
   collectionHoldsCodegraphData,
   CollectionRegistry,
   foldColumnTables,
+  isAnswerBanner,
   resolveBaseIndexEntry,
   resolveDomainEnvCodeDefaults,
   resolveRegistryEnv,
@@ -216,21 +217,32 @@ function parseParams(raw: string | undefined): ParsedParams {
 /**
  * What an agent reads. Search tools answer with `structuredContent` and an
  * empty (or hint-only) `content`, so the structured payload comes first,
- * pretty-printed; then text blocks verbatim; any other block type is named
- * and deferred to `--json`.
+ * pretty-printed — after an answer banner, which leads as it does over MCP
+ * (nknkg.3); then text blocks verbatim; any other block type is named and
+ * deferred to `--json`.
  */
 function renderContent(result: CallToolResult): string[] {
   const structured = result.structuredContent === undefined ? [] : [JSON.stringify(result.structuredContent, null, 2)];
-  const blocks = result.content.map((block) =>
-    block.type === "text" ? block.text : `[${block.type} content omitted — rerun with --json]`,
-  );
-  return [...structured, ...blocks];
+  const isBanner = (block: CallToolResult["content"][number]) => block.type === "text" && isAnswerBanner(block.text);
+  const banners = result.content.filter(isBanner).map((block) => (block.type === "text" ? block.text : ""));
+  const blocks = result.content
+    .filter((block) => !isBanner(block))
+    .map((block) => (block.type === "text" ? block.text : `[${block.type} content omitted — rerun with --json]`));
+  return [...banners, ...structured, ...blocks];
 }
 
-/** The tool's answer: structuredContent, else its text blocks — JSON parsed where they hold JSON. */
+/**
+ * The tool's answer: structuredContent (minus its `banner` key), else its text blocks —
+ * JSON parsed where they hold JSON; banners are not answer.
+ */
 function answerOf(result: CallToolResult): unknown {
-  if (result.structuredContent !== undefined) return result.structuredContent;
-  const texts = result.content.flatMap((block) => (block.type === "text" ? [parseOrKeep(block.text)] : []));
+  if (result.structuredContent !== undefined) {
+    const { banner, ...answer } = result.structuredContent;
+    return typeof banner === "string" && isAnswerBanner(banner) ? answer : result.structuredContent;
+  }
+  const texts = result.content.flatMap((block) =>
+    block.type === "text" && !isAnswerBanner(block.text) ? [parseOrKeep(block.text)] : [],
+  );
   return texts.length === 1 ? texts[0] : texts;
 }
 

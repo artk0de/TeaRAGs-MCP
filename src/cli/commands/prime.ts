@@ -1,7 +1,7 @@
 import type { CommandModule } from "yargs";
 
 import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-session.js";
-import { createPathCollectionResolver } from "../../core/api/index.js";
+import { createPathCollectionResolver, resolveBaseIndexEntry } from "../../core/api/index.js";
 import { flushed, routeConsoleToStderr } from "../call/stdio.js";
 import { primeRegistryRuntime } from "../prime/registry-runtime.js";
 import { runPrime } from "../prime/run-prime.js";
@@ -10,6 +10,7 @@ interface PrimeArgs {
   path?: string;
   project?: string;
   full?: boolean;
+  agent?: boolean;
 }
 
 export const primeCommand: CommandModule<object, PrimeArgs> = {
@@ -30,6 +31,11 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
         type: "boolean",
         default: false,
         describe: "Append the metrics resource (signal thresholds, labelMap, resolve breakdown) for humans.",
+      })
+      .option("agent", {
+        type: "boolean",
+        default: false,
+        describe: "Agent digest for SessionStart hooks: alias + collection, actionable freshness.",
       }),
   handler: async (argv) => {
     // The in-process server logs through console; stdout carries only the digest.
@@ -42,7 +48,9 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
         path: argv.path,
         project: argv.project,
         full: argv.full,
+        agent: argv.agent,
         createPathCollectionResolver,
+        resolveBaseIndexEntry,
         registryRuntime: primeRegistryRuntime(),
         openSession: openInProcessMcpSession,
       });

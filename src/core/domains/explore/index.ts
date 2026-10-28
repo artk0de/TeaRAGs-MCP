@@ -9,8 +9,11 @@ export {
 } from "./errors/index.js";
 export type { ExploreErrorCode } from "./errors/index.js";
 export { Reranker } from "./reranker.js";
+export { QUERY_VARIANT_SEPARATOR, splitQueryVariants, withoutWorkingTreeFloors } from "./query-variants.js";
+export type { ExploreQueryVariant } from "./query-variants.js";
 export type { ScoringWeights, RerankableResult, RerankMode } from "./reranker.js";
 export type { RerankerPort, RerankOptions } from "./reranker-port.js";
+export type { DeclaredVisibilityIndex } from "./declared-visibility-index.js";
 export type { ExploreRequestScope } from "./request-scope.js";
 export { historyClockRerankOption } from "./history-clock.js";
 export { OrderByFieldResolver, RankModule, type RankOptions } from "./rank-module.js";
