@@ -73,6 +73,29 @@ describe("tea-rags://guide/* resources", () => {
     expect(resources.filter((r) => r.uri.startsWith("qdrant://collection/"))).toEqual([]);
   });
 
+  // bd tea-rags-mcp-kk5xe: a harness that lists resources keeps the listing in
+  // context and re-sends it on every later model call, so the listing (not the
+  // bodies) carries a size budget. Measured 4,565 chars when pinned.
+  it("keeps resources/list + resources/templates/list under 5,000 chars, one line per entry", async () => {
+    const s = await connect();
+    const resources = await s.listResources();
+    const templates = await s.listResourceTemplates();
+    const chars = JSON.stringify({ resources }).length + JSON.stringify({ resourceTemplates: templates }).length;
+    expect(chars).toBeLessThanOrEqual(5000);
+    for (const entry of [...resources, ...templates]) {
+      expect(entry.description ?? "", entry.name).not.toContain("\n");
+      expect((entry.description ?? "").length, entry.name).toBeLessThanOrEqual(240);
+    }
+  });
+
+  it("resolves every listed resource URI", async () => {
+    const s = await connect();
+    for (const { uri } of await s.listResources()) {
+      const { contents } = await s.readResource(uri);
+      expect(contents.length, uri).toBeGreaterThan(0);
+    }
+  });
+
   it("serves the agent guides moved out of the injected rules", async () => {
     const s = await connect();
     for (const topic of ["navigation", "decision-tree", "freshness", "degraded"]) {
