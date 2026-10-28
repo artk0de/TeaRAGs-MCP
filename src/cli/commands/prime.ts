@@ -1,7 +1,7 @@
 import type { CommandModule } from "yargs";
 
 import { openInProcessMcpSession } from "../../bootstrap/transport/in-process-session.js";
-import { createPathCollectionResolver } from "../../core/api/index.js";
+import { createPathCollectionResolver, resolveBaseIndexEntry } from "../../core/api/index.js";
 import { flushed, routeConsoleToStderr } from "../call/stdio.js";
 import { primeRegistryRuntime } from "../prime/registry-runtime.js";
 import { runPrime } from "../prime/run-prime.js";
@@ -50,6 +50,7 @@ export const primeCommand: CommandModule<object, PrimeArgs> = {
         full: argv.full,
         agent: argv.agent,
         createPathCollectionResolver,
+        resolveBaseIndexEntry,
         registryRuntime: primeRegistryRuntime(),
         openSession: openInProcessMcpSession,
       });

@@ -62,6 +62,7 @@ describe("primeCommand", () => {
       project: undefined,
       full: true,
       createPathCollectionResolver: expect.any(Function),
+      resolveBaseIndexEntry: expect.any(Function),
       registryRuntime: expect.anything(),
       openSession: expect.any(Function),
     });
