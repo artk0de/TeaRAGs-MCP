@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 6,
-      "digest": "sha256:4862c92260f407c73052c1c736342e036a34aeb99e98114324c680bc3401716c"
+      "digest": "sha256:215549d6148c5043ebafc5ecdbeaf2457a79c3ed39bce67cfbb6aebfdcc8c508"
     },
     "walker": {
       "version": 8,
-      "digest": "sha256:f98b11ed84798e3395b9d59ea40438401e306a2069be7a3a0efcaf1d2baaed8b"
+      "digest": "sha256:84821c58482e7d98bad7b2402d4ed1635c7e43304bd047ddcdd538a573286c42"
     }
   },
   "bash": {
@@ -60,7 +60,7 @@
   "ruby": {
     "chunking": {
       "version": 3,
-      "digest": "sha256:91b6517e4d73ba7ef4c3c07aba24483e96123c7155f49f5a65910cf12b280091"
+      "digest": "sha256:4db100f3ac0cd50962cb2098db5a116fd3cb8b022f4cde70a50e0ba9fed7bdaf"
     },
     "walker": {
       "version": 11,
@@ -89,8 +89,8 @@
   },
   "typescript": {
     "chunking": {
-      "version": 2,
-      "digest": "sha256:b2fe2e58e6d18f59f57b29affb4f0ee7bb60c1b958ce8f4c1e6d6350f3da5804"
+      "version": 3,
+      "digest": "sha256:12081c6a55b5a5fed16b5c2096847cfb97b0336698e702ca1c28c4742b206c48"
     },
     "walker": {
       "version": 15,

@@ -22,7 +22,8 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
-import { isStaticMethodNode } from "../../../../primitives/ids/index.js";
+import { classifyMethod, isStaticMethodNode, type MethodClassification } from "../../../../primitives/ids/index.js";
+import { foldSubFloorGroups } from "../../kernel/index.js";
 import { findClassBody } from "./utils.js";
 
 // ── Classification ────────────────────────────────────────────────
@@ -395,8 +396,24 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
   if (!classBody) return [];
 
   const extractedStarts = new Set(ctx.validChildren.map((child) => child.startIndex));
-  const groups = groupAdjacentNodes(classBody, ctx.excludedRows, extractedStarts);
   const classHeader = extractClassHeader(ctx.containerNode, ctx.codeLines);
+  const withHeader = (content: string): string => (classHeader ? `${classHeader}\n${content}` : content);
+  const groupContent = (group: NodeGroup): string =>
+    extractGroupContent(group, ctx.codeLines, ctx.excludedRows)?.content ?? "";
+  const shortMethods = classBodyShortMethods(classBody, extractedStarts, ctx.excludedRows);
+  // A sub-floor group folds into a neighbour instead of being dropped (bd
+  // tea-rags-mcp-xiki8, the TypeScript twin of 30qdc); a group holding a short
+  // method declares a member and is never noise.
+  const groups = foldSubFloorGroups(groupAdjacentNodes(classBody, ctx.excludedRows, extractedStarts), {
+    isSubFloor: (group) =>
+      withHeader(groupContent(group)).length < 50 && !group.nodes.some((node) => shortMethods.has(node.startIndex)),
+    fits: (group) => withHeader(groupContent(group)).length <= ctx.config.maxChunkSize,
+    merge: (host, guest) => ({
+      type: host.type,
+      nodes: [...host.nodes, ...guest.nodes].sort((a, b) => a.startIndex - b.startIndex),
+    }),
+    startOf: (group) => group.nodes[0].startIndex,
+  });
   const results: BodyChunkResult[] = [];
 
   for (const group of groups) {
@@ -404,10 +421,7 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
     if (!extracted) continue;
 
     // Prepend class header for context
-    const contentWithContext = classHeader ? `${classHeader}\n${extracted.content}` : extracted.content;
-
-    // Skip tiny groups
-    if (contentWithContext.length < 50) continue;
+    const contentWithContext = withHeader(extracted.content);
 
     const chunk: BodyChunkResult = {
       content: contentWithContext,
@@ -424,7 +438,63 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
     }
   }
 
-  return mergeSmallBodyChunks(results, classHeader, ctx.config.maxChunkSize);
+  return declareShortMethods(mergeSmallBodyChunks(results, classHeader, ctx.config.maxChunkSize), shortMethods);
+}
+
+type ShortMethod = { name: string; methodKind: MethodClassification; line: number };
+
+/**
+ * The methods a class body declares that the engine did not extract as
+ * children — a `method_definition` under its 50-char child floor (`get id() {
+ * return 1; }`), keyed by start offset (bd tea-rags-mcp-xiki8). Their rows ride
+ * a body chunk as neighbour members (bd tea-rags-mcp-u7tjf); the chunk holding
+ * the method's first row declares it, so `find_symbol("Owner#id")` answers
+ * through it. Rows a comment hook excluded are skipped, as the grouper skips them.
+ */
+function classBodyShortMethods(
+  classBody: AstNode,
+  extractedStarts: ReadonlySet<number>,
+  excludedRows: Set<number>,
+): Map<number, ShortMethod> {
+  const methods = new Map<number, ShortMethod>();
+  for (const node of classBody.namedChildren) {
+    if (node.type !== "method_definition" || extractedStarts.has(node.startIndex)) continue;
+    if (excludedRows.has(node.startPosition.row)) continue;
+    const name = node.childForFieldName("name");
+    const methodKind = classifyMethod(node);
+    if (!name || !methodKind) continue;
+    methods.set(node.startIndex, { name: name.text, methodKind, line: node.startPosition.row + 1 });
+  }
+  return methods;
+}
+
+/**
+ * Each short method declared by the first body chunk whose rows hold its first
+ * line, as `BodyChunkResult.declaredMethodMembers` in source order; the engine
+ * composes them into `memberSymbolIds` (`Owner#m` / `Owner.m`). Accessor twins
+ * share one id, so a chunk declares it once.
+ */
+function declareShortMethods(chunks: BodyChunkResult[], shortMethods: Map<number, ShortMethod>): BodyChunkResult[] {
+  if (shortMethods.size === 0) return chunks;
+  const holds = (chunk: BodyChunkResult, line: number): boolean =>
+    line >= chunk.startLine &&
+    line <= chunk.endLine &&
+    (chunk.lineRanges ?? [{ start: chunk.startLine, end: chunk.endLine }]).some(
+      (r) => line >= r.start && line <= r.end,
+    );
+  const declared = new Map<BodyChunkResult, ShortMethod[]>();
+  for (const method of [...shortMethods.values()].sort((a, b) => a.line - b.line)) {
+    const chunk = chunks.find((candidate) => holds(candidate, method.line));
+    if (!chunk) continue;
+    const members = declared.get(chunk) ?? [];
+    if (!members.some((m) => m.name === method.name && m.methodKind === method.methodKind)) members.push(method);
+    declared.set(chunk, members);
+  }
+  return chunks.map((chunk) => {
+    const members = declared.get(chunk);
+    if (!members) return chunk;
+    return { ...chunk, declaredMethodMembers: members.map(({ name, methodKind }) => ({ name, methodKind })) };
+  });
 }
 
 // ── ChunkingHook export ────────────────────────────────────────────
