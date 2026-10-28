@@ -2,11 +2,11 @@
 name: dino-brainstorming
 description:
   'Brainstorm code change grounded in tea-rags risk, ownership, tech-debt
-  signals. Verb brainstorm/discuss beats explore PRE-GEN ("brainstorm
-  splitting/refactoring Y"). Triggers on "brainstorm X", "design feature",
-  "redesign Y", "let''s discuss", "давай обсудим", "обсудим", "как перестроить",
-  "что может сломаться". NOT research before refactor with no brainstorm/discuss
-  verb (→ explore PRE-GEN), NOT trivial edits with no code area.'
+  signals. Verb brainstorm/discuss beats explore PRE-GEN ("brainstorm splitting
+  Y"). Triggers "brainstorm X", "design feature", "redesign Y", "let''s
+  discuss", "давай обсудим", "обсудим", "как перестроить", "что может
+  сломаться". NOT research w/o brainstorm verb, NOT "what breaks if I change
+  <symbol>" (explore), NOT trivial edits.'
 ---
 
 # dinopowers: brainstorming
