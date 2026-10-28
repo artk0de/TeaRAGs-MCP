@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -313,6 +314,78 @@ describe("CollectionRegistry", () => {
       const stop = r.startWatching();
       expect(typeof stop).toBe("function");
       stop();
+    });
+  });
+
+  describe("startWatching() — a failing directory watch degrades to polling (bd tea-rags-mcp-mqxfd)", () => {
+    function errnoError(code: string): NodeJS.ErrnoException {
+      return Object.assign(new Error(`${code}: too many open files, watch`), { code, syscall: "watch" });
+    }
+
+    function writeExternalPath(path: string): void {
+      saveRegistryFile(dir, {
+        version: 1,
+        collections: {
+          code_a: {
+            collectionName: "code_a",
+            path,
+            name: null,
+            embeddingModel: "m",
+            embeddingDimensions: 384,
+            qdrantUrl: "http://localhost:6333",
+            indexedAt: "2026-05-13T00:00:00.000Z",
+            teaRagsVersion: "0.1.0",
+            chunksCount: 10,
+          },
+        },
+      });
+    }
+
+    async function waitFor(predicate: () => boolean): Promise<void> {
+      for (let i = 0; i < 100 && !predicate(); i++) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    it("survives an EMFILE error event and still sees external writes", async () => {
+      const handle = Object.assign(new EventEmitter(), { close: vi.fn() });
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const r = new CollectionRegistry(dir, { registryDirWatch: () => handle, registryPollIntervalMs: 10 });
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+
+      expect(() => handle.emit("error", errnoError("EMFILE"))).not.toThrow();
+      handle.emit("error", errnoError("EMFILE"));
+      expect(handle.close).toHaveBeenCalledTimes(1);
+      const logged = stderr.mock.calls.map(([line]) => String(line)).filter((line) => line.includes("EMFILE"));
+      expect(logged).toHaveLength(1);
+
+      expect(r.get("code_a")?.path).toBe("/repo/a");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      writeExternalPath("/repo/a-external");
+      await waitFor(() => r.get("code_a")?.path === "/repo/a-external");
+      expect(r.get("code_a")?.path).toBe("/repo/a-external");
+      stop();
+      stderr.mockRestore();
+    });
+
+    it("survives a watch that throws EMFILE at start and polls instead", async () => {
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const r = new CollectionRegistry(dir, {
+        registryDirWatch: () => {
+          throw errnoError("EMFILE");
+        },
+        registryPollIntervalMs: 10,
+      });
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+      expect(stderr.mock.calls.some(([line]) => String(line).includes("EMFILE"))).toBe(true);
+
+      expect(r.get("code_a")?.path).toBe("/repo/a");
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      writeExternalPath("/repo/a-polled");
+      await waitFor(() => r.get("code_a")?.path === "/repo/a-polled");
+      expect(r.get("code_a")?.path).toBe("/repo/a-polled");
+      stop();
+      stderr.mockRestore();
     });
   });
 

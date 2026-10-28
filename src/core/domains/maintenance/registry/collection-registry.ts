@@ -1,4 +1,5 @@
-import { watch, type FSWatcher } from "node:fs";
+import { unwatchFile, watch, watchFile, type Stats } from "node:fs";
+import { join } from "node:path";
 
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import {
@@ -28,7 +29,24 @@ import {
   type RegistryEnvPinDrop,
 } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
-import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
+import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS, REGISTRY_FILE_NAME } from "./registry-file.js";
+
+/** The slice of `fs.FSWatcher` the registry's data-directory watch uses. */
+export interface RegistryDirWatchHandle {
+  on: (event: "error", listener: (error: NodeJS.ErrnoException) => void) => unknown;
+  close: () => void;
+}
+
+/** Starts a directory watch; `filename` is the changed entry's name, or null when the platform omits it. */
+export type RegistryDirWatch = (dir: string, listener: (filename: string | null) => void) => RegistryDirWatchHandle;
+
+/** Stat-polling period once the directory watch is unavailable (EMFILE, ENOSPC, sandbox denial). */
+const REGISTRY_POLL_INTERVAL_MS = 2_000;
+
+const defaultRegistryDirWatch: RegistryDirWatch = (dir, listener) =>
+  watch(dir, { persistent: false }, (_eventType, filename) => {
+    listener(filename === null ? null : String(filename));
+  });
 
 function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {
   const snapshot = new Map<string, CollectionEntry>();
@@ -53,6 +71,10 @@ export interface CollectionRegistryOptions {
    * `envCodeDefaults` too; without the probe the step is left to the next open.
    */
   codegraphDataProbe?: CodegraphDataProbe;
+  /** Test seam for the data-directory watch `startWatching` opens; defaults to `fs.watch`. */
+  registryDirWatch?: RegistryDirWatch;
+  /** Polling period of the fallback `startWatching` degrades to; defaults to 2 s. */
+  registryPollIntervalMs?: number;
 }
 
 export class CollectionRegistry {
@@ -71,7 +93,8 @@ export class CollectionRegistry {
    */
   private throughputOptima: EmbeddingThroughputOptimaSection | null = null;
   private readonly tombstones = new Set<string>();
-  private watcher: FSWatcher | null = null;
+  private watcher: RegistryDirWatchHandle | null = null;
+  private pollListener: ((curr: Stats, prev: Stats) => void) | null = null;
   private stopHandle: (() => void) | null = null;
 
   constructor(
@@ -466,10 +489,10 @@ export class CollectionRegistry {
    * concurrent CLI or pipeline run. Returns a stop handle that closes the
    * watcher. Idempotent — repeated calls return the same handle. Audit #2.
    *
-   * fs.watch fails synchronously if the path does not exist; we tolerate
-   * by deferring the watch silently. Worst case: the very first external
-   * mutation before our process records anything is missed — extremely
-   * unlikely and recovered by the merge-on-write CAS in flush() anyway.
+   * A directory watch that cannot start (missing dir, EMFILE, ENOSPC, a
+   * sandbox denying it) or that later emits an `error` event degrades to
+   * stat-polling `registry.json` — logged once, never thrown: an unhandled
+   * FSWatcher `error` event kills the process (bd tea-rags-mcp-mqxfd).
    */
   startWatching(): () => void {
     if (this.stopHandle !== null) return this.stopHandle;
@@ -479,24 +502,71 @@ export class CollectionRegistry {
     // file-level watcher detaches after the first rename. A directory
     // watcher survives the rename cycle and lets us filter by filename.
     // Audit #2 regression fix.
+    const watchDir = this.options.registryDirWatch ?? defaultRegistryDirWatch;
     try {
-      this.watcher = watch(this.dataDir, { persistent: false }, (_eventType, filename) => {
-        if (filename === "registry.json" || filename === null) {
-          this.cache = null;
-          this.loadedSnapshot = null;
-          this.throughputOptima = null;
-        }
+      const handle = watchDir(this.dataDir, (filename) => {
+        if (filename === REGISTRY_FILE_NAME || filename === null) this.invalidateCache();
       });
-    } catch {
-      this.watcher = null;
+      handle.on("error", (err) => {
+        if (this.watcher === handle) this.degradeToPolling(err);
+      });
+      this.watcher = handle;
+    } catch (err) {
+      this.degradeToPolling(err as NodeJS.ErrnoException);
     }
     this.stopHandle = () => {
       if (this.watcher !== null) {
         this.watcher.close();
         this.watcher = null;
       }
+      if (this.pollListener !== null) {
+        unwatchFile(join(this.dataDir, REGISTRY_FILE_NAME), this.pollListener);
+        this.pollListener = null;
+      }
       this.stopHandle = null;
     };
     return this.stopHandle;
+  }
+
+  private invalidateCache(): void {
+    this.cache = null;
+    this.loadedSnapshot = null;
+    this.throughputOptima = null;
+  }
+
+  /**
+   * Replaces a failed directory watch with stat-polling of `registry.json`.
+   * `fs.watchFile` holds no file descriptor, so it survives the exhaustion
+   * that broke the watch. A missing data directory is the expected case and
+   * is not logged; any other cause is, once.
+   */
+  private degradeToPolling(err: NodeJS.ErrnoException): void {
+    if (this.watcher !== null) {
+      const failed = this.watcher;
+      this.watcher = null;
+      try {
+        failed.close();
+      } catch {
+        // already torn down by the failure
+      }
+    }
+    if (this.pollListener !== null) return;
+    const interval = this.options.registryPollIntervalMs ?? REGISTRY_POLL_INTERVAL_MS;
+    if (err.code !== "ENOENT") {
+      process.stderr.write(
+        `[tea-rags] registry watch unavailable (${err.code ?? err.message}), polling ${REGISTRY_FILE_NAME} every ${interval} ms\n`,
+      );
+    }
+    const listener = (curr: Stats, prev: Stats): void => {
+      if (curr.mtimeMs !== prev.mtimeMs || curr.ino !== prev.ino) this.invalidateCache();
+    };
+    try {
+      watchFile(join(this.dataDir, REGISTRY_FILE_NAME), { persistent: false, interval }, listener);
+      this.pollListener = listener;
+    } catch (pollError) {
+      process.stderr.write(
+        `[tea-rags] registry polling unavailable: ${(pollError as Error).message}; external registry edits are merged at the next flush\n`,
+      );
+    }
   }
 }
