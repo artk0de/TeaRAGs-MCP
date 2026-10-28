@@ -153,6 +153,153 @@ describe("ExploreFacade — expanded methods", () => {
     vi.clearAllMocks();
   });
 
+  it("routes only explicit migration searches to the companion collection", async () => {
+    const { facade, qdrant } = makeFacade();
+    await facade.semanticSearch({ collection: "test_col", query: "orders" });
+    expect(qdrant.search).toHaveBeenLastCalledWith("test_col", expect.any(Array), expect.any(Number), undefined);
+    await facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" } as any);
+    expect(qdrant.search).toHaveBeenLastCalledWith(
+      "test_col_migrations",
+      expect.any(Array),
+      expect.any(Number),
+      undefined,
+    );
+    await facade.hybridSearch({ collection: "test_col", query: "orders", scope: "migrations" } as any);
+    expect(qdrant.hybridSearch.mock.calls.at(-1)?.[0]).toBe("test_col_migrations");
+  });
+
+  it("returns no migration results when the companion collection does not exist", async () => {
+    const qdrant = makeMockQdrant({ collectionExists: vi.fn(async (name: string) => name === "test_col") });
+    const { facade } = makeFacade({ qdrant });
+    expect(
+      (await facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" } as any)).results,
+    ).toEqual([]);
+    expect(
+      (await facade.hybridSearch({ collection: "test_col", query: "orders", scope: "migrations" } as any)).results,
+    ).toEqual([]);
+    expect(qdrant.search).not.toHaveBeenCalled();
+    expect(qdrant.hybridSearch).not.toHaveBeenCalled();
+  });
+
+  it("returns migration metadata in the default result projection", async () => {
+    const qdrant = makeMockQdrant({
+      search: vi.fn().mockResolvedValue([
+        {
+          id: "1",
+          score: 0.9,
+          payload: {
+            relativePath: "db/migrate/1_orders.rb",
+            content: "add_column :orders, :token, :uuid",
+            operation: "add_column",
+            table: "orders",
+            columns: ["token"],
+            version: "1",
+          },
+        },
+      ]),
+    });
+    const { facade } = makeFacade({ qdrant });
+    const result = await facade.semanticSearch({
+      collection: "test_col",
+      query: "orders token",
+      scope: "migrations",
+    } as any);
+    expect(result.results[0].payload).toMatchObject({
+      operation: "add_column",
+      table: "orders",
+      columns: ["token"],
+      version: "1",
+    });
+  });
+
+  it("keeps migration metadata with metaOnly while omitting source", async () => {
+    const qdrant = makeMockQdrant({
+      search: vi
+        .fn()
+        .mockResolvedValue([
+          {
+            id: "1",
+            score: 0.9,
+            payload: {
+              relativePath: "db/migrate/1_orders.rb",
+              content: "add_column :orders, :token, :uuid",
+              operation: "add_column",
+              table: "orders",
+              columns: ["token"],
+              version: "1",
+            },
+          },
+        ]),
+    });
+    const { facade } = makeFacade({ qdrant });
+    const result = await facade.semanticSearch({
+      collection: "test_col",
+      query: "orders",
+      scope: "migrations",
+      metaOnly: true,
+    });
+    expect(result.results[0].payload).toMatchObject({
+      operation: "add_column",
+      table: "orders",
+      columns: ["token"],
+      version: "1",
+    });
+    expect(result.results[0].payload).not.toHaveProperty("content");
+  });
+
+  it("does not load or compute code signal statistics for migration searches", async () => {
+    const statsCache = { lastWrittenAt: vi.fn(), load: vi.fn() };
+    const { facade } = makeFacade({ statsCache });
+    await facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" } as any);
+    expect(statsCache.lastWrittenAt).not.toHaveBeenCalled();
+    expect(statsCache.load).not.toHaveBeenCalled();
+  });
+
+  it("does not apply a production preset's default filter to migration scope", async () => {
+    const reranker = makeMockReranker({
+      getFullPreset: vi
+        .fn()
+        .mockReturnValue({ filter: { must_not: [{ key: "chunkType", match: { value: "migration" } }] } }),
+    });
+    const { facade, qdrant } = makeFacade({ reranker });
+    await facade.semanticSearch({
+      collection: "test_col",
+      query: "orders",
+      scope: "migrations",
+      rerank: "hotspots",
+    } as any);
+    expect(qdrant.search.mock.calls.at(-1)?.[3]).toBeUndefined();
+    expect(reranker.rerank).not.toHaveBeenCalled();
+  });
+
+  it("keeps code and migration results separate for both search methods", async () => {
+    const rows = (collection: string) =>
+      collection.endsWith("_migrations")
+        ? [
+            {
+              id: "m",
+              score: 0.9,
+              payload: {
+                relativePath: "db/migrate/1_orders.rb",
+                content: "add_column :orders, :token, :uuid",
+                operation: "add_column",
+              },
+            },
+          ]
+        : [{ id: "c", score: 0.9, payload: { relativePath: "app/orders.rb", content: "class Orders; end" } }];
+    const qdrant = makeMockQdrant({
+      search: vi.fn(async (collection: string) => rows(collection)),
+      hybridSearch: vi.fn(async (collection: string) => rows(collection)),
+    });
+    const { facade } = makeFacade({ qdrant });
+    for (const search of [facade.semanticSearch.bind(facade), facade.hybridSearch.bind(facade)]) {
+      const code = await search({ collection: "test_col", query: "orders" });
+      const migrations = await search({ collection: "test_col", query: "orders", scope: "migrations" });
+      expect(code.results.map((row) => row.payload?.relativePath)).toEqual(["app/orders.rb"]);
+      expect(migrations.results.map((row) => row.payload?.relativePath)).toEqual(["db/migrate/1_orders.rb"]);
+    }
+  });
+
   // =========================================================================
   // semanticSearch
   // =========================================================================

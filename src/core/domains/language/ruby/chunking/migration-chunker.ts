@@ -56,11 +56,14 @@ function methodOf(node: AstNode): string | undefined {
 function blockColumns(node: AstNode): string[] {
   const operationBlock = node.namedChildren.find((child) => child.type === "do_block" || child.type === "block");
   if (!operationBlock) return [];
+  const parameters = operationBlock.namedChildren.find((child) => child.type === "block_parameters");
+  const builder = parameters?.namedChildren.find((child) => child.type === "identifier")?.text;
+  if (!builder) return [];
   const columns: string[] = [];
   const visit = (child: AstNode): void => {
     if (child.type === "call") {
       const callReceiver = child.childForFieldName("receiver");
-      if (callReceiver?.type === "identifier") {
+      if (callReceiver?.type === "identifier" && callReceiver.text === builder) {
         const name = literal(argumentsOf(child)[0]);
         if (name) columns.push(name);
       }
@@ -95,7 +98,9 @@ export function chunkRailsMigration(root: AstNode, code: string, filePath: strin
             : operation === "rename_column"
               ? [literal(args[1]), literal(args[2])].filter((value): value is string => value !== undefined)
               : operation.includes("column") || operation.includes("reference") || operation.includes("index")
-                ? [literal(args[1])].filter((value): value is string => value !== undefined)
+                ? (args[1]?.type === "array" ? args[1].namedChildren.map(literal) : [literal(args[1])]).filter(
+                    (value): value is string => value !== undefined,
+                  )
                 : [];
         migrationChunks.push({
           chunkType: "migration",

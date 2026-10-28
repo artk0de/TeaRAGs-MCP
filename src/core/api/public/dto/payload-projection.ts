@@ -53,6 +53,7 @@ const MAX_SUGGESTION_DEPTH = 5;
 export interface PayloadProjectionMode {
   metaOnly: boolean;
   reranked: boolean;
+  migration?: boolean;
   /**
    * A search tool (semantic_search, hybrid_search, rank_chunks, find_similar)
    * answers: its default is {@link DEFAULT_SEARCH_FIELDS} /
@@ -155,7 +156,12 @@ function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): Se
 }
 
 function defaultKeysOf(mode: PayloadProjectionMode): readonly string[] {
-  if (mode.searchTool) return mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+  if (mode.searchTool) {
+    const defaults = mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+    return mode.migration
+      ? [...defaults, "chunkType", "version", "operation", "direction", "table", "columns"]
+      : defaults;
+  }
   if (!mode.metaOnly) return CONTENT_FIELDS;
   return mode.outline ? OUTLINE_META_ONLY_FIELDS : LOCATOR_FIELDS;
 }

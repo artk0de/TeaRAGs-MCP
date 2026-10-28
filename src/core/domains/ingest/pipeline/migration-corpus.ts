@@ -70,7 +70,7 @@ export async function rebuildMigrationCorpus(options: {
   const digest = createHash("sha256")
     .update(
       JSON.stringify([
-        "migration-v1",
+        "migration-v2",
         chunkSize,
         embeddings.getModel?.(),
         sourceFiles.map(({ filePath, code }) => [relative(root, filePath), code]),

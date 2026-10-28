@@ -141,6 +141,9 @@ local `review_changes` gate before each commit.
   operations must remain distinguishable.
 - Defer overlay, legacy point cleanup and precise ignore precedence: these
   require separate lifecycle work and do not block a new companion corpus.
+- Rebuild the companion when its migration digest changes, and skip embedding
+  when unchanged: alias publication avoids partial history at the cost of
+  re-embedding all migrations after a change.
 
 ## Delivery phases
 
