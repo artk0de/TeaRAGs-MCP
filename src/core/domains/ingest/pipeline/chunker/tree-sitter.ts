@@ -244,12 +244,22 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Compute 1-based endLine from a tree-sitter node.
-   * tree-sitter endPosition.row is inclusive (same row for single-line nodes),
-   * so we ensure endLine > startLine for at least 1 line span.
+   * 1-based, INCLUSIVE endLine of a tree-sitter node: a single-line node ends
+   * on its own row. `startLine..endLine` is the set of rows the chunk owns, so
+   * reporting one row past a one-liner made it own the next statement's row
+   * too (bd tea-rags-mcp-5ndal).
    */
   private computeEndLine(node: AstNode): number {
-    return Math.max(node.startPosition.row + 2, node.endPosition.row + 1);
+    return node.endPosition.row + 1;
+  }
+
+  /**
+   * The `methodLines` payload value: rows after the first, floored at 1 — the
+   * value the chunker has always stored, kept apart from the ownership range
+   * so the size signals it feeds do not move.
+   */
+  private methodLinesOf(node: AstNode): number {
+    return Math.max(1, node.endPosition.row - node.startPosition.row);
   }
 
   /**
@@ -1003,7 +1013,7 @@ export class TreeSitterChunker implements CodeChunker {
             name: c.name,
             symbolId: c.symbolId,
             claimed: true,
-            methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+            methodLines: this.methodLinesOf(node),
           },
         });
       });
@@ -1058,7 +1068,7 @@ export class TreeSitterChunker implements CodeChunker {
       return;
     }
     chunks.push({
-      content: content.trim(),
+      content: this.withDeclaredHeaderRow(node, content.trim(), code, langConfig),
       startLine: attributePrefix.startLine,
       endLine: this.computeEndLine(node),
       metadata: {
@@ -1069,7 +1079,7 @@ export class TreeSitterChunker implements CodeChunker {
         name: nodeName,
         parentSymbolId,
         symbolId,
-        methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
+        methodLines: this.methodLinesOf(node),
       },
     });
   }
@@ -1350,6 +1360,22 @@ export class TreeSitterChunker implements CodeChunker {
    * Extract the opening line of a container node (e.g., "RSpec.describe User do").
    * Used to build hierarchy context for nested chunks.
    */
+  /**
+   * A container emitted whole as ONE chunk opens with its declared header row
+   * when the node's own text starts mid-row: a Ruby value-class container's
+   * node is the builder call (`Struct.new(:a) do`), while its header is the
+   * whole assignment row (`Row = Struct.new(:a) do`), so the constant would be
+   * in no chunk's content (bd tea-rags-mcp-0k8zt). Any other node is unchanged.
+   */
+  private withDeclaredHeaderRow(node: AstNode, content: string, code: string, langConfig: LanguageConfig): string {
+    const declared = langConfig.containerHeader?.(node, code);
+    if (declared === undefined) return content;
+    const firstRowEnd = content.indexOf("\n");
+    const firstRow = (firstRowEnd < 0 ? content : content.slice(0, firstRowEnd)).trim();
+    if (firstRow === declared || !declared.endsWith(firstRow)) return content;
+    return firstRowEnd < 0 ? declared : `${declared}${content.slice(firstRowEnd)}`;
+  }
+
   private extractContainerHeader(node: AstNode, code: string, langConfig: LanguageConfig): string {
     const declared = langConfig.containerHeader?.(node, code);
     if (declared !== undefined) return declared;
@@ -1727,7 +1753,12 @@ export class TreeSitterChunker implements CodeChunker {
   private emitLeafChild(childNode: AstNode, ci: number, childContent: string, pass: ChildChunkEmissionPass): void {
     const { ctx, langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
     const attributePrefix = this.leadingAttributeStart(childNode);
-    let finalContent = code.substring(attributePrefix.startIndex, childNode.endIndex).trim();
+    let finalContent = this.withDeclaredHeaderRow(
+      childNode,
+      code.substring(attributePrefix.startIndex, childNode.endIndex).trim(),
+      code,
+      langConfig,
+    );
     let { startLine } = attributePrefix;
 
     const prefix = ctx.methodPrefixes.get(ci);
@@ -1824,7 +1855,7 @@ export class TreeSitterChunker implements CodeChunker {
         parentSymbolId: effectiveParent,
         parentType,
         symbolId,
-        methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
+        methodLines: this.methodLinesOf(childNode),
       },
     });
   }

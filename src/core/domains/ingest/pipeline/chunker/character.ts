@@ -55,11 +55,17 @@ export class CharacterChunker implements CodeChunker {
     const cuts = splitter.split();
     const ranges: RowRange[] = [];
     const sliced = new Map<RowRange, { start: number; end: number }>();
+    // The first row of a range's overlap — rows of the PREVIOUS chunk this one
+    // repeats as leading context. They are content, not a claim: the range
+    // itself (and so `startLine..endLine`) stays the chunk's own rows, so every
+    // row has one owning chunk (bd tea-rags-mcp-5ndal).
+    const overlapFrom = new Map<RowRange, number>();
     cuts.forEach((cut, i) => {
       const range = { startRow: cut.startRow, endRow: cut.endRow };
       if (cut.columns) sliced.set(range, cut.columns);
       else if (i > 0 && !cuts[i - 1].columns) {
-        range.startRow = this.overlapStart(splitter, rows, cuts[i - 1], cut.startRow, overlapLimit);
+        const contextStart = this.overlapStart(splitter, rows, cuts[i - 1], cut.startRow, overlapLimit);
+        if (contextStart < cut.startRow) overlapFrom.set(range, contextStart);
       }
       ranges.push(range);
     });
@@ -69,9 +75,10 @@ export class CharacterChunker implements CodeChunker {
       const columns = sliced.get(range);
       const trimmed = columns ? range : trimBlankRows(range, rows);
       if (!trimmed) continue;
+      const contentStart = Math.min(overlapFrom.get(range) ?? trimmed.startRow, trimmed.startRow);
       const content = columns
         ? rows[range.startRow].slice(columns.start, columns.end)
-        : rows.slice(trimmed.startRow, trimmed.endRow + 1).join("\n");
+        : rows.slice(contentStart, trimmed.endRow + 1).join("\n");
       if (content.trim().length === 0) continue;
       chunks.push({
         content,
