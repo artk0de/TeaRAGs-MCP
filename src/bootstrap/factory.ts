@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   createDaemonRouting,
   getStorageDir,
+  isDaemonPidAlive,
   openDaemonLogFd,
   resolveDaemonClientTarget,
   sweepOrphanedDaemonKeyDirs,
@@ -494,13 +495,14 @@ const codegraphDaemonLock = new DaemonLock();
 /** Cheap pid-liveness probe over the daemon's pid file (no Qdrant coupling). */
 function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
   if (!existsSync(paths.pidFile)) return false;
+  let pid: number;
   try {
-    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
-    process.kill(pid, 0);
-    return true;
+    pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
   } catch {
     return false;
   }
+  // EPERM (a sandboxed client) still means the daemon runs — never spawn a twin (bd tea-rags-mcp-hdl65).
+  return Number.isSafeInteger(pid) && pid > 0 && isDaemonPidAlive(pid);
 }
 
 /** What a spawner hands the codegraph daemon process, resolved from ITS config. */

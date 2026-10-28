@@ -1,5 +1,7 @@
 import { closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 
+import { isPidAlive } from "../../process-tree/pid-liveness.js";
+
 /**
  * How long a lock whose holder cannot be identified is honoured before it is
  * treated as abandoned. Every holder writes its pid, so this window only
@@ -117,19 +119,5 @@ function isAbandoned(lockPath: string): boolean {
     return Date.now() - statSync(lockPath).mtimeMs > STALE_LOCK_GRACE_MS;
   } catch {
     return false;
-  }
-}
-
-/**
- * Signal-0 liveness probe. EPERM means the pid is taken by a process this user
- * may not signal — alive, and emphatically not ours to steal from. Only ESRCH
- * (and an unreadable pid) count as gone.
- */
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
   }
 }

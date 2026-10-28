@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
+import { isPidAlive } from "../../process-tree/pid-liveness.js";
+
 /**
  * Who holds a daemon — the embedded Qdrant and codegraph daemons share this
  * file format. `holders` is a multiset of pids, one entry per attach, so a
@@ -27,15 +29,8 @@ const processExitHooks: ExitHooks = {
   off: (listener) => process.off("exit", listener),
 };
 
-/** EPERM means the pid runs under another user — still a holder. */
-function isHolderAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
+/** EPERM means the pid runs under another user or outside our sandbox — still a holder. */
+const isHolderAlive: HolderLiveness = isPidAlive;
 
 function parseDaemonRefs(content: string): DaemonRefs {
   const [first = "", ...rest] = content.trim().split("\n");

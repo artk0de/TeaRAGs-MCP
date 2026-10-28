@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { purgeStaleSpills, spillLiveMarkerPath } from "../../../../src/core/adapters/duckdb/spill-files.js";
 
@@ -140,5 +140,20 @@ describe("purgeStaleSpills", () => {
     purgeStaleSpills(dir);
 
     expect(existsSync(live)).toBe(true);
+  });
+
+  it("keeps a spill whose owner exists but may not be signalled (EPERM, bd tea-rags-mcp-hdl65)", () => {
+    const owned = spill("code_a-run1", 424_242);
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+    });
+
+    try {
+      purgeStaleSpills(dir);
+    } finally {
+      vi.restoreAllMocks();
+    }
+
+    expect(existsSync(owned)).toBe(true);
   });
 });

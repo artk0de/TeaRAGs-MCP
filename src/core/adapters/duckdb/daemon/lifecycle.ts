@@ -3,6 +3,7 @@ import { mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlin
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { isPidAlive } from "../../process-tree/pid-liveness.js";
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
 import { attachDaemonRef, countLiveDaemonRefs, detachDaemonRef } from "../../qdrant/embedded/daemon-refs.js";
 import type {
@@ -303,29 +304,13 @@ export async function waitForDaemonExit(
   }
 }
 
-/** Signal-0 liveness probe (kill throws ESRCH once the process is gone). */
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Signal-0 liveness probe for a recorded daemon pid, with EPERM counted as
- * ALIVE (mirrors the `DaemonLock` probe): the pid is taken by a process this
- * user may not signal — a live daemon is not ours to sweep. Only ESRCH counts
- * as gone.
+ * ALIVE: the pid is taken by a process this user (or this sandbox) may not
+ * signal — a live daemon is not ours to sweep. Only ESRCH counts as gone.
  */
 export function isDaemonPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
-  }
+  return isPidAlive(pid);
 }
 
 /** What one build-key directory says about the daemon that owns it. */

@@ -17,7 +17,7 @@
 
 import type * as ChildProcessModule from "node:child_process";
 import type { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -105,6 +105,24 @@ describe("ensureCodegraphDaemon — spawn lock held until the child is observabl
     expect(spawned.children).toHaveLength(1);
     // The spawn lock is still held — another PROCESS's ensure sees it too.
     expect(existsSync(getDaemonPaths(storageDir).lockFile)).toBe(true);
+  });
+
+  it("spawns no twin beside a daemon whose pid exists but may not be signalled (EPERM, bd tea-rags-mcp-hdl65)", async () => {
+    const { pool } = wire();
+    const paths = getDaemonPaths(storageDir);
+    const deniedPid = 424_242;
+    mkdirSync(paths.buildDir, { recursive: true });
+    writeFileSync(paths.pidFile, String(deniedPid));
+    const realKill = process.kill.bind(process);
+    vi.spyOn(process, "kill").mockImplementation((pid: number, signal?: string | number) => {
+      if (pid === deniedPid) throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+      return realKill(pid, signal);
+    });
+
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_flight_denied_v1"));
+
+    expect(spawned.children).toHaveLength(0);
+    expect(existsSync(paths.pidFile)).toBe(true);
   });
 
   it("releases the spawn lock once the child's pid file names a live pid", async () => {

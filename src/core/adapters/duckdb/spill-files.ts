@@ -24,22 +24,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import { join } from "node:path";
 
 import { SPILL_LIVE_MARKER_SUFFIX, spillLiveMarkerPath } from "../../contracts/types/codegraph-spill.js";
+import { isPidAlive } from "../process-tree/pid-liveness.js";
 
 /** Re-exported for the adapter's callers; the naming contract itself lives in contracts. */
 export { spillLiveMarkerPath };
 
 /** Extension of an output spill written by the codegraph extraction sink. */
 const SPILL_EXTENSION = ".ndjson";
-
-/** Signal-0 liveness probe (`kill` throws ESRCH once the process is gone). */
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** Read a marker's pid; `undefined` when it is missing or not a pid. */
 function readMarkerPid(markerPath: string): number | undefined {
