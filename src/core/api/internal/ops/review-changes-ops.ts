@@ -45,6 +45,7 @@ import {
 import { readOnce } from "./architecture-report-ops.js";
 import { readDiffScope, readTreeLag } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
+import { hoistNotJudgedFiles } from "./review-not-judged-files.js";
 import {
   readReviewChangeEdges,
   REVIEW_SECTION_PROVIDERS,
@@ -331,6 +332,7 @@ export class ReviewChangesOps {
         if (outcome.status === "rejected") throw outcome.reason;
         sections[provider.id] = outcome.value;
       });
+      const hoisted = hoistNotJudgedFiles(sections);
       return {
         review: {
           workTree: scope.workTree,
@@ -339,7 +341,8 @@ export class ReviewChangesOps {
           changedFiles: scope.changedFiles,
           ...(indexLag !== undefined ? { indexLag } : {}),
           ...(scope.notices.length > 0 ? { notices: [...scope.notices] } : {}),
-          sections,
+          ...(hoisted.notJudged !== undefined ? { notJudged: hoisted.notJudged } : {}),
+          sections: hoisted.sections,
         },
       };
     } finally {

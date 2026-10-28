@@ -7,9 +7,12 @@ hub cuts, norm ledgers = same as `tea-rags://guide/architecture`.
 ## Envelope
 
 `workTree`, `base`, `mergeBase`, `changedFiles`, `indexLag`, `notices` (an empty
-diff names the trees and bases it did not look at). A section NOT requested is
-OMITTED from the map; a requested one whose substrate is missing answers
-`built: false` + reason — absence is not not-built.
+diff names the trees and bases it did not look at), `notJudged` = every file
+some section did not judge, ONCE, grouped by reasons:
+`{reasons: {<section>: reason}, details?, relPaths}`; inside a section
+`notJudged` = its count. A section NOT requested is OMITTED from the map; a
+requested one whose substrate is missing answers `built: false` + reason —
+absence is not not-built.
 
 ## naming
 
@@ -38,11 +41,12 @@ data = notJudged `noCohesionData`, never zero (cap 50 reports).
 
 ## architecture
 
-Findings in hand (deciding fix / report-only) → `tea-rags:architecture-diagnostics`
-Phase 3h: load `repair/<family>.md` of every family present, one class line per
-finding — no `preExisting` = introduced, must-fix (exempt only by
-`compositionRoot` flag / Known-false-positive entry, never bare "by design");
-`preExisting` + `remedy` = cheap fix; `preExisting`, no remedy = report-only.
+Findings in hand (deciding fix / report-only) →
+`tea-rags:architecture-diagnostics` Phase 3h: load `repair/<family>.md` of every
+family present, one class line per finding — no `preExisting` = introduced,
+must-fix (exempt only by `compositionRoot` flag / Known-false-positive entry,
+never bare "by design"); `preExisting` + `remedy` = cheap fix; `preExisting`, no
+remedy = report-only.
 
 The diff's added edges judged by the boundary detectors: stableDependencies,
 leakingAbstraction, cycles, mainSequence delta, silentCoupling, facadeContract,

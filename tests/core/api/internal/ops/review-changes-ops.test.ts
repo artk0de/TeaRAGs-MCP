@@ -576,9 +576,14 @@ describe("ReviewChangesOps", () => {
   it("a file with no symbol commits is a cohesion notJudged entry — absence, never a zero", async () => {
     writeFileSync(join(repo, "src/git/second.ts"), "export const second = 2;\n");
     const result = await makeOps(graphDbStub()).reviewChanges(request({ files: [CHANGED, "src/git/second.ts"] }));
-    expect(result.review.sections.cohesion?.notJudged).toEqual([
-      { relPath: "src/git/second.ts", reason: "noCohesionData" },
-    ]);
+    // The file is listed once at review level (bd tea-rags-mcp-56fax); the section keeps the count.
+    expect(result.review.notJudged).toContainEqual(
+      expect.objectContaining({
+        reasons: expect.objectContaining({ cohesion: "noCohesionData" }),
+        relPaths: expect.arrayContaining(["src/git/second.ts"]),
+      }),
+    );
+    expect(result.review.sections.cohesion?.notJudged).toBe(1);
     expect(result.review.sections.cohesion?.analyzedFiles).toBe(1);
   });
 
