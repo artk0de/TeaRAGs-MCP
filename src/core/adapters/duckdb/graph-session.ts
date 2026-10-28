@@ -83,6 +83,9 @@ const DEFAULT_DB_MEMORY_LIMIT = "2GB";
  */
 const EDGE_INSERT_CHUNK_ROWS = 200;
 
+/** Result column `applyScopedRowDiff` reads its `retainedWhere` verdict from. */
+const RETAINED_ROW_COLUMN = "__scoped_diff_retained";
+
 export interface DuckDbGraphSessionOptions {
   path: string;
   /**
@@ -934,6 +937,14 @@ export class DuckDbGraphSession {
    * `table` and the column names are compile-time literals supplied by the
    * caller, never user input; every value goes through a positional bind.
    *
+   * `retainedWhere`, when given, is a SQL predicate over the stored row naming
+   * rows ANOTHER writer owns inside this scope (bd tea-rags-mcp-m7png: the
+   * residual store's `origin = 'model'` file edges under the walk's
+   * `source_rel_path`). Such a row is still read, so an incoming row with its
+   * key UPDATEs it and takes it over, but it is never deleted for being absent
+   * from `rows` — its owner reconciles it. Like `table`, it is a compile-time
+   * literal.
+   *
    * Resolves to the keys it DELETED, in `keyColumns` order, so a caller whose
    * rows are referenced from another table can retire those references too
    * (`DuckDbSymbolStore#upsertSymbolsBulk` and the method edges into a removed
@@ -946,22 +957,29 @@ export class DuckDbGraphSession {
     keyColumns: readonly string[],
     valueColumns: readonly string[],
     rows: readonly (readonly unknown[])[],
+    retainedWhere?: string,
   ): Promise<unknown[][]> {
     if (scopeValues.length === 0) return [];
     const columns = [...keyColumns, ...valueColumns];
     const keyWidth = keyColumns.length;
+    const retainedColumn =
+      retainedWhere === undefined ? "" : `, COALESCE((${retainedWhere}), false) AS ${RETAINED_ROW_COLUMN}`;
 
-    const existing = new Map<string, { key: unknown[]; values: string }>();
+    const existing = new Map<string, { key: unknown[]; values: string; retained: boolean }>();
     for (let i = 0; i < scopeValues.length; i += EDGE_INSERT_CHUNK_ROWS) {
       const chunk = scopeValues.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
       const found = await this.queryAll<Record<string, unknown>>(
-        `SELECT ${columns.join(", ")} FROM ${table} WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")})`,
+        `SELECT ${columns.join(", ")}${retainedColumn} FROM ${table} WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")})`,
         chunk.slice(),
       );
       for (const row of found) {
         const tuple = columns.map((c) => row[c]);
         const key = tuple.slice(0, keyWidth);
-        existing.set(tupleFingerprint(key), { key, values: tupleFingerprint(tuple.slice(keyWidth)) });
+        existing.set(tupleFingerprint(key), {
+          key,
+          values: tupleFingerprint(tuple.slice(keyWidth)),
+          retained: row[RETAINED_ROW_COLUMN] === true,
+        });
       }
     }
 
@@ -980,7 +998,7 @@ export class DuckDbGraphSession {
     }
     const toDelete: unknown[][] = [];
     for (const [key, row] of existing) {
-      if (!incoming.has(key)) toDelete.push(row.key);
+      if (!row.retained && !incoming.has(key)) toDelete.push(row.key);
     }
 
     await this.deleteByKeyBatched(table, keyColumns, toDelete);

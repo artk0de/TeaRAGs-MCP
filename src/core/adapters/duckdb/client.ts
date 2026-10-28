@@ -190,7 +190,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.ontology = new DuckDbOntologyReportStore(this.session);
     this.typeNames = new DuckDbTypeNameStore(this.session);
     this.fieldAccesses = new DuckDbFieldAccessStore(this.session);
-    this.residualEdges = new DuckDbResidualEdgeStore(this.session);
+    this.residualEdges = new DuckDbResidualEdgeStore(this.session, this.maintenance);
     this.residualCalibration = new DuckDbResidualCalibrationStore(this.session);
   }
 

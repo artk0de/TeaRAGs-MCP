@@ -14,8 +14,11 @@
  * A model call between two files no import links also adds a file edge
  * (migration 056: `cg_symbols_edges_file.origin = 'model'`), so file-scope
  * lookups, file fan and the layout see the dependency. Those rows are rebuilt
- * from the model method edges on every apply; the re-walk drops them with the
- * file's other edges, and an import it finds replaces them.
+ * from the model method edges on every apply, which also rebuilds the
+ * `target_rel_path` index that churn drifts; the re-walk never deletes them
+ * (they are this store's, bd tea-rags-mcp-m7png), so one whose model edge the
+ * re-walk dropped stays until the next apply, and an import the re-walk finds
+ * replaces it.
  *
  * Sites a model put outside the project ("none of these") live in
  * `cg_residual_external_sites` (058), replaced per model on every apply and
@@ -39,6 +42,7 @@ import { METHOD_EDGE_KEYS, METHOD_EDGE_VALUES } from "./file-graph-store.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { decodeResidualClassTargets } from "./residual-class-targets-codec.js";
 import { placeholders } from "./sql-binding.js";
+import type { DuckDbStorageMaintenance } from "./storage-maintenance.js";
 
 /** Values per `IN (…)` list — the bound the session's batched writers use. */
 const RESIDUAL_IN_LIST_CHUNK = 200;
@@ -96,7 +100,10 @@ interface ModelResolvedSiteCountDbRow {
 }
 
 export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
-  constructor(private readonly session: DuckDbGraphSession) {}
+  constructor(
+    private readonly session: DuckDbGraphSession,
+    private readonly maintenance: Pick<DuckDbStorageMaintenance, "rebuildEdgeFileTargetIndex" | "checkpoint">,
+  ) {}
 
   async readResidualCallSites(): Promise<ResidualCallSiteRow[]> {
     const rows = await this.session.queryAll<ResidualSiteDbRow>(
@@ -230,7 +237,7 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
    * only when it does.
    */
   async applyModelEdges(model: string, edges: readonly ModelEdgeRow[]): Promise<ModelEdgeApplyResult> {
-    return this.session.transaction(async () => {
+    const applied = await this.session.transaction(async () => {
       const before = await this.storedModelEdges(model);
       const callTexts = await this.callTextsBySite(edges.map((e) => e.siteKey));
       const targetPaths = await this.targetPathsBySymbol(edges.map((e) => e.targetSymbolId));
@@ -267,6 +274,17 @@ export class DuckDbResidualEdgeStore implements CodegraphResidualEdgeStore {
       const after = await this.storedModelEdges(model);
       return { stored: after.length, changed: after.join("\n") !== before.join("\n") };
     });
+    // The sync's DELETE + INSERT churn is what drifted taxdome's target index
+    // past the rows it holds, and nothing rebuilt it before the next run's
+    // DELETE fatally invalidated the database (bd tea-rags-mcp-m7png). This
+    // store is the only writer of those rows, so it restores the index after
+    // every sync — outside the transaction, through the queued rebuild — and
+    // checkpoints it like `GraphBuildFinalizer#checkpoint` does: a session closes
+    // without a shutdown checkpoint, and a READ_ONLY opener cannot replay a
+    // CREATE INDEX over a populated table from the WAL.
+    await this.maintenance.rebuildEdgeFileTargetIndex();
+    await this.maintenance.checkpoint();
+    return applied;
   }
 
   /** Make the rows of `model` in `cg_residual_external_sites` equal `sites`, attribute sites included. */
