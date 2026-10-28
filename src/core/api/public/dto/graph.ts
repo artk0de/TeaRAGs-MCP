@@ -353,7 +353,7 @@ export interface CycleResult {
    * package, every top-level `main`), which the bare `members` entry cannot.
    * `relativePath` is `""` for a cycle not yet recomputed since migration 028.
    */
-  memberLocations?: CycleMemberLocation[];
+  memberLocations?: CycleResultMemberLocation[];
   /** Convenience — member count (always >= 2). */
   length: number;
   /**
@@ -366,7 +366,7 @@ export interface CycleResult {
   modelEdgeCount?: number;
 }
 
-export interface CycleMemberLocation extends GraphRowTreeStateField {
+export interface CycleResultMemberLocation extends GraphRowTreeStateField {
   symbolId: SymbolId;
   relativePath: RelPath;
 }

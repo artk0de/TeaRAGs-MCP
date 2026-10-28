@@ -77,7 +77,7 @@ export type {
   AmbiguousCallerResult,
   CalleeResult,
   CallerResult,
-  CycleMemberLocation,
+  CycleResultMemberLocation,
   CycleResult,
   FileImportersResponse,
   FileImportResult,
