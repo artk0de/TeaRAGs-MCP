@@ -401,7 +401,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // When class/module is too large, recursively look for these smaller units
     // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
     // to find the methods inside (class << self ... end contains methods)
-    childChunkTypes: ["method", "singleton_method", "call"],
+    childChunkTypes: ["method", "singleton_method", "call", "class", "module"],
     nameExtractor: (node: AstNode, code: string): string | undefined => {
       if (node.type !== "call") return undefined;
       const id = node.children.find((c) => c.type === "identifier");

@@ -184,11 +184,20 @@ export const CodeChunkGrouper = {
    * Group a class chunk with its member chunks into an outline result.
    * Replaces the inline `outlineClass` in symbol-resolve.ts.
    */
-  group(classChunk: ScrollChunk, memberChunks: ScrollChunk[], visibilityOf?: MemberVisibilityLookup): SearchResult {
+  group(
+    classChunk: ScrollChunk,
+    memberChunks: ScrollChunk[],
+    visibilityOf?: MemberVisibilityLookup,
+    declaringWindows: ScrollChunk[] = [],
+  ): SearchResult {
     const sorted = sortByLine(memberChunks);
 
     const className = (classChunk.payload.name as string | undefined) ?? "";
-    const outlineContent = [className, ...memberLines(sorted, visibilityOf)].join("\n");
+    // A class-level window that declares members without chunks of their own
+    // (Ruby constants, `memberSymbolIds` — bd tea-rags-mcp-1x85g) lists them
+    // among the members, in line order; the window itself stays the header's.
+    const lines = memberLines(sortByLine([...memberChunks, ...declaringWindows]), visibilityOf);
+    const outlineContent = [className, ...lines].join("\n");
 
     const allChunks = [classChunk, ...sorted];
 
