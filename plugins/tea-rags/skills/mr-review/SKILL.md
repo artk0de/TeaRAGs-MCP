@@ -15,9 +15,9 @@ codex-description: >-
   Signal-driven review of a merge request or local branch — rank diff risks
   (blast radius, fragile zones, missing tests), comments naming concrete fixes.
   Triggers "review this MR <url>", "review MR/PR", "review my branch", "проведи
-  ревью MR", "сделай ревью ветки". NOT reviewer context before requesting review
-  (dinopowers:requesting-code-review), NOT health scan without a diff
-  (risk-assessment), NOT debugging a failure (bug-hunt).
+  ревью MR", "сделай ревью ветки". NOT naming fit of my changes (review_changes
+  naming), NOT reviewer context (requesting-code-review), NOT health scan w/o
+  diff (risk-assessment), NOT debugging (bug-hunt).
 argument-hint: "[MR/PR URL — omit for local review]"
 ---
 

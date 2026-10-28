@@ -1,12 +1,12 @@
 ---
 name: explore
 description:
-  'Explain/investigate code — "how does X work", "where is X used", "find all
-  X", "architecture of Y", "best example of X"; pre-generation context — "before
-  I change/refactor X", "what to know before touching X". NOT for active bugs, a
-  bug already found, named suspects, hits with bugFixRate labels (bug-hunt). NOT
-  for plan requests ("draft a plan to add X", [subagent:…] too) (writing-plans).
-  NOT standalone health scan (risk-assessment).'
+  'Explain/investigate code — "how does X work", "where is X used", "who calls X
+  / what breaks if I change it", "find all X", "architecture of Y", "best
+  example of X"; pre-change context — "before I change X", "what to know before
+  touching X". NOT active bugs, a found bug, named suspects, bugFixRate hits
+  (bug-hunt). NOT plan requests ("draft a plan to add X", [subagent:…] too)
+  (writing-plans). NOT area health scan (risk-assessment).'
 ---
 
 # Explore
@@ -61,8 +61,12 @@ risk / change / ownership / codegraph row) + the matched phrase — routing on
 surface keywords without this line = wrong.
 
 **Doc claim in hand** (prompt or a doc chunk states a number / limit / default),
-any strategy → verify in source (`documentation:"exclude"` + `find_symbol`)
-before the answer repeats it; the plan prints both outcome lines, copied:
+any strategy → verify in source before the answer repeats it; the plan carries
+these verification calls, copied with the claimed value, both in the plan:
+`semantic_search(query=<the limit's behaviour>, documentation:"exclude")` →
+`shell rg -l --hidden --glob '!.git' "<value>" <source dir> (literal, -l)` →
+`find_symbol` on the enclosing symbol of the hits; then both outcome lines,
+copied, in the plan:
 `On conflict: Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
 `On match: Doc matches code at <file:line>.`
 
@@ -134,11 +138,12 @@ EXPLAIN/TRACE/PRE-GEN/EXEMPLAR. Top-to-bottom, first match wins.
 | 4        | "архитектура", "structure", "backbone", "что центральное", "organized", "end to end", "walk me through" — a typed `<dir>` with none → path-first  | [references/architecture-pattern.md](./references/architecture-pattern.md) |
 | 5        | "как в проекте называют X", "what does the project call X", "is this name right"                                                                  | `get_naming_lexicon` — see below                                           |
 
-**Rows 1–4: open the row's reference with its own read command BEFORE planning
-(MANDATORY)** — naming it without opening it is a fail; the calls carry filters
-the row name does not show. Plan line 1 = codegraph state + its source (below).
-Plan/answer NAMES the calls below — "follow the reference's workflow" is not a
-plan.
+**Rows 1, 3, 4: open the row's reference with its own read command BEFORE
+planning (MANDATORY)** — naming it without opening it is a fail; the calls carry
+filters the row name does not show. Row 2 (codegraph on): the Row 2 line below
+IS the plan, no reference read; codegraph off → its reference. Plan line 1 =
+codegraph state + its source (below). Plan/answer NAMES the calls below —
+"follow the reference's workflow" is not a plan.
 
 - **Row 1** (cycles, codegraph on): empty `find_cycles` IS the answer — say "no
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
@@ -167,20 +172,12 @@ plan.
   `4 find_symbol` depth. Sources only — no tests / docs axis searches. Hubs
   before entries = wrong order; a plan without call 3 = wrong.
 
-**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)`.
-Checked first: the question quotes a candidate name (`<name>` — "is `<name>` a
-good name", even with "or what do we call it") →
-`names:[{name: "<name>", kind, type?: "<T>"}]` — its verdict + alternatives
-answer both halves; never `concept`. No candidate name, a type `<T>` named ("how
-is a variable / value of `<T>` named", "как называть переменную с `<T>`") →
-copied: `get_naming_lexicon(types:["<T>"])` — never `concept:"<T>"`. `concept`
-only for "what do we call X" (X = idea, not a type). Names in a diff ("do my
-uncommitted names fit?") →
+**Naming (row 5):** names in a diff ("do my uncommitted names fit?") →
 `review_changes(changes:{} | {base}, sections:["naming"])` — its findings ARE
 the answer; no `get_naming_lexicon` follow-up, never hand-list the diff's names
-into `names[]`. Answer = dominant shape + top names/terms with holders;
-reading + codegraph-off fallback: `../data-driven-generation/SKILL.md` Step 5
-"Naming (lexicon)".
+into `names[]`, no reference read. Any other naming ask → open
+[references/naming-pattern.md](./references/naming-pattern.md) with its own read
+command before planning.
 
 **Match intent phrasing, not symbol substrings.** Classify by verb frame, NOT
 characters in symbol name. "what does X call?" / "who calls X?" = USAGE (row 2)
@@ -206,18 +203,6 @@ Broad orientation / structure ("introduce me", row 4) → ORIENT
 `chunkSize` rows, its caveat line). Both flagged content-inferred; never
 `entryPoint` / `architecturalHub` / graph tools. Each sub-pattern states own
 fallback.
-
-## Pattern-search keyword groups (EXEMPLAR routing)
-
-| Strategy        | Keywords (any match)                                                                                                                                                         |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever                                                  |
-| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module                                                        |
-| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose                                                        |
-| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example — SEED rerank `proven` preset, never custom weights |
-
-**Exception:** "all call sites / all usages of X" names ONE symbol's usages →
-TRACE / codegraph row 2 wins over generic Collect.
 
 ---
 
@@ -252,10 +237,13 @@ Apply tables above, first match:
    pattern ("antipatterns in src/") → refactoring-scan. A NAMED pattern ("sync
    I/O in hot path", "N+1") → pattern-search Antipattern (SEED techDebt →
    EXPAND), even unscoped. Collect / Spread / Reference → pattern-search.
-4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md),
-   calls named in the plan. PG-1 DISCOVER, first matching branch: user names a
-   file path → `find_symbol(path=<cwd>, relativePath=<file>)` outline (2+ files
-   → ONE `find_symbol(symbols=[<paths>])`), then
+4. PRE-GEN → plan = the PG lines here, calls named in the plan, no reference
+   read to plan them;
+   [references/pre-gen-pattern.md](./references/pre-gen-pattern.md) = PG-2
+   signal reading + PG-4 output, opened once PG-2 rows are in hand. PG-1
+   DISCOVER, first matching branch: user names a file path →
+   `find_symbol(path=<cwd>, relativePath=<file>)` outline (2+ files → ONE
+   `find_symbol(symbols=[<paths>])`), then
    `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
    `hybrid_search` / `semantic_search` on it; known symbol, no file →
    `find_symbol` + `hybrid_search`; else `semantic_search`
@@ -263,16 +251,20 @@ Apply tables above, first match:
    `find_symbol(symbols=[<2–5 key symbols>], rerank="techDebt", metaOnly=false)`
    (own overlay signals, no risk-assessment delegation) → PG-3 `find_symbol` on
    1–2 symbols only (e.g. base error classes), never call chains.
-5. EXPLAIN → Explore Flow below, format per
-   [references/explain-pattern.md](./references/explain-pattern.md). Codegraph
-   on + anchor id (named symbol or a row) → copied, ≤ 4 calls:
-   `get_callees(symbolId: <anchor id>, depth: 2)` →
+5. EXPLAIN → BREADTH below, answer per FORMAT below. "How does X work / how does
+   `<Class>` <verb> …", no `Class#method` typed → call 1 = discovery, never
+   `find_symbol` first: `semantic_search(query=<behaviour>)`, or
+   `hybrid_search(query="<Class> <verb>", metaOnly=true)` when X is an
+   identifier → anchor id from its hits. Read / show the body of a named symbol
+   → `find_symbol(symbol:)` directly. Codegraph on + anchor id (named symbol or
+   a row) → copied, ≤ 4 calls: `get_callees(symbolId: <anchor id>, depth: 2)` →
    `find_symbol(symbols: [<only the tree methods the answer needs>])`; never one
    `get_callees` per hop, never a grep → read chain. Named component ("the
    <name> adapter") → Scope extraction probe FIRST, then
    `semantic_search(query=<behaviour>, pathPattern="**/<name>/**")` — the
    component word in query text alone is NOT scope. Skip ORIENT ≠ skip probe.
-6. TRACE → Explore Flow below, format per
+6. TRACE → BREADTH below, answer per FORMAT below; codegraph off → the loop
+   above, forward deps ("what does X call") per
    [references/trace-pattern.md](./references/trace-pattern.md). Codegraph on →
    `get_callers(symbolId: <id>, depth: 2)` (impact / who ends up calling X) →
    ONE batch of only the needed callers; `truncated.next` → run it verbatim.
@@ -293,54 +285,7 @@ below. Scope found → EVERY breadth call carries that `pathPattern`.
 
 No hardcoded aliases — probe result = source of truth.
 
-### Direct-input intents (no BREADTH)
-
-User gives **code snippet or chunk** (not question) → skip BREADTH →
-find_similar with code as input → EXPLAIN similarities.
-
-## Explore Flow (human understanding)
-
-```
-[broad scope? → ORIENT (entry points)] → BREADTH (search) →
-  pick interesting results →
-  LATERAL (find_similar) — same pattern elsewhere?
-  DEPTH (find_symbol) — trace specific symbol?
-→ explain to developer
-```
-
-### 1. ORIENT (broad scope ONLY)
-
-**Path typed first.** The prompt names a directory or file path → call 1 =
-`find_symbol(relativePath: <that path>)` outline; 2+ files typed → call 1 = ONE
-`find_symbol(symbols: [<the file paths>])` (their outlines) (adds — ORIENT /
-BREADTH follow); bodies → ONE
-`find_symbol(symbols: [<Class#method ids from that outline or a row>])`, never a
-dir path in `symbols`.
-
-**Gate by target.** System / domain / directory ("introduce me to the project",
-"full picture of X", "walk me through domain Y") → ORIENT first. Named symbol /
-narrow question ("what does Reranker#rerank do", "where is X used") → SKIP to
-BREADTH (Scope extraction still runs; its pathPattern rides on BREADTH).
-
-Architecture phrasing never reaches here — codegraph row 4 catches it;
-architecture-pattern.md Step 0 runs same orientation.
-
-Entry points = flow skeleton; see them BEFORE breadth so results land on a map.
-
-- **Codegraph on** (graph tools in tool list):
-  `semantic_search rerank="entryPoint" pathPattern=<scope> limit=5` —
-  graph-confirmed composition roots (fanOutPerLine↑, fanIn↓). Overlay shows
-  `fanIn` / `fanOut` / `imports`.
-- **Codegraph off**:
-  `semantic_search rerank="onboarding" pathPattern=<scope> limit=5` — stable +
-  documented + mature files. FLAG as content-inferred, NOT graph-confirmed.
-- Small / flat scope (no clear driver) → say ranking degraded; never present
-  utility as "the entry point".
-
-ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
-("where does X start") → codegraph row 3, not here.
-
-### 2. BREADTH
+## BREADTH (point questions)
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
 DEFINITION → find_symbol; known/bare name, need USAGES →
@@ -355,16 +300,16 @@ first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).
 Subagent: drift / reindex is a note to the parent, never a plan step in place of
 these calls.
 
-**Broad scope → split axes** per `../../rules/references/axis-splitting.md`.
-Three calls, axis = filter param (never `language` as axis proxy):
+**Path typed first.** The prompt names a directory or file path → call 1 =
+`find_symbol(relativePath: <that path>)` outline; 2+ files typed (compare them
+too) → call 1 = ONE `find_symbol(symbols: [<the file paths>])` (their outlines);
+bodies → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`,
+never a dir path in `symbols`, never a search first.
 
-1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
-2. tests — `testFile: "only"` (expected behavior)
-3. docs — `documentation: "only"` (hypothesis, never sole evidence). Doc claim
-   (number, limit, default) → verify in source (`documentation:"exclude"` +
-   `find_symbol`), then answer carries this line, copied:
-   `Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
-   (match → `Doc matches code at <file:line>.`)
+Broad scope with no path typed (system / domain, "full picture", "introduce
+me"), split axes, a code snippet as input, depth moves (find_similar,
+neighbours) → open [references/explore-flow.md](./references/explore-flow.md)
+with its own read command. Point questions: no split, no flow reference.
 
 Point question about tests ("is X tested?", "tests covering `<file>`") → ONE
 call, no split, no Glob:
@@ -372,24 +317,16 @@ call, no split, no Glob:
 — names, never a sentence; not `semantic_search`. Other point questions: no
 split.
 
-No `filter:{presets}` by default — understanding needs breadth.
+## FORMAT
 
-Scan results: files, modules, patterns, domain boundaries.
-
-### 3. PICK + EXPLORE
-
-Per interesting result:
-
-- **"Same thing elsewhere?"** → find_similar (code or chunk ID)
-- **"What is this symbol?"** → find_symbol (full definition). 0 results → act on
-  `empty.reason` (`unknownSymbol` / `ambiguous` → a `suggestions` id verbatim),
-  still nothing → hybrid_search.
-- **"Surrounding context"** → `find_symbol` `relativePath` outline → drill
-  neighbour id (`navigation.prev/nextSymbolId`); never Read.
-
-Fewer deep dives > many shallow.
-
-### 4. FORMAT
-
-Answer per strategy reference picked in Step 0 (explain / trace / pre-gen /
-exemplar pattern).
+EXPLAIN "how does X work" → flow entry → processing → output, key files + roles;
+"architecture of X" → components, responsibilities, connections, boundaries.
+TRACE → chain `A → B → C → X`. Citations `file:line`; quote 3–5 lines, never
+dump functions. Contrast ("how is X different from Y", "compare how X, Y …"): X,
+Y typed as paths → "Path typed first" above; else ONE `hybrid_search` for the
+shared concept (BM25 catches both names), split hits into X-only / Y-only / both
+by file path, present three groups — never two separate searches. Ownership /
+recent-author overlay fields, zero-hit test split, evidence discipline of a
+broad EXPLAIN →
+[references/explain-pattern.md](./references/explain-pattern.md). PRE-GEN /
+EXEMPLAR → their reference (Step 0).

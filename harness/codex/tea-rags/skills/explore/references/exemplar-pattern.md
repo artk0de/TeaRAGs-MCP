@@ -24,3 +24,15 @@ Step 0 keyword classifier picks group (SKILL.md keyword table). Then:
 - Do NOT add explore-style EXPLAIN summary on top.
 
 Snippet/chunk input (not question) → SKILL.md "Direct-input intents".
+
+## Keyword groups (pick the pattern-search strategy)
+
+| Strategy        | Keywords (any match)                                                                                                                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever                                                  |
+| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module                                                        |
+| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose                                                        |
+| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example — SEED rerank `proven` preset, never custom weights |
+
+**Exception:** "all call sites / all usages of X" names ONE symbol's usages →
+TRACE / codegraph row 2 wins over generic Collect.

@@ -22,10 +22,10 @@ scope).
 Broad target (system / domain / directory) → ENTRY POINTS before hubs — hubs =
 what everything routes THROUGH, entries = where flow STARTS; answer needs both:
 `semantic_search rerank="entryPoint" pathPattern=<scope> limit=5 testFile:"exclude" documentation:"exclude"`.
-= Explore Flow ORIENT, absorbed here (architecture phrasing routes here before
-the flow). Same small-utility bias as entry-point-pattern.md — post-filter tiny
-`chunkSize` / pass `minFanOut` + `level: "chunk"` (else `minFanOut` = file
-import count); state filter applied.
+= explore-flow.md ORIENT, absorbed here (architecture phrasing routes here
+before the flow). Same small-utility bias as entry-point-pattern.md —
+post-filter tiny `chunkSize` / pass `minFanOut` + `level: "chunk"` (else
+`minFanOut` = file import count); state filter applied.
 
 ## Step 1 — backbone (hubs)
 

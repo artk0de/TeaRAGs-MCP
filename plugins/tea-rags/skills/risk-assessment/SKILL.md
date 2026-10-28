@@ -12,10 +12,10 @@ description: >-
 codex-description: >-
   Project/domain health — multi-preset risk scan (bugs, hotspots, tech debt)
   into tiers; "evaluate risks", "assess code health", "zones needing attention".
-  NOT one-preset asks, bug-prone areas (analytics-rerank). NOT bug symptoms,
-  even with zones ("проверь зоны A, B") (bug-hunt). NOT unframed "something's
-  off in X" (dinopowers:systematic-debugging). NOT "what to refactor in X"
-  (explore). NOT a subagent's tests-at-risk recipe (tests-as-context).
+  NOT one-preset asks (analytics-rerank). NOT bug symptoms, even with zones
+  ("проверь зоны A, B") (bug-hunt). NOT unframed "something's off in X"
+  (systematic-debugging). NOT "what to refactor in X", "what breaks if I change
+  <symbol>" (explore). NOT tests-at-risk (tests-as-context).
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 

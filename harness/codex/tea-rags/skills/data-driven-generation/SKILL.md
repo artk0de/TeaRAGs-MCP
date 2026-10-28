@@ -2,11 +2,11 @@
 name: data-driven-generation
 description:
   'Decide HOW to write/change code from git signals on neighbors — mode
-  CREATE/EXTEND/MODIFY, templates from proven low-churn code, reuse shared
-  helpers. Triggers "implement function X", "add method to Y", "change behavior
-  of X", "напиши функцию", "поправь метод", a hotfix with location + fix named
-  (cause known, not bug-hunt), "overlay labels → strategy?". NOT discovery
-  ($explore). NOT pure rename/extract (a file MOVE still runs it).'
+  CREATE/EXTEND/MODIFY, templates from proven low-churn code, reuse helpers.
+  Triggers "implement function X", "add method to Y", "change behavior of X",
+  "напиши функцию", "поправь метод", hotfix with location + fix named, "overlay
+  labels → strategy?". NOT discovery ($explore), "which files must change"
+  impact asks. NOT pure rename/extract (a file MOVE still runs it).'
 ---
 
 # Data-Driven Generation
