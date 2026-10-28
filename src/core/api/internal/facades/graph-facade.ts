@@ -63,6 +63,7 @@ import {
   type GetCalleesResponse,
   type GetCallersRequest,
   type GetCallersResponse,
+  type GraphNoticesField,
 } from "../../public/dto/graph.js";
 import { InvalidParameterError, MissingArgumentError } from "../../public/errors.js";
 import {
@@ -94,6 +95,7 @@ import { pageGraphRows, readCalleeTree, readCallerTree, type CallTreeReads } fro
 import { CochangeOps } from "../ops/cochange-ops.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
+import { rustCycleScopeNotices } from "../ops/rustc-driver-notice.js";
 import { readSymbolEdgesExplained, type SymbolEdgeRead, type TestChunkProbe } from "../ops/symbol-edge-explanation.js";
 
 export interface GraphFacadeDeps {
@@ -284,6 +286,11 @@ function collapseCalleesByTarget<E extends CalleeEdge>(edges: readonly E[]): (E 
 
 function emptyField(read: { empty?: EmptyAnswerExplanation }): { empty?: EmptyAnswerExplanation } {
   return read.empty === undefined ? {} : { empty: read.empty };
+}
+
+/** `{ notices }` when the read earned a lower-bound notice (bd tea-rags-mcp-nknkg.1), `{}` otherwise. */
+function noticesField(read: GraphNoticesField): GraphNoticesField {
+  return read.notices === undefined ? {} : { notices: read.notices };
 }
 
 /** `{ resolvedSymbolId }` when the answer was aliased, `{}` otherwise — the field is omitted, never null. */
@@ -508,7 +515,7 @@ export class GraphFacade {
           "callers",
           this.testChunkProbe(req),
         );
-        const resolved = { ...resolvedField(read), ...emptyField(read) };
+        const resolved = { ...resolvedField(read), ...emptyField(read), ...noticesField(read) };
         if (depth > 1) {
           const tree = await readCallerTree(read.queriedSymbolId, read.edges, this.callTreeReads(handle, req), {
             ...req,
@@ -575,7 +582,7 @@ export class GraphFacade {
             ...req,
             depth,
           });
-          return { ...resolvedField(read), ...tree, ...emptyField(read) };
+          return { ...resolvedField(read), ...tree, ...emptyField(read), ...noticesField(read) };
         }
         const visible = read.edges.filter(isNavigationVisibleEdge);
         const page = pageGraphRows(
@@ -588,6 +595,7 @@ export class GraphFacade {
           callees: await decorateCallees(handle.graphDb, page.rows),
           ...unresolvedCallsField(visible),
           ...emptyField(read),
+          ...noticesField(read),
           ...(page.truncated ? { truncated: page.truncated } : {}),
         };
       },
@@ -804,6 +812,7 @@ export class GraphFacade {
             length: e.members.length,
             ...(e.hasModelEdge ? { hasModelEdge: true, modelEdgeCount: e.modelEdgeCount ?? 0 } : {}),
           })),
+          ...(entries.length === 0 ? await rustCycleScopeNotices(handle.graphDb, req.pathPattern) : {}),
         };
       },
       { cycles: [] },

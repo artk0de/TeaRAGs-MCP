@@ -139,9 +139,9 @@ diff's → `review_changes` verdicts, nothing after.
   `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
-- `rustc driver: unavailable` (status/index/empty Rust graph answer) → tell user
-  ONCE: Rust edges static-only (lower bound) + install command; never install it
-  or claim "no callers"/"dead code".
+- `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
+  Rust edges static-only (lower bound) + install command; never install it or
+  claim "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
   unindexed file → shell file reads, no confirm ask; indexed → tell user the
   plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.

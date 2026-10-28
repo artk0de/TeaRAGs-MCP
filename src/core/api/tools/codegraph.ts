@@ -72,6 +72,10 @@ const EMPTY_GRAPH_ANSWER_CONTRACT =
   "with same short name), testChunk (id is an indexed test chunk; tests are not graph nodes), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
   "unknownFile.";
 
+/** Lower-bound notices shared by get_callers / get_callees / trace_path / find_cycles (bd tea-rags-mcp-nknkg.1). */
+const GRAPH_NOTICES_CONTRACT =
+  " notices[] = answer stands but is a lower bound (Rust edges static-only: rustc driver did not index).";
+
 /** The `depth > 1` answer shared by get_callers / get_callees (bd tea-rags-mcp-afdpc). */
 const CALL_TREE_CONTRACT =
   `depth 2–${String(CALL_TREE_MAX_DEPTH)} → BFS tree rows (parent = row the edge leaves; seen = listed earlier, ` +
@@ -561,7 +565,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
       "files that import it, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      `unknown file → empty importers + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}`,
+      `unknown file → empty importers + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}${GRAPH_NOTICES_CONTRACT}`,
     schemaKey: "get_callers",
     responseRows: CALLER_ROWS,
     invoke: async (app, request) => {
@@ -584,7 +588,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "Entries with origin:'model' come from residual resolution: probabilistic (carry model, p), not compiler truth. " +
       "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
       "files it imports, each {relativePath, importText, callWeight, modelCallWeight?, origin?}, heaviest callWeight first; origin:'model' = only a model call links them; " +
-      `unknown file → empty imports + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}`,
+      `unknown file → empty imports + message. ${CALL_TREE_CONTRACT}${EMPTY_GRAPH_ANSWER_CONTRACT}${GRAPH_NOTICES_CONTRACT}`,
     schemaKey: "get_callees",
     responseRows: CALLEE_ROWS,
     invoke: async (app, request) => {
@@ -606,7 +610,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "memberLocations lists {symbolId, relativePath} per member in the same order — " +
       "namesakes in different files are distinct members; an empty relativePath means " +
       "the cycle was not recomputed since the index upgrade. hasModelEdge:true + modelEdgeCount = " +
-      "hops inside the cycle only residual-model edges support (absent = all static).",
+      `hops inside the cycle only residual-model edges support (absent = all static).${GRAPH_NOTICES_CONTRACT}`,
     schemaKey: "find_cycles",
     responseRows: { narrowing: ["scope", "pathPattern"] },
     invoke: async (app, request) =>
@@ -687,7 +691,8 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
       "from/to: host-class id with no node of its own → traced via the member's first definer up " +
       "hierarchy in MRO order; resolvedEndpoints names the id traced. " +
       "Empty paths with empty {reason, message, suggestions?} = an endpoint is unknown (unknownSymbol) or " +
-      "narrowed away by fromPath/toPath (noMatch); paths [] without empty = both known, no path.",
+      "narrowed away by fromPath/toPath (noMatch); paths [] without empty = both known, " +
+      `no path.${GRAPH_NOTICES_CONTRACT}`,
     schemaKey: "trace_path",
     responseRows: { narrowing: ["maxPaths", "maxDepth", "fromPath", "toPath"] },
     // `TracePathRequest.rerank` is the string preset name the curated enum
