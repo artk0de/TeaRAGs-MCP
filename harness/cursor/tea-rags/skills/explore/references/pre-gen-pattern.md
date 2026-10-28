@@ -7,6 +7,10 @@ signals, overlay labels.
 
 Target area files, first matching branch:
 
+- **Anchor already in context** (a row or body naming the behaviour) →
+  `get_callees(symbolId=<anchor id>, depth=2)` (callers for impact:
+  `get_callers`) first, then PG-2 batch — no `semantic_search` /
+  `hybrid_search`; new search only for code the graph does not reach
 - **User names a file path** → `find_symbol(path=<cwd>, relativePath=<file>)`
   outline, then `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
   `hybrid_search` / `semantic_search` on it

@@ -343,6 +343,15 @@ describe("renderCodexHarness", () => {
     expect(skillsRule.slice(0, 200)).toMatch(/never open its `SKILL\.md`/);
   });
 
+  // bd tea-rags-mcp-5xbfc: with a bare `<src dir>` slot Codex filled it with the cwd or left it unresolved
+  // (`<source-root-under-…>`). The slot carries two relative examples — two, so neither becomes THE default.
+  it("renders the core usages row as one copyable rg literal whose dir slot names two relative examples", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    expect(core).toContain(`\`shell rg -l --hidden --glob '!.git' "<X>" <src dir, e.g. app/ or src/>\``);
+    expect(core).toMatch(/`<src dir>` \(a dir under cwd, never cwd itself\)/);
+  });
+
   it("keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const core = rendered.get("tea-rags/scripts/core.txt") ?? "";

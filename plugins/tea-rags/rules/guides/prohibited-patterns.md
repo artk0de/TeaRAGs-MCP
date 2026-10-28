@@ -83,7 +83,7 @@ instead → guide `tool-choice`.
 | File structure                | find_symbol(relativePath:)        | Read (whole file)                                 |
 | Directory contents            | find_symbol(relativePath: <dir>)  | `empty.reason` unknownPath → a `suggestions` path |
 | Doc TOC                       | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)               |
-| All usages                    | hybrid_search + offset pagination | text search (only if hybrid unavailable)          |
+| All usages                    | text search → find_symbol outline | callers of a symbol: + get_callers                |
 | Behavioral discovery          | semantic_search                   | hybrid_search                                     |
 | Cross-layer                   | semantic_search × per language    | same                                              |
 | Exact text                    | text search                       | —                                                 |
