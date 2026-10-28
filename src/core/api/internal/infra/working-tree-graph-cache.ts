@@ -39,7 +39,8 @@
  *   and the staging copy is discarded.
  *
  * Scheduling: single-flight per key in-process; a caller waits at most its
- * `waitMs` and is told `building` past it while the build continues (the next
+ * `waitMs` and is told `building` past it — or `queued: N builds ahead` while
+ * the builder still holds it behind other builds — while the build continues (the next
  * call joins the same promise) — unless the build's outcome arrived in the very
  * turn the wait lapsed, which is then the answer; a finished failure is
  * remembered per key for `failureBackoffMs` — a child out of its time or heap
@@ -90,6 +91,7 @@ import {
   type WorkingTreeGraphBuildBudget,
   type WorkingTreeGraphBuildInput,
   type WorkingTreeGraphBuildOutcome,
+  type WorkingTreeGraphBuildProgress,
   type WorkingTreeGraphProviderConfig,
   type WorkingTreeGraphResidualInput,
   type WorkingTreeGraphSeed,
@@ -99,6 +101,15 @@ import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } fro
 
 /** The reason a caller gets when its wait lapsed and the build is still running. */
 export const WORKING_TREE_GRAPH_BUILDING_REASON = "building";
+
+/**
+ * The reason a caller gets when its wait lapsed and the build has not started:
+ * the builder holds it behind `ahead` other builds — another tree's, typically
+ * (bd tea-rags-mcp-ewg7d). Not "ready soon": it starts once those finish.
+ */
+export function workingTreeGraphQueuedReason(ahead: number): string {
+  return `queued: ${String(ahead)} ${ahead === 1 ? "build" : "builds"} ahead`;
+}
 
 /**
  * How long a finished failure answers for its key before the build is tried
@@ -188,9 +199,11 @@ export interface WorkingTreeGraphCodegraphRuntime {
 
 /** `WorkingTreeGraphProcessBuilder`'s surface; a test hands a fake. */
 export interface WorkingTreeGraphBuilder {
+  /** `progress` is optional to honour: a builder that never calls it reads as `building` throughout. */
   build: (
     input: WorkingTreeGraphBuildInput,
     budget: WorkingTreeGraphBuildBudget,
+    progress?: WorkingTreeGraphBuildProgress,
   ) => Promise<WorkingTreeGraphBuildOutcome>;
   /** Kill every build child still running, synchronously — the process is exiting. */
   killInFlight?: () => void;
@@ -335,6 +348,8 @@ interface WorkingTreeGraphInflightBuild {
   promise: Promise<WorkingTreeGraphState>;
   /** The builder returned (or threw); what is left is publishing or cleanup. */
   outcomeArrived: boolean;
+  /** Builds the builder runs before this one, while it holds it queued; absent once dispatched. */
+  queuedAhead?: number;
 }
 
 /** One build attempt's end: published, or failed — and whether its snapshot vanished under it. */
@@ -441,7 +456,16 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
           // up, and its answer — a timeout's reason, say — beats `building`.
           setImmediate(() => {
             const { build } = tracker;
-            resolve(build?.outcomeArrived ? build.promise : unavailable(WORKING_TREE_GRAPH_BUILDING_REASON));
+            if (build?.outcomeArrived) {
+              resolve(build.promise);
+              return;
+            }
+            const ahead = build?.queuedAhead;
+            resolve(
+              unavailable(
+                ahead === undefined ? WORKING_TREE_GRAPH_BUILDING_REASON : workingTreeGraphQueuedReason(ahead),
+              ),
+            );
           }).unref?.();
         },
         Math.max(0, waitMs),
@@ -755,8 +779,17 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
                 : {}),
             },
             this.deps.budget,
+            {
+              queued: (ahead) => {
+                entry.queuedAhead = ahead;
+              },
+              dispatched: () => {
+                delete entry.queuedAhead;
+              },
+            },
           );
         } finally {
+          delete entry.queuedAhead;
           entry.outcomeArrived = true;
         }
         if (outcome.kind !== "built") {

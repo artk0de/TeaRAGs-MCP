@@ -19,6 +19,7 @@ export {
   WorkingTreeGraphProcessBuilder,
   type WorkingTreeGraphBuildBudget,
   type WorkingTreeGraphBuildOutcome,
+  type WorkingTreeGraphBuildProgress,
   type WorkingTreeGraphProcessBuilderOptions,
 } from "./tree-graph-process-builder.js";
 export { type WorkingTreeGraphSeed } from "./tree-graph-seed-apply.js";
