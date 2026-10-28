@@ -31,6 +31,8 @@ import {
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
+import { rebuildMigrationCorpus } from "../pipeline/migration-corpus.js";
+import { migrationCollectionName } from "../pipeline/migration-files.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore, SkippedFileStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
@@ -97,11 +99,19 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let build: SetupResult | undefined;
 
     try {
+      await rebuildMigrationCorpus({
+        root: absolutePath,
+        codeCollection: aliasCollectionName,
+        qdrant: this.qdrant,
+        embeddings: this.embeddings,
+        parse: this.deps.parseMigration,
+        chunkSize: this.config.chunkSize,
+      });
       const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
       stats.filesScanned = files.length;
       pipelineLog.step({ component: "IndexRun" }, "SCAN_COMPLETE", { files: files.length });
 
-      if (files.length === 0) {
+      if (files.length === 0 && !(await this.qdrant.collectionExists(migrationCollectionName(aliasCollectionName)))) {
         stats.durationMs = Date.now() - startTime;
         return stats;
       }

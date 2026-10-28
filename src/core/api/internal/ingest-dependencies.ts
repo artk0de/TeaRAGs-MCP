@@ -34,6 +34,7 @@ import {
   fullRegistryPayloadSignalDescriptors,
   fullRegistryStatsAccumulators,
 } from "./composition.js";
+import { parseMigrationOperations } from "./migration-parser.js";
 
 export function createIngestDependencies(
   qdrant: QdrantManager,
@@ -63,6 +64,7 @@ export function createIngestDependencies(
   const declaredIndexes = declaredPayloadIndexSet();
 
   return {
+    parseMigration: parseMigrationOperations,
     createSchemaManager: (collectionName: string) => {
       const indexStore = new IndexStoreAdapter(qdrant);
       const sparseStore = new SparseStoreAdapter(qdrant);
