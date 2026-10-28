@@ -219,4 +219,94 @@ describe("TreeSitterChunker — module remainder", () => {
     expect(uncoveredNonBlankLines(code, chunks)).toEqual([]);
     expect(chunks.find((c) => c.metadata.symbolId === "LOADERS")).toMatchObject({ startLine: 5, endLine: 16 });
   });
+
+  // bd tea-rags-mcp-mpen8: a top-level statement a chunk only PARTLY carries —
+  // a chunkable node nested inside a non-chunkable one — kept no other row,
+  // because nothing owns the remainder of a node that is not itself a chunk.
+  it("covers the rows of a top-level block around a nested chunked function", async () => {
+    const code = [
+      "export function startTheReportingWorker(): void {",
+      "  console.log('worker started for the reporting queue');",
+      "}",
+      "",
+      "if (process.env.RUN_REPORTING_WORKER) {",
+      "  const queueName = process.argv[2];",
+      "  const stopTheWorker = () => void releaseTheQueueLease(queueName).then(() => process.exit(0));",
+      "  process.on('SIGTERM', stopTheWorker);",
+      "  startTheReportingWorker();",
+      "}",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/worker.ts", "typescript");
+
+    expect(uncoveredNonBlankLines(code, chunks)).toEqual([]);
+  });
+
+  it("covers an ambient module's declarations that are not chunkable themselves", async () => {
+    const code = [
+      'declare module "reporting-pipeline" {',
+      "  interface PipelineOptions {",
+      "    device?: string;",
+      "    precision?: string;",
+      "  }",
+      "",
+      "  export function createReportingPipeline(",
+      "    task: string,",
+      "    options?: PipelineOptions,",
+      "  ): Promise<unknown>;",
+      "",
+      "  export const environment: {",
+      "    cacheDirectory: string;",
+      "  };",
+      "}",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/reporting-pipeline.d.ts", "typescript");
+
+    expect(uncoveredNonBlankLines(code, chunks)).toEqual([]);
+  });
+
+  it("carries a top-level object literal's header as its member chunk's prefix, adding no remainder", async () => {
+    const code = [
+      "export const reportOrderingPolicy: OrderingPolicy<ReportContext> = {",
+      "  order(reportKey, context, recurse) {",
+      "    const base = context.parentReports.get(reportKey);",
+      "    return base ? [base, ...recurse(base)] : [];",
+      "  },",
+      "};",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/report-ordering.ts", "typescript");
+
+    // The declaration is a container: its header row is the member chunk's
+    // hierarchy prefix (the container-header contract), so the module
+    // remainder never repeats it as a chunk of its own.
+    expect(uncoveredNonBlankLines(code, chunks)).toEqual([
+      "1: export const reportOrderingPolicy: OrderingPolicy<ReportContext> = {",
+      "6: };",
+    ]);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.symbolId).toBe("reportOrderingPolicy.order");
+    expect(chunks[0].content.split("\n")[0]).toBe("const reportOrderingPolicy: OrderingPolicy<ReportContext> = {");
+  });
+
+  it("adds no module remainder for an exported class — its header stays the body chunks' prefix", async () => {
+    const code = [
+      "export class ReportScheduler {",
+      "  scheduleTheNightlyReport(reportName: string): void {",
+      "    this.queue.push({ reportName, at: 'nightly-window' });",
+      "  }",
+      "",
+      "  cancelTheNightlyReport(reportName: string): void {",
+      "    this.queue = this.queue.filter((entry) => entry.reportName !== reportName);",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/report-scheduler.ts", "typescript");
+
+    expect(chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.parentSymbolId === undefined)).toEqual(
+      [],
+    );
+  });
 });

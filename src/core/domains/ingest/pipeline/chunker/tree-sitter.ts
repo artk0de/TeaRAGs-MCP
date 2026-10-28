@@ -631,7 +631,9 @@ export class TreeSitterChunker implements CodeChunker {
       if (chunks.length > 0 || code.length <= 100) {
         const merged = this.mergeSmallChunks(chunks);
         const withRemainder =
-          merged.length > 0 ? this.withModuleRemainder(merged, root, langConfig, code, filePath, language) : merged;
+          merged.length > 0
+            ? this.withModuleRemainder(merged, root, new Set(nodes), langConfig, code, filePath, language)
+            : merged;
         return {
           chunks: this.chunksCoveringFile(
             this.enforceMaxChunkSize(withRemainder),
@@ -2168,8 +2170,10 @@ export class TreeSitterChunker implements CodeChunker {
    * inside a container; this is the same planner run over the file:
    *
    *   - a candidate is a top-level statement NONE of whose rows any chunk
-   *     carries. A partly covered one belongs to the chunks covering it (a
-   *     container owns its other rows through its own remainder);
+   *     carries, or the rows of a partly covered one that lie outside every
+   *     chunk owner (`TreeSitterChunker#unownedRows` — a container owns its
+   *     other rows through its own remainder and header prefix; a function
+   *     nested in a top-level `if` owns only its own, bd tea-rags-mcp-mpen8);
    *   - import / re-export statements are never candidates, and a comment is
    *     one only when it directly precedes a candidate — a comment above a
    *     chunked symbol is that symbol's, not the module's;
@@ -2183,6 +2187,7 @@ export class TreeSitterChunker implements CodeChunker {
   private withModuleRemainder(
     chunks: CodeChunk[],
     root: AstNode,
+    chunkableNodes: ReadonlySet<AstNode>,
     langConfig: LanguageConfig,
     code: string,
     filePath: string,
@@ -2196,15 +2201,13 @@ export class TreeSitterChunker implements CodeChunker {
       for (const { start, end } of ranges) for (let line = start; line <= end; line++) coveredRows.add(line - 1);
     }
 
-    const candidates = this.moduleRemainderCandidates(root, coveredRows, langConfig);
+    const candidates = this.moduleRemainderCandidates(root, coveredRows, chunkableNodes, langConfig);
     if (candidates.length === 0) return chunks;
 
     const remainderRows = new Set<number>();
-    for (const node of candidates) {
-      for (let { row } = node.startPosition; row <= node.endPosition.row; row++) remainderRows.add(row);
-    }
-    const firstRow = candidates[0].startPosition.row;
-    const lastRow = candidates[candidates.length - 1].endPosition.row;
+    for (const { rows } of candidates) for (const row of rows) remainderRows.add(row);
+    const firstRow = candidates[0].rows[0];
+    const lastRow = candidates[candidates.length - 1].rows[candidates[candidates.length - 1].rows.length - 1];
     const outsideRows = new Set<number>();
     for (let row = firstRow; row <= lastRow; row++) if (!remainderRows.has(row)) outsideRows.add(row);
 
@@ -2223,7 +2226,7 @@ export class TreeSitterChunker implements CodeChunker {
     );
     if (parts.length === 0) return chunks;
 
-    const statements = candidates.filter((node) => !this.isCommentNode(node));
+    const statements = candidates.map(({ node }) => node).filter((node) => !this.isCommentNode(node));
     const name = statements.length === 1 ? this.moduleDeclarationName(statements[0]) : undefined;
     const remainder = this.remainderChunks(
       parts,
@@ -2242,34 +2245,88 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * The top-level nodes the module remainder is made of, in source order:
-   * every root child none of whose rows `coveredRows` holds, minus imports,
-   * minus comments not directly above (no blank row between) a kept statement.
+   * The top-level nodes the module remainder is made of, in source order, each
+   * with the 0-based rows it contributes: every root child none of whose rows
+   * `coveredRows` holds (all its rows), minus imports, minus comments not
+   * directly above (no blank row between) a kept statement.
+   *
+   * A root child a chunk only PARTLY carries contributes its unowned rows
+   * (`TreeSitterChunker#unownedRows`): a chunkable node found nested inside a
+   * non-chunkable one — the function in a top-level `if`, the method of an
+   * `export const X = { … }`, the interface in a `declare module` — left every
+   * other row of that statement in no chunk, because nothing owns the
+   * remainder of a node that is not itself a chunk (bd tea-rags-mcp-mpen8).
    */
-  private moduleRemainderCandidates(root: AstNode, coveredRows: Set<number>, langConfig: LanguageConfig): AstNode[] {
-    const uncovered = (node: AstNode): boolean => {
-      for (let { row } = node.startPosition; row <= node.endPosition.row; row++) if (coveredRows.has(row)) return false;
-      return true;
+  private moduleRemainderCandidates(
+    root: AstNode,
+    coveredRows: Set<number>,
+    chunkableNodes: ReadonlySet<AstNode>,
+    langConfig: LanguageConfig,
+  ): { node: AstNode; rows: number[] }[] {
+    const spanRows = (node: AstNode): number[] => {
+      const rows: number[] = [];
+      for (let { row } = node.startPosition; row <= node.endPosition.row; row++) rows.push(row);
+      return rows;
     };
-    const kept: AstNode[] = [];
+    const kept: { node: AstNode; rows: number[] }[] = [];
     let pendingComments: AstNode[] = [];
     for (const node of root.children) {
-      if (!uncovered(node) || this.isModuleImport(node, langConfig)) {
+      const rows = this.isModuleImport(node, langConfig) ? [] : this.unownedRows(node, coveredRows, chunkableNodes);
+      if (rows.length === 0) {
         pendingComments = [];
         continue;
       }
-      if (this.isCommentNode(node)) {
+      const partial = rows.length !== node.endPosition.row - node.startPosition.row + 1;
+      if (this.isCommentNode(node) && !partial) {
         const previous = pendingComments[pendingComments.length - 1];
         if (previous && node.startPosition.row > previous.endPosition.row + 1) pendingComments = [];
         pendingComments.push(node);
         continue;
       }
       const lastComment = pendingComments[pendingComments.length - 1];
-      if (lastComment && node.startPosition.row <= lastComment.endPosition.row + 1) kept.push(...pendingComments);
+      if (lastComment && rows[0] <= lastComment.endPosition.row + 1) {
+        kept.push(...pendingComments.map((comment) => ({ node: comment, rows: spanRows(comment) })));
+      }
       pendingComments = [];
-      kept.push(node);
+      kept.push({ node, rows });
     }
     return kept;
+  }
+
+  /**
+   * The 0-based rows of `node` no chunk owns, ascending: rows `coveredRows`
+   * does not hold, outside every chunk OWNER — a node `findChunkableNodes`
+   * returned (`chunkableNodes`) at least one of whose rows a chunk carries. An
+   * owner's other rows (a class header, carried as the body chunks' prefix by
+   * contract) are its own business, so the walk never descends into one; a
+   * node a filter hook rejected was descended into, never chunked, and owns
+   * nothing — nor does one no chunk carries (the 50-char gate dropped it).
+   */
+  private unownedRows(node: AstNode, coveredRows: Set<number>, chunkableNodes: ReadonlySet<AstNode>): number[] {
+    const first = node.startPosition.row;
+    const last = node.endPosition.row;
+    let touched = false;
+    for (let row = first; row <= last && !touched; row++) touched = coveredRows.has(row);
+    const rows: number[] = [];
+    if (!touched) {
+      for (let row = first; row <= last; row++) rows.push(row);
+      return rows;
+    }
+    const owned = new Set<number>(coveredRows);
+    const markOwners = (n: AstNode): void => {
+      if (chunkableNodes.has(n)) {
+        let carried = false;
+        for (let { row } = n.startPosition; row <= n.endPosition.row && !carried; row++) carried = coveredRows.has(row);
+        if (carried) {
+          for (let { row } = n.startPosition; row <= n.endPosition.row; row++) owned.add(row);
+          return;
+        }
+      }
+      for (const child of n.children) markOwners(child);
+    };
+    markOwners(node);
+    for (let row = first; row <= last; row++) if (!owned.has(row)) rows.push(row);
+    return rows;
   }
 
   /**

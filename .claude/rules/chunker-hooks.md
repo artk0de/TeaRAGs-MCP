@@ -78,13 +78,15 @@ exclude rows you set a prefix for.
 
 The file-level counterpart: after the top-level chunks are emitted, the engine
 emits ONE remainder for the top-level statements none of whose rows any chunk
-carries (`TreeSitterChunker#withModuleRemainder` — same planner, same 50-char
-floor, `lineRanges`, `#partN`). Imports never join it: grammar import node types
-and `export … from` / bare `export { … }` lists are recognized by the engine; a
-language whose import is an ordinary call (Ruby `require`) declares
-`LanguageChunkerHooks.isModuleImport`. A remainder that is exactly one named
-declaration takes its name as symbolId. A hook never re-emits top-level code to
-keep it searchable.
+carries, plus the rows of a partly carried one that no chunked node owns (a
+function inside a top-level `if`, bd tea-rags-mcp-mpen8 — a container still owns
+its header and other rows) (`TreeSitterChunker#withModuleRemainder` — same
+planner, same 50-char floor, `lineRanges`, `#partN`). Imports never join it:
+grammar import node types and `export … from` / bare `export { … }` lists are
+recognized by the engine; a language whose import is an ordinary call (Ruby
+`require`) declares `LanguageChunkerHooks.isModuleImport`. A remainder that is
+exactly one named declaration takes its name as symbolId. A hook never re-emits
+top-level code to keep it searchable.
 
 ## Container header: once per chunk, on every member part
 
