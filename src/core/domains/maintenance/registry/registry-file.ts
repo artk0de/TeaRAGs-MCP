@@ -11,7 +11,7 @@ import { REGISTRY_CODEGRAPH_DEFAULT_MIGRATION_REVISION } from "./codegraph-defau
 import { applyEmbeddingThroughputOptimumWrites, liftEmbeddingThroughputOptima } from "./embedding-throughput-optima.js";
 import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
 
-const FILE_NAME = "registry.json";
+export const REGISTRY_FILE_NAME = "registry.json";
 const CURRENT_VERSION = 1 as const;
 /**
  * The data revision a registry created from scratch is born at: it holds no
@@ -35,7 +35,7 @@ const CAS_BACKOFF_MS_BASE = 10;
 const KNOWN_MIGRATIONS: Record<number, (raw: unknown) => RegistryFileV1> = {};
 
 function filePath(dataDir: string): string {
-  return join(dataDir, FILE_NAME);
+  return join(dataDir, REGISTRY_FILE_NAME);
 }
 
 /**
