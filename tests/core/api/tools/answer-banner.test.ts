@@ -11,6 +11,7 @@ import {
   emptyGraphBanner,
   SEARCH_ANCHOR_BANNER,
   symbolShortName,
+  workingTreeBanner,
 } from "../../../../src/core/api/tools/answer-banner.js";
 import type { McpToolResult } from "../../../../src/core/api/tools/format.js";
 import { createRegisterTool } from "../../../../src/core/api/tools/middleware/error-handler.js";
@@ -248,5 +249,89 @@ describe("registered tools carry the banner as the FIRST content item", () => {
     const result = await handler({}, {});
     expect(result.isError).toBe(true);
     expect(result.content.some((c) => c.text.startsWith("↳ "))).toBe(false);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-u7afw: an answer from a lagging index stated the lag
+ * (`changedFiles`, `pendingFiles`, `treeGraphUnavailable`) and nothing else, so
+ * agents read "index lags" and left for shell reads. The overlay serves the
+ * tree; the answer now says so, and names the one part that is not live.
+ */
+describe("workingTreeBanner — lagging answers say they are live", () => {
+  it("names the overlaid count, keeps the agent in tea-rags, and adds only the qualifiers present", () => {
+    expect(workingTreeBanner({ tree: "/w", changedFiles: 143, treeGraphUnavailable: "building" })).toBe(
+      "↳ Live: rows = your working tree (143 changed files overlaid) — keep reading with tea-rags; no reindex. Graph edges = last index (tree graph building).",
+    );
+    expect(workingTreeBanner({ tree: "/w", changedFiles: 12, pendingFiles: 12 })).toBe(
+      "↳ Live: rows = your working tree (12 changed files overlaid) — keep reading with tea-rags; no reindex. 12 not re-read yet → repeat this same call; it serves them once warm.",
+    );
+  });
+
+  it("no lag, a degraded overlay, or no marker → no banner", () => {
+    expect(workingTreeBanner({ tree: "/w" })).toBeUndefined();
+    expect(workingTreeBanner({ tree: "/w", changedFiles: 0 })).toBeUndefined();
+    expect(
+      workingTreeBanner({ tree: "/w", changedFiles: 5, degraded: { reason: "no stamp", remedy: "reindex" } }),
+    ).toBeUndefined();
+    expect(workingTreeBanner(undefined)).toBeUndefined();
+  });
+
+  it("stays one line under the banner prefix", () => {
+    const text = workingTreeBanner({
+      tree: "/w",
+      changedFiles: 1833,
+      pendingFiles: 40,
+      treeGraphUnavailable: "failed",
+    });
+    expect(text?.startsWith("↳ ")).toBe(true);
+    expect(text).not.toContain("\n");
+    expect(text?.length).toBeLessThanOrEqual(240);
+  });
+});
+
+describe("registered tools carry the working-tree banner after the decision banner", () => {
+  const register = (name: string, result: McpToolResult) => {
+    const server = { registerTool: vi.fn() };
+    createRegisterTool()(
+      server as never,
+      name,
+      { description: "d" } as never,
+      vi.fn().mockResolvedValue(result) as never,
+    );
+    return server.registerTool.mock.calls[0][2] as (args: unknown, extra: unknown) => Promise<McpToolResult>;
+  };
+  const lag = { tree: "/w", project: "p", changedFiles: 12, pendingFiles: 12 };
+
+  it("text channel: decision banner, then the tree banner, then the answer", async () => {
+    const answer = { ...structuredClone(searchRows), workingTree: lag };
+    const result = await register("semantic_search", textJson(answer))({ query: "q" }, {});
+    expect(result.content.map((c) => c.text)).toEqual([
+      SEARCH_ANCHOR_BANNER,
+      workingTreeBanner(lag),
+      JSON.stringify(answer),
+    ]);
+  });
+
+  it("an answer with no decision point still opens with the tree banner", async () => {
+    const answer = { results: [], workingTree: lag, empty: { reason: "unknownPath", suggestions: [] } };
+    const result = await register("find_symbol", textJson(answer))({ relativePath: "a/new.rb" }, {});
+    expect(result.content[0].text).toBe(workingTreeBanner(lag));
+    expect(JSON.parse(result.content[1].text)).toEqual(answer);
+  });
+
+  it("structured channel: one FIRST `banner` key holding both lines", async () => {
+    const answer = { ...structuredClone(searchRows), workingTree: lag };
+    const result = await register("hybrid_search", structured(answer))({ query: "q" }, {});
+    expect(Object.keys(result.structuredContent ?? {})[0]).toBe("banner");
+    expect((result.structuredContent as { banner?: unknown } | undefined)?.banner).toBe(
+      `${SEARCH_ANCHOR_BANNER}\n${workingTreeBanner(lag)}`,
+    );
+  });
+
+  it("a current tree adds nothing", async () => {
+    const answer = { results: [], workingTree: { tree: "/w", project: "p" } };
+    const result = await register("find_symbol", textJson(answer))({ relativePath: "a.rb" }, {});
+    expect(result.content).toHaveLength(1);
   });
 });

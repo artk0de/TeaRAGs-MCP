@@ -64,9 +64,10 @@ export function answerBannerFor(tool: string, args: unknown, result: McpToolResu
 }
 
 /**
- * Wraps a tool handler so its answer opens with the banner {@link answerBannerFor} picks:
- * the first content item AND, on a structured answer, the first `structuredContent` key
- * (`banner`) — Claude Code shows the model structuredContent instead of content.
+ * Wraps a tool handler so its answer opens with the banner {@link answerBannerFor} picks,
+ * then the {@link workingTreeBanner} line: one content item each AND, on a structured
+ * answer, the first `structuredContent` key (`banner`, the lines joined by a newline) —
+ * Claude Code shows the model structuredContent instead of content.
  */
 export function withAnswerBanner<A, E>(
   tool: string,
@@ -74,14 +75,22 @@ export function withAnswerBanner<A, E>(
 ): (args: A, extra: E) => Promise<McpToolResult> {
   return async (args, extra) => {
     const result = await handler(args, extra);
-    const banner = answerBannerFor(tool, args, result);
-    if (banner === undefined) return result;
-    const content = [{ type: "text" as const, text: banner }, ...result.content];
+    const banners = [answerBannerFor(tool, args, result), workingTreeBannerFor(result)].filter(
+      (line): line is string => line !== undefined,
+    );
+    if (banners.length === 0) return result;
+    const banner = banners.join("\n");
+    const content = [...banners.map((text) => ({ type: "text" as const, text })), ...result.content];
     const structured = result.structuredContent;
     return isRecord(structured)
       ? { ...result, content, structuredContent: { banner, ...structured } }
       : { ...result, content };
   };
+}
+
+function workingTreeBannerFor(result: McpToolResult): string | undefined {
+  if (result.isError === true) return undefined;
+  return workingTreeBanner(readAnswer(result)?.answer.workingTree);
 }
 
 function findSymbolBanner(request: Record<string, unknown>, answer: Record<string, unknown>): string | undefined {
@@ -134,6 +143,33 @@ function isGraphBannerTool(tool: string): tool is GraphBannerTool {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The line an answer from a lagging index opens with (bd tea-rags-mcp-u7afw).
+ * The compact `workingTree` marker carries `changedFiles` only beside a
+ * qualifier, and a bare count read as "index lags" sent agents to shell reads
+ * although the overlay had served the tree. Measured 2026-10-28 (plan-only
+ * cases quoting a lagging answer, Codex ×6 and Claude ×3 without plugin
+ * rules): this wording held Codex at its no-banner level (27/30) where the
+ * other four candidates lost 3–5 cases, and turned Claude's pending-file case
+ * from 0/3 to 3/3 ("repeat this same call"; "still warming" sent Codex to cat).
+ * A degraded overlay serves nothing live, so it gets no banner.
+ */
+export function workingTreeBanner(marker: unknown): string | undefined {
+  if (!isRecord(marker) || marker.degraded !== undefined) return undefined;
+  const { changedFiles, pendingFiles, treeGraphUnavailable } = marker;
+  if (typeof changedFiles !== "number" || changedFiles <= 0) return undefined;
+  const pending =
+    typeof pendingFiles === "number" && pendingFiles > 0
+      ? ` ${pendingFiles} not re-read yet → repeat this same call; it serves them once warm.`
+      : "";
+  const graph =
+    typeof treeGraphUnavailable === "string" ? ` Graph edges = last index (tree graph ${treeGraphUnavailable}).` : "";
+  return (
+    `${BANNER_PREFIX}Live: rows = your working tree (${changedFiles} changed files overlaid) — ` +
+    `keep reading with tea-rags; no reindex.${pending}${graph}`
+  );
 }
 
 /** True for a content text that is an answer banner, not answer data — readers that want the answer skip it. */
