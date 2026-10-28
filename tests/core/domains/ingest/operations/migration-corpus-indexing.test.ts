@@ -34,6 +34,9 @@ describe("migration corpus indexing", () => {
       qdrant: qdrant as any,
       embeddings: new MockEmbeddingProvider(),
       config,
+      blobReaderFactory: async () => {
+        throw new Error("blob reads are not expected with enrichment off");
+      },
       trajectoryConfig: defaultTrajectoryConfig(),
       snapshotDir: join(root, "snapshots"),
       createChunkerPool: warmChunkerPoolFactory,
