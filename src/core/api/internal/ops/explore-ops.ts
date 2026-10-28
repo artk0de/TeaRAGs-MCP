@@ -468,8 +468,7 @@ export class ExploreOps {
         this.buildFileOutlineStrategy(relativePath, request.language, fullTextMaxLines),
     );
     const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
-    const leanFields = request.metaOnly ? BATCH_LEAN_FIELDS.filter((f) => f !== "content") : BATCH_LEAN_FIELDS;
-    const fields = request.fields ?? (request.rerank ? undefined : leanFields);
+    const fields = request.fields ?? (request.rerank ? undefined : BATCH_LEAN_FIELDS);
     const projection = projectSearchResultPayloads(
       answer.rows.map(({ result }) => ({
         id: result.id ?? "",
@@ -480,9 +479,15 @@ export class ExploreOps {
       })),
       fields,
     );
+    // metaOnly's lean default drops a symbol row's body, but a file-path row's
+    // `content` IS the outline metaOnly asks for — it stays, as in relativePath
+    // mode (bd tea-rags-mcp-y3trx).
+    const leanMetaOnly = request.metaOnly === true && !request.fields && !request.rerank;
     const results = projection.results.map((row, i) => {
-      const { request: address, resolvedAs } = answer.rows[i];
-      return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...row.payload } };
+      const { request: address, resolvedAs, fileOutline } = answer.rows[i];
+      const { content: _body, ...bodyless } = row.payload ?? {};
+      const payload = leanMetaOnly && !fileOutline ? bodyless : row.payload;
+      return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...payload } };
     });
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
     return {
