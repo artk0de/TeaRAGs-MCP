@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { isPidAlive, isSignalDenied } from "../../process-tree/pid-liveness.js";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { compareSemver, isSemver } from "../required-version.js";
 import { QDRANT_CRASH_LOG_NAME } from "./corruption-recovery.js";
@@ -35,14 +36,7 @@ const READINESS_POLL_INTERVAL_MS = 200;
 const IDLE_SHUTDOWN_MS = 30_000;
 const SPAWN_GRACE_MS = 500;
 
-export function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { isPidAlive };
 
 /**
  * Wait for the daemon to become ready OR die.
@@ -170,14 +164,33 @@ function getStoragePath(appDataPath?: string): string {
 }
 
 export function isDaemonAlive(paths: DaemonPaths): boolean {
-  if (!existsSync(paths.pidFile)) return false;
+  const pid = readRecordedNumber(paths.pidFile);
+  return pid !== undefined && isPidAlive(pid);
+}
+
+/** A positive integer the daemon wrote into `daemonFile`; undefined when absent or unreadable. */
+function readRecordedNumber(daemonFile: string): number | undefined {
+  let raw: string;
   try {
-    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
-    process.kill(pid, 0);
-    return true;
+    raw = readFileSync(daemonFile, "utf-8");
   } catch {
-    return false;
+    return undefined;
   }
+  const parsed = parseInt(raw.trim(), 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/** The daemon the pid/port files record, and what vouches that it still serves the storage. */
+export interface RecordedDaemon {
+  pid: number;
+  port: number;
+  /** "pid" = the recorded pid is alive (or unprobeable); "port" = the pid is gone but the recorded port answers. */
+  attestedBy: "pid" | "port";
+}
+
+export interface RecordedDaemonDeps {
+  isAlive: (pid: number) => boolean;
+  portAnswers: (port: number) => Promise<boolean>;
 }
 
 async function probeHealth(url: string): Promise<boolean> {
@@ -187,6 +200,32 @@ async function probeHealth(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+const defaultRecordedDaemonDeps: RecordedDaemonDeps = {
+  isAlive: isPidAlive,
+  portAnswers: async (port) => probeHealth(`http://127.0.0.1:${port}`),
+};
+
+/**
+ * The daemon the pid/port files record, if anything still vouches for it.
+ *
+ * The pid is asked first and is authoritative — Qdrant binds HTTP only after
+ * shard recovery, so a live daemon may not answer yet, and an unprobeable pid
+ * (EPERM) counts as alive. Only a pid that is provably GONE falls back to the
+ * recorded port: a daemon still answering there owns the storage, and wiping
+ * its files would cold-spawn a second Qdrant over it (bd tea-rags-mcp-hdl65).
+ */
+export async function findRecordedDaemon(
+  paths: DaemonPaths,
+  deps: RecordedDaemonDeps = defaultRecordedDaemonDeps,
+): Promise<RecordedDaemon | undefined> {
+  const port = readRecordedNumber(paths.portFile);
+  const pid = readRecordedNumber(paths.pidFile);
+  if (port === undefined || pid === undefined) return undefined;
+  if (deps.isAlive(pid)) return { pid, port, attestedBy: "pid" };
+  if (await deps.portAnswers(port)) return { pid, port, attestedBy: "port" };
+  return undefined;
 }
 
 /**
@@ -217,10 +256,19 @@ function readRefs(paths: DaemonPaths): number {
   return countLiveDaemonRefs(paths.refsFile);
 }
 
-function incrementRefs(paths: DaemonPaths): number {
+/**
+ * Record this process as a holder; the live count, or undefined when the refs
+ * file may not be written (a sandbox that reads the daemon dir but not writes
+ * it). An unrecorded attach still serves — and its release must then detach
+ * nothing, or it would take another holder's ref (bd tea-rags-mcp-hdl65).
+ */
+function incrementRefs(paths: DaemonPaths): number | undefined {
   const lock = daemonLock.acquire(paths.lockFile);
   try {
     return attachDaemonRef(paths.refsFile);
+  } catch (error) {
+    console.error(`[tea-rags] Qdrant ref not recorded (${(error as Error).message}); attaching without one`);
+    return undefined;
   } finally {
     if (lock) daemonLock.release(lock.fd);
   }
@@ -302,11 +350,7 @@ export async function gracefulKill(pid: number, timeoutMs = GRACEFUL_KILL_TIMEOU
 
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return; // exited
-    }
+    if (!isPidAlive(pid)) return; // exited
     await sleep(100);
   }
 
@@ -356,22 +400,28 @@ async function waitForDaemonExit(pid: number, deps: EvictStaleDaemonDeps, maxPol
 }
 
 /** SIGTERM, wait for a graceful exit, then SIGKILL + wait if it won't die. */
-async function terminateAndWait(pid: number, deps: EvictStaleDaemonDeps): Promise<void> {
+/**
+ * Stop `pid`; true once it is gone. False when this process may not signal it
+ * (EPERM — another user, or a sandbox around this client): the daemon lives on
+ * and still holds the WAL lock, so nothing may be cleaned or spawned over it.
+ */
+async function terminateAndWait(pid: number, deps: EvictStaleDaemonDeps): Promise<boolean> {
   try {
     deps.killPid(pid, "SIGTERM");
-  } catch {
-    return; // already dead — nothing holds the WAL lock
+  } catch (error) {
+    return !isSignalDenied(error); // ESRCH: already dead — nothing holds the WAL lock
   }
-  if (await waitForDaemonExit(pid, deps, DAEMON_EXIT_MAX_POLLS)) return;
+  if (await waitForDaemonExit(pid, deps, DAEMON_EXIT_MAX_POLLS)) return true;
 
   // Still holding the exclusive WAL lock past the graceful window — force it
   // down so the cold-spawn doesn't crash with `Wal error ... WouldBlock`.
   try {
     deps.killPid(pid, "SIGKILL");
-  } catch {
-    return; // exited between checks
+  } catch (error) {
+    return !isSignalDenied(error); // ESRCH: exited between checks
   }
   await waitForDaemonExit(pid, deps, DAEMON_EXIT_SIGKILL_MAX_POLLS);
+  return true;
 }
 
 /**
@@ -413,7 +463,10 @@ export async function evictStaleDaemon(
       `restarting to load the upgraded binary.`,
   );
 
-  await terminateAndWait(pid, deps);
+  if (!(await terminateAndWait(pid, deps))) {
+    console.error(`[tea-rags] Not permitted to stop stale Qdrant daemon (pid=${pid}); attaching to it instead.`);
+    return false;
+  }
   cleanupDaemonFilesOwnedBy(paths, pid);
   return true;
 }
@@ -513,10 +566,6 @@ async function waitForDaemon(paths: DaemonPaths): Promise<void> {
   }
 }
 
-function readPidFromFile(paths: DaemonPaths): number {
-  return parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
-}
-
 function makeDaemonHandle(
   paths: DaemonPaths,
   port: number,
@@ -524,16 +573,19 @@ function makeDaemonHandle(
   pid: number,
   appDataPath?: string,
   lowMemory = false,
+  refHeld = true,
 ): DaemonHandle {
   return {
     url,
     pid,
     storagePath: paths.storagePath,
-    release: bindDaemonRefRelease(() => {
-      const remaining = decrementRefs(paths);
-      console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
-      return remaining;
-    }),
+    release: refHeld
+      ? bindDaemonRefRelease(() => {
+          const remaining = decrementRefs(paths);
+          console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
+          return remaining;
+        })
+      : () => undefined,
     reconnect: makeReconnect(paths, port, async () => (await ensureDaemon(appDataPath, lowMemory)).url),
     startupPhase: () => computeStartupPhase(paths),
   };
@@ -545,24 +597,27 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
   const paths = getDaemonPaths(storagePath);
 
   // Fast path: attach to running daemon (no lock needed).
-  // We intentionally do NOT probe /readyz here — Qdrant binds its HTTP port
-  // only after shard recovery, so a legitimately-alive daemon would look
-  // unreachable during cold start. pid-liveness is the authoritative signal.
-  if (isDaemonAlive(paths) && existsSync(paths.portFile)) {
-    const port = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
+  // pid-liveness is the authoritative signal and /readyz is NOT required —
+  // Qdrant binds its HTTP port only after shard recovery, so a legitimately
+  // alive daemon would look unreachable during cold start. The port is asked
+  // only once the pid is provably gone (findRecordedDaemon).
+  const recorded = await findRecordedDaemon(paths);
+  if (recorded) {
+    const { pid, port } = recorded;
     const url = `http://127.0.0.1:${port}`;
-    const pid = readPidFromFile(paths);
 
     // A binary auto-upgrade refreshes the on-disk binary, but a daemon under
     // sustained MCP use never goes idle, so the deferred-to-idle cold-spawn
     // upgrade never fires and the OLD process serves the OLD version forever —
     // invisible to warnIfStaleBinary (file-based). If the binary is current but
     // the running daemon is older than pinned, evict it and cold-spawn below.
-    if (!(await evictStaleDaemon(paths, pid, url, appDataPath))) {
+    // A port-attested daemon is not the recorded pid, so that pid is no
+    // handle to evict it by — attach and leave the upgrade to its idle exit.
+    if (recorded.attestedBy === "port" || !(await evictStaleDaemon(paths, pid, url, appDataPath))) {
       const refs = incrementRefs(paths);
-      console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
+      console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs ?? "unrecorded"})`);
       warnIfStaleBinary(appDataPath);
-      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory, refs !== undefined);
     }
     // Stale daemon evicted — fall through to the slow-path cold spawn.
   }
@@ -578,14 +633,16 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
 
   try {
     // Double-check: daemon may have appeared while we waited for the lock.
-    // Same rule as fast path — pid-alive is authoritative, don't probe HTTP.
-    if (isDaemonAlive(paths) && existsSync(paths.portFile)) {
-      const port = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
+    // Same rule as fast path — this is also the last gate before
+    // cleanupDaemonFiles, which must never wipe the files of a daemon that is
+    // alive, unprobeable (EPERM), or still answering on its port.
+    const lateRecorded = await findRecordedDaemon(paths);
+    if (lateRecorded) {
+      const { pid, port } = lateRecorded;
       const url = `http://127.0.0.1:${port}`;
-      const pid = readPidFromFile(paths);
       const refs = incrementRefs(paths);
-      console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
-      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory);
+      console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs ?? "unrecorded"})`);
+      return makeDaemonHandle(paths, port, url, pid, appDataPath, lowMemory, refs !== undefined);
     }
 
     // The pid/port files can be lost while the daemon lives on; a cold spawn
@@ -596,10 +653,10 @@ async function ensureDaemon(appDataPath?: string, lowMemory = false): Promise<Da
       const refs = incrementRefs(paths);
       console.error(
         `[tea-rags] Re-adopted Qdrant daemon with lost pid/port files ` +
-          `(pid=${orphan.pid}, port=${orphan.port}, refs=${refs})`,
+          `(pid=${orphan.pid}, port=${orphan.port}, refs=${refs ?? "unrecorded"})`,
       );
       warnIfStaleBinary(appDataPath);
-      return makeDaemonHandle(paths, orphan.port, url, orphan.pid, appDataPath, lowMemory);
+      return makeDaemonHandle(paths, orphan.port, url, orphan.pid, appDataPath, lowMemory, refs !== undefined);
     }
 
     cleanupDaemonFiles(paths);
@@ -668,9 +725,7 @@ export function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
   let idleSince: number | null = null;
 
   const interval = setInterval(() => {
-    try {
-      process.kill(pid, 0);
-    } catch {
+    if (!isPidAlive(pid)) {
       clearInterval(interval);
       cleanupDaemonFilesOwnedBy(paths, pid);
       return;

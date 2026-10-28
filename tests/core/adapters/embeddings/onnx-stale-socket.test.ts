@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
 import { OnnxDaemon } from "../../../../src/core/adapters/embeddings/onnx/daemon.js";
@@ -89,6 +89,36 @@ describe("OnnxEmbeddings stale daemon socket recovery", () => {
       expect(result.embedding).toEqual([1, 2, 3]);
       expect(existsSync(socketPath)).toBe(true);
     } finally {
+      await provider.terminate();
+      await daemon.stop();
+    }
+  }, 10_000);
+
+  it("keeps the socket of a daemon whose pid exists but may not be signalled (EPERM, bd tea-rags-mcp-hdl65)", async () => {
+    const socketPath = join(dir, `denied-${randomUUID().slice(0, 6)}.sock`);
+    const pidFile = join(dir, "denied.pid");
+    const daemon = new OnnxDaemon({
+      socketPath,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => new MockWorker(),
+    });
+    await daemon.start();
+    const deniedPid = 424_242;
+    writeFileSync(pidFile, String(deniedPid));
+    const realKill = process.kill.bind(process);
+    vi.spyOn(process, "kill").mockImplementation((pid: number, signal?: string | number) => {
+      if (pid === deniedPid) throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+      return realKill(pid, signal);
+    });
+    const provider = new OnnxEmbeddings("test-model", 3, undefined, "cpu", socketPath, pidFile, 300);
+    try {
+      const result = await provider.embed("x");
+      expect(result.embedding).toEqual([1, 2, 3]);
+      expect(existsSync(socketPath)).toBe(true);
+      expect(existsSync(pidFile)).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
       await provider.terminate();
       await daemon.stop();
     }

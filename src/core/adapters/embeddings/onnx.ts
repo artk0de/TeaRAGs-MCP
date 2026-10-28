@@ -4,6 +4,7 @@ import { createConnection, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isPidAlive } from "../process-tree/pid-liveness.js";
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./onnx/daemon-types.js";
 import { OnnxInferenceError, OnnxModelLoadError } from "./onnx/errors.js";
@@ -113,10 +114,9 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     try {
       const pid = parseInt(readFileSync(this.pidFile, "utf-8").trim(), 10);
       if (isNaN(pid)) return true;
-      process.kill(pid, 0); // signal 0 = check if alive
-      return false;
+      return !isPidAlive(pid);
     } catch {
-      return true; // process not found
+      return true; // pid file unreadable
     }
   }
 
