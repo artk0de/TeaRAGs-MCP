@@ -52,7 +52,7 @@ describe("FileOutlineStrategy", () => {
 
     await strategy.execute({ collectionName: "c", limit: 1 });
 
-    expect(mockScrollFiltered).toHaveBeenCalledWith("c", { must: exactPath("src/utils.ts") }, 200);
+    expect(mockScrollFiltered).toHaveBeenCalledWith("c", { must: exactPath("src/utils.ts") }, 10_000);
   });
 
   it("adds language condition when provided", async () => {
@@ -246,7 +246,7 @@ describe("FileOutlineStrategy", () => {
     expect(result[0].payload?.content).toBe(INDEX_FRESHNESS_TOC);
   });
 
-  it("strips payload.content when metaOnly is true", async () => {
+  it("keeps the outline, not the chunk body, in payload.content when metaOnly is true", async () => {
     mockScrollFiltered.mockResolvedValue([
       {
         id: "a",
@@ -268,7 +268,7 @@ describe("FileOutlineStrategy", () => {
 
     const result = await strategy.execute({ collectionName: "c", limit: 1, metaOnly: true });
 
-    expect(result[0].payload?.content).toBeUndefined();
+    expect(result[0].payload?.content).toBe("src/x.ts\n  fn");
   });
 
   it("invokes reranker when rerank option is set", async () => {

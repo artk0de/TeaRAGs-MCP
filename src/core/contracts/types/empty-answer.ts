@@ -27,6 +27,8 @@ export type EmptyAnswerReason =
   | "unknownFile"
   /** `relativePath` names neither an indexed file nor a directory prefix. */
   | "unknownPath"
+  /** `relativePath` names a file with no symbol chunk (top-level DSL/config) — read it with the default code read tool. */
+  | "noSymbols"
   /** `pathPattern` alone matches no indexed point. */
   | "pathPatternMatchesNothing"
   /** Points exist without the filters / preset filter; the filters removed them. */

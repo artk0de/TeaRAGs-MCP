@@ -54,6 +54,7 @@ import {
   SYMBOL_SEPARATORS,
   symbolIdLastSegment,
   symbolIdTextToken,
+  symbolIdTextTokens,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type {
@@ -73,6 +74,7 @@ import type {
   SymbolLineRange,
   SymbolVisibilityResolver,
 } from "../../../contracts/types/codegraph.js";
+import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RerankMode } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
@@ -92,6 +94,18 @@ import type { ExploreContext, ExploreResult } from "./types.js";
 
 /** Qdrant scroll page size for symbol discovery. */
 const SCROLL_LIMIT = 200;
+
+/**
+ * Scroll cap for a fully-qualified query (bd tea-rags-mcp-hditp). Its filter
+ * holds one text condition per name segment, so the superset is the FQN's own
+ * rows plus the few ids sharing every segment (measured on a large Ruby corpus:
+ * 47–186 rows, against 862–8174 for the last segment alone) — the cap bounds a
+ * pathological class, it does not page through namesakes.
+ */
+const QUALIFIED_SCROLL_LIMIT = 2000;
+
+/** Suffix-match candidates an ambiguous answer names (EmptyAnswerExplanation: at most five). */
+const MAX_SUFFIX_SUGGESTIONS = 5;
 
 /** Default user-requested limit when caller doesn't specify one. */
 const DEFAULT_USER_LIMIT = 50;
@@ -121,6 +135,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
 
+  /** Why the answer is empty when a partial namespace path names several symbols (`ambiguous`); else undefined. */
+  get emptyAnswer(): EmptyAnswerExplanation | undefined {
+    return this.empty;
+  }
+
+  private empty?: EmptyAnswerExplanation;
+
   /** No overfetch — executeExplore scrolls a fixed SCROLL_LIMIT page. */
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {
     return ctx;
@@ -130,9 +151,10 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     const primaryFilter = this.buildSymbolFilter("symbolId");
     const parentFilter = this.buildSymbolFilter("parentSymbolId");
 
+    const scrollLimit = isFullyQualified(this.input.symbol) ? QUALIFIED_SCROLL_LIMIT : SCROLL_LIMIT;
     const [symbolChunks, memberChunks] = await Promise.all([
-      this.qdrant.scrollFiltered(ctx.collectionName, primaryFilter, SCROLL_LIMIT),
-      this.qdrant.scrollFiltered(ctx.collectionName, parentFilter, SCROLL_LIMIT),
+      this.qdrant.scrollFiltered(ctx.collectionName, primaryFilter, scrollLimit),
+      this.qdrant.scrollFiltered(ctx.collectionName, parentFilter, scrollLimit),
     ]);
 
     const seen = new Set(symbolChunks.map((c) => c.id));
@@ -157,16 +179,18 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     //     the Qdrant tokenized superset leaks middle-of-name hits
     //     (`setValue` for `set`, `Baroque` for `bar`).
     // See class doc-comment for the tokenization + short-name rationale.
-    const exact = isFullyQualified(this.input.symbol)
-      ? filterByExactSymbolId(allChunks, this.input.symbol)
-      : filterByLastSegment(allChunks, this.input.symbol);
+    const qualified = isFullyQualified(this.input.symbol)
+      ? this.resolveQualified(allChunks)
+      : { symbol: this.input.symbol, exact: filterByLastSegment(allChunks, this.input.symbol) };
+    if (!qualified) return [];
+    const { symbol, exact } = qualified;
     // A tiny test example shares a chunk with its tiny siblings, and a test
     // scope's setup a chunk with its neighbours' setup; either is named only in
     // that chunk's `memberSymbolIds` (bd tea-rags-mcp-5xpq4) — asked only when
     // no chunk answered the id as its own (a scope id is still answered by its
     // examples' parentSymbolId, which outlines them but is not its setup).
     const grouped =
-      isFullyQualified(this.input.symbol) && !answersOwnId(exact, this.input.symbol)
+      isFullyQualified(symbol) && !answersOwnId(exact, symbol)
         ? await this.substituteFromWorkingTree(await this.scrollPackMembers(ctx.collectionName), ctx, (row) =>
             this.matchesPackMemberScroll(row),
           )
@@ -177,14 +201,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // whether the id is the pack's own (first member) or reached through
     // `memberSymbolIds`. A pack matched as a MEMBER of the queried scope stays
     // whole: it is outlined, not answered.
-    const filtered = isFullyQualified(this.input.symbol)
-      ? matched.map((chunk) => answerPackMember(chunk, this.input.symbol))
-      : matched;
+    const filtered = isFullyQualified(symbol) ? matched.map((chunk) => answerPackMember(chunk, symbol)) : matched;
 
     // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
     // metaOnly strips the outline text, so there is nothing to decorate.
     const resolved = (await renderWithDeclaredVisibility(
-      (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
+      (visibilityOf) => resolveSymbols(filtered, symbol, ctx.metaOnly, visibilityOf),
       ctx.metaOnly ? undefined : this.visibilityResolver,
       ctx.collectionName,
       recordingTreeGraphReader(ctx.workingTreeView),
@@ -422,16 +444,50 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   }
 
   /**
+   * The rows answering a fully-qualified query, and the id they answer it as.
+   * The exact id first; when no row carries it, the one id the query is a
+   * segment-boundary SUFFIX of (`Ledger::Client` → `Tax::Ledger::Client`, bd
+   * tea-rags-mcp-hditp) — a partial namespace path is how a caller names a
+   * nested class it did not see whole. Several such ids → undefined, with
+   * {@link emptyAnswer} naming them (`ambiguous`).
+   */
+  private resolveQualified(chunks: readonly ScrollChunk[]): { symbol: string; exact: ScrollChunk[] } | undefined {
+    const { symbol } = this.input;
+    const exact = filterByExactSymbolId(chunks, symbol);
+    if (exact.length > 0) return { symbol, exact };
+    const suffixed = idsEndingWith(chunks, symbol);
+    if (suffixed.length === 1) return { symbol: suffixed[0], exact: filterByExactSymbolId(chunks, suffixed[0]) };
+    if (suffixed.length === 0) return { symbol, exact };
+    this.empty = {
+      reason: "ambiguous",
+      message: `${symbol} is the tail of ${suffixed.length} symbol ids — retry with one of them.`,
+      suggestions: suffixed.slice(0, MAX_SUFFIX_SUGGESTIONS),
+    };
+    return undefined;
+  }
+
+  /**
    * The two scrolls' filters ({@link buildSymbolFilter}) as one predicate over a
    * row Qdrant never stored — the working tree's delta rows. Same text token,
    * same language condition; the pathPattern half is the text pre-filter the
    * exact matcher in `executeExplore` re-applies to every row anyway.
    */
   private matchesSymbolScrolls(row: ScrollChunk): boolean {
-    const textQuery = symbolIdTextToken(this.input.symbol);
+    const tokens = this.scrollTextTokens();
     const { symbolId, parentSymbolId } = row.payload;
-    const textMatch = matchesTextIndexed(symbolId, textQuery) || matchesTextIndexed(parentSymbolId, textQuery);
-    return textMatch && this.matchesLanguage(row);
+    const carriesAll = (stored: unknown) => tokens.every((token) => matchesTextIndexed(stored, token));
+    return (carriesAll(symbolId) || carriesAll(parentSymbolId)) && this.matchesLanguage(row);
+  }
+
+  /**
+   * The text tokens both scrolls require, one condition each: a bare name's
+   * single token, or one per segment of a fully-qualified id
+   * (`symbolIdTextTokens`) — selective, so namesakes of the last segment no
+   * longer fill the scroll page (bd tea-rags-mcp-hditp).
+   */
+  private scrollTextTokens(): string[] {
+    const { symbol } = this.input;
+    return isFullyQualified(symbol) ? symbolIdTextTokens(symbol) : [symbolIdTextToken(symbol)];
   }
 
   private matchesLanguage(row: ScrollChunk): boolean {
@@ -439,13 +495,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   }
 
   private buildSymbolFilter(key: "symbolId" | "parentSymbolId"): Record<string, unknown> {
-    // Reduce the query to a single reliable text token. Full FQNs tokenize
-    // to multiple tokens that, under default `word` tokenizer + AND join,
-    // miss target rows on some live indices. The last name segment is
-    // always present in the indexed tokens of the target row.
+    // One text condition per token, never a whole FQN in one condition: full
+    // FQNs tokenize to multiple tokens that, under default `word` tokenizer +
+    // AND join, miss target rows on some live indices. Each segment alone is
+    // always among the target row's indexed tokens (`scrollTextTokens`).
     // See class doc-comment for the tokenization rationale.
-    const textQuery = symbolIdTextToken(this.input.symbol);
-    const must: Record<string, unknown>[] = [{ key, match: { text: textQuery } }];
+    const must: Record<string, unknown>[] = this.scrollTextTokens().map((token) => ({ key, match: { text: token } }));
     if (this.input.language) {
       must.push({ key: "language", match: { value: this.input.language } });
     }
@@ -469,6 +524,28 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 /** Does the symbol contain a structural separator (FQN, not a bare name)? */
 function isFullyQualified(symbol: string): boolean {
   return SYMBOL_SEPARATORS.test(symbol);
+}
+
+/** Namespace separators a partial path may start after: `B::C` is a tail of `A::B::C`, of `A.B::C` too. */
+const NAMESPACE_BOUNDARIES = ["::", "."] as const;
+
+/**
+ * The distinct ids `query` is a segment-boundary suffix of — read off each
+ * row's own id, its parent id and its member owner, so a class answered only
+ * through its members is found too. Sorted, for a stable suggestion order.
+ */
+function idsEndingWith(chunks: readonly ScrollChunk[], query: string): string[] {
+  const tails = NAMESPACE_BOUNDARIES.map((boundary) => `${boundary}${query}`);
+  const found = new Set<string>();
+  for (const chunk of chunks) {
+    const symbolId = chunk.payload.symbolId as string | undefined;
+    const parentSymbolId = chunk.payload.parentSymbolId as string | undefined;
+    const owner = symbolId === undefined ? undefined : memberOwnerOf(symbolId);
+    for (const id of [symbolId, parentSymbolId, owner]) {
+      if (id !== undefined && tails.some((tail) => id.endsWith(tail))) found.add(id);
+    }
+  }
+  return [...found].sort();
 }
 
 /**

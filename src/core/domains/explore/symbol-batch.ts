@@ -134,6 +134,9 @@ export class SymbolBatchDrill {
           pathDowngraded: outline.fullTextWithheld,
         };
       }
+      // A file with no symbol chunk is no symbol either: its reason is the miss.
+      const empty = outline.emptyAnswer;
+      if (empty?.reason === "noSymbols") return { rows: [], miss: { request: address, message: empty.message } };
       // A bare root-level name that is no file may still be a symbol id; a slashed one is a path.
       if (address.includes("/")) return { rows: [], miss: unknownPathMiss(address, outline.emptyAnswer?.suggestions) };
     }

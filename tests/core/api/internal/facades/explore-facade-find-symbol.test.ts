@@ -307,7 +307,7 @@ describe("ExploreFacade.findSymbol", () => {
           { key: "relativePath", match: { value: "src/utils.ts" } },
         ],
       },
-      200,
+      10_000,
     );
   });
 

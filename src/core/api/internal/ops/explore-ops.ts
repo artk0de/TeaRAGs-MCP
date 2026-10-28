@@ -214,6 +214,8 @@ interface ExploreFinalizeOptions {
    * tea-rags-mcp-q1g6s.16) instead of find_symbol's lean default.
    */
   searchTool?: boolean;
+  /** find_symbol `relativePath`: rows are outlines, kept under metaOnly (`PayloadProjectionMode.outline`). */
+  outline?: boolean;
   /**
    * Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides
    * on the answer, with the floors the strategy's reads claimed on it (D8).
@@ -405,6 +407,7 @@ export class ExploreOps {
     const strategy = this.buildFindSymbolStrategy(request);
     const response = await this.executeExplore(strategy, ctx, {
       fields: request.fields,
+      outline: strategy instanceof FileOutlineStrategy,
       workingTreeView,
     });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
@@ -418,7 +421,8 @@ export class ExploreOps {
       strategy instanceof FileOutlineStrategy
         ? strategy.emptyAnswer
         : response.results.length === 0 && request.symbol
-          ? await this.explainSymbolMiss(request, request.symbol, ctx, workingTreeView)
+          ? ((strategy instanceof SymbolSearchStrategy ? strategy.emptyAnswer : undefined) ??
+            (await this.explainSymbolMiss(request, request.symbol, ctx, workingTreeView)))
           : undefined;
     return {
       ...response,
@@ -605,6 +609,7 @@ export class ExploreOps {
         metaOnly: ctx.metaOnly === true,
         reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance",
         searchTool: finalize.searchTool === true,
+        outline: finalize.outline === true,
       },
     );
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;

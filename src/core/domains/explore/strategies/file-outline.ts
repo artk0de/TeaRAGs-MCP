@@ -29,7 +29,13 @@ import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
-const SCROLL_LIMIT = 200;
+/**
+ * Chunks read for one file. The filter is exact (one path), so the cap bounds a
+ * pathological file instead of paging: a 200-chunk cap silently cut the outline
+ * of every larger file (bd tea-rags-mcp-hditp). Same bound as the per-file
+ * payload heal (`HEAL_PER_FILE_SCROLL_LIMIT`).
+ */
+const FILE_SCROLL_LIMIT = 10_000;
 
 /** Chunks read for one directory answer or one nearest-path probe; the cap makes the listing `truncated`. */
 const DIRECTORY_SCROLL_LIMIT = 20_000;
@@ -85,9 +91,13 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     return this.directoryOutline;
   }
 
-  /** Why the answer is empty when `relativePath` named neither a file nor a directory (N6 `unknownPath`). */
+  /**
+   * Why the answer is empty: `relativePath` named neither a file nor a directory
+   * (N6 `unknownPath`), or a file too large for its full text holds no symbol
+   * chunk to outline (`noSymbols`).
+   */
   get emptyAnswer(): EmptyAnswerExplanation | undefined {
-    return this.unknownPath;
+    return this.empty;
   }
 
   /** True when the `relativePath:` rule would have answered full text but `fullTextMaxLines` kept the outline. */
@@ -96,8 +106,10 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
   }
 
   private directoryOutline?: DirectoryOutline;
-  private unknownPath?: EmptyAnswerExplanation;
+  private empty?: EmptyAnswerExplanation;
   private withheldFullText = false;
+  /** The tree's text was read and withheld for its size (either full-text rule) — the outline is the whole answer. */
+  private treeTextWithheld = false;
 
   /** No overfetch — a single scroll page is enough for one file's chunks. */
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {
@@ -126,7 +138,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     // Chunk floor (bd tea-rags-mcp-xi2r9.3): a changed file is outlined from the
     // tree, a deleted one comes back empty — never the index's stale version.
     const scrolled = await this.substituteFromWorkingTree(
-      await this.qdrant.scrollFiltered(ctx.collectionName, { must }, SCROLL_LIMIT),
+      await this.qdrant.scrollFiltered(ctx.collectionName, { must }, FILE_SCROLL_LIMIT),
       ctx,
       (row) => this.matchesOutlineScroll(row),
     );
@@ -149,7 +161,21 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
       ctx.collectionName,
       recordingTreeGraphReader(ctx.workingTreeView),
     );
-    return [ctx.metaOnly ? outline : await this.fullTextOrOutline(outline, ctx)];
+    if (ctx.metaOnly) return [outline];
+    const answer = await this.fullTextOrOutline(outline, ctx);
+    if (this.treeTextWithheld && chunks.every((c) => c.payload.symbolId === undefined)) {
+      // Top-level DSL/config (initializers, route files): the outline would be
+      // the bare path line. find_symbol outlines code symbols; it does not read
+      // configs (owner direction, bd tea-rags-mcp-hditp) — say so.
+      this.empty = {
+        reason: "noSymbols",
+        message:
+          `${this.input.relativePath} has no symbol chunks (top-level DSL/config) — ` +
+          "read it with the default code read tool.",
+      };
+      return [];
+    }
+    return [answer];
   }
 
   /**
@@ -169,10 +195,14 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     if (text === undefined) return outline;
     const lineCount = countLines(text);
     const outlineText = typeof outline.payload?.content === "string" ? outline.payload.content : "";
-    if (lineCount > FULL_TEXT_MAX_LINES && outlineText.length < text.length) return outline;
+    if (lineCount > FULL_TEXT_MAX_LINES && outlineText.length < text.length) {
+      this.treeTextWithheld = true;
+      return outline;
+    }
     const cap = this.input.fullTextMaxLines;
     if (cap !== undefined && lineCount > cap) {
       this.withheldFullText = true;
+      this.treeTextWithheld = true;
       return outline;
     }
     return {
@@ -195,7 +225,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
       this.directoryOutline = under.capped ? { ...grouping.outline, truncated: true } : grouping.outline;
       return grouping.files;
     }
-    this.unknownPath = {
+    this.empty = {
       reason: "unknownPath",
       message: `No indexed file or directory at "${this.input.relativePath}".`,
       suggestions: await this.nearestPaths(ctx, dir),
@@ -311,16 +341,10 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
       return results.map((r) => ({ ...r, payload: pickListingFields(r.payload) }));
     }
 
+    // metaOnly keeps `content`: a file row's content is its OUTLINE, which is
+    // the metadata metaOnly asks for (bd tea-rags-mcp-hditp) — `executeExplore`
+    // already declined the full text.
     let processed = results;
-
-    if (originalCtx.metaOnly) {
-      processed = processed.map((r) => {
-        if (!r.payload) return r;
-        const payload = { ...r.payload };
-        delete payload.content;
-        return { ...r, payload };
-      });
-    }
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {

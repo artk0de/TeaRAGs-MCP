@@ -77,6 +77,28 @@ export function symbolIdTextToken(symbol: string): string {
   return symbolIdLastSegment(symbol).replace(METHOD_NAME_SUFFIX, "");
 }
 
+/**
+ * One text token per name segment, last segment first, duplicates and empty
+ * segments dropped (bd tea-rags-mcp-hditp).
+ *
+ *   `Foo::Bar#baz`  → [`baz`, `Bar`, `Foo`]
+ *   `Foo#updated=`  → [`updated`, `Foo`]
+ *   `createNote`    → [`createNote`]
+ *
+ * Each token is one segment, queried as its OWN `match: { text }` condition —
+ * never the whole FQN in one condition, the conjunction {@link symbolIdTextToken}
+ * exists to avoid. A row whose id extends or equals the FQN carries every
+ * segment, so the conditions together stay a superset of the rows that answer
+ * it while no longer admitting every namesake of the last segment: the
+ * last-token-only scroll of `Billing::Client` shared its page with every other
+ * `Client` in the collection and lost members to the page cap.
+ */
+export function symbolIdTextTokens(symbol: string): string[] {
+  const segments = symbol.split(SYMBOL_SEPARATORS).reverse();
+  const tokens = segments.map((segment) => segment.replace(METHOD_NAME_SUFFIX, "")).filter((t) => t.length > 0);
+  return [...new Set(tokens)];
+}
+
 /** The tokens the `word` tokenizer stores for a value: alphanumeric runs, lowercased, Unicode-aware. */
 function wordTokens(value: string): string[] {
   return value
