@@ -701,6 +701,68 @@
         "Read / cat of hit files",
         "find_symbol(relativePath:) of a guessed directory as the first call"
       ]
+    },
+    {
+      "id": "N1",
+      "audit_finding": "9u17t (a): multi-file 'which files change' after a search answer — the next call is the graph on the anchor, not an answer from the rows (bench post-mortem: 4 lost questions each missed a neighbour one graph call exposes)",
+      "context": "Project alias `lending`, cwd /work/lending (its own checkout), TypeScript, codegraph on, healthy index. The previous call was semantic_search(query: \"renewing a book loan extends the due date\", metaOnly: true); its answer was:\n```\n↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).\n{\"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\"], \"rows\": [[\"src/web/loans-controller.ts\", \"LoansController#renew\", 14, 40], [\"src/loans/renewal/loan-renewer.ts\", \"LoanRenewer#renew\", 22, 70], [\"src/loans/policy/renewal-limit.ts\", \"RenewalLimit#check\", 8, 30]]}}\n```",
+      "prompt": "Which files must change to add a maximum of three renewals per loan?",
+      "expected": "next call get_callers / get_callees(symbolId: \"RenewalLimit#check\" or \"LoanRenewer#renew\") (find_co_changed beside it allowed) → ONE find_symbol(symbols: [needed ids]); the answer lists the files the edges exposed",
+      "not": [
+        "an answer listing only the three rows' files with no graph call",
+        "a new semantic_search / hybrid_search",
+        "find_symbol per row",
+        "the graph on LoansController#renew only (row 1)"
+      ]
+    },
+    {
+      "id": "N2",
+      "audit_finding": "9u17t (b): 'how does X work end to end' after the anchor's body answer — get_callees depth 2, not an answer from the body alone",
+      "context": "Project alias `lending`, cwd /work/lending (its own checkout), TypeScript, codegraph on, healthy index. The previous call was find_symbol(symbol: \"LoanRenewer#renew\"); its answer was:\n```\n↳ Body shown in full — answer from it; do not reopen the file.\n{\"results\": [{\"payload\": {\"relativePath\": \"src/loans/renewal/loan-renewer.ts\", \"symbolId\": \"LoanRenewer#renew\", \"startLine\": 22, \"endLine\": 70, \"content\": \"async renew(loanId: LoanId): Promise<Loan> {\\n  const loan = await this.loans.get(loanId);\\n  this.limit.check(loan);\\n  const due = this.calendar.nextDueDate(loan.dueDate, loan.branchId);\\n  const renewed = loan.withDueDate(due).incrementRenewals();\\n  await this.loans.save(renewed);\\n  await this.notifier.renewed(renewed);\\n  return renewed;\\n}\"}}]}\n```",
+      "prompt": "How does renewing a loan work end to end?",
+      "expected": "get_callees(symbolId: \"LoanRenewer#renew\", depth: 2) → ONE find_symbol(symbols: [needed callee ids]); answer from the body plus those callees",
+      "not": [
+        "an answer from the quoted body alone, zero calls",
+        "find_symbol / Read / cat of loan-renewer.ts again",
+        "a new semantic_search",
+        "one find_symbol per callee"
+      ]
+    },
+    {
+      "id": "N3",
+      "audit_finding": "9u17t (c) over-steer guard: a single-symbol show request takes no graph call",
+      "context": "Project alias `lending`, cwd /work/lending (its own checkout), TypeScript, codegraph on, healthy index. No call has been made yet.",
+      "prompt": "Show me LoanRenewer#renew.",
+      "expected": "find_symbol(symbol: \"LoanRenewer#renew\") and the answer from its body; no further call",
+      "not": [
+        "get_callees / get_callers / trace_path / find_co_changed",
+        "semantic_search / hybrid_search",
+        "Read / cat of the file"
+      ]
+    },
+    {
+      "id": "N4",
+      "audit_finding": "9u17t (c) over-steer guard: a single-method question after that method's body answer takes zero calls",
+      "context": "Project alias `lending`, cwd /work/lending (its own checkout), TypeScript, codegraph on, healthy index. The previous call was find_symbol(symbol: \"RenewalLimit#check\"); its answer was:\n```\n↳ Body shown in full — answer from it; do not reopen the file.\n{\"results\": [{\"payload\": {\"relativePath\": \"src/loans/policy/renewal-limit.ts\", \"symbolId\": \"RenewalLimit#check\", \"startLine\": 8, \"endLine\": 30, \"content\": \"check(loan: Loan): void {\\n  if (loan.holds.length > 0) throw new LoanOnHoldError(loan.id);\\n  if (loan.renewals >= this.max) throw new RenewalLimitError(loan.id, this.max);\\n}\"}}]}\n```",
+      "prompt": "What does RenewalLimit#check do when the loan has a hold on it?",
+      "expected": "answer from the quoted body (LoanOnHoldError thrown before the count check); zero further calls",
+      "not": [
+        "get_callees / get_callers",
+        "find_symbol / Read of renewal-limit.ts again",
+        "a new search"
+      ]
+    },
+    {
+      "id": "N5",
+      "audit_finding": "9u17t (a'): 'which files change' after the anchor's body answer (bench flow: find_symbol(anchor), then an answer) — the graph call on the anchor comes before answering",
+      "context": "Project alias `lending`, cwd /work/lending (its own checkout), TypeScript, codegraph on, healthy index. The previous call was find_symbol(symbol: \"LoanRenewer#renew\"); its answer was:\n```\n↳ Body shown in full — answer from it; do not reopen the file.\n{\"results\": [{\"payload\": {\"relativePath\": \"src/loans/renewal/loan-renewer.ts\", \"symbolId\": \"LoanRenewer#renew\", \"startLine\": 22, \"endLine\": 70, \"content\": \"async renew(loanId: LoanId): Promise<Loan> {\\n  const loan = await this.loans.get(loanId);\\n  this.limit.check(loan);\\n  const due = this.calendar.nextDueDate(loan.dueDate, loan.branchId);\\n  const renewed = loan.withDueDate(due).incrementRenewals();\\n  await this.loans.save(renewed);\\n  await this.notifier.renewed(renewed);\\n  return renewed;\\n}\"}}]}\n```",
+      "prompt": "Which files must change to let librarians override the renewal limit for one loan?",
+      "expected": "get_callers / get_callees(symbolId: \"LoanRenewer#renew\") (depth 2; find_co_changed beside it allowed) before answering → ONE find_symbol(symbols: [needed ids])",
+      "not": [
+        "an answer from the quoted body alone",
+        "a new semantic_search before the graph call",
+        "find_symbol / Read of loan-renewer.ts again"
+      ]
     }
   ],
   "results": {
@@ -720,6 +782,31 @@
       "pct": 70
     },
     "delta_cascade_vs_nothing_pp": 30,
-    "delta_after_vs_before_pp": 0
+    "delta_after_vs_before_pp": 0,
+    "9u17t": {
+      "date": "2026-10-28",
+      "method": "plan-only, N1-N5 + neighbours E1/D1/HD1 in one session; Codex x3 + Claude (sonnet) x1 per variant; before = plugin 0.49.1 core, after = 0.49.2 core (anchor rule: graph call first, then ONE find_symbol batch). Banners unchanged (quoted as served).",
+      "grading": "N1 strict = the NEXT call is get_callers/get_callees on the anchor; others per expected/not",
+      "before": {
+        "N1": "codex 0/3, claude 0/1 (find_symbol(anchor) first, graph second)",
+        "N2": "3/3, 1/1",
+        "N3": "3/3, 1/1",
+        "N4": "3/3, 1/1",
+        "N5": "3/3, 1/1",
+        "E1": "3/3, 1/1",
+        "D1": "3/3, 1/1",
+        "HD1": "3/3, 1/1"
+      },
+      "after": {
+        "N1": "3/3, 1/1",
+        "N2": "3/3, 1/1",
+        "N3": "3/3, 1/1",
+        "N4": "3/3, 1/1",
+        "N5": "3/3, 1/1",
+        "E1": "3/3, 1/1",
+        "D1": "3/3, 1/1",
+        "HD1": "3/3, 1/1"
+      }
+    }
   }
 }

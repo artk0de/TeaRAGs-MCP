@@ -84,12 +84,13 @@ diff's → `review_changes` verdicts, nothing after.
 - After `find_symbol`: method = full body; small file (`kind: "file"`) = full
   text, nothing after; outline → drill. Needed at once → ONE
   `find_symbol(symbols: [...])`: NAMED `Class#method` ids (rows, outline, edges)
-  and several FILES; never a dir. After a search: `find_symbol` next.
+  and several FILES; never a dir.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
-  it better → new anchor. Which files change / every place → in order, before
-  any new search: `1. find_symbol(symbol: <anchor id>)`
-  `2. get_callers/get_callees(symbolId: <anchor id>)`, `find_co_changed`. Before
+  it better → new anchor. Which files change / end to end / every place → next
+  call, before any new search or answer:
+  `1. get_callers/get_callees(symbolId: <anchor id>, depth: 2)`,
+  `find_co_changed` `2. ONE find_symbol(symbols: [anchor + needed ids])`. Before
   answering: every row that named the behaviour is in the answer, or why it's a
   false lead.
 - `symbolId` ends `#partN` = fragment →

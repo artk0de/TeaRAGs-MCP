@@ -150,12 +150,12 @@ and tree, never "index unusable". Thousands of changed files included.
   then Grep tool `"<name>"` (literal). No graph retry.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
-  caller in the changed file + Grep tool `"<name>"` (literal) for callers the
-  index lacks.
+  caller in the changed file + Grep tool `"<name>"` (literal)
+  for callers the index lacks.
 - Standard read/search tools are routed, not forbidden (core routing row 1):
   config / DSL / routes / migrations / specs, an unindexed file or a
-  `find_symbol` stub → Read tool; other indexed code → `find_symbol`. Lag never
-  changes that choice.
+  `find_symbol` stub → Read tool; other indexed code →
+  `find_symbol`. Lag never changes that choice.
 
 ## Worktree clone — teardown only
 
