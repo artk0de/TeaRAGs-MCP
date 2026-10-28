@@ -18,7 +18,7 @@ import {
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { foldSubFloorGroups } from "../../kernel/index.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
-import { valueClassContainerBody, valueClassContainerName } from "./value-class-container.js";
+import { valueClassContainerBody, valueClassContainerHeader } from "./value-class-container.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -435,12 +435,10 @@ const bodyGrouper = new RubyClassBodyChunker();
  * undefined.
  */
 export function extractClassHeader(node: AstNode, code: string): string | undefined {
-  const lines = code.split("\n");
-  const firstLine = lines[node.startPosition.row];
-  if (firstLine && (/^\s*(class|module)\s+/.test(firstLine) || valueClassContainerName(node) !== undefined)) {
-    return firstLine.trim();
-  }
-  return undefined;
+  const valueClassHeader = valueClassContainerHeader(node, code);
+  if (valueClassHeader !== undefined) return valueClassHeader;
+  const firstLine = code.split("\n")[node.startPosition.row];
+  return firstLine && /^\s*(class|module)\s+/.test(firstLine) ? firstLine.trim() : undefined;
 }
 
 /**

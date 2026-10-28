@@ -52,68 +52,102 @@ function linesToRanges(lines: number[]): ContainerRemainderRange[] {
   return ranges;
 }
 
+/** Whether `chunk` already carries `text` as one of its own content lines (a container header prefix row). */
+function carriesLineText(chunk: CodeChunk, text: string): boolean {
+  return chunk.content.split("\n").some((row) => row.trim() === text);
+}
+
 /**
- * Fold each below-floor remainder part into the nearest chunk — the closest one
- * ending before it, else the closest one starting after it — that still fits
- * `maxChunkSize` with the part's text appended. Only the part's non-blank lines
- * no chunk covers yet are appended (a container header the host already carries
- * as its prefix row is not repeated twice when it is covered). The host gains
- * `lineRanges` for the absorbed lines, so git enrichment attributes them.
+ * The chunks adjacent to `line`: those whose last claimed row before it is the
+ * closest (`preceding`), and those whose first claimed row after it is the
+ * closest (`following`). Every chunk in between would be nearer, so a host
+ * taken from these never spans another chunk's rows.
+ */
+function adjacentChunks(
+  chunks: readonly CodeChunk[],
+  line: number,
+): { preceding: CodeChunk[]; following: CodeChunk[] } {
+  let precedingRow = -Infinity;
+  let followingRow = Infinity;
+  const lastBefore = new Map<CodeChunk, number>();
+  const firstAfter = new Map<CodeChunk, number>();
+  for (const chunk of chunks) {
+    for (const { start, end } of chunkLineRanges(chunk)) {
+      if (end < line && end > (lastBefore.get(chunk) ?? -Infinity)) lastBefore.set(chunk, end);
+      if (start > line && start < (firstAfter.get(chunk) ?? Infinity)) firstAfter.set(chunk, start);
+    }
+    precedingRow = Math.max(precedingRow, lastBefore.get(chunk) ?? -Infinity);
+    followingRow = Math.min(followingRow, firstAfter.get(chunk) ?? Infinity);
+  }
+  return {
+    preceding: chunks.filter((chunk) => lastBefore.get(chunk) === precedingRow),
+    following: chunks.filter((chunk) => firstAfter.get(chunk) === followingRow),
+  };
+}
+
+/**
+ * Fold each below-floor remainder part into its neighbour chunks, line by line
+ * (bd tea-rags-mcp-mfnvp): every uncovered line goes to the chunk ADJACENT to it
+ * — the one ending closest before it, else the one starting closest after it —
+ * that still fits `maxChunkSize` with the line appended. Adjacency keeps the
+ * host's span off every other chunk's rows. With `hostParentSymbolId` (a
+ * container's remainder), only that container's own members may host, so a
+ * nested container's member chunk never takes the outer class's `private`; an
+ * adjacent neighbour of another scope leaves that direction without a host.
+ * A line an adjacent chunk already carries as a content line (a container
+ * header prefix) is searchable through it and is not appended again. The host
+ * gains `lineRanges` for the absorbed lines, so git enrichment attributes them.
  *
- * Mutates the host chunks in place. Returns the parts no chunk could host —
- * the caller emits those as chunks of their own: a tiny chunk is noise, a lost
- * line is a search miss, and the miss is the worse failure.
+ * Mutates the host chunks in place, a part all-or-nothing. Returns the parts
+ * with a line no chunk could host — the caller emits those as chunks of their
+ * own: a tiny chunk is noise, a lost line is a search miss, and the miss is the
+ * worse failure.
  */
 export function absorbRemainderIntoNeighbourChunk(
   parts: readonly ContainerRemainderPart[],
   chunks: CodeChunk[],
   codeLines: readonly string[],
   maxChunkSize: number,
+  hostParentSymbolId?: string,
 ): ContainerRemainderPart[] {
+  const canHost = (chunk: CodeChunk): boolean =>
+    hostParentSymbolId === undefined || chunk.metadata.parentSymbolId === hostParentSymbolId;
   const unhosted: ContainerRemainderPart[] = [];
   for (const part of parts) {
-    const candidates: number[] = [];
+    const plan = new Map<CodeChunk, number[]>();
+    const appendedLength = (chunk: CodeChunk, line: number): number =>
+      [...(plan.get(chunk) ?? []), line].reduce((sum, l) => sum + 1 + codeLines[l - 1].length, chunk.content.length);
+    let hosted = true;
     for (const { start, end } of part.lineRanges) {
-      for (let line = start; line <= end; line++) {
-        if (SEARCHABLE_LINE.test(codeLines[line - 1] ?? "") && !chunks.some((chunk) => coversLine(chunk, line))) {
-          candidates.push(line);
-        }
+      for (let line = start; line <= end && hosted; line++) {
+        const text = codeLines[line - 1] ?? "";
+        if (!SEARCHABLE_LINE.test(text) || chunks.some((chunk) => coversLine(chunk, line))) continue;
+        const { preceding, following } = adjacentChunks(chunks, line);
+        if ([...preceding, ...following].some((chunk) => carriesLineText(chunk, text.trim()))) continue;
+        const host = [preceding.find(canHost), following.find(canHost)].find(
+          (chunk) => chunk !== undefined && appendedLength(chunk, line) <= maxChunkSize,
+        );
+        if (host === undefined) hosted = false;
+        else plan.set(host, [...(plan.get(host) ?? []), line]);
       }
     }
-    if (candidates.length === 0) continue;
-
-    const first = candidates[0];
-    const preceding = chunks.filter((chunk) => chunk.endLine < first).sort((a, b) => b.endLine - a.endLine);
-    const following = chunks.filter((chunk) => chunk.endLine >= first).sort((a, b) => a.startLine - b.startLine);
-    let host: CodeChunk | undefined;
-    let lines: number[] = [];
-    for (const chunk of [...preceding, ...following]) {
-      // A line the host already carries as text (a container header prefix) is
-      // searchable through it; appending it again would only move its range.
-      lines = candidates.filter((line) => !chunk.content.includes(codeLines[line - 1].trim()));
-      if (chunk.content.length + 1 + lines.map((line) => codeLines[line - 1]).join("\n").length <= maxChunkSize) {
-        host = chunk;
-        break;
-      }
-    }
-    if (!host) {
+    if (!hosted) {
       unhosted.push(part);
       continue;
     }
-    if (lines.length === 0) continue;
-    const text = lines.map((line) => codeLines[line - 1]).join("\n");
-
-    host.content = `${host.content}\n${text}`;
-    const ranges = linesToRanges([
-      ...chunkLineRanges(host).flatMap(({ start, end }) =>
-        Array.from({ length: end - start + 1 }, (_, i) => start + i),
-      ),
-      ...lines,
-    ]);
-    host.startLine = ranges[0].start;
-    host.endLine = ranges[ranges.length - 1].end;
-    if (ranges.length > 1) host.metadata.lineRanges = ranges;
-    else delete host.metadata.lineRanges;
+    for (const [host, lines] of plan) {
+      host.content = `${host.content}\n${lines.map((line) => codeLines[line - 1]).join("\n")}`;
+      const ranges = linesToRanges([
+        ...chunkLineRanges(host).flatMap(({ start, end }) =>
+          Array.from({ length: end - start + 1 }, (_, i) => start + i),
+        ),
+        ...lines,
+      ]);
+      host.startLine = ranges[0].start;
+      host.endLine = ranges[ranges.length - 1].end;
+      if (ranges.length > 1) host.metadata.lineRanges = ranges;
+      else delete host.metadata.lineRanges;
+    }
   }
   return unhosted;
 }

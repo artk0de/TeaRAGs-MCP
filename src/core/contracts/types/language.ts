@@ -571,6 +571,14 @@ export interface LanguageChunkerHooks {
    * recognized by the engine without it.
    */
   isModuleImport?: (node: AstNode) => boolean;
+  /**
+   * The header row naming a container, for a container whose node does not
+   * start where its declaration does — Ruby's `Row = Struct.new(…) do` is a
+   * `call` bound by an enclosing assignment, so the node's own first row reads
+   * `Struct.new(…) do`. Undefined → the engine's header: the node's text on the
+   * row its `name` starts on.
+   */
+  containerHeader?: (node: AstNode, code: string) => string | undefined;
 }
 
 /**

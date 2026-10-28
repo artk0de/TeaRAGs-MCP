@@ -175,6 +175,8 @@ export const capability: LanguageCapability = {
   // a lone `include`) folds into a neighbour body chunk instead of being dropped, and a
   // `def` under the child floor is declared by the body chunk holding it
   // (`memberSymbolIds` `Owner#m` / `Owner.m`); `--force --languages ruby` repopulates.
+  // Same chunking 3, bd tea-rags-mcp-mfnvp: a value-class container's member chunks are
+  // headed by its whole assignment row (`Row = Struct.new(…) do`), nested or top-level.
   versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
