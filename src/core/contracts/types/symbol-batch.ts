@@ -20,6 +20,8 @@ export interface SymbolBatchMiss {
    * An unknown PATH entry: the nearest indexed paths, as `empty.suggestions` of
    * `relativePath:` carries them. An unknown SYMBOL: the members of its
    * container when that resolves, else same-named ids, closest namespace first.
+   * An AMBIGUOUS address: its candidates as `<symbolId> (<relativePath>)`,
+   * class / module chunks first.
    */
   suggestions?: string[];
 }

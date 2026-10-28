@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
+import { filterMetaOnly } from "../../../src/core/domains/explore/post-process.js";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -121,6 +122,49 @@ describe("ExploreFacade filter delegation to registry.buildMergedFilter", () => 
         must: [{ key: "language", match: { value: "typescript" } }],
       }),
     );
+  });
+
+  // bd tea-rags-mcp-d9w4o: a ticket drill reads the matched ids off the meta-only row.
+  it("keeps the requested level's taskIds on a metaOnly taskId search row", async () => {
+    const qdrant = makeMockQdrant();
+    qdrant.search.mockResolvedValue([
+      {
+        id: "p1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          symbolId: "A#run",
+          startLine: 1,
+          endLine: 9,
+          content: "run() {}",
+          git: { file: { taskIds: ["T-1", "T-2"] }, chunk: { taskIds: ["T-1"], commitCount: 2 } },
+        },
+      },
+    ]);
+    // As production declares them: both taskIds levels are essential git keys.
+    const registry = makeMockRegistry();
+    registry.getEssentialPayloadKeys.mockReturnValue(["git.file.taskIds", "git.chunk.taskIds"]);
+    const { facade } = makeFacade({ qdrant, registry });
+    // The real metaOnly step keeps essential git keys; this file mocks it, so stand it in per call.
+    const asMetaOnly = (results: any[]) => results.map((r) => r.payload);
+    vi.mocked(filterMetaOnly)
+      .mockImplementationOnce(asMetaOnly)
+      .mockImplementationOnce(asMetaOnly)
+      .mockImplementationOnce(asMetaOnly);
+
+    const chunkLevel = await facade.semanticSearch({
+      collection: "test",
+      query: "q",
+      taskId: "T-1",
+      level: "chunk",
+      metaOnly: true,
+    });
+    const fileDefault = await facade.semanticSearch({ collection: "test", query: "q", taskId: "T-1", metaOnly: true });
+    const noTicket = await facade.semanticSearch({ collection: "test", query: "q", metaOnly: true });
+
+    expect(chunkLevel.results[0]?.payload?.git).toEqual({ chunk: { taskIds: ["T-1"] } });
+    expect(fileDefault.results[0]?.payload?.git).toEqual({ file: { taskIds: ["T-1", "T-2"] } });
+    expect(noTicket.results[0]?.payload?.git).toBeUndefined();
   });
 
   it("passes raw filter to registry.buildMergedFilter alongside typed params", async () => {

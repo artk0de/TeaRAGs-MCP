@@ -27,6 +27,12 @@ export type EmptyAnswerReason =
   | "unknownFile"
   /** `relativePath` names neither an indexed file nor a directory prefix. */
   | "unknownPath"
+  /**
+   * `relativePath` exists in the working tree but ingest leaves it out (an
+   * ignore pattern, an unindexed file type) — read it with the default code
+   * read tool; the message names the pattern when one matched.
+   */
+  | "ignoredPath"
   /** `relativePath` names a file with no symbol chunk (top-level DSL/config) — read it with the default code read tool. */
   | "noSymbols"
   /** `pathPattern` alone matches no indexed point. */

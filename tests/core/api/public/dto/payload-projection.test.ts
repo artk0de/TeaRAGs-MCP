@@ -364,6 +364,36 @@ describe("projectSearchResultPayloads — search tools' default fields (q1g6s.16
     });
   });
 
+  // bd tea-rags-mcp-d9w4o: a ticket drill sees the ids its taskId filter matched without a re-search.
+  it("keeps the filtered level's taskIds on a metaOnly row of a taskId search", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], undefined, {
+      metaOnly: true,
+      reranked: false,
+      taskIdsLevel: "chunk",
+      ...SEARCH,
+    });
+
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: LOCATOR.relativePath,
+      symbolId: LOCATOR.symbolId,
+      startLine: LOCATOR.startLine,
+      endLine: LOCATOR.endLine,
+      signature: LOCATOR.signature,
+      git: { chunk: { taskIds: ["tea-rags-mcp-b"] } },
+    });
+  });
+
+  it("keeps the file level's taskIds on a content row of a file-level taskId search", () => {
+    const outcome = projectSearchResultPayloads([makeFullHit()], undefined, {
+      metaOnly: false,
+      reranked: false,
+      taskIdsLevel: "file",
+      ...SEARCH,
+    });
+
+    expect(outcome.results[0]?.payload?.git).toEqual({ file: { taskIds: ["tea-rags-mcp-a"] } });
+  });
+
   it("narrows a content search row to DEFAULT_SEARCH_FIELDS — no navigation, chunkType, language", () => {
     const hit = makeFullHit();
     const outcome = projectSearchResultPayloads([hit], undefined, { metaOnly: false, reranked: false, ...SEARCH });

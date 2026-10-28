@@ -7,6 +7,7 @@
 import type { WorkingTreeTouchedBasePointsByPath } from "../../../../../src/core/contracts/types/working-tree.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import type {
+  UnindexedTreePath,
   WorkingTreeDenseVectors,
   WorkingTreeView,
 } from "../../../../../src/core/domains/explore/working-tree/index.js";
@@ -24,6 +25,8 @@ export interface FakeWorkingTreeViewInput {
   basePoints?: WorkingTreeTouchedBasePointsByPath;
   /** The tree's file texts by relative path, as `readTreeFile` answers them. Omit → no tree file reader wired. */
   files?: Record<string, string>;
+  /** Tree paths that exist but ingest leaves out, as `unindexedTreePath` answers them. Omit → no reader wired. */
+  unindexed?: Record<string, UnindexedTreePath>;
 }
 
 export function fakeWorkingTreeView({
@@ -34,6 +37,7 @@ export function fakeWorkingTreeView({
   dense,
   basePoints,
   files,
+  unindexed,
 }: FakeWorkingTreeViewInput): WorkingTreeView {
   const view: WorkingTreeView = {
     marker: {
@@ -53,6 +57,7 @@ export function fakeWorkingTreeView({
   if (dense) view.readDeltaVectors = async () => dense;
   if (basePoints) view.readTouchedBasePoints = async () => basePoints;
   if (files) view.readTreeFile = async (relativePath) => files[relativePath];
+  if (unindexed) view.unindexedTreePath = async (relativePath) => unindexed[relativePath];
   return view;
 }
 
