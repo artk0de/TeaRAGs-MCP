@@ -5,13 +5,18 @@
 # DENIES one call with a reason naming the tea-rags call to use.
 #
 # Per-session counters, no tea-rags call in between:
-#   3 consecutive text searches (Grep tool; shell grep / egrep / fgrep / rg / ag
-#     / ack / git grep starting a command — `<cmd> | grep` filters output and is
-#     neutral), OR
-#   3 consecutive reads of indexed code (Read tool; shell cat / sed / head / tail
-#     / less / more — membership by `tea-rags project indexed`, the same check
-#     deny-indexed-read.sh makes; a file outside the index is neutral), OR
-#   4 of them mixed
+#   3 consecutive concept searches done by text search (Grep tool; shell grep /
+#     egrep / fgrep / rg / ag / ack / git grep starting a command) — an
+#     alternation `a|b` / `a\|b` / two -e patterns. A single literal (identifier,
+#     constant, phrase), any -F search and `<cmd> | grep` over output are neutral:
+#     core routes literal and occurrence searches to the text-search tool, OR
+#   3 consecutive reads of indexed source code (Read tool; shell cat / sed / head
+#     / tail / less / more — membership by `tea-rags project indexed`; a file
+#     outside the index is neutral), OR
+#   4 of them mixed.
+# Never counted (bd tea-rags-mcp-nxg76): a read of, or a search scoped to,
+# config / DSL / routes / initializers / migrations / specs / tests / fixtures /
+# data files (`standard_zone`) — core routes those to the standard tools.
 # → DENY once, reset the counters, at most one deny per 120 s. Drift is a
 # within-turn phenomenon: a new user prompt (UserPromptSubmit on Claude / Codex,
 # beforeSubmitPrompt on Cursor — this script is wired there too) resets the
@@ -115,16 +120,41 @@ indexed_rel() { # <tea-rags project indexed args…> → relativePath of an inde
   "$BIN" project indexed "$@" --json 2>/dev/null | jq -r 'select(.indexed == true) | .relativePath // empty' 2>/dev/null
 }
 
+# Core routes these to the standard tools (bd tea-rags-mcp-nxg76): config, DSL, routes,
+# initializers, migrations, specs / tests / fixtures, data files. A read of one or a
+# search scoped to one is the routed path, never drift.
+standard_zone() { # <text: a path, or a whole command>
+  printf '%s' "$1" | grep -qE "(^|[/[:space:]'\"=])(config|spec|specs|test|tests|__tests__|fixtures|db|migrate|migrations|initializers|routes)(/|[[:space:]'\"]|$)|(_spec|_test|\.spec|\.test)\.[A-Za-z]+([[:space:]'\"]|$)|(^|/)routes\.[A-Za-z]+|\.(ya?ml|json|toml|ini|sql|rake|lock|env)([[:space:]'\"]|$)"
+}
+# A concept search done by text search: an alternation of words (`a|b`, `a\|b`, two -e
+# patterns). A single literal — an identifier, constant, phrase — is the routed occurrence
+# search and never counts; so does any -F / --fixed-strings search.
+concept_shell_search() { # <command>
+  printf '%s' "$1" | grep -qE '(^|[[:space:]])(-[A-Za-z]*F[A-Za-z]*|--fixed-strings)([[:space:]]|$)' && return 1
+  printf '%s' "$1" | grep -qF '\|' && return 0
+  printf '%s' "$1" | grep -qE "'[^']*[|][^']*'|\"[^\"]*[|][^\"]*\"" && return 0
+  printf '%s' "$1" | grep -qE '(^|[[:space:]])-e[[:space:]].*[[:space:]]-e[[:space:]]'
+}
+
+rel_text() { # <text> → the text with "$CWD/" removed, so a zone word in the checkout path never counts
+  if [ -n "$CWD" ]; then printf '%s' "${1//"$CWD"\//}"; else printf '%s' "$1"; fi
+}
+
 KIND=""
 REL=""
 case "$(field '.tool_name')" in
-  Grep) KIND=search ;;
+  Grep)
+    PATTERN=$(field '.tool_input.pattern')
+    SCOPE=$(printf '%s' "$INPUT" | jq -r '[.tool_input // {} | to_entries[] | select(.key != "pattern") | .value | strings] | join(" ")' 2>/dev/null)
+    case "$PATTERN" in *"|"*) standard_zone "$(rel_text "$SCOPE")" || KIND=search ;; esac
+    ;;
   Read)
     FILE=$(field '.tool_input.file_path // .tool_input.path // .tool_input.target_file')
     [ -n "$FILE" ] || allow
     case "$(printf '%s' "${FILE##*.}" | tr '[:upper:]' '[:lower:]')" in
       png | jpg | jpeg | gif | webp | bmp | ico | svg | pdf | zip | gz | tgz | tar | woff | woff2 | ttf | mp4 | mov | wav | mp3) allow ;;
     esac
+    standard_zone "$(rel_text "$FILE")" && allow
     case "$FILE" in /*) ;; *) [ -n "$CWD" ] || allow; FILE="$CWD/$FILE" ;; esac
     REL=$(indexed_rel --path "$FILE")
     [ -n "$REL" ] && KIND=read
@@ -146,9 +176,9 @@ case "$(field '.tool_name')" in
       REL=$(indexed_rel --command "$COMMAND" --cwd "$CWD")
     fi
     if [ -n "$REL" ]; then
-      KIND=read
+      standard_zone "$REL" || KIND=read
     elif printf '%s' "$COMMAND" | grep -qE '(^|[;&(`]|\|\||\$\()[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|sudo|command|env)[[:space:]]+)*(grep|egrep|fgrep|rg|ag|ack|git[[:space:]]+grep)([[:space:]]|$)'; then
-      KIND=search
+      concept_shell_search "$COMMAND" && ! standard_zone "$(rel_text "$COMMAND")" && KIND=search
     fi
     ;;
 esac
@@ -177,7 +207,7 @@ save 0 0 0 "$NOW" || allow
 
 TAIL="Counter reset — you may continue; this reminder fires at most once per 120 s."
 case "$TRIGGER" in
-  search) REASON="tea-rags: $SEARCHES text searches in a row, no tea-rags call. Behaviour/concept → semantic_search; a name + intent → hybrid_search(metaOnly: true); then find_symbol(symbol:) on the hit. $TAIL" ;;
+  search) REASON="tea-rags: $SEARCHES concept searches by text alternation in a row, no tea-rags call. Behaviour/concept → semantic_search; a name + intent → hybrid_search(metaOnly: true); then find_symbol(symbol:) on the hit. $TAIL" ;;
   read) REASON="tea-rags: $READS reads of indexed code in a row, no tea-rags call. Read code with find_symbol(relativePath: \"${REL:-<file>}\") or ONE find_symbol(symbols: [<ids>]); flow → get_callees / get_callers. $TAIL" ;;
   *) REASON="tea-rags: $TOTAL text searches / code reads in a row, no tea-rags call. Behaviour → semantic_search; read code → find_symbol(relativePath:) or ONE find_symbol(symbols: [<ids>]); flow → get_callees / get_callers. $TAIL" ;;
 esac

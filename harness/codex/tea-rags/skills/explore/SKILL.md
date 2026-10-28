@@ -249,7 +249,8 @@ Apply tables above, first match:
    EXPAND), even unscoped. Collect / Spread / Reference → pattern-search.
 4. PRE-GEN → [references/pre-gen-pattern.md](./references/pre-gen-pattern.md),
    calls named in the plan. PG-1 DISCOVER, first matching branch: user names a
-   file path → `find_symbol(path=<cwd>, relativePath=<file>)` outline, then
+   file path → `find_symbol(path=<cwd>, relativePath=<file>)` outline (2+ files
+   → ONE `find_symbol(symbols=[<paths>])`), then
    `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
    `hybrid_search` / `semantic_search` on it; known symbol, no file →
    `find_symbol` + `hybrid_search`; else `semantic_search`
@@ -305,10 +306,11 @@ find_similar with code as input → EXPLAIN similarities.
 ### 1. ORIENT (broad scope ONLY)
 
 **Path typed first.** The prompt names a directory or file path → call 1 =
-`find_symbol(relativePath: <that path>)` outline (adds — ORIENT / BREADTH
-follow); bodies → ONE
+`find_symbol(relativePath: <that path>)` outline; 2+ files typed → call 1 = ONE
+`find_symbol(symbols: [<the file paths>])` (their outlines) (adds — ORIENT /
+BREADTH follow); bodies → ONE
 `find_symbol(symbols: [<Class#method ids from that outline or a row>])`, never a
-file / dir path in `symbols`.
+dir path in `symbols`.
 
 **Gate by target.** System / domain / directory ("introduce me to the project",
 "full picture of X", "walk me through domain Y") → ORIENT first. Named symbol /

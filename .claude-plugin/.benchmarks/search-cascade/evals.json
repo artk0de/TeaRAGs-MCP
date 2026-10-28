@@ -434,12 +434,12 @@
       "audit_finding": "yz10n: a find_symbol(symbols:) batch used as `cat` — 88 benchmark batch entries, 52 file paths + 12 directories = 190k of 197k chars",
       "context": "Project alias `tea-rags`, cwd /work/tea-rags (its own checkout), TypeScript, codegraph on, healthy index. src/telemetry/sampling/ holds six TypeScript files (head-sampler.ts, tail-sampler.ts, rate-budget.ts, sampling-policy.ts, policy-loader.ts, index.ts), each 80–300 lines with one or two classes.",
       "prompt": "How does src/telemetry/sampling/ work? What's in that directory, and which code decides whether a span is kept?",
-      "expected": "find_symbol(relativePath: \"src/telemetry/sampling\") (directory frame) — or a file/class outline via find_symbol(relativePath: <file>) / find_symbol(symbol: <Class>) — BEFORE any batch; then ONE find_symbol(symbols: [<Class#method / function ids taken from those outline lines>]) for the members the answer needs. get_callees / get_architecture_report alongside are fine",
+      "expected": "find_symbol(relativePath: \"src/telemetry/sampling\") (directory frame) — or the files' outlines in ONE find_symbol(symbols: [<file paths from the frame>]) / find_symbol(symbol: <Class>) — BEFORE any member batch; then ONE find_symbol(symbols: [<Class#method / function ids taken from those outline lines>]) for the members the answer needs. get_callees / get_architecture_report alongside are fine",
       "not": [
-        "a find_symbol(symbols: [...]) entry that is a file path or a directory path",
+        "a directory path inside find_symbol(symbols: [...])",
         "Read / cat / ls / Glob / rg --files",
-        "one find_symbol(symbol:) call per member id",
-        "a symbols batch before any outline"
+        "one find_symbol(symbol:) or find_symbol(relativePath:) call per file or per member id",
+        "a member-id batch before any outline"
       ]
     },
     {
@@ -471,28 +471,26 @@
     },
     {
       "id": "HD1",
-      "audit_finding": "0jt47: the PreToolUse hook denies Read/cat of indexed files (ueplg); the deny reason must be followed, not routed around",
-      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed (310 lines, class Inventory::BatchLedger with #reconcile and #close_period). The agent's previous step was Read(file_path: \"/work/orchard/app/models/inventory/batch_ledger.rb\"); the tea-rags PreToolUse hook denied it with: \"app/models/inventory/batch_ledger.rb is indexed — read it with find_symbol(relativePath: \\\"app/models/inventory/batch_ledger.rb\\\") (outline; small file = full text), or find_symbol(symbols: [<the method ids you need>]) when ids are known. Read is for files outside the index.\" Plan the next steps from here.",
+      "audit_finding": "nxg76 (was 0jt47): the indexed-read deny is lifted; a source-code question about an indexed model file still reads through find_symbol",
+      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed (310 lines, class Inventory::BatchLedger with #reconcile and #close_period). No hook denies reads.",
       "prompt": "How does BatchLedger reconcile a period before closing it?",
-      "expected": "follows the deny reason: find_symbol(relativePath: \"app/models/inventory/batch_ledger.rb\") outline, then ONE find_symbol(symbols: [...]) batch carrying only the needed methods (Inventory::BatchLedger#reconcile, Inventory::BatchLedger#close_period) — or that batch directly, the ids being known from the context; answers from those bodies",
+      "expected": "find_symbol(relativePath: \"app/models/inventory/batch_ledger.rb\") outline, then ONE find_symbol(symbols: [...]) batch carrying only the needed methods (Inventory::BatchLedger#reconcile, Inventory::BatchLedger#close_period) — or that batch directly; answers from those bodies",
       "not": [
-        "retrying Read of batch_ledger.rb (any path form or offset/limit)",
-        "shell cat / sed -n / head / tail / less of the file, alone or in a compound",
+        "Read / cat / sed -n of the whole 310-line model file",
         "a default code search tool match-line dump (-n / context lines) read as the code",
         "a batch carrying every member id of the outline"
       ]
     },
     {
       "id": "HD2",
-      "audit_finding": "0jt47: a manual-read order on an indexed file — the hook still denies it; the agent says so instead of working around it",
-      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed. The tea-rags plugin's PreToolUse hook is active: it denies Read and shell cat/sed/head/tail/less of indexed files.",
+      "audit_finding": "nxg76 (was 0jt47): the indexed-read deny is lifted; a manual-read order is served by the client's file reader",
+      "context": "Project alias `orchard`, cwd /work/orchard (its own checkout), Ruby/Rails, codegraph on, healthy index. app/models/inventory/batch_ledger.rb is indexed. No hook denies reads.",
       "prompt": "Read app/models/inventory/batch_ledger.rb by hand.",
-      "expected": "tells the user the tea-rags plugin hook blocks a manual Read of indexed code (quoting or naming the deny), then reads it via find_symbol(relativePath: \"app/models/inventory/batch_ledger.rb\") (full text when small, else outline, then the needed ids); may add that the user can read it themselves or disable the hook. One Read attempt that the hook denies, followed by this, is acceptable",
+      "expected": "reads the file with the default code read tool (Claude: Read; Codex: shell sed -n '<start>,<end>p' on that one file), no confirmation question",
       "not": [
-        "shell cat / sed -n / head / tail / less / awk / python open() of the file",
-        "a second Read attempt after the deny",
-        "a default code search tool match-line dump of the file as a workaround",
-        "silently reading via find_symbol without telling the user the hook blocks the manual read"
+        "telling the user a plugin hook blocks the read",
+        "replacing the ordered read with find_symbol without the user's consent",
+        "asking for confirmation before reading"
       ]
     },
     {
@@ -653,6 +651,55 @@
         "get_callees(symbolId: \"PayoutsController#create\") (row 1)",
         "find_symbol per row",
         "a default code search tool → Read chain"
+      ]
+    },
+    {
+      "id": "BR1",
+      "audit_finding": "ednnx: 70 single-file find_symbol(relativePath:) reads in one bench, several per message; 37-50 calls saveable by one find_symbol(symbols:[<paths>]) batch",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. src/notifications/ holds invoice-mailer.ts, receipt-mailer.ts and dunning-mailer.ts (each 80-200 lines, one class each). No outline of them has been read yet.",
+      "prompt": "Compare how src/notifications/invoice-mailer.ts, src/notifications/receipt-mailer.ts and src/notifications/dunning-mailer.ts build their subject lines.",
+      "expected": "ONE find_symbol(symbols: [\"src/notifications/invoice-mailer.ts\", \"src/notifications/receipt-mailer.ts\", \"src/notifications/dunning-mailer.ts\"]) (file outlines in one call) → then ONE find_symbol(symbols: [<the subject-building method ids from those outlines>])",
+      "not": [
+        "three separate find_symbol(relativePath:) calls, one per file",
+        "Read / cat / sed -n of the three files",
+        "a directory path in the symbols batch",
+        "semantic_search for the subject lines"
+      ]
+    },
+    {
+      "id": "BR2",
+      "audit_finding": "nxg76: DSL/config/migration files answer find_symbol with ~190-char stubs or unknownPath (db/migrate unindexed): +39 read calls and 4 lost facts in the bench",
+      "context": "Project alias `shop`, cwd /work/shop (its own checkout), Ruby/Rails, codegraph on, healthy index. Migrations live under db/migrate/ (not in the index).",
+      "prompt": "Which columns does the CreateSubscriptions migration add, and what is the default of `status`?",
+      "expected": "default code search tool for the literal `CreateSubscriptions` over db/migrate/ (files first, -l) → the default code read tool (Claude: Read; Codex: shell sed -n) on that one migration file; answer from the file",
+      "not": [
+        "semantic_search / hybrid_search for the migration",
+        "find_symbol(relativePath:) or find_symbol(symbol:) of the migration",
+        "a search of the whole repo root"
+      ]
+    },
+    {
+      "id": "BR3",
+      "audit_finding": "nxg76: proving absence / completeness over a known directory — the standard directory search won Q03, Q18, Q21, Q30 in the bench",
+      "context": "Project alias `ledger`, cwd /work/ledger (its own checkout), TypeScript, codegraph on, healthy index. Feature flags are declared only in src/flags/registry.ts and config/flags/*.yml.",
+      "prompt": "Is there any feature flag that gates bulk CSV export? I need to be sure — tell me if none exists.",
+      "expected": "default code search tool over the flag declarations (src/flags/ and config/flags/), bounded (-l or a line cap), for the export words (e.g. literal `export` / `csv`, case-insensitive allowed); an empty answer is reported as the proof of absence; hits read with the default code read tool (yml) or find_symbol (registry.ts)",
+      "not": [
+        "concluding 'no such flag' from semantic_search / hybrid_search alone",
+        "a search of the whole repo root",
+        "get_callers as the absence proof"
+      ]
+    },
+    {
+      "id": "BR4",
+      "audit_finding": "nxg76 guard: after the balanced-routing rows, a concept question with no name still starts in tea-rags (bench wins Q02, Q23)",
+      "context": "Project alias `relay`, cwd /work/relay (its own checkout), TypeScript, codegraph on, healthy index. No file, class or constant has been named or seen yet.",
+      "prompt": "How does the app decide when to retry a failed webhook delivery?",
+      "expected": "semantic_search for the retry-decision behaviour (several phrasings fused in one call allowed) → the anchor row → get_callees / get_callers(symbolId: <anchor>) → ONE find_symbol(symbols: [needed ids])",
+      "not": [
+        "a default code search tool alternation of concept words (e.g. `retry|backoff|attempt`) as the discovery step",
+        "Read / cat of hit files",
+        "find_symbol(relativePath:) of a guessed directory as the first call"
       ]
     }
   ],

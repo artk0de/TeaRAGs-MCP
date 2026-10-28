@@ -577,7 +577,6 @@ describe("renderCodexHarness", () => {
         matcher: "^(Bash|shell|exec_command)$",
         hooks: [
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 },
-          { type: "command", command: `\${PLUGIN_ROOT}/scripts/deny-indexed-read.sh`, timeout: 10 },
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex`, timeout: 10 },
         ],
       },
@@ -609,20 +608,16 @@ describe("renderCodexHarness", () => {
   });
 
   // Codex T22 r3: one `cat` of three skills (50 KB) lost its middle to the ~10k-token exec-output cap; the model filled the gap.
-  // bd tea-rags-mcp-mqhlr: Codex has no Read tool — an indexed file is read through shell `sed -n` / `cat`.
-  it("ships a PreToolUse shell hook that denies reading an indexed file and points at find_symbol", async () => {
+  // bd tea-rags-mcp-nxg76: the indexed-read deny is lifted — core routes config, DSL, migrations and
+  // specs to shell reads, so no Codex hook denies a `cat` / `sed -n` of an indexed file.
+  it("ships no indexed-read deny hook", async () => {
     const rendered = await renderCodexHarness(ROOT);
-    const script = rendered.get("tea-rags/scripts/deny-indexed-read.sh") ?? "";
 
-    expect(script).toMatch(/^#!\/bin\/bash\n/);
-    expect(script).toContain('project indexed --command "$COMMAND" --cwd "$CWD" --json');
-    expect(script).toContain('find_symbol(relativePath: \\"$REL\\")');
-    expect(script).toContain("find_symbol(symbols: [<the method ids you need>])");
-    expect(script).toContain("exit 2");
-    expect(script).not.toContain("CLAUDE_");
+    expect(rendered.has("tea-rags/scripts/deny-indexed-read.sh")).toBe(false);
+    expect(rendered.get("tea-rags/hooks/hooks.json")).not.toContain("deny-indexed-read");
   });
 
-  it("the one-file-read deny names find_symbol for an indexed file, so its sed -n advice never contradicts the indexed-read deny", async () => {
+  it("the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const script = rendered.get("tea-rags/scripts/one-file-read.sh") ?? "";
 

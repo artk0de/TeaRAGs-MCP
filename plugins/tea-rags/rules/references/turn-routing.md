@@ -15,9 +15,9 @@ Single source: the generators copy the block below into each harness
 
 ```
 tea-rags routing (this turn):
-- read indexed code via find_symbol(relativePath:|symbol:), never shell cat/sed
+- source code via find_symbol; config/migrations/specs, stubs → default code read tool
 - behaviour/concept words → semantic_search
 - how it works / impact → get_callees / get_callers
-- default code search tool only locates exact text, then find_symbol
-- batch the needed ids: ONE find_symbol(symbols:[…])
+- exact text, all X in a dir, absence → default code search tool
+- ids or files needed at once: ONE find_symbol(symbols:[…])
 ```

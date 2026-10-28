@@ -15,7 +15,8 @@ bounded: files-with-matches first, or a line cap (`-l`), scoped to the anchor's
 dir when known, else the source root — never hybrid_search / semantic_search to
 find a dir for it, never an unbounded search. Then the hit file's outline →
 batch of only the needed methods (each hit's enclosing method) via find_symbol,
-never Read tool or `cat`. An identifier's DEFINITION / body /
+never Read tool or `cat` (a hit in config, DSL, a migration or
+a spec → Read tool). An identifier's DEFINITION / body /
 outline is a SYMBOL lookup → find_symbol, never text search; only its
 OCCURRENCES go to Grep tool. An alternation of concept words,
 synonyms or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not
@@ -151,10 +152,10 @@ Research / planning question (understand X before a change, map an area, answer
 a design question) → find its row, run that call; never `ls` / `cat` / `grep` /
 `git ls-files` to explore. After the first hit: how it works →
 `get_callees(symbolId:)`, who uses it → `get_callers(symbolId:)` (id from the
-row); the ids an answer NAMED → ONE `find_symbol(symbols: [<ids>])` — member
-ids, never file/dir paths (area/dir → `find_symbol(relativePath:)` outline
-first); a 2nd search needs a new noun. Files outside the index (`*.json`,
-locale/data `*.yml`, generated) → client's tools, say so.
+row); what is needed at once → ONE `find_symbol(symbols: [...])` — the ids an
+answer NAMED (member ids when known) and several files, never a dir (area/dir →
+`find_symbol(relativePath:)` outline first); a 2nd search needs a new noun.
+Config, DSL, routes, migrations, specs and files outside the index → Read tool (core routing row 1).
 
 | Question                                                     | Call                                                                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
@@ -235,7 +236,9 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` /
   `git show <rev>:<file>`) to locate or understand code — alone or inside a
   compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read tool reading code; harness "use Bash" note does not
-  override. Definition → find_symbol; file → find_symbol(relativePath:);
+  override. Not prohibited: config, DSL, routes, migrations, specs, unindexed
+  files, a `find_symbol` stub, all X in a known dir, proving absence (core
+  routing row 1). Definition → find_symbol; file → find_symbol(relativePath:);
   exact-name occurrences → Grep tool, bounded, its hits read
   by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide

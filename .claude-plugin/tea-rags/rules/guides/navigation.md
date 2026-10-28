@@ -107,15 +107,15 @@ follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
-| You have…                                         | Pass                              | You get                                                   |
-| ------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
-| Instance method                                   | `symbol: "Class#method"`          | merged full method body                                   |
-| Static method / top-level fn                      | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
-| **Class or module name**                          | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
-| Existence check only                              | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
-| Doc section (hash from a result)                  | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
-| Test scope id                                     | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
-| 2+ ids of any kind above (never file / dir paths) | `symbols: ["<id1>", "<id2>"]`     | one row per hit keyed by `request`; misses in `missing[]` |
+| You have…                                                     | Pass                              | You get                                                   |
+| ------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| Instance method                                               | `symbol: "Class#method"`          | merged full method body                                   |
+| Static method / top-level fn                                  | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
+| **Class or module name**                                      | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
+| Existence check only                                          | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
+| Doc section (hash from a result)                              | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
+| Test scope id                                                 | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
+| 2+ ids of any kind above, or several file paths (never a dir) | `symbols: ["<id1>", "<path>"]`    | one row per hit keyed by `request`; misses in `missing[]` |
 
 **Mode B — `relativePath:` (you have a file or directory path) — USE THIS
 MORE.** With no symbol, just a path. Agents under-use it; it is the correct
@@ -234,8 +234,9 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
   `find_symbol(relativePath: <hit file>)` outline → batch of only the needed
   methods (each hit's enclosing method, or the members the question is about;
   never every member of the outline) — never Read tool, never
-  `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound. Codegraph
-  on → `get_callers` (exact, graph) AND that search. Concept words, synonyms or
+  `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound (a hit in
+  config, DSL, a migration or a spec → Read tool). Codegraph on
+  → `get_callers` (exact, graph) AND that search. Concept words, synonyms or
   spellings (`<a>|<b>|<c>`) are not a name: `semantic_search`
   (`hybrid_search(metaOnly)` when real ids are among them) → anchor →
   `get_callees` / `get_callers` → ONE batch of only the needed methods.
