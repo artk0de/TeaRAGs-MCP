@@ -308,13 +308,46 @@ describe("DuckDbGraphClient — residual ops", () => {
       ]);
     });
 
-    it("a re-walked source file loses its model file edges", async () => {
+    // bd tea-rags-mcp-m7png: the model file edges belong to the residual store,
+    // so the walk's per-file diff never deletes them — that DELETE is what hit
+    // the drifted target index and invalidated taxdome's database. The next
+    // apply reconciles them against the model method edges.
+    it("a re-walked source file keeps its model file edges until the next apply reconciles them", async () => {
       await writeBilling();
       await client.applyModelEdges("kev", [EDGE]);
 
       await writeBilling();
 
+      expect(await readFileEdges()).toEqual([
+        { source_rel_path: "app/billing.rb", target_rel_path: "app/models/firm.rb", origin: "model" },
+      ]);
+
+      await client.applyModelEdges("kev", []);
+
       expect(await readFileEdges()).toEqual([]);
+    });
+
+    it("rebuilds the file edge target index after syncing the model file edges, so lookups match a scan", async () => {
+      const targetIndexOid = async (): Promise<unknown> =>
+        (
+          await client.queryAll<{ index_oid: unknown }>(
+            "SELECT index_oid FROM duckdb_indexes() WHERE index_name = 'idx_cg_symbols_edges_file_target'",
+          )
+        )[0]?.index_oid;
+      await writeBilling();
+      const before = await targetIndexOid();
+
+      await client.applyModelEdges("kev", [EDGE]);
+
+      expect(await targetIndexOid()).not.toEqual(before);
+      const lookup = await client.queryAll(
+        "SELECT source_rel_path FROM cg_symbols_edges_file WHERE target_rel_path = 'app/models/firm.rb'",
+      );
+      const scan = await client.queryAll(
+        "SELECT source_rel_path FROM cg_symbols_edges_file WHERE target_rel_path || '' = 'app/models/firm.rb'",
+      );
+      expect(lookup).toEqual(scan);
+      expect(lookup).toHaveLength(1);
     });
 
     it("an import edge the re-walk finds replaces the model file edge", async () => {

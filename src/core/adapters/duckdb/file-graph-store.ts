@@ -78,7 +78,7 @@ const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 // re-walk that changes only them rewrites the row instead of keeping the first.
 // Migration 051 (bd tea-rags-mcp-zl3so): the alias table rides the same row.
 // Migration 056: the walk writes NULL origin, so an import it finds replaces a
-// model-derived edge, and a re-walk drops the file's model-derived edges.
+// model-derived edge.
 const FILE_EDGE_VALUES = [
   "import_text",
   "imported_export_names",
@@ -86,6 +86,15 @@ const FILE_EDGE_VALUES = [
   "reexported_export_bindings",
   "origin",
 ] as const;
+/**
+ * The file edges the walk does NOT own: `DuckDbResidualEdgeStore` writes them
+ * and reconciles them on every model apply, so the walk's diff never deletes
+ * one (bd tea-rags-mcp-m7png). That DELETE ran against a target index the
+ * residual sync's churn had drifted, and DuckDB answered "Failed to delete all
+ * rows from index" by invalidating the database. A re-walk can still UPDATE
+ * one to `origin` NULL when it finds the import itself.
+ */
+const MODEL_FILE_EDGE_PREDICATE = "origin = 'model'";
 // Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
 const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
 export const METHOD_EDGE_KEYS = [
@@ -458,6 +467,7 @@ export class DuckDbFileGraphStore {
       FILE_EDGE_KEYS,
       FILE_EDGE_VALUES,
       fileEdgeRows,
+      MODEL_FILE_EDGE_PREDICATE,
     );
     await this.session.applyScopedRowDiff(
       "cg_symbols_edges_file_type_only",

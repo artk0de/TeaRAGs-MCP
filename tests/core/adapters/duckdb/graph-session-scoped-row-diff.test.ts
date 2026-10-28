@@ -79,6 +79,30 @@ describe("DuckDbGraphSession#applyScopedRowDiff", () => {
     expect(await rowsOf("a.rb")).toEqual([{ name: "keep", tags: ["x"] }]);
   });
 
+  // bd tea-rags-mcp-m7png: a row another writer owns is in scope for an UPDATE
+  // (the caller's row with the same key takes it over) but is never deleted.
+  it("never deletes a row retainedWhere matches, and still updates one the incoming rows name", async () => {
+    await session.run(
+      "INSERT INTO t VALUES ('a.rb', 'owned', ['walk']), ('a.rb', 'foreign', ['model']), ('a.rb', 'claimed', ['model'])",
+    );
+
+    const deleted = await session.applyScopedRowDiff(
+      "t",
+      "file",
+      ["a.rb"],
+      ["file", "name"],
+      ["tags"],
+      [["a.rb", "claimed", null]],
+      "list_contains(tags, 'model')",
+    );
+
+    expect(deleted).toEqual([["a.rb", "owned"]]);
+    expect(await rowsOf("a.rb")).toEqual([
+      { name: "claimed", tags: null },
+      { name: "foreign", tags: ["model"] },
+    ]);
+  });
+
   it("clearColumnByScopeValuesBatched clears the column in scope only, and an empty scope is a no-op", async () => {
     await session.run("INSERT INTO t VALUES ('a.rb', 'n', ['x']), ('b.rb', 'm', ['y'])");
     await session.clearColumnByScopeValuesBatched("t", "tags", "file", []);

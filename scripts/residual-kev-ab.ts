@@ -407,7 +407,15 @@ async function main(): Promise<void> {
 
   const session = new DuckDbGraphSession({ path: graphDb, accessMode: "READ_ONLY" });
   await session.open();
-  const rows = await new DuckDbResidualEdgeStore(session).readResidualCallSites().finally(async () => session.close());
+  // READ_ONLY: the store only reads residual sites here and never applies model
+  // edges, so the index rebuild + checkpoint it would run after a sync are unreachable.
+  const readOnlyMaintenance = {
+    rebuildEdgeFileTargetIndex: async () => Promise.resolve(),
+    checkpoint: async () => Promise.resolve(),
+  };
+  const rows = await new DuckDbResidualEdgeStore(session, readOnlyMaintenance)
+    .readResidualCallSites()
+    .finally(async () => session.close());
   const readFile = fileReader(projectRoot);
   const provider = ResidualModelProviderFactory.create("kev", { kevSessionUrl: values.broker, kevThreshold: 0.7 });
   mkdirSync(values.out, { recursive: true });
