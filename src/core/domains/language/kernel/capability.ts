@@ -100,6 +100,10 @@ export const sharedVersions: LanguageSupportVersions = {
   // Same chunking 6, bd tea-rags-mcp-30qdc: the engine composes a body chunk's
   // `declaredMethodMembers` into `memberSymbolIds`; only Ruby declares them, so
   // every other language's output is byte-identical.
+  // Same chunking 6, bd tea-rags-mcp-mpen8: a top-level statement a chunk only
+  // partly carries (a function inside a top-level `if`, an ambient
+  // `declare module` with non-chunkable members) adds its unowned rows to the
+  // module remainder instead of losing them.
   chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
