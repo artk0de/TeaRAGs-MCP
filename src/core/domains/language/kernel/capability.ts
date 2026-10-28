@@ -104,6 +104,10 @@ export const sharedVersions: LanguageSupportVersions = {
   // partly carries (a function inside a top-level `if`, an ambient
   // `declare module` with non-chunkable members) adds its unowned rows to the
   // module remainder instead of losing them.
+  // Same chunking 6, bd tea-rags-mcp-mfnvp: a below-floor remainder is hosted
+  // line by line by the ADJACENT chunk — for a container, one of its own
+  // members — so a nested container's member chunk no longer takes the outer
+  // class's `private` and its span no longer runs over the outer methods.
   chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd

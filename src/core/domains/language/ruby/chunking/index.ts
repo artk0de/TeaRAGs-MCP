@@ -30,4 +30,4 @@ export { isRakeFile, rakeFilterHook } from "./rake-filter.js";
 export { rakeScopeChunkerHook } from "./rake-scope-chunker.js";
 export { rspecFilterHook, isRspecFile } from "./rspec-filter.js";
 export { rspecScopeChunkerHook, buildScopeTree, produceScopeChunks } from "./rspec-scope-chunker.js";
-export { valueClassContainerName, valueClassFilterHook } from "./value-class-container.js";
+export { valueClassContainerHeader, valueClassContainerName, valueClassFilterHook } from "./value-class-container.js";

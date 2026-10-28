@@ -2,7 +2,7 @@
   "*": {
     "chunking": {
       "version": 6,
-      "digest": "sha256:4e7980db735ee23595a2f07d268afcbf11d3d323f0776cb5618795dad51723bd"
+      "digest": "sha256:51344271c270f344745c6fecd88651fcbfbe956b1f6c5b88de88cb7256e91cc8"
     },
     "walker": {
       "version": 8,
@@ -60,11 +60,11 @@
   "ruby": {
     "chunking": {
       "version": 3,
-      "digest": "sha256:c89d65342d0f46e272c9bed377729f23a0331d9fd94d56965d3fc5d78cff55fc"
+      "digest": "sha256:e1ded1dc58aa609b028d1bb5bdf90f53ca4ea3e97412c8af989b0e49d5119285"
     },
     "walker": {
       "version": 11,
-      "digest": "sha256:3415ff015ac789c58c5556b7d4d26ed2447546017aa77516e12d6c3f0d1b2d31"
+      "digest": "sha256:d79631cbbeb519da1cf61894d24024aab123689482c66fca76618a803b38a7f8"
     }
   },
   "rust": {

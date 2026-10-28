@@ -105,6 +105,8 @@ export interface LanguageConfig {
   readImportSpecifiers?: (root: AstNode) => string[];
   /** `LanguageChunkerHooks.isModuleImport`, threaded the same way. */
   isModuleImport?: (node: AstNode) => boolean;
+  /** `LanguageChunkerHooks.containerHeader`, threaded the same way. */
+  containerHeader?: (node: AstNode, code: string) => string | undefined;
 }
 
 /**

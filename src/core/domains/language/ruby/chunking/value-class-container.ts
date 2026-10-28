@@ -42,6 +42,16 @@ export function valueClassContainerName(node: AstNode): string | undefined {
   return target && CONSTANT_TARGET_TYPES.has(target.type) ? target.text : undefined;
 }
 
+/**
+ * The header row of a value-class container — its whole assignment row
+ * (`Row = Struct.new(:a) do`), not the builder call's own text from `Struct`
+ * on (bd tea-rags-mcp-mfnvp) — or undefined for any other node.
+ */
+export function valueClassContainerHeader(node: AstNode, code: string): string | undefined {
+  if (valueClassContainerName(node) === undefined) return undefined;
+  return code.split("\n")[node.startPosition.row]?.trim();
+}
+
 /** The block body of a value-class container — the statements a `class` body would hold. */
 export function valueClassContainerBody(node: AstNode): AstNode | null {
   if (valueClassContainerName(node) === undefined) return null;

@@ -457,6 +457,7 @@ export class TreeSitterChunker implements CodeChunker {
         classifier: hooks.classifier,
         readImportSpecifiers: hooks.readImportSpecifiers,
         isModuleImport: hooks.isModuleImport,
+        containerHeader: hooks.containerHeader,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -855,7 +856,7 @@ export class TreeSitterChunker implements CodeChunker {
     );
 
     if (validChildren.length > 0) {
-      const containerHeader = this.extractContainerHeader(node, code);
+      const containerHeader = this.extractContainerHeader(node, code, langConfig);
       // Every body chunk is emitted as `${containerHeader}\n${content}` below,
       // so the hook's budget is told about that prefix (bd tea-rags-mcp-pi1cl).
       const ctx = createHookContext(
@@ -919,6 +920,7 @@ export class TreeSitterChunker implements CodeChunker {
             parentType,
             chunkType: this.getChunkType(node.type),
           },
+          containerHeader,
           [],
           filePath,
           language,
@@ -1348,7 +1350,9 @@ export class TreeSitterChunker implements CodeChunker {
    * Extract the opening line of a container node (e.g., "RSpec.describe User do").
    * Used to build hierarchy context for nested chunks.
    */
-  private extractContainerHeader(node: AstNode, code: string): string {
+  private extractContainerHeader(node: AstNode, code: string, langConfig: LanguageConfig): string {
+    const declared = langConfig.containerHeader?.(node, code);
+    if (declared !== undefined) return declared;
     const lines = code.substring(node.startIndex, node.endIndex).split("\n");
     return lines[this.containerHeaderRow(node) - node.startPosition.row].trim();
   }
@@ -1583,7 +1587,7 @@ export class TreeSitterChunker implements CodeChunker {
   ): Promise<void> {
     const { langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
     const childName = this.extractName(childNode, code, langConfig.nameExtractor);
-    const childHeader = this.extractContainerHeader(childNode, code);
+    const childHeader = this.extractContainerHeader(childNode, code, langConfig);
     // The prefix every body chunk of this container is emitted under (below),
     // reserved in the hook's budget (bd tea-rags-mcp-pi1cl).
     const bodyChunkPrefix =
@@ -1689,6 +1693,7 @@ export class TreeSitterChunker implements CodeChunker {
         parentType,
         chunkType: this.getChunkType(childNode.type),
       },
+      childHeader,
       hierarchyHeaders,
       filePath,
       language,
@@ -2016,6 +2021,7 @@ export class TreeSitterChunker implements CodeChunker {
     validChildren: AstNode[],
     ctx: HookContext,
     identity: ContainerRemainderIdentity,
+    containerHeader: string,
     hierarchyHeaders: string[],
     filePath: string,
     language: string,
@@ -2036,12 +2042,13 @@ export class TreeSitterChunker implements CodeChunker {
         leadingStartRow,
         containerEndRow: containerNode.endPosition.row,
         coveredRows,
-        containerHeader: this.extractContainerHeader(containerNode, ctx.code),
+        containerHeader,
         containerHeaderRow: this.containerHeaderRow(containerNode),
         hierarchyPrefix: this.buildHierarchyPrefix(hierarchyHeaders),
         maxChunkSize: this.config.maxChunkSize,
       },
       chunks,
+      identity.symbolId,
     );
 
     chunks.push(
@@ -2092,17 +2099,25 @@ export class TreeSitterChunker implements CodeChunker {
    * text (bd tea-rags-mcp-6xdwe): a remainder at or above the floor is planned
    * as before; one below it is folded into the nearest chunk of `chunks`
    * (mutated in place) and only the parts no chunk can host come back, to be
-   * emitted as chunks of their own.
+   * emitted as chunks of their own. `containerSymbolId` scopes the hosts to
+   * that container's own members (bd tea-rags-mcp-mfnvp).
    */
   private planRemainderKeepingText(
     input: Omit<ContainerRemainderInput, "minContentLength">,
     chunks: CodeChunk[],
+    containerSymbolId?: string,
   ): ContainerRemainderPart[] {
     const parts = planContainerRemainder({ ...input, minContentLength: 50 });
     if (parts.length > 0) return parts;
     const belowFloor = planContainerRemainder({ ...input, minContentLength: 1 });
     if (belowFloor.length === 0) return [];
-    return absorbRemainderIntoNeighbourChunk(belowFloor, chunks, input.codeLines, this.config.maxChunkSize);
+    return absorbRemainderIntoNeighbourChunk(
+      belowFloor,
+      chunks,
+      input.codeLines,
+      this.config.maxChunkSize,
+      containerSymbolId,
+    );
   }
 
   /**

@@ -45,7 +45,13 @@ import type {
   TypeRef,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
-import { isRubyModuleImport, RubyChunkClassifier, rubyHooks, valueClassContainerName } from "./chunking/index.js";
+import {
+  isRubyModuleImport,
+  RubyChunkClassifier,
+  rubyHooks,
+  valueClassContainerHeader,
+  valueClassContainerName,
+} from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueFor } from "./dsl/index.js";
 import { RUBY_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST } from "./gemfile.js";
@@ -97,6 +103,8 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   },
   hooks: rubyHooks,
   isModuleImport: isRubyModuleImport,
+  // `Row = Struct.new(…) do` is headed by its whole assignment row (bd tea-rags-mcp-mfnvp).
+  containerHeader: valueClassContainerHeader,
   // Names a top-level Rake task by its Rake name (bd tea-rags-mcp-k0602).
   classifier: new RubyChunkClassifier(),
   // Class-body DSL macros are represented in chunks by category grouping
