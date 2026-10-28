@@ -25,11 +25,12 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
 Indexed code is never READ with shell sed -n '<start>,<end>p' <one file>, shell
-`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. Shell rg -l only
-LOCATES exact text — `-l` first or a line cap, in the anchor's dir when known,
-else the source root, never the repo root or a search for the dir. No find/Glob
-to locate code. Shell / shell sed -n '<start>,<end>p' <one file> only for files
-outside the index (`*.json`, locale/data `*.yml`) — say so.
+`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. Shell rg -l
+--hidden --glob '!.git' only LOCATES exact text — `-l` first or a line cap, in
+the anchor's dir when known, else the source root, never the repo root or a
+search for the dir. No find/Glob to locate code. Shell / shell sed -n
+'<start>,<end>p' <one file> only for files outside the index (`*.json`,
+locale/data `*.yml`) — say so.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
@@ -51,8 +52,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell rg
-  -l, not tea-rags; phrase/error string → plan these three lines, never stop at
-  the hit: `shell rg -l "<phrase>" <dir> (literal, line cap)` →
+  -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these
+  three lines, never stop at the hit:
+  `shell rg -l --hidden --glob '!.git' "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
@@ -65,8 +67,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → shell rg -l `"<X>" <src dir>` (literal, `-l`) → `find_symbol`
-  outline → batch of only the needed methods, never stop at the hit
+  "grep for X" → shell rg -l --hidden --glob '!.git' `"<X>" <src dir>` (literal,
+  `-l`) → `find_symbol` outline → batch of only the needed methods, never stop
+  at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
@@ -130,10 +133,10 @@ diff's → `review_changes` verdicts, nothing after.
   changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped (a
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
-  `3. shell rg -l "<name>" (literal)` — callers the index lacks. No graph retry.
-  Graph tools absent from your tool list → codegraph off: callers = usages row,
-  never "no cycles"; present → on, no probe call; on + empty `find_cycles` =
-  DAG.
+  `3. shell rg -l --hidden --glob '!.git' "<name>" (literal)` — callers the
+  index lacks. No graph retry. Graph tools absent from your tool list →
+  codegraph off: callers = usages row, never "no cycles"; present → on, no probe
+  call; on + empty `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` (status/index/empty Rust graph answer) → tell user
@@ -178,5 +181,5 @@ invalid in a plan — open it first.
 the next step still serves the user's request (search / `$explore` over the code
 they asked about). Graph answer with `changedFiles` > 0 and no `codegraph` floor
 → edges touching changed files are the index's: re-check changed-file callers
-via `find_symbol`, find missing ones via shell rg -l (literal) — never a bare
-retry of the graph call.
+via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'
+(literal) — never a bare retry of the graph call.

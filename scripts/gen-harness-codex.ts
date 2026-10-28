@@ -62,7 +62,7 @@ const CODEX_DIALECT: HarnessDialect = {
   // bd tea-rags-mcp-onli7: rg ships inside Codex (`@openai/codex-<platform>/vendor/<triple>/codex-path/rg`,
   // on its shell PATH since codex-cli 0.162.1). `grep -rl` ignores .gitignore: a whole-repo run walked
   // node_modules/build/.git and never completed in the read-only sandbox (live D3 Q3, 2/3 runs).
-  codeSearchTool: "shell rg -l",
+  codeSearchTool: "shell rg -l --hidden --glob '!.git'",
   // One file per command — `one-file-read.sh` (ONE_FILE_READ_SCRIPT) enforces it.
   codeReadTool: "shell sed -n '<start>,<end>p' <one file>",
 };

@@ -2,5 +2,5 @@ tea-rags routing (this turn):
 - read indexed code via find_symbol(relativePath:|symbol:), never shell cat/sed
 - behaviour/concept words → semantic_search
 - how it works / impact → get_callees / get_callers
-- shell rg -l only locates exact text, then find_symbol
+- shell rg -l --hidden --glob '!.git' only locates exact text, then find_symbol
 - batch the needed ids: ONE find_symbol(symbols:[…])

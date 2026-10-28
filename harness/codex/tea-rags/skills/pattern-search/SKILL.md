@@ -16,8 +16,8 @@ codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 
 1. **Execute YOURSELF** — no subagents.
 2. **CRITICAL: `tea-rags://guide/decision-tree` is ONLY tool selection method.**
-   Built-in Search, Glob, shell rg -l, `find` PROHIBITED for code discovery.
-   Catch yourself reaching for grep/search — STOP, use
+   Built-in Search, Glob, shell rg -l --hidden --glob '!.git', `find` PROHIBITED
+   for code discovery. Catch yourself reaching for grep/search — STOP, use
    `tea-rags://guide/decision-tree` decision tree. ONLY acceptable fallback:
    text search, only after TeaRAGs tools returned no results, and only for
    literal text (markers, phrases, regex). Identifiers (class/method/constant)

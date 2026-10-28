@@ -15,5 +15,5 @@ command in this turn is invalid in a plan — open it first.
 the next step still serves the user's request (search / `$explore` over the
 code they asked about). Graph answer with `changedFiles` > 0 and no
 `codegraph` floor → edges touching changed files are the index's: re-check
-changed-file callers via `find_symbol`, find missing ones via shell rg -l
+changed-file callers via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'
 (literal) — never a bare retry of the graph call.

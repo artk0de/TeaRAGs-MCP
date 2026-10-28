@@ -48,7 +48,7 @@ for H in claude codex; do
 done
 
 TXT="$ROOT/harness/codex/tea-rags/scripts/turn-routing.txt"
-[ -s "$TXT" ] && ! grep -q 'default code search tool' "$TXT" && grep -qF 'shell rg -l' "$TXT"
+[ -s "$TXT" ] && ! grep -q 'default code search tool' "$TXT" && grep -qF "shell rg -l --hidden --glob '!.git'" "$TXT"
 note $? "codex: turn-routing.txt is generated in the Codex dialect (shell rg -l)"
 # bd tea-rags-mcp-onli7: the Claude Code package names its own search tool, not the role.
 run claude '{"hook_event_name":"UserPromptSubmit","session_id":"s1"}' "$ROOT/.claude-plugin/tea-rags/scripts/turn-routing.sh"

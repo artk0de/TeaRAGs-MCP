@@ -201,9 +201,11 @@ describe("toCodexSkill", () => {
     const text = toCodexSkill(CODE_SEARCH_SOURCE, { skillNames: KNOWN });
     const read = "shell sed -n '<start>,<end>p' <one file>";
 
-    expect(text).toContain("TODO markers → shell rg -l, never tea-rags.");
-    expect(text).toContain('Print `shell rg -l "<phrase>" (literal) → find_symbol`.');
-    expect(text).toContain("Wrapped: shell rg -l (not a tea-rags tool).");
+    const search = "shell rg -l --hidden --glob '!.git'";
+
+    expect(text).toContain(`TODO markers → ${search}, never tea-rags.`);
+    expect(text).toContain(`Print \`${search} "<phrase>" (literal) → find_symbol\`.`);
+    expect(text).toContain(`Wrapped: ${search} (not a tea-rags tool).`);
     expect(text).toContain(`Never read with ${read} or\n  ${read} again.`);
     expect(text).toContain("- **Shell sed -n '<start>,<end>p' <one file> after a hit** — no.");
     expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/i);
@@ -502,7 +504,7 @@ describe("renderCodexHarness", () => {
   it("Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
-    expect(codexRules).toContain("find missing ones via shell rg -l");
+    expect(codexRules).toContain("find missing ones via shell rg -l --hidden --glob '!.git'");
     expect(codexRules).not.toContain("`hybrid_search` metaOnly");
   });
 
