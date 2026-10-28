@@ -18,6 +18,13 @@ export interface CodeToolNames {
    */
   codeSearchTool: string;
   /**
+   * Set when `codeSearchTool` is a shell command line (Codex `shell rg -l …`): "default code search tool
+   * `"<X>" <dir>`" folds into ONE literal `` `<codeSearchTool> "<X>" <dir>` ``. With the command outside
+   * the span Codex composed rg itself and aimed it at the cwd, the repo root (bd tea-rags-mcp-5xbfc).
+   * Tool-call clients (Grep tool) leave it unset.
+   */
+  foldsSearchLiteral?: boolean;
+  /**
    * The client's own file reader, named where sources say "default code read tool": Claude Code /
    * Cursor `Read tool`, Codex `shell sed -n '<start>,<end>p' <one file>` (one file per command, enforced
    * by its `one-file-read.sh` hook).
@@ -212,9 +219,18 @@ function withCaseOf(match: string, name: string): string {
  * package runs only this rule; its sources are already in the Claude Code dialect otherwise.
  */
 export function nameCodeTools(md: string, tools: CodeToolNames): string {
-  return md
+  return foldSearchLiterals(md, tools)
     .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+search\s+tool\b/g, (match) => withCaseOf(match, tools.codeSearchTool))
     .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+read\s+tool\b/g, (match) => withCaseOf(match, tools.codeReadTool));
+}
+
+/** "default code search tool `"<X>" <dir>`" → `` `<codeSearchTool> "<X>" <dir>` `` when the dialect folds it. */
+function foldSearchLiterals(md: string, tools: CodeToolNames): string {
+  if (tools.foldsSearchLiteral !== true) return md;
+  return md.replace(
+    /\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+search\s+tool\s+`("<[^`>]+>"\s+<[^`>]+>)`/g,
+    (_match, literal: string) => `\`${tools.codeSearchTool} ${literal}\``,
+  );
 }
 
 /** Name a dinopowers wrapper ships under outside Claude Code, clear of the superpowers skill it wraps. */

@@ -211,6 +211,19 @@ describe("toCodexSkill", () => {
     expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/i);
   });
 
+  // bd tea-rags-mcp-5xbfc: the mapping sat OUTSIDE the `"<X>" <src dir>` span, so Codex composed rg itself and
+  // aimed it at the cwd (repo root) — one copyable literal keeps the dir slot in the planned line.
+  it("folds the default code search tool and its following pattern + dir span into one copyable rg literal", () => {
+    const text = toCodexSkill(
+      '# Usages\n\nWhere X is used → default code search tool `"<X>" <src dir>` (literal, `-l`) → find_symbol.\n' +
+        'Every call → The default code search tool\n`"<X>" <dir>` (literal).\n',
+      { skillNames: KNOWN, name: "usages" },
+    );
+
+    expect(text).toContain("Where X is used → `shell rg -l --hidden --glob '!.git' \"<X>\" <src dir>` (literal, `-l`)");
+    expect(text).toContain("Every call → `shell rg -l --hidden --glob '!.git' \"<X>\" <dir>` (literal).");
+  });
+
   it("falls back to the folder name and a body-derived description", () => {
     const bare = toCodexSkill("---\nuser-invocable: false\n---\n\n# Scan\n\nInternal scan step. More.\n", {
       skillNames: KNOWN,
@@ -489,6 +502,14 @@ describe("renderCodexHarness", () => {
       const prose = path.endsWith("/core.txt") || path.endsWith("/codex-rules.txt");
       expect(content.length, path).toBeLessThanOrEqual(prose ? CODEX_CORE_HOOK_BUDGET : CODEX_HOOK_CONTEXT_BUDGET);
     }
+  });
+
+  // bd tea-rags-mcp-kk5xe: a bare `list_mcp_resources` lists EVERY server (codex_apps alone 44k of 51k chars).
+  it("core's guide-read line reads the known URI on the tea-rags server, never a bare resource listing", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    expect(core).toContain('`read_mcp_resource(server: "tea-rags", uri: "tea-rags://guide/<topic>")`');
+    expect(core).toContain('never a bare `list_mcp_resources` (list only with `server: "tea-rags"`)');
   });
 
   it("the skill and AGENTS copies still carry the whole Codex core: rules + Codex-only rules in one text", async () => {
