@@ -15,10 +15,11 @@ import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/clien
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
 import { WORKING_TREE_GRAPH_WAIT_MS } from "../../../../../src/core/api/internal/infra/working-tree-graph-read.js";
 import { TracePathOps } from "../../../../../src/core/api/internal/ops/trace-path-ops.js";
-import type {
-  WorkingTreeGraphReader,
-  WorkingTreeGraphState,
-  WorkingTreeMarker,
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphState,
+  type WorkingTreeMarker,
 } from "../../../../../src/core/contracts/types/working-tree.js";
 import type { WorkingTreeView } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import { buildWorkingTreeGraph } from "../../../../../src/core/domains/trajectory/codegraph/working-tree/tree-graph-build.js";
@@ -134,19 +135,20 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
   const built = (): WorkingTreeGraphState => ({ kind: "built", dbPath: treeDbPath, physicalCollectionName: PHYSICAL });
 
   /** A view of the fixture's delta whose tree graph answers `state`; `null` → a clean tree. */
-  const overlayAnswering = (state: WorkingTreeGraphState | null) => {
+  const overlayAnswering = (state: WorkingTreeGraphState | null, extra: Partial<WorkingTreeView> = {}) => {
     const readTreeGraph = vi.fn<WorkingTreeGraphReader>(async () => state as WorkingTreeGraphState);
     const view = (): WorkingTreeView => ({
       marker: marker(state ? CHANGED.length : 0),
       touchedPaths: new Set(state ? CHANGED : []),
       deletedPaths: new Set(),
       ...(state ? { readTreeGraph } : {}),
+      ...extra,
     });
     return { overlay: { view: vi.fn(async () => view()) }, readTreeGraph };
   };
 
-  const facadeWith = (state: WorkingTreeGraphState | null) => {
-    const { overlay, readTreeGraph } = overlayAnswering(state);
+  const facadeWith = (state: WorkingTreeGraphState | null, extra: Partial<WorkingTreeView> = {}) => {
+    const { overlay, readTreeGraph } = overlayAnswering(state, extra);
     const graphPool = pool();
     const facade = new GraphFacade({
       pool: graphPool as never,
@@ -166,8 +168,7 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       expect(response.callers.map((c) => `${c.sourceRelPath}#${c.sourceSymbolId}`)).toContain("src/a.ts#run");
       expect(response.workingTree?.floors).toEqual(["codegraph"]);
       expect(response.workingTree?.treeGraphUnavailable).toBeUndefined();
-      // D11b: a graph tool waits the build budget plus a margin, so its first
-      // caller hears the build's own outcome rather than "building".
+      // 07b9w: a graph tool waits the search budget, never the build budget.
       expect(readTreeGraph).toHaveBeenCalledWith(WORKING_TREE_GRAPH_WAIT_MS);
     });
 
@@ -262,6 +263,61 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
       expect(graphPool.acquireFileReader).not.toHaveBeenCalled();
     });
 
+    it("waits at most the search budget, clamped to the view's remaining answer budget (07b9w)", async () => {
+      const unclamped = facadeWith({ kind: "unavailable", reason: "building" });
+      await unclamped.facade.getCallers({ collection: "code_x", symbolId: "y" });
+      expect(unclamped.readTreeGraph).toHaveBeenCalledWith(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+
+      const clamped = facadeWith({ kind: "unavailable", reason: "building" }, { remainingWaitMs: () => 1_200 });
+      await clamped.facade.getCallers({ collection: "code_x", symbolId: "y" });
+      expect(clamped.readTreeGraph).toHaveBeenCalledWith(1_200);
+    });
+
+    it("marks index edges in files the tree changed with treeState; untouched edges stay unmarked (07b9w)", async () => {
+      const { facade } = facadeWith({ kind: "unavailable", reason: "building" });
+
+      const callersOfX = await facade.getCallers({ collection: "code_x", symbolId: "x" });
+      expect(callersOfX.callers).toContainEqual(
+        expect.objectContaining({ sourceSymbolId: "run", sourceRelPath: "src/a.ts", treeState: "modified" }),
+      );
+
+      const callersOfQ = await facade.getCallers({ collection: "code_x", symbolId: "q" });
+      const p = callersOfQ.callers.find((c) => c.sourceSymbolId === "p");
+      expect(p).toBeDefined();
+      expect(p).not.toHaveProperty("treeState");
+
+      const calleesOfRun = await facade.getCallees({ collection: "code_x", symbolId: "run" });
+      const x = calleesOfRun.callees.find((c) => c.targetSymbolId === "x");
+      expect(x).toBeDefined();
+      expect(x).not.toHaveProperty("treeState");
+    });
+
+    it("says when the queried symbol's own file is in the delta (07b9w)", async () => {
+      const deltaChunks = async () => [
+        { id: "q1", payload: { relativePath: "src/q.ts", symbolId: "q" } },
+        { id: "r1", payload: { relativePath: "src/a.ts", symbolId: "run" } },
+      ];
+      const { facade } = facadeWith({ kind: "unavailable", reason: "building" }, { readDeltaChunks: deltaChunks });
+
+      const callersOfQ = await facade.getCallers({ collection: "code_x", symbolId: "q" });
+      expect(callersOfQ).toMatchObject({ queriedTreeState: "modified" });
+
+      const callersOfX = await facade.getCallers({ collection: "code_x", symbolId: "x" });
+      expect(callersOfX).not.toHaveProperty("queriedTreeState");
+    });
+
+    it("a symbol only the tree defines answers treeOnly, never unknownSymbol (07b9w)", async () => {
+      const deltaChunks = async () => [{ id: "z1", payload: { relativePath: "src/a.ts", symbolId: "onlyInTree" } }];
+      const { facade } = facadeWith({ kind: "unavailable", reason: "building" }, { readDeltaChunks: deltaChunks });
+
+      const callers = await facade.getCallers({ collection: "code_x", symbolId: "onlyInTree" });
+      expect(callers.empty?.reason).toBe("treeOnly");
+      expect(callers.empty?.message).toMatch(/building/);
+
+      const absent = await facade.getCallees({ collection: "code_x", symbolId: "nowhere" });
+      expect(absent.empty?.reason).toBe("unknownSymbol");
+    });
+
     it("readTreeSymbolLineRanges answers null, never the base graph's ranges of a changed file", async () => {
       const { facade, graphPool } = facadeWith({ kind: "unavailable", reason: "building" });
 
@@ -289,6 +345,25 @@ describe("graph tools over the tree graph (WTO-7)", { timeout: 120_000 }, () => 
 
       expect(response.paths).toEqual([]);
       expect(response.workingTree?.treeGraphUnavailable).toBe("codegraph is disabled");
+    });
+
+    it("trace_path marks steps in files the tree changed (07b9w)", async () => {
+      const { overlay } = overlayAnswering({ kind: "unavailable", reason: "building" });
+      const ops = new TracePathOps({
+        pool: pool() as never,
+        qdrant: { scrollBySymbolIds: vi.fn(async () => []) },
+        reranker: {} as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async () => PHYSICAL,
+        workingTreeOverlay: overlay,
+      });
+
+      const response = await ops.tracePath({ collection: "code_x", from: "run", to: "x" });
+
+      const steps = response.paths[0]?.steps ?? [];
+      expect(steps.map((s) => s.symbolId)).toEqual(["run", "x"]);
+      expect(steps[0]).toMatchObject({ relativePath: "src/a.ts", treeState: "modified" });
+      expect(steps[1]).not.toHaveProperty("treeState");
     });
   });
 

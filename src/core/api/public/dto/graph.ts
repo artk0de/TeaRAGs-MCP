@@ -18,7 +18,7 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
-import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
+import type { WorkingTreeMarker, WorkingTreeState } from "../../../contracts/types/working-tree.js";
 
 export interface GetCallersRequest {
   /** Project alias from the collection registry — RECOMMENDED. */
@@ -63,7 +63,7 @@ export interface DeclaredVisibilityField {
 }
 
 /** One caller; `visibility` is the CALLER symbol's own. */
-export interface CallerResult extends DeclaredVisibilityField {
+export interface CallerResult extends DeclaredVisibilityField, GraphRowTreeStateField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
@@ -81,7 +81,7 @@ export interface CallerResult extends DeclaredVisibilityField {
  * materialized edge — the over-cap fan-out was persisted as one aggregate
  * row instead of m edges.
  */
-export interface AmbiguousCallerResult {
+export interface AmbiguousCallerResult extends GraphRowTreeStateField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
@@ -125,7 +125,7 @@ export interface GraphPageTruncationField {
  * back-reference to a symbol listed earlier, not expanded again; `external` =
  * the expanded node's call sites pinned to no in-project symbol.
  */
-export interface CallTreeRow {
+export interface CallTreeRow extends GraphRowTreeStateField {
   depth: number;
   parent: SymbolId;
   symbolId: SymbolId;
@@ -141,7 +141,7 @@ export interface CallTreeRow {
 
 /** `get_callers` / `get_callees` with `depth > 1`: the reverse / forward call tree of `symbolId`. */
 export interface SymbolCallTreeResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
   tree: CallTreeRow[];
   /** get_callees: the queried symbol's own call sites pinned to no in-project symbol. Absent when none. */
   unresolved?: number;
@@ -163,7 +163,7 @@ export interface WorkingTreeMarkerField {
  * One file on the other end of a file edge (bd tea-rags-mcp-gfvr8): an importer
  * for `get_callers`, an imported file for `get_callees`.
  */
-export interface FileImportResult {
+export interface FileImportResult extends GraphRowTreeStateField {
   relativePath: RelPath;
   /** The import text the walker recorded; null on a row that carries none. */
   importText: string | null;
@@ -179,7 +179,7 @@ export interface FileImportResult {
   origin?: "model";
 }
 
-interface FileScopeResponseBase extends EmptyAnswerField, GraphPageTruncationField {
+interface FileScopeResponseBase extends EmptyAnswerField, GraphPageTruncationField, QueriedTreeStateField {
   /** The file the request named, normalised (a leading `./` stripped). */
   relativePath: RelPath;
   /** Edge count before `limit` was applied. */
@@ -215,10 +215,30 @@ export interface ResolvedSymbolIdField {
 }
 
 /**
+ * A graph row read from the INDEX's graph for a tree whose own graph was
+ * unavailable (bd tea-rags-mcp-07b9w): `treeState` when the row's file is one
+ * the tree changed — the edge may be stale — with the search rows' vocabulary.
+ * Absent = the edge is exact for the tree.
+ */
+export interface GraphRowTreeStateField {
+  treeState?: WorkingTreeState;
+}
+
+/**
+ * Same condition as {@link GraphRowTreeStateField}, for the QUERIED symbol or
+ * file itself: its own file is in the tree's delta, so the index's edges of it
+ * may be stale. Absent otherwise.
+ */
+export interface QueriedTreeStateField {
+  queriedTreeState?: WorkingTreeState;
+}
+
+/**
  * Why a graph answer is empty (agent turn economy N6) — `unknownSymbol` (no
  * node under either separator; `suggestions` = ids defined under the short
  * name), `noEdges` (node present, no edges; a lower bound when its language's
- * resolve rate is low), `unknownFile`. Absent on every non-empty answer and on
+ * resolve rate is low), `unknownFile`, `treeOnly` (defined only in the tree,
+ * whose graph was unavailable). Absent on every non-empty answer and on
  * a collection with no graph database.
  */
 export interface EmptyAnswerField {
@@ -237,7 +257,7 @@ export interface GraphNoticesField {
 }
 
 export interface SymbolCallersResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -278,7 +298,7 @@ export interface GetCalleesRequest {
 }
 
 /** One callee; `visibility` is the TARGET symbol's own (never set on a file-only edge). */
-export interface CalleeResult extends DeclaredVisibilityField {
+export interface CalleeResult extends DeclaredVisibilityField, GraphRowTreeStateField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
@@ -293,7 +313,7 @@ export interface CalleeResult extends DeclaredVisibilityField {
 }
 
 export interface SymbolCalleesResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField {
+  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
   /** Callees with a resolved target symbol only. */
   callees: CalleeResult[];
   /** Call sites the resolver pinned to no target symbol; they are not `callees` rows. Absent when none. */
@@ -346,7 +366,7 @@ export interface CycleResult {
   modelEdgeCount?: number;
 }
 
-export interface CycleMemberLocation {
+export interface CycleMemberLocation extends GraphRowTreeStateField {
   symbolId: SymbolId;
   relativePath: RelPath;
 }
@@ -394,7 +414,7 @@ export interface TracePathRequest {
   maxPaths?: number;
 }
 
-export interface PathStep extends DeclaredVisibilityField {
+export interface PathStep extends DeclaredVisibilityField, GraphRowTreeStateField {
   /** Class#method (instance) / Class.method (static) / functionName. */
   symbolId: SymbolId;
   relativePath: RelPath;

@@ -73,6 +73,7 @@ export {
   WorkingTreeTouchedBasePoints,
   WorkingTreeWatcher,
   WorkingTreeChangeClock,
+  workingTreeStateOf,
 } from "./working-tree/index.js";
 export type {
   WorkingTreeChunkerPool,

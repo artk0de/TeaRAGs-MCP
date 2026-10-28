@@ -42,8 +42,9 @@
  * `waitMs` and is told `building` past it while the build continues (the next
  * call joins the same promise) — unless the build's outcome arrived in the very
  * turn the wait lapsed, which is then the answer; a finished failure is
- * remembered per key for `failureBackoffMs`, so a tree the build cannot handle
- * does not fork a child per request. Every outcome but `built` is a product
+ * remembered per key for `failureBackoffMs` — a child out of its time or heap
+ * budget until the delta changes — so a tree the build cannot handle does not
+ * fork a child per request. Every outcome but `built` is a product
  * answer — the reader degrades to the base graph — so `graphFor` never rejects.
  *
  * Retention runs after every publish (for that tree's graphs and that
@@ -99,7 +100,10 @@ import { physicalCollectionNamesListedByStorage, resolvePhysicalCollection } fro
 /** The reason a caller gets when its wait lapsed and the build is still running. */
 export const WORKING_TREE_GRAPH_BUILDING_REASON = "building";
 
-/** How long a finished failure answers for its key before the build is tried again. */
+/**
+ * How long a finished failure answers for its key before the build is tried
+ * again. A build out of its time or heap budget is not retried for the same delta.
+ */
 export const WORKING_TREE_GRAPH_FAILURE_BACKOFF_MS = 60_000;
 
 /** Default wall-clock budget of one tree build (spec: graph tools wait up to 120 s). */
@@ -336,7 +340,24 @@ interface WorkingTreeGraphInflightBuild {
 /** One build attempt's end: published, or failed — and whether its snapshot vanished under it. */
 type WorkingTreeGraphAttempt =
   | { kind: "published"; state: WorkingTreeGraphState }
-  | { kind: "failed"; state: WorkingTreeGraphState; snapshotVanished: boolean };
+  | {
+      kind: "failed";
+      state: WorkingTreeGraphState;
+      snapshotVanished: boolean;
+      /** The child ran out of its time or heap budget: the same delta would again (bd tea-rags-mcp-07b9w). */
+      budgetExhausted: boolean;
+    };
+
+/**
+ * A remembered failure of one key. `until` is `Infinity` for a budget-exhausted
+ * build — the key holds the delta's digest, so the next edit asks again;
+ * `treeRoot` lets a newer such failure of the tree retire the older one.
+ */
+interface WorkingTreeGraphFailure {
+  state: WorkingTreeGraphState;
+  until: number;
+  treeRoot: string;
+}
 
 /** One published tree graph, as retention sees it. */
 interface PublishedTreeGraph {
@@ -366,7 +387,7 @@ const unavailable = (reason: string): WorkingTreeGraphState => ({ kind: "unavail
 
 export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   private readonly inflight = new Map<string, WorkingTreeGraphInflightBuild>();
-  private readonly failures = new Map<string, { state: WorkingTreeGraphState; until: number }>();
+  private readonly failures = new Map<string, WorkingTreeGraphFailure>();
   private readonly snapshotExports = new Map<string, Promise<void>>();
   /** Snapshots a running build of THIS process reads — never removed under it. */
   private readonly snapshotsInUse = new Map<string, number>();
@@ -643,10 +664,10 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
   ): Promise<WorkingTreeGraphState> {
     const first = await this.buildAndPublish(job, entry);
     if (first.kind === "published") return first.state;
-    if (!first.snapshotVanished) return this.remember(job.key, first.state);
+    if (!first.snapshotVanished) return this.remember(job, first);
 
     const baseVersion = await baseGraphVersion(job.runtime.pool.pathFor(job.physical));
-    if (!baseVersion) return this.remember(job.key, unavailable(`base codegraph for ${job.physical} vanished`));
+    if (!baseVersion) return this.remember(job, { state: unavailable(`base codegraph for ${job.physical} vanished`) });
     const retry: WorkingTreeGraphJob = {
       ...job,
       baseVersion,
@@ -656,8 +677,8 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     if (joined) return joined.promise;
     const second = await this.buildAndPublish(retry, entry);
     if (second.kind === "published") return second.state;
-    if (retry.key !== job.key) this.remember(retry.key, second.state);
-    return this.remember(job.key, second.state);
+    if (retry.key !== job.key) this.remember(retry, second);
+    return this.remember(job, second);
   }
 
   /**
@@ -687,10 +708,11 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     );
     let snapshotPath: string | undefined;
     let seedDbPath: string | undefined;
-    const failed = (state: WorkingTreeGraphState): WorkingTreeGraphAttempt => ({
+    const failed = (state: WorkingTreeGraphState, budgetExhausted = false): WorkingTreeGraphAttempt => ({
       kind: "failed",
       state,
       snapshotVanished: snapshotPath !== undefined && !existsSync(snapshotPath),
+      budgetExhausted,
     });
     entry.outcomeArrived = false;
     this.trackStaging(staging);
@@ -737,7 +759,10 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
         } finally {
           entry.outcomeArrived = true;
         }
-        if (outcome.kind !== "built") return failed(unavailable(buildFailureReason(outcome)));
+        if (outcome.kind !== "built") {
+          const budgetExhausted = outcome.kind !== "failed";
+          return failed(unavailable(buildFailureReason(outcome)), budgetExhausted);
+        }
         const { graph } = outcome;
         const origin = graph.seeded ? "from the tree's previous graph" : "from the base";
         const rejection = graph.seedRejection ? ` seedRejected="${graph.seedRejection}"` : "";
@@ -914,9 +939,26 @@ export class WorkingTreeGraphCache implements WorkingTreeGraphSource {
     else this.seedsInUse.delete(dbPath);
   }
 
-  private remember(key: string, state: WorkingTreeGraphState): WorkingTreeGraphState {
-    this.failures.set(key, { state, until: this.now() + this.failureBackoffMs });
-    return state;
+  /**
+   * Remember a finished failure of `job`'s key: for `failureBackoffMs`, or —
+   * a child that ran out of its time or heap budget — until the delta changes
+   * (the key holds its digest), so a delta the child cannot finish never forks
+   * it again per backoff (bd tea-rags-mcp-07b9w). Only the tree's newest such
+   * failure is kept; an older digest's cannot answer again.
+   */
+  private remember(
+    job: WorkingTreeGraphJob,
+    attempt: { state: WorkingTreeGraphState; budgetExhausted?: boolean },
+  ): WorkingTreeGraphState {
+    const treeRoot = job.request.tree.root;
+    if (attempt.budgetExhausted) {
+      for (const [key, failure] of this.failures) {
+        if (failure.treeRoot === treeRoot && failure.until === Infinity) this.failures.delete(key);
+      }
+    }
+    const until = attempt.budgetExhausted ? Infinity : this.now() + this.failureBackoffMs;
+    this.failures.set(job.key, { state: attempt.state, until, treeRoot });
+    return attempt.state;
   }
 
   /**

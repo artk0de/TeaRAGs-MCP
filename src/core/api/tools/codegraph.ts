@@ -70,7 +70,8 @@ const EMPTY_GRAPH_ANSWER_CONTRACT =
   "other form answered, named in resolvedSymbolId. " +
   "Empty answer carries empty {reason, message, suggestions?}: unknownSymbol (no node; suggestions = ids " +
   "with same short name), testChunk (id is an indexed test chunk; tests are not graph nodes), noEdges (node, no edges; message flags lower bound when language resolve rate < 0.9), " +
-  "unknownFile.";
+  "unknownFile, treeOnly (only in your tree, its graph not ready: find_symbol). " +
+  "treeGraphUnavailable → rows whose file your tree changed carry treeState; queriedTreeState = the queried one's.";
 
 /** Lower-bound notices shared by get_callers / get_callees / trace_path / find_cycles (bd tea-rags-mcp-nknkg.1). */
 const GRAPH_NOTICES_CONTRACT =

@@ -45,3 +45,18 @@ describe("get_callees / get_callers — deterministic column order", () => {
     expect(one.columns).toEqual(other.columns);
   });
 });
+
+describe("get_callers — working-tree marks on the wire (07b9w)", () => {
+  it("an index edge in a changed file carries treeState; an exact edge reads null", async () => {
+    const callers = await callTool("get_callers", {
+      callers: [
+        { sourceSymbolId: "run", sourceRelPath: "src/a.ts", callExpression: "x()", treeState: "modified" },
+        { sourceSymbolId: "p", sourceRelPath: "src/p.ts", callExpression: "x()" },
+      ],
+    });
+
+    const column = callers.columns.indexOf("treeState");
+    expect(column).toBeGreaterThanOrEqual(0);
+    expect(callers.rows.map((row) => row[column])).toEqual(["modified", null]);
+  });
+});

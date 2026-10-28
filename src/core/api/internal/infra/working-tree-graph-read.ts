@@ -4,34 +4,31 @@
  * `TracePathOps` share, kept out of both per facade discipline.
  *
  * A view whose delta is non-empty carries `readTreeGraph`. The read waits for
- * the tree graph up to {@link WORKING_TREE_GRAPH_WAIT_MS}; `built` → the SAME
- * read function runs against the tree's published file, attached READ_ONLY;
- * `unavailable` → the caller reads the base graph and the marker names why. A
- * clean or degraded view, or no view, never asks.
+ * the tree graph up to {@link WORKING_TREE_GRAPH_WAIT_MS}, clamped to what is
+ * left of the view's answer budget; `built` → the SAME read function runs
+ * against the tree's published file, attached READ_ONLY; `unavailable` → the
+ * caller reads the base graph, the marker names why, and the build keeps
+ * running for a later call (bd tea-rags-mcp-07b9w). A clean or degraded view,
+ * or no view, never asks.
  *
  * A built graph that cannot be opened is a failure, not a fallback: the base
  * graph answers for a different commit, and saying so silently is exactly what
  * the base path refuses (`GraphFacade#readGraph`, bd tea-rags-mcp-kn2cb).
  */
 import type { CollectionGraphHandle } from "../../../adapters/duckdb/pool.js";
-import type { WorkingTreeGraphReader, WorkingTreeGraphState } from "../../../contracts/types/working-tree.js";
-import { WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS } from "./working-tree-graph-cache.js";
-
-/**
- * How far a graph tool's wait outlasts the build budget. The budget is counted
- * from the child's fork, after the base snapshot is exported, and its kill
- * still has to be reaped and reported; a wait equal to the budget lapsed just
- * before that and answered `building` for a build that had in fact run out.
- */
-export const WORKING_TREE_GRAPH_WAIT_MARGIN_MS = 10_000;
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeGraphReader,
+  type WorkingTreeGraphState,
+} from "../../../contracts/types/working-tree.js";
 
 /**
  * How long a graph tool waits for the tree graph before answering from the
- * base: the build budget (spec: 120 s) plus {@link WORKING_TREE_GRAPH_WAIT_MARGIN_MS},
- * so a build that runs out of budget is reported with its reason, not as
- * still building.
+ * base: the search answers' wait (bd tea-rags-mcp-07b9w). A build that outlasts
+ * it keeps running and serves a later call; waiting out the build budget
+ * (120 s) blocked every graph call behind a delta the child could not finish.
  */
-export const WORKING_TREE_GRAPH_WAIT_MS = WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS + WORKING_TREE_GRAPH_WAIT_MARGIN_MS;
+export const WORKING_TREE_GRAPH_WAIT_MS = WORKING_TREE_SEARCH_GRAPH_WAIT_MS;
 
 /** The pool surface the tree graph is opened through. */
 export interface WorkingTreeGraphFileOpener {
@@ -47,13 +44,20 @@ export type WorkingTreeGraphHandleSelection =
   | { kind: "tree"; handle: CollectionGraphHandle; state: WorkingTreeGraphState }
   | { kind: "base"; state?: WorkingTreeGraphState };
 
-/** Wait for the tree graph and open it, or say the base graph answers. */
+/**
+ * Wait for the tree graph and open it, or say the base graph answers. The wait
+ * is {@link WORKING_TREE_GRAPH_WAIT_MS}, clamped to `remainingWaitMs` — the
+ * view's answer budget — when given.
+ */
 export async function selectWorkingTreeGraphHandle(
   readTreeGraph: WorkingTreeGraphReader | undefined,
   opener: WorkingTreeGraphFileOpener,
+  remainingWaitMs?: () => number,
 ): Promise<WorkingTreeGraphHandleSelection> {
   if (!readTreeGraph) return { kind: "base" };
-  const state = await readTreeGraph(WORKING_TREE_GRAPH_WAIT_MS);
+  const state = await readTreeGraph(
+    Math.min(WORKING_TREE_GRAPH_WAIT_MS, remainingWaitMs?.() ?? WORKING_TREE_GRAPH_WAIT_MS),
+  );
   if (state.kind !== "built") return { kind: "base", state };
   return { kind: "tree", handle: await opener.acquireFileReader(state.dbPath), state };
 }
@@ -63,8 +67,9 @@ export async function readWorkingTreeGraph<T>(
   readTreeGraph: WorkingTreeGraphReader | undefined,
   opener: WorkingTreeGraphFileOpener,
   fn: (handle: CollectionGraphHandle) => Promise<T>,
+  remainingWaitMs?: () => number,
 ): Promise<{ kind: "tree"; value: T; state: WorkingTreeGraphState } | { kind: "base"; state?: WorkingTreeGraphState }> {
-  const selection = await selectWorkingTreeGraphHandle(readTreeGraph, opener);
+  const selection = await selectWorkingTreeGraphHandle(readTreeGraph, opener, remainingWaitMs);
   if (selection.kind === "base") return selection;
   try {
     return { kind: "tree", value: await fn(selection.handle), state: selection.state };
