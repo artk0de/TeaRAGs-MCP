@@ -35,6 +35,10 @@
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/turn-routing.sh\" --harness cursor",
         "timeout": 5
+      },
+      {
+        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness cursor",
+        "timeout": 5
       }
     ],
     "postToolUse": [

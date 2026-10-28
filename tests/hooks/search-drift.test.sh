@@ -10,7 +10,9 @@
 # Per-session counters: DENY once after 3 consecutive text searches, 3 reads of
 # indexed code, or 4 mixed, with no tea-rags call between; at most one deny per
 # 120 s; a deny resets the counters; edits are neutral; every error fails open
-# (Cursor: fail-open prints {"permission":"allow"}).
+# (Cursor: fail-open prints {"permission":"allow"}). A new user prompt
+# (UserPromptSubmit / beforeSubmitPrompt) resets the counters and keeps the deny
+# cooldown: drift is a within-turn phenomenon.
 set -u
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PASS=0; FAIL=0
@@ -101,6 +103,12 @@ tearags() { # <h> <sid>: a successful tea-rags MCP call
     *) jq -cn --arg s "$2" '{hook_event_name:"PostToolUse",session_id:$s,cwd:"/repo",tool_name:"mcp__tea-rags__find_symbol",tool_input:{},tool_response:{}}' ;;
   esac
 }
+prompt() { # <h> <sid>: a new user prompt
+  case "$1" in
+    cursor) jq -cn --arg s "$2" '{hook_event_name:"beforeSubmitPrompt",conversation_id:$s,prompt:"next",workspace_roots:["/repo"]}' ;;
+    *) jq -cn --arg s "$2" '{hook_event_name:"UserPromptSubmit",session_id:$s,cwd:"/repo",prompt:"next"}' ;;
+  esac
+}
 fresh() { rm -rf "$STATE"; mkdir -p "$STATE"; NOW=1000000; }
 
 for H in claude codex cursor; do
@@ -171,6 +179,32 @@ for H in claude codex cursor; do
   rm -f "$BLOCKED"
 done
 
+# A new user prompt is a fresh routing decision: it resets the counters, keeps the deny cooldown.
+for H in claude codex cursor; do
+  [ -f "$(hook_of "$H")" ] || continue
+  fresh
+  run "$H" "$(pre "$H" t1 grep foo)"; run "$H" "$(pre "$H" t1 grep foo)"
+  run "$H" "$(prompt "$H" t1)"
+  case "$H" in cursor) [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.continue // empty' 2>/dev/null)" = true ] ;; *) [ "$CODE" = 0 ] && [ -z "$OUT" ] ;; esac
+  note $? "$H: prompt event passes through ($H shape)"
+  run "$H" "$(pre "$H" t1 grep foo)"; run "$H" "$(pre "$H" t1 grep foo)"; allowed "$H"; note $? "$H: 2 searches, new prompt, 2 searches -> no deny"
+  run "$H" "$(pre "$H" t1 grep foo)"; denied "$H"; note $? "$H: 3 searches within one turn still denied"
+
+  fresh
+  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep foo)"; done
+  denied "$H"; note $? "$H: setup deny"
+  run "$H" "$(prompt "$H" t2)"
+  NOW=$((NOW + 30))
+  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep foo)"; done
+  allowed "$H"; note $? "$H: deny, new prompt, 3 searches within 120 s -> no second deny (cooldown kept)"
+
+  fresh
+  run "$H" "$(prompt "$H" t3)"
+  [ ! -e "$STATE/drift-$H-t3" ]; note $? "$H: prompt without prior state creates no state"
+  run "$H" '{"hook_event_name":"UserPromptSubmit"}'
+  [ "$CODE" = 0 ]; note $? "$H: prompt without session id fails open"
+done
+
 # Wiring: each harness registers the counting and the resetting event.
 PJ="$ROOT/plugins/tea-rags/.claude-plugin/plugin.json"
 jq -e '.hooks.PreToolUse[] | select(.matcher | test("Grep")) | .hooks[] | select(.command | test("search-drift.sh --harness claude"))' "$PJ" >/dev/null
@@ -189,6 +223,12 @@ jq -e '.hooks.preToolUse[] | select(.matcher | test("Grep")) | select(.command |
 note $? "cursor: preToolUse wires search-drift"
 jq -e '.hooks.afterMCPExecution[] | select(.command | test("search-drift.sh\"? --harness cursor"))' "$UJ" >/dev/null
 note $? "cursor: afterMCPExecution wires search-drift"
+jq -e '.hooks.UserPromptSubmit[].hooks[] | select(.command | test("search-drift.sh --harness claude"))' "$PJ" >/dev/null
+note $? "claude: UserPromptSubmit wires search-drift (turn reset)"
+jq -e '.hooks.UserPromptSubmit[].hooks[] | select(.command | test("search-drift.sh --harness codex"))' "$CJ" >/dev/null
+note $? "codex: UserPromptSubmit wires search-drift (turn reset)"
+jq -e '.hooks.beforeSubmitPrompt[] | select(.command | test("search-drift.sh\"? --harness cursor"))' "$UJ" >/dev/null
+note $? "cursor: beforeSubmitPrompt wires search-drift (turn reset)"
 cmp -s "$ROOT/plugins/tea-rags/scripts/search-drift.sh" "$(hook_of codex)" && cmp -s "$ROOT/plugins/tea-rags/scripts/search-drift.sh" "$(hook_of cursor)"
 note $? "one script: Codex and Cursor ship the plugin's search-drift.sh byte-identical"
 

@@ -12,7 +12,10 @@
 #     / less / more — membership by `tea-rags project indexed`, the same check
 #     deny-indexed-read.sh makes; a file outside the index is neutral), OR
 #   4 of them mixed
-# → DENY once, reset the counters, at most one deny per 120 s. A successful
+# → DENY once, reset the counters, at most one deny per 120 s. Drift is a
+# within-turn phenomenon: a new user prompt (UserPromptSubmit on Claude / Codex,
+# beforeSubmitPrompt on Cursor — this script is wired there too) resets the
+# counters and keeps the deny timestamp, so the cooldown survives turns. A successful
 # tea-rags MCP call resets the counters. Edits, writes and every other tool are
 # neutral: neither counted nor reset.
 #
@@ -85,6 +88,14 @@ case "$EVENT" in
     [ "$FAILED" = true ] && pass
     [ -f "$STATE" ] && save 0 0 0 "$LAST_DENY"
     pass
+    ;;
+  userpromptsubmit | beforesubmitprompt)
+    # A new user prompt is a fresh routing decision: drift is a within-turn
+    # phenomenon, so the counters reset and only the deny cooldown survives.
+    [ -f "$STATE" ] && save 0 0 0 "$LAST_DENY"
+    # Cursor's beforeSubmitPrompt takes {"continue":true}; the others take no output.
+    [ "$HARNESS" = cursor ] && echo '{"continue":true}'
+    exit 0
     ;;
   pretooluse) ;;
   *) allow ;;

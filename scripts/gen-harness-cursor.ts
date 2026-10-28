@@ -643,7 +643,11 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
         afterShellExecution: [{ command: hookCommand("after-shell-execution.sh"), timeout: 120 }],
         // bd tea-rags-mcp-nknkg.2: beforeSubmitPrompt has no context channel, so it arms the turn and
         // the turn's first postToolUse delivers the routing lines as additional_context.
-        beforeSubmitPrompt: [{ command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 }],
+        // search-drift.sh resets its per-turn counters on the same prompt event (drift is within-turn).
+        beforeSubmitPrompt: [
+          { command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 },
+          { command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 5 },
+        ],
         postToolUse: [{ command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 }],
         preToolUse: [
           { matcher: "Shell|Read|Grep", command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 10 },
