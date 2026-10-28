@@ -1,6 +1,6 @@
 # Search Guide — Parameter Examples
 
-Routing: tea-rags://guide/core + tea-rags://guide/decision-tree. Here: concrete param
+Routing: tea-rags://guide/core + tea-rags://guide/tool-choice. Here: concrete param
 examples per tool.
 
 ## search_code Examples

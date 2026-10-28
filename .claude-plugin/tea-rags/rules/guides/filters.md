@@ -57,3 +57,15 @@ Catalog (gated by registered trajectories):
 - **require codegraph:** `hubs`, `deadCandidates`, `unstableCore`
 
 **Inventory vs query rule:** hard specific presets (panicZone, abandonedHotspots, …) suit query-absent inventory scans (empty result = valid answer); query-driven triage → rank broadly, no hard specific filter (keeps recall). Hygiene presets (production/coreLogic) safe in any mode; they are rerank-preset defaults (when that default applies: `filter` param description).
+
+## pathPattern
+
+Universal formatting constraint (picomatch, exact match on project-relative `relativePath`). Recipes (negation, dominant-domain exclusion) → `/tea-rags:filter-building`.
+
+- GOOD: `src/auth/**` (a path the user names from the project root — use it as-is, no `**/` prefix)
+- GOOD: `**/enrichment/**` (a directory NAME whose depth is unknown)
+- GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from results)
+- GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
+- GOOD: `!**/test/**` (picomatch negation — exclude a directory subtree)
+- BAD: `{file1.rb,file2.rb}`, `services/**` for a bare name (no `**/` → root only; fine when the user named that root-relative path)
+- BAD: `/Users/me/project/src/**` (absolute path — never matches)

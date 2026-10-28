@@ -37,7 +37,7 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 2. **Git signals ONLY from overlay** — never `git log` / `git blame`. Diff
    acquisition (Phase 1) = sanctioned exception: review INPUT, not signals.
 3. **No built-in Search/Grep** — tea-rags tools per
-   `tea-rags://guide/decision-tree`.
+   `tea-rags://guide/tool-choice`.
 4. **Evidence filter is hard.** Every finding rests on signal value or concrete
    code (symbol, line, sibling pattern). Can't cite → drop in Phase 4, never
    soften into speculative "maybe consider…" nit. Evidence = INTERNAL gate;

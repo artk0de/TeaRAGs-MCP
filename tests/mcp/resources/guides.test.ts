@@ -65,23 +65,30 @@ describe("tea-rags://guide/* resources", () => {
   // guide/architecture + guide/review add two listed rows (the answer-reading
   // prose that left two tool descriptions); the per-collection flood this cap
   // guards against stays excluded below.
-  it("lists at most 21 resources and templates together, no per-collection entry", async () => {
+  // INVARIANT CHANGE (bd tea-rags-mcp-lqyop): 21 → 25. decision-tree (32.5k
+  // chars, read whole for one routing answer) split into four topic guides
+  // (tool-choice, skill-choice, research-questions, prohibited-patterns) plus
+  // a short index; four listed rows buy a ~26k-char cut per guide read.
+  it("lists at most 25 resources and templates together, no per-collection entry", async () => {
     const s = await connect();
     const resources = await s.listResources();
     const templates = await s.listResourceTemplates();
-    expect(resources.length + templates.length).toBeLessThanOrEqual(21);
+    expect(resources.length + templates.length).toBeLessThanOrEqual(25);
     expect(resources.filter((r) => r.uri.startsWith("qdrant://collection/"))).toEqual([]);
   });
 
   // bd tea-rags-mcp-kk5xe: a harness that lists resources keeps the listing in
   // context and re-sends it on every later model call, so the listing (not the
   // bodies) carries a size budget. Measured 4,565 chars when pinned.
-  it("keeps resources/list + resources/templates/list under 5,000 chars, one line per entry", async () => {
+  // INVARIANT CHANGE (bd tea-rags-mcp-lqyop): 5,000 → 5,500. The four
+  // decision-tree topic guides list at 5,443 chars (+878); one avoided
+  // whole-decision-tree read (32.5k chars) pays for ~37 re-sends of the rows.
+  it("keeps resources/list + resources/templates/list under 5,500 chars, one line per entry", async () => {
     const s = await connect();
     const resources = await s.listResources();
     const templates = await s.listResourceTemplates();
     const chars = JSON.stringify({ resources }).length + JSON.stringify({ resourceTemplates: templates }).length;
-    expect(chars).toBeLessThanOrEqual(5000);
+    expect(chars).toBeLessThanOrEqual(5500);
     for (const entry of [...resources, ...templates]) {
       expect(entry.description ?? "", entry.name).not.toContain("\n");
       expect((entry.description ?? "").length, entry.name).toBeLessThanOrEqual(240);
@@ -100,6 +107,21 @@ describe("tea-rags://guide/* resources", () => {
     const s = await connect();
     for (const topic of ["navigation", "decision-tree", "freshness", "degraded"]) {
       expect(await textOf(s, `tea-rags://guide/${topic}`)).toMatch(/^# /);
+    }
+  });
+
+  // bd tea-rags-mcp-lqyop: decision-tree is a short index; each question class
+  // has its own guide, and the index names every one of them.
+  it("serves decision-tree as a short index naming the routing topic guides", async () => {
+    const s = await connect();
+    const topics = ["tool-choice", "skill-choice", "research-questions", "prohibited-patterns"];
+    const index = await textOf(s, "tea-rags://guide/decision-tree");
+    expect(index.length).toBeLessThanOrEqual(3000);
+    for (const topic of topics) {
+      expect(index, topic).toContain(`tea-rags://guide/${topic}`);
+      const guide = await textOf(s, `tea-rags://guide/${topic}`);
+      expect(guide, topic).toMatch(/^# /);
+      expect(guide.length, topic).toBeLessThanOrEqual(6500);
     }
   });
 

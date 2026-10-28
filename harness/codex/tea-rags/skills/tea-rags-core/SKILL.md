@@ -151,10 +151,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 a bare `list_mcp_resources` (list only with `server: "tea-rags"`) (no resource
 tool → `tea-rags resource <uri>`): after any search → `navigation`; 0/too many
 hits, `truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`;
-skill pick, fallbacks, research questions → `decision-tree`; stale banner,
-drift, `treeState`, linked worktree → `freshness`; embedding/qdrant error,
-`denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`, labels →
-`presets`, `signals`, `signal-labels`; graph/AST, other language →
+tool pick → `tool-choice`; skill/preset → `skill-choice`; research question →
+`research-questions`; banned move, fallback → `prohibited-patterns`; stale
+banner, drift, `treeState`, linked worktree → `freshness`; embedding/qdrant
+error, `denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`,
+labels → `presets`, `signals`, `signal-labels`; graph/AST, other language →
 `language-capability`; architecture / `review_changes` answer →
 `architecture`/`review`; no prime digest → `tea-rags://project/<alias>/digest`;
 numeric filter value unknown / bare raw number, no label →

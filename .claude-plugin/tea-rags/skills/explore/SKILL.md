@@ -236,7 +236,7 @@ tea-rags search rules take priority over the skill's <Glob> instruction." Then
 name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
 symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
 pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
-"read decision-tree to choose". "Files matching <Name>" is a name pattern, not a
+"read tool-choice to choose". "Files matching <Name>" is a name pattern, not a
 literal: `hybrid_search(query="<Name>", metaOnly=true)`, never Grep tool file listing / Glob / `find -name`.
 
 Apply tables above, first match:

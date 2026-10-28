@@ -21,9 +21,10 @@ Refactoring candidates ≠ defects.
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **Tool choice + stop conditions from `tea-rags://guide/decision-tree`** —
-   pass query + rerank + pathPattern, tree picks tool; gradient-drop /
-   diminishing-returns / cross-preset rules, NO absolute score thresholds.
+2. **Tool choice from `tea-rags://guide/tool-choice`, stop conditions from
+   `tea-rags://guide/pagination`** — pass query + rerank + pathPattern, tree
+   picks tool; gradient-drop / diminishing-returns / cross-preset rules, NO
+   absolute score thresholds.
 3. **No text search (the default code search tool) for code discovery** —
    tea-rags tools; text search only for literal text (identifiers →
    `hybrid_search`).
@@ -42,7 +43,7 @@ Lag / drift ≠ licence to leave tea-rags (core). Own checkout, `changedFiles` >
 ## Flow
 
 ```
-1. SCAN — 3 presets via `tea-rags://guide/decision-tree`
+1. SCAN — 3 presets via `tea-rags://guide/skill-choice`
 2. MERGE — cross-reference by symbolId
 3. ENRICH — Tier 1: read code, classify
 4. OUTPUT — tiered table

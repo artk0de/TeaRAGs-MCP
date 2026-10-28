@@ -327,7 +327,7 @@ not replaces.
 
 **Follow-up searches in cycle** (callers, definition, where X happens — also
 asked as "which tools, how do you state the choice"): pick tool from
-`tea-rags://guide/decision-tree` — not ad-hoc `semantic_search`. ONE line per
+`tea-rags://guide/tool-choice` — not ad-hoc `semantic_search`. ONE line per
 call, printed in the answer right before it — N calls → N lines, also for a
 `find_symbol` on a symbol whose name the user gave, also in a plan with no call
 run. Several known symbols' bodies = ONE `find_symbol(symbols=[<ids>])` call,
