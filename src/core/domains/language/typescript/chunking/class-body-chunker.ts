@@ -21,7 +21,12 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
+import {
+  bodyChunkContentBudget,
+  type BodyChunkResult,
+  type ChunkingHook,
+  type HookContext,
+} from "../../../../contracts/types/chunker.js";
 import { classifyMethod, isStaticMethodNode, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { foldSubFloorGroups } from "../../kernel/index.js";
 import { findClassBody } from "./utils.js";
@@ -111,6 +116,12 @@ function hasModifier(node: AstNode, modifier: string): boolean {
 interface NodeGroup {
   type: GroupType;
   nodes: AstNode[];
+  /**
+   * The 0-based rows this group writes, set only on a piece cut from a node
+   * too large for the budget; absent, the rows are each node's own plus its
+   * leading comments (`groupRows`).
+   */
+  rows?: number[];
 }
 
 /**
@@ -167,15 +178,18 @@ function groupAdjacentNodes(
 // ── Class header extraction ───────────────────────────────────────
 
 /**
- * Extract the class declaration header line for context injection.
- * Returns "export class Foo extends Bar {" or undefined.
+ * Extract the class declaration header for context injection: "export class
+ * Foo extends Bar {", or undefined. A header whose heritage or type parameters
+ * run over several rows keeps every row through the body's opening brace —
+ * `extends` / `implements` on rows of their own were in no chunk (bd
+ * tea-rags-mcp-gkvvo).
  */
-function extractClassHeader(containerNode: AstNode, codeLines: string[]): string | undefined {
-  const firstLine = codeLines[containerNode.startPosition.row];
-  if (firstLine && /^\s*(export\s+)?(abstract\s+)?class\s+/.test(firstLine)) {
-    return firstLine.trim();
-  }
-  return undefined;
+function extractClassHeader(containerNode: AstNode, classBody: AstNode, codeLines: string[]): string | undefined {
+  const startRow = containerNode.startPosition.row;
+  const firstLine = codeLines[startRow];
+  if (!firstLine || !/^\s*(export\s+)?(abstract\s+)?class\s+/.test(firstLine)) return undefined;
+  const continuation = codeLines.slice(startRow + 1, classBody.startPosition.row + 1).map((line) => line.trimEnd());
+  return [firstLine.trim(), ...continuation].join("\n");
 }
 
 // ── Body chunk extraction ─────────────────────────────────────────
@@ -189,6 +203,11 @@ function collectPrecedingComments(node: AstNode, excludedRows: Set<number>): Ast
   let sibling = node.previousNamedSibling;
 
   while (sibling?.type === "comment") {
+    // A comment trailing the previous member on its own row is that member's
+    // row, not a leading comment of this one: claiming it here wrote the row
+    // twice (bd tea-rags-mcp-gkvvo).
+    const before = sibling.previousNamedSibling;
+    if (before && before.type !== "comment" && before.endPosition.row === sibling.startPosition.row) break;
     if (!excludedRows.has(sibling.startPosition.row)) {
       commentNodes.unshift(sibling);
     }
@@ -198,15 +217,26 @@ function collectPrecedingComments(node: AstNode, excludedRows: Set<number>): Ast
   return commentNodes;
 }
 
-/**
- * Append all rows covered by a node to the rows array, and corresponding
- * source lines to the contentLines array.
- */
-function appendNodeContent(node: AstNode, codeLines: string[], contentLines: string[], allRows: number[]): void {
-  for (let { row } = node.startPosition; row <= node.endPosition.row; row++) {
-    contentLines.push(codeLines[row]);
-    allRows.push(row);
+/** 0-based rows of a node and its leading comments, in source order. */
+function nodeRows(node: AstNode, excludedRows: Set<number>): number[] {
+  const rows: number[] = [];
+  for (const unit of [...collectPrecedingComments(node, excludedRows), node]) {
+    for (let { row } = unit.startPosition; row <= unit.endPosition.row; row++) rows.push(row);
   }
+  return rows;
+}
+
+/** 0-based rows a group writes, in source order. */
+function groupRows(group: NodeGroup, excludedRows: Set<number>): number[] {
+  return group.rows ?? group.nodes.flatMap((node) => nodeRows(node, excludedRows));
+}
+
+/** The text a group writes for `rows`, as the chunk content carries it. */
+function rowsText(rows: number[], codeLines: string[]): string {
+  return rows
+    .map((row) => codeLines[row])
+    .join("\n")
+    .trim();
 }
 
 /**
@@ -220,19 +250,8 @@ function extractGroupContent(
 ): { content: string; startLine: number; endLine: number; lineRanges: { start: number; end: number }[] } | null {
   if (group.nodes.length === 0) return null;
 
-  const contentLines: string[] = [];
-  const allRows: number[] = [];
-
-  for (const node of group.nodes) {
-    // Include preceding comments for this node
-    const comments = collectPrecedingComments(node, excludedRows);
-    for (const c of comments) {
-      appendNodeContent(c, codeLines, contentLines, allRows);
-    }
-
-    // Include the node itself
-    appendNodeContent(node, codeLines, contentLines, allRows);
-  }
+  const allRows = groupRows(group, excludedRows);
+  const contentLines = allRows.map((row) => codeLines[row]);
 
   allRows.sort((a, b) => a - b);
 
@@ -278,54 +297,74 @@ function computeLineRanges(lines: number[]): { start: number; end: number }[] {
 }
 
 /**
- * Split a body chunk if its content exceeds maxChunkSize.
- * Splits at line boundaries.
+ * Groups whose rows exceed `budget` cut into pieces that fit, each carrying
+ * exactly its own rows (bd tea-rags-mcp-gkvvo). A group packs whole members
+ * greedily in source order; a member larger than the budget on its own (a
+ * long object-literal field initializer) is cut at line boundaries into
+ * row-explicit pieces. The old split cut the finished chunk TEXT and gave every
+ * piece the group's first line plus an offset, and the whole group's ranges —
+ * a group spanning methods then claimed the method rows and lost its own.
  */
-function splitOversizedChunk(
-  chunk: BodyChunkResult,
-  classHeader: string | undefined,
-  maxChunkSize: number,
-): BodyChunkResult[] {
-  if (chunk.content.length <= maxChunkSize) return [chunk];
-
-  // Remove class header for splitting, re-add to each sub-chunk
-  const headerPrefix = classHeader ? `${classHeader}\n` : "";
-  const bodyContent = classHeader ? chunk.content.slice(headerPrefix.length) : chunk.content;
-  const bodyLines = bodyContent.split("\n");
-
-  const results: BodyChunkResult[] = [];
-  let subLines: string[] = [];
-  let subSize = headerPrefix.length;
-  let subStartOffset = 0;
-
-  for (let i = 0; i < bodyLines.length; i++) {
-    const line = bodyLines[i];
-    const lineLen = line.length + 1; // +1 for newline
-    if (subSize + lineLen > maxChunkSize && subLines.length > 0) {
-      results.push({
-        content: `${headerPrefix}${subLines.join("\n")}`.trim(),
-        startLine: chunk.startLine + subStartOffset,
-        endLine: chunk.startLine + i - 1,
-        lineRanges: chunk.lineRanges,
-      });
-      subLines = [];
-      subSize = headerPrefix.length;
-      subStartOffset = i;
+function splitOversizedGroups(
+  groups: NodeGroup[],
+  budget: number,
+  codeLines: string[],
+  excludedRows: Set<number>,
+): NodeGroup[] {
+  const fits = (rows: number[]): boolean => rowsText(rows, codeLines).length <= budget;
+  const nodeGroups: NodeGroup[] = [];
+  for (const group of groups) {
+    if (fits(groupRows(group, excludedRows))) {
+      nodeGroups.push(group);
+      continue;
     }
-    subLines.push(line);
-    subSize += lineLen;
+    let packed: AstNode[] = [];
+    const flushPacked = () => {
+      if (packed.length > 0) nodeGroups.push({ type: group.type, nodes: packed });
+      packed = [];
+    };
+    for (const node of group.nodes) {
+      const rows = nodeRows(node, excludedRows);
+      if (!fits(rows)) {
+        flushPacked();
+        nodeGroups.push(
+          ...cutRowsToBudget(rows, fits).map((pieceRows) => ({ type: group.type, nodes: [node], rows: pieceRows })),
+        );
+        continue;
+      }
+      if (!fits(packed.flatMap((member) => nodeRows(member, excludedRows)).concat(rows))) flushPacked();
+      packed.push(node);
+    }
+    flushPacked();
   }
+  return nodeGroups;
+}
 
-  if (subLines.length > 0) {
-    results.push({
-      content: `${headerPrefix}${subLines.join("\n")}`.trim(),
-      startLine: chunk.startLine + subStartOffset,
-      endLine: chunk.startLine + bodyLines.length - 1,
-      lineRanges: chunk.lineRanges,
-    });
+/** `rows` cut at line boundaries into runs that each fit; a row wider than the budget stays a run of its own. */
+function cutRowsToBudget(rows: number[], fits: (rows: number[]) => boolean): number[][] {
+  const pieces: number[][] = [];
+  let piece: number[] = [];
+  for (const row of rows) {
+    if (piece.length > 0 && !fits([...piece, row])) {
+      pieces.push(piece);
+      piece = [];
+    }
+    piece.push(row);
   }
+  if (piece.length > 0) pieces.push(piece);
+  return pieces;
+}
 
-  return results;
+/** Two groups as one: their members, and their rows when either is a cut piece. */
+function mergeNodeGroups(host: NodeGroup, guest: NodeGroup, excludedRows: Set<number>): NodeGroup {
+  const nodes = [...new Map([...host.nodes, ...guest.nodes].map((node) => [node.startIndex, node])).values()].sort(
+    (a, b) => a.startIndex - b.startIndex,
+  );
+  if (!host.rows && !guest.rows) return { type: host.type, nodes };
+  const rows = [...new Set([...groupRows(host, excludedRows), ...groupRows(guest, excludedRows)])].sort(
+    (a, b) => a - b,
+  );
+  return { type: host.type, nodes, rows };
 }
 
 // ── Small body chunk merging ──────────────────────────────────────
@@ -389,6 +428,23 @@ function mergeSmallBodyChunks(
 }
 
 /**
+ * Characters a group's own rows may spend: the engine's content budget
+ * (`bodyChunkContentBudget`, which reserves the hierarchy plus ONE header row)
+ * less the header continuation rows this hook writes on top. With no engine
+ * reservation (a hook driven directly) the hook's own header is reserved, so
+ * the written chunk stays within `maxChunkSize` either way.
+ */
+function groupContentBudget(ctx: HookContext, classHeader: string | undefined): number {
+  if (!classHeader) return bodyChunkContentBudget(ctx.config);
+  const firstRow = classHeader.split("\n", 1)[0];
+  const reserved = ctx.config.bodyChunkPrefixLength ?? firstRow.length + 1;
+  return (
+    bodyChunkContentBudget({ maxChunkSize: ctx.config.maxChunkSize, bodyChunkPrefixLength: reserved }) -
+    (classHeader.length - firstRow.length)
+  );
+}
+
+/**
  * Extract body chunks from a TypeScript class with AST-based semantic grouping.
  */
 export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
@@ -396,23 +452,23 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
   if (!classBody) return [];
 
   const extractedStarts = new Set(ctx.validChildren.map((child) => child.startIndex));
-  const classHeader = extractClassHeader(ctx.containerNode, ctx.codeLines);
+  const classHeader = extractClassHeader(ctx.containerNode, classBody, ctx.codeLines);
   const withHeader = (content: string): string => (classHeader ? `${classHeader}\n${content}` : content);
   const groupContent = (group: NodeGroup): string =>
     extractGroupContent(group, ctx.codeLines, ctx.excludedRows)?.content ?? "";
+  const budget = groupContentBudget(ctx, classHeader);
   const shortMethods = classBodyShortMethods(classBody, extractedStarts, ctx.excludedRows);
-  // A sub-floor group folds into a neighbour instead of being dropped (bd
-  // tea-rags-mcp-xiki8, the TypeScript twin of 30qdc); a group holding a short
-  // method declares a member and is never noise.
-  const groups = foldSubFloorGroups(groupAdjacentNodes(classBody, ctx.excludedRows, extractedStarts), {
+  // An oversized group is cut into row-accurate pieces first (bd
+  // tea-rags-mcp-gkvvo); a sub-floor group then folds into a neighbour instead
+  // of being dropped (bd tea-rags-mcp-xiki8, the TypeScript twin of 30qdc); a
+  // group holding a short method declares a member and is never noise.
+  const adjacentGroups = groupAdjacentNodes(classBody, ctx.excludedRows, extractedStarts);
+  const groups = foldSubFloorGroups(splitOversizedGroups(adjacentGroups, budget, ctx.codeLines, ctx.excludedRows), {
     isSubFloor: (group) =>
       withHeader(groupContent(group)).length < 50 && !group.nodes.some((node) => shortMethods.has(node.startIndex)),
-    fits: (group) => withHeader(groupContent(group)).length <= ctx.config.maxChunkSize,
-    merge: (host, guest) => ({
-      type: host.type,
-      nodes: [...host.nodes, ...guest.nodes].sort((a, b) => a.startIndex - b.startIndex),
-    }),
-    startOf: (group) => group.nodes[0].startIndex,
+    fits: (group) => groupContent(group).length <= budget,
+    merge: (host, guest) => mergeNodeGroups(host, guest, ctx.excludedRows),
+    startOf: (group) => groupRows(group, ctx.excludedRows)[0],
   });
   const results: BodyChunkResult[] = [];
 
@@ -423,19 +479,12 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
     // Prepend class header for context
     const contentWithContext = withHeader(extracted.content);
 
-    const chunk: BodyChunkResult = {
+    results.push({
       content: contentWithContext,
       startLine: extracted.startLine,
       endLine: extracted.endLine,
       lineRanges: extracted.lineRanges,
-    };
-
-    // Split oversized groups
-    if (chunk.content.length > ctx.config.maxChunkSize) {
-      results.push(...splitOversizedChunk(chunk, classHeader, ctx.config.maxChunkSize));
-    } else {
-      results.push(chunk);
-    }
+    });
   }
 
   return declareShortMethods(mergeSmallBodyChunks(results, classHeader, ctx.config.maxChunkSize), shortMethods);

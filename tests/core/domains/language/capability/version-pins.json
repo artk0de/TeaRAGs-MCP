@@ -90,7 +90,7 @@
   "typescript": {
     "chunking": {
       "version": 3,
-      "digest": "sha256:12081c6a55b5a5fed16b5c2096847cfb97b0336698e702ca1c28c4742b206c48"
+      "digest": "sha256:46be276d6895c1c3376ac9bd8df06a1da2aaded898613de71fd0844572a80ac8"
     },
     "walker": {
       "version": 15,
