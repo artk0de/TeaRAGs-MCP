@@ -79,7 +79,9 @@ export interface WorkingTreeMarker {
   /**
    * Why graph data in this answer came from the INDEX's graph although the
    * tree changed files (WTO-7): the tree graph was still building past the
-   * caller's wait, its build failed, or codegraph is off. Set only while
+   * caller's wait (`building`), its build had not started because it waits
+   * behind other builds (`queued: N builds ahead`), its build failed, or
+   * codegraph is off. Set only while
    * `floors` lacks `"codegraph"`: the graph edges and codegraph signals then
    * describe the indexed commit, not the tree.
    */
@@ -151,7 +153,8 @@ export interface WorkingTreeGraphRequest {
 /**
  * The tree graph, or why the reader serves the base graph instead. Every
  * variant but `built` is a product answer — the reader degrades and names the
- * reason — never an error: still building when the wait lapsed, a failed /
+ * reason — never an error: still building (or still queued behind other
+ * builds) when the wait lapsed, a failed /
  * timed-out / heap-exhausted child, no base graph, codegraph off.
  */
 export type WorkingTreeGraphState =

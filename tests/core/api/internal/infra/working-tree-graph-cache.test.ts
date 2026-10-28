@@ -53,6 +53,7 @@ import type {
   WorkingTreeGraphBuildBudget,
   WorkingTreeGraphBuildInput,
   WorkingTreeGraphBuildOutcome,
+  WorkingTreeGraphBuildProgress,
 } from "../../../../../src/core/domains/trajectory/codegraph/working-tree/index.js";
 
 const COLLECTION = "code_wtg";
@@ -127,6 +128,8 @@ function gate(): Gate {
 class FakeBuilder {
   inputs: WorkingTreeGraphBuildInput[] = [];
   budgets: WorkingTreeGraphBuildBudget[] = [];
+  /** Each build's progress hooks, in call order. */
+  progress: WorkingTreeGraphBuildProgress[] = [];
   gate: Gate | undefined;
   /** Runs inside the build, after the input is recorded and before it finishes. */
   during: ((input: WorkingTreeGraphBuildInput) => void) | undefined;
@@ -140,9 +143,11 @@ class FakeBuilder {
   async build(
     input: WorkingTreeGraphBuildInput,
     budget: WorkingTreeGraphBuildBudget,
+    progress: WorkingTreeGraphBuildProgress = {},
   ): Promise<WorkingTreeGraphBuildOutcome> {
     this.inputs.push(input);
     this.budgets.push(budget);
+    this.progress.push(progress);
     this.during?.(input);
     if (this.gate) await this.gate.promise;
     if (this.outcome) return this.outcome(input);
@@ -305,6 +310,26 @@ describe("WorkingTreeGraphCache#graphFor", () => {
     const next = cache.graphFor(request(root), 10_000);
     builder.gate.open();
     expectBuilt(await next);
+    expect(builder.inputs).toHaveLength(1);
+  });
+
+  it("answers `queued` while the builder holds the build behind another tree's, `building` once it is dispatched (bd tea-rags-mcp-ewg7d)", async () => {
+    const { cache, builder } = harness();
+    builder.gate = gate();
+    builder.during = () => builder.progress.at(-1)?.queued?.(2);
+    const root = treeDir("t1");
+
+    expect(await cache.graphFor(request(root), 20)).toEqual({ kind: "unavailable", reason: "queued: 2 builds ahead" });
+    builder.progress[0].queued?.(1);
+    expect(await cache.graphFor(request(root), 20)).toEqual({ kind: "unavailable", reason: "queued: 1 build ahead" });
+    builder.progress[0].dispatched?.();
+    expect(await cache.graphFor(request(root), 20)).toEqual({
+      kind: "unavailable",
+      reason: WORKING_TREE_GRAPH_BUILDING_REASON,
+    });
+
+    builder.gate.open();
+    expectBuilt(await cache.graphFor(request(root), 10_000));
     expect(builder.inputs).toHaveLength(1);
   });
 

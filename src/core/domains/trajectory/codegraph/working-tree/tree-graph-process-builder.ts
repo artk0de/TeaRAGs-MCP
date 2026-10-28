@@ -77,6 +77,22 @@ export type WorkingTreeGraphBuildOutcome =
   | { kind: "timedOut"; timeoutMs: number }
   | { kind: "heapExhausted"; heapLimitMb: number };
 
+/**
+ * What a caller hears about its build in the builder's serial queue — one warm
+ * child runs one build at a time, so a tree may wait behind another tree's
+ * build (bd tea-rags-mcp-ewg7d). Both hooks are optional and called
+ * synchronously from the builder.
+ */
+export interface WorkingTreeGraphBuildProgress {
+  /**
+   * The build waits: `ahead` builds — the one in flight included — run before
+   * it. Called when it is queued and again each time it moves up.
+   */
+  queued?: (ahead: number) => void;
+  /** The build left the queue: a child is running it now. */
+  dispatched?: () => void;
+}
+
 /** Lifecycle knobs; tests shorten them. */
 export interface WorkingTreeGraphProcessBuilderOptions {
   /** Default {@link WORKING_TREE_GRAPH_CHILD_IDLE_MS}. */
@@ -97,6 +113,9 @@ const SIGABRT_EXIT_CODE = 134;
 interface QueuedBuild {
   input: WorkingTreeGraphBuildInput;
   budget: WorkingTreeGraphBuildBudget;
+  progress: WorkingTreeGraphBuildProgress;
+  /** The place `progress.queued` last heard; announced again only when it moves. */
+  announcedAhead?: number;
   resolve: (outcome: WorkingTreeGraphBuildOutcome) => void;
 }
 
@@ -159,17 +178,19 @@ export class WorkingTreeGraphProcessBuilder {
   /**
    * Run one tree build in the warm child (forking it if none is up) once every
    * build queued before it has finished. Settles when the child replies or
-   * dies; a reply leaves the child running for the next build.
+   * dies; a reply leaves the child running for the next build. `progress`
+   * hears the build's place in the queue and its dispatch.
    */
   async build(
     input: WorkingTreeGraphBuildInput,
     budget: WorkingTreeGraphBuildBudget,
+    progress: WorkingTreeGraphBuildProgress = {},
   ): Promise<WorkingTreeGraphBuildOutcome> {
     if (!(budget.timeoutMs > 0) || !(budget.heapLimitMb > 0)) {
       throw new Error(`WorkingTreeGraphProcessBuilder: budget must be positive (got ${JSON.stringify(budget)})`);
     }
     return new Promise((resolve) => {
-      this.queue.push({ input, budget, resolve });
+      this.queue.push({ input, budget, progress, resolve });
       this.pump();
     });
   }
@@ -196,18 +217,27 @@ export class WorkingTreeGraphProcessBuilder {
     await Promise.all(closing);
   }
 
-  /** Dispatch the next queued build if the child is free. */
+  /**
+   * Dispatch the next queued build if the child is free, then tell every build
+   * still waiting its place: one build is in flight, so the queue head has one
+   * ahead of it.
+   */
   private pump(): void {
-    if (this.warm?.active) return;
-    const next = this.queue.shift();
-    if (!next) return;
-    const child = this.childFor(next.budget.heapLimitMb);
-    if (!child) {
-      next.resolve({ kind: "failed", reason: this.lastForkError ?? "tree-graph fork failed" });
-      this.pump();
-      return;
+    while (!this.warm?.active) {
+      const next = this.queue.shift();
+      if (!next) break;
+      const child = this.childFor(next.budget.heapLimitMb);
+      if (!child) {
+        next.resolve({ kind: "failed", reason: this.lastForkError ?? "tree-graph fork failed" });
+        continue;
+      }
+      this.dispatch(child, next);
     }
-    this.dispatch(child, next);
+    this.queue.forEach((waiting, index) => {
+      if (waiting.announcedAhead === index + 1) return;
+      waiting.announcedAhead = index + 1;
+      waiting.progress.queued?.(index + 1);
+    });
   }
 
   /** The warm child when it was forked with `heapLimitMb`; otherwise retire it and fork one that was. */
@@ -274,6 +304,7 @@ export class WorkingTreeGraphProcessBuilder {
     // A build in flight holds the parent open, as a cold child did; an idle
     // child does not (see `release`).
     holdParent(warm.process, true);
+    build.progress.dispatched?.();
     const request: WorkingTreeGraphEntryRequest = { input: build.input, debug: isDebug(), id };
     warm.process.send(request, (err) => {
       if (err) active.processError ??= err;

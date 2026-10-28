@@ -255,6 +255,27 @@ describe("WorkingTreeGraphProcessBuilder", () => {
     expect(treeGraphChildren()).toEqual([answeredBy(next)]);
   }, 120_000);
 
+  it("reports a build's place in the queue as it moves up, then its dispatch (bd tea-rags-mcp-ewg7d)", async () => {
+    const builder = scriptedBuilder();
+    const events: Record<string, (string | number)[]> = { first: [], second: [], third: [] };
+    const progressOf = (name: string) => ({
+      queued: (ahead: number) => events[name].push(ahead),
+      dispatched: () => events[name].push("dispatched"),
+    });
+
+    const first = builder.build(cued("reply"), SCRIPTED_BUDGET, progressOf("first"));
+    const second = builder.build(cued("reply"), SCRIPTED_BUDGET, progressOf("second"));
+    const third = builder.build(cued("reply"), SCRIPTED_BUDGET, progressOf("third"));
+
+    expect(events).toEqual({ first: ["dispatched"], second: [1], third: [2] });
+    await Promise.all([first, second, third]);
+    expect(events).toEqual({
+      first: ["dispatched"],
+      second: [1, "dispatched"],
+      third: [2, 1, "dispatched"],
+    });
+  }, 120_000);
+
   it("builds queued behind a killed child are dispatched to a fresh child, not failed", async () => {
     const builder = scriptedBuilder();
 
