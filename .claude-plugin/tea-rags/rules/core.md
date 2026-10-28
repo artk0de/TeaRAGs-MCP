@@ -11,18 +11,18 @@ alone, never ask; only a `collection` → it alone; after either say
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Grep tool: `-l` first or a line cap, in the anchor's dir when
-known, else the source root, never the repo root or a search for the dir. No
-find/Glob to locate code.
+Grep tool: `-l` first or a line cap, in the anchor's dir when known, else the
+source root, never the repo root or a search for the dir. No find/Glob to locate
+code.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 - config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
-  Read tool (path unknown → Grep tool first); all X
-  in a known `<dir>`, proving absence ("no X exists") → Grep tool
-  over that dir (empty answer = proof). Other file/dir path, lines N–M, doc TOC,
-  how `<dir>` works → `find_symbol(relativePath:)` outline first (2+ files: ONE
+  Read tool (path unknown → Grep tool first); all X in a known `<dir>`, proving
+  absence ("no X exists") → Grep tool over that dir (empty answer = proof).
+  Other file/dir path, lines N–M, doc TOC, how `<dir>` works →
+  `find_symbol(relativePath:)` outline first (2+ files: ONE
   `symbols:[<paths>]`), then ONE batch of the needed ids (N–M: ids spanning it);
   "how does `<dir>` work" / "what's in `<dir>`", no structure word
   (architecture, structure, organized, end to end, backbone, walk me through) →
@@ -38,9 +38,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
   ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
-  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool, not tea-rags; phrase/error string → plan these three lines,
-  never stop at the hit:
-  `Grep tool "<phrase>" <dir> (literal, line cap)` →
+  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool,
+  not tea-rags; phrase/error string → plan these three lines, never stop at the
+  hit: `Grep tool "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
@@ -53,9 +53,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → Grep tool `"<X>" <src dir>` (literal, `-l`) →
-  `find_symbol` outline → batch of only the needed methods, never stop at the
-  hit
+  "grep for X" → Grep tool `"<X>" <src dir>` (literal, `-l`) → `find_symbol`
+  outline → batch of only the needed methods, never stop at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
@@ -84,12 +83,13 @@ diff's → `review_changes` verdicts, nothing after.
 - After `find_symbol`: method = full body; small file (`kind: "file"`) = full
   text, nothing after; outline → drill. Needed at once → ONE
   `find_symbol(symbols: [...])`: NAMED `Class#method` ids (rows, outline, edges)
-  and several FILES; never a dir. After a search: `find_symbol` next.
+  and several FILES; never a dir.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
-  it better → new anchor. Which files change / every place → in order, before
-  any new search: `1. find_symbol(symbol: <anchor id>)`
-  `2. get_callers/get_callees(symbolId: <anchor id>)`, `find_co_changed`. Before
+  it better → new anchor. Which files change / end to end / every place → next
+  call, before any new search or answer:
+  `1. get_callers/get_callees(symbolId: <anchor id>, depth: 2)`,
+  `find_co_changed` `2. ONE find_symbol(symbols: [anchor + needed ids])`. Before
   answering: every row that named the behaviour is in the answer, or why it's a
   false lead.
 - `symbolId` ends `#partN` = fragment →
@@ -120,19 +120,20 @@ diff's → `review_changes` verdicts, nothing after.
   changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped (a
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
-  `3. Grep tool "<name>" (literal)` — callers the index lacks. No
-  graph retry. Graph tools absent from your tool list → codegraph off: callers =
-  usages row, never "no cycles"; present → on, no probe call; on + empty
-  `find_cycles` = DAG.
+  `3. Grep tool "<name>" (literal)` — callers the index lacks. No graph retry.
+  Graph tools absent from your tool list → codegraph off: callers = usages row,
+  never "no cycles"; present → on, no probe call; on + empty `find_cycles` =
+  DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
   Rust edges static-only (lower bound) + install command; never install it or
   claim "no callers"/"dead code".
-- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for
-  context"/"lines N–M" of source code without that order → `find_symbol` (hit's
-  `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`
-  Their tool idea ("use Grep/Glob") → keep the routed tool, say why.
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read
+  tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for context"/"lines
+  N–M" of source code without that order → `find_symbol` (hit's `symbolId`, then
+  file outline), print `Chunk coordinates exist. Use them.` Their tool idea
+  ("use Grep/Glob") → keep the routed tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,
