@@ -212,7 +212,7 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 
 | Graph intent        | Non-codegraph fallback                                                                                               |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| who calls / X calls | default code search tool `"<name>" <dir>` (literal, files-with-matches) + `find_symbol` — name-match, NOT edge truth |
+| who calls / X calls | Grep tool `"<name>" <dir>` (literal, files-with-matches) + `find_symbol` — name-match, NOT edge truth |
 | call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"                              |
 | cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"                                |
 | layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"                                     |
@@ -227,13 +227,13 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 - Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
   bodies → ONE `find_symbol(symbols: [<member ids>])` for all members needed.
 - Who-uses-X (an exact name you know, or an `a|b` of exact ids already seen) →
-  the default code search tool `"<X>" <dir>` (literal, `-l`), bounded:
+  Grep tool `"<X>" <dir>` (literal, `-l`), bounded:
   files-with-matches first, or a line cap; `<dir>` = the anchor's dir when
   known, else the source root — never hybrid_search / semantic_search to find a
   dir for it, never an unbounded occurrence search. Its hits →
   `find_symbol(relativePath: <hit file>)` outline → batch of only the needed
   methods (each hit's enclosing method, or the members the question is about;
-  never every member of the outline) — never the default code read tool, never
+  never every member of the outline) — never Read tool, never
   `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound. Codegraph
   on → `get_callers` (exact, graph) AND that search. Concept words, synonyms or
   spellings (`<a>|<b>|<c>`) are not a name: `semantic_search`

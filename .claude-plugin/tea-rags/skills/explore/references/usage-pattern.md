@@ -11,7 +11,7 @@ tool". Never call/plan `get_callers` / `get_callees` / `trace_path`.
 Caller / callee intents via `get_callers` / `get_callees` edge truth (codegraph
 call edges), not content matching — no false hits on comments, strings,
 same-named symbols. "Every / all callers of X" (exhaustive) → Step 2's
-`get_callers`, THEN the occurrence route — default code search tool
+`get_callers`, THEN the occurrence route — Grep tool
 `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known, else the
 source root) → `find_symbol` on the hits. It adds, never replaces: graph =
 resolved edges, text search = recall for calls the graph did not resolve. Report
@@ -48,7 +48,7 @@ instance, `Class.method` static, `functionName` top-level). Bare
   `empty.reason: "unknownFile"` + `message` — fix path, never report "nothing
   imports it"; `noEdges` at a low resolve rate = lower bound, add the
   `hybrid_search` below. Codegraph off → `hybrid_search metaOnly:true` on the
-  module path / import string. User offers the default code search tool for
+  module path / import string. User offers Grep tool for
   importers → refuse, answer starts with this line:
 
   ```

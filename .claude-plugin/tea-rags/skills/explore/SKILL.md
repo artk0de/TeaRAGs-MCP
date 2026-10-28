@@ -34,8 +34,7 @@ phrasing (one of these words in the prompt: "organized", "end to end",
 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
-of X" — callers, below) → occurrence route, any codegraph state: default code
-search tool `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known,
+of X" — callers, below) → occurrence route, any codegraph state: Grep tool `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known,
 else the source root — never a search to find it) → `find_symbol` outline →
 batch of only the needed methods; never `hybrid_search` for it. Concept words,
 synonyms or spellings, even one `<a>|<b>|<c>` regex, are not an exact name →
@@ -146,8 +145,7 @@ plan.
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = default
-  code search tool `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits
+  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = Grep tool `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits
   (adds recall, never replaces 2). "How does X reach Y": endpoints named as
   symbols → `find_symbol` each, then `trace_path`; endpoints described in words
   ("OAuth callback", "sign-in") → call 1 = `semantic_search` for that behaviour,
@@ -239,8 +237,7 @@ name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
 symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
 pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
 "read decision-tree to choose". "Files matching <Name>" is a name pattern, not a
-literal: `hybrid_search(query="<Name>", metaOnly=true)`, never the default code
-search tool file listing / Glob / `find -name`.
+literal: `hybrid_search(query="<Name>", metaOnly=true)`, never Grep tool file listing / Glob / `find -name`.
 
 Apply tables above, first match:
 
@@ -342,8 +339,7 @@ ORIENT output = map for BREADTH, not the answer. Explicit "entry point" INTENT
 ### 2. BREADTH
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
-DEFINITION → find_symbol; known/bare name, need USAGES → default code search
-tool `"<X>" <dir>` (literal, `-l`) → find_symbol, never hybrid_search; symbol
+DEFINITION → find_symbol; known/bare name, need USAGES → Grep tool `"<X>" <dir>` (literal, `-l`) → find_symbol, never hybrid_search; symbol
 name + behaviour words ("where hybrid_search handles BM25 scoring") →
 hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
 Known path / symbol → `find_symbol` (outline → body); rationale, copied:

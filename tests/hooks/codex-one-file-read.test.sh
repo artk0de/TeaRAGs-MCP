@@ -43,6 +43,10 @@ allowed $'python3 - <<\'PY\'\nfrom pathlib import Path\nprint(Path(\'/x/a/SKILL.
 allowed $'python3 - <<\'PY\'\nimport os\nprint([os.path.exists(p) for p in [\'a.md\',\'b.md\']])\nPY'
 allowed $'cat <<\'EOF\'\nsee a.md and b.md\nEOF'
 allowed 'sed -n 1,200p a.md'
+# bd tea-rags-mcp-onli7: Codex's code read tool is `sed -n '<start>,<end>p' <one file>` — this hook enforces the one file.
+allowed "sed -n '10,80p' a.md"
+denied "sed -n '1,80p' a.md b.md"
+denied "sed -n '1,80p' a.md; sed -n '1,9p' b.md"
 allowed 'rg -n foo a.md b.md'
 allowed 'grep -n foo a.md b.md'
 allowed 'ls x/*.md'

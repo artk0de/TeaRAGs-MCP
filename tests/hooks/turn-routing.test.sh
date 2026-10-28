@@ -48,7 +48,13 @@ for H in claude codex; do
 done
 
 TXT="$ROOT/harness/codex/tea-rags/scripts/turn-routing.txt"
-[ -s "$TXT" ] && ! grep -q 'default code search tool' "$TXT"; note $? "codex: turn-routing.txt is generated in the Codex dialect"
+[ -s "$TXT" ] && ! grep -q 'default code search tool' "$TXT" && grep -qF 'shell rg -l' "$TXT"
+note $? "codex: turn-routing.txt is generated in the Codex dialect (shell rg -l)"
+# bd tea-rags-mcp-onli7: the Claude Code package names its own search tool, not the role.
+run claude '{"hook_event_name":"UserPromptSubmit","session_id":"s1"}' "$ROOT/.claude-plugin/tea-rags/scripts/turn-routing.sh"
+CTX=$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)
+printf '%s' "$CTX" | grep -qF 'Grep tool' && ! printf '%s' "$CTX" | grep -qiE 'default code (search|read) tool|ripgrep|rg -'
+note $? "claude package: the routing lines name the Grep tool"
 [ -s "$ROOT/harness/cursor/tea-rags/scripts/turn-routing.txt" ]; note $? "cursor: turn-routing.txt is generated"
 
 run cursor '{"hook_event_name":"beforeSubmitPrompt","conversation_id":"c1","prompt":"q","attachments":[]}'

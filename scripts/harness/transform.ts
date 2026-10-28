@@ -5,7 +5,27 @@
  * `scripts/gen-harness-cursor.ts`) plugs in its own `HarnessDialect`.
  */
 
-export interface HarnessDialect {
+/**
+ * One concrete tool list per harness for the roles sources name abstractly (bd tea-rags-mcp-onli7) —
+ * an abstract "native tool" phrase is read differently by each harness. Every package, Claude Code's
+ * included, ships the concrete names; only the MCP server instructions stay harness-neutral.
+ */
+export interface CodeToolNames {
+  /**
+   * The client's own literal text search, named where sources say "default code search tool".
+   * Bounded by default — files-with-matches first: Claude Code / Cursor `Grep tool`, Codex `shell rg -l`
+   * (rg ships inside Codex; `grep -rl` ignores .gitignore and never finished on a whole repo).
+   */
+  codeSearchTool: string;
+  /**
+   * The client's own file reader, named where sources say "default code read tool": Claude Code /
+   * Cursor `Read tool`, Codex `shell sed -n '<start>,<end>p' <one file>` (one file per command, enforced
+   * by its `one-file-read.sh` hook).
+   */
+  codeReadTool: string;
+}
+
+export interface HarnessDialect extends CodeToolNames {
   /** How a skill is mentioned in prose: Codex `$explore`, Cursor `/explore`. */
   skillMention: (name: string) => string;
   /** Replacement for `${CLAUDE_PLUGIN_ROOT}`. */
@@ -16,13 +36,6 @@ export interface HarnessDialect {
   readResourceTool: string;
   /** Model-side tool listing MCP resources: Codex `list_mcp_resources`, Cursor `ListMcpResources`. */
   listResourcesTool: string;
-  /**
-   * The client's own literal text search, named where sources say "default code search tool".
-   * Bounded by default — files-with-matches first: Codex `shell grep -rl`, Cursor `Grep tool`.
-   */
-  codeSearchTool: string;
-  /** The client's own file reader, named where sources say "default code read tool": Codex `shell file reads`, Cursor `Read tool`. */
-  codeReadTool: string;
   /** Skills list names plugin skills `superpowers:Y` (Codex) — the availability clause keeps that form. */
   listsQualifiedSkills?: boolean;
 }
@@ -155,8 +168,8 @@ export function extractInjectionBlock(md: string): string {
  * 6. Agent-tool passages → "spawn a subagent", `subagent_type:` lines dropped;
  * 7. `AskUserQuestion` → asking the user;
  * 8. `CLAUDE_PLUGIN_ROOT` / `CLAUDE_PROJECT_DIR` → dialect variables;
- * 9. "(the) default code search tool" / "(the) default code read tool", line breaks included →
- *    the dialect's text search / file reader.
+ * 9. "(the) default code search tool" / "(the) default code read tool", line breaks and a capital
+ *    first letter included → the dialect's text search / file reader ({@link nameCodeTools}).
  */
 export function toHarnessText(
   md: string,
@@ -174,7 +187,9 @@ export function toHarnessText(
       mention(name, whole),
     )
     .replace(/(?<![\w/])\/?tea-rags:([a-z0-9-]+)(?![\w/-])/g, (whole, name: string) => mention(name, whole));
-  return (wrappers ? wrapperMentions(text, dialect) : text.replace(/\b(?:dinopowers|superpowers):([a-z0-9-]+)/g, "$1"))
+  const rewritten = (
+    wrappers ? wrapperMentions(text, dialect) : text.replace(/\b(?:dinopowers|superpowers):([a-z0-9-]+)/g, "$1")
+  )
     .replace(/\s*\(`?Agent`? tool\)/g, "")
     .replace(/^(\s*)`?Agent`? tool:/gm, "$1Spawn a subagent:")
     .replace(/\b(?:the )?`?Agent`? tool\b/g, "a subagent")
@@ -182,9 +197,24 @@ export function toHarnessText(
     .replace(/\b(?:using|via) `?AskUserQuestion`?/g, "by asking the user")
     .replace(/`?AskUserQuestion`?/g, "ask the user")
     .replace(/\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT\b/g, dialect.pluginRootVar)
-    .replace(/\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b/g, dialect.projectDirVar)
-    .replace(/\b(?:the\s+)?default\s+code\s+search\s+tool\b/g, dialect.codeSearchTool)
-    .replace(/\b(?:the\s+)?default\s+code\s+read\s+tool\b/g, dialect.codeReadTool);
+    .replace(/\$\{CLAUDE_PROJECT_DIR\}|\$CLAUDE_PROJECT_DIR\b/g, dialect.projectDirVar);
+  return nameCodeTools(rewritten, dialect);
+}
+
+/** A sentence-initial role phrase keeps its capital on the concrete name (`Default code read tool` → `Read tool`). */
+function withCaseOf(match: string, name: string): string {
+  return /^[A-Z]/.test(match) ? name.charAt(0).toUpperCase() + name.slice(1) : name;
+}
+
+/**
+ * `toHarnessText` rule 9 on its own: "(the) default code search tool" / "(the) default code read
+ * tool", line breaks and a capital first letter included → `tools`' concrete names. The Claude Code
+ * package runs only this rule; its sources are already in the Claude Code dialect otherwise.
+ */
+export function nameCodeTools(md: string, tools: CodeToolNames): string {
+  return md
+    .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+search\s+tool\b/g, (match) => withCaseOf(match, tools.codeSearchTool))
+    .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+read\s+tool\b/g, (match) => withCaseOf(match, tools.codeReadTool));
 }
 
 /** Name a dinopowers wrapper ships under outside Claude Code, clear of the superpowers skill it wraps. */

@@ -19,7 +19,7 @@ alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
 Indexed code is never READ with Read tool, shell
-`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. The Grep tool only LOCATES exact text — `-l` first or a line cap, in the anchor's
+`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. Grep tool only LOCATES exact text — `-l` first or a line cap, in the anchor's
 dir when known, else the source root, never the repo root or a search for the
 dir. No find/Glob to locate code. Shell / Read tool only for files
 outside the index (`*.json`, locale/data `*.yml`) — say so.
