@@ -819,6 +819,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
           {
             hooks: [
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/turn-routing.sh --harness codex`, timeout: 5 },
+              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
             ],
           },
         ],

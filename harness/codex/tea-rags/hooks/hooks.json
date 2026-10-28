@@ -47,6 +47,11 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
+            "timeout": 5
           }
         ]
       }

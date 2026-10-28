@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.48.5",
+  "version": "0.48.6",
   "author": {
     "name": "artk0de"
   },
@@ -35,6 +35,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/turn-routing.sh --harness claude",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh --harness claude",
+            "timeout": 3
           }
         ]
       }
