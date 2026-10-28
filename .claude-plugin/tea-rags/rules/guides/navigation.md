@@ -107,15 +107,15 @@ follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
-| You have…                                         | Pass                              | You get                                                   |
-| ------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
-| Instance method                                   | `symbol: "Class#method"`          | merged full method body                                   |
-| Static method / top-level fn                      | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
-| **Class or module name**                          | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
-| Existence check only                              | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
-| Doc section (hash from a result)                  | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
-| Test scope id                                     | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
-| 2+ ids of any kind above (never file / dir paths) | `symbols: ["<id1>", "<id2>"]`     | one row per hit keyed by `request`; misses in `missing[]` |
+| You have…                                                     | Pass                              | You get                                                   |
+| ------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
+| Instance method                                               | `symbol: "Class#method"`          | merged full method body                                   |
+| Static method / top-level fn                                  | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
+| **Class or module name**                                      | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
+| Existence check only                                          | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
+| Doc section (hash from a result)                              | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
+| Test scope id                                                 | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
+| 2+ ids of any kind above, or several file paths (never a dir) | `symbols: ["<id1>", "<path>"]`    | one row per hit keyed by `request`; misses in `missing[]` |
 
 **Mode B — `relativePath:` (you have a file or directory path) — USE THIS
 MORE.** With no symbol, just a path. Agents under-use it; it is the correct
@@ -210,14 +210,14 @@ convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
 non-graph substitute — never read an absent/empty graph tool as positive fact
 (no "it's a DAG", no "path structurally impossible", no "architectural centre"):
 
-| Graph intent        | Non-codegraph fallback                                                                                               |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Graph intent        | Non-codegraph fallback                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
 | who calls / X calls | Grep tool `"<name>" <dir>` (literal, files-with-matches) + `find_symbol` — name-match, NOT edge truth |
-| call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"                              |
-| cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"                                |
-| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"                                     |
-| architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable                                          |
-| entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed                             |
+| call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"               |
+| cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"                 |
+| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"                      |
+| architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable                           |
+| entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed              |
 
 ### Optimal routes (navigate, don't re-search)
 
@@ -227,15 +227,15 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 - Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
   bodies → ONE `find_symbol(symbols: [<member ids>])` for all members needed.
 - Who-uses-X (an exact name you know, or an `a|b` of exact ids already seen) →
-  Grep tool `"<X>" <dir>` (literal, `-l`), bounded:
-  files-with-matches first, or a line cap; `<dir>` = the anchor's dir when
-  known, else the source root — never hybrid_search / semantic_search to find a
-  dir for it, never an unbounded occurrence search. Its hits →
-  `find_symbol(relativePath: <hit file>)` outline → batch of only the needed
-  methods (each hit's enclosing method, or the members the question is about;
-  never every member of the outline) — never Read tool, never
-  `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound. Codegraph
-  on → `get_callers` (exact, graph) AND that search. Concept words, synonyms or
+  Grep tool `"<X>" <dir>` (literal, `-l`), bounded: files-with-matches first, or
+  a line cap; `<dir>` = the anchor's dir when known, else the source root —
+  never hybrid_search / semantic_search to find a dir for it, never an unbounded
+  occurrence search. Its hits → `find_symbol(relativePath: <hit file>)` outline
+  → batch of only the needed methods (each hit's enclosing method, or the
+  members the question is about; never every member of the outline) — never Read
+  tool, never `cat` / `sed -n` / `head`, alone or inside a shell `a; b` compound
+  (a hit in config, DSL, a migration or a spec → Read tool). Codegraph on →
+  `get_callers` (exact, graph) AND that search. Concept words, synonyms or
   spellings (`<a>|<b>|<c>`) are not a name: `semantic_search`
   (`hybrid_search(metaOnly)` when real ids are among them) → anchor →
   `get_callees` / `get_callers` → ONE batch of only the needed methods.

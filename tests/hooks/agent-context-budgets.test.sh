@@ -9,7 +9,10 @@ note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((
 
 # Subagent block, measured WITH the alias line: `tea-rags` is stubbed to resolve a
 # long-ish alias so the prepended line counts against the cap.
-SUBAGENT_CAP=3000
+# 3000 → 3400 (bd tea-rags-mcp-nxg76): the balanced-routing row (config/DSL/migrations/
+# specs → default code read tool; completeness / absence → directory search) and the
+# several-files batch line. Our cap, far under Claude Code's 10,000-char hook preview limit.
+SUBAGENT_CAP=3400
 STUB_DIR="$(mktemp -d)"; trap 'rm -rf "$STUB_DIR"' EXIT
 printf '#!/bin/bash\necho tea-rags-mcp-alias\n' > "$STUB_DIR/tea-rags"; chmod +x "$STUB_DIR/tea-rags"
 INPUT='{"session_id":"s","hook_event_name":"SubagentStart","agent_type":"general-purpose"}'

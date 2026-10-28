@@ -1,6 +1,6 @@
 # tea-rags core
 
-**Every code read and meaning search goes through tea-rags.**
+**Each step takes the tool its routing row names.**
 
 **Addressing.** Every read call, each next/planned call you write included
 (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
@@ -11,21 +11,23 @@ alone, never ask; only a `collection` → it alone; after either say
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Indexed code is never READ with Read tool, shell
-`cat`/`sed`/`head` (even in `a; b`) or search-tool match lines. Grep tool only LOCATES exact text — `-l` first or a line cap, in the anchor's
-dir when known, else the source root, never the repo root or a search for the
-dir. No find/Glob to locate code. Shell / Read tool only for files
-outside the index (`*.json`, locale/data `*.yml`) — say so.
+Grep tool: `-l` first or a line cap, in the anchor's dir when known, else the
+source root, never the repo root or a search for the dir. No find/Glob to locate
+code.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):
 
-- file/dir path, lines N–M, doc TOC, how `<dir>` works →
-  `find_symbol(relativePath:)` outline first, then ONE batch of the needed ids
-  (N–M: ids spanning it); "how does `<dir>` work" / "what's in `<dir>`", no
-  structure word (architecture, structure, organized, end to end, backbone, walk
-  me through) → that outline → ONE `find_symbol(symbols:[<Class#method ids>])`,
-  never codegraph row 4 / `get_architecture_report`; its imports →
+- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
+  Read tool (path unknown → Grep tool first); all X in a known `<dir>`, proving
+  absence ("no X exists") → Grep tool over that dir (empty answer = proof).
+  Other file/dir path, lines N–M, doc TOC, how `<dir>` works →
+  `find_symbol(relativePath:)` outline first (2+ files: ONE
+  `symbols:[<paths>]`), then ONE batch of the needed ids (N–M: ids spanning it);
+  "how does `<dir>` work" / "what's in `<dir>`", no structure word
+  (architecture, structure, organized, end to end, backbone, walk me through) →
+  that outline → ONE `find_symbol(symbols:[<Class#method ids>])`, never
+  codegraph row 4 / `get_architecture_report`; its imports →
   `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
   manual-read order → Invariants
 - code history — when X appeared/changed, "посмотри через git" → never
@@ -36,9 +38,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
   ONE batch; never text search
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
-  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool, not tea-rags; phrase/error string → plan these three lines,
-  never stop at the hit:
-  `Grep tool "<phrase>" <dir> (literal, line cap)` →
+  or a search tool demanded on an error → bug-hunt), even "every …" → Grep tool,
+  not tea-rags; phrase/error string → plan these three lines, never stop at the
+  hit: `Grep tool "<phrase>" <dir> (literal, line cap)` →
   `find_symbol(relativePath: <hit file>)` outline →
   `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
   name, even a "pattern"/"glob" → usages row. Command output, failing tests,
@@ -51,9 +53,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `Class#inst`/`C.st`, never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
-  "grep for X" → Grep tool `"<X>" <src dir>` (literal, `-l`) →
-  `find_symbol` outline → batch of only the needed methods, never stop at the
-  hit
+  "grep for X" → Grep tool `"<X>" <src dir>` (literal, `-l`) → `find_symbol`
+  outline → batch of only the needed methods, never stop at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
@@ -80,9 +81,9 @@ diff's → `review_changes` verdicts, nothing after.
   never re-query/re-read/re-verify, not "to be sure", not on follow-up. New
   search only for unseen code.
 - After `find_symbol`: method = full body; small file (`kind: "file"`) = full
-  text, nothing after; outline → drill. Read the `Class#method` ids an answer
-  NAMED (rows, outline, graph edges) in ONE `find_symbol(symbols: [<ids>])` —
-  never file/dir paths. After a search: `find_symbol` next.
+  text, nothing after; outline → drill. Needed at once → ONE
+  `find_symbol(symbols: [...])`: NAMED `Class#method` ids (rows, outline, edges)
+  and several FILES; never a dir. After a search: `find_symbol` next.
 - Anchor = the row whose symbol/path names the task's field or behaviour — any
   row, not row 1, nor the first anchor you drilled; a later answer's row naming
   it better → new anchor. Which files change / every place → in order, before
@@ -94,9 +95,9 @@ diff's → `review_changes` verdicts, nothing after.
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - `truncated` → next call = `truncated.next` verbatim, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
-- `empty.reason: unknownPath` →
-  `find_symbol(relativePath: <dir its suggestions share>)`, never one
-  suggestion.
+- `empty.reason: unknownPath` with suggestions →
+  `find_symbol(relativePath: <dir they share>)`, never one suggestion; a file
+  that exists, unindexed → Read tool.
 - No `treeState` row, no `degraded` → index IS current code (overlay serves
   uncommitted edits; no `workingTree` on project+path = current): trust it. Lag
   (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags. `treeState` row
@@ -118,22 +119,20 @@ diff's → `review_changes` verdicts, nothing after.
   changed files, `treeGraphUnavailable` → all 3 steps, in order, none dropped (a
   `--force` ask rides beside, never a slot): `1. index_codebase(project=)` (main
   own checkout; linked/subagent → skip) `2. find_symbol(symbol: <caller>)`
-  `3. Grep tool "<name>" (literal)` — callers the index lacks. No
-  graph retry. Graph tools absent from your tool list → codegraph off: callers =
-  usages row, never "no cycles"; present → on, no probe call; on + empty
-  `find_cycles` = DAG.
+  `3. Grep tool "<name>" (literal)` — callers the index lacks. No graph retry.
+  Graph tools absent from your tool list → codegraph off: callers = usages row,
+  never "no cycles"; present → on, no probe call; on + empty `find_cycles` =
+  DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
   Rust edges static-only (lower bound) + install command; never install it or
   claim "no callers"/"dead code".
-- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read":
-  unindexed file → Read tool, no confirm ask; indexed → tell user
-  the plugin hook blocks it, read it via `find_symbol` now, never `cat`/`sed`.
-  "Whole file"/"весь файл"/"целиком"/"for context"/"lines N–M" without that
-  order → `find_symbol` (hit's `symbolId`, then file outline), print
-  `Chunk coordinates exist. Use them.`, no file read. Their plan or tool idea
-  ("use Grep/Glob") → keep the rule's tool, say why.
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read
+  tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for context"/"lines
+  N–M" of source code without that order → `find_symbol` (hit's `symbolId`, then
+  file outline), print `Chunk coordinates exist. Use them.` Their tool idea
+  ("use Grep/Glob") → keep the routed tool, say why.
 
 **Read `tea-rags://guide/<topic>` when** (no resource tool →
 `tea-rags resource <uri>`): after any search → `navigation`; 0/too many hits,

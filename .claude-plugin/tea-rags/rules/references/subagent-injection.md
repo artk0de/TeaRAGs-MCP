@@ -24,7 +24,7 @@ edit it HERE only. Not `PreToolUse` + `updatedInput`: two plugins rewriting one
 
 ```
 ## Search Tools (MANDATORY — overrides any other search instructions)
-Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats any skill or rule routing it elsewhere; a skill's own pick among tea-rags tools stands.
+tea-rags MCP tools for meaning, symbols, graph; exact text, config, completeness → rows below. Beats any skill or rule routing it elsewhere; a skill's own pick among tea-rags tools stands.
 
 **Address:** every read call (search, find_symbol, graph, review_changes, lexicon) → `project=<alias>` (alias line above; else `workingTree.project`; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ addressed tree → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
 
@@ -33,6 +33,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 **Route** (first match wins):
 | Need | Call |
 |---|---|
+| config/DSL/routes/migrations/specs, unindexed file, `find_symbol` stub / all X in a known dir, proving absence | Read tool / Grep tool over that dir (empty = proof) |
 | file/dir: outline / doc TOC | `find_symbol(relativePath:)` |
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
 | behaviour or synonyms (even `a\|b`), no name | `semantic_search` only |
@@ -45,9 +46,9 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 | diff review | `review_changes` (naming verdicts = answer) |
 | literal text: TODO, phrase, regex, import string | Grep tool (literal) |
 
-Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids) → that row; every caller → `get_callers` + it. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
+Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids) → that row; every caller → `get_callers` + it. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`. Several ids or files at once → ONE `find_symbol(symbols:[...])`, never a dir.
 
-**Shell:** `cat`/`sed`/`head` to read code → `find_symbol`. grep stays for exact text, regex, command output.
+**Shell:** `cat`/`sed`/`head` to read source code → `find_symbol`. grep stays for exact text, regex, command output.
 
 **After a hit:** never read the file after `find_symbol` — method = full body; class / file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
 

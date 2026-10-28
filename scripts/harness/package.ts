@@ -26,7 +26,8 @@ export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME
  * Hook scripts every harness ships verbatim from `plugins/tea-rags/scripts/` (bd tea-rags-mcp-nknkg.2):
  * one implementation for Claude Code, Codex and Cursor, the harness picked by `--harness`.
  * `turn-routing.sh` re-injects the routing lines each user turn; `search-drift.sh` denies once after
- * a streak of text searches / indexed-code reads with no tea-rags call.
+ * a streak of concept-shaped text searches / source-code reads with no tea-rags call (literal searches and
+ * config / spec / migration paths are neutral, bd tea-rags-mcp-nxg76).
  */
 export const SHARED_HOOK_SCRIPTS = ["turn-routing.sh", "search-drift.sh"] as const;
 

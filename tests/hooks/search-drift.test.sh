@@ -7,8 +7,11 @@
 #            (PreToolUse shell counts, PostToolUse tea-rags MCP resets)
 #   cursor — harness/cursor/tea-rags/scripts/search-drift.sh --harness cursor
 #            (preToolUse Shell|Read|Grep counts, afterMCPExecution tea-rags resets)
-# Per-session counters: DENY once after 3 consecutive text searches, 3 reads of
-# indexed code, or 4 mixed, with no tea-rags call between; at most one deny per
+# Per-session counters: DENY once after 3 consecutive concept searches done by
+# text search (an alternation), 3 reads of indexed source code, or 4 mixed, with
+# no tea-rags call between. Literal / -F searches and reads of, or searches scoped
+# to, config / DSL / migrations / specs are neutral (bd tea-rags-mcp-nxg76: core
+# routes them to the standard tools). At most one deny per
 # 120 s; a deny resets the counters; edits are neutral; every error fails open
 # (Cursor: fail-open prints {"permission":"allow"}). A new user prompt
 # (UserPromptSubmit / beforeSubmitPrompt) resets the counters and keeps the deny
@@ -37,6 +40,8 @@ chmod +x "$FAKEBIN/tea-rags"
 ln -s "$(command -v jq)" "$NOCLI/jq"
 BASE_PATH="/usr/bin:/bin"
 export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
+# A concept search done by text search: an alternation of words.
+C='retry|backoff'
 STATE="$(mktemp -d)"
 NOW=1000000
 
@@ -87,7 +92,7 @@ pre() { # <h> <sid> <tool-kind: grep|read|bash|edit> <arg>
     cursor:edit) tool=Write; input=$(jq -cn --arg a "$arg" '{file_path:$a}') ;;
   esac
   case "$h" in
-    codex) [ "$kind" = grep ] && input=$(jq -cn --arg a "rg -n $arg src" '{command:$a}') ;;
+    codex) [ "$kind" = grep ] && input=$(jq -cn --arg a "rg -n '$arg' src" '{command:$a}') ;;
     *) ;;
   esac
   case "$h" in
@@ -115,23 +120,23 @@ for H in claude codex cursor; do
   [ -f "$(hook_of "$H")" ] || { note 1 "$H: hook script exists at $(hook_of "$H")"; continue; }
 
   fresh
-  run "$H" "$(pre "$H" s1 grep foo)"; allowed "$H"; note $? "$H: search 1 allowed"
-  run "$H" "$(pre "$H" s1 grep foo)"; allowed "$H"; note $? "$H: search 2 allowed"
-  run "$H" "$(pre "$H" s1 grep foo)"; denied "$H" "semantic_search"; note $? "$H: search 3 denied, names semantic_search"
+  run "$H" "$(pre "$H" s1 grep "$C")"; allowed "$H"; note $? "$H: search 1 allowed"
+  run "$H" "$(pre "$H" s1 grep "$C")"; allowed "$H"; note $? "$H: search 2 allowed"
+  run "$H" "$(pre "$H" s1 grep "$C")"; denied "$H" "semantic_search"; note $? "$H: search 3 denied, names semantic_search"
   denied "$H" "reset"; note $? "$H: deny says the counter is reset"
-  run "$H" "$(pre "$H" s1 grep foo)"; allowed "$H"; note $? "$H: deny reset the counter"
+  run "$H" "$(pre "$H" s1 grep "$C")"; allowed "$H"; note $? "$H: deny reset the counter"
 
   # Cooldown: a fourth streak inside 120 s is not denied; after it, it is.
-  run "$H" "$(pre "$H" s1 grep foo)"; run "$H" "$(pre "$H" s1 grep foo)"
-  NOW=$((NOW + 60)); run "$H" "$(pre "$H" s1 grep foo)"; allowed "$H"; note $? "$H: no second deny within 120 s"
-  NOW=$((NOW + 61)); run "$H" "$(pre "$H" s1 grep foo)"; denied "$H"; note $? "$H: deny again after 120 s"
+  run "$H" "$(pre "$H" s1 grep "$C")"; run "$H" "$(pre "$H" s1 grep "$C")"
+  NOW=$((NOW + 60)); run "$H" "$(pre "$H" s1 grep "$C")"; allowed "$H"; note $? "$H: no second deny within 120 s"
+  NOW=$((NOW + 61)); run "$H" "$(pre "$H" s1 grep "$C")"; denied "$H"; note $? "$H: deny again after 120 s"
 
   fresh
-  run "$H" "$(pre "$H" s2 grep foo)"; run "$H" "$(pre "$H" s2 grep foo)"
+  run "$H" "$(pre "$H" s2 grep "$C")"; run "$H" "$(pre "$H" s2 grep "$C")"
   run "$H" "$(tearags "$H" s2)"
   case "$H" in cursor) [ "$CODE" = 0 ] && printf '%s' "$OUT" | jq -e . >/dev/null 2>&1 ;; *) [ "$CODE" = 0 ] && [ -z "$OUT" ] ;; esac
   note $? "$H: tea-rags call passes through"
-  run "$H" "$(pre "$H" s2 grep foo)"; run "$H" "$(pre "$H" s2 grep foo)"; allowed "$H"; note $? "$H: tea-rags call resets the counter"
+  run "$H" "$(pre "$H" s2 grep "$C")"; run "$H" "$(pre "$H" s2 grep "$C")"; allowed "$H"; note $? "$H: tea-rags call resets the counter"
 
   fresh
   export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
@@ -145,36 +150,73 @@ for H in claude codex cursor; do
   export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
 
   fresh
-  run "$H" "$(pre "$H" s5 grep foo)"; run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"
-  run "$H" "$(pre "$H" s5 grep foo)"; allowed "$H"; note $? "$H: mixed 3 allowed"
+  run "$H" "$(pre "$H" s5 grep "$C")"; run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"
+  run "$H" "$(pre "$H" s5 grep "$C")"; allowed "$H"; note $? "$H: mixed 3 allowed"
   run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"; denied "$H"; note $? "$H: mixed 4 denied"
 
   fresh
-  run "$H" "$(pre "$H" s6 grep foo)"; run "$H" "$(pre "$H" s6 edit /repo/src/a.ts)"; allowed "$H"; note $? "$H: edit allowed"
-  run "$H" "$(pre "$H" s6 grep foo)"; denied "$H"; run "$H" "$(pre "$H" s6 grep foo)"
+  run "$H" "$(pre "$H" s6 grep "$C")"; run "$H" "$(pre "$H" s6 edit /repo/src/a.ts)"; allowed "$H"; note $? "$H: edit allowed"
+  run "$H" "$(pre "$H" s6 grep "$C")"; denied "$H"; run "$H" "$(pre "$H" s6 grep "$C")"
   fresh
-  run "$H" "$(pre "$H" s6 grep foo)"; run "$H" "$(pre "$H" s6 edit /repo/src/a.ts)"
-  run "$H" "$(pre "$H" s6 grep foo)"; run "$H" "$(pre "$H" s6 grep foo)"; denied "$H"; note $? "$H: edits neither count nor reset"
+  run "$H" "$(pre "$H" s6 grep "$C")"; run "$H" "$(pre "$H" s6 edit /repo/src/a.ts)"
+  run "$H" "$(pre "$H" s6 grep "$C")"; run "$H" "$(pre "$H" s6 grep "$C")"; denied "$H"; note $? "$H: edits neither count nor reset"
 
   fresh
   for _ in 1 2 3 4; do run "$H" "$(pre "$H" s7 bash 'npm test 2>&1 | grep FAIL')"; done
   allowed "$H"; note $? "$H: grep over command output is neutral"
   fresh
-  run "$H" "$(pre "$H" s8 bash 'git status')"; run "$H" "$(pre "$H" s8 bash 'rg -l foo src')"
-  run "$H" "$(pre "$H" s8 bash 'cd src && grep -rn bar .')"; allowed "$H"; note $? "$H: shell search 2 allowed"
-  run "$H" "$(pre "$H" s8 bash 'git grep baz')"; denied "$H"; note $? "$H: shell search 3 (rg/grep/git grep) denied"
+  run "$H" "$(pre "$H" s8 bash 'git status')"; run "$H" "$(pre "$H" s8 bash 'rg -l "foo|qux" src')"
+  run "$H" "$(pre "$H" s8 bash 'cd src && grep -rn "bar\|baz" .')"; allowed "$H"; note $? "$H: shell concept search 2 allowed"
+  run "$H" "$(pre "$H" s8 bash 'git grep -e baz -e qux')"; denied "$H"; note $? "$H: shell concept search 3 (a|b, a\\|b, -e -e) denied"
+
+  # bd tea-rags-mcp-nxg76: literal searches are the routed occurrence search, never drift.
+  fresh
+  for _ in 1 2 3 4 5; do run "$H" "$(pre "$H" l1 grep RETRY_AFTER_SECONDS)"; done
+  allowed "$H"; note $? "$H: literal searches (one identifier) are neutral"
+  run "$H" "$(pre "$H" l1 bash 'rg -l RETRY_AFTER_SECONDS src')"; run "$H" "$(pre "$H" l1 bash 'grep -rn "retry after" src')"
+  run "$H" "$(pre "$H" l1 bash 'grep -rnF "a|b" src')"; run "$H" "$(pre "$H" l1 bash 'rg -l --fixed-strings "x|y" src')"
+  allowed "$H"; note $? "$H: shell literal / phrase / -F searches are neutral"
+  run "$H" "$(pre "$H" l1 grep "$C")"; run "$H" "$(pre "$H" l1 grep "$C")"; allowed "$H"; note $? "$H: neutral searches left the counter at 0"
+
+  # Searches scoped to config / spec / migration paths and reads of them are neutral.
+  fresh
+  for _ in 1 2 3 4; do run "$H" "$(pre "$H" z1 bash 'rg -n "create_table|add_column" db/migrate')"; done
+  allowed "$H"; note $? "$H: concept search scoped to db/migrate is neutral"
+  for _ in 1 2 3 4; do run "$H" "$(pre "$H" z1 bash 'grep -rln "FLAG_A\|FLAG_B" spec/constants config/routes.rb')"; done
+  allowed "$H"; note $? "$H: concept search scoped to spec/ and config/ is neutral"
+  case "$H" in
+    claude | cursor)
+      for _ in 1 2 3 4; do
+        run "$H" "$(jq -cn --arg s z1 '{hook_event_name:"PreToolUse",session_id:$s,conversation_id:$s,cwd:"/repo",workspace_roots:["/repo"],tool_name:"Grep",tool_input:{pattern:"create_table|add_column",path:"/repo/db/migrate"}}' | if [ "$H" = cursor ]; then jq -c '.hook_event_name="preToolUse"'; else cat; fi)"
+      done
+      allowed "$H"; note $? "$H: Grep tool alternation with path db/migrate is neutral" ;;
+  esac
+  export FAKE_OUT='{"indexed":true,"relativePath":"db/migrate/001_create_orders.rb"}'
+  for f in db/migrate/001_create_orders.rb config/initializers/money.rb spec/models/order_spec.rb config/routes.rb; do
+    run "$H" "$(pre "$H" z2 read "/repo/$f")"
+  done
+  allowed "$H"; note $? "$H: reads of migrations / initializers / specs / routes are neutral"
+  export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
+  run "$H" "$(pre "$H" z2 read /repo/src/a.ts)"; run "$H" "$(pre "$H" z2 read /repo/src/a.ts)"; allowed "$H"
+  note $? "$H: zone reads left the read counter at 0"
+  # A zone word in the checkout path itself never neutralises a source read.
+  fresh
+  for _ in 1 2 3; do
+    run "$H" "$(pre "$H" z3 read /repo/src/a.ts | jq -c '.cwd="/work/test/repo" | .workspace_roots=["/work/test/repo"] | if .tool_input.file_path then .tool_input.file_path="/work/test/repo/src/a.ts" else .tool_input.command=(.tool_input.command | if type=="array" then (.[2]="cat src/a.ts") else . end) end')"
+  done
+  denied "$H" "find_symbol"; note $? "$H: a zone word in the cwd does not exempt a source read"
 
   fresh
-  run "$H" "$(pre "$H" a grep foo)"; run "$H" "$(pre "$H" a grep foo)"
-  run "$H" "$(pre "$H" b grep foo)"; allowed "$H"; note $? "$H: sessions are counted apart"
+  run "$H" "$(pre "$H" a grep "$C")"; run "$H" "$(pre "$H" a grep "$C")"
+  run "$H" "$(pre "$H" b grep "$C")"; allowed "$H"; note $? "$H: sessions are counted apart"
 
   # Fail-open paths.
   fresh
-  run "$H" "$(pre "$H" s9 grep foo)" "$BASE_PATH"
+  run "$H" "$(pre "$H" s9 grep "$C")" "$BASE_PATH"
   if command -v jq >/dev/null 2>&1 && [ "$(command -v jq)" != /usr/bin/jq ]; then allowed "$H"; note $? "$H: no jq → allow"; fi
   run "$H" 'not json'; allowed "$H"; note $? "$H: unparsable stdin → allow"
   BLOCKED="$(mktemp)"
-  for _ in 1 2 3 4; do run "$H" "$(pre "$H" s10 grep foo)" "" "$BLOCKED/state"; done
+  for _ in 1 2 3 4; do run "$H" "$(pre "$H" s10 grep "$C")" "" "$BLOCKED/state"; done
   allowed "$H"; note $? "$H: unwritable state dir → allow"
   rm -f "$BLOCKED"
 done
@@ -183,19 +225,19 @@ done
 for H in claude codex cursor; do
   [ -f "$(hook_of "$H")" ] || continue
   fresh
-  run "$H" "$(pre "$H" t1 grep foo)"; run "$H" "$(pre "$H" t1 grep foo)"
+  run "$H" "$(pre "$H" t1 grep "$C")"; run "$H" "$(pre "$H" t1 grep "$C")"
   run "$H" "$(prompt "$H" t1)"
   case "$H" in cursor) [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.continue // empty' 2>/dev/null)" = true ] ;; *) [ "$CODE" = 0 ] && [ -z "$OUT" ] ;; esac
   note $? "$H: prompt event passes through ($H shape)"
-  run "$H" "$(pre "$H" t1 grep foo)"; run "$H" "$(pre "$H" t1 grep foo)"; allowed "$H"; note $? "$H: 2 searches, new prompt, 2 searches -> no deny"
-  run "$H" "$(pre "$H" t1 grep foo)"; denied "$H"; note $? "$H: 3 searches within one turn still denied"
+  run "$H" "$(pre "$H" t1 grep "$C")"; run "$H" "$(pre "$H" t1 grep "$C")"; allowed "$H"; note $? "$H: 2 searches, new prompt, 2 searches -> no deny"
+  run "$H" "$(pre "$H" t1 grep "$C")"; denied "$H"; note $? "$H: 3 searches within one turn still denied"
 
   fresh
-  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep foo)"; done
+  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep "$C")"; done
   denied "$H"; note $? "$H: setup deny"
   run "$H" "$(prompt "$H" t2)"
   NOW=$((NOW + 30))
-  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep foo)"; done
+  for _ in 1 2 3; do run "$H" "$(pre "$H" t2 grep "$C")"; done
   allowed "$H"; note $? "$H: deny, new prompt, 3 searches within 120 s -> no second deny (cooldown kept)"
 
   fresh
@@ -209,8 +251,12 @@ done
 PJ="$ROOT/plugins/tea-rags/.claude-plugin/plugin.json"
 jq -e '.hooks.PreToolUse[] | select(.matcher | test("Grep")) | .hooks[] | select(.command | test("search-drift.sh --harness claude"))' "$PJ" >/dev/null
 note $? "claude: PreToolUse wires search-drift"
-jq -e '.hooks.PreToolUse[] | select(.matcher | test("Read")) | .hooks[] | select(.command | test("deny-indexed-read.sh"))' "$PJ" >/dev/null
-note $? "claude: PreToolUse wires deny-indexed-read"
+# bd tea-rags-mcp-nxg76: the indexed-read deny is gone from all three harnesses.
+! grep -qF 'deny-indexed-read' "$PJ" "$ROOT/harness/codex/tea-rags/hooks/hooks.json" "$ROOT/harness/cursor/tea-rags/hooks/hooks.json"
+note $? "no harness wires deny-indexed-read"
+[ ! -e "$ROOT/plugins/tea-rags/scripts/deny-indexed-read.sh" ] && [ ! -e "$ROOT/harness/codex/tea-rags/scripts/deny-indexed-read.sh" ] \
+  && [ ! -e "$ROOT/harness/cursor/tea-rags/scripts/deny-indexed-read.sh" ] && [ ! -e "$ROOT/.claude-plugin/tea-rags/scripts/deny-indexed-read.sh" ]
+note $? "no harness ships deny-indexed-read.sh"
 jq -e '.hooks.PostToolUse[] | select(.matcher | test("tea-rags")) | .hooks[] | select(.command | test("search-drift.sh --harness claude"))' "$PJ" >/dev/null
 note $? "claude: PostToolUse(tea-rags MCP) wires search-drift"
 CJ="$ROOT/harness/codex/tea-rags/hooks/hooks.json"

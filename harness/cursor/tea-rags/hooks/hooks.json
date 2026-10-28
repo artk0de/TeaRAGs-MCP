@@ -13,18 +13,6 @@
         "timeout": 30
       }
     ],
-    "beforeReadFile": [
-      {
-        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/deny-indexed-read.sh\"",
-        "timeout": 10
-      }
-    ],
-    "beforeShellExecution": [
-      {
-        "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/deny-indexed-read.sh\"",
-        "timeout": 10
-      }
-    ],
     "afterShellExecution": [
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/after-shell-execution.sh\"",

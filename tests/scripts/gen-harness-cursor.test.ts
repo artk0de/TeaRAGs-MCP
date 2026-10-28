@@ -209,8 +209,6 @@ describe("renderCursorHarness", () => {
     expect(Object.keys(hooks.hooks)).toEqual([
       "sessionStart",
       "subagentStart",
-      "beforeReadFile",
-      "beforeShellExecution",
       "afterShellExecution",
       "beforeSubmitPrompt",
       "postToolUse",
@@ -230,10 +228,12 @@ describe("renderCursorHarness", () => {
     };
     const scripts: Record<string, string> = {
       subagentStart: "subagent-start.sh",
-      beforeReadFile: "deny-indexed-read.sh",
-      beforeShellExecution: "deny-indexed-read.sh",
       afterShellExecution: "after-shell-execution.sh",
     };
+    // bd tea-rags-mcp-nxg76: the indexed-read deny is lifted on every harness.
+    expect(hooks.beforeReadFile).toBeUndefined();
+    expect(hooks.beforeShellExecution).toBeUndefined();
+    expect(rendered.has("tea-rags/scripts/deny-indexed-read.sh")).toBe(false);
 
     for (const [event, script] of Object.entries(scripts)) {
       expect(hooks[event]).toHaveLength(1);

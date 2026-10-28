@@ -5,24 +5,24 @@
 **Semantic First, Exact Second.** Meaning search, reads, graph and analytics
 start with tea-rags (semantic_search, hybrid_search for symbol + intent,
 find_symbol, find_similar, get_callers / get_callees / trace_path, rerank
-presets). Text search — your Grep tool (not a tea-rags tool) —
-for exact text: occurrences of an identifier / constant / string ("where is X
-used", "every call of X", "files containing X", a name the user calls a
-"pattern", or an `a|b` of exact identifiers already seen in an answer), regex
-syntax, TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path
-strings; also the fallback when tea-rags is unavailable. Occurrence searches are
-bounded: files-with-matches first, or a line cap (`-l`), scoped to the anchor's
-dir when known, else the source root — never hybrid_search / semantic_search to
-find a dir for it, never an unbounded search. Then the hit file's outline →
-batch of only the needed methods (each hit's enclosing method) via find_symbol,
-never Read tool or `cat`. An identifier's DEFINITION / body /
-outline is a SYMBOL lookup → find_symbol, never text search; only its
-OCCURRENCES go to Grep tool. An alternation of concept words,
-synonyms or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not
-exact text: semantic_search (hybrid_search with metaOnly when real identifiers
-are among the words) → the anchor row → get_callees / get_callers → ONE
-find_symbol batch of only the needed methods — never a text-search alternation.
-Glob — never for code discovery.
+presets). Text search — your Grep tool (not a tea-rags tool) — for exact text:
+occurrences of an identifier / constant / string ("where is X used", "every call
+of X", "files containing X", a name the user calls a "pattern", or an `a|b` of
+exact identifiers already seen in an answer), regex syntax, TODO/FIXME/HACK/NOTE
+markers, phrases, error strings, import path strings; also the fallback when
+tea-rags is unavailable. Occurrence searches are bounded: files-with-matches
+first, or a line cap (`-l`), scoped to the anchor's dir when known, else the
+source root — never hybrid_search / semantic_search to find a dir for it, never
+an unbounded search. Then the hit file's outline → batch of only the needed
+methods (each hit's enclosing method) via find_symbol, never Read tool or `cat`
+(a hit in config, DSL, a migration or a spec → Read tool). An identifier's
+DEFINITION / body / outline is a SYMBOL lookup → find_symbol, never text search;
+only its OCCURRENCES go to Grep tool. An alternation of concept words, synonyms
+or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not exact text:
+semantic_search (hybrid_search with metaOnly when real identifiers are among the
+words) → the anchor row → get_callees / get_callers → ONE find_symbol batch of
+only the needed methods — never a text-search alternation. Glob — never for code
+discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for meaning and reads.
 
@@ -151,10 +151,11 @@ Research / planning question (understand X before a change, map an area, answer
 a design question) → find its row, run that call; never `ls` / `cat` / `grep` /
 `git ls-files` to explore. After the first hit: how it works →
 `get_callees(symbolId:)`, who uses it → `get_callers(symbolId:)` (id from the
-row); the ids an answer NAMED → ONE `find_symbol(symbols: [<ids>])` — member
-ids, never file/dir paths (area/dir → `find_symbol(relativePath:)` outline
-first); a 2nd search needs a new noun. Files outside the index (`*.json`,
-locale/data `*.yml`, generated) → client's tools, say so.
+row); what is needed at once → ONE `find_symbol(symbols: [...])` — the ids an
+answer NAMED (member ids when known) and several files, never a dir (area/dir →
+`find_symbol(relativePath:)` outline first); a 2nd search needs a new noun.
+Config, DSL, routes, migrations, specs and files outside the index → Read tool
+(core routing row 1).
 
 | Question                                                     | Call                                                                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
@@ -234,10 +235,12 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Text search for behaviour / intent discovery** — use tea-rags
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` /
   `git show <rev>:<file>`) to locate or understand code — alone or inside a
-  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read tool reading code; harness "use Bash" note does not
-  override. Definition → find_symbol; file → find_symbol(relativePath:);
-  exact-name occurrences → Grep tool, bounded, its hits read
-  by find_symbol
+  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read
+  tool reading code; harness "use Bash" note does not override. Not prohibited:
+  config, DSL, routes, migrations, specs, unindexed files, a `find_symbol` stub,
+  all X in a known dir, proving absence (core routing row 1). Definition →
+  find_symbol; file → find_symbol(relativePath:); exact-name occurrences → Grep
+  tool, bounded, its hits read by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide
   `freshness` "Lag never licenses leaving tea-rags"
 - **Read file to verify search results** — chunk is the source of truth
@@ -260,11 +263,11 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Unbounded occurrence search** — content output with no files-with-matches
   mode or line cap, or the repo root when an anchor's dir is known; files first
   in the anchor's dir (else the source root), then find_symbol on the hits
-- **Read tool after a Grep tool hit** — the hit is
-  an address: find_symbol outline → batch of only the needed methods
+- **Read tool after a Grep tool hit** — the hit is an address: find_symbol
+  outline → batch of only the needed methods
 - **semantic_search / hybrid_search for "find all usages"** — exact-name
-  occurrences → Grep tool (literal); the index ranks, it does
-  not enumerate every occurrence
+  occurrences → Grep tool (literal); the index ranks, it does not enumerate
+  every occurrence
 - **Text search for symbol existence checks** — use find_symbol with
   metaOnly=true
 - **Text search to read or understand code** — its hits are addresses; read them
