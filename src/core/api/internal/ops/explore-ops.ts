@@ -24,6 +24,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
@@ -651,13 +652,20 @@ export class ExploreOps {
     { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
     scope?: ExploreRequestScope,
   ): Promise<ExploreResponse> {
+    let migrationMarker: { collection: string; revision: unknown } | undefined;
     if (request.scope === "migrations") {
       const workingTree = await resolveIndexedWorkingTree(this.collectionRegistry, request, async (name) =>
         this.qdrant.collectionExists(name),
       );
-      if (!(await this.qdrant.collectionExists(migrationCollectionName(workingTree.baseIndex.collectionName)))) {
+      const migrationCollection = migrationCollectionName(workingTree.baseIndex.collectionName);
+      if (!(await this.qdrant.collectionExists(migrationCollection))) {
         return { results: [] };
       }
+      const marker = await this.qdrant.getPoint?.(migrationCollection, INDEXING_METADATA_ID);
+      if (marker === null || (marker && marker.payload?.indexingComplete !== true)) {
+        throw new Error("Migration corpus update is incomplete; retry indexing before searching migrations");
+      }
+      if (marker) migrationMarker = { collection: migrationCollection, revision: marker.payload?.migrationRevision };
     }
     const { target, query, embedding, queryVariants, denseUnavailable } = await this.embedQuery(
       request,
@@ -693,6 +701,15 @@ export class ExploreOps {
       migrationMetaOnly: request.scope === "migrations" && request.metaOnly === true,
       workingTreeView,
     });
+    if (migrationMarker) {
+      const marker = await this.qdrant.getPoint(migrationMarker.collection, INDEXING_METADATA_ID);
+      if (marker?.payload?.indexingComplete !== true) {
+        throw new Error("Migration corpus update is incomplete; retry indexing before searching migrations");
+      }
+      if (marker.payload.migrationRevision !== migrationMarker.revision) {
+        throw new Error("Migration corpus changed during the search; retry the query");
+      }
+    }
     // N6: the diagnosis counts run ONLY on an empty answer, and a failed
     // count leaves the explanation out instead of failing the search.
     const empty =

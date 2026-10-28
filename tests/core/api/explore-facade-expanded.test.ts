@@ -153,6 +153,43 @@ describe("ExploreFacade — expanded methods", () => {
     vi.clearAllMocks();
   });
 
+  it("rejects migration searches while the migration corpus is incomplete", async () => {
+    const qdrant = makeMockQdrant({ getPoint: vi.fn().mockResolvedValue({ payload: { indexingComplete: false } }) });
+    const { facade } = makeFacade({ qdrant });
+    await expect(
+      facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" }),
+    ).rejects.toThrow(/incomplete/i);
+    await expect(facade.hybridSearch({ collection: "test_col", query: "orders", scope: "migrations" })).rejects.toThrow(
+      /incomplete/i,
+    );
+  });
+
+  it("rejects migration results when an update starts during the search", async () => {
+    const qdrant = makeMockQdrant({
+      getPoint: vi
+        .fn()
+        .mockResolvedValueOnce({ payload: { indexingComplete: true } })
+        .mockResolvedValue({ payload: { indexingComplete: false } }),
+    });
+    const { facade } = makeFacade({ qdrant });
+    await expect(
+      facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" }),
+    ).rejects.toThrow(/incomplete/i);
+  });
+
+  it("rejects migration results when an update completes during the search", async () => {
+    const qdrant = makeMockQdrant({
+      getPoint: vi
+        .fn()
+        .mockResolvedValueOnce({ payload: { indexingComplete: true, migrationRevision: "before" } })
+        .mockResolvedValue({ payload: { indexingComplete: true, migrationRevision: "after" } }),
+    });
+    const { facade } = makeFacade({ qdrant });
+    await expect(
+      facade.semanticSearch({ collection: "test_col", query: "orders", scope: "migrations" }),
+    ).rejects.toThrow(/changed/i);
+  });
+
   it("routes only explicit migration searches to the companion collection", async () => {
     const { facade, qdrant } = makeFacade();
     await facade.semanticSearch({ collection: "test_col", query: "orders" });
@@ -214,22 +251,20 @@ describe("ExploreFacade — expanded methods", () => {
 
   it("keeps migration metadata with metaOnly while omitting source", async () => {
     const qdrant = makeMockQdrant({
-      search: vi
-        .fn()
-        .mockResolvedValue([
-          {
-            id: "1",
-            score: 0.9,
-            payload: {
-              relativePath: "db/migrate/1_orders.rb",
-              content: "add_column :orders, :token, :uuid",
-              operation: "add_column",
-              table: "orders",
-              columns: ["token"],
-              version: "1",
-            },
+      search: vi.fn().mockResolvedValue([
+        {
+          id: "1",
+          score: 0.9,
+          payload: {
+            relativePath: "db/migrate/1_orders.rb",
+            content: "add_column :orders, :token, :uuid",
+            operation: "add_column",
+            table: "orders",
+            columns: ["token"],
+            version: "1",
           },
-        ]),
+        },
+      ]),
     });
     const { facade } = makeFacade({ qdrant });
     const result = await facade.semanticSearch({

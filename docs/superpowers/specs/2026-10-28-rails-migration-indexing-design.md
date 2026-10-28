@@ -147,6 +147,12 @@ local `review_changes` gate before each commit.
   configuration requires a one-time rebuild of the companion corpus.
 - Invalidate changed snapshot entries before mutating existing points: an
   interrupted update must be retried on the next index run.
+- Mark the migration collection incomplete and record pending paths before
+  incremental writes; reject migration searches until recovery finishes: a
+  removed newly-added file must not leave a stale searchable point after a
+  crash.
+- Check an update revision before and after migration search: overlapping
+  updates must not return mixed results as a completed corpus.
 
 ## Delivery phases
 

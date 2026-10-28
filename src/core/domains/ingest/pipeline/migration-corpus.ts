@@ -12,6 +12,11 @@ interface MigrationCorpusStore {
   collectionExists: (name: string) => Promise<boolean>;
   getPoint?: (name: string, id: string) => Promise<{ payload?: Record<string, unknown> } | null>;
   deleteCollection: (name: string) => Promise<void>;
+  setPayload?: (
+    name: string,
+    payload: Record<string, unknown>,
+    options: { points: string[]; wait: boolean; ordering?: "strong" },
+  ) => Promise<unknown>;
   deletePointsByPaths?: (name: string, paths: string[]) => Promise<void>;
   addPointsWithSparse: (
     name: string,
@@ -77,9 +82,43 @@ export async function rebuildMigrationCorpus(options: {
   const migrationConfig = JSON.stringify(["migration-v2", chunkSize, embeddings.getModel?.()]);
   const incremental = !!previous && hasSnapshot && metadata?.migrationConfig === migrationConfig;
   const changes = incremental && synchronizer ? await synchronizer.detectChanges(files) : undefined;
-  if (changes && changes.added.length + changes.modified.length + changes.deleted.length === 0) return;
+  if (changes && metadata?.indexingComplete === false && Array.isArray(metadata.migrationPendingPaths)) {
+    const currentPaths = new Set(files.map((file) => relative(root, file).split(sep).join("/")));
+    for (const path of metadata.migrationPendingPaths) {
+      if (typeof path !== "string") continue;
+      if (currentPaths.has(path)) {
+        if (!changes.added.includes(path) && !changes.modified.includes(path)) changes.modified.push(path);
+      } else if (!changes.deleted.includes(path)) {
+        changes.deleted.push(path);
+      }
+    }
+  }
+  if (changes && previous && changes.added.length + changes.modified.length + changes.deleted.length === 0) {
+    if (metadata?.indexingComplete === false && qdrant.setPayload) {
+      await qdrant.setPayload(previous, { indexingComplete: true }, { points: [INDEXING_METADATA_ID], wait: true });
+    }
+    return;
+  }
   if (changes && synchronizer) await synchronizer.invalidateEntries([...changes.modified, ...changes.deleted]);
   if (changes && !qdrant.deletePointsByPaths) throw new Error("Migration corpus requires path deletion support");
+  if (changes && previous) {
+    if (!qdrant.setPayload || !qdrant.getPoint) throw new Error("Migration corpus requires completion marker support");
+    const pendingPaths = [...changes.added, ...changes.modified, ...changes.deleted];
+    const migrationRevision = randomUUID();
+    await qdrant.setPayload(
+      previous,
+      { indexingComplete: false, migrationPendingPaths: pendingPaths, migrationRevision },
+      { points: [INDEXING_METADATA_ID], wait: true, ordering: "strong" },
+    );
+    const marker = (await qdrant.getPoint(previous, INDEXING_METADATA_ID))?.payload;
+    if (
+      marker?.indexingComplete !== false ||
+      marker.migrationRevision !== migrationRevision ||
+      JSON.stringify(marker.migrationPendingPaths) !== JSON.stringify(pendingPaths)
+    ) {
+      throw new Error("Migration corpus incomplete marker could not be confirmed");
+    }
+  }
   const filesToEmbed = changes ? [...changes.added, ...changes.modified].map((file) => join(root, file)) : files;
   const sourceFiles = await Promise.all(
     filesToEmbed.map(async (filePath) => ({ filePath, code: await readFile(filePath, "utf8") })),
@@ -175,6 +214,7 @@ export async function rebuildMigrationCorpus(options: {
           payload: {
             _type: "indexing_metadata",
             indexingComplete: true,
+            migrationRevision: randomUUID(),
             embeddingModel: embeddings.getModel?.(),
             migrationDigest: digest,
             migrationConfig,
@@ -189,6 +229,13 @@ export async function rebuildMigrationCorpus(options: {
       if (previous) await qdrant.deleteCollection(previous);
     }
     await synchronizer?.updateSnapshot(files);
+    if (changes && qdrant.setPayload) {
+      await qdrant.setPayload(
+        target,
+        { indexingComplete: true, migrationPendingPaths: [] },
+        { points: [INDEXING_METADATA_ID], wait: true, ordering: "strong" },
+      );
+    }
   } finally {
     if (!published) await qdrant.deleteCollection(target);
   }
