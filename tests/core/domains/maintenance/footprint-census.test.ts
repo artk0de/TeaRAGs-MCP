@@ -185,4 +185,16 @@ describe("classifyCollectionFootprints", () => {
 
     expect(findings[0]?.blockedBy).toBe("in use: indexing lock held by a live run");
   });
+
+  it("does not call store files a leftover while a generation of that name still lives under another alias", () => {
+    const findings = classifyCollectionFootprints(
+      inventory({
+        physicalCollections: ["code_x_v1"],
+        aliases: [{ aliasName: "code_other", collectionName: "code_x_v1" }],
+        storeLogicals: ["code_x"],
+      }),
+    );
+
+    expect(findings.map((f) => `${f.findingClass}:${f.logicalName}`)).toEqual(["unregistered-alias:code_other"]);
+  });
 });

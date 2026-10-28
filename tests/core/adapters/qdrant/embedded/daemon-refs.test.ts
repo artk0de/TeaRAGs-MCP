@@ -156,4 +156,21 @@ describe("bindDaemonRefRelease", () => {
 
     expect(off).toHaveBeenCalledTimes(1);
   });
+
+  it("registers on the real process exit hook and unregisters the same listener on release", () => {
+    const once = vi.spyOn(process, "once").mockImplementation(() => process);
+    const off = vi.spyOn(process, "off").mockImplementation(() => process);
+    try {
+      const release = bindDaemonRefRelease(vi.fn(() => 0));
+      const listener = once.mock.calls.find(([event]) => event === "exit")?.[1];
+      expect(listener).toBeTypeOf("function");
+
+      release();
+
+      expect(off).toHaveBeenCalledWith("exit", listener);
+    } finally {
+      once.mockRestore();
+      off.mockRestore();
+    }
+  });
 });

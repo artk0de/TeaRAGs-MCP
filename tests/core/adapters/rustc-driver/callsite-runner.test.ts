@@ -1,10 +1,20 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RustSourceStamp } from "../../../../src/core/adapters/filesystem/rust-sources.js";
 import type { SupervisedChild } from "../../../../src/core/adapters/process-tree/supervised-child.js";
@@ -1134,6 +1144,211 @@ describe("lockRustcDriverRunRecord — host lock file", () => {
       expect(release).toBeDefined();
       release?.();
       expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("acquireRustcCallSites — host failures and stale on-disk state", () => {
+  const reuseOnly: RustCallSiteAdmission = () => "reuseOnly";
+
+  it("answers failed with the thrown message when discovery itself blows up", async () => {
+    const h = host();
+    h.deps.discover = () => {
+      throw new Error("discovery exploded");
+    };
+    const result = await acquire(h);
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.detail).toBe("discovery exploded");
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("answers unavailable when a found driver has no resolvable pin sysroot", async () => {
+    const h = host();
+    h.deps.run = () => ({ kind: "failed" });
+    const result = await acquire(h);
+    expect(result.status).toBe("unavailable");
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it("answers failed naming the binary when the driver cannot print its banner", async () => {
+    const h = host();
+    const { run } = h.deps;
+    h.deps.run = (command, args, timeoutMs) => (args[0] === "-V" ? { kind: "failed" } : run(command, args, timeoutMs));
+    const result = await acquire(h);
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.detail).toBe(`${DRIVER} -V failed`);
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  it.each(["{ not json", "null"])("ignores an unreadable source record (%s) and the latch beside it", async (text) => {
+    const h = host();
+    await acquire(h);
+    const out = outDirOf(h.spawns[0]);
+    h.texts.set(`${out}/sources.json`, text);
+    h.texts.set(`${out}/latch.json`, text);
+    const result = await acquire(h, { admission: reuseOnly });
+    expect(result.status).toBe("noCache");
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it("ignores a latch with an unknown reason", async () => {
+    const h = host();
+    await acquire(h);
+    const out = outDirOf(h.spawns[0]);
+    h.texts.set(`${out}/latch.json`, JSON.stringify({ reason: "mystery", detail: "x" }));
+    const result = await acquire(h);
+    expect(result.status).toBe("reused");
+    expect(result.diagnostics.latched).toBeUndefined();
+  });
+
+  describe("failed crates and changed sources under reuseOnly", () => {
+    const partial = (failed: Record<string, unknown>[], over: Record<string, unknown> = {}): DriverScript =>
+      okScript({
+        runJson: okRun({
+          success: false,
+          exitCode: 101,
+          units: [{ file: "app-1.ndjson", crate: "app" }],
+          failed,
+          ...over,
+        }),
+        units: { "app-1.ndjson": row() },
+        exitCode: 101,
+      });
+    const failure = (packageId: string) => ({ packageId, target: "dep", kind: ["lib"], firstError: "boom" });
+    const edited = [
+      { relPath: "app/src/main.rs", size: 101, mtimeMs: 5 },
+      { relPath: "core/src/lib.rs", size: 200, mtimeMs: 1 },
+    ];
+
+    it("re-runs cargo when units stayed missing and any source changed", async () => {
+      const missing = [{ unit: "app-1", packageId: "p", target: "app", kind: ["bin"], test: false }];
+      const stillMissing = okScript({ runJson: okRun({ missing }) });
+      const h = host({ scripts: [stillMissing, stillMissing, okScript()] });
+      expect((await acquire(h)).status).toBe("partial");
+      h.setSources(edited);
+      await acquire(h, { admission: reuseOnly });
+      expect(h.spawns).toHaveLength(3);
+    });
+
+    it.each([
+      ["a registry crate", "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.0"],
+      ["a path crate outside the project", "path+file:///elsewhere/dep#dep@0.1.0"],
+    ])("serves the earlier run when only %s failed: no project edit can fix it", async (_label, packageId) => {
+      const h = host({ scripts: [partial([failure(packageId)])] });
+      await acquire(h);
+      h.setSources(edited);
+      const result = await acquire(h, { admission: reuseOnly });
+      expect(result.status).toBe("reused");
+      expect(h.spawns).toHaveLength(1);
+    });
+
+    it.each([
+      ["an id carrying no source", "dep 0.1.0"],
+      ["a path id whose URL cannot be a local path", "path+file://remote-host/dep#dep@0.1.0"],
+    ])("re-runs cargo when the failed crate is %s and any source changed", async (_label, packageId) => {
+      const h = host({ scripts: [partial([failure(packageId)]), okScript()] });
+      await acquire(h);
+      h.setSources(edited);
+      await acquire(h, { admission: reuseOnly });
+      expect(h.spawns).toHaveLength(2);
+    });
+
+    it("treats a failed crate at the project root as touched by any source change", async () => {
+      const h = host({ scripts: [partial([failure("path+file:///ws#root@0.1.0")]), okScript()] });
+      await acquire(h);
+      h.setSources(edited);
+      await acquire(h, { admission: reuseOnly });
+      expect(h.spawns).toHaveLength(2);
+    });
+  });
+});
+
+describe("defaultRustcCallSiteRunnerDeps — host filesystem", () => {
+  it("reads, lists, stats, renames and resolves paths, degrading every failure to an absent answer", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-runner-fs-"));
+    try {
+      const { fs } = defaultRustcCallSiteRunnerDeps({ TEA_RAGS_DATA_DIR: dir });
+      const file = join(dir, "a", "note.txt");
+      fs.writeTextAtomic(file, "hello");
+
+      expect(fs.readText(file)).toBe("hello");
+      expect(fs.readText(join(dir, "missing"))).toBeUndefined();
+      expect(fs.listDir(join(dir, "a"))).toEqual(["note.txt"]);
+      expect(fs.listDir(join(dir, "missing"))).toEqual([]);
+      expect(fs.stat(file)?.size).toBe(5);
+      expect(fs.stat(join(dir, "missing"))).toBeUndefined();
+      expect(fs.realPath(join(dir, "missing"))).toBe(join(dir, "missing"));
+      expect(fs.realPath(file)).toBe(realpathSync(file));
+
+      const moved = join(dir, "b", "c", "note.txt");
+      fs.rename(file, moved);
+      expect(fs.readText(moved)).toBe("hello");
+      expect(existsSync(file)).toBe(false);
+
+      fs.remove(join(dir, "b"));
+      expect(existsSync(join(dir, "b"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands removeInBackground to the shared async delete", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-runner-bg-"));
+    try {
+      const { fs } = defaultRustcCallSiteRunnerDeps({ TEA_RAGS_DATA_DIR: dir });
+      const target = join(dir, "trash");
+      mkdirSync(target);
+      fs.removeInBackground(target);
+      await removeRustcDriverPathInBackground(target);
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writeTextAtomic swallows a write that cannot happen and leaves no temp file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-runner-write-"));
+    try {
+      const { fs } = defaultRustcCallSiteRunnerDeps({ TEA_RAGS_DATA_DIR: dir });
+      const sealed = join(dir, "sealed");
+      mkdirSync(sealed);
+      chmodSync(sealed, 0o500);
+      try {
+        expect(() => {
+          fs.writeTextAtomic(join(sealed, "child.json"), "{}");
+        }).not.toThrow();
+        expect(readdirSync(sealed)).toEqual([]);
+      } finally {
+        chmodSync(sealed, 0o700);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("removeRustcDriverPathInBackground — failure", () => {
+  it("logs a delete that fails instead of rejecting", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(removeRustcDriverPathInBackground("bad\0path")).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining("background delete of"), expect.anything());
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("lockRustcDriverRunRecord — unwritable lock dir", () => {
+  it("answers a no-op release when the lock directory cannot be created", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-run-lock-blocked-"));
+    try {
+      writeFileSync(join(dir, "blocker"), "x");
+      const release = await lockRustcDriverRunRecord(join(dir, "blocker", "p", "run.lock"), 0);
+      expect(release).toBeDefined();
+      expect(release?.()).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
