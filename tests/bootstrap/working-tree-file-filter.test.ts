@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createWorkingTreeFileFilter } from "../../src/bootstrap/factory.js";
+import { createWorkingTreeFileFilter, createWorkingTreePathExclusionReader } from "../../src/bootstrap/factory.js";
 import { bindLanguagePresencePorts } from "../../src/core/api/internal/ops/language-presence-ports.js";
 import { languageIngestIgnoreContribution } from "../../src/core/domains/language/capability/native.js";
 
@@ -45,6 +45,22 @@ describe("language ignore contributions reach every composed scanner", () => {
     })(root);
     expect(accepts("src/main.py")).toBe(true);
     expect(accepts("vendor/serde/src/lib.rs")).toBe(false);
+  });
+
+  // bd tea-rags-mcp-d9w4o: the ignoredPath answer asks the same composed scanner why.
+  it("the working-tree path exclusion reader excludes the cargo-vendored crate and admits the source file", async () => {
+    const exclusionOf = await createWorkingTreePathExclusionReader({
+      chunkSize: 2500,
+      chunkOverlap: 300,
+      supportedExtensions: [".rs", ".py"],
+      ignorePatterns: ["*.log"],
+      enableHybridSearch: false,
+      quantizationScalar: false,
+      turboQuant: false,
+    })(root);
+    expect(exclusionOf("src/main.py", false)).toBeUndefined();
+    expect(exclusionOf("vendor/serde", true)).toEqual({});
+    expect(exclusionOf("logs/run.log", false)).toEqual({ ignoreRule: "*.log" });
   });
 
   it("language presence does not see a language that lives only in a cargo-vendored crate", async () => {

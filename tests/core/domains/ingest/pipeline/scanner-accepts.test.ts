@@ -63,3 +63,43 @@ describe("FileScanner#accepts", () => {
     expect(scanned).toEqual(["src/app.ts"]);
   });
 });
+
+// bd tea-rags-mcp-d9w4o: why ingest leaves a tree path out, for the ignoredPath answer.
+describe("FileScanner#exclusionOf", () => {
+  let root: string;
+  let scanner: FileScanner;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "scanner-exclusion-"));
+    writeFileSync(join(root, ".contextignore"), "generated/\n");
+    writeFileSync(join(root, ".gitignore"), "secret.ts\n");
+    scanner = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
+    await scanner.loadIgnorePatterns(root);
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("should name the pattern that ignores a file's ancestor directory", () => {
+    expect(scanner.exclusionOf("generated/deep/model.ts", false)).toEqual({ ignoreRule: "generated/" });
+  });
+
+  it("should name the pattern that ignores a directory itself", () => {
+    expect(scanner.exclusionOf("generated/deep", true)).toEqual({ ignoreRule: "generated/" });
+    expect(scanner.exclusionOf("generated/", true)).toEqual({ ignoreRule: "generated/" });
+  });
+
+  it("should name the pattern that ignores a file", () => {
+    expect(scanner.exclusionOf("secret.ts", false)).toEqual({ ignoreRule: "secret.ts" });
+  });
+
+  it("should exclude an unsupported extension without a pattern", () => {
+    expect(scanner.exclusionOf("assets/logo.png", false)).toEqual({});
+  });
+
+  it("should not exclude an accepted file or a directory nothing prunes", () => {
+    expect(scanner.exclusionOf("src/app.ts", false)).toBeUndefined();
+    expect(scanner.exclusionOf("src", true)).toBeUndefined();
+  });
+});

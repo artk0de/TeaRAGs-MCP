@@ -11,6 +11,7 @@
  * reported as `resolvedAs`, an ambiguity cap, and the misses.
  */
 
+import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
 import { BATCH_FULL_TEXT_MAX_LINES, type SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
@@ -70,6 +71,17 @@ const BARE_FILE_EXTENSIONS = new Set([
 
 /** Matches one address may answer with; more is a miss asking to qualify it. */
 const MAX_MATCHES_PER_ADDRESS = 5;
+
+/** Candidates an ambiguous miss names (bd tea-rags-mcp-d9w4o). */
+const MAX_AMBIGUOUS_CANDIDATES = 7;
+
+/**
+ * Which candidates an ambiguous miss lists first: a class / module outline is
+ * what a bare type name most often addresses, a type alias or interface
+ * declaration least often.
+ */
+const AMBIGUOUS_CHUNK_TYPE_RANK: Readonly<Record<string, number>> = { class: 0, function: 1, test: 1, block: 2 };
+const AMBIGUOUS_UNRANKED_CHUNK_TYPE = 3;
 
 /** Addresses resolved at once — each one runs two Qdrant scrolls. */
 const ADDRESS_CONCURRENCY = 4;
@@ -139,8 +151,10 @@ export class SymbolBatchDrill {
       // A file with no symbol chunk is no symbol either: its reason is the miss.
       const empty = outline.emptyAnswer;
       if (empty?.reason === "noSymbols") return { rows: [], miss: { request: address, message: empty.message } };
-      // A bare root-level name that is no file may still be a symbol id; a slashed one is a path.
-      if (address.includes("/")) return { rows: [], miss: unknownPathMiss(address, outline.emptyAnswer?.suggestions) };
+      // A bare root-level name that is no file may still be a symbol id; a slashed one, or one the tree has, is a path.
+      if (address.includes("/") || empty?.reason === "ignoredPath") {
+        return { rows: [], miss: unknownPathMiss(address, empty) };
+      }
     }
     return this.resolveSymbol(address, ctx);
   }
@@ -157,6 +171,7 @@ export class SymbolBatchDrill {
         miss: {
           request: address,
           message: `ambiguous: ${results.length} matches — qualify with Class# or pathPattern`,
+          suggestions: ambiguousCandidates(results),
         },
         warning,
       };
@@ -250,12 +265,34 @@ function directoryEntryMiss(address: string): SymbolBatchMiss {
   return { request: address, message: `directory — call find_symbol(relativePath: ${dir}) on its own` };
 }
 
-function unknownPathMiss(address: string, suggestions: readonly string[] | undefined): SymbolBatchMiss {
+/** A path entry no file answered: an ignored tree path says so (bd tea-rags-mcp-d9w4o), else the nearest indexed paths. */
+function unknownPathMiss(address: string, empty: EmptyAnswerExplanation | undefined): SymbolBatchMiss {
+  if (empty?.reason === "ignoredPath") return { request: address, message: empty.message };
+  const suggestions = empty?.suggestions;
   return {
     request: address,
     message: `unknown path — ${UNKNOWN_PATH_HINT}`,
     ...(suggestions && suggestions.length > 0 ? { suggestions: [...suggestions] } : {}),
   };
+}
+
+/**
+ * An ambiguous address's candidates as `<symbolId> (<relativePath>)`, distinct,
+ * class / module chunks first and type aliases last (stable within a rank),
+ * at most {@link MAX_AMBIGUOUS_CANDIDATES}.
+ */
+function ambiguousCandidates(results: readonly ExploreResult[]): string[] {
+  const ranked = results.flatMap((result) => {
+    const symbolId = result.payload?.symbolId;
+    if (typeof symbolId !== "string") return [];
+    const chunkType = result.payload?.chunkType;
+    const rank =
+      (typeof chunkType === "string" ? AMBIGUOUS_CHUNK_TYPE_RANK[chunkType] : undefined) ??
+      AMBIGUOUS_UNRANKED_CHUNK_TYPE;
+    return [{ candidate: `${symbolId} (${relativePathOf(result.payload)})`, rank }];
+  });
+  const ordered = ranked.sort((a, b) => a.rank - b.rank).map(({ candidate }) => candidate);
+  return [...new Set(ordered)].slice(0, MAX_AMBIGUOUS_CANDIDATES);
 }
 
 /** `Foo.bar` ↔ `Foo#bar` on the last separator; undefined for a bare name or a `::` tail. */

@@ -216,6 +216,8 @@ interface ExploreFinalizeOptions {
   searchTool?: boolean;
   /** find_symbol `relativePath`: rows are outlines, kept under metaOnly (`PayloadProjectionMode.outline`). */
   outline?: boolean;
+  /** The level a `taskId` filter matched (`PayloadProjectionMode.taskIdsLevel`); absent → no taskId filter. */
+  taskIdsLevel?: "file" | "chunk";
   /**
    * Never rejects (`WorkingTreeOverlay#view` degrades instead); its marker rides
    * on the answer, with the floors the strategy's reads claimed on it (D8).
@@ -338,7 +340,13 @@ export class ExploreOps {
     return this.executeExplore(
       this.scrollRankStrategy,
       withHistoryClock(buildRankChunksContext(request, collectionName, filter, level), historyAnchorSec),
-      { presetFilterNotice, fields: request.fields, searchTool: true, workingTreeView },
+      {
+        presetFilterNotice,
+        fields: request.fields,
+        searchTool: true,
+        ...taskIdsProjectionOf(request, level),
+        workingTreeView,
+      },
     );
   }
 
@@ -615,6 +623,7 @@ export class ExploreOps {
         reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance",
         searchTool: finalize.searchTool === true,
         outline: finalize.outline === true,
+        ...(finalize.taskIdsLevel ? { taskIdsLevel: finalize.taskIdsLevel } : {}),
       },
     );
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
@@ -667,6 +676,7 @@ export class ExploreOps {
       presetFilterNotice,
       fields: request.fields,
       searchTool: true,
+      ...taskIdsProjectionOf(request, level),
       workingTreeView,
     });
     // N6: the diagnosis counts run ONLY on an empty answer, and a failed
@@ -1237,6 +1247,18 @@ function buildVectorSearchContext(
     metaOnly: request.metaOnly,
     level,
   };
+}
+
+/**
+ * A `taskId` search keeps the matched `taskIds` array in its default
+ * projection (bd tea-rags-mcp-d9w4o). The level is the one the filter compiled
+ * at: the request's effective level, else the taskId filter's own default (file).
+ */
+function taskIdsProjectionOf(
+  request: { taskId?: string },
+  level: "chunk" | "file" | undefined,
+): { taskIdsLevel?: "file" | "chunk" } {
+  return request.taskId ? { taskIdsLevel: level ?? "file" } : {};
 }
 
 function buildRankChunksContext(

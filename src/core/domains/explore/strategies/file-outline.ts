@@ -25,6 +25,7 @@ import { CodeChunkGrouper, DirectoryChunkGrouper, DocChunkGrouper, type ScrollCh
 import { historyClockRerankOption } from "../history-clock.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { RerankerPort } from "../reranker-port.js";
+import type { UnindexedTreePath } from "../working-tree/overlay.js";
 import { recordingTreeGraphReader } from "../working-tree/tree-graph-marker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -93,7 +94,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
   /**
    * Why the answer is empty: `relativePath` named neither a file nor a directory
-   * (N6 `unknownPath`), or a file too large for its full text holds no symbol
+   * (N6 `unknownPath`), named a tree path ingest leaves out (`ignoredPath`), or a file too large for its full text holds no symbol
    * chunk to outline (`noSymbols`).
    */
   get emptyAnswer(): EmptyAnswerExplanation | undefined {
@@ -224,6 +225,11 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     if (grouping) {
       this.directoryOutline = under.capped ? { ...grouping.outline, truncated: true } : grouping.outline;
       return grouping.files;
+    }
+    const unindexed = await ctx.workingTreeView?.unindexedTreePath?.(dir);
+    if (unindexed) {
+      this.empty = { reason: "ignoredPath", message: ignoredPathMessage(dir, unindexed) };
+      return [];
     }
     this.empty = {
       reason: "unknownPath",
@@ -357,6 +363,15 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
     return processed;
   }
+}
+
+/** The `ignoredPath` sentence (bd tea-rags-mcp-d9w4o): what the tree has, why it is unindexed, which tool reads it. */
+function ignoredPathMessage(path: string, unindexed: UnindexedTreePath): string {
+  const why = unindexed.ignoreRule === undefined ? "" : ` (ignore pattern "${unindexed.ignoreRule}")`;
+  return unindexed.isDirectory
+    ? `directory "${path}" exists in the working tree but is not indexed${why} — ` +
+        "list and read it with the default code search / read tools."
+    : `"${path}" exists in the working tree but is not indexed${why} — read it with the default code read tool.`;
 }
 
 function pickListingFields(payload: Record<string, unknown> | undefined): Record<string, unknown> {

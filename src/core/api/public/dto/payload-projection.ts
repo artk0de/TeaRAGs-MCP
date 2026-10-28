@@ -67,6 +67,12 @@ export interface PayloadProjectionMode {
    * tea-rags-mcp-hditp).
    */
   outline?: boolean;
+  /**
+   * A search tool's `taskId` filter matched `git.<level>.taskIds` at this level:
+   * its default projection keeps that array, so a ticket drill sees which ids
+   * the ticket touched without a second search (bd tea-rags-mcp-d9w4o).
+   */
+  taskIdsLevel?: "file" | "chunk";
 }
 
 /**
@@ -143,19 +149,19 @@ export function projectSearchResultPayloads(
 function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): SearchResult[] {
   if (!mode.searchTool && !mode.metaOnly && mode.reranked) return results;
   const keys = defaultKeysOf(mode);
+  const matched = new Set<string>();
   return results.map((result) => {
     const { payload } = result;
     if (!payload) return result;
-    const projected: Record<string, unknown> = {};
-    for (const key of keys) {
-      if (key in payload) projected[key] = payload[key];
-    }
-    return { ...result, payload: projected };
+    return { ...result, payload: projectPayload(payload, keys, matched) };
   });
 }
 
 function defaultKeysOf(mode: PayloadProjectionMode): readonly string[] {
-  if (mode.searchTool) return mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+  if (mode.searchTool) {
+    const keys = mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+    return mode.taskIdsLevel ? [...keys, `git.${mode.taskIdsLevel}.taskIds`] : keys;
+  }
   if (!mode.metaOnly) return CONTENT_FIELDS;
   return mode.outline ? OUTLINE_META_ONLY_FIELDS : LOCATOR_FIELDS;
 }

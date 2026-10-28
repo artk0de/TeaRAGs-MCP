@@ -241,5 +241,49 @@ describe("FileOutlineStrategy directory mode", () => {
       expect(strategy.emptyAnswer?.suggestions?.[0]).toBe(`${DIR}/fresh/base.ts`);
       expect(strategy.emptyAnswer?.suggestions).not.toContain(`${DIR}/base.ts`);
     });
+
+    // bd tea-rags-mcp-d9w4o: a path the tree has but ingest ignores is not unknown.
+    it("explains a tree file an ignore pattern excludes as ignoredPath naming the pattern", async () => {
+      indexHolds(index);
+      const view = fakeWorkingTreeView({
+        unindexed: { "db/migrate/001_create.rb": { isDirectory: false, ignoreRule: "db/migrate/" } },
+      });
+      const strategy = strategyFor("db/migrate/001_create.rb");
+
+      const results = await run(strategy, view);
+
+      expect(results).toEqual([]);
+      expect(strategy.emptyAnswer).toEqual({
+        reason: "ignoredPath",
+        message:
+          '"db/migrate/001_create.rb" exists in the working tree but is not indexed (ignore pattern "db/migrate/") — ' +
+          "read it with the default code read tool.",
+      });
+    });
+
+    it("explains an excluded tree directory as ignoredPath pointing at the default code tools", async () => {
+      indexHolds(index);
+      const view = fakeWorkingTreeView({ unindexed: { "db/migrate": { isDirectory: true } } });
+      const strategy = strategyFor("db/migrate/");
+
+      await run(strategy, view);
+
+      expect(strategy.emptyAnswer).toEqual({
+        reason: "ignoredPath",
+        message:
+          'directory "db/migrate" exists in the working tree but is not indexed — ' +
+          "list and read it with the default code search / read tools.",
+      });
+    });
+
+    it("keeps unknownPath for a path the tree does not have either", async () => {
+      indexHolds(index);
+      const view = fakeWorkingTreeView({ unindexed: {} });
+      const strategy = strategyFor("src/strategies/nested/base.ts");
+
+      await run(strategy, view);
+
+      expect(strategy.emptyAnswer?.reason).toBe("unknownPath");
+    });
   });
 });

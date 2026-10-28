@@ -184,6 +184,13 @@ for H in claude codex cursor; do
   allowed "$H"; note $? "$H: concept search scoped to db/migrate is neutral"
   for _ in 1 2 3 4; do run "$H" "$(pre "$H" z1 bash 'grep -rln "FLAG_A\|FLAG_B" spec/constants config/routes.rb')"; done
   allowed "$H"; note $? "$H: concept search scoped to spec/ and config/ is neutral"
+  # bd tea-rags-mcp-d9w4o (eval Z5): a column-existence check is three literal
+  # searches over db/ (both table forms, then the column) — core routes it there.
+  fresh
+  run "$H" "$(pre "$H" z5 bash 'grep -rn -F ":invoices" db/migrate')"
+  run "$H" "$(pre "$H" z5 bash "grep -rn -F '\"invoices\"' db/migrate")"
+  run "$H" "$(pre "$H" z5 bash 'grep -rn -F "paid_at" db/migrate')"
+  allowed "$H"; note $? "$H: three literal searches scoped to db/migrate are not denied"
   case "$H" in
     claude | cursor)
       for _ in 1 2 3 4; do
