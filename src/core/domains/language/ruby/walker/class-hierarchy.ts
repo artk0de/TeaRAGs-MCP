@@ -46,9 +46,9 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { canonicalizeHookMixin, extendedHookMixinsOfBody } from "./extended-hook-mixins.js";
-import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./shared/index.js";
+import { attachedBlockOf, lexicalScopeFqName, readScopeResolution, valueClassMemberNames } from "./shared/index.js";
 import { CONSTANT_ASSIGNMENT_NODE_TYPES, symbolKindOf } from "./symbol-kind.js";
-import { rubyBodyMemberCounts, valueClassMemberNames } from "./type-member-census.js";
+import { rubyBodyMemberCounts } from "./type-member-census.js";
 
 /**
  * Flatten a class/module body into every statement that DECLARES FOR IT — the

@@ -45,7 +45,7 @@ import type {
   TypeRef,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
-import { isRubyModuleImport, RubyChunkClassifier, rubyHooks } from "./chunking/index.js";
+import { isRubyModuleImport, RubyChunkClassifier, rubyHooks, valueClassContainerName } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueFor } from "./dsl/index.js";
 import { RUBY_DEPENDENCY_MANIFEST, RUBY_TEST_DEPENDENCY_MANIFEST } from "./gemfile.js";
@@ -82,6 +82,9 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   alwaysExtractChildren: true,
   nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "call") return undefined;
+    // `Billing::Entry = Data.define(…) do` is named by its constant, like a class (bd tea-rags-mcp-0td4h).
+    const valueClassName = valueClassContainerName(node);
+    if (valueClassName !== undefined) return valueClassName;
     const id = node.children.find((c) => c.type === "identifier");
     const methodName = id ? code.substring(id.startIndex, id.endIndex) : "";
     const args = node.childForFieldName("arguments");

@@ -36,29 +36,8 @@ export interface RubyMemberCounts {
   fieldCount: number;
 }
 
-/** `Struct.new(…)` / `Data.define(…)` — the receiver constant and the method that builds a value class. */
-const VALUE_CLASS_BUILDERS: ReadonlyMap<string, string> = new Map([
-  ["Struct", "new"],
-  ["Data", "define"],
-]);
-
 function callArguments(call: AstNode): readonly AstNode[] {
   return call.childForFieldName("arguments")?.namedChildren ?? [];
-}
-
-/**
- * The member names a `Struct.new(:a, :b)` / `Data.define(:a, :b)` call declares,
- * or null when `node` is no such call. A `Struct.new("Name", :a)` class-name
- * string and a `keyword_init: true` pair are not members.
- */
-export function valueClassMemberNames(node: AstNode | null | undefined): string[] | null {
-  if (node?.type !== "call") return null;
-  const receiver = node.childForFieldName("receiver")?.text.replace(/^::/, "");
-  const method = node.childForFieldName("method")?.text;
-  if (receiver === undefined || method === undefined || VALUE_CLASS_BUILDERS.get(receiver) !== method) return null;
-  return callArguments(node)
-    .filter((arg) => arg.type === "simple_symbol")
-    .map((arg) => arg.text.slice(1));
 }
 
 /** The name a `def` declares: `x` for an instance method, `.x` for a singleton one. */

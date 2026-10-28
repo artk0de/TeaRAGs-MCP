@@ -16,3 +16,4 @@ export {
 export { rubyBodyTailExpression } from "./body-tail.js";
 export { CONTAINER_BLOCK_ITERATION_METHODS, CONTAINER_ELEMENT_RETURNING_METHODS } from "./container-vocabulary.js";
 export type { RubyExtractInput } from "./extract-input.js";
+export { valueClassMemberNames } from "./value-class-builder.js";

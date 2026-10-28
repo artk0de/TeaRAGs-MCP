@@ -18,6 +18,7 @@ import {
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { foldSubFloorGroups } from "../../kernel/index.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
+import { valueClassContainerBody, valueClassContainerName } from "./value-class-container.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -429,12 +430,14 @@ const bodyGrouper = new RubyClassBodyChunker();
 
 /**
  * Extract class/module header line for context injection.
- * Returns "class Foo < Bar" or "module Baz" or undefined.
+ * Returns "class Foo < Bar" or "module Baz", the whole assignment row of a
+ * value-class container ("Billing::Entry = Data.define(:a) do", bd 0td4h), or
+ * undefined.
  */
 export function extractClassHeader(node: AstNode, code: string): string | undefined {
   const lines = code.split("\n");
   const firstLine = lines[node.startPosition.row];
-  if (firstLine && /^\s*(class|module)\s+/.test(firstLine)) {
+  if (firstLine && (/^\s*(class|module)\s+/.test(firstLine) || valueClassContainerName(node) !== undefined)) {
     return firstLine.trim();
   }
   return undefined;
@@ -559,8 +562,13 @@ function mergeBodyGroups(host: BodyGroup, guest: BodyGroup): BodyGroup {
  * a method, a block or a nested container belongs to that scope, not to this
  * body chunk.
  */
+/** The statements of a container's own body — a class / module body, or a value-class builder's block (bd 0td4h). */
+function containerBody(containerNode: AstNode): AstNode | null {
+  return containerNode.childForFieldName("body") ?? valueClassContainerBody(containerNode);
+}
+
 function containerConstantAssignments(containerNode: AstNode, code: string): { name: string; line: number }[] {
-  const body = containerNode.childForFieldName("body");
+  const body = containerBody(containerNode);
   if (!body) return [];
   const constants: { name: string; line: number }[] = [];
   for (const statement of body.namedChildren) {
@@ -608,7 +616,7 @@ function containerShortMethods(
       });
     }
   };
-  collect(containerNode.childForFieldName("body"));
+  collect(containerBody(containerNode));
   return methods;
 }
 
