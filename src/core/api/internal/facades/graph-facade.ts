@@ -72,6 +72,7 @@ import {
   resolveWorkingTree,
   type IndexExistenceCheck,
 } from "../collection-resolver.js";
+import { markIndexGraphAnswer } from "../infra/working-tree-graph-marks.js";
 import { readWorkingTreeGraph } from "../infra/working-tree-graph-read.js";
 import type {
   DeclaredTestDependencyLookup,
@@ -408,8 +409,9 @@ export class GraphFacade {
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
     graph: "tree" | "index" = "tree",
+    symbolId?: SymbolId,
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
-    return this.readMeasuredTree(await this.measureWorkingTree(addr), fn, fallback, graph);
+    return this.readMeasuredTree(await this.measureWorkingTree(addr), fn, fallback, graph, symbolId);
   }
 
   /**
@@ -424,12 +426,18 @@ export class GraphFacade {
     return { workingTree, view };
   }
 
-  /** The reading half of {@link withMarkedReadHandle}, over a tree already measured. */
+  /**
+   * The reading half of {@link withMarkedReadHandle}, over a tree already
+   * measured. An index-graph answer for a tree whose graph was unavailable
+   * carries the marks of `markIndexGraphAnswer` (bd tea-rags-mcp-07b9w);
+   * `symbolId` = the queried symbol, when the request named one.
+   */
   private async readMeasuredTree<T extends object>(
     measured: MeasuredWorkingTree,
     fn: (handle: CollectionGraphHandle) => Promise<T>,
     fallback: T,
     graph: "tree" | "index" = "tree",
+    symbolId?: SymbolId,
   ): Promise<T & { workingTree?: WorkingTreeMarker }> {
     const { workingTree, view } = measured;
     // `index`: the answer is a property of the INDEX's history, which a working
@@ -437,13 +445,15 @@ export class GraphFacade {
     // claims no floor and names no unavailability (live D9).
     const tree =
       graph === "tree"
-        ? await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn)
+        ? await readWorkingTreeGraph(view?.readTreeGraph, this.deps.pool, fn, view?.remainingWaitMs)
         : ({ kind: "base" } as const);
     const result =
       tree.kind === "tree" ? tree.value : await this.readGraph(workingTree.baseIndex.collectionName, fn, fallback);
     if (!view) return result;
-    if ("state" in tree && tree.state) recordTreeGraphState(view.marker, tree.state);
-    return { ...result, workingTree: view.marker };
+    const state = "state" in tree ? tree.state : undefined;
+    if (state) recordTreeGraphState(view.marker, state);
+    const marked = tree.kind === "base" ? await markIndexGraphAnswer(result, view, state, symbolId) : result;
+    return { ...marked, workingTree: view.marker };
   }
 
   private async readGraph<T>(
@@ -552,6 +562,8 @@ export class GraphFacade {
         };
       },
       { callers: [] },
+      "tree",
+      symbolId,
     );
   }
 
@@ -600,6 +612,8 @@ export class GraphFacade {
         };
       },
       { callees: [] },
+      "tree",
+      symbolId,
     );
   }
 

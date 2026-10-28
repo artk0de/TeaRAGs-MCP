@@ -44,9 +44,10 @@ import {
 } from "../../../../../src/core/api/internal/infra/working-tree-graph-cache.js";
 import { WORKING_TREE_GRAPH_WAIT_MS } from "../../../../../src/core/api/internal/infra/working-tree-graph-read.js";
 import type { PhysicalCollectionName } from "../../../../../src/core/contracts/types/collection-identity.js";
-import type {
-  WorkingTreeGraphRequest,
-  WorkingTreeGraphState,
+import {
+  WORKING_TREE_SEARCH_GRAPH_WAIT_MS,
+  type WorkingTreeGraphRequest,
+  type WorkingTreeGraphState,
 } from "../../../../../src/core/contracts/types/working-tree.js";
 import type {
   WorkingTreeGraphBuildBudget,
@@ -362,6 +363,29 @@ describe("WorkingTreeGraphCache#graphFor", () => {
     expectBuilt(await cache.graphFor(request(root), 10_000));
     expect(builder.inputs).toHaveLength(2);
     expect(treeEntries().filter((name) => name.includes(".staging-"))).toEqual([]);
+  });
+
+  it("remembers a timed-out or heap-exhausted build until the delta changes, not for the backoff (07b9w)", async () => {
+    const { cache, builder, clock } = harness({ failureBackoffMs: 60_000 });
+    const root = treeDir("t1");
+
+    for (const outcome of [
+      () => ({ kind: "timedOut" as const, timeoutMs: 120_000 }),
+      () => ({ kind: "heapExhausted" as const, heapLimitMb: 2048 }),
+    ]) {
+      builder.outcome = outcome;
+      const req = request(root, `fp-${outcome().kind}`);
+      const first = await cache.graphFor(req, 10_000);
+      const builds = builder.inputs.length;
+
+      clock.now += 10 * 60_000;
+      expect(await cache.graphFor(req, 10_000)).toEqual(first);
+      expect(builder.inputs).toHaveLength(builds);
+
+      builder.outcome = undefined;
+      expectBuilt(await cache.graphFor({ ...req, deleted: [`src/gone-${outcome().kind}.ts`] }, 10_000));
+      expect(builder.inputs).toHaveLength(builds + 1);
+    }
   });
 
   it("names a timed-out and a heap-exhausted child in the reason", async () => {
@@ -1046,8 +1070,9 @@ describe("WorkingTreeGraphCache — process exit (D6)", () => {
 });
 
 describe("WorkingTreeGraphCache — the reader's wait (D11b)", () => {
-  it("a graph tool waits longer than the build budget, so a build that runs out reports why", () => {
-    expect(WORKING_TREE_GRAPH_WAIT_MS).toBeGreaterThan(WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS);
+  it("a graph tool waits the search budget, never the build budget (07b9w)", () => {
+    expect(WORKING_TREE_GRAPH_WAIT_MS).toBe(WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
+    expect(WORKING_TREE_GRAPH_WAIT_MS).toBeLessThan(WORKING_TREE_GRAPH_BUILD_TIMEOUT_MS);
   });
 
   it("a wait that lapses in the same turn the build ends reports the build's outcome, not `building`", async () => {

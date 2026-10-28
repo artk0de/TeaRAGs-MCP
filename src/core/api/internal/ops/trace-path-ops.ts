@@ -60,6 +60,7 @@ import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "..
 import { resolveIndexedWorkingTree, type IndexExistenceCheck } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
 import { readPayloadSymbolIsTest } from "../infra/payload-symbol-is-test-reader.js";
+import { markIndexGraphAnswer } from "../infra/working-tree-graph-marks.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 import { rustTracePathNotices } from "./rustc-driver-notice.js";
@@ -151,7 +152,7 @@ export class TracePathOps {
   async tracePath(req: TracePathRequest): Promise<PathTraceResult> {
     const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
-    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool, view?.remainingWaitMs);
     const result = await this.traceInCollection(
       req,
       workingTree.baseIndex.collectionName,
@@ -160,7 +161,9 @@ export class TracePathOps {
     );
     if (!view) return result;
     if (selection.state) recordTreeGraphState(view.marker, selection.state);
-    return { ...result, workingTree: view.marker };
+    // An index-graph walk: steps in files the tree changed carry `treeState` (bd tea-rags-mcp-07b9w).
+    const marked = selection.kind === "base" ? await markIndexGraphAnswer(result, view, selection.state) : result;
+    return { ...marked, workingTree: view.marker };
   }
 
   /** `treeHandle`, when given, is the graph walked instead of the index's; it is closed here like any other. */

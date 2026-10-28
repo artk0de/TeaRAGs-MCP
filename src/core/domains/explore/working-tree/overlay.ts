@@ -43,9 +43,9 @@ export interface WorkingTreeView {
   /**
    * What is left of this request's answer budget
    * ({@link WORKING_TREE_ANSWER_BUDGET_MS}, counted from the view's creation),
-   * never negative. Every SEARCH-side wait on a tree layer is clamped to it, so
-   * one request's waits share one deadline instead of adding up; graph tools
-   * do not ask it. The overlay sets it on every measured view; absent on a
+   * never negative. Every wait on a tree layer — the graph tools' tree-graph
+   * wait included (bd tea-rags-mcp-07b9w) — is clamped to it, so one request's
+   * waits share one deadline instead of adding up. The overlay sets it on every measured view; absent on a
    * degraded or hand-built view, where nothing beyond a wait's own budget
    * bounds it.
    */

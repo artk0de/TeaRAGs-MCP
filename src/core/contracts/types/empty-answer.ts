@@ -13,6 +13,12 @@ export type EmptyAnswerReason =
   | "unknownSymbol"
   /** A bare name matched more symbols than one answer carries. */
   | "ambiguous"
+  /**
+   * The id is defined only in the addressed working tree, and the tree's graph
+   * was unavailable this call, so the index graph that answered has no node for
+   * it (bd tea-rags-mcp-07b9w). Not absent — retry once the graph is built.
+   */
+  | "treeOnly"
   /** The id is an indexed TEST chunk; test code is not in the codegraph, so it has no node and no edges. */
   | "testChunk"
   /** Graph node exists, zero edges — a lower bound when the resolve rate is low. */

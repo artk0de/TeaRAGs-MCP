@@ -352,7 +352,7 @@ export class OntologyReportOps {
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
     const workingTree = await resolveIndexedWorkingTree(this.deps.collectionRegistry, req, this.deps.indexExists);
     const view = await this.deps.workingTreeOverlay?.view(workingTree, req.project);
-    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool);
+    const selection = await selectWorkingTreeGraphHandle(view?.readTreeGraph, this.deps.pool, view?.remainingWaitMs);
     const response = await this.reportFrom(
       req,
       workingTree.baseIndex.collectionName,
