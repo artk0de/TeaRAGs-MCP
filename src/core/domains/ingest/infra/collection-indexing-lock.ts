@@ -87,6 +87,15 @@ type ExactLockRemoval = "removed" | "gone" | "replaced";
  */
 const locksHeldByThisProcess = new Set<string>();
 
+/**
+ * Every lock this process is releasing right now, by {@link lockHoldKey}: added
+ * when the hold is dropped, removed once the release settled. A successor that
+ * takes over such a file received a HANDOVER from a live predecessor, not the
+ * leftover of a dead writer, so it must not report `tookOverStaleLock` — that
+ * flag sends `IndexingOps` into its dead-writer reclaim sweep (bd gciir).
+ */
+const locksReleasingByThisProcess = new Set<string>();
+
 function lockHoldKey(path: string, record: IndexingLockRecord): string {
   return [path, record.hostname, record.pid, record.startedAt].join("\0");
 }
@@ -126,9 +135,11 @@ export class CollectionIndexingLock implements CollectionIndexingLockPort {
       let tookOverStaleLock = false;
       if (existing) {
         if (!this.isStale(path, existing)) return undefined;
+        const handedOver =
+          existing.record !== undefined && locksReleasingByThisProcess.has(lockHoldKey(path, existing.record));
         const removal = await removeExactLock(path, existing);
         if (removal === "replaced") return undefined;
-        tookOverStaleLock = removal === "removed";
+        tookOverStaleLock = removal === "removed" && !handedOver;
       }
       return await this.create(path, operation, tookOverStaleLock);
     } catch (error) {
@@ -279,14 +290,18 @@ export class HeldCollectionIndexingLock implements HeldCollectionIndexingLockPor
     if (this.released) return;
     this.released = true;
     clearInterval(this.timer);
-    locksHeldByThisProcess.delete(lockHoldKey(this.path, this.current));
-    await this.pendingRefresh;
+    const holdKey = lockHoldKey(this.path, this.current);
+    locksReleasingByThisProcess.add(holdKey);
+    locksHeldByThisProcess.delete(holdKey);
     try {
+      await this.pendingRefresh;
       const onDisk = await inspectLock(this.path);
       if (!onDisk || !isSameLock(this.ownIdentity(), onDisk)) return;
       await removeExactLock(this.path, this.ownIdentity());
     } catch (error) {
       throw new IndexingLockUnavailableError(this.path, asError(error));
+    } finally {
+      locksReleasingByThisProcess.delete(holdKey);
     }
   }
 
