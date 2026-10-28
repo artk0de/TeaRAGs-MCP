@@ -8,9 +8,10 @@ description: >-
   "почему не работает", "ошибка в", "стектрейс", "такой же баг в других местах",
   "X feels wrong", "which tool next mid-investigation", "final report of a
   confirmed cause". NOT for code review, a code-health scan with no felt
-  malfunction, or a request to apply a named fix at a named location (→
-  data-driven-generation). Wraps superpowers:systematic-debugging with
-  tea-rags:bug-hunt suspect ranking.
+  malfunction, code history with no failure ("when did X change", "посмотри
+  через git" — core routing answers it), or a request to apply a named fix at a
+  named location (→ data-driven-generation). Wraps
+  superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
 ---
 
 # dinopowers: systematic-debugging
@@ -213,16 +214,10 @@ Step 3: hypothesis block from bug-hunt's PRESENT output
 Step 4: Skill(superpowers:systematic-debugging) with that block prepended
 ```
 
-Do NOT substitute:
-
-| Wrong approach                                                                                     | Why wrong                                                                    |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Direct `mcp__tea-rags__semantic_search` with `rerank="bugHunt"`                                    | Bypasses bug-hunt triage (healthy → SKIP, concerning+churn) + PRESENT format |
-| Named preset `"hotspots"` / `"techDebt"`                                                           | `bugHunt` calibrated for symptom→suspect; others = broader risk lenses       |
-| `mcp__tea-rags__hybrid_search` on the error string (even naming an identifier, even user-demanded) | BM25 on error text → where string is logged, not where bug originates        |
-| Custom rerank weights                                                                              | Weighting owned by `bug-hunt` skill — don't duplicate                        |
-| Built-in Grep / Read on stack trace files                                                          | Loses bugFixRate; reads healthy code                                         |
-| `git log --grep` / `git blame` for bug history                                                     | `bug-hunt` reads git signals via overlay; manual git slower + noisier        |
+Never substitute bug-hunt with a direct `semantic_search(rerank="bugHunt")`,
+another preset (`hotspots` / `techDebt`), custom weights, `hybrid_search` on the
+error string, Grep / Read of stack-trace files, or `git log` / `blame` — each
+bypasses its triage + PRESENT. Why per substitute: `references/red-flags.md`.
 
 ## Step 3 — Convert suspects to hypothesis block
 
@@ -250,50 +245,16 @@ query, never promote healthy files, never fall back to direct `semantic_search`.
 
 ## Step 3.5 — Trace the causal chain to a suspect (optional but preferred)
 
-Bug-hunt = **flat** list. Have **entry/repro point** (failing test, request
-handler, CLI entry, top user-code stack frame) → promote prime suspect to
-**chain**: `mcp__tea-rags__trace_path` entry → suspect. **Requires codegraph**:
-on = graph tools (`get_callers`, `trace_path`, …) in your tool list; absent =
-off. Off → `trace_path` not registered — skip, stay with flat list.
+Entry / repro point known (failing test, handler, CLI entry, top user-code
+frame) AND codegraph on (graph tools in your tool list; absent = off → skip,
+flat list stays) → one call replaces hand-walked `get_callers` / `get_callees`:
 
 ```
-mcp__tea-rags__trace_path(
-  from="<entry/repro symbol>",   # e.g. the failing test or request handler
-  to="<prime suspect symbol>",   # the bugFixRate-critical symbol from Step 2/3
-  rerank="bugHunt"               # danger-rank the steps the same lens as bug-hunt
-)
+mcp__tea-rags__trace_path(from="<entry/repro symbol>", to="<prime suspect symbol>", rerank="bugHunt")
 ```
 
-One call replaces N hand-walked `get_callers` / `get_callees` turns: static call
-CHAIN + temporal risk per step.
-
-Read result:
-
-- **`dangerRanking[0]`** — inspect FIRST: riskiest hop between entry and suspect
-  (not necessarily either). Start hypothesis there.
-- **`dangerOverlay`** per step — `bugFixRate` / churn per hop; quiet
-  intermediate with critical history surfaces.
-- **Empty result** — check `namesakes` first (wrong `fromPath`/`toPath` pin →
-  fix pin), then floor rule (no `codegraph` floor + `changedFiles` > 0 → edges
-  in changed files = index's, re-check). Only then: NO static path `from` →
-  `to`; "entry reaches suspect" **structurally false**. Either repro point
-  wrong, dynamic/async edge invisible to static graph, or suspect unrelated.
-  Drop it, trace next suspect.
-
-Preset for trace:
-
-| Situation                                       | `rerank`      |
-| ----------------------------------------------- | ------------- |
-| General symptom, history-ranked chain (default) | `bugHunt`     |
-| **Fresh regression** — "worked last release"    | `recent`      |
-| Suspect is a hot, frequently-touched path       | `hotspots`    |
-| Failure smells like a wide blast-radius change  | `blastRadius` |
-
-Fresh regression → `recent` ranks most recently-changed hop first (likely
-breaking change). Old always-flaky symptom → keep `bugHunt`. Deep/branchy graph
-→ bound `maxDepth` / `maxPaths`.
-
-Append under Step 3 block:
+Fresh regression ("worked last release") → `rerank="recent"`. `dangerRanking[0]`
+= inspect first. Append under the Step 3 block:
 
 ```
 **Causal chain (entry → prime suspect), danger-ranked:**
@@ -302,6 +263,7 @@ Append under Step 3 block:
 - full path: <from> → … → <to> (<N> hops)
 ```
 
+Empty result, `namesakes`, other presets, bounds: `references/trace-chain.md`.
 No clear entry/repro point → skip; flat ranking enough.
 
 ## Step 4 — Invoke superpowers:systematic-debugging
@@ -346,7 +308,8 @@ consulting decision tree → hybrid_search because exhaustive usage of identifie
 consulting decision tree → find_symbol because study known symbol
 ```
 
-Follow-up rerank = Step 3.5 preset table; bug-hunt weighting stays in bug-hunt.
+Follow-up rerank = preset table in `references/trace-chain.md`; bug-hunt
+weighting stays in bug-hunt.
 
 ## Step 5 — Root-cause report: Cause / Fix / Prevention (MANDATORY)
 
@@ -396,35 +359,3 @@ Rules:
   `- defensive validation at <coupling-point symbol> (<file>:<line>): reject <bad input / state> before it fans out to dependents — because <level>.fanIn=<label>`
   `- integration test <test file>: drives <entry> → <fixed symbol>, asserts <invariant> — because <level>.fanIn=<label>`
 - Concrete + actionable. "Be careful", "add more tests", "monitor" = invalid.
-
-## Red Flags — STOP and restart from Step 2
-
-- "I already know where the bug is" → run Step 2; mental model may be stale
-- "bug-hunt slow, grep error string" → grep finds log callsites, not origins
-- Direct `semantic_search` `rerank="bugHunt"` → missed triage; invoke skill
-- Hypotheses before bug-hunt output → revert, wait for suspects
-- Raw bug-hunt JSON to `superpowers:systematic-debugging` → extract block first
-- Fabricated `symptom` from "it feels off" → skip Step 2, state it
-- Re-ran bug-hunt per hypothesis → one call per symptom; iteration = inner
-  skill's job
-- Full stack trace as `symptom` → named user-code frames + error message only
-- Inner skill chained raw `superpowers:test-driven-development` /
-  `superpowers:verification-before-completion` → intercept, invoke
-  `dinopowers:Y` (Chaining rule)
-- Root cause found, answer = fix only → add Step 5 block
-- Prevention bullet without `<signal>=<label>` / `mechanism`, or overlay showed
-  `deep-silo` / `erratic` / `hub` and Prevention ignores it → rewrite from
-  Signal → Prevention table
-- Follow-up search without "consulting decision tree → …" line → state branch,
-  re-pick tool
-
-## Common Mistakes
-
-| Mistake                                                 | Reality                                                                                                                                                                                      |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Error message as first hypothesis, no bug-hunt          | Flat search. Bug-hunt narrows to bug-prone zones first.                                                                                                                                      |
-| bug-hunt AFTER hypotheses ("to validate")               | Wrong order — seeds, not validates.                                                                                                                                                          |
-| Ignore "healthy" skip                                   | Calibrated-out by bug-hunt; looking there = overriding trusted prior.                                                                                                                        |
-| Speculative "maybe race" question                       | Brainstorming (`dinopowers:brainstorming`, pathPattern scoped to the named area), not debugging.                                                                                             |
-| Hand-walk `get_callers` / `get_callees` entry → suspect | `trace_path(from, to, rerank="bugHunt")` — whole chain, danger-ranked, one call.                                                                                                             |
-| Empty `trace_path` = "tool failed"                      | Codegraph on: empty after `namesakes` + floor checks = no static path → drop hypothesis. Codegraph off: `trace_path` absent (not empty) = NO evidence; keep hypothesis, verify via suspects. |
