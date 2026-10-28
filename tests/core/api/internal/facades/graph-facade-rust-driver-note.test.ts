@@ -48,7 +48,8 @@ describe("GraphFacade — Rust empty answers carry the rustc-driver lower-bound 
     expect(message).toMatch(/rustc driver/);
     expect(message).toMatch(/static-only/);
     expect(message).toMatch(/lower bound/);
-    expect(message).toMatch(/never report "no callers"/);
+    expect(message).toMatch(/confirm with a literal text search for the name/);
+    expect(message).not.toMatch(/never report/);
   });
 
   it("driver skipped → same lower-bound note", async () => {

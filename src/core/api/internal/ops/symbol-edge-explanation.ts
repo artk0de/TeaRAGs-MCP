@@ -40,7 +40,7 @@ export type SymbolEdgeExplanationGraph = Pick<
   Partial<Pick<GraphDbClient, "getRustcDriverStatus">>;
 
 /** What a lower-bound note tells the agent to do instead of claiming the symbol is unused. */
-const LOWER_BOUND_NEXT = 'confirm with a literal text search for the name; never report "no callers".';
+const LOWER_BOUND_NEXT = "confirm with a literal text search for the name.";
 
 /** Resolve rate under which a zero-edge answer is reported as a lower bound. */
 export const LOW_RESOLVE_RATE = 0.9;

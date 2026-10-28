@@ -45,4 +45,18 @@ describe("splitQueryVariants", () => {
     expect(() => splitQueryVariants(six.join(" ||| "))).toThrow(InvalidQueryError);
     expect(splitQueryVariants(six.slice(0, 5))).toHaveLength(5);
   });
+
+  it("names the variant cap in the hint, not the empty-query advice", () => {
+    const six = Array.from({ length: 6 }, (_, i) => `q${i}`);
+    const overflow = (() => {
+      try {
+        splitQueryVariants(six);
+      } catch (error) {
+        return error as InvalidQueryError;
+      }
+      return undefined;
+    })();
+    expect(overflow?.hint).toMatch(/at most 5/);
+    expect(overflow?.hint).not.toMatch(/non-empty/);
+  });
 });

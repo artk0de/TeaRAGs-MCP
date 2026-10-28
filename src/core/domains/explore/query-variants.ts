@@ -32,7 +32,10 @@ export function splitQueryVariants(query: string | readonly string[]): string[] 
     .filter((part) => part.length > 0);
   if (variants.length === 0) throw new InvalidQueryError("every query variant is empty");
   if (variants.length > MAX_QUERY_VARIANTS) {
-    throw new InvalidQueryError(`${variants.length} query variants, at most ${MAX_QUERY_VARIANTS} are fused`);
+    throw new InvalidQueryError(
+      `${variants.length} query variants, at most ${MAX_QUERY_VARIANTS} are fused`,
+      `Pass at most ${MAX_QUERY_VARIANTS} phrasings (\`a ||| b\`); merge or drop the rest`,
+    );
   }
   return variants;
 }
