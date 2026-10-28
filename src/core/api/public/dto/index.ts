@@ -172,6 +172,7 @@ export type {
   ReviewChangesRequest,
   ReviewChangesResult,
   ReviewChangesReviewBlock,
+  ReviewNotJudgedFiles,
   ReviewSectionEnvelope,
   ReviewSectionId,
   ReviewSectionNotJudgedEntry,

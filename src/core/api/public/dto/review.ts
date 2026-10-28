@@ -55,12 +55,29 @@ export interface ReviewSectionNotJudgedEntry {
   detail?: string;
 }
 
+/**
+ * Files some section did not judge, each listed ONCE at review level and
+ * grouped by the sections' reasons (bd tea-rags-mcp-56fax): the same unjudged
+ * files used to repeat in every section's own list. `reasons` = section id →
+ * why that section skipped every file in `relPaths`.
+ */
+export interface ReviewNotJudgedFiles {
+  reasons: Partial<Record<ReviewSectionId, string>>;
+  details?: Partial<Record<ReviewSectionId, string>>;
+  relPaths: string[];
+}
+
 /** The uniform envelope every section result carries beside its own payload. */
 export interface ReviewSectionEnvelope {
   built: boolean;
   /** When not built: the substrate that was missing or failed. */
   reason?: string;
-  notJudged?: readonly ReviewSectionNotJudgedEntry[];
+  /**
+   * Files this section did not judge. A provider answers the entries; the
+   * review answer keeps their COUNT here and lists the files once in
+   * `ReviewChangesReviewBlock.notJudged`.
+   */
+  notJudged?: number | readonly ReviewSectionNotJudgedEntry[];
 }
 
 /**
@@ -365,6 +382,8 @@ export interface ReviewChangesReviewBlock {
   indexLag?: { indexedCommit: string; treeCommit: string };
   /** Non-fatal observations — an empty diff is one, never a bare `changedFiles: 0`. */
   notices?: string[];
+  /** Every file a section did not judge, once, with each section's reason; absent when every section judged every file. */
+  notJudged?: ReviewNotJudgedFiles[];
   /** Keyed by section id; a section not requested is OMITTED — absence is not not-built. */
   sections: Partial<Record<ReviewSectionId, ReviewSectionResult>>;
 }
