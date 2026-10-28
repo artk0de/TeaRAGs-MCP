@@ -73,7 +73,10 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   // When class/module is too large, recursively look for these smaller units.
   // NOTE: "singleton_class" removed from childChunkTypes — we traverse THROUGH
   // it to find the methods inside (class << self ... end contains methods).
-  childChunkTypes: ["method", "singleton_method", "call"],
+  // `class` / `module` stop the descent so a nested container is chunked as
+  // its own container under its full id (`module A; class B` → `A::B`), not
+  // folded into the outermost one's body (bd tea-rags-mcp-1x85g).
+  childChunkTypes: ["method", "singleton_method", "call", "class", "module"],
   // In Ruby, virtually all code lives inside class/module. Without this flag,
   // small classes become a single chunk and individual methods are not searchable.
   alwaysExtractChildren: true,

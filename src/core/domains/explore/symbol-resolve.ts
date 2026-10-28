@@ -31,6 +31,11 @@ const CONTAINER_PARENT_TYPE = /class|module|struct/;
 interface ContainerOutlinePlan {
   /** The class-level chunk, when the scroll holds one. */
   classChunk?: ScrollChunk;
+  /**
+   * The class's own windows naming members in `memberSymbolIds` (Ruby
+   * constants, bd tea-rags-mcp-1x85g) — listed as outline members.
+   */
+  declaringWindows?: ScrollChunk[];
   /** Heading of a synthesised outline — the queried container id. */
   containerSymbolId: string;
   /** Ids a member or test may name as its parentSymbolId. */
@@ -86,8 +91,12 @@ export function resolveSymbols(
   metaOnly?: boolean,
   visibilityOf?: MemberVisibilityLookup,
 ): SearchResult[] {
-  const groups = [...groupChunks(chunks).values()];
-  const results: SearchResult[] = [];
+  // 0. A member a container body chunk DECLARES (a Ruby constant, bd
+  //    tea-rags-mcp-1x85g) is answered by that chunk as its body, never by an
+  //    outline of the container the chunk belongs to.
+  const declaring = query === undefined ? [] : chunks.filter((c) => declaresMember(c, query));
+  const results: SearchResult[] = query === undefined ? [] : declaring.map((c) => declaredMemberAnswer(c, query));
+  const groups = [...groupChunks(chunks.filter((c) => !declaring.includes(c))).values()];
   const emittedIds = new Set<string | number>();
   const emit = (group: ScrollChunk[]): void => {
     for (const c of group) emittedIds.add(c.id);
@@ -171,6 +180,7 @@ function planClassChunkOutlines(groups: ScrollChunk[][]): ContainerOutlinePlan[]
     );
     plans.push({
       classChunk,
+      declaringWindows: group.filter((c) => isClassLevelChunk(c) && Array.isArray(c.payload.memberSymbolIds)),
       containerSymbolId: typeof classChunk.payload.symbolId === "string" ? classChunk.payload.symbolId : "",
       ids,
       relativePath,
@@ -266,7 +276,7 @@ function planTestScopeOutlines(pendingGroups: ScrollChunk[][], query: string): C
 function renderContainerOutline(plan: ContainerOutlinePlan, visibilityOf?: MemberVisibilityLookup): SearchResult {
   const memberChunks = plan.memberGroups.flatMap(outlineMemberChunks);
   return plan.classChunk
-    ? CodeChunkGrouper.group(plan.classChunk, memberChunks, visibilityOf)
+    ? CodeChunkGrouper.group(plan.classChunk, memberChunks, visibilityOf, plan.declaringWindows)
     : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf);
 }
 
@@ -298,6 +308,30 @@ function stripPartName(name: unknown): string | undefined {
 
 function hasContainerParentType(c: ScrollChunk): boolean {
   return typeof c.payload.parentType === "string" && CONTAINER_PARENT_TYPE.test(c.payload.parentType);
+}
+
+/**
+ * Does a container body chunk declare `query` as a member it carries without
+ * a chunk of its own (`memberSymbolIds`, bd tea-rags-mcp-1x85g)? A packed test
+ * chunk answers its members through `answerPackMember` upstream, and a chunk
+ * whose own id IS the query is the query's body anyway.
+ */
+function declaresMember(c: ScrollChunk, query: string): boolean {
+  const { memberSymbolIds, symbolId } = c.payload;
+  return !isTestChunk(c) && symbolId !== query && Array.isArray(memberSymbolIds) && memberSymbolIds.includes(query);
+}
+
+/**
+ * The declaring chunk as the member's body, addressed by the member's id and
+ * parented to the container that declares it. The member's name is its id
+ * past the container's and the separator joining them.
+ */
+function declaredMemberAnswer(c: ScrollChunk, query: string): SearchResult {
+  const container = typeof c.payload.symbolId === "string" ? c.payload.symbolId : "";
+  const name =
+    container !== "" && query.startsWith(container) ? query.slice(container.length).replace(/^\W+/, "") : query;
+  const payload: Record<string, unknown> = { ...c.payload, symbolId: query, name, parentSymbolId: container };
+  return { id: c.id, score: 1.0, payload };
 }
 
 function isClassLevelChunk(c: ScrollChunk): boolean {

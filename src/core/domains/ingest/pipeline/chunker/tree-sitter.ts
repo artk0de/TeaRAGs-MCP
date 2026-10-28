@@ -196,6 +196,27 @@ export class TreeSitterChunker implements CodeChunker {
    * is unchanged: `classifyMethod` still decides, this just stops discarding
    * what it decided.
    */
+  /**
+   * A container body chunk's declared members as ids (bd tea-rags-mcp-1x85g):
+   * each `BodyChunkResult.declaredMemberNames` entry composed under the
+   * container's symbolId with the language's scope separator — the composer,
+   * never a hand-written join — into `memberSymbolIds`. Nothing when the hook
+   * declared no member or the container has no id to compose under.
+   */
+  private declaredMemberLinks(
+    result: BodyChunkResult,
+    containerSymbolId: string | undefined,
+    langConfig: LanguageConfig,
+  ): Pick<CodeChunk["metadata"], "memberSymbolIds"> {
+    const names = result.declaredMemberNames;
+    if (!names || names.length === 0 || containerSymbolId === undefined) return {};
+    return {
+      memberSymbolIds: names.map((name) =>
+        this.symbolIds.compose(containerSymbolId, name, { scopeSeparator: langConfig.scopeSeparator }),
+      ),
+    };
+  }
+
   private buildSymbolId(
     name?: string,
     parentName?: string,
@@ -853,6 +874,7 @@ export class TreeSitterChunker implements CodeChunker {
         if (hasHookChain) {
           for (const result of ctx.bodyChunks) {
             const body = this.composeBodyChunkContent([], containerHeader, result.content);
+            const containerSymbolId = result.symbolId ?? this.buildSymbolId(parentName);
             chunks.push({
               content: body.content,
               startLine: result.startLine,
@@ -865,11 +887,12 @@ export class TreeSitterChunker implements CodeChunker {
                 name: result.name ?? parentName,
                 parentSymbolId: result.parentSymbolId ?? parentName,
                 parentType: result.parentType ?? parentType,
-                symbolId: result.symbolId ?? this.buildSymbolId(parentName),
+                symbolId: containerSymbolId,
                 lineRanges: result.lineRanges,
                 contextPrefix: body.contextPrefix,
                 ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
                 ...testChunkLinks(result),
+                ...this.declaredMemberLinks(result, containerSymbolId, langConfig),
               },
             });
           }
@@ -1420,11 +1443,6 @@ export class TreeSitterChunker implements CodeChunker {
       const childNode = validChildren[ci];
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
-      if (childContent.length > this.config.maxChunkSize) {
-        this.emitOversizedChild(childNode, ci, pass);
-        continue;
-      }
-
       // Check if child is itself a container (e.g., nested describe/context)
       const grandChildren = this.findChildChunkableNodes(
         childNode,
@@ -1434,12 +1452,22 @@ export class TreeSitterChunker implements CodeChunker {
         filePath,
       );
       const validGrandChildren = grandChildren.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
-
-      if (
+      const recursesAsContainer =
         validGrandChildren.length > 0 &&
-        langConfig.alwaysExtractChildren &&
-        this.canRecurseAsContainer(childNode, langConfig)
-      ) {
+        langConfig.alwaysExtractChildren === true &&
+        this.canRecurseAsContainer(childNode, langConfig);
+
+      // bd tea-rags-mcp-1x85g — a SCOPE container (a Ruby class nested in its
+      // module) larger than the budget is still a container: its members are
+      // extracted one by one. Splitting it as one oversized symbol would fold
+      // every method of the class into `Outer::Class#partN` windows.
+      const isScopeContainer = langConfig.scopeContainerTypes?.includes(childNode.type) ?? false;
+      if (childContent.length > this.config.maxChunkSize && !(recursesAsContainer && isScopeContainer)) {
+        this.emitOversizedChild(childNode, ci, pass);
+        continue;
+      }
+
+      if (recursesAsContainer) {
         await this.emitNestedContainer(childNode, ci, validGrandChildren, pass);
         continue;
       }
@@ -1481,7 +1509,7 @@ export class TreeSitterChunker implements CodeChunker {
     const methodKind = classifyMethod(semanticNode);
     const scopeSeparator = langConfig.scopeSeparator ?? ".";
     const intermediateScopes = [
-      ...this.collectIntermediateScopes(childNode, langConfig, code),
+      ...this.collectIntermediateScopes(childNode, langConfig, code, pass.container),
       ...enclosingClassScopeNames(semanticNode, pass.container),
       ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
@@ -1610,6 +1638,10 @@ export class TreeSitterChunker implements CodeChunker {
         hierarchyHeaders.length > 0
           ? this.composeBodyChunkContent(hierarchyHeaders, childHeader, result.content)
           : { content: result.content, contextPrefix: undefined };
+      // bd tea-rags-mcp-1x85g — the container's body is the CONTAINER's: its
+      // full id (`A::B::C`), never the bare child name (`C`). An anonymous
+      // container has no id of its own to give.
+      const containerSymbolId = result.symbolId ?? (childName ? fullParentName : undefined);
       chunks.push({
         content: body.content,
         startLine: result.startLine,
@@ -1621,12 +1653,16 @@ export class TreeSitterChunker implements CodeChunker {
           chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
           name: result.name ?? childName,
           parentSymbolId: result.parentSymbolId ?? fullParentName ?? parentName,
-          parentType: result.parentType ?? parentType,
-          symbolId: result.symbolId ?? this.buildSymbolId(childName),
+          // Parented to the container itself (above), so typed as it — the
+          // top-level body chunk's rule. An anonymous container's body keeps
+          // the enclosing parent, and that parent's type.
+          parentType: result.parentType ?? (childName ? childNode.type : parentType),
+          symbolId: containerSymbolId,
           lineRanges: result.lineRanges,
           ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
           ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
           ...testChunkLinks(result),
+          ...this.declaredMemberLinks(result, containerSymbolId, langConfig),
         },
       });
     }
@@ -1737,7 +1773,7 @@ export class TreeSitterChunker implements CodeChunker {
     // container of its own; it sits below every such class, so it goes last.
     const scopeSeparator = langConfig.scopeSeparator ?? ".";
     const intermediateScopes = [
-      ...this.collectIntermediateScopes(childNode, langConfig, code),
+      ...this.collectIntermediateScopes(childNode, langConfig, code, pass.container),
       ...enclosingClassScopeNames(semanticNode, pass.container),
       ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
@@ -1794,13 +1830,26 @@ export class TreeSitterChunker implements CodeChunker {
    *
    * When `scopeContainerTypes` is unset on the language config, the
    * function bails out with `[]` — the existing single-level behaviour.
+   *
+   * bd tea-rags-mcp-1x85g — when the pass `container` is itself a scope
+   * container, the walk stops AT it: only the scopes strictly between the leaf
+   * and the container are intermediate. A recursed nested container (`module
+   * A; module B; class C`, C recursed with `parentName` `A::B::C`) is not the
+   * outermost scope, so dropping the outermost name would re-append `B::C`.
    */
-  private collectIntermediateScopes(leafNode: AstNode, langConfig: LanguageConfig, code: string): string[] {
+  private collectIntermediateScopes(
+    leafNode: AstNode,
+    langConfig: LanguageConfig,
+    code: string,
+    container: AstNode,
+  ): string[] {
     const scopeTypes = langConfig.scopeContainerTypes;
     if (!scopeTypes || scopeTypes.length === 0) return [];
+    const boundedByContainer = scopeTypes.includes(container.type);
     const chain: string[] = [];
     let p = leafNode.parent;
     while (p) {
+      if (boundedByContainer && p === container) break;
       // Stop when we hit any node listed in chunkableTypes — that level
       // is already represented by the outer `parentName`. We must not
       // continue past it or we'd duplicate the outer container's name.
@@ -1819,7 +1868,8 @@ export class TreeSitterChunker implements CodeChunker {
     // Drop the outermost entry — that's the level already named by
     // `parentName` in the caller. Without this, `module A; def foo`
     // would emit parentName "A" AND chain ["A"], yielding "A::A#foo".
-    if (chain.length > 0) chain.shift();
+    // A walk bounded by the container never collected that level.
+    if (!boundedByContainer && chain.length > 0) chain.shift();
     return chain;
   }
 

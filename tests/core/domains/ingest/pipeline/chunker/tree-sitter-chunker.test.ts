@@ -4811,10 +4811,15 @@ end`;
 
       // Nested Configuration class should produce:
       // - method chunks (initialize, to_hash)
-      // - body chunk with attr_accessor, attr_reader, validates
-      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.content.includes("attr_accessor"));
+      // - body chunks with attr_accessor, attr_reader, validates — grouped by
+      //   declaration category under the nested class's own id, exactly as a
+      //   top-level class body is (bd tea-rags-mcp-1x85g)
+      const bodyChunks = chunks.filter(
+        (c) => c.metadata.chunkType === "block" && c.metadata.symbolId === "ApplicationService::Configuration",
+      );
       expect(bodyChunks.length).toBeGreaterThanOrEqual(1);
-      expect(bodyChunks[0].content).toContain("validates");
+      expect(bodyChunks.some((c) => c.content.includes("attr_accessor"))).toBe(true);
+      expect(bodyChunks.some((c) => c.content.includes("validates"))).toBe(true);
     });
   });
 

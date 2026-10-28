@@ -111,6 +111,16 @@ export interface BodyChunkResult {
    * member's. Absent on a chunk of one member.
    */
   memberSymbolIds?: string[];
+  /**
+   * The names of the members a container body chunk DECLARES without a chunk
+   * of their own — Ruby class-level constants (bd tea-rags-mcp-1x85g), in
+   * source order. The engine composes each under the container's symbolId
+   * with the language's scope separator (`Owner::CONST`) into the chunk's
+   * `memberSymbolIds`, so `find_symbol` answers the member through the chunk
+   * and the container outline lists it. The chunk keeps the container's own
+   * symbolId.
+   */
+  declaredMemberNames?: string[];
 }
 
 /**

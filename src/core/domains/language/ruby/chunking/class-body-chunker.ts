@@ -496,6 +496,7 @@ export function extractBodyChunks(
   // into a headerless `#part2` (bd tea-rags-mcp-j4jrn).
   const groups = bodyGrouper.groupLines(bodyLines, bodyChunkContentBudget(config));
   const classHeader = extractClassHeader(containerNode, code);
+  const constants = containerConstantAssignments(containerNode, code);
 
   const results: BodyChunkResult[] = [];
 
@@ -513,16 +514,42 @@ export function extractBodyChunks(
 
     const minLine = Math.min(...group.lineRanges.map((r) => r.start));
     const maxLine = Math.max(...group.lineRanges.map((r) => r.end));
+    const groupLines = new Set(group.lines.map((l) => l.sourceLine));
+    const declaredMemberNames = constants.filter((c) => groupLines.has(c.line)).map((c) => c.name);
 
     results.push({
       content: contentWithContext,
       startLine: minLine,
       endLine: maxLine,
       lineRanges: group.lineRanges,
+      ...(declaredMemberNames.length > 0 ? { declaredMemberNames } : {}),
     });
   }
 
   return results;
+}
+
+/**
+ * The constants a class / module body assigns at its own level (`FOO_SQL =
+ * <<~SQL`, `LIMIT ||= 10`), each with its 1-based line (bd tea-rags-mcp-1x85g).
+ * Only direct statements of the container's body: a constant assigned inside
+ * a method, a block or a nested container belongs to that scope, not to this
+ * body chunk.
+ */
+function containerConstantAssignments(containerNode: AstNode, code: string): { name: string; line: number }[] {
+  const body = containerNode.childForFieldName("body");
+  if (!body) return [];
+  const constants: { name: string; line: number }[] = [];
+  for (const statement of body.namedChildren) {
+    if (statement.type !== "assignment" && statement.type !== "operator_assignment") continue;
+    const left = statement.childForFieldName("left");
+    if (left?.type !== "constant") continue;
+    constants.push({
+      name: code.substring(left.startIndex, left.endIndex),
+      line: statement.startPosition.row + 1,
+    });
+  }
+  return constants;
 }
 
 // ── ChunkingHook export ────────────────────────────────────────────
