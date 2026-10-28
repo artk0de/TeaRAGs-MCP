@@ -235,6 +235,36 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
         expect(batch.batchNotice).toMatch(/outline/);
       });
 
+      // bd tea-rags-mcp-y3trx: metaOnly keeps a path entry's outline, like relativePath mode.
+      it("keeps a path entry's outline under metaOnly, as relativePath mode does", async () => {
+        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } });
+
+        const batch = await facade(view()).findSymbol({
+          collection: "code_x",
+          symbols: ["src/lib/h.ts"],
+          metaOnly: true,
+        });
+        const single = await facade(view()).findSymbol({
+          collection: "code_x",
+          relativePath: "src/lib/h.ts",
+          metaOnly: true,
+        });
+
+        expect(single.results[0].payload?.content).toContain("helper");
+        expect(batch.results[0].payload?.content).toBe(single.results[0].payload?.content);
+      });
+
+      it("keeps a symbol entry lean under metaOnly while a path entry beside it keeps its outline", async () => {
+        const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } })).findSymbol({
+          collection: "code_x",
+          symbols: ["Foo#bar", "src/lib/h.ts"],
+          metaOnly: true,
+        });
+
+        expect(response.results[0].payload?.content).toBeUndefined();
+        expect(response.results[1].payload?.content).toContain("helper");
+      });
+
       it("answers a file of exactly 60 lines with its full text and no notice", async () => {
         const text = linesOf(60);
         const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": text } })).findSymbol({

@@ -79,6 +79,8 @@ export interface SymbolBatchRow {
   request: string;
   /** The id that answered, when it differs from `request` only by the `#`/`.` separator. */
   resolvedAs?: string;
+  /** The row answers a file-path address: its `content` is the file outline (or text), not a symbol body. */
+  fileOutline?: boolean;
   result: ExploreResult;
 }
 
@@ -130,7 +132,7 @@ export class SymbolBatchDrill {
       if (outline.directory) return { rows: [], miss: directoryEntryMiss(address), pathDowngraded: true };
       if (results.length > 0) {
         return {
-          rows: results.map((result) => ({ request: address, result })),
+          rows: results.map((result) => ({ request: address, fileOutline: true, result })),
           pathDowngraded: outline.fullTextWithheld,
         };
       }
