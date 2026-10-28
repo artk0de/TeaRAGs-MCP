@@ -63,6 +63,7 @@ const CODEX_DIALECT: HarnessDialect = {
   // on its shell PATH since codex-cli 0.162.1). `grep -rl` ignores .gitignore: a whole-repo run walked
   // node_modules/build/.git and never completed in the read-only sandbox (live D3 Q3, 2/3 runs).
   codeSearchTool: "shell rg -l --hidden --glob '!.git'",
+  foldsSearchLiteral: true,
   // One file per command — `one-file-read.sh` (ONE_FILE_READ_SCRIPT) enforces it.
   codeReadTool: "shell sed -n '<start>,<end>p' <one file>",
 };
@@ -109,6 +110,21 @@ a rule you did not see is not a rule you may guess. Saw that marker → re-read 
 `;
 
 /** Puts \`prelude\` right after the body's H1 (or first, when there is none). */
+/**
+ * Codex core's guide-read line names the call: on Codex a bare `list_mcp_resources` ({} args) lists
+ * EVERY server — codex_apps alone was 44k of a 51k-char listing, tea-rags' own 3.7k (bd tea-rags-mcp-kk5xe).
+ * The guide URI is known, so the line reads it directly on the tea-rags server.
+ */
+const CORE_GUIDE_READ_ANCHOR = /(\*\*Read `tea-rags:\/\/guide\/<topic>` when\*\*)\s+\(/;
+const CODEX_GUIDE_READ_CALL =
+  '`read_mcp_resource(server: "tea-rags", uri: "tea-rags://guide/<topic>")`, never a bare ' +
+  '`list_mcp_resources` (list only with `server: "tea-rags"`)';
+
+function withCodexGuideReads(core: string): string {
+  if (!CORE_GUIDE_READ_ANCHOR.test(core)) throw new Error("core.md lost its guide-read line (kk5xe anchor)");
+  return core.replace(CORE_GUIDE_READ_ANCHOR, (_match, head: string) => `${head} → ${CODEX_GUIDE_READ_CALL} (`);
+}
+
 function withCodexPrelude(body: string, prelude: string): string {
   const heading = /^# [^\n]*\n+/.exec(body);
   if (!heading) return `${prelude}\n${body}`;
@@ -716,7 +732,9 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
 
   if (hasCore) {
     const coreRules = withCodexPrelude(
-      toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames),
+      withCodexGuideReads(
+        toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames),
+      ),
       CODEX_READ_DISCIPLINE,
     );
     const core = coreRules + CODEX_SKILL_LOADING;
