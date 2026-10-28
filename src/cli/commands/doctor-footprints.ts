@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/index.js";
 import type { FootprintCensusRow } from "../../bootstrap/footprint-census.js";
+import type { FootprintPurgeDeps } from "../../bootstrap/footprint-purge.js";
 import {
   collectionHoldsCodegraphData,
   CollectionRegistry,
@@ -17,8 +18,11 @@ export interface FootprintDoctorArgs {
   fix?: boolean;
 }
 
+/** The purge saga's roles plus the census reads (chunk-filtered count, build-lease probe). */
+type FootprintDoctorQdrant = FootprintPurgeDeps["qdrant"] & Pick<QdrantManager, "countPoints" | "getPoint">;
+
 export interface FootprintDoctorDeps {
-  qdrant: QdrantManager;
+  qdrant: FootprintDoctorQdrant;
 }
 
 /** One table row's verdict: what the fix did, or would do, with the finding. */
@@ -155,7 +159,7 @@ export async function runFootprintDoctor(args: FootprintDoctorArgs, deps?: Footp
 
 async function purgeFootprints(
   rows: readonly FootprintCensusRow[],
-  qdrant: QdrantManager,
+  qdrant: FootprintDoctorQdrant,
   registry: CollectionRegistry,
   appDataDir: string,
 ): Promise<FootprintVerdictRow[]> {

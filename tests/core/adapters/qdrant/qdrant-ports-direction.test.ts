@@ -298,6 +298,8 @@ const API_CONCRETE_KEPT: Record<string, string> = {
     "constructs the manager and hands it to EmbeddingModelGuard's concrete constructor — guard ctor and the armed slot are construction sites",
   "src/cli/commands/doctor.ts":
     "composition actor constructing the manager; its narrow test-injection surfaces stay Pick'd off the api/public re-export — cli may not import adapters below api/public",
+  "src/cli/commands/doctor-footprints.ts":
+    "composition actor constructing the manager; its test-injection surface is the purger's roles plus a Pick'd census read off the api/public re-export — cli may not import adapters below api/public",
   "src/cli/commands/projects.ts":
     "composition actor constructing the manager; its narrow test-injection surfaces stay Pick'd off the api/public re-export — cli may not import adapters below api/public",
   "src/cli/commands/qdrant.ts": "constructs the manager (composition actor) — construction sites keep the concrete",
