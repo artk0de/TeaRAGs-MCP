@@ -51,10 +51,8 @@ filter param (never `language` as axis proxy):
 1. sources FIRST — `testFile: "exclude", documentation: "exclude"`
 2. tests — `testFile: "only"` (expected behavior)
 3. docs — `documentation: "only"` (hypothesis, never sole evidence). Doc claim
-   (number, limit, default) → verify in source (`documentation:"exclude"` +
-   `find_symbol`), then answer carries this line, copied:
-   `Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
-   (match → `Doc matches code at <file:line>.`)
+   (number, limit, default) → SKILL.md "Doc claim in hand" (verification line +
+   both outcome lines).
 
 No `filter:{presets}` by default — understanding needs breadth.
 

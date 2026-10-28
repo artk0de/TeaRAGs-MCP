@@ -68,8 +68,11 @@ risk / change / ownership / codegraph row) + the matched phrase — routing on
 surface keywords without this line = wrong.
 
 **Doc claim in hand** (prompt or a doc chunk states a number / limit / default),
-any strategy → verify in source (`documentation:"exclude"` + `find_symbol`)
-before the answer repeats it; the plan prints both outcome lines, copied:
+any strategy → verify in source before the answer repeats it; the plan carries
+these verification calls, copied with the claimed value, both in the plan:
+`semantic_search(query=<the limit's behaviour>, documentation:"exclude")` →
+`Grep tool "<value>" <source dir> (literal, -l)` → `find_symbol` on the
+enclosing symbol of the hits; then both outcome lines, copied, in the plan:
 `On conflict: Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
 `On match: Doc matches code at <file:line>.`
 
@@ -253,12 +256,13 @@ Apply tables above, first match:
    `find_symbol(symbols=[<2–5 key symbols>], rerank="techDebt", metaOnly=false)`
    (own overlay signals, no risk-assessment delegation) → PG-3 `find_symbol` on
    1–2 symbols only (e.g. base error classes), never call chains.
-5. EXPLAIN → BREADTH below, answer per FORMAT below. A typed CamelCase class
-   name + the verb of its method ("how does `<Class>` <verb> …"), no
-   `Class#method` → call 1 `find_symbol(symbol: "<Class>")` outline → the method
-   id from it. A lowercase concept noun ("how does the scheduler work") is no
-   anchor → `semantic_search` first. Codegraph on + anchor id (named symbol or a
-   row) → copied, ≤ 4 calls: `get_callees(symbolId: <anchor id>, depth: 2)` →
+5. EXPLAIN → BREADTH below, answer per FORMAT below. "How does X work / how does
+   `<Class>` <verb> …", no `Class#method` typed → call 1 = discovery, never
+   `find_symbol` first: `semantic_search(query=<behaviour>)`, or
+   `hybrid_search(query="<Class> <verb>", metaOnly=true)` when X is an
+   identifier → anchor id from its hits. Read / show the body of a named symbol
+   → `find_symbol(symbol:)` directly. Codegraph on + anchor id (named symbol or
+   a row) → copied, ≤ 4 calls: `get_callees(symbolId: <anchor id>, depth: 2)` →
    `find_symbol(symbols: [<only the tree methods the answer needs>])`; never one
    `get_callees` per hop, never a grep → read chain. Named component ("the
    <name> adapter") → Scope extraction probe FIRST, then
