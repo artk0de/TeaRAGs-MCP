@@ -142,6 +142,37 @@ describe("CollectionIndexingLock", () => {
       await successor?.release();
     });
 
+    it("does not call a successor that took the file from a releasing holder in this process a dead-writer takeover", async () => {
+      // The predecessor is alive and finishing, not dead: reporting a takeover
+      // made IndexingOps run its dead-writer reclaim sweep after every
+      // back-to-back index whose release had not unlinked yet (bd gciir).
+      const holder = await lockWith().tryAcquire(COLLECTION, "index-codebase");
+      // Hold the release between dropping its hold and unlinking — the window a
+      // loaded machine opens by itself. Release waits for an in-flight heartbeat
+      // write, so a pending one is the gate; without it the unlink usually wins
+      // and the successor never meets the file.
+      let openGate: (refreshed: boolean) => void = () => undefined;
+      Reflect.set(holder as object, "pendingRefresh", new Promise<boolean>((resolve) => (openGate = resolve)));
+
+      const releasing = holder?.release();
+      const successor = await lockWith({ now: () => T0 + 1_000 }).tryAcquire(COLLECTION, "force-reindex");
+      openGate(true);
+      await releasing;
+
+      expect(successor).toBeDefined();
+      expect(successor?.tookOverStaleLock).toBe(false);
+      await successor?.release();
+    });
+
+    it("still calls taking a leaked lock that names this process a dead-writer takeover", async () => {
+      writeLockOfAnotherRun({ pid: 1111 });
+
+      const held = await lockWith({ pid: 1111, isProcessAlive: () => true }).tryAcquire(COLLECTION, "index-codebase");
+
+      expect(held?.tookOverStaleLock).toBe(true);
+      await held?.release();
+    });
+
     it("never probes a pid from another host: a fresh lock written elsewhere stays live", async () => {
       writeLockOfAnotherRun({ pid: 4242, hostname: "host-b" });
 
