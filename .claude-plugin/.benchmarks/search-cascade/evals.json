@@ -763,6 +763,63 @@
         "a new semantic_search before the graph call",
         "find_symbol / Read of loan-renewer.ts again"
       ]
+    },
+    {
+      "id": "Z1",
+      "audit_finding": "d9w4o lever 6 (bench Q01): a ticket drill re-searched because meta-only rows dropped taskIds, and an agent grepped the source for the ticket id",
+      "context": "Project alias `ledgerly`, cwd /work/ledgerly (its own checkout), Ruby on Rails, codegraph on, healthy index; commit messages carry ticket keys like LED-482.",
+      "prompt": "What did ticket LED-482 change in the code?",
+      "expected": "first call semantic_search(taskId: \"LED-482\", level: \"chunk\") (metaOnly allowed; a query naming the topic allowed) → ONE find_symbol(symbols: [<touched ids from its rows>])",
+      "not": [
+        "a default code search tool / grep / rg for \"LED-482\" in the source",
+        "git log / git show for the ticket",
+        "a second semantic_search to see the taskIds",
+        "one find_symbol call per touched id"
+      ]
+    },
+    {
+      "id": "Z2",
+      "audit_finding": "d9w4o lever 6 (bench Q26): column existence — models declare no columns, agents ran semantic_search on model names",
+      "context": "Project alias `ledgerly`, cwd /work/ledgerly (its own checkout), Ruby on Rails, codegraph on, healthy index; db/ holds schema.rb and db/migrate/.",
+      "prompt": "Does the invoices table have a paid_at column?",
+      "expected": "first call the default code search tool over db/ (literal paid_at / the invoices table; schema file first, else db/migrate/); both :invoices and \"invoices\" table forms tried before claiming absence",
+      "not": [
+        "semantic_search / hybrid_search on the Invoice model name",
+        "find_symbol(symbol: \"Invoice\") to look for columns",
+        "claiming absence after one literal form"
+      ]
+    },
+    {
+      "id": "Z3",
+      "audit_finding": "d9w4o lever 6 (bench Q30): find_symbol on an ignored path answered unknownPath with no suggestions and agents fanned out more find_symbol calls; it now answers ignoredPath",
+      "context": "Project alias `ledgerly`, cwd /work/ledgerly (its own checkout), Ruby on Rails, healthy index. The previous call was find_symbol(relativePath: \"db/migrate/20240101_create_invoices.rb\"); its answer was:\n```\n{\"results\": [], \"empty\": {\"reason\": \"ignoredPath\", \"message\": \"\\\"db/migrate/20240101_create_invoices.rb\\\" exists in the working tree but is not indexed (ignore pattern \\\"db/migrate/\\\") — read it with the default code read tool.\"}}\n```",
+      "prompt": "Show me what that migration creates.",
+      "expected": "next call = the default code read tool on db/migrate/20240101_create_invoices.rb",
+      "not": [
+        "find_symbol again on that path or on other db/migrate/ paths",
+        "semantic_search / hybrid_search for the migration",
+        "answering that the file does not exist"
+      ]
+    },
+    {
+      "id": "Z4",
+      "audit_finding": "d9w4o lever 6: an ambiguous batch address answered with no candidates; the miss now lists `<symbolId> (<relativePath>)`, class outlines first",
+      "context": "Project alias `ledgerly`, cwd /work/ledgerly (its own checkout), Ruby on Rails, healthy index. The previous call was find_symbol(symbols: [\"Invoice\", \"PaymentGateway#charge\"]); its answer held the PaymentGateway#charge body and:\n```\n\"missing\": [{\"request\": \"Invoice\", \"message\": \"ambiguous: 9 matches — qualify with Class# or pathPattern\", \"suggestions\": [\"Invoice (app/models/invoice.rb)\", \"Invoice (app/graphql/types/invoice.rb)\", \"Invoice (lib/billing/export/invoice.rb)\", \"Invoice (app/serializers/invoice.rb)\", \"Invoice (spec/factories/invoice.rb)\", \"Invoice (app/admin/invoice.rb)\", \"Invoice (lib/billing/types.rb)\"]}]\n```",
+      "prompt": "Outline the Invoice model.",
+      "expected": "ONE follow-up reaching app/models/invoice.rb's outline: find_symbol(symbol: \"Invoice\", pathPattern: \"app/models/invoice.rb\") or find_symbol(relativePath: \"app/models/invoice.rb\"); answer from it",
+      "not": [
+        "semantic_search / hybrid_search for the Invoice model",
+        "more than one follow-up call before the outline",
+        "a default code search tool / grep for \"class Invoice\""
+      ]
+    },
+    {
+      "id": "Z5",
+      "audit_finding": "d9w4o lever 6: the column-existence route is three literal searches over db/; the search-drift hook must not deny it",
+      "context": "Hook case, not a plan: tests/hooks/search-drift.test.sh (claude, codex, cursor).",
+      "prompt": "(hook) grep -rn -F \":invoices\" db/migrate; grep -rn -F \"\\\"invoices\\\"\" db/migrate; grep -rn -F \"paid_at\" db/migrate",
+      "expected": "no deny on any of the three",
+      "not": ["a deny naming semantic_search or find_symbol"]
     }
   ],
   "results": {
@@ -807,6 +864,22 @@
         "D1": "3/3, 1/1",
         "HD1": "3/3, 1/1"
       }
+    },
+    "d9w4o": {
+      "date": "2026-10-28",
+      "method": "plan-only, Z1-Z4 in one session; Codex x3 + Claude (sonnet) x1; plugin 0.49.4 core from this branch. Z5 = tests/hooks/search-drift.test.sh (claude/codex/cursor).",
+      "round1": {
+        "Z1": "codex 3/3, claude 1/1",
+        "Z2": "codex 2/3 (r1 searched schema.rb for the column only, no table forms, no migrations), claude 0/1 (paid_at only, absence on empty)",
+        "Z3": "codex 3/3, claude 1/1",
+        "Z4": "codex 3/3, claude 1/1"
+      },
+      "fix": "core schema line spelled the table forms as `:<table>` and `\"<table>\"` before \"absent\", schema then migrations",
+      "round2_Z1_Z2": {
+        "Z1": "codex 3/3, claude 1/1",
+        "Z2": "codex 3/3, claude 1/1"
+      },
+      "Z5": "no deny on three literal db/migrate searches, all three harnesses"
     }
   }
 }

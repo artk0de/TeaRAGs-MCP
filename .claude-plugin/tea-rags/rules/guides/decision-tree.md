@@ -5,25 +5,24 @@
 **Semantic First, Exact Second.** Meaning search, reads, graph and analytics
 start with tea-rags (semantic_search, hybrid_search for symbol + intent,
 find_symbol, find_similar, get_callers / get_callees / trace_path, rerank
-presets). Text search — your Grep tool (not a tea-rags tool) —
-for exact text: occurrences of an identifier / constant / string ("where is X
-used", "every call of X", "files containing X", a name the user calls a
-"pattern", or an `a|b` of exact identifiers already seen in an answer), regex
-syntax, TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path
-strings; also the fallback when tea-rags is unavailable. Occurrence searches are
-bounded: files-with-matches first, or a line cap (`-l`), scoped to the anchor's
-dir when known, else the source root — never hybrid_search / semantic_search to
-find a dir for it, never an unbounded search. Then the hit file's outline →
-batch of only the needed methods (each hit's enclosing method) via find_symbol,
-never Read tool or `cat` (a hit in config, DSL, a migration or
-a spec → Read tool). An identifier's DEFINITION / body /
-outline is a SYMBOL lookup → find_symbol, never text search; only its
-OCCURRENCES go to Grep tool. An alternation of concept words,
-synonyms or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not
-exact text: semantic_search (hybrid_search with metaOnly when real identifiers
-are among the words) → the anchor row → get_callees / get_callers → ONE
-find_symbol batch of only the needed methods — never a text-search alternation.
-Glob — never for code discovery.
+presets). Text search — your Grep tool (not a tea-rags tool) — for exact text:
+occurrences of an identifier / constant / string ("where is X used", "every call
+of X", "files containing X", a name the user calls a "pattern", or an `a|b` of
+exact identifiers already seen in an answer), regex syntax, TODO/FIXME/HACK/NOTE
+markers, phrases, error strings, import path strings; also the fallback when
+tea-rags is unavailable. Occurrence searches are bounded: files-with-matches
+first, or a line cap (`-l`), scoped to the anchor's dir when known, else the
+source root — never hybrid_search / semantic_search to find a dir for it, never
+an unbounded search. Then the hit file's outline → batch of only the needed
+methods (each hit's enclosing method) via find_symbol, never Read tool or `cat`
+(a hit in config, DSL, a migration or a spec → Read tool). An identifier's
+DEFINITION / body / outline is a SYMBOL lookup → find_symbol, never text search;
+only its OCCURRENCES go to Grep tool. An alternation of concept words, synonyms
+or spellings (`<a>|<b>|<c>`) is a behaviour / intent question, not exact text:
+semantic_search (hybrid_search with metaOnly when real identifiers are among the
+words) → the anchor row → get_callees / get_callers → ONE find_symbol batch of
+only the needed methods — never a text-search alternation. Glob — never for code
+discovery.
 
 **MANDATORY:** ALWAYS prefer tea-rags over text search for meaning and reads.
 
@@ -155,37 +154,39 @@ a design question) → find its row, run that call; never `ls` / `cat` / `grep` 
 row); what is needed at once → ONE `find_symbol(symbols: [...])` — the ids an
 answer NAMED (member ids when known) and several files, never a dir (area/dir →
 `find_symbol(relativePath:)` outline first); a 2nd search needs a new noun.
-Config, DSL, routes, migrations, specs and files outside the index → Read tool (core routing row 1).
+Config, DSL, routes, migrations, specs and files outside the index → Read tool
+(core routing row 1).
 
-| Question                                                     | Call                                                                                                             |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Layers / wrong-way dependencies of `<dir>` (not exploration) | `find_symbol(relativePath: "<dir>")` → `get_architecture_report(pathPattern: "<dir>/**")`                        |
-| Is the codebase laid out correctly                           | `/tea-rags:architecture-diagnostics`                                                                             |
-| What implements contract / port / base `<P>`                 | `find_symbol(symbol: "<P>")` → `get_callers` + `hybrid_search(query: "<P>", metaOnly: true)`                     |
-| Where `<X>` is registered / resolved / configured / flagged  | `hybrid_search(query: "<X> register config flag", metaOnly: true)` → `find_symbol(symbols: [<hit ids>])`         |
-| Which models / tables back `<X>`                             | `hybrid_search(query: "<X> model", metaOnly: true)`; schema / migrations outside the index → client's tools      |
-| What the existing provider / impl does for `<W>`             | `find_symbol(symbol: "<Impl>#<method>")`                                                                         |
-| How does `<A>` reach `<B>`, riskiest step                    | `find_symbol` ids → `trace_path(rerank: "dangerous")`; one hop → `get_callers`                                   |
-| Where do we do `<X>` (code may use other words)              | `hybrid_search(query: "<X>")`; what it touches → `rerank: "blastRadius"`                                         |
-| Onboard me into `<area>` / entry points                      | `/tea-rags:explore` · `semantic_search(rerank: "onboarding" \| "entryPoint", pathPattern)`                       |
-| Which modules the app is built around                        | `rank_chunks(rerank: "architecturalHub")` · `filter: { presets: "hubs" }`                                        |
-| What was done under ticket `<T>`                             | `semantic_search(query: "<topic>", taskId: "<T>")`                                                               |
-| Which of N similar implementations to copy                   | `semantic_search(query, rerank: "proven", filter: { presets: "battleTested" })`                                  |
-| Is there already a helper for `<X>`                          | `find_similar(positiveCode: "<draft>")`                                                                          |
-| Add `<feature>` in our style, no duplicates                  | `/tea-rags:data-driven-generation`                                                                               |
-| Who calls `<X>` before I change it                           | `find_symbol(symbol: "<X>")` → `get_callers`                                                                     |
-| What not to touch / where to build a parallel implementation | `rank_chunks(rerank: "criticalPath" \| "blastRadius" \| "godModule", pathPattern)`                               |
-| What needs a second reviewer                                 | `rank_chunks(rerank: "criticalPath" \| "criticalMethod", filter: { presets: "panicZone" \| "unstableCore" })`    |
-| Which tests cover the behaviour I change                     | `/tea-rags:tests-as-context`                                                                                     |
-| Most dangerous modules in `<domain>`                         | `/tea-rags:risk-assessment`                                                                                      |
-| Symptom / failure — what is to blame                         | `/tea-rags:bug-hunt`                                                                                             |
-| Map the tech debt in `<area>`                                | `rank_chunks(rerank: "techDebt" \| "refactoring" \| "decomposition" \| "godModule" \| "godMethod", pathPattern)` |
-| What changed most lately in `<area>`                         | `rank_chunks(rerank: "hotspots", pathPattern, maxAgeDays: <N>)`                                                  |
-| What is dead or abandoned                                    | `semantic_search(query: "<area>", filter: { presets: "deadCandidates" \| "abandonedHotspots" })`                 |
-| Who owns `<area>`, where is the bus factor one               | `rank_chunks(rerank: "ownership", pathPattern)` · `filter: { presets: "fragileSilo" }`                           |
-| Old security-critical code overdue for audit                 | `semantic_search(query, rerank: "securityAudit", filter: { presets: "securityPaths" })`                          |
-| What in this MR to look at first                             | `/tea-rags:mr-review`                                                                                            |
-| Do the names in my diff fit                                  | `review_changes(changes: {} uncommitted \| { base } branch, sections: ["naming"])`                               |
+| Question                                                     | Call                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layers / wrong-way dependencies of `<dir>` (not exploration) | `find_symbol(relativePath: "<dir>")` → `get_architecture_report(pathPattern: "<dir>/**")`                                                                                                                                                                                                       |
+| Is the codebase laid out correctly                           | `/tea-rags:architecture-diagnostics`                                                                                                                                                                                                                                                            |
+| What implements contract / port / base `<P>`                 | `find_symbol(symbol: "<P>")` → `get_callers` + `hybrid_search(query: "<P>", metaOnly: true)`                                                                                                                                                                                                    |
+| Where `<X>` is registered / resolved / configured / flagged  | `hybrid_search(query: "<X> register config flag", metaOnly: true)` → `find_symbol(symbols: [<hit ids>])`                                                                                                                                                                                        |
+| Which models / tables back `<X>`                             | `hybrid_search(query: "<X> model", metaOnly: true)`; schema / migrations outside the index → client's tools                                                                                                                                                                                     |
+| Does table / column `<c>` exist, `create_table`, DB schema   | Grep tool over `db/` (literal): the schema file first (`schema.rb`, `structure.sql`), else `db/migrate/`; try both `:<t>` and `"<t>"` forms before claiming absence. Never `semantic_search` on model names — models declare no columns                                                         |
+| What the existing provider / impl does for `<W>`             | `find_symbol(symbol: "<Impl>#<method>")`                                                                                                                                                                                                                                                        |
+| How does `<A>` reach `<B>`, riskiest step                    | `find_symbol` ids → `trace_path(rerank: "dangerous")`; one hop → `get_callers`                                                                                                                                                                                                                  |
+| Where do we do `<X>` (code may use other words)              | `hybrid_search(query: "<X>")`; what it touches → `rerank: "blastRadius"`                                                                                                                                                                                                                        |
+| Onboard me into `<area>` / entry points                      | `/tea-rags:explore` · `semantic_search(rerank: "onboarding" \| "entryPoint", pathPattern)`                                                                                                                                                                                                      |
+| Which modules the app is built around                        | `rank_chunks(rerank: "architecturalHub")` · `filter: { presets: "hubs" }`                                                                                                                                                                                                                       |
+| What was done under ticket `<T>`                             | `semantic_search(query: "<topic>", taskId: "<T>", level: "chunk", metaOnly: true)` — rows = chunks whose own commits carry `<T>`, each with its `git.chunk.taskIds` → ONE `find_symbol(symbols: [<touched ids>])`. A ticket id lives in commit messages, never in source: no text search for it |
+| Which of N similar implementations to copy                   | `semantic_search(query, rerank: "proven", filter: { presets: "battleTested" })`                                                                                                                                                                                                                 |
+| Is there already a helper for `<X>`                          | `find_similar(positiveCode: "<draft>")`                                                                                                                                                                                                                                                         |
+| Add `<feature>` in our style, no duplicates                  | `/tea-rags:data-driven-generation`                                                                                                                                                                                                                                                              |
+| Who calls `<X>` before I change it                           | `find_symbol(symbol: "<X>")` → `get_callers`                                                                                                                                                                                                                                                    |
+| What not to touch / where to build a parallel implementation | `rank_chunks(rerank: "criticalPath" \| "blastRadius" \| "godModule", pathPattern)`                                                                                                                                                                                                              |
+| What needs a second reviewer                                 | `rank_chunks(rerank: "criticalPath" \| "criticalMethod", filter: { presets: "panicZone" \| "unstableCore" })`                                                                                                                                                                                   |
+| Which tests cover the behaviour I change                     | `/tea-rags:tests-as-context`                                                                                                                                                                                                                                                                    |
+| Most dangerous modules in `<domain>`                         | `/tea-rags:risk-assessment`                                                                                                                                                                                                                                                                     |
+| Symptom / failure — what is to blame                         | `/tea-rags:bug-hunt`                                                                                                                                                                                                                                                                            |
+| Map the tech debt in `<area>`                                | `rank_chunks(rerank: "techDebt" \| "refactoring" \| "decomposition" \| "godModule" \| "godMethod", pathPattern)`                                                                                                                                                                                |
+| What changed most lately in `<area>`                         | `rank_chunks(rerank: "hotspots", pathPattern, maxAgeDays: <N>)`                                                                                                                                                                                                                                 |
+| What is dead or abandoned                                    | `semantic_search(query: "<area>", filter: { presets: "deadCandidates" \| "abandonedHotspots" })`                                                                                                                                                                                                |
+| Who owns `<area>`, where is the bus factor one               | `rank_chunks(rerank: "ownership", pathPattern)` · `filter: { presets: "fragileSilo" }`                                                                                                                                                                                                          |
+| Old security-critical code overdue for audit                 | `semantic_search(query, rerank: "securityAudit", filter: { presets: "securityPaths" })`                                                                                                                                                                                                         |
+| What in this MR to look at first                             | `/tea-rags:mr-review`                                                                                                                                                                                                                                                                           |
+| Do the names in my diff fit                                  | `review_changes(changes: {} uncommitted \| { base } branch, sections: ["naming"])`                                                                                                                                                                                                              |
 
 ## Rerank Decision → /tea-rags:analytics-rerank
 
@@ -235,12 +236,12 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Text search for behaviour / intent discovery** — use tea-rags
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` /
   `git show <rev>:<file>`) to locate or understand code — alone or inside a
-  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read tool reading code; harness "use Bash" note does not
-  override. Not prohibited: config, DSL, routes, migrations, specs, unindexed
-  files, a `find_symbol` stub, all X in a known dir, proving absence (core
-  routing row 1). Definition → find_symbol; file → find_symbol(relativePath:);
-  exact-name occurrences → Grep tool, bounded, its hits read
-  by find_symbol
+  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read
+  tool reading code; harness "use Bash" note does not override. Not prohibited:
+  config, DSL, routes, migrations, specs, unindexed files, a `find_symbol` stub,
+  all X in a known dir, proving absence (core routing row 1). Definition →
+  find_symbol; file → find_symbol(relativePath:); exact-name occurrences → Grep
+  tool, bounded, its hits read by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide
   `freshness` "Lag never licenses leaving tea-rags"
 - **Read file to verify search results** — chunk is the source of truth
@@ -263,11 +264,11 @@ working directory as `path`; the hook supplies the repository's `project` alias
 - **Unbounded occurrence search** — content output with no files-with-matches
   mode or line cap, or the repo root when an anchor's dir is known; files first
   in the anchor's dir (else the source root), then find_symbol on the hits
-- **Read tool after a Grep tool hit** — the hit is
-  an address: find_symbol outline → batch of only the needed methods
+- **Read tool after a Grep tool hit** — the hit is an address: find_symbol
+  outline → batch of only the needed methods
 - **semantic_search / hybrid_search for "find all usages"** — exact-name
-  occurrences → Grep tool (literal); the index ranks, it does
-  not enumerate every occurrence
+  occurrences → Grep tool (literal); the index ranks, it does not enumerate
+  every occurrence
 - **Text search for symbol existence checks** — use find_symbol with
   metaOnly=true
 - **Text search to read or understand code** — its hits are addresses; read them

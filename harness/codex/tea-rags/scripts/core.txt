@@ -25,13 +25,13 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
   shell sed -n '<start>,<end>p' <one file> (path unknown → shell rg -l --hidden --glob '!.git' first); all X
   in a known `<dir>`, proving absence ("no X exists") → shell rg -l --hidden --glob '!.git'
-  over that dir (empty answer = proof). Other file/dir path, lines N–M, doc TOC,
-  how `<dir>` works → `find_symbol(relativePath:)` outline first (2+ files: ONE
-  `symbols:[<paths>]`), then ONE batch of the needed ids (N–M: ids spanning it);
-  "how does `<dir>` work" / "what's in `<dir>`", no structure word
+  over that dir (empty = proof); table/column exists, `create_table` → that
+  search over `db/` (schema, then migrations; `:<table>` and `"<table>"` before
+  "absent"), never `semantic_search`. Other file/dir path, lines N–M, doc TOC,
+  how `<dir>` works / what's in it → `find_symbol(relativePath:)` outline first,
+  then ONE batch of the needed ids (N–M: ids spanning it); no structure word
   (architecture, structure, organized, end to end, backbone, walk me through) →
-  that outline → ONE `find_symbol(symbols:[<Class#method ids>])`, never
-  codegraph row 4 / `get_architecture_report`; its imports →
+  never codegraph / `get_architecture_report`; its imports →
   `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count);
   manual-read order → Invariants
 - code history — when X appeared/changed, "посмотри через git" → never
@@ -72,7 +72,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `get_architecture_report(pathPattern)`; implements `<P>` → `get_callers` +
   `hybrid_search(<P>, metaOnly)`; registered/configured `<X>` →
   `hybrid_search("<X> register config")`; ticket `<T>` →
-  `semantic_search(taskId:)`; owners/recent churn/debt/don't-touch →
+  `semantic_search(taskId: <T>, level: "chunk")` → ONE
+  `find_symbol(symbols: <touched ids>)`, no grep; owners/recent
+  churn/debt/don't-touch →
   `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
   dead code → `filter:{presets:"deadCandidates"}`; which to copy →
   `rerank: "proven"`
@@ -102,10 +104,10 @@ diff's → `review_changes` verdicts, nothing after.
 - `truncated` → next call = `truncated.next` verbatim, or narrowed
   (`detectors`/`limit`/`evidenceLimit`/`pathPattern`); never the same call.
 - `empty.reason: unknownPath` with suggestions →
-  `find_symbol(relativePath: <dir they share>)`, never one suggestion; a file
-  that exists, unindexed → shell sed -n '<start>,<end>p' <one file>.
+  `find_symbol(relativePath: <dir they share>)`, never one suggestion;
+  `ignoredPath` → shell sed -n '<start>,<end>p' <one file>.
 - No `treeState` row, no `degraded` → index IS current code (overlay serves
-  uncommitted edits; no `workingTree` on project+path = current): trust it. Lag
+  uncommitted edits; no `workingTree` = current): trust it. Lag
   (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags. `treeState` row
   = pre-edit copy (say why, e.g. `denseUnavailable`): dependents' fanIn/churn
   valid, not proof of the edit → `find_symbol`; `pendingFiles` > 0 (a count; may
@@ -131,9 +133,8 @@ diff's → `review_changes` verdicts, nothing after.
   `find_cycles` = DAG.
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
-- `rustc driver: unavailable` (status/index/Rust graph answer) → tell user ONCE:
-  Rust edges static-only (lower bound) + install command; never install it or
-  claim "no callers"/"dead code".
+- `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower
+  bound) + install command; never install it, never "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → shell sed -n '<start>,<end>p' <one file>, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for
   context"/"lines N–M" of source code without that order → `find_symbol` (hit's
   `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`
