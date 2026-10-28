@@ -108,6 +108,10 @@ export const sharedVersions: LanguageSupportVersions = {
   // line by line by the ADJACENT chunk — for a container, one of its own
   // members — so a nested container's member chunk no longer takes the outer
   // class's `private` and its span no longer runs over the outer methods.
+  // Same chunking 6, bd tea-rags-mcp-5ndal / 0k8zt: every row has one owning
+  // chunk — a single-line node's `endLine` is its own row (it claimed the next
+  // statement's row), the character fallback's overlap is content, not a claim,
+  // and a leaf value-class container opens with its `Const =` assignment row.
   chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
