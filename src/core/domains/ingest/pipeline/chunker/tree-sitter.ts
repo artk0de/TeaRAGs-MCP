@@ -200,21 +200,26 @@ export class TreeSitterChunker implements CodeChunker {
    * A container body chunk's declared members as ids (bd tea-rags-mcp-1x85g):
    * each `BodyChunkResult.declaredMemberNames` entry composed under the
    * container's symbolId with the language's scope separator — the composer,
-   * never a hand-written join — into `memberSymbolIds`. Nothing when the hook
-   * declared no member or the container has no id to compose under.
+   * never a hand-written join — into `memberSymbolIds`, followed by each
+   * `declaredMethodMembers` entry composed with its method kind (bd
+   * tea-rags-mcp-30qdc). Nothing when the hook declared no member or the
+   * container has no id to compose under.
    */
   private declaredMemberLinks(
     result: BodyChunkResult,
     containerSymbolId: string | undefined,
     langConfig: LanguageConfig,
   ): Pick<CodeChunk["metadata"], "memberSymbolIds"> {
-    const names = result.declaredMemberNames;
-    if (!names || names.length === 0 || containerSymbolId === undefined) return {};
-    return {
-      memberSymbolIds: names.map((name) =>
+    if (containerSymbolId === undefined) return {};
+    const memberSymbolIds = [
+      ...(result.declaredMemberNames ?? []).map((name) =>
         this.symbolIds.compose(containerSymbolId, name, { scopeSeparator: langConfig.scopeSeparator }),
       ),
-    };
+      ...(result.declaredMethodMembers ?? []).map(({ name, methodKind }) =>
+        this.symbolIds.compose(containerSymbolId, name, { methodKind, scopeSeparator: langConfig.scopeSeparator }),
+      ),
+    ];
+    return memberSymbolIds.length === 0 ? {} : { memberSymbolIds };
   }
 
   private buildSymbolId(

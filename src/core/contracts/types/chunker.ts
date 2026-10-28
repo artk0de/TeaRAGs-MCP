@@ -121,6 +121,15 @@ export interface BodyChunkResult {
    * symbolId.
    */
   declaredMemberNames?: string[];
+  /**
+   * The METHODS a container body chunk declares without a chunk of their own —
+   * a Ruby `def` under the engine's 50-char child floor, whose rows ride the
+   * body chunk (bd tea-rags-mcp-30qdc), in source order. Composed like
+   * {@link declaredMemberNames}, but with the method's kind deciding the
+   * separator (`Owner#m` / `Owner.m`), and appended after them in
+   * `memberSymbolIds`.
+   */
+  declaredMethodMembers?: { name: string; methodKind: "instance" | "static" }[];
 }
 
 /**
