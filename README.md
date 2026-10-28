@@ -17,6 +17,7 @@
   <a href="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml"><img src="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/artk0de/TeaRAGs-MCP"><img src="https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF" alt="codecov"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-d4af37" alt="MIT license"></a>
+  <a href="https://mcprush.com/to/tea-rags-mcp?ref=badge"><img src="https://mcprush.com/badge/tea-rags-mcp/score.svg" alt="Tea Rags MCP on mcprush"></a>
 </p>
 
 ---
@@ -788,6 +789,10 @@ Engineering notes behind the releases, each with the corpus it was measured on �
 - [Why this blog exists — 2026-08-19](https://artk0de.github.io/TeaRAGs-MCP/blog/why-this-blog-exists)
 
 <!-- BLOG:END -->
+
+## 📇 Listed On
+
+[![Tea Rags MCP server](https://mcprush.com/badge/tea-rags-mcp/card.svg)](https://mcprush.com/to/tea-rags-mcp?ref=badge)
 
 ## ⭐ Star History
 

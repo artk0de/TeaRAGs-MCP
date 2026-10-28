@@ -31,7 +31,7 @@
         "What does get_naming_lexicon return for a MISFIT?",
         "How does trace_path pick the path between two symbols?",
         "Who calls the confidence dampening code?",
-        "How does the Codex harness generator split core and digest into hooks?"
+        "How does a tool answer get trimmed when it exceeds the response budget?"
       ],
       "expected": "with_hooks: every turn Q1-Q18 makes at least one tea-rags call before any text search or shell read of code; turns Q14-Q18 have a tea-rags share of code-reading calls >= 0.8 and no lower than the Q1-Q5 share minus 0.1; 'how does / what happens' turns start with get_callees (or find_symbol to anchor, then get_callees), 'who calls' turns start with get_callers. no_hooks arm recorded for the delta.",
       "not": [
@@ -52,7 +52,7 @@
         "And where is the retry backoff configured?",
         "Summarise what you found in two lines."
       ],
-      "expected": "if Q4 drifts to 3 consecutive text searches with no tea-rags call, the 3rd is denied with 'tea-rags: 3 text searches in a row ... semantic_search ... Counter reset — you may continue'; the agent's NEXT code call is semantic_search (or hybrid_search(metaOnly)) for the retry/timeout concept, then find_symbol on the hit; at most one search-drift deny in the session within any 120 s window; Q5 starts with a tea-rags call. Pass also when Q4 never drifts (semantic_search first) — record whether the deny fired.",
+      "expected": "if Q4 drifts to 3 consecutive text searches with no tea-rags call, the 3rd is denied with 'tea-rags: 3 text searches in a row ... semantic_search ... Counter reset — you may continue'; the agent's NEXT code call is semantic_search (or hybrid_search(metaOnly)) for the retry/timeout concept, then find_symbol on the hit; at most one search-drift deny in the session within any 120 s window; Q5 starts with a tea-rags call, or with a literal search for identifiers already shown in this session (core usages row: exact known names → default code search tool). Pass also when Q4 never drifts (semantic_search first) — record whether the deny fired.",
       "not": [
         "retrying the denied grep / rg verbatim as the next call",
         "routing around the deny through another text-search form (Glob, find -exec grep, python re over files)",
