@@ -67,6 +67,8 @@ describe("buildMcpAutoUpdateTrigger", () => {
 
     // Server is up, project not registered yet → inert.
     expect(trigger.hintFor({ project: "p" })).toBeNull();
+    // Allow the OS watcher to become active before the external process writes.
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // A DIFFERENT process (CLI `auto-update`) registers + enables afterwards.
     const external = new CollectionRegistry(dataDir);

@@ -141,9 +141,12 @@ local `review_changes` gate before each commit.
   operations must remain distinguishable.
 - Defer overlay, legacy point cleanup and precise ignore precedence: these
   require separate lifecycle work and do not block a new companion corpus.
-- Rebuild the companion when its migration digest changes, and skip embedding
-  when unchanged: alias publication avoids partial history at the cost of
-  re-embedding all migrations after a change.
+- Use the existing file synchronizer with a companion-specific snapshot and
+  update only added, modified, and deleted files: routine changes must not
+  re-embed an entire migration history. A missing snapshot or changed embedding
+  configuration requires a one-time rebuild of the companion corpus.
+- Invalidate changed snapshot entries before mutating existing points: an
+  interrupted update must be retried on the next index run.
 
 ## Delivery phases
 

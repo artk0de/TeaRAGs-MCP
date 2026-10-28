@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { relative, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
@@ -12,6 +12,7 @@ interface MigrationCorpusStore {
   collectionExists: (name: string) => Promise<boolean>;
   getPoint?: (name: string, id: string) => Promise<{ payload?: Record<string, unknown> } | null>;
   deleteCollection: (name: string) => Promise<void>;
+  deletePointsByPaths?: (name: string, paths: string[]) => Promise<void>;
   addPointsWithSparse: (
     name: string,
     points: {
@@ -57,6 +58,12 @@ export async function rebuildMigrationCorpus(options: {
   embeddings: MigrationEmbeddings;
   chunkSize?: number;
   parse: MigrationParser;
+  synchronizer?: {
+    initialize: () => Promise<boolean>;
+    detectChanges: (files: string[]) => Promise<{ added: string[]; modified: string[]; deleted: string[] }>;
+    invalidateEntries: (paths: Iterable<string>) => Promise<number>;
+    updateSnapshot: (files: string[]) => Promise<void>;
+  };
 }): Promise<void> {
   const { root, codeCollection, qdrant, embeddings } = options;
   const chunkSize = options.chunkSize ?? 4500;
@@ -64,8 +71,18 @@ export async function rebuildMigrationCorpus(options: {
   const alias = migrationCollectionName(codeCollection);
   const previous = (await qdrant.collectionExists(alias)) ? await qdrant.aliases.resolveActive?.(alias) : undefined;
   if (files.length === 0 && !previous) return;
+  const { synchronizer } = options;
+  const hasSnapshot = synchronizer ? await synchronizer.initialize() : false;
+  const metadata = previous ? (await qdrant.getPoint?.(previous, INDEXING_METADATA_ID))?.payload : undefined;
+  const migrationConfig = JSON.stringify(["migration-v2", chunkSize, embeddings.getModel?.()]);
+  const incremental = !!previous && hasSnapshot && metadata?.migrationConfig === migrationConfig;
+  const changes = incremental && synchronizer ? await synchronizer.detectChanges(files) : undefined;
+  if (changes && changes.added.length + changes.modified.length + changes.deleted.length === 0) return;
+  if (changes && synchronizer) await synchronizer.invalidateEntries([...changes.modified, ...changes.deleted]);
+  if (changes && !qdrant.deletePointsByPaths) throw new Error("Migration corpus requires path deletion support");
+  const filesToEmbed = changes ? [...changes.added, ...changes.modified].map((file) => join(root, file)) : files;
   const sourceFiles = await Promise.all(
-    files.map(async (filePath) => ({ filePath, code: await readFile(filePath, "utf8") })),
+    filesToEmbed.map(async (filePath) => ({ filePath, code: await readFile(filePath, "utf8") })),
   );
   const digest = createHash("sha256")
     .update(
@@ -77,15 +94,18 @@ export async function rebuildMigrationCorpus(options: {
       ]),
     )
     .digest("hex");
-  if (previous && (await qdrant.getPoint?.(previous, INDEXING_METADATA_ID))?.payload?.migrationDigest === digest) {
+  if (!synchronizer && previous && metadata?.migrationDigest === digest) {
     return;
   }
-  const target = `${alias}_${randomUUID().replaceAll("-", "")}`;
-  const probe = await embeddings.embed?.("tea-rags vector width probe");
+  const target = incremental ? previous : `${alias}_${randomUUID().replaceAll("-", "")}`;
+  const probe = incremental ? undefined : await embeddings.embed?.("tea-rags vector width probe");
   const dimensions = probe?.embedding.length || embeddings.getDimensions();
-  await qdrant.createCollection(target, dimensions, "Cosine", true);
-  let published = false;
+  if (!incremental) await qdrant.createCollection(target, dimensions, "Cosine", true);
+  let published = incremental;
   try {
+    if (changes?.deleted.length && qdrant.deletePointsByPaths) {
+      await qdrant.deletePointsByPaths(target, changes.deleted);
+    }
     for (const { filePath, code } of sourceFiles) {
       const relativePath = relative(root, filePath).split(sep).join("/");
       const operations = await options.parse(code, relativePath, chunkSize);
@@ -121,7 +141,10 @@ export async function rebuildMigrationCorpus(options: {
           })),
         );
       }
-      if (chunks.length === 0) continue;
+      if (chunks.length === 0) {
+        if (incremental && qdrant.deletePointsByPaths) await qdrant.deletePointsByPaths(target, [relativePath]);
+        continue;
+      }
       const vectors = await embeddings.embedBatch(chunks.map((chunk) => chunk.content));
       const points = chunks.map((chunk, index) => {
         const hash = createHash("sha256").update(`${relativePath}:${chunk.symbolId}:${chunk.content}`).digest("hex");
@@ -140,25 +163,32 @@ export async function rebuildMigrationCorpus(options: {
           },
         };
       });
+      if (incremental && qdrant.deletePointsByPaths) await qdrant.deletePointsByPaths(target, [relativePath]);
       await qdrant.addPointsWithSparse(target, points);
     }
-    await qdrant.addPointsWithSparse(target, [
-      {
-        id: INDEXING_METADATA_ID,
-        vector: new Array<number>(dimensions).fill(0),
-        sparseVector: { indices: [], values: [] },
-        payload: {
-          _type: "indexing_metadata",
-          indexingComplete: true,
-          embeddingModel: embeddings.getModel?.(),
-          migrationDigest: digest,
+    if (!incremental) {
+      await qdrant.addPointsWithSparse(target, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array<number>(dimensions).fill(0),
+          sparseVector: { indices: [], values: [] },
+          payload: {
+            _type: "indexing_metadata",
+            indexingComplete: true,
+            embeddingModel: embeddings.getModel?.(),
+            migrationDigest: digest,
+            migrationConfig,
+          },
         },
-      },
-    ]);
-    if (previous) await qdrant.aliases.switchAlias(alias, previous, target);
-    else await qdrant.aliases.createAlias(alias, target);
-    published = true;
-    if (previous) await qdrant.deleteCollection(previous);
+      ]);
+    }
+    if (!incremental) {
+      if (previous) await qdrant.aliases.switchAlias(alias, previous, target);
+      else await qdrant.aliases.createAlias(alias, target);
+      published = true;
+      if (previous) await qdrant.deleteCollection(previous);
+    }
+    await synchronizer?.updateSnapshot(files);
   } finally {
     if (!published) await qdrant.deleteCollection(target);
   }

@@ -14,7 +14,11 @@ export function isMigrationPath(filePath: string): boolean {
 export async function discoverMigrationFiles(root: string): Promise<string[]> {
   const files: string[] = [];
   async function walk(directory: string): Promise<void> {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entries = await readdir(directory, { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+      if (directory === root && err.code === "ENOENT") return [];
+      throw err;
+    });
+    for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) {

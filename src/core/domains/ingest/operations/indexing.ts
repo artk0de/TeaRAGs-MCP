@@ -106,6 +106,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         embeddings: this.embeddings,
         parse: this.deps.parseMigration,
         chunkSize: this.config.chunkSize,
+        synchronizer: this.deps.createSynchronizer(absolutePath, migrationCollectionName(aliasCollectionName)),
       });
       const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
       stats.filesScanned = files.length;

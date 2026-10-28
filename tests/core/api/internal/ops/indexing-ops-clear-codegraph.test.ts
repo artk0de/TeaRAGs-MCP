@@ -38,7 +38,8 @@ describe("IndexingOps — clear removes every codegraph generation (39xca.1)", (
           events.push("qdrant-cleared");
           return false;
         }),
-        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+        aliases: { listAliases: vi.fn().mockResolvedValue([]), isAlias: vi.fn().mockResolvedValue(false) },
+        listCollections: vi.fn().mockResolvedValue([]),
       } as never,
       embeddings: { embed: vi.fn(), resolveModelInfo: vi.fn() } as never,
       config: { chunkSize: 1000, userSetChunkSize: false } as never,
