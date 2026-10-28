@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import type { RelPath } from "../../../../src/core/contracts/types/codegraph.js";
 import type { ScrollChunk } from "../../../../src/core/domains/explore/chunk-grouping/types.js";
+import { FileOutlineStrategy } from "../../../../src/core/domains/explore/strategies/file-outline.js";
 import { SymbolSearchStrategy } from "../../../../src/core/domains/explore/strategies/symbol.js";
 import { isFilePathAddress, SymbolBatchDrill } from "../../../../src/core/domains/explore/symbol-batch.js";
 import type { WorkingTreeView } from "../../../../src/core/domains/explore/working-tree/index.js";
@@ -290,6 +291,32 @@ describe("SymbolBatchDrill", () => {
       const answer = await run(["helper"], view);
 
       expect(answer.rows[0].result.treeState).toBe("modified");
+    });
+
+    // bd tea-rags-mcp-d9w4o: an ignored tree path is no unknown path — its reason is the miss.
+    it("lists a path entry the tree has but ingest ignores with the ignoredPath message", async () => {
+      indexHolds(index);
+      const pathDrill = new SymbolBatchDrill(
+        (symbol) => new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol }),
+        (relativePath, fullTextMaxLines) =>
+          new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath, fullTextMaxLines }),
+      );
+      const view = fakeWorkingTreeView({
+        unindexed: { "db/migrate/001_create.rb": { isDirectory: false, ignoreRule: "db/migrate/" } },
+      });
+
+      const answer = await pathDrill.execute(["db/migrate/001_create.rb"], {
+        collectionName: "c",
+        limit: 50,
+        workingTreeView: view,
+      });
+
+      expect(answer.missing).toEqual([
+        {
+          request: "db/migrate/001_create.rb",
+          message: expect.stringMatching(/not indexed \(ignore pattern "db\/migrate\/"\).*default code read tool/),
+        },
+      ]);
     });
   });
 });

@@ -67,6 +67,8 @@ export {
   type WorkingTreeDeltaChunkSource,
   type WorkingTreeIndexLookup,
   type WorkingTreeOverlayDeps,
+  type UnindexedTreePath,
+  type WorkingTreePathExclusion,
   type WorkingTreeTouchedBasePointSource,
   type WorkingTreeView,
 } from "./overlay.js";

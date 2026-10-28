@@ -80,6 +80,14 @@ export interface WorkingTreeView {
    */
   readTreeFile?: (relativePath: string) => Promise<string | undefined>;
   /**
+   * Whether `relativePath` exists in this tree while ingest leaves it out
+   * (bd tea-rags-mcp-d9w4o): the ignore rule that excludes it when one does.
+   * Undefined for a path the tree lacks, one that leaves the tree, or one
+   * ingest admits. Present when the tree root is known and a path exclusion
+   * reader is wired — degraded views included: it reads the disk, not the delta.
+   */
+  unindexedTreePath?: (relativePath: string) => Promise<UnindexedTreePath | undefined>;
+  /**
    * `rows` with the trajectory payload ingest would have given them
    * (`WORKING_TREE_SIGNAL_PAYLOAD_KEYS`, WTO-6/7): every row that is one of
    * this view's delta rows (by id) gets its git / codegraph blocks merged over
@@ -150,6 +158,16 @@ export interface WorkingTreeView {
   renamedFrom?: ReadonlyMap<string, string>;
 }
 
+/** Why ingest leaves a tree path out: the ignore pattern excluding it or an ancestor directory, when one does. */
+export interface WorkingTreePathExclusion {
+  ignoreRule?: string;
+}
+
+/** A path the tree has and ingest leaves out (`WorkingTreeView#unindexedTreePath`). */
+export interface UnindexedTreePath extends WorkingTreePathExclusion {
+  isDirectory: boolean;
+}
+
 /** A row `signalDeltaRows` can be handed: a delta row, or an answer's hit carrying one's id. Without an id it is neither. */
 export interface WorkingTreeSignalledRow {
   id?: string | number;
@@ -202,6 +220,14 @@ export interface WorkingTreeOverlayDeps {
   deltaReader: WorkingTreeDeltaReader;
   /** The ingest admission rule for files under `root` (`FileScanner#accepts`). */
   createFileFilter: (root: string) => Promise<(relativePath: string) => boolean>;
+  /**
+   * Why ingest leaves a path under `root` out (`FileScanner#exclusionOf`);
+   * undefined from the reader = admitted. Absent → views carry no
+   * `unindexedTreePath`.
+   */
+  createPathExclusionReader?: (
+    root: string,
+  ) => Promise<(relativePath: string, isDirectory: boolean) => WorkingTreePathExclusion | undefined>;
   /**
    * Delta admission: whether a CHANGED file is re-read from the tree (chunked,
    * vectorized, graphed). A declined file is served from the index and named in
@@ -353,7 +379,9 @@ export class WorkingTreeOverlay {
       : await this.measure(tree, alias);
     // A shared measurement hands its degraded view to every ask: each answer
     // stamps its own marker, never a sibling's.
-    if (measured.kind === "degraded") return measurements ? copyDegradedView(measured.view) : measured.view;
+    if (measured.kind === "degraded") {
+      return this.withUnindexedTreePath(tree, measurements ? copyDegradedView(measured.view) : measured.view);
+    }
     const { collectionName } = tree.baseIndex;
     const { marker, delta, deleted, reread, indexOnly } = measured;
     const touched = reread.length + deleted.length;
@@ -421,6 +449,15 @@ export class WorkingTreeOverlay {
     }
     if (reread.length > 0 && this.deps.watcher && !(await isBaseCheckout(tree))) {
       this.deps.watcher.watch(tree.root);
+    }
+    return this.withUnindexedTreePath(tree, view);
+  }
+
+  /** `view` with `unindexedTreePath` when the tree root is known and an exclusion reader is wired. */
+  private withUnindexedTreePath(workingTree: WorkingTree, view: WorkingTreeView): WorkingTreeView {
+    const { createPathExclusionReader } = this.deps;
+    if (createPathExclusionReader && workingTree.root !== "") {
+      view.unindexedTreePath = unindexedTreePathReader(createPathExclusionReader, workingTree.root);
     }
     return view;
   }
@@ -609,6 +646,28 @@ function treeFileReader(
     const absolutePath = resolve(resolvedRoot, relativePath);
     if (!absolutePath.startsWith(`${resolvedRoot}${sep}`)) return undefined;
     return (await files.readContent(absolutePath))?.content.toString("utf8");
+  };
+}
+
+/**
+ * A view's `unindexedTreePath`: stats `relativePath` under `root` and, when it
+ * exists, asks ingest's exclusion rule why it is left out. The rule loads the
+ * tree's ignore files once, on the first ask — the miss path only.
+ */
+function unindexedTreePathReader(
+  createPathExclusionReader: NonNullable<WorkingTreeOverlayDeps["createPathExclusionReader"]>,
+  root: string,
+): (relativePath: string) => Promise<UnindexedTreePath | undefined> {
+  const resolvedRoot = resolve(root);
+  let exclusionOf: ReturnType<typeof createPathExclusionReader> | undefined;
+  return async (relativePath) => {
+    const absolutePath = resolve(resolvedRoot, relativePath);
+    if (!absolutePath.startsWith(`${resolvedRoot}${sep}`)) return undefined;
+    const stats = await fs.stat(absolutePath).catch(() => undefined);
+    if (!stats) return undefined;
+    const isDirectory = stats.isDirectory();
+    const exclusion = (await (exclusionOf ??= createPathExclusionReader(resolvedRoot)))(relativePath, isDirectory);
+    return exclusion ? { isDirectory, ...exclusion } : undefined;
   };
 }
 

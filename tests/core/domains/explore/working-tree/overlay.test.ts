@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -124,6 +124,29 @@ describe("WorkingTreeOverlay", { timeout: 60_000 }, () => {
       expect(await view.readTreeFile?.("src/keep.ts")).toBeUndefined();
       expect(await view.readTreeFile?.("src/none.ts")).toBeUndefined();
       expect(await view.readTreeFile?.("../outside.ts")).toBeUndefined();
+    });
+
+    // bd tea-rags-mcp-d9w4o: a path the tree has but ingest leaves out.
+    it("should report an excluded tree file and directory with the ignore rule, and nothing for an absent or accepted path", async () => {
+      record({ indexedCommit, indexedDirty: false });
+      mkdirSync(join(tree, "db/migrate"), { recursive: true });
+      writeFileSync(join(tree, "db/migrate/001_create.rb"), "create_table :t\n");
+      const view = await new WorkingTreeOverlay({
+        registry,
+        deltaReader: createWorkingTreeDeltaReader(),
+        createFileFilter,
+        createPathExclusionReader: async () => (relativePath) =>
+          relativePath.startsWith("db/migrate") ? { ignoreRule: "db/migrate/" } : undefined,
+      }).view(workingTree(), "proj");
+
+      expect(await view.unindexedTreePath?.("db/migrate/001_create.rb")).toEqual({
+        isDirectory: false,
+        ignoreRule: "db/migrate/",
+      });
+      expect(await view.unindexedTreePath?.("db/migrate")).toEqual({ isDirectory: true, ignoreRule: "db/migrate/" });
+      expect(await view.unindexedTreePath?.("db/migrate/none.rb")).toBeUndefined();
+      expect(await view.unindexedTreePath?.("src/keep.ts")).toBeUndefined();
+      expect(await view.unindexedTreePath?.("../outside")).toBeUndefined();
     });
 
     it("should carry no reader when no tree file source is wired", async () => {

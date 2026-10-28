@@ -133,6 +133,23 @@ export class FileScanner {
   }
 
   /**
+   * Why ingest leaves a repo-relative path out, when it does (bd
+   * tea-rags-mcp-d9w4o): `ignoreRule` = the pattern that ignores it or an
+   * ancestor directory; no rule when a marker set prunes it or — a file — its
+   * extension is not indexed. Undefined when `accepts` takes the file, or
+   * nothing prunes the directory. Call after `loadIgnorePatterns`.
+   */
+  exclusionOf(relativePath: string, isDirectory: boolean): { ignoreRule?: string } | undefined {
+    const posixPath = relativePath.split(sep).join("/").replace(/\/+$/, "");
+    if (posixPath.length === 0 || isAbsolute(posixPath) || posixPath.split("/").includes("..")) return undefined;
+    const verdict = this.ig.test(isDirectory ? `${posixPath}/` : posixPath);
+    if (verdict.ignored) return verdict.rule ? { ignoreRule: verdict.rule.pattern } : {};
+    if (this.hasMarkedAncestor(isDirectory ? `${posixPath}/.` : posixPath)) return {};
+    if (!isDirectory && !this.supportedExts.has(extname(posixPath))) return {};
+    return undefined;
+  }
+
+  /**
    * Get the configured ignore filter instance.
    * Used by enrichment module to filter git log results.
    */

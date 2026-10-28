@@ -11,6 +11,7 @@
  * reported as `resolvedAs`, an ambiguity cap, and the misses.
  */
 
+import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
 import { BATCH_FULL_TEXT_MAX_LINES, type SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
@@ -137,8 +138,10 @@ export class SymbolBatchDrill {
       // A file with no symbol chunk is no symbol either: its reason is the miss.
       const empty = outline.emptyAnswer;
       if (empty?.reason === "noSymbols") return { rows: [], miss: { request: address, message: empty.message } };
-      // A bare root-level name that is no file may still be a symbol id; a slashed one is a path.
-      if (address.includes("/")) return { rows: [], miss: unknownPathMiss(address, outline.emptyAnswer?.suggestions) };
+      // A bare root-level name that is no file may still be a symbol id; a slashed one, or one the tree has, is a path.
+      if (address.includes("/") || empty?.reason === "ignoredPath") {
+        return { rows: [], miss: unknownPathMiss(address, empty) };
+      }
     }
     return this.resolveSymbol(address, ctx);
   }
@@ -248,7 +251,10 @@ function directoryEntryMiss(address: string): SymbolBatchMiss {
   return { request: address, message: `directory — call find_symbol(relativePath: ${dir}) on its own` };
 }
 
-function unknownPathMiss(address: string, suggestions: readonly string[] | undefined): SymbolBatchMiss {
+/** A path entry no file answered: an ignored tree path says so (bd tea-rags-mcp-d9w4o), else the nearest indexed paths. */
+function unknownPathMiss(address: string, empty: EmptyAnswerExplanation | undefined): SymbolBatchMiss {
+  if (empty?.reason === "ignoredPath") return { request: address, message: empty.message };
+  const suggestions = empty?.suggestions;
   return {
     request: address,
     message: `unknown path — ${UNKNOWN_PATH_HINT}`,

@@ -1836,6 +1836,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     registry: collectionRegistry,
     deltaReader: createWorkingTreeDeltaReader(workingTreeChangeClock ? { changeClock: workingTreeChangeClock } : {}),
     createFileFilter: workingTreeFileFilter,
+    createPathExclusionReader: createWorkingTreePathExclusionReader(config.ingestCode),
     // Only AST-chunked changed files are re-read; the rest answer from the index.
     admitsToDelta: createWorkingTreeDeltaAdmission(),
     warmer: workingTreeDeltaWarmer,
@@ -2577,6 +2578,28 @@ export function createWorkingTreeFileFilter(
     });
     await scanner.loadIgnorePatterns(root);
     return (relativePath) => scanner.accepts(relativePath);
+  };
+}
+
+/**
+ * Why ingest leaves a tree path out (bd tea-rags-mcp-d9w4o): the same scanner
+ * configuration as {@link createWorkingTreeFileFilter}, asked
+ * `FileScanner#exclusionOf` instead of `accepts`, so the `ignoredPath` answer
+ * names the pattern the index run applied.
+ */
+export function createWorkingTreePathExclusionReader(
+  ingestCode: AppConfig["ingestCode"],
+): (root: string) => Promise<(relativePath: string, isDirectory: boolean) => { ignoreRule?: string } | undefined> {
+  const { ignoreContributions } = withLanguageIgnoreContributions(ingestCode);
+  return async (root) => {
+    const scanner = new FileScanner({
+      supportedExtensions: ingestCode.supportedExtensions,
+      ignorePatterns: ingestCode.ignorePatterns,
+      customIgnorePatterns: ingestCode.customIgnorePatterns,
+      ignoreContributions,
+    });
+    await scanner.loadIgnorePatterns(root);
+    return (relativePath, isDirectory) => scanner.exclusionOf(relativePath, isDirectory);
   };
 }
 
