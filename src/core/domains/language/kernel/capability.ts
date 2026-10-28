@@ -97,6 +97,9 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunk — and a remainder under the floor rides in its nearest chunk instead
   // of being dropped. Only small files and files with tiny top-level / member
   // statements move, but no narrower scope can name them, so plain `--force`.
+  // Same chunking 6, bd tea-rags-mcp-30qdc: the engine composes a body chunk's
+  // `declaredMethodMembers` into `memberSymbolIds`; only Ruby declares them, so
+  // every other language's output is byte-identical.
   chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd

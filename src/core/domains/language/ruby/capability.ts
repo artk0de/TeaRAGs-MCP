@@ -170,7 +170,11 @@ export const capability: LanguageCapability = {
   // chunking 3: bd tea-rags-mcp-k0602 — a `.rake` file is chunked as the Rake DSL: one
   // `function` chunk per task / multitask / file / rule, addressed by its namespace-qualified
   // Rake name (`billing:sync`), `desc` attached; a chunking-2 index holds a `.rake` file
-  // as plain Ruby (`--force --file-extension .rake`). `.rb` output is unchanged.
+  // as plain Ruby (`--force --file-extension .rake`). Same chunking 3 (one bump per
+  // release), bd tea-rags-mcp-30qdc: a class-body group under the 50-char floor (`private`,
+  // a lone `include`) folds into a neighbour body chunk instead of being dropped, and a
+  // `def` under the child floor is declared by the body chunk holding it
+  // (`memberSymbolIds` `Owner#m` / `Owner.m`); `--force --languages ruby` repopulates.
   versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or

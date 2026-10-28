@@ -15,6 +15,7 @@ import {
   type ChunkingHook,
   type HookChunkingConfig,
 } from "../../../../contracts/types/chunker.js";
+import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
@@ -494,39 +495,100 @@ export function extractBodyChunks(
   // hierarchy on top; `bodyChunkPrefixLength` reserves both, so a group sized to
   // what is left fits the cap whole instead of being line-cut by the post-pass
   // into a headerless `#part2` (bd tea-rags-mcp-j4jrn).
-  const groups = bodyGrouper.groupLines(bodyLines, bodyChunkContentBudget(config));
+  const budget = bodyChunkContentBudget(config);
   const classHeader = extractClassHeader(containerNode, code);
   const constants = containerConstantAssignments(containerNode, code);
+  const shortMethods = containerShortMethods(containerNode, childNodes, code);
+  const withHeader = (group: BodyGroup): string => {
+    const groupContent = groupText(group);
+    return classHeader ? `${classHeader}\n${groupContent}` : groupContent;
+  };
+  const declaresMember = (group: BodyGroup): boolean =>
+    group.lines.some((l) => constants.some((c) => c.line === l.sourceLine) || shortMethods.has(l.sourceLine));
+  const groups = foldSubFloorGroups(
+    bodyGrouper.groupLines(bodyLines, budget),
+    (group) => withHeader(group).length < 50 && !declaresMember(group),
+    (group) => groupText(group).length <= budget,
+  );
 
   const results: BodyChunkResult[] = [];
 
   for (const group of groups) {
-    const groupContent = group.lines
-      .map((l) => l.text)
-      .join("\n")
-      .trim();
-
-    // Prepend class header for context
-    const contentWithContext = classHeader ? `${classHeader}\n${groupContent}` : groupContent;
-
-    // Skip tiny groups
-    if (contentWithContext.length < 50) continue;
-
     const minLine = Math.min(...group.lineRanges.map((r) => r.start));
     const maxLine = Math.max(...group.lineRanges.map((r) => r.end));
     const groupLines = new Set(group.lines.map((l) => l.sourceLine));
     const declaredMemberNames = constants.filter((c) => groupLines.has(c.line)).map((c) => c.name);
+    const declaredMethodMembers = [...shortMethods]
+      .filter(([line]) => groupLines.has(line))
+      .map(([, method]) => method);
 
     results.push({
-      content: contentWithContext,
+      content: withHeader(group),
       startLine: minLine,
       endLine: maxLine,
       lineRanges: group.lineRanges,
       ...(declaredMemberNames.length > 0 ? { declaredMemberNames } : {}),
+      ...(declaredMethodMembers.length > 0 ? { declaredMethodMembers } : {}),
     });
   }
 
   return results;
+}
+
+function groupText(group: BodyGroup): string {
+  return group.lines
+    .map((l) => l.text)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Body groups with every group under the 50-char noise floor folded into a
+ * neighbour instead of dropped (bd tea-rags-mcp-30qdc): once this hook writes
+ * a body chunk the engine's container remainder stays out, so a dropped
+ * `private` / lone `include` row was in no chunk at all. A sub-floor group
+ * joins the group before it, else the next one, whichever still fits the
+ * budget; one no neighbour can host stays a group of its own. When EVERY group
+ * is under the floor nothing comes back — the hook then writes no body chunk
+ * and the engine's remainder keeps those rows (bd tea-rags-mcp-6xdwe).
+ */
+function foldSubFloorGroups(
+  groups: BodyGroup[],
+  isSubFloor: (group: BodyGroup) => boolean,
+  fits: (group: BodyGroup) => boolean,
+): BodyGroup[] {
+  if (groups.every(isSubFloor)) return [];
+  const merged = (host: BodyGroup, guest: BodyGroup): BodyGroup => {
+    const lines = [...host.lines, ...guest.lines].sort((a, b) => a.sourceLine - b.sourceLine);
+    return { type: host.type, lines, lineRanges: computeLineRanges(lines) };
+  };
+
+  const kept: BodyGroup[] = [];
+  let pendingGroups: BodyGroup[] = [];
+  for (const group of groups) {
+    if (isSubFloor(group)) {
+      const last = kept.at(-1);
+      const intoLast = last && merged(last, group);
+      if (intoLast && fits(intoLast)) kept[kept.length - 1] = intoLast;
+      else pendingGroups.push(group);
+      continue;
+    }
+    let host = group;
+    for (const guest of pendingGroups) {
+      const intoHost = merged(host, guest);
+      if (fits(intoHost)) host = intoHost;
+      else kept.push(guest);
+    }
+    pendingGroups = [];
+    kept.push(host);
+  }
+  for (const guest of pendingGroups) {
+    const last = kept.at(-1);
+    const intoLast = last && merged(last, guest);
+    if (intoLast && fits(intoLast)) kept[kept.length - 1] = intoLast;
+    else kept.push(guest);
+  }
+  return kept.sort((a, b) => a.lines[0].sourceLine - b.lines[0].sourceLine);
 }
 
 /**
@@ -550,6 +612,43 @@ function containerConstantAssignments(containerNode: AstNode, code: string): { n
     });
   }
   return constants;
+}
+
+/**
+ * The methods a class / module body declares that the engine did not extract
+ * as children — a `def` under its 50-char child floor — keyed by the 1-based
+ * line of their `def` row (bd tea-rags-mcp-30qdc). Their rows reach this hook
+ * as body lines, so the body chunk holding that row declares the method and
+ * `find_symbol("Owner#m")` answers through it. Direct statements of the body
+ * plus those of a `class << self` block (class methods there); a `def` nested
+ * in a method, a block or a nested container belongs to that scope.
+ */
+function containerShortMethods(
+  containerNode: AstNode,
+  extractedChildren: AstNode[],
+  code: string,
+): Map<number, { name: string; methodKind: MethodClassification }> {
+  const extracted = new Set(extractedChildren.map((c) => c.startIndex));
+  const methods = new Map<number, { name: string; methodKind: MethodClassification }>();
+  const collect = (body: AstNode | null): void => {
+    for (const statement of body?.namedChildren ?? []) {
+      if (statement.type === "singleton_class") {
+        collect(statement.childForFieldName("body"));
+        continue;
+      }
+      if (statement.type !== "method" && statement.type !== "singleton_method") continue;
+      if (extracted.has(statement.startIndex)) continue;
+      const name = statement.childForFieldName("name");
+      const methodKind = classifyMethod(statement);
+      if (!name || !methodKind) continue;
+      methods.set(statement.startPosition.row + 1, {
+        name: code.substring(name.startIndex, name.endIndex),
+        methodKind,
+      });
+    }
+  };
+  collect(containerNode.childForFieldName("body"));
+  return methods;
 }
 
 // ── ChunkingHook export ────────────────────────────────────────────
