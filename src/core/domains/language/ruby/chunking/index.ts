@@ -5,8 +5,10 @@ import { rakeFilterHook } from "./rake-filter.js";
 import { rakeScopeChunkerHook } from "./rake-scope-chunker.js";
 import { rspecFilterHook } from "./rspec-filter.js";
 import { rspecScopeChunkerHook } from "./rspec-scope-chunker.js";
+import { valueClassFilterHook } from "./value-class-container.js";
 
 export const rubyHooks: ChunkingHook[] = [
+  valueClassFilterHook, // filterNode: outside spec / .rake files accepts `X = Struct.new/Data.define(…) do` as a container
   rakeFilterHook, // filterNode: in .rake files accepts Rake DSL calls, rejects others — before RSpec, first verdict wins
   rspecFilterHook, // filterNode: accepts RSpec DSL calls, rejects others
   rubyCommentCaptureHook, // Must run before body chunker (populates excludedRows)
@@ -28,3 +30,4 @@ export { isRakeFile, rakeFilterHook } from "./rake-filter.js";
 export { rakeScopeChunkerHook } from "./rake-scope-chunker.js";
 export { rspecFilterHook, isRspecFile } from "./rspec-filter.js";
 export { rspecScopeChunkerHook, buildScopeTree, produceScopeChunks } from "./rspec-scope-chunker.js";
+export { valueClassContainerName, valueClassFilterHook } from "./value-class-container.js";
