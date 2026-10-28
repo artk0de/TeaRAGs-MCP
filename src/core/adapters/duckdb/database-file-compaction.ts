@@ -21,7 +21,7 @@
 import { existsSync, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
-import type { DuckDBConnection } from "@duckdb/node-api";
+import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 
 import type { CodegraphStorageFootprint } from "../../contracts/types/codegraph.js";
 
@@ -195,4 +195,63 @@ async function compareCopy(conn: DuckDBConnection, database: string): Promise<Co
     };
   }
   return { kind: "verified" };
+}
+
+/** Catalog storage tags identify headers 64 / 999 without disturbing native file locks. */
+export async function readStorageFormat(conn: DuckDBConnection, database?: string): Promise<string | undefined> {
+  const [metadata] = await rows(
+    conn,
+    `SELECT tags['storage_version'] AS version FROM duckdb_databases() WHERE database_name = ${database ? quoteLiteral(database) : "current_database()"}`,
+  );
+  return metadata?.version as string | undefined;
+}
+
+/** EXPORT/IMPORT rebuilds storage under the fresh instance's default format. */
+export async function writeStorageFormatCopy(
+  conn: DuckDBConnection,
+  stagingPath: string,
+  exportDir: string,
+): Promise<CompactedCopyVerdict> {
+  const database = await currentDatabaseName(conn);
+  await conn.run(`EXPORT DATABASE ${quoteLiteral(exportDir)} (FORMAT PARQUET)`);
+  const [settings] = await rows(
+    conn,
+    "SELECT current_setting('memory_limit') AS memory_limit, current_setting('threads') AS threads",
+  );
+  const instance = await DuckDBInstance.create(stagingPath, {
+    memory_limit: String(settings.memory_limit),
+    threads: String(settings.threads),
+  });
+  try {
+    const imported = await instance.connect();
+    try {
+      await imported.run(`IMPORT DATABASE ${quoteLiteral(exportDir)}`);
+      await imported.run("CHECKPOINT");
+    } finally {
+      imported.closeSync();
+    }
+  } finally {
+    instance.closeSync();
+  }
+  await conn.run(`ATTACH ${quoteLiteral(stagingPath)} AS ${COMPACTION_TARGET_ALIAS} (READ_ONLY)`);
+  try {
+    const verdict = await compareCopy(conn, database);
+    if (verdict.kind === "mismatch") return verdict;
+    const tables = await listTables(conn, database);
+    if (tables.includes("schema_migrations")) {
+      const sourceLedger = `${quoteIdentifier(database)}.main.schema_migrations`;
+      const copiedLedger = `${COMPACTION_TARGET_ALIAS}.main.schema_migrations`;
+      const different = await rows(
+        conn,
+        `SELECT * FROM ((SELECT * FROM ${sourceLedger} EXCEPT ALL SELECT * FROM ${copiedLedger}) UNION ALL (SELECT * FROM ${copiedLedger} EXCEPT ALL SELECT * FROM ${sourceLedger})) LIMIT 1`,
+      );
+      if (different.length > 0) return { kind: "mismatch", detail: "migration ledger contents differ" };
+    }
+    if ((await readStorageFormat(conn, COMPACTION_TARGET_ALIAS)) !== "v2.0.0+" || walHoldsData(stagingPath)) {
+      return { kind: "mismatch", detail: "copy is not checkpointed DuckDB 2.0 storage" };
+    }
+    return verdict;
+  } finally {
+    await conn.run(`DETACH ${COMPACTION_TARGET_ALIAS}`);
+  }
 }

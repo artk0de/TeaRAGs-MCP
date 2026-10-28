@@ -30,6 +30,7 @@ const { compactionStagingPath } = await import("../../../../src/core/adapters/du
 const { CodegraphStorageCompactionFailedError } = await import("../../../../src/core/adapters/duckdb/errors.js");
 const { DATABASE_MIGRATIONS } =
   await import("../../../../src/core/domains/maintenance/migration/database/migrations/index.js");
+const compactionPolicy = await import("../../../../src/core/adapters/duckdb/storage-compaction.js");
 const { runMigrations } = await import("../../../../src/core/domains/maintenance/migration/database/runner.js");
 
 describe("DuckDbGraphClient#compactStorage — a failed publish", () => {
@@ -44,8 +45,10 @@ describe("DuckDbGraphClient#compactStorage — a failed publish", () => {
     db = new DuckDbGraphClient({ path, compactionPolicy: { minFileBytes: 0, minStoredToLiveRatio: 2 } });
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
-    // Each migration leaves a live schema_migrations row, so the churn that clears
-    // the 2x policy grows with the migration count.
+    // 2.0 vacuums indexed deletes; force eligibility to reach the real publish failure.
+    vi.spyOn(compactionPolicy, "shouldCompactCodegraphStorage").mockReturnValue(true);
+    // Keep the populated churn fixture; eligibility above is independent of
+    // dead versions because DuckDB 2.0 checkpoints vacuum them.
     const churnRuns = Math.ceil((2 * (DATABASE_MIGRATIONS.length + 32)) / 30) + 1;
     for (let run = 0; run < churnRuns; run++) {
       await db.run("DELETE FROM cg_symbols_files");
@@ -58,6 +61,7 @@ describe("DuckDbGraphClient#compactStorage — a failed publish", () => {
 
   afterEach(async () => {
     renameControl.fail = false;
+    vi.restoreAllMocks();
     await db.close();
     rmSync(dir, { recursive: true, force: true });
   });

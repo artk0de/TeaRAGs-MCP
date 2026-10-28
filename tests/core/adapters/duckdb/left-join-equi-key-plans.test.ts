@@ -28,7 +28,9 @@ import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/mi
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 /** Plan operators a one-sided ON predicate degrades the join into. */
-const NESTED_LOOP_JOIN = /NESTED_LOOP_JOIN|BLOCKWISE_NL_JOIN|PIECEWISE_MERGE_JOIN/;
+// DuckDB 1.x renders operators as `HASH_JOIN`, 2.0 as `Hash Join` (bd tea-rags-mcp-r1c0s).
+const HASH_JOIN = /hash[_ ]join/i;
+const NESTED_LOOP_JOIN = /nested[_ ]loop[_ ]join|blockwise[_ ]nl[_ ]join|piecewise[_ ]merge[_ ]join/i;
 
 describe("one-sided LEFT JOIN predicates become equi-join keys (bd tea-rags-mcp-3x25d)", () => {
   let dir: string;
@@ -207,7 +209,7 @@ describe("one-sided LEFT JOIN predicates become equi-join keys (bd tea-rags-mcp-
       await seedIdentifiers();
       const { sql, params } = resolvedSql();
       const plan = await planOf(sql, params);
-      expect(plan).toMatch(/HASH_JOIN/);
+      expect(plan).toMatch(HASH_JOIN);
       expect(plan).not.toMatch(NESTED_LOOP_JOIN);
     });
   });
@@ -259,7 +261,7 @@ describe("one-sided LEFT JOIN predicates become equi-join keys (bd tea-rags-mcp-
       const pageRankSql = issued.find((sql) => sql.includes("cg_symbols_metrics"));
       expect(pageRankSql).toBeDefined();
       const plan = await planOf(pageRankSql as string);
-      expect(plan).toMatch(/HASH_JOIN/);
+      expect(plan).toMatch(HASH_JOIN);
       expect(plan).not.toMatch(NESTED_LOOP_JOIN);
     });
   });

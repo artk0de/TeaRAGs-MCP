@@ -196,6 +196,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   // ── Lifecycle + durability ──
 
+  async convertStorageToCurrentFormat(): Promise<boolean> {
+    return this.session.convertStorageToCurrentFormat();
+  }
+
   async init(): Promise<void> {
     return this.maintenance.init();
   }

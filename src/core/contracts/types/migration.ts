@@ -56,6 +56,8 @@ export type ShardedSnapshotAccessFactory = (
 
 /** The client surface the graph DDL runner needs. Mirrors MigrationCapableClient. */
 export interface MigrationCapableGraphClient {
+  /** Native storage conversion, when supported by the database adapter. */
+  convertStorageToCurrentFormat?: () => Promise<boolean>;
   exec: (sql: string) => Promise<void>;
   run: (sql: string, params?: unknown[]) => Promise<void>;
   queryAll: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;

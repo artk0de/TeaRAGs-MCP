@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fixturePhysicalCollectionName } from "../../__helpers__/collection-identity.js";
 import type { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
+import * as compactionPolicy from "../../../../src/core/adapters/duckdb/storage-compaction.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -37,6 +38,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await pool.closeAll();
   rmSync(tmp, { recursive: true, force: true });
 });
@@ -45,10 +47,8 @@ describe("GraphDbClientPool across a storage compaction", () => {
   it("keeps serving the same handle and closes nothing", async () => {
     const handle = await pool.acquire(NAME);
     const graphDb = handle.graphDb as DuckDbGraphClient;
-    // Eight generations of 25 rows: the stored/live ratio must clear 2 with the
-    // migration ledger's rows (one per migration, counted on both sides) added
-    // in — four generations sat exactly at 2.0 with 50 migrations, and the 51st
-    // tipped it to "skipped" (bd tea-rags-mcp-zl3so).
+    // Churn real rows before the forced swap. In 2.0 the checkpoint vacuums
+    // their deleted versions, so policy eligibility is injected below.
     for (let run = 0; run < 8; run++) {
       await graphDb.run("DELETE FROM cg_symbols_files");
       for (let f = 0; f < 25; f++) {
@@ -58,6 +58,8 @@ describe("GraphDbClientPool across a storage compaction", () => {
     }
     const inode = statSync(pool.pathFor(NAME)).ino;
 
+    // DuckDB 2.0 vacuums this churn; admit one real swap to pin pool identity.
+    vi.spyOn(compactionPolicy, "shouldCompactCodegraphStorage").mockReturnValueOnce(true);
     expect((await graphDb.compactStorage()).kind).toBe("compacted");
 
     expect(statSync(pool.pathFor(NAME)).ino).not.toBe(inode);
