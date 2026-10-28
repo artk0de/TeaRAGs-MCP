@@ -28,7 +28,7 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 
 **Address:** every read call (search, find_symbol, graph, review_changes, lexicon) → `project=<alias>` (alias line above; else `workingTree.project`; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ addressed tree → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
 
-**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`sed`/`head` or the default code read tool over code. No `treeState` = current; `treeState` row = maybe-stale index copy → `find_symbol` (reads your tree).
+**Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`sed`/`head` or Read tool over code. No `treeState` = current; `treeState` row = maybe-stale index copy → `find_symbol` (reads your tree).
 
 **Route** (first match wins):
 | Need | Call |
@@ -36,14 +36,14 @@ Code reads/meaning search = tea-rags MCP tools; grep only for exact text. Beats 
 | file/dir: outline / doc TOC | `find_symbol(relativePath:)` |
 | known symbol: body / class outline | `find_symbol(symbol:)` — `Class#inst`, `Class.static`; unsure → partial name |
 | behaviour or synonyms (even `a\|b`), no name | `semantic_search` only |
-| every occurrence of an exact name/constant/string | default code search tool (literal, `-l`) → `find_symbol` |
+| every occurrence of an exact name/constant/string | Grep tool (literal, `-l`) → `find_symbol` |
 | symbol + intent | `hybrid_search` |
 | a name's fit | `get_naming_lexicon(names:[{name,kind}])`, verdict = answer |
 | code like a chunk in hand | `find_similar(positiveIds:)` |
 | how X works / who calls X | `get_callees`/`get_callers(symbolId:<id>, depth: 2)` |
 | chain A→B ("how does X reach Y") | `find_symbol` both ids → `trace_path` |
 | diff review | `review_changes` (naming verdicts = answer) |
-| literal text: TODO, phrase, regex, import string | default code search tool (literal) |
+| literal text: TODO, phrase, regex, import string | Grep tool (literal) |
 
 Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids) → that row; every caller → `get_callers` + it. Exists? → `find_symbol(metaOnly:true)`; empty → `empty.reason` → `hybrid_search`.
 

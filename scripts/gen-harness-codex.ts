@@ -59,8 +59,12 @@ const CODEX_DIALECT: HarnessDialect = {
   projectDirVar: "$PWD",
   readResourceTool: "read_mcp_resource",
   listResourcesTool: "list_mcp_resources",
-  codeSearchTool: "shell grep -rl",
-  codeReadTool: "shell file reads",
+  // bd tea-rags-mcp-onli7: rg ships inside Codex (`@openai/codex-<platform>/vendor/<triple>/codex-path/rg`,
+  // on its shell PATH since codex-cli 0.162.1). `grep -rl` ignores .gitignore: a whole-repo run walked
+  // node_modules/build/.git and never completed in the read-only sandbox (live D3 Q3, 2/3 runs).
+  codeSearchTool: "shell rg -l",
+  // One file per command — `one-file-read.sh` (ONE_FILE_READ_SCRIPT) enforces it.
+  codeReadTool: "shell sed -n '<start>,<end>p' <one file>",
 };
 
 /**
@@ -78,13 +82,15 @@ to another skill (a \`$dino-*\` wrapper → \`$bug-hunt\`, \`$explore\`,
 \`$data-driven-generation\` …) → open that \`SKILL.md\` too. Plan from that text,
 not from this core. \`repair/<family>.md\`, \`rules/…\` in any skill or
 reference = the plugin root (the folder holding \`skills/\`), never the skill's
-own folder.
+own folder. Every skill you name in a plan → open its \`SKILL.md\` with its own command
+first; a plan from memory is not reading it. A skill path you did not open with a
+command in this turn is invalid in a plan — open it first.
 
 **Lag follow-ups.** Incremental \`index_codebase\` is a prelude, not the answer:
 the next step still serves the user's request (search / \`$explore\` over the
 code they asked about). Graph answer with \`changedFiles\` > 0 and no
 \`codegraph\` floor → edges touching changed files are the index's: re-check
-changed-file callers via \`find_symbol\`, find missing ones via shell grep -rl
+changed-file callers via \`find_symbol\`, find missing ones via ${CODEX_DIALECT.codeSearchTool}
 (literal) — never a bare retry of the graph call.
 `;
 
@@ -93,13 +99,13 @@ changed-file callers via \`find_symbol\`, find missing ones via shell grep -rl
  * middle, so the rule against it must sit where truncation never reaches.
  * Codex T22 r6: one run cat'ed 11 files and lost SKILL.md, another read nothing;
  * r16: a `python3 -c` loop printed five skills at once — the ban names no tool.
+ * The skill-path rule that used to follow it rides `codex-rules.txt` ({@link CODEX_SKILL_LOADING}):
+ * naming the read tool as a one-file `sed -n` range grew core past {@link CODEX_CORE_HOOK_BUDGET}
+ * (bd tea-rags-mcp-onli7), and the core hook's cap is measured.
  */
 const CODEX_READ_DISCIPLINE = `**Read ONE file per command**, any tool alike (\`cat\`, \`sed\`, \`python3\`, a loop):
 output past ~10k tokens loses its middle (\`…N tokens truncated…\`), and
 a rule you did not see is not a rule you may guess. Saw that marker → re-read the file in ranges (\`sed -n\`).
-Every skill you name in a plan → open its \`SKILL.md\` with its own command
-first; a plan from memory is not reading it. A skill path you did not open with a
-command in this turn is invalid in a plan — open it first.
 `;
 
 /** Puts \`prelude\` right after the body's H1 (or first, when there is none). */

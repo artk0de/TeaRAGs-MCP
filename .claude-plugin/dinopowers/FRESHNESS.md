@@ -21,9 +21,8 @@ Addressing + lag rules: core rules (always on). Wrappers follow, never restate.
   consent. Drift `Run:` with `--force` adds ONE line
   `AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`
   beside that incremental call — never instead of it, never "won't proceed".
-- **Lag ≠ unusable** — never licence for Bash `cat`/`sed`/`head` or the default
-  code read tool over code (→ guide/freshness "Lag never licenses leaving
-  tea-rags").
+- **Lag ≠ unusable** — never licence for Bash `cat`/`sed`/`head` or Read tool
+  over code (→ guide/freshness "Lag never licenses leaving tea-rags").
 - **No worktree clone** — overlay reads any delta; `pendingFiles` /
   `indexOnlyFiles` ≠ reindex triggers.
 - **Branch finish** — `dinopowers:finishing-a-development-branch` reindexes

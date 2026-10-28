@@ -98,6 +98,7 @@ Wrapped: the default
   code search tool (not a tea-rags tool).
 Never read with the default code read tool or
   the default code read tool again.
+- **Default code read tool after a hit** — no.
 `;
 const KNOWN = new Set(["explore", "filter-building", "test-first"]);
 
@@ -118,7 +119,8 @@ describe("toCursorSkill", () => {
     expect(text).toContain('Print `Grep tool "<phrase>" (literal) → find_symbol`.');
     expect(text).toContain("Wrapped: Grep tool (not a tea-rags tool).");
     expect(text).toContain("Never read with Read tool or\n  Read tool again.");
-    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/);
+    expect(text).toContain("- **Read tool after a hit** — no.");
+    expect(text).not.toMatch(/default\s+code\s+(?:search|read)\s+tool/i);
   });
 
   it("keeps only name and description and mentions skills as slash commands", () => {

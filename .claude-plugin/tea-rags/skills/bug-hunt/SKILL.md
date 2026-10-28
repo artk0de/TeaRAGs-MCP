@@ -66,7 +66,7 @@ argument-hint: [bug description or symptom]
   (no step 0, no probes), never cat / sed / Read around the hit; the plan never
   ends at the code-search hit — find_symbol follows it; print this ONE line,
   slots filled:
-  `default code search tool "<phrase>" <dir> (literal, line cap) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
+  `Grep tool "<phrase>" <dir> (literal, line cap) → find_symbol(path=<cwd>, relativePath=<hit file>) outline → find_symbol(path=<cwd>, symbol=<enclosing symbolId>) body`.
 - Suspect files named AND a search over them asked ("targeted search", "search
   both", "поиск по") — the word "suspect" included → run it now, ONE call, not a
   confirmatory search, no refusal:
@@ -193,9 +193,8 @@ No `## Signal thresholds` table in the output above → read
    user to paste `git log`. `git status --porcelain -uall` allowed: working-tree
    state (file NAMES), not code history or content — feeds Uncommitted probe
    only.
-3. **No text search (the default code search tool) for code discovery** —
-   TeaRAGs only; text search for literal text, identifiers never —
-   `hybrid_search`.
+3. **No text search (Grep tool) for code discovery** — TeaRAGs only; text search
+   for literal text, identifiers never — `hybrid_search`.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
    or navigation.

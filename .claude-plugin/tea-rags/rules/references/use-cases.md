@@ -126,6 +126,6 @@ per-language support here.
 ## Outside tea-rags
 
 Literal text only (TODO/FIXME, phrase, regex, import-path string) → text search
-(the default code search tool). File structure / call-sites / usages stay on
-tea-rags (`find_symbol`, `hybrid_search`, graph tools) — routing:
+(Grep tool). File structure / call-sites / usages stay on tea-rags
+(`find_symbol`, `hybrid_search`, graph tools) — routing:
 `tea-rags://guide/decision-tree`.
