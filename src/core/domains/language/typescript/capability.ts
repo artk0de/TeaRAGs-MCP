@@ -193,7 +193,12 @@ export const capability: LanguageCapability = {
   // `--force-enrichments codegraph --languages typescript`.
   // Same walker 15 (one bump per release), bd tea-rags-mcp-ek2cu: the shared
   // ECMAScript class census counts async instance methods (migration 050).
-  versions: { chunking: 2, walker: 15, codegraphSchema: 2 },
+  // chunking 3: bd tea-rags-mcp-xiki8 — a class-body group under the 50-char
+  // floor (a lone `private n = 1;` between methods) folds into a neighbour body
+  // chunk instead of being dropped, and a method under the child floor is
+  // declared by the body chunk holding it (`memberSymbolIds` `Owner#m` /
+  // `Owner.m`); `--force --languages typescript` repopulates.
+  versions: { chunking: 3, walker: 15, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or

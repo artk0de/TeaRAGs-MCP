@@ -16,6 +16,7 @@ import {
   type HookChunkingConfig,
 } from "../../../../contracts/types/chunker.js";
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
+import { foldSubFloorGroups } from "../../kernel/index.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
@@ -505,11 +506,14 @@ export function extractBodyChunks(
   };
   const declaresMember = (group: BodyGroup): boolean =>
     group.lines.some((l) => constants.some((c) => c.line === l.sourceLine) || shortMethods.has(l.sourceLine));
-  const groups = foldSubFloorGroups(
-    bodyGrouper.groupLines(bodyLines, budget),
-    (group) => withHeader(group).length < 50 && !declaresMember(group),
-    (group) => groupText(group).length <= budget,
-  );
+  // A sub-floor group folds into a neighbour instead of being dropped (bd
+  // tea-rags-mcp-30qdc); a group declaring a member is never noise.
+  const groups = foldSubFloorGroups(bodyGrouper.groupLines(bodyLines, budget), {
+    isSubFloor: (group) => withHeader(group).length < 50 && !declaresMember(group),
+    fits: (group) => groupText(group).length <= budget,
+    merge: mergeBodyGroups,
+    startOf: (group) => group.lines[0].sourceLine,
+  });
 
   const results: BodyChunkResult[] = [];
 
@@ -542,53 +546,10 @@ function groupText(group: BodyGroup): string {
     .trim();
 }
 
-/**
- * Body groups with every group under the 50-char noise floor folded into a
- * neighbour instead of dropped (bd tea-rags-mcp-30qdc): once this hook writes
- * a body chunk the engine's container remainder stays out, so a dropped
- * `private` / lone `include` row was in no chunk at all. A sub-floor group
- * joins the group before it, else the next one, whichever still fits the
- * budget; one no neighbour can host stays a group of its own. When EVERY group
- * is under the floor nothing comes back — the hook then writes no body chunk
- * and the engine's remainder keeps those rows (bd tea-rags-mcp-6xdwe).
- */
-function foldSubFloorGroups(
-  groups: BodyGroup[],
-  isSubFloor: (group: BodyGroup) => boolean,
-  fits: (group: BodyGroup) => boolean,
-): BodyGroup[] {
-  if (groups.every(isSubFloor)) return [];
-  const merged = (host: BodyGroup, guest: BodyGroup): BodyGroup => {
-    const lines = [...host.lines, ...guest.lines].sort((a, b) => a.sourceLine - b.sourceLine);
-    return { type: host.type, lines, lineRanges: computeLineRanges(lines) };
-  };
-
-  const kept: BodyGroup[] = [];
-  let pendingGroups: BodyGroup[] = [];
-  for (const group of groups) {
-    if (isSubFloor(group)) {
-      const last = kept.at(-1);
-      const intoLast = last && merged(last, group);
-      if (intoLast && fits(intoLast)) kept[kept.length - 1] = intoLast;
-      else pendingGroups.push(group);
-      continue;
-    }
-    let host = group;
-    for (const guest of pendingGroups) {
-      const intoHost = merged(host, guest);
-      if (fits(intoHost)) host = intoHost;
-      else kept.push(guest);
-    }
-    pendingGroups = [];
-    kept.push(host);
-  }
-  for (const guest of pendingGroups) {
-    const last = kept.at(-1);
-    const intoLast = last && merged(last, guest);
-    if (intoLast && fits(intoLast)) kept[kept.length - 1] = intoLast;
-    else kept.push(guest);
-  }
-  return kept.sort((a, b) => a.lines[0].sourceLine - b.lines[0].sourceLine);
+/** Two body line groups as one, rows in source order, under the host's type. */
+function mergeBodyGroups(host: BodyGroup, guest: BodyGroup): BodyGroup {
+  const lines = [...host.lines, ...guest.lines].sort((a, b) => a.sourceLine - b.sourceLine);
+  return { type: host.type, lines, lineRanges: computeLineRanges(lines) };
 }
 
 /**

@@ -20,6 +20,7 @@ const LANGUAGE_ROOT = "src/core/domains/language";
 const HOOKS_ROOT = "src/core/domains/ingest/pipeline/chunker/hooks";
 const CHUNKER_ROOT = "src/core/domains/ingest/pipeline/chunker";
 const TEST_SCOPE_CHUNKS = `${LANGUAGE_ROOT}/kernel/test-scope-chunks.ts`;
+const SUB_FLOOR_GROUP_FOLD = `${LANGUAGE_ROOT}/kernel/sub-floor-group-fold.ts`;
 
 /**
  * What the `*` pseudo-language's axes vouch for: the sources every language
@@ -69,6 +70,10 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // scope tree to: it moves chunks and never an edge, so it is pruned back
       // out of the kernel's walker axis below.
       TEST_SCOPE_CHUNKS,
+      // The sub-floor fold every class-body hook runs its groups through (bd
+      // tea-rags-mcp-xiki8): it moves body-chunk rows and never an edge, so it
+      // is pruned out of the walker axis below like the test-scope emission.
+      SUB_FLOOR_GROUP_FOLD,
     ],
   },
   {
@@ -104,7 +109,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
     // Same exclusion as a language's own `capability.ts`, for the same reason:
     // `kernel/capability.ts` HOLDS `sharedVersions`, so digesting it would make
     // every bump invalidate the pin it just moved.
-    exclude: [`${LANGUAGE_ROOT}/kernel/capability.ts`, TEST_SCOPE_CHUNKS],
+    exclude: [`${LANGUAGE_ROOT}/kernel/capability.ts`, TEST_SCOPE_CHUNKS, SUB_FLOOR_GROUP_FOLD],
   },
 ];
 

@@ -586,8 +586,11 @@ describe("seeded support versions", () => {
       // — a method of the literal a named function returns is written as
       // `factory#member`, and a declarator-bound factory's members gain its
       // segment, so the payload `symbolId` of those chunks moves.
+      // typescript chunking 3: bd tea-rags-mcp-xiki8 — a sub-floor class-body
+      // group folds into a neighbour body chunk instead of being dropped, and a
+      // short method is declared by the body chunk holding it.
       const CHUNKING_BUMPED = new Map([
-        ["typescript", 2],
+        ["typescript", 3],
         ["javascript", 3],
         ["swift", 4],
         ["bash", 2],
