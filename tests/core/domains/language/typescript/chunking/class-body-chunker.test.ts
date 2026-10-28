@@ -579,3 +579,201 @@ describe("typescriptBodyChunkingHook", () => {
     expect(chunk.endLine).toBe(4);
   });
 });
+
+// --- bd tea-rags-mcp-gkvvo: every class-body row lands in a chunk that holds it ---
+
+type ClaimingChunk = {
+  content: string;
+  startLine: number;
+  endLine: number;
+  lineRanges?: { start: number; end: number }[];
+};
+
+/** 1-based rows a body chunk claims: its `lineRanges` clipped to its span. */
+function claimedRows(chunk: ClaimingChunk): Set<number> {
+  const rows = new Set<number>();
+  for (const range of chunk.lineRanges ?? [{ start: chunk.startLine, end: chunk.endLine }]) {
+    for (let row = Math.max(range.start, chunk.startLine); row <= Math.min(range.end, chunk.endLine); row++) {
+      rows.add(row);
+    }
+  }
+  return rows;
+}
+
+/**
+ * Every listed 1-based row is claimed by a body chunk whose content holds it,
+ * and no chunk claims a non-blank row its content does not hold.
+ */
+function expectRowsClaimedWithContent(code: string, chunks: ClaimingChunk[], rows: number[]): void {
+  const lines = code.split("\n");
+  const holds = (chunk: ClaimingChunk, text: string) => chunk.content.split("\n").some((l) => l.trim() === text);
+  for (const chunk of chunks) {
+    for (const row of claimedRows(chunk)) {
+      const text = lines[row - 1].trim();
+      if (text) expect(holds(chunk, text), `row ${row} claimed but not in content: ${text}`).toBe(true);
+    }
+  }
+  for (const row of rows) {
+    const text = lines[row - 1].trim();
+    const holder = chunks.find((chunk) => claimedRows(chunk).has(row) && holds(chunk, text));
+    expect(holder, `row ${row} in no chunk: ${text}`).toBeDefined();
+  }
+}
+
+/** Non-blank 1-based rows of `code` in `[from, to]`. */
+function nonBlankRows(code: string, from: number, to: number): number[] {
+  return code
+    .split("\n")
+    .map((line, i) => [line.trim(), i + 1] as const)
+    .filter(([text, row]) => text.length > 0 && row >= from && row <= to)
+    .map(([, row]) => row);
+}
+
+const methodBlock = (name: string): string[] => [
+  `  ${name}(input: string): string {`,
+  `    const normalized = input.trim().toLowerCase();`,
+  `    return normalized.length > 0 ? normalized : "${name}";`,
+  "  }",
+];
+
+describe("typescriptBodyChunkingHook — oversized body coverage (bd tea-rags-mcp-gkvvo)", () => {
+  it("keeps every row of a field group between methods in the split part whose content holds it", () => {
+    const code = [
+      "export class Inventory {", // 1
+      ...methodBlock("first"), // 2-5
+      "",
+      "  readonly transform: Transformer;", // 7
+      "",
+      "  private readonly cache = new LookupCache();", // 9
+      "  private readonly scratch: Record<string, unknown> = {};",
+      "  /** Lazily built on the first batch. */",
+      "  private discovery: Discovery | null = null;",
+      "  private lifetime: {",
+      "    readonly root: string;",
+      "    readonly headSha: string;",
+      "    readonly data: Promise<Map<string, number>>;",
+      "  } | null = null;",
+      "  private anchor: {",
+      "    readonly root: string;",
+      "    readonly headSha: string;",
+      "    readonly data: Promise<number | undefined>;",
+      "  } | null = null;", // 22
+      "",
+      ...methodBlock("second"), // 24-27
+      "",
+      "  private tail: string[] = [];", // 29
+      "  private readonly limits = { soft: 10, hard: 20 };", // 30
+      "",
+      ...methodBlock("third"),
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code, { maxChunkSize: 260 });
+    typescriptBodyChunkingHook.process(ctx);
+
+    expect(ctx.bodyChunks.length).toBeGreaterThan(1);
+    expectRowsClaimedWithContent(code, ctx.bodyChunks, [7, ...nonBlankRows(code, 9, 22), 29, 30]);
+  });
+
+  it("keeps a multi-line arrow-property member whole and claimed when the body is split", () => {
+    const code = [
+      "export class Streamer {", // 1
+      "  private readonly first = new LookupCache();", // 2
+      "  private readonly second: Record<string, unknown> = {};", // 3
+      ...methodBlock("open"), // 4-7
+      "",
+      "  /** Arrow-property so `this` survives being passed as a callback. */", // 9
+      "  streamBatch = async (",
+      "    root: string,",
+      "    paths: string[],",
+      "  ): Promise<Map<string, number>> => {",
+      "    if (paths.length === 0) return new Map();",
+      "    return this.collect(root, paths);",
+      "  };", // 16
+      "",
+      ...methodBlock("close"),
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code, { maxChunkSize: 330 });
+    typescriptBodyChunkingHook.process(ctx);
+
+    const arrowRows = nonBlankRows(code, 9, 16);
+    expectRowsClaimedWithContent(code, ctx.bodyChunks, [2, 3, ...arrowRows]);
+    const holders = ctx.bodyChunks.filter((chunk) => arrowRows.some((row) => claimedRows(chunk).has(row)));
+    expect(holders).toHaveLength(1);
+  });
+
+  it("claims the tail of a field initializer larger than the budget, closing row included", () => {
+    const entries = Array.from({ length: 30 }, (_, i) => [
+      `    entry${i}: (slice) => {`,
+      `      for (const item of slice.items${i} ?? []) this.sink.add(item);`,
+      "    },",
+    ]).flat();
+    const code = [
+      "export class Absorber {", // 1
+      "  private readonly sink = new Set<string>();", // 2
+      ...methodBlock("reset"), // 3-6
+      "",
+      "  private readonly absorbers: AbsorberTable = {", // 8
+      ...entries,
+      "  };",
+      "",
+      ...methodBlock("drain"),
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code, { maxChunkSize: 700 });
+    typescriptBodyChunkingHook.process(ctx);
+
+    expect(ctx.bodyChunks.length).toBeGreaterThan(1);
+    expectRowsClaimedWithContent(code, ctx.bodyChunks, [2, ...nonBlankRows(code, 8, 8 + entries.length + 1)]);
+    for (const chunk of ctx.bodyChunks) expect(chunk.content.length).toBeLessThanOrEqual(700);
+  });
+
+  it("carries class header continuation rows (heritage on their own lines) in the body chunk", () => {
+    const code = [
+      "export class UnavailableFailure",
+      "  extends ProviderFailure",
+      "  implements RecoveryReporting",
+      "{",
+      "  readonly recoveryWaitMs: number;",
+      "  readonly endpointCount: number;",
+      "",
+      ...methodBlock("describe"),
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code);
+    typescriptBodyChunkingHook.process(ctx);
+
+    expect(ctx.bodyChunks).toHaveLength(1);
+    const [chunk] = ctx.bodyChunks;
+    expect(chunk.content.split("\n").slice(0, 4)).toEqual([
+      "export class UnavailableFailure",
+      "  extends ProviderFailure",
+      "  implements RecoveryReporting",
+      "{",
+    ]);
+    expect(chunk.content).toContain("readonly endpointCount: number;");
+  });
+
+  it("carries a multi-line type-parameter header in the body chunk", () => {
+    const code = [
+      "export class LinearizerCache<",
+      "  TCtx extends CacheContext,",
+      "  TPolicy extends LinearizationPolicy<TCtx>,",
+      "> {",
+      "  private readonly entries = new WeakMap<object, TPolicy>();",
+      "",
+      ...methodBlock("lookup"),
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code);
+    typescriptBodyChunkingHook.process(ctx);
+
+    expect(ctx.bodyChunks).toHaveLength(1);
+    expect(ctx.bodyChunks[0].content).toContain("  TPolicy extends LinearizationPolicy<TCtx>,\n> {");
+  });
+});
