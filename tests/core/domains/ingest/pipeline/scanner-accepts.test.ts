@@ -53,6 +53,14 @@ describe("FileScanner#accepts", () => {
     expect(scanner.accepts("secret.ts")).toBe(false);
   });
 
+  it("keeps migration files out of code scans and working-tree admission", async () => {
+    const rubyScanner = new FileScanner({ supportedExtensions: [".rb"], ignorePatterns: [] });
+    await rubyScanner.loadIgnorePatterns(root);
+    write("db/migrate/20261028000000_orders.rb", "class Orders; end\n");
+    expect(rubyScanner.accepts("db/migrate/20261028000000_orders.rb")).toBe(false);
+    expect(await rubyScanner.scanDirectory(root)).toEqual([]);
+  });
+
   it("should admit through scanDirectory exactly the files it accepts", async () => {
     const candidates = ["src/app.ts", "assets/logo.png", "node_modules/x.ts", "generated/deep/model.ts", "secret.ts"];
     for (const candidate of candidates) write(candidate);

@@ -20,10 +20,12 @@ import type { MigratorPort } from "../../../contracts/types/migration.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { ParallelFileSynchronizer } from "../sync/index.js";
 import type { ChunkerPoolFactory } from "./chunker/infra/pool.js";
+import type { MigrationParser } from "./migration-corpus.js";
 
 // ── Public interfaces ────────────────────────────────────────────
 
 export interface IngestDependencies {
+  parseMigration: MigrationParser;
   createSchemaManager: (collectionName: string) => SchemaManager;
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
   createMigrator: (collectionName: string, codebasePath: string) => MigratorPort;

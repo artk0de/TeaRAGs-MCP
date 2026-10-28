@@ -53,6 +53,7 @@ const MAX_SUGGESTION_DEPTH = 5;
 export interface PayloadProjectionMode {
   metaOnly: boolean;
   reranked: boolean;
+  migration?: boolean;
   /**
    * A search tool (semantic_search, hybrid_search, rank_chunks, find_similar)
    * answers: its default is {@link DEFAULT_SEARCH_FIELDS} /
@@ -159,7 +160,10 @@ function projectByMode(results: SearchResult[], mode: PayloadProjectionMode): Se
 
 function defaultKeysOf(mode: PayloadProjectionMode): readonly string[] {
   if (mode.searchTool) {
-    const keys = mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+    const defaults = mode.metaOnly ? DEFAULT_META_ONLY_FIELDS : DEFAULT_SEARCH_FIELDS;
+    const keys = mode.migration
+      ? [...defaults, "chunkType", "version", "operation", "direction", "table", "columns"]
+      : defaults;
     return mode.taskIdsLevel ? [...keys, `git.${mode.taskIdsLevel}.taskIds`] : keys;
   }
   if (!mode.metaOnly) return CONTENT_FIELDS;

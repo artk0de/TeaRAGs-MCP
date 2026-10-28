@@ -421,6 +421,12 @@ function paginationFields(metaOnlyDefault?: boolean) {
 function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeAny, applied: ReadonlySet<string>) {
   return {
     ...collectionPathFields(),
+    scope: z
+      .enum(["code", "migrations"])
+      .optional()
+      .describe(
+        "Default code. Use migrations for Rails schema history (not current state); ranks by relevance and ignores signal rerank presets.",
+      ),
     ...searchCommonFields(filterSchema),
     ...typedFilterFields(applied),
     ...levelField(),

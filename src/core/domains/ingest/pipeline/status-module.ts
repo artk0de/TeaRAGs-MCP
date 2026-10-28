@@ -48,6 +48,7 @@ import {
 } from "../infra/index.js";
 import { ParallelFileSynchronizer, QuarantineStore, ShardedSnapshotManager, SkippedFileStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
+import { migrationCollectionName } from "./migration-files.js";
 
 // The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
 // the same number to decide whether a half-built collection may be reclaimed,
@@ -717,6 +718,14 @@ export class StatusModule {
         // Legacy: real collection, just delete it
         await this.qdrant.deleteCollection(aliasCollectionName);
       }
+    }
+
+    const migrationAlias = migrationCollectionName(aliasCollectionName);
+    if (await this.qdrant.aliases.isAlias(migrationAlias)) {
+      await this.qdrant.aliases.deleteAlias(migrationAlias);
+    }
+    for (const physicalName of await this.qdrant.listCollections()) {
+      if (physicalName.startsWith(`${migrationAlias}_`)) await this.qdrant.deleteCollection(physicalName);
     }
 
     // Also delete snapshot

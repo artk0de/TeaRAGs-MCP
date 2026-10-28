@@ -34,6 +34,13 @@ const parseIndexCodebase = (input: unknown) => z.object(IndexCodebaseSchema).par
 const parseSearchCode = (input: unknown) => z.object(SearchCodeSchema).parse(input);
 const parseSemanticSearch = (input: unknown) => z.object(SemanticSearchSchema).parse(input);
 const parseHybridSearch = (input: unknown) => z.object(HybridSearchSchema).parse(input);
+
+describe("migration search scope", () => {
+  it("accepts an explicit migration scope on semantic and hybrid search", () => {
+    expect(parseSemanticSearch({ query: "orders", scope: "migrations" })).toMatchObject({ scope: "migrations" });
+    expect(parseHybridSearch({ query: "orders", scope: "migrations" })).toMatchObject({ scope: "migrations" });
+  });
+});
 const parseRankChunks = (input: unknown) => z.object(RankChunksSchema).parse(input);
 
 // ---------------------------------------------------------------------------

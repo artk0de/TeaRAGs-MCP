@@ -13,6 +13,7 @@ import ignore, { type Ignore } from "ignore";
 import type { IgnoredDirectoryMarker } from "../../../contracts/types/ingest-config.js";
 import type { ScannerConfig } from "../../../types.js";
 import { BUILTIN_IGNORE_PATTERNS, BUILTIN_IGNORED_DIRECTORY_MARKERS } from "./ignore-defaults.js";
+import { isMigrationPath } from "./migration-files.js";
 
 export class FileScanner {
   private ig: Ignore = ignore();
@@ -128,7 +129,10 @@ export class FileScanner {
     const posixPath = relativePath.split(sep).join("/");
     if (posixPath.length === 0 || isAbsolute(posixPath) || posixPath.split("/").includes("..")) return false;
     return (
-      this.supportedExts.has(extname(posixPath)) && !this.ig.ignores(posixPath) && !this.hasMarkedAncestor(posixPath)
+      this.supportedExts.has(extname(posixPath)) &&
+      !isMigrationPath(posixPath) &&
+      !this.ig.ignores(posixPath) &&
+      !this.hasMarkedAncestor(posixPath)
     );
   }
 

@@ -13,3 +13,5 @@ export type { IngestDependencies } from "./pipeline/index.js";
 export type { SynchronizerTuning } from "./sync/index.js";
 export { INDEXING_METADATA_ID } from "../../contracts/constants.js";
 export { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./pipeline/enrichment/index.js";
+
+export { migrationCollectionName } from "./pipeline/migration-files.js";

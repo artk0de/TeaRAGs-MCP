@@ -23,16 +23,16 @@
  * language via the injected `LanguageFactoryDescriptor`; the generic engine
  * hardcodes no `db/` or `ruby` knowledge of its own (bd tea-rags-mcp-biwbq).
  *
- * codegraph-ONLY: semantic search still indexes these files (a migration is a
- * legitimate "when did column X appear" search target) — only the call graph
- * drops them. `.gitignore` glob syntax (the `ignore` package).
+ * These globs govern the codegraph. Rails migration history is indexed in a
+ * separate corpus, available through the explicit migration search scope.
+ * Other paths retain their ordinary search admission. `.gitignore` glob syntax
+ * (the `ignore` package).
  *
  * NOTE: `db/schema.rb` is ALSO a generated file and remains covered by
  * `infra/file-classification` `GENERATED_PATTERNS` for the separate git-skip
  * classification axis; it is listed here so the Ruby domain declares its full
  * non-app codegraph surface in one place. `db/migrate` / `db/data` are
- * hand-written (not generated) — they SHOULD keep their git ownership signals,
- * so they belong ONLY on this codegraph-only axis, not in `GENERATED_PATTERNS`.
+ * hand-written (not generated), so they do not belong in `GENERATED_PATTERNS`.
  */
 export const RUBY_CODEGRAPH_EXCLUSION_GLOBS: readonly string[] = [
   "**/db/migrate/**",

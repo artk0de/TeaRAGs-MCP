@@ -24,6 +24,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
@@ -61,6 +62,7 @@ import {
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
+import { migrationCollectionName } from "../../../domains/ingest/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
@@ -214,6 +216,8 @@ interface ExploreFinalizeOptions {
    * tea-rags-mcp-q1g6s.16) instead of find_symbol's lean default.
    */
   searchTool?: boolean;
+  migration?: boolean;
+  migrationMetaOnly?: boolean;
   /** find_symbol `relativePath`: rows are outlines, kept under metaOnly (`PayloadProjectionMode.outline`). */
   outline?: boolean;
   /** The level a `taskId` filter matched (`PayloadProjectionMode.taskIdsLevel`); absent → no taskId filter. */
@@ -601,27 +605,38 @@ export class ExploreOps {
     ctx: ExploreContext,
     finalize: ExploreFinalizeOptions = {},
   ): Promise<ExploreResponse> {
-    await this.ensureStats(ctx.collectionName);
+    if (!finalize.migration) await this.ensureStats(ctx.collectionName);
     const workingTreeView = await finalize.workingTreeView;
-    const results = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const candidates = await strategy.execute(workingTreeView ? { ...ctx, workingTreeView } : ctx);
+    const results = finalize.migration
+      ? candidates
+      : candidates.filter((result) => {
+          const path = result.payload?.relativePath;
+          return typeof path !== "string" || !/(?:^|\/)db\/migrate\//.test(path.replaceAll("\\", "/"));
+        });
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;
     const projection = projectSearchResultPayloads(
-      results.map((r) => ({
-        id: r.id ?? "",
-        score: r.score,
-        payload: r.payload ? stripInternalFields(r.payload) : r.payload,
-        rankingOverlay: r.rankingOverlay,
-        ...(r.treeState ? { treeState: r.treeState } : {}),
-      })),
+      results.map((r) => {
+        const payload = r.payload ? stripInternalFields(r.payload) : r.payload;
+        if (payload && finalize.migrationMetaOnly) delete payload.content;
+        return {
+          id: r.id ?? "",
+          score: r.score,
+          payload,
+          rankingOverlay: r.rankingOverlay,
+          ...(r.treeState ? { treeState: r.treeState } : {}),
+        };
+      }),
       finalize.fields,
       // N4: `fields` absent → the call mode's default projection; the LAST
       // payload step, after every reader of the full payload ran.
       {
-        metaOnly: ctx.metaOnly === true,
+        metaOnly: ctx.metaOnly === true || finalize.migrationMetaOnly === true,
         reranked: ctx.rerank !== undefined && ctx.rerank !== "relevance",
         searchTool: finalize.searchTool === true,
+        migration: finalize.migration === true,
         outline: finalize.outline === true,
         ...(finalize.taskIdsLevel ? { taskIdsLevel: finalize.taskIdsLevel } : {}),
       },
@@ -652,6 +667,21 @@ export class ExploreOps {
     { attachConfidence, denseLegOptional }: { attachConfidence: boolean; denseLegOptional: boolean },
     scope?: ExploreRequestScope,
   ): Promise<ExploreResponse> {
+    let migrationMarker: { collection: string; revision: unknown } | undefined;
+    if (request.scope === "migrations") {
+      const workingTree = await resolveIndexedWorkingTree(this.collectionRegistry, request, async (name) =>
+        this.qdrant.collectionExists(name),
+      );
+      const migrationCollection = migrationCollectionName(workingTree.baseIndex.collectionName);
+      if (!(await this.qdrant.collectionExists(migrationCollection))) {
+        return { results: [] };
+      }
+      const marker = await this.qdrant.getPoint?.(migrationCollection, INDEXING_METADATA_ID);
+      if (marker === null || (marker && marker.payload?.indexingComplete !== true)) {
+        throw new Error("Migration corpus update is incomplete; retry indexing before searching migrations");
+      }
+      if (marker) migrationMarker = { collection: migrationCollection, revision: marker.payload?.migrationRevision };
+    }
     const { target, query, embedding, queryVariants, denseUnavailable } = await this.embedQuery(
       request,
       denseLegOptional,
@@ -662,23 +692,40 @@ export class ExploreOps {
     const workingTreeView = queryVariants
       ? target.workingTreeView?.then(withoutWorkingTreeFloors)
       : target.workingTreeView;
-    const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
+    const rerank =
+      request.scope === "migrations"
+        ? undefined
+        : resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
-    await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level, "semantic_search", historyAnchorSec);
+    if (request.scope !== "migrations") await this.ensureStats(collectionName);
+    const filterRequest =
+      request.scope === "migrations" && request.filter === undefined ? { ...request, filter: {} } : request;
+    const { filter, presetFilterNotice } = this.buildFilter(filterRequest, level, "semantic_search", historyAnchorSec);
     const vectorCtx = buildVectorSearchContext(request, query, collectionName, embedding, filter, rerank, level);
+    if (request.scope === "migrations" && request.metaOnly) vectorCtx.metaOnly = false;
     const ctx = withHistoryClock(queryVariants ? { ...vectorCtx, queryVariants } : vectorCtx, historyAnchorSec);
     const response = await this.executeExplore(strategy, denseUnavailable ? { ...ctx, denseUnavailable } : ctx, {
-      attachConfidence: attachConfidence && !queryVariants,
+      attachConfidence: attachConfidence && !queryVariants && request.scope !== "migrations",
       presetFilterNotice,
       fields: request.fields,
       searchTool: true,
       ...taskIdsProjectionOf(request, level),
+      migration: request.scope === "migrations",
+      migrationMetaOnly: request.scope === "migrations" && request.metaOnly === true,
       workingTreeView,
     });
+    if (migrationMarker) {
+      const marker = await this.qdrant.getPoint(migrationMarker.collection, INDEXING_METADATA_ID);
+      if (marker?.payload?.indexingComplete !== true) {
+        throw new Error("Migration corpus update is incomplete; retry indexing before searching migrations");
+      }
+      if (marker.payload.migrationRevision !== migrationMarker.revision) {
+        throw new Error("Migration corpus changed during the search; retry the query");
+      }
+    }
     // N6: the diagnosis counts run ONLY on an empty answer, and a failed
     // count leaves the explanation out instead of failing the search.
     const empty =
@@ -748,6 +795,7 @@ export class ExploreOps {
       request.project,
       true,
       scope,
+      request.scope === "migrations",
     );
     try {
       await modelGuard?.ensureMatch(target.collectionName, { failOnProviderOutage: true, ...READ_PATH_EMBED });
@@ -887,6 +935,7 @@ export class ExploreOps {
     project: string | undefined,
     embeds: boolean,
     scope?: ExploreRequestScope,
+    migrations = false,
   ): Promise<ResolvedExploreTarget & { modelGuard?: EmbeddingModelGuardPort }> {
     // The one existence seam every read tool resolves through (live round-3 D3):
     // a missing index is refused before the overlay measures the tree.
@@ -898,7 +947,12 @@ export class ExploreOps {
           ? scope.collectionExists(name, async (probed) => this.qdrant.collectionExists(probed))
           : this.qdrant.collectionExists(name),
     );
-    const resolved = this.targetOf(workingTree, path, project, scope);
+    const resolved = migrations
+      ? {
+          collectionName: migrationCollectionName(workingTree.baseIndex.collectionName),
+          path: workingTree.baseIndex.root,
+        }
+      : this.targetOf(workingTree, path, project, scope);
     // The collection's own provider and guard (bd tea-rags-mcp-b91f5): the
     // marker is held to the model that will embed for it, never to this
     // process's default model. The index's history clock is read beside it.

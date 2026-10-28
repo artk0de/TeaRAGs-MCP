@@ -25,6 +25,8 @@ import type {
 } from "../pipeline/enrichment/recompute-deferral.js";
 import type { DeferredChunkRecoveryHandoff } from "../pipeline/enrichment/recovery.js";
 import { pipelineLog } from "../pipeline/infra/debug-log/index.js";
+import { rebuildMigrationCorpus } from "../pipeline/migration-corpus.js";
+import { migrationCollectionName } from "../pipeline/migration-files.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
@@ -113,6 +115,15 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const ctx = await this.prepareReindexContext(absolutePath, aliasCollectionName);
+      await rebuildMigrationCorpus({
+        root: absolutePath,
+        codeCollection: aliasCollectionName,
+        qdrant: this.qdrant,
+        embeddings: this.embeddings,
+        parse: this.deps.parseMigration,
+        chunkSize: this.config.chunkSize,
+        synchronizer: this.deps.createSynchronizer(absolutePath, migrationCollectionName(aliasCollectionName)),
+      });
       if (overrides?.rechunk) {
         stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
       }
