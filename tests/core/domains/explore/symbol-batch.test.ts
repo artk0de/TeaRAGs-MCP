@@ -133,7 +133,30 @@ describe("SymbolBatchDrill", () => {
 
     expect(answer.rows).toEqual([]);
     expect(answer.missing).toEqual([
-      { request: "run", message: "ambiguous: 6 matches — qualify with Class# or pathPattern" },
+      {
+        request: "run",
+        message: "ambiguous: 6 matches — qualify with Class# or pathPattern",
+        suggestions: Array.from({ length: 6 }, (_, i) => `C${i}#run (src/c${i}.ts)`),
+      },
+    ]);
+  });
+
+  // bd tea-rags-mcp-d9w4o: the miss names the candidates, so one follow-up reaches the right outline.
+  it("lists at most seven ambiguous candidates, class and module chunks before type aliases", async () => {
+    const named = (id: string, relativePath: string, chunkType: string) =>
+      codeRow(id, { symbolId: "Ledger", name: "Ledger", relativePath, chunkType, content: id });
+    indexHolds([
+      named("t1", "src/types/ledger.ts", "interface"),
+      named("b1", "src/ledger/const.ts", "block"),
+      ...Array.from({ length: 6 }, (_, i) => named(`c${i}`, `src/m${i}/ledger.rb`, "class")),
+    ]);
+
+    const answer = await run(["Ledger"]);
+
+    expect(answer.missing[0]?.message).toBe("ambiguous: 8 matches — qualify with Class# or pathPattern");
+    expect(answer.missing[0]?.suggestions).toEqual([
+      ...Array.from({ length: 6 }, (_, i) => `Ledger (src/m${i}/ledger.rb)`),
+      "Ledger (src/ledger/const.ts)",
     ]);
   });
 

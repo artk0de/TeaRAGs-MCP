@@ -72,6 +72,17 @@ const BARE_FILE_EXTENSIONS = new Set([
 /** Matches one address may answer with; more is a miss asking to qualify it. */
 const MAX_MATCHES_PER_ADDRESS = 5;
 
+/** Candidates an ambiguous miss names (bd tea-rags-mcp-d9w4o). */
+const MAX_AMBIGUOUS_CANDIDATES = 7;
+
+/**
+ * Which candidates an ambiguous miss lists first: a class / module outline is
+ * what a bare type name most often addresses, a type alias or interface
+ * declaration least often.
+ */
+const AMBIGUOUS_CHUNK_TYPE_RANK: Readonly<Record<string, number>> = { class: 0, function: 1, test: 1, block: 2 };
+const AMBIGUOUS_UNRANKED_CHUNK_TYPE = 3;
+
 /** Addresses resolved at once — each one runs two Qdrant scrolls. */
 const ADDRESS_CONCURRENCY = 4;
 
@@ -158,6 +169,7 @@ export class SymbolBatchDrill {
         miss: {
           request: address,
           message: `ambiguous: ${results.length} matches — qualify with Class# or pathPattern`,
+          suggestions: ambiguousCandidates(results),
         },
         warning,
       };
@@ -260,6 +272,25 @@ function unknownPathMiss(address: string, empty: EmptyAnswerExplanation | undefi
     message: `unknown path — ${UNKNOWN_PATH_HINT}`,
     ...(suggestions && suggestions.length > 0 ? { suggestions: [...suggestions] } : {}),
   };
+}
+
+/**
+ * An ambiguous address's candidates as `<symbolId> (<relativePath>)`, distinct,
+ * class / module chunks first and type aliases last (stable within a rank),
+ * at most {@link MAX_AMBIGUOUS_CANDIDATES}.
+ */
+function ambiguousCandidates(results: readonly ExploreResult[]): string[] {
+  const ranked = results.flatMap((result) => {
+    const symbolId = result.payload?.symbolId;
+    if (typeof symbolId !== "string") return [];
+    const chunkType = result.payload?.chunkType;
+    const rank =
+      (typeof chunkType === "string" ? AMBIGUOUS_CHUNK_TYPE_RANK[chunkType] : undefined) ??
+      AMBIGUOUS_UNRANKED_CHUNK_TYPE;
+    return [{ candidate: `${symbolId} (${relativePathOf(result.payload)})`, rank }];
+  });
+  const ordered = ranked.sort((a, b) => a.rank - b.rank).map(({ candidate }) => candidate);
+  return [...new Set(ordered)].slice(0, MAX_AMBIGUOUS_CANDIDATES);
 }
 
 /** `Foo.bar` ↔ `Foo#bar` on the last separator; undefined for a bare name or a `::` tail. */
