@@ -5,7 +5,11 @@ import { join, relative, sep } from "node:path";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { CharacterChunker } from "./chunker/character.js";
-import { discoverMigrationFiles, migrationCollectionName } from "./migration-files.js";
+import {
+  discoverMigrationFiles,
+  migrationCollectionName,
+  type MigrationDirectoryExclusion,
+} from "./migration-files.js";
 
 interface MigrationCorpusStore {
   createCollection: (name: string, dimensions: number, distance: "Cosine", sparse: boolean) => Promise<void>;
@@ -63,6 +67,13 @@ export async function rebuildMigrationCorpus(options: {
   embeddings: MigrationEmbeddings;
   chunkSize?: number;
   parse: MigrationParser;
+  /**
+   * The code index's scanner, ignore patterns already loaded for `root`, so
+   * the corpus leaves out every directory the code index leaves out. A path
+   * it newly excludes drops out of the discovered list, which the
+   * synchronizer then reports as `deleted`.
+   */
+  scanner: MigrationDirectoryExclusion;
   synchronizer?: {
     initialize: () => Promise<boolean>;
     detectChanges: (files: string[]) => Promise<{ added: string[]; modified: string[]; deleted: string[] }>;
@@ -72,7 +83,7 @@ export async function rebuildMigrationCorpus(options: {
 }): Promise<void> {
   const { root, codeCollection, qdrant, embeddings } = options;
   const chunkSize = options.chunkSize ?? 4500;
-  const files = await discoverMigrationFiles(root);
+  const files = await discoverMigrationFiles(root, options.scanner);
   const alias = migrationCollectionName(codeCollection);
   const previous = (await qdrant.collectionExists(alias)) ? await qdrant.aliases.resolveActive?.(alias) : undefined;
   if (files.length === 0 && !previous) return;

@@ -99,6 +99,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     let build: SetupResult | undefined;
 
     try {
+      const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
       await rebuildMigrationCorpus({
         root: absolutePath,
         codeCollection: aliasCollectionName,
@@ -106,9 +107,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
         embeddings: this.embeddings,
         parse: this.deps.parseMigration,
         chunkSize: this.config.chunkSize,
+        scanner,
         synchronizer: this.deps.createSynchronizer(absolutePath, migrationCollectionName(aliasCollectionName)),
       });
-      const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
       stats.filesScanned = files.length;
       pipelineLog.step({ component: "IndexRun" }, "SCAN_COMPLETE", { files: files.length });
 

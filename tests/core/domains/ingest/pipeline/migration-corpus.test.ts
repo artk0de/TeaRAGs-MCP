@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +7,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MockQdrantManager } from "../__helpers__/test-helpers.js";
 import { parseMigrationOperations } from "../../../../../src/core/api/internal/migration-parser.js";
 import { rebuildMigrationCorpus } from "../../../../../src/core/domains/ingest/pipeline/migration-corpus.js";
+import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
+import { ParallelFileSynchronizer } from "../../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
+
+async function loadedScanner(root: string): Promise<FileScanner> {
+  const scanner = new FileScanner({ supportedExtensions: [".rb"], ignorePatterns: [] });
+  await scanner.loadIgnorePatterns(root);
+  return scanner;
+}
 
 describe("migration corpus", () => {
   let root = "";
@@ -50,6 +59,7 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     expect(qdrant.createCollection).toHaveBeenCalledWith(
       expect.stringMatching(/^code_test_migrations_/),
@@ -107,6 +117,7 @@ describe("migration corpus", () => {
         qdrant,
         embeddings,
         parse: parseMigrationOperations,
+        scanner: await loadedScanner(root),
       }),
     ).rejects.toThrow("embedding failed");
     expect(qdrant.aliases.switchAlias).not.toHaveBeenCalled();
@@ -139,6 +150,7 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     const texts = embeddings.embedBatch.mock.calls.flatMap(([batch]) => batch);
     expect(texts.length).toBeGreaterThan(1);
@@ -164,6 +176,7 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     const count = embeddings.embedBatch.mock.calls.length;
     await rebuildMigrationCorpus({
@@ -172,6 +185,7 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     expect(embeddings.embedBatch).toHaveBeenCalledTimes(count);
   });
@@ -192,6 +206,7 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     const points = await qdrant.scrollFiltered("code_test_migrations", {}, 100);
     expect(points.some((point) => point.payload.content === "# schema changed by an external helper\n")).toBe(true);
@@ -219,7 +234,59 @@ describe("migration corpus", () => {
       qdrant,
       embeddings,
       parse: parseMigrationOperations,
+      scanner: await loadedScanner(root),
     });
     expect(qdrant.createCollection).toHaveBeenCalledWith(expect.any(String), 5, "Cosine", true);
+  });
+
+  it("drops already-indexed migrations once the project's ignore files exclude their directory", async () => {
+    root = await mkdtemp(join(process.cwd(), ".migration-corpus-test-"));
+    const snapshotDir = await mkdtemp(join(tmpdir(), "migration-corpus-snapshots-"));
+    const source =
+      "class Orders < ActiveRecord::Migration[7.0]\n def change\n add_column :orders, :vendor_id, :uuid\n end\nend\n";
+    await mkdir(join(root, "db/migrate"), { recursive: true });
+    await mkdir(join(root, ".claude/worktrees/a/db/migrate"), { recursive: true });
+    await writeFile(join(root, "db/migrate/20261028000000_orders.rb"), source);
+    await writeFile(join(root, ".claude/worktrees/a/db/migrate/20261028000000_orders.rb"), source);
+    const qdrant = new MockQdrantManager();
+    const embeddings = {
+      getDimensions: () => 3,
+      getModel: () => "test-model",
+      embedBatch: vi.fn(async (texts: string[]) => texts.map(() => ({ embedding: [1, 0, 0] }))),
+    };
+    const run = async (): Promise<void> =>
+      rebuildMigrationCorpus({
+        root,
+        codeCollection: "code_test",
+        qdrant,
+        embeddings,
+        parse: parseMigrationOperations,
+        scanner: await loadedScanner(root),
+        synchronizer: new ParallelFileSynchronizer(root, "code_test_migrations", snapshotDir, 2),
+      });
+    const indexedPaths = async (): Promise<string[]> =>
+      [
+        ...new Set(
+          (await qdrant.scrollFiltered("code_test_migrations", {}, 100))
+            .map((point) => point.payload.relativePath as string | undefined)
+            .filter((path): path is string => typeof path === "string"),
+        ),
+      ].sort();
+    try {
+      await run();
+      expect(await indexedPaths()).toEqual([
+        ".claude/worktrees/a/db/migrate/20261028000000_orders.rb",
+        "db/migrate/20261028000000_orders.rb",
+      ]);
+      await writeFile(join(root, ".gitignore"), ".claude/worktrees/\n");
+      const deleteSpy = vi.spyOn(qdrant, "deletePointsByPaths");
+      await run();
+      expect(deleteSpy).toHaveBeenCalledWith(expect.any(String), [
+        ".claude/worktrees/a/db/migrate/20261028000000_orders.rb",
+      ]);
+      expect(await indexedPaths()).toEqual(["db/migrate/20261028000000_orders.rb"]);
+    } finally {
+      await rm(snapshotDir, { recursive: true, force: true });
+    }
   });
 });

@@ -122,6 +122,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         embeddings: this.embeddings,
         parse: this.deps.parseMigration,
         chunkSize: this.config.chunkSize,
+        scanner: ctx.scanner,
         synchronizer: this.deps.createSynchronizer(absolutePath, migrationCollectionName(aliasCollectionName)),
       });
       if (overrides?.rechunk) {
