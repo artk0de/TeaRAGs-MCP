@@ -17,6 +17,11 @@
 //                commands drop the whole ledger) → invalidate.
 //   PreToolUse   Read · Bash reads · find_symbol (symbol / symbols / relativePath)
 //                → additionalContext note when the request is ≥ 80% covered.
+//                Read · Bash reads of an INDEXED SOURCE file (`tea-rags project
+//                indexed`, the test search-drift.sh runs; never a standard-zone.ere
+//                path — config / DSL / routes / migrations / specs / data) → one
+//                nudge line naming find_symbol(relativePath:), once per file per
+//                turn, never beside the re-read note or a search-drift deny.
 //   UserPromptSubmit → next turn (the note names the turn).
 //   SessionStart compact | clear → drop the session ledger (the lines left the
 //                context); startup → prune ledgers idle for 7 days.
@@ -30,10 +35,11 @@
 //
 // Fail open, always: unparsable input, no session id, unwritable state — exit 0,
 // no output.
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const COVERAGE_THRESHOLD = 0.8;
 export const MAX_RANGES_PER_FILE = 16;
@@ -42,6 +48,12 @@ const MAX_NOTES = 3;
 const READ_DEFAULT_LIMIT = 2000;
 const MAX_COUNTED_BYTES = 8 * 1024 * 1024;
 const IDLE_LEDGER_MS = 7 * 24 * 3600 * 1000;
+const INDEXED_LOOKUP_TIMEOUT_MS = 1500;
+// search-drift.sh thresholds: a read streak of 3, 4 mixed, one deny per 120 s.
+const DRIFT_READ_STREAK = 3;
+const DRIFT_MIXED_STREAK = 4;
+const DRIFT_COOLDOWN_SEC = 120;
+const DRIFT_JUST_DENIED_SEC = 5;
 const TEA_RAGS_TOOL = /^mcp__.*tea-rags.*__(\w+)$/;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -621,17 +633,35 @@ export function fileLineCount(path) {
 }
 
 /** Merge `[start, end, turn, tool]` ranges; a merged range keeps the latest source. Insertion order = age. */
+/**
+ * Union of `[start, end, ...label]` ranges given oldest first, as disjoint ranges, oldest
+ * first. A range keeps the label (turn, tool) of the call that served it: a newer range
+ * takes over only the ranges it covers whole (the same lines served again) and claims the
+ * lines no range holds yet — a grep line inside a Read range never relabels the Read.
+ * Abutting ranges with the same label coalesce.
+ */
 function mergeRanges(ranges) {
-  const sorted = ranges.map((r, age) => ({ r, age })).sort((a, b) => a.r[0] - b.r[0]);
-  const merged = [];
-  for (const { r, age } of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && r[0] <= last.r[1] + 1) {
-      last.r = [last.r[0], Math.max(last.r[1], r[1]), ...(age > last.age ? r.slice(2) : last.r.slice(2))];
-      last.age = Math.max(last.age, age);
-    } else merged.push({ r: [...r], age });
+  let held = [];
+  ranges.forEach((r, age) => {
+    const [start, end] = r;
+    held = held.filter((h) => h.r[0] < start || h.r[1] > end);
+    let next = start;
+    for (const h of held.filter((x) => x.r[1] >= start && x.r[0] <= end).sort((a, b) => a.r[0] - b.r[0])) {
+      if (h.r[0] > next) held.push({ r: [next, h.r[0] - 1, ...r.slice(2)], age });
+      next = Math.max(next, h.r[1] + 1);
+    }
+    if (next <= end) held.push({ r: [next, end, ...r.slice(2)], age });
+  });
+  const sameLabel = (a, b) => a.length === b.length && a.every((v, i) => i < 2 || v === b[i]);
+  const coalesced = [];
+  for (const h of held.sort((a, b) => a.r[0] - b.r[0])) {
+    const last = coalesced[coalesced.length - 1];
+    if (last && h.r[0] === last.r[1] + 1 && sameLabel(last.r, h.r)) {
+      last.r = [last.r[0], h.r[1], ...last.r.slice(2)];
+      last.age = Math.max(last.age, h.age);
+    } else coalesced.push({ ...h, r: [...h.r] });
   }
-  return merged.sort((a, b) => a.age - b.age).map((m) => m.r);
+  return coalesced.sort((a, b) => a.age - b.age).map((h) => h.r);
 }
 
 export class RereadLedger {
@@ -711,6 +741,17 @@ export class RereadLedger {
     // Valid only while the file's lines are still on record (unchanged since).
     const file = this.entry(entry.path);
     return file && coverage(file.ranges, entry.start, entry.end).fraction >= COVERAGE_THRESHOLD ? entry : null;
+  }
+
+  /** Index-nudge state of a file: `{ indexed: false }`, or `{ relativePath, turn }` of its last nudge. */
+  nudgeEntry(path) {
+    const entry = readJson(join(this.dir, `n-${hash(path)}`));
+    return entry && entry.path === path ? entry : null;
+  }
+
+  recordNudge(path, state) {
+    mkdirSync(this.dir, { recursive: true });
+    writeJson(join(this.dir, `n-${hash(path)}`), { path, ...state });
   }
 
   forget(path) {
@@ -798,7 +839,7 @@ function requests(tool, input, cwd, lineCount) {
 }
 
 /** One hook event → the JSON to print, or null. */
-export function handleHookEvent(input, { stateDir, lineCount = fileLineCount }) {
+export function handleHookEvent(input, { stateDir, lineCount = fileLineCount, indexedLookup = cliIndexedLookup }) {
   const event = String(input?.hook_event_name ?? "").toLowerCase();
   const sid = String(input?.session_id ?? "").replace(/[^A-Za-z0-9_.-]/g, "_");
   if (!event || !sid) return null;
@@ -826,6 +867,7 @@ export function handleHookEvent(input, { stateDir, lineCount = fileLineCount }) 
 
   const { files, symbols } = requests(tool, toolInput, cwd, lineCount);
   const notes = [];
+  const held = new Set();
   for (const symbolId of symbols) {
     const entry = ledger.symbol(symbolId);
     if (entry) {
@@ -839,17 +881,132 @@ export function handleHookEvent(input, { stateDir, lineCount = fileLineCount }) 
     if (!entry) continue;
     for (const [start, end] of ranges) {
       const { fraction, pieces } = coverage(entry.ranges, start, end);
-      if (fraction >= COVERAGE_THRESHOLD) notes.push(describe(pieces, path, cwd));
+      if (fraction >= COVERAGE_THRESHOLD) {
+        notes.push(describe(pieces, path, cwd));
+        held.add(path);
+      }
     }
   }
-  if (!notes.length) return null;
-  const shown = [...new Set(notes)].slice(0, MAX_NOTES);
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      additionalContext: `tea-rags: ${shown.join("; ")} — answer from them.`,
-    },
-  };
+  const lines = [];
+  if (notes.length) lines.push(`tea-rags: ${[...new Set(notes)].slice(0, MAX_NOTES).join("; ")} — answer from them.`);
+  if ((tool === "Read" || tool === "Bash") && !driftDenyMayFire(stateDir, sid)) {
+    const fresh = files.map((f) => f.path).filter((path) => !held.has(path));
+    const nudge = indexedSourceNudge(ledger, fresh, cwd, indexedLookup);
+    if (nudge) lines.push(nudge);
+  }
+  if (!lines.length) return null;
+  return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: lines.join("\n") } };
+}
+
+/**
+ * Whether search-drift.sh may deny this same call: it runs beside this hook on the same
+ * PreToolUse and its deny already names find_symbol, so the nudge stays out of that call.
+ * Reads search-drift's per-session state ("<searches> <reads> <total> <last deny epoch>")
+ * either before its update — this call would be read 3 or call 4 of a streak, cooldown
+ * over — or after it: a deny just written. Errs toward silence: a counter already bumped
+ * by this call can only suppress a nudge, never let one through beside a deny.
+ */
+function driftDenyMayFire(stateDir, sid) {
+  const file = join(stateDir, `drift-claude-${sid}`);
+  let state;
+  let writtenMs;
+  try {
+    state = readFileSync(file, "utf8").trim().split(/\s+/).map(Number);
+    writtenMs = statSync(file).mtimeMs;
+  } catch {
+    return false;
+  }
+  const [, reads, total, lastDeny] = state;
+  if (state.length < 4 || state.some((n) => !Number.isInteger(n))) return false;
+  const now = Number.parseInt(process.env.TEA_RAGS_HOOK_NOW ?? "", 10) || Math.floor(Date.now() / 1000);
+  if (lastDeny > 0 && now - lastDeny < DRIFT_JUST_DENIED_SEC) return true;
+  // Written after this process started: search-drift already counted this call and allowed it.
+  if (writtenMs >= Date.now() - process.uptime() * 1000) return false;
+  return (reads + 1 >= DRIFT_READ_STREAK || total + 1 >= DRIFT_MIXED_STREAK) && now - lastDeny >= DRIFT_COOLDOWN_SEC;
+}
+
+/** The zone pattern search-drift.sh reads (standard-zone.ere beside this script) as a RegExp; null when absent. */
+function standardZonePattern() {
+  try {
+    const ere = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "standard-zone.ere"), "utf8").trim();
+    return ere ? new RegExp(ere.replaceAll("[:space:]", "\\s")) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The index answer for raw-read targets, through `tea-rags project indexed` (the membership
+ * test search-drift.sh runs): `{ status: "indexed", relativePath }` for the first indexed
+ * path, `{ status: "absent" }` when none is, `{ status: "unknown" }` when the CLI is missing,
+ * slow or unparsable. `TEA_RAGS_BIN` set → that binary only, as in search-drift.sh.
+ */
+export function cliIndexedLookup(paths) {
+  const args = ["project", "indexed", ...paths.flatMap((path) => ["--path", path]), "--json"];
+  const home = process.env.HOME ?? "";
+  const bins = process.env.TEA_RAGS_BIN
+    ? [process.env.TEA_RAGS_BIN]
+    : ["tea-rags", `${home}/.npm-global/bin/tea-rags`, "/opt/homebrew/bin/tea-rags", "/usr/local/bin/tea-rags"];
+  for (const bin of bins) {
+    let out;
+    try {
+      out = execFileSync(bin, args, {
+        encoding: "utf8",
+        timeout: INDEXED_LOOKUP_TIMEOUT_MS,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch (error) {
+      if (error?.code === "ENOENT" || error?.code === "EACCES") continue;
+      out = typeof error?.stdout === "string" ? error.stdout : "";
+    }
+    try {
+      const answer = JSON.parse(out);
+      if (answer?.indexed === true && typeof answer.relativePath === "string") {
+        return { status: "indexed", relativePath: answer.relativePath };
+      }
+      return answer?.indexed === false ? { status: "absent" } : { status: "unknown" };
+    } catch {
+      return { status: "unknown" };
+    }
+  }
+  return { status: "unknown" };
+}
+
+/**
+ * One line sending a raw read of an INDEXED SOURCE file to find_symbol(relativePath:), or
+ * null. Never for a zone path (config / DSL / routes / migrations / specs / data — core
+ * routes those to the read tool), a file outside the index, or a file already nudged this
+ * turn; a file's index verdict is looked up once per session.
+ */
+function indexedSourceNudge(ledger, paths, cwd, lookup) {
+  const zone = paths.length ? standardZonePattern() : null;
+  if (!zone) return null;
+  const turn = ledger.safeTurn();
+  const shown = (path) => (cwd && !relative(cwd, path).startsWith("..") ? relative(cwd, path) : path);
+  const known = [];
+  const unknown = [];
+  for (const path of new Set(paths)) {
+    if (zone.test(shown(path))) continue;
+    const seen = ledger.nudgeEntry(path);
+    if (seen?.indexed === false || seen?.turn === turn) continue;
+    (seen?.relativePath ? known : unknown).push(seen ?? { path });
+  }
+  let hit = known[0] ?? null;
+  if (!hit && unknown.length) {
+    const answer = lookup(unknown.map((u) => u.path));
+    if (answer.status === "absent") unknown.forEach((u) => ledger.recordNudge(u.path, { indexed: false }));
+    if (answer.status === "indexed") {
+      const path = unknown.find(
+        (u) => u.path === answer.relativePath || u.path.endsWith(`/${answer.relativePath}`),
+      )?.path;
+      if (path) hit = { path, relativePath: answer.relativePath };
+    }
+  }
+  if (!hit) return null;
+  ledger.recordNudge(hit.path, { relativePath: hit.relativePath, turn });
+  if (zone.test(hit.relativePath)) return null;
+  const file = hit.relativePath;
+  return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
 }
 
 function recordPost(ledger, tool, input, response, cwd, lineCount) {
@@ -862,7 +1019,9 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
     const path = input.file_path ?? input.path;
     if (typeof path !== "string" || (!cwd && !isAbsolute(path))) return;
     const abs = resolve(cwd ?? "/", path);
-    const total = lineCount(abs);
+    // Claude Code's Read result: tool_response.file {filePath, content, numLines, startLine, totalLines}.
+    const reported = response && typeof response === "object" ? response.file?.totalLines : null;
+    const total = lineCount(abs) ?? (Number.isInteger(reported) && reported > 0 ? reported : null);
     if (total === null) return;
     const [start, end] = readToolRange(input, response);
     if (start <= Math.min(end, total)) ledger.record(abs, [[start, Math.min(end, total)]], "Read");

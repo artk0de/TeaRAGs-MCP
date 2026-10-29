@@ -259,6 +259,9 @@ for H in claude codex cursor; do
   fresh
   run "$H" "$(prompt "$H" t3)"
   [ ! -e "$STATE/drift-$H-t3" ]; note $? "$H: prompt without prior state creates no state"
+  run "$H" "$(pre "$H" t3 grep "$C")"
+  [ -f "$STATE/drift-$H-t3" ] && [ "$(ls "$STATE" | grep -c "^drift-$H-t3")" = 1 ]
+  note $? "$H: state file is drift-<harness>-<session id> exactly (reread-ledger.mjs reads it)"
   run "$H" '{"hook_event_name":"UserPromptSubmit"}'
   [ "$CODE" = 0 ]; note $? "$H: prompt without session id fails open"
 done
