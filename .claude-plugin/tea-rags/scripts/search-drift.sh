@@ -64,7 +64,7 @@ field() { printf '%s' "$INPUT" | jq -r "$1 // empty" 2>/dev/null; }
 
 EVENT=$(field '.hook_event_name' | tr '[:upper:]' '[:lower:]')
 [ -n "$EVENT" ] || allow
-SID=$(field '.session_id // .conversation_id' | tr -c 'A-Za-z0-9_.-' '_')
+SID=$(field '.session_id // .conversation_id' | tr -d '\n' | tr -c 'A-Za-z0-9_.-' '_')
 [ -n "$SID" ] || allow
 STATE_DIR="${TEA_RAGS_HOOK_STATE_DIR:-${CLAUDE_PLUGIN_DATA:-${PLUGIN_DATA:-${TMPDIR:-/tmp}/tea-rags-hooks}}}"
 STATE="$STATE_DIR/drift-$HARNESS-$SID"
@@ -123,9 +123,13 @@ indexed_rel() { # <tea-rags project indexed args…> → relativePath of an inde
 
 # Core routes these to the standard tools (bd tea-rags-mcp-nxg76): config, DSL, routes,
 # initializers, migrations, specs / tests / fixtures, data files. A read of one or a
-# search scoped to one is the routed path, never drift.
+# search scoped to one is the routed path, never drift. The zone pattern (POSIX ERE) lives
+# in standard-zone.ere beside this script, its single source: reread-ledger.mjs reads it
+# too. No pattern file → every path is a zone path: nothing counts, the hook fails open.
+ZONE_ERE=$(cat "$(dirname "$0")/standard-zone.ere" 2>/dev/null)
 standard_zone() { # <text: a path, or a whole command>
-  printf '%s' "$1" | grep -qE "(^|[/[:space:]'\"=])(config|spec|specs|test|tests|__tests__|fixtures|db|migrate|migrations|initializers|routes)(/|[[:space:]'\"]|$)|(_spec|_test|\.spec|\.test)\.[A-Za-z]+([[:space:]'\"]|$)|(^|/)routes\.[A-Za-z]+|\.(ya?ml|json|toml|ini|sql|rake|lock|env)([[:space:]'\"]|$)"
+  [ -n "$ZONE_ERE" ] || return 0
+  printf '%s' "$1" | grep -qE "$ZONE_ERE"
 }
 # A concept search done by text search: an alternation of words (`a|b`, `a\|b`, two -e
 # patterns). A single literal — an identifier, constant, phrase — is the routed occurrence
