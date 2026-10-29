@@ -63,7 +63,32 @@ export interface DeclaredVisibilityField {
 }
 
 /** One caller; `visibility` is the CALLER symbol's own. */
-export interface CallerResult extends DeclaredVisibilityField, GraphRowTreeStateField {
+/**
+ * A class / module id answers its members' edges too (bd tea-rags-mcp-znzv3):
+ * a rolled-up row names the member it reaches (`member` = separator + member
+ * segment under the queried id, `#run` / `.call`); `memberRollup` says the
+ * answer was rolled up. Edges between the container's own members are counted
+ * in `internalCallers` / `internalCallees`, never listed.
+ */
+export interface ContainerMemberRollup {
+  /** Direct members whose edges were read. */
+  members: number;
+  /** Distinct caller+member pairs whose caller is inside the container. */
+  internalCallers?: number;
+  /** Distinct member+target pairs whose target is inside the container. */
+  internalCallees?: number;
+}
+
+export interface ContainerMemberRollupField {
+  memberRollup?: ContainerMemberRollup;
+}
+
+/** The member a rolled-up row belongs to; absent on the queried symbol's own edges. */
+export interface ContainerMemberRowField {
+  member?: string;
+}
+
+export interface CallerResult extends DeclaredVisibilityField, GraphRowTreeStateField, ContainerMemberRowField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
@@ -125,7 +150,7 @@ export interface GraphPageTruncationField {
  * back-reference to a symbol listed earlier, not expanded again; `external` =
  * the expanded node's call sites pinned to no in-project symbol.
  */
-export interface CallTreeRow extends GraphRowTreeStateField {
+export interface CallTreeRow extends GraphRowTreeStateField, ContainerMemberRowField {
   depth: number;
   parent: SymbolId;
   symbolId: SymbolId;
@@ -141,7 +166,13 @@ export interface CallTreeRow extends GraphRowTreeStateField {
 
 /** `get_callers` / `get_callees` with `depth > 1`: the reverse / forward call tree of `symbolId`. */
 export interface SymbolCallTreeResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
+  extends
+    ResolvedSymbolIdField,
+    EmptyAnswerField,
+    GraphPageTruncationField,
+    GraphNoticesField,
+    QueriedTreeStateField,
+    ContainerMemberRollupField {
   tree: CallTreeRow[];
   /** get_callees: the queried symbol's own call sites pinned to no in-project symbol. Absent when none. */
   unresolved?: number;
@@ -257,7 +288,13 @@ export interface GraphNoticesField {
 }
 
 export interface SymbolCallersResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
+  extends
+    ResolvedSymbolIdField,
+    EmptyAnswerField,
+    GraphPageTruncationField,
+    GraphNoticesField,
+    QueriedTreeStateField,
+    ContainerMemberRollupField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -298,7 +335,7 @@ export interface GetCalleesRequest {
 }
 
 /** One callee; `visibility` is the TARGET symbol's own (never set on a file-only edge). */
-export interface CalleeResult extends DeclaredVisibilityField, GraphRowTreeStateField {
+export interface CalleeResult extends DeclaredVisibilityField, GraphRowTreeStateField, ContainerMemberRowField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
@@ -313,7 +350,13 @@ export interface CalleeResult extends DeclaredVisibilityField, GraphRowTreeState
 }
 
 export interface SymbolCalleesResponse
-  extends ResolvedSymbolIdField, EmptyAnswerField, GraphPageTruncationField, GraphNoticesField, QueriedTreeStateField {
+  extends
+    ResolvedSymbolIdField,
+    EmptyAnswerField,
+    GraphPageTruncationField,
+    GraphNoticesField,
+    QueriedTreeStateField,
+    ContainerMemberRollupField {
   /** Callees with a resolved target symbol only. */
   callees: CalleeResult[];
   /** Call sites the resolver pinned to no target symbol; they are not `callees` rows. Absent when none. */

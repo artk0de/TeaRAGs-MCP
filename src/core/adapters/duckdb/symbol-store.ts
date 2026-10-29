@@ -275,6 +275,20 @@ export class DuckDbSymbolStore {
     return rows.map((row) => row.symbol_id);
   }
 
+  /** A container's direct members (bd tea-rags-mcp-znzv3) — see `CodegraphSymbolFileStore#getContainerMemberSymbolIds`. */
+  async getContainerMemberSymbolIds(containerSymbolId: SymbolId, limit: number): Promise<SymbolId[]> {
+    const rows = await this.session.queryAll<{ symbol_id: string }>(
+      `SELECT DISTINCT m.symbol_id FROM cg_symbols m
+        WHERE (starts_with(m.symbol_id, ? || '#') OR starts_with(m.symbol_id, ? || '.'))
+          AND NOT regexp_matches(substr(m.symbol_id, length(?) + 2), '#|\\.|::')
+          AND EXISTS (SELECT 1 FROM cg_symbols c WHERE c.symbol_id = ?
+                        AND (c.symbol_kind IS NULL OR c.symbol_kind IN ('class', 'module', 'interface', 'enum')))
+        ORDER BY m.symbol_id LIMIT ?`,
+      [containerSymbolId, containerSymbolId, containerSymbolId, containerSymbolId, limit],
+    );
+    return rows.map((row) => row.symbol_id);
+  }
+
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     // Tier 1 — exact symbol_id match (the canonical fast path, indexed).
     const exact = await this.session.queryAll<{ rel_path: string; chunk_id: string | null }>(

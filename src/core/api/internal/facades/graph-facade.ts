@@ -94,6 +94,12 @@ import {
 import { ArchitectureRestructurePlanOps } from "../ops/architecture-restructure-plan-ops.js";
 import { pageGraphRows, readCalleeTree, readCallerTree, type CallTreeReads } from "../ops/call-tree-ops.js";
 import { CochangeOps } from "../ops/cochange-ops.js";
+import {
+  memberRollupField,
+  rollUpContainerCallees,
+  rollUpContainerCallers,
+  type ContainerMemberLabel,
+} from "../ops/container-member-rollup.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 import { rustCycleScopeNotices } from "../ops/rustc-driver-notice.js";
@@ -273,14 +279,17 @@ function unresolvedCallsField(edges: readonly CalleeEdge[]): { unresolved?: numb
 
 /**
  * Call sites reaching one target symbol are one edge to an agent: the first site's row carries `count` when
- * more followed, in first-seen order.
+ * more followed, in first-seen order. A container's rolled-up rows collapse per member+target (bd tea-rags-mcp-znzv3).
  */
-function collapseCalleesByTarget<E extends CalleeEdge>(edges: readonly E[]): (E & { count?: number })[] {
-  const byTarget = new Map<SymbolId | null, E & { count?: number }>();
+function collapseCalleesByTarget<E extends CalleeEdge & ContainerMemberLabel>(
+  edges: readonly E[],
+): (E & { count?: number })[] {
+  const byTarget = new Map<string, E & { count?: number }>();
   for (const edge of edges) {
-    const seen = byTarget.get(edge.targetSymbolId);
+    const key = `${edge.member ?? ""}\0${edge.targetSymbolId ?? ""}`;
+    const seen = byTarget.get(key);
     if (seen) seen.count = (seen.count ?? 1) + 1;
-    else byTarget.set(edge.targetSymbolId, { ...edge });
+    else byTarget.set(key, { ...edge });
   }
   return [...byTarget.values()];
 }
@@ -518,14 +527,20 @@ export class GraphFacade {
     return this.withMarkedReadHandle(
       req,
       async (handle) => {
-        const read = await readSymbolEdgesExplained(
+        const own = await readSymbolEdgesExplained(
           handle.graphDb,
           symbolId,
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallers(target)),
           "callers",
           this.testChunkProbe(req),
         );
-        const resolved = { ...resolvedField(read), ...emptyField(read), ...noticesField(read) };
+        const read = await rollUpContainerCallers(handle.graphDb, own, isNavigationVisibleEdge);
+        const resolved = {
+          ...resolvedField(read),
+          ...emptyField(read),
+          ...noticesField(read),
+          ...memberRollupField(read),
+        };
         if (depth > 1) {
           const tree = await readCallerTree(read.queriedSymbolId, read.edges, this.callTreeReads(handle, req), {
             ...req,
@@ -582,19 +597,26 @@ export class GraphFacade {
     return this.withMarkedReadHandle(
       req,
       async (handle) => {
-        const read = await readSymbolEdgesExplained(
+        const own = await readSymbolEdgesExplained(
           handle.graphDb,
           symbolId,
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallees(target)),
           "callees",
           this.testChunkProbe(req),
         );
+        const read = await rollUpContainerCallees(handle.graphDb, own, isNavigationVisibleEdge);
         if (depth > 1) {
           const tree = await readCalleeTree(read.queriedSymbolId, read.edges, this.callTreeReads(handle, req), {
             ...req,
             depth,
           });
-          return { ...resolvedField(read), ...tree, ...emptyField(read), ...noticesField(read) };
+          return {
+            ...resolvedField(read),
+            ...tree,
+            ...emptyField(read),
+            ...noticesField(read),
+            ...memberRollupField(read),
+          };
         }
         const visible = read.edges.filter(isNavigationVisibleEdge);
         const page = pageGraphRows(
@@ -608,6 +630,7 @@ export class GraphFacade {
           ...unresolvedCallsField(visible),
           ...emptyField(read),
           ...noticesField(read),
+          ...memberRollupField(read),
           ...(page.truncated ? { truncated: page.truncated } : {}),
         };
       },

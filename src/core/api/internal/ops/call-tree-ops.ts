@@ -22,6 +22,7 @@ import {
   type GraphPageTruncation,
   type SymbolCallTreeResponse,
 } from "../../public/dto/graph.js";
+import type { ContainerMemberLabel } from "./container-member-rollup.js";
 
 /** The reads a call tree takes, bound to the request's graph handle and collection. */
 export interface CallTreeReads {
@@ -116,6 +117,7 @@ function toRow(node: CallTreeNode, signature: string | undefined): CallTreeRow {
     depth: node.depth,
     parent: node.parent,
     symbolId: node.symbolId,
+    ...(node.member !== undefined && { member: node.member }),
     relPath: node.relPath,
     ...(node.edgeKind !== undefined && { edgeKind: node.edgeKind }),
     ...(node.confidence !== undefined && { confidence: node.confidence }),
@@ -133,35 +135,48 @@ function expansionsOf<E>(
   return new Map([...bySymbol].map(([symbolId, edges]) => [symbolId, expand(edges)]));
 }
 
-/** Visible callee edges, one hop per target symbol (first site wins, as the one-hop answer collapses them). */
-function calleeExpansion(edges: readonly CalleeEdge[], isVisible: CallTreeReads["isVisible"]): CallTreeExpansion {
+/**
+ * Visible callee edges, one hop per target symbol (first site wins, as the one-hop answer collapses them) — per
+ * member+target on a container's rolled-up anchor edges (bd tea-rags-mcp-znzv3).
+ */
+function calleeExpansion(
+  edges: readonly (CalleeEdge & ContainerMemberLabel)[],
+  isVisible: CallTreeReads["isVisible"],
+): CallTreeExpansion {
   const visible = edges.filter(isVisible);
-  const hops = new Map<SymbolId, CallTreeHop>();
+  const hops = new Map<string, CallTreeHop>();
   let external = 0;
   for (const edge of visible) {
     if (edge.targetSymbolId === null) external += 1;
-    else if (!hops.has(edge.targetSymbolId)) {
-      hops.set(edge.targetSymbolId, hopOf(edge.targetSymbolId, edge.targetRelPath, edge));
+    else {
+      const key = memberScopedKey(edge.targetSymbolId, edge.member);
+      if (!hops.has(key)) hops.set(key, hopOf(edge.targetSymbolId, edge.targetRelPath, edge));
     }
   }
   return { hops: [...hops.values()], external };
 }
 
-/** Visible caller edges, one hop per source symbol. */
-function callerExpansion(edges: readonly CallerEdge[], isVisible: CallTreeReads["isVisible"]): CallTreeExpansion {
-  const hops = new Map<SymbolId, CallTreeHop>();
+/** Visible caller edges, one hop per source symbol — per caller+member on a container's rolled-up anchor edges. */
+function callerExpansion(
+  edges: readonly (CallerEdge & ContainerMemberLabel)[],
+  isVisible: CallTreeReads["isVisible"],
+): CallTreeExpansion {
+  const hops = new Map<string, CallTreeHop>();
   for (const edge of edges.filter(isVisible)) {
-    if (!hops.has(edge.sourceSymbolId)) {
-      hops.set(edge.sourceSymbolId, hopOf(edge.sourceSymbolId, edge.sourceRelPath, edge));
-    }
+    const key = memberScopedKey(edge.sourceSymbolId, edge.member);
+    if (!hops.has(key)) hops.set(key, hopOf(edge.sourceSymbolId, edge.sourceRelPath, edge));
   }
   return { hops: [...hops.values()], external: 0 };
+}
+
+function memberScopedKey(symbolId: SymbolId, member: string | undefined): string {
+  return member === undefined ? symbolId : `${symbolId}\0${member}`;
 }
 
 function hopOf(
   symbolId: SymbolId,
   relPath: string,
-  edge: { edgeKind?: string; confidence?: number; origin?: EdgeOrigin },
+  edge: { edgeKind?: string; confidence?: number; origin?: EdgeOrigin; member?: string },
 ): CallTreeHop {
   return {
     symbolId,
@@ -169,5 +184,6 @@ function hopOf(
     ...(edge.edgeKind !== undefined && { edgeKind: edge.edgeKind }),
     ...(edge.confidence !== undefined && { confidence: edge.confidence }),
     ...(edge.origin === "model" && { origin: "model" as const }),
+    ...(edge.member !== undefined && { member: edge.member }),
   };
 }

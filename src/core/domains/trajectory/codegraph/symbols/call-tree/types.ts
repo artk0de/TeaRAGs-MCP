@@ -8,6 +8,8 @@ export interface CallTreeHop {
   confidence?: number;
   /** `"model"` when a residual-resolution verdict produced the edge; absent means a static edge. */
   origin?: "model";
+  /** Anchor hops of a container id only: the member the edge was rolled up from (`#run`, `.call`). */
+  member?: string;
 }
 
 /** What one expanded node reaches: its in-project hops in answer order, and the sites that are not hops. */

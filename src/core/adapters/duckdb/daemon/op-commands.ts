@@ -303,6 +303,9 @@ const DAEMON_OP_COMMAND_DEFINITIONS: DaemonOpCommandDefinitions = {
   findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId)),
   getSymbolVisibilities: read(async (graphDb, p) => graphDb.getSymbolVisibilities(p.symbolIds)),
   lookupSymbolIdsByShortName: read(async (graphDb, p) => graphDb.lookupSymbolIdsByShortName(p.shortName, p.limit)),
+  getContainerMemberSymbolIds: read(async (graphDb, p) =>
+    graphDb.getContainerMemberSymbolIds(p.containerSymbolId, p.limit),
+  ),
   // Naming-lexicon reads over cg_identifiers (bd tea-rags-mcp-4p3sb.8).
   aggregateIdentifiersByType: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByType({
