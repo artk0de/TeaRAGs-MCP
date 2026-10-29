@@ -59,8 +59,8 @@ export {
 } from "../../contracts/resolve-rate.js";
 export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
 
-// find_symbol `symbols` batch: the full-text line cap the tool prose states (bd yz10n).
-export { BATCH_FULL_TEXT_MAX_LINES } from "../../contracts/types/symbol-batch.js";
+// find_symbol full text: the line cap and the `symbols` batch's char budget the tool prose states (bd yz10n).
+export { BATCH_FULL_TEXT_CHAR_BUDGET, FULL_TEXT_MAX_LINES } from "../../contracts/types/symbol-batch.js";
 export { MAX_QUERY_VARIANTS, QUERY_VARIANT_SEPARATOR } from "../../contracts/types/query-variants.js";
 
 // ── Codegraph payload vocabulary ─────────────────────────────────────

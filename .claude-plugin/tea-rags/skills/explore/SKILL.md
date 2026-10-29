@@ -34,22 +34,24 @@ phrasing (one of these words in the prompt: "organized", "end to end",
 below, even worded "how is/does X …" — never EXPLAIN, never an axis split.
 Opening line, copied: `Strategy: codegraph row 4 — "<phrase>"`. "Where is X
 used" / every occurrence of an exact name, constant or string (not "every call
-of X" — callers, below) → occurrence route, any codegraph state: Grep tool `"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known,
-else the source dir, e.g. `app/` or `src/` — a dir under cwd, never cwd itself,
-never a search to find it) → `find_symbol` outline → batch of only the needed
-methods; never `hybrid_search` for it. Proving absence ("no X exists", "tell me
-if none") where the prompt names the declaring dirs or files → Grep tool over exactly those (empty = proof), never `semantic_search`, even
-for concept words. Concept words, synonyms or spellings, even one `<a>|<b>|<c>`
-regex, are not an exact name → EXPLAIN: `semantic_search`
-(`hybrid_search(metaOnly)` when real ids are among them) → anchor →
-`get_callees`/`get_callers(symbolId:, depth: 2)` → ONE batch of only the needed
-methods; never a text-search alternation. "Callers of X" → decide codegraph
-first (plan line below); on → `Strategy: codegraph row 2` (`get_callers`; "every
-call / all callers of X" → plan both lines: it + that occurrence route), never
-TRACE-only `hybrid_search`. Off (or off branch of an unknown state) → TRACE
-loop, copied, ≥ 2 calls: `hybrid_search(query="<X>", metaOnly=true)` → per
-caller hit `hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels.
-One call = fail.
+of X" — callers, below) → occurrence route, any codegraph state: Grep tool
+`"<X>" <dir>` (literal, `-l`; `<dir>` = the anchor's dir when known, else the
+source dir, e.g. `app/` or `src/` — a dir under cwd, never cwd itself, never a
+search to find it) → `find_symbol` outline → batch of only the needed methods;
+never `hybrid_search` for it. Proving absence ("no X exists", "tell me if none")
+where the prompt names the declaring dirs or files → Grep tool over exactly
+those (empty = proof), never `semantic_search`, even for concept words. Concept
+words, synonyms or spellings, even one `<a>|<b>|<c>` regex, are not an exact
+name → EXPLAIN: `semantic_search` (`hybrid_search(metaOnly)` when real ids are
+among them) → anchor → `get_callees`/`get_callers(symbolId:, depth: 2)` → ONE
+batch of only the needed methods; never a text-search alternation. "Callers of
+X" → decide codegraph first (plan line below); on → `Strategy: codegraph row 2`
+(`get_callers`; "every call / all callers of X" → plan both lines: it + that
+occurrence route), never TRACE-only `hybrid_search`. Off (or off branch of an
+unknown state) → TRACE loop, copied, ≥ 2 calls:
+`hybrid_search(query="<X>", metaOnly=true)` → per caller hit
+`hybrid_search(query="<caller>", metaOnly=true)` → repeat ≤ 3 levels. One call =
+fail.
 
 | User intent contains                                                                                         | Strategy | Skip if                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,9 +68,8 @@ surface keywords without this line = wrong.
 any strategy → verify in source before the answer repeats it; the plan carries
 these verification calls, copied with the claimed value, both in the plan:
 `semantic_search(query=<the limit's behaviour>, documentation:"exclude")` →
-`Grep tool "<value>" <source dir> (literal, -l)` → `find_symbol`
-on the enclosing symbol of the hits; then both outcome lines, copied, in the
-plan:
+`Grep tool "<value>" <source dir> (literal, -l)` → `find_symbol` on the
+enclosing symbol of the hits; then both outcome lines, copied, in the plan:
 `On conflict: Code value wins; doc drifted: <doc path> says X, code does Y at <file:line>.`
 `On match: Doc matches code at <file:line>.`
 
@@ -152,11 +153,12 @@ codegraph state + its source (below). Plan/answer NAMES the calls below —
   cycles in `<scope>` → DAG" plainly; no hedge, no content-search fallback.
 - **Row 2** (callers/callees, codegraph on): call 1 = `find_symbol` → exact id,
   even when the user typed `Class#method`; call 2 = `get_callers` /
-  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = Grep tool `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits
-  (adds recall, never replaces 2). "How does X reach Y": endpoints named as
-  symbols → `find_symbol` each, then `trace_path`; endpoints described in words
-  ("OAuth callback", "sign-in") → call 1 = `semantic_search` for that behaviour,
-  call 2 = `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
+  `get_callees symbolId=<that id>`; "every / all callers" → call 3 = Grep tool
+  `"<X>" <dir>` (literal, `-l`) → `find_symbol` on the hits (adds recall, never
+  replaces 2). "How does X reach Y": endpoints named as symbols → `find_symbol`
+  each, then `trace_path`; endpoints described in words ("OAuth callback",
+  "sign-in") → call 1 = `semantic_search` for that behaviour, call 2 =
+  `trace_path from/to=<symbolIds from its hits>`. A phrase is never a
   `find_symbol symbol=`.
 
 - **Rows 3 + 4, call 1 = ORIENT:**
@@ -224,7 +226,8 @@ name the tool: identifier / name pattern → `hybrid_search metaOnly`, known
 symbol → `find_symbol`. Seed tool decided HERE, up front, even when routed on to
 pattern-search Collect — print `Seed tool: hybrid_search`; never defer it to
 "read tool-choice to choose". "Files matching <Name>" is a name pattern, not a
-literal: `hybrid_search(query="<Name>", metaOnly=true)`, never Grep tool file listing / Glob / `find -name`.
+literal: `hybrid_search(query="<Name>", metaOnly=true)`, never Grep tool file
+listing / Glob / `find -name`.
 
 Apply tables above, first match:
 
@@ -288,10 +291,11 @@ No hardcoded aliases — probe result = source of truth.
 ## BREADTH (point questions)
 
 query=$ARGUMENTS. Behavior/intent → semantic_search; known symbol, need
-DEFINITION → find_symbol; known/bare name, need USAGES → Grep tool `"<X>" <dir>` (literal, `-l`) → find_symbol, never hybrid_search; symbol
-name + behaviour words ("where hybrid_search handles BM25 scoring") →
-hybrid_search. Existence check ("does X exist") → `find_symbol` `metaOnly=true`.
-Known path / symbol → `find_symbol` (outline → body); rationale, copied:
+DEFINITION → find_symbol; known/bare name, need USAGES → Grep tool `"<X>" <dir>`
+(literal, `-l`) → find_symbol, never hybrid_search; symbol name + behaviour
+words ("where hybrid_search handles BM25 scoring") → hybrid_search. Existence
+check ("does X exist") → `find_symbol` `metaOnly=true`. Known path / symbol →
+`find_symbol` (outline → body); rationale, copied:
 `'Curiosity search' anti-pattern — known location → find_symbol, not another search.`
 Combined behaviour + "how does X reach Y" → `semantic_search` for the behaviour
 first, then `trace_path` on endpoint ids from its hits (codegraph Row 2).
@@ -300,9 +304,11 @@ these calls.
 
 **Path typed first.** The prompt names a directory or file path → call 1 =
 `find_symbol(relativePath: <that path>)` outline; 2+ files typed (compare them
-too) → call 1 = ONE `find_symbol(symbols: [<the file paths>])` (their outlines);
-bodies → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`,
-never a dir path in `symbols`, never a search first.
+too) → call 1 = ONE `find_symbol(symbols: [<the file paths>])` (full text ≤150
+lines within batch budget, else outline — `batchNotice` names which); outlined
+file's bodies → ONE
+`find_symbol(symbols: [<Class#method ids from that outline>])`, never a dir path
+in `symbols`, never a search first.
 
 Broad scope with no path typed (system / domain, "full picture", "introduce
 me"), split axes, a code snippet as input, depth moves (find_similar,

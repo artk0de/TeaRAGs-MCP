@@ -20,6 +20,7 @@ import type { SymbolVisibilityResolver } from "../../../contracts/types/codegrap
 import type { DirectoryOutline } from "../../../contracts/types/directory-outline.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RerankMode } from "../../../contracts/types/reranker.js";
+import { FULL_TEXT_MAX_LINES } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DirectoryChunkGrouper, DocChunkGrouper, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
@@ -55,19 +56,9 @@ const DIRECTORY_PAYLOAD = [
 /** Alternatives an unknown path is answered with. */
 const NEAREST_PATH_CAP = 5;
 
-/** Files up to this many lines answer with their full text instead of an outline. */
-const FULL_TEXT_MAX_LINES = 150;
-
 export interface FileOutlineInput {
   relativePath: string;
   language?: string;
-  /**
-   * A STRICT full-text cap: a file over it answers its outline even when the
-   * outline is longer than the file (find_symbol `symbols` batch, bd
-   * tea-rags-mcp-yz10n). Absent → the `relativePath:` rule: up to
-   * {@link FULL_TEXT_MAX_LINES} lines, or an outline at least as long as the file.
-   */
-  fullTextMaxLines?: number;
 }
 
 export class FileOutlineStrategy extends BaseExploreStrategy {
@@ -101,14 +92,23 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     return this.empty;
   }
 
-  /** True when the `relativePath:` rule would have answered full text but `fullTextMaxLines` kept the outline. */
+  /** True when the file's text was read and withheld for its size: the outline is the answer. */
   get fullTextWithheld(): boolean {
-    return this.withheldFullText;
+    return this.treeTextWithheld;
+  }
+
+  /**
+   * The outline the answer's full text replaced, or undefined when the answer
+   * is not full text — a find_symbol batch past its full-text budget answers
+   * it instead (bd tea-rags-mcp-yz10n).
+   */
+  get outlineBehindFullText(): ExploreResult | undefined {
+    return this.replacedOutline;
   }
 
   private directoryOutline?: DirectoryOutline;
   private empty?: EmptyAnswerExplanation;
-  private withheldFullText = false;
+  private replacedOutline?: ExploreResult;
   /** The tree's text was read and withheld for its size (either full-text rule) — the outline is the whole answer. */
   private treeTextWithheld = false;
 
@@ -186,7 +186,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
    * the tree's, read whole — chunks overlap and member chunks carry container
    * headers, so no concatenation of them is the file. A file the view serves
    * from the index (`treeState: "modified"`) or cannot read keeps the outline.
-   * `fullTextMaxLines` then tightens the rule to a strict line cap.
+   * A full-text answer keeps the outline it replaced ({@link outlineBehindFullText}).
    */
   private async fullTextOrOutline(outline: ExploreResult, ctx: ExploreContext): Promise<ExploreResult> {
     const view = ctx.workingTreeView;
@@ -200,12 +200,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
       this.treeTextWithheld = true;
       return outline;
     }
-    const cap = this.input.fullTextMaxLines;
-    if (cap !== undefined && lineCount > cap) {
-      this.withheldFullText = true;
-      this.treeTextWithheld = true;
-      return outline;
-    }
+    this.replacedOutline = outline;
     return {
       ...outline,
       payload: { ...outline.payload, kind: "file", content: text, startLine: 1, endLine: lineCount },

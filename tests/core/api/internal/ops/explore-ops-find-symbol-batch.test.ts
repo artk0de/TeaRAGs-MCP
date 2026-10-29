@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExploreFacade } from "../../../../../src/core/api/internal/facades/explore-facade.js";
 import { InvalidParameterError } from "../../../../../src/core/api/public/errors.js";
+import { BATCH_FULL_TEXT_CHAR_BUDGET } from "../../../../../src/core/contracts/types/symbol-batch.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 import type { WorkingTreeView } from "../../../../../src/core/domains/explore/working-tree/index.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
@@ -91,9 +92,9 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
     rmSync(registryDir, { recursive: true, force: true });
   });
 
-  const facade = (view?: WorkingTreeView) =>
+  const facade = (view?: WorkingTreeView, rows: ScrollChunk[] = INDEX) =>
     new ExploreFacade({
-      qdrant: qdrantHolding(INDEX),
+      qdrant: qdrantHolding(rows),
       embeddings: { embed: vi.fn() } as any,
       reranker,
       registry,
@@ -215,14 +216,15 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       ]);
     });
 
-    // bd tea-rags-mcp-yz10n: a batch is not `cat` — a path entry answers its
-    // outline (member ids to drill), only a file of ≤60 lines its text.
+    // bd tea-rags-mcp-yz10n: a batch is not `cat` — a path entry over the
+    // relativePath full-text rule answers its outline (member ids to drill); a
+    // smaller file answers its text while the batch's full-text budget lasts.
     describe("path entries answer outlines, not text (yz10n)", () => {
       const linesOf = (n: number): string =>
         `${Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join("\n")}\n`;
 
-      it("answers a file over 60 lines with its outline, though relativePath mode answers its text", async () => {
-        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } });
+      it("answers a file over 150 lines with its outline, as relativePath mode does, and says why", async () => {
+        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(151) } });
 
         const batch = await facade(view()).findSymbol({ collection: "code_x", symbols: ["src/lib/h.ts"] });
         const single = await facade(view()).findSymbol({ collection: "code_x", relativePath: "src/lib/h.ts" });
@@ -231,8 +233,75 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
         expect(batch.results[0].payload?.kind).toBeUndefined();
         expect(batch.results[0].payload?.content).toContain("helper");
         expect(batch.results[0].payload?.content).not.toContain("export const v0");
-        expect(single.results[0].payload?.kind).toBe("file");
+        expect(single.results[0].payload?.kind).toBeUndefined();
         expect(batch.batchNotice).toMatch(/outline/);
+        expect(batch.batchNotice).toContain("over 150 lines");
+        expect(batch.batchNotice).toContain("src/lib/h.ts");
+      });
+
+      // The benchmark agent got outlines for 133- and 112-line files in a batch
+      // and then read both whole — what one relativePath call answers in full.
+      it("answers a file of 61–150 lines with its full text, as relativePath mode does", async () => {
+        const text = linesOf(133);
+        const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": text } })).findSymbol({
+          collection: "code_x",
+          symbols: ["src/lib/h.ts"],
+        });
+
+        expect(response.results[0].payload).toMatchObject({ kind: "file", content: text, endLine: 133 });
+        expect(response.batchNotice).toBeUndefined();
+      });
+
+      describe("the batch's full-text budget", () => {
+        const PATHS = ["src/a/one.ts", "src/a/two.ts", "src/a/three.ts", "src/a/four.ts"];
+        const rows = PATHS.map((relativePath, i) =>
+          codeRow(`p${i}`, { symbolId: `fn${i}`, name: `fn${i}`, relativePath, content: `fn${i} body` }),
+        );
+        /** A 100-line file of about `chars` characters. */
+        const sized = (chars: number): string => {
+          const width = Math.floor(chars / 100) - 1;
+          return `${Array.from({ length: 100 }, () => "x".repeat(width)).join("\n")}\n`;
+        };
+
+        it("answers full text in request order while the budget lasts, outlining the files past it", async () => {
+          const big = sized(BATCH_FULL_TEXT_CHAR_BUDGET * 0.4);
+          const files = {
+            "src/a/one.ts": big,
+            "src/a/two.ts": big,
+            "src/a/three.ts": big,
+            "src/a/four.ts": "export const small = 1;\n",
+          };
+
+          const response = await facade(fakeWorkingTreeView({ files }), rows).findSymbol({
+            collection: "code_x",
+            symbols: PATHS,
+          });
+
+          expect(response.results.map((r) => [r.payload?.request, r.payload?.kind])).toEqual([
+            ["src/a/one.ts", "file"],
+            ["src/a/two.ts", "file"],
+            ["src/a/three.ts", undefined],
+            ["src/a/four.ts", "file"],
+          ]);
+          expect(response.results[2].payload?.content).toContain("fn2");
+          expect(response.batchNotice).toContain(`${BATCH_FULL_TEXT_CHAR_BUDGET}-char`);
+          expect(response.batchNotice).toContain("src/a/three.ts");
+          expect(response.batchNotice).not.toContain("src/a/two.ts");
+          expect(response.batchNotice).toContain("find_symbol(relativePath: <path>)");
+          expect(response.batchNotice).not.toContain("fn2");
+        });
+
+        it("adds no notice when every file fits the budget", async () => {
+          const files = Object.fromEntries(PATHS.map((path) => [path, sized(BATCH_FULL_TEXT_CHAR_BUDGET * 0.2)]));
+
+          const response = await facade(fakeWorkingTreeView({ files }), rows).findSymbol({
+            collection: "code_x",
+            symbols: PATHS,
+          });
+
+          expect(response.results.every((r) => r.payload?.kind === "file")).toBe(true);
+          expect(response.batchNotice).toBeUndefined();
+        });
       });
 
       // bd tea-rags-mcp-y3trx: metaOnly keeps a path entry's outline, like relativePath mode.

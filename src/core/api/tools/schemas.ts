@@ -21,9 +21,9 @@
 import { z } from "zod";
 
 import {
-  BATCH_FULL_TEXT_MAX_LINES,
   DEFAULT_META_ONLY_FIELDS,
   DEFAULT_SEARCH_FIELDS,
+  FULL_TEXT_MAX_LINES,
   MAX_QUERY_VARIANTS,
   PROJECT_NAME_RE,
   QUERY_VARIANT_SEPARATOR,
@@ -520,7 +520,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
       .max(20)
       .optional()
       .describe(
-        `1-20 symbol ids or file paths; file → outline (≤${BATCH_FULL_TEXT_MAX_LINES} lines: full text), directory → missing. Excludes symbol, relativePath.`,
+        `1-20 symbol ids or file paths; file ≤${FULL_TEXT_MAX_LINES} lines → full text within batch budget, else outline. Excludes symbol, relativePath.`,
       ),
     relativePath: z
       .string()

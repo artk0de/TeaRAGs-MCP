@@ -302,9 +302,11 @@ these calls.
 
 **Path typed first.** The prompt names a directory or file path → call 1 =
 `find_symbol(relativePath: <that path>)` outline; 2+ files typed (compare them
-too) → call 1 = ONE `find_symbol(symbols: [<the file paths>])` (their outlines);
-bodies → ONE `find_symbol(symbols: [<Class#method ids from that outline>])`,
-never a dir path in `symbols`, never a search first.
+too) → call 1 = ONE `find_symbol(symbols: [<the file paths>])` (full text ≤150
+lines within batch budget, else outline — `batchNotice` names which); outlined
+file's bodies → ONE
+`find_symbol(symbols: [<Class#method ids from that outline>])`, never a dir path
+in `symbols`, never a search first.
 
 Broad scope with no path typed (system / domain, "full picture", "introduce
 me"), split axes, a code snippet as input, depth moves (find_similar,
