@@ -60,7 +60,7 @@
   "ruby": {
     "chunking": {
       "version": 3,
-      "digest": "sha256:e1ded1dc58aa609b028d1bb5bdf90f53ca4ea3e97412c8af989b0e49d5119285"
+      "digest": "sha256:9f56da382b5dc7bbbcb34b0f6c58f5c738ea98dd7caf8da6c497449f440ec495"
     },
     "walker": {
       "version": 11,
