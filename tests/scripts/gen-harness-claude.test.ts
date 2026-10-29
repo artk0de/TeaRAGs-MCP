@@ -132,6 +132,7 @@ describe("renderClaudePackage — code tools (bd tea-rags-mcp-onli7)", () => {
         "Never read with the default code read tool or",
         "  the default code read tool again.",
         "- **Default code read tool after a hit** — no.",
+        "The default code search tool: `-l` first.",
         "",
       ].join("\n"),
     );
@@ -151,6 +152,16 @@ describe("renderClaudePackage — code tools (bd tea-rags-mcp-onli7)", () => {
     expect(text).toContain("Never read with Read tool or\n  Read tool again.");
     expect(text).toContain("- **Read tool after a hit** — no.");
     expect(text).not.toMatch(/\b(?:rg|ripgrep)\b/);
+  });
+
+  it("defines the Grep tool once with its Bash fallback and the zsh-safe form (the harness may lack Grep)", () => {
+    const text = renderClaudePackage(fixtureRoot, "p").get("rules/core.md")?.content.toString("utf8") ?? "";
+
+    expect(text).toContain(
+      "Grep tool (absent → Bash `grep`; zsh: quote globs `--include='*.rb'`, no `echo ===`): `-l` first.",
+    );
+    expect(text.split("absent → Bash `grep`")).toHaveLength(2);
+    expect(text).toContain("TODO markers → Grep tool, never tea-rags.");
   });
 
   it("leaves non-Markdown files byte-identical", () => {
