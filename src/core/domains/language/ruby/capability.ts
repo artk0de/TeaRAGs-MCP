@@ -181,6 +181,9 @@ export const capability: LanguageCapability = {
   // (`lineRanges`, `startLine`); a body-less nested `class X < Y; end` is a member
   // (`Owner::X`); header text keeps row indentation and one blank row per gap; a
   // top-level leaf chunk opens with its comment by the same method rule.
+  // Same chunking 3, bd tea-rags-mcp-5ivtb: a class-level DSL statement is declared by
+  // its body chunk (`Owner#chapters`, `Owner.recent`, `Owner.validates :title`), and a
+  // multi-line statement's continuation rows stay in its own body chunk.
   versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or

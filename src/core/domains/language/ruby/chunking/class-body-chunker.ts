@@ -17,7 +17,8 @@ import {
 } from "../../../../contracts/types/chunker.js";
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { foldSubFloorGroups } from "../../kernel/index.js";
-import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
+import { RUBY_DSL, type DslCategory, type RubyDslEntry } from "../dsl/index.js";
+import { STRUCTURED_MACROS } from "../walker/structured/index.js";
 import { collectMethodCommentRows } from "./comment-capture.js";
 import { valueClassContainerBody, valueClassContainerHeader } from "./value-class-container.js";
 
@@ -135,6 +136,9 @@ const END_REGEX = /^\s*end\s*(#.*)?$/;
  */
 const KEYWORD_BLOCK_OPENERS = new Set(["class", "module"]);
 
+/** A row opening with a hash key (`foreign_key: :id`, `class: Foo`) — an argument continuation. */
+const HASH_KEY_ROW = /^\s*\w+:(?!:)/;
+
 // ── RubyClassBodyChunker class ─────────────────────────────────────
 
 export class RubyClassBodyChunker {
@@ -155,6 +159,10 @@ export class RubyClassBodyChunker {
     if (!match) return undefined;
 
     const keyword = match[1];
+
+    // A hash-key row (`scope: :firm_id`, `if: :active?`) continues a statement's
+    // argument list, whatever word the key is (bd tea-rags-mcp-5ivtb).
+    if (HASH_KEY_ROW.test(trimmed)) return undefined;
 
     // Known Rails/Ruby declaration keyword
     if (keyword in DECLARATION_KEYWORDS) return DECLARATION_KEYWORDS[keyword];
@@ -196,6 +204,19 @@ export class RubyClassBodyChunker {
      * that should attach to the next group rather than being dropped.
      */
     const flushGroup = (): BodyLine[] => {
+      // A pending row that is neither blank nor a comment continues the
+      // statement above it (`has_many :x,` / `  foreign_key: :y`): it stays in
+      // the current group, so one statement never spans two chunks (bd
+      // tea-rags-mcp-5ivtb). Only the comment rows after it lead the next group.
+      let continuationEnd = -1;
+      pendingBlanks.forEach((l, i) => {
+        const text = l.text.trim();
+        if (text.length > 0 && !text.startsWith("#")) continuationEnd = i;
+      });
+      if (currentType && continuationEnd >= 0) {
+        currentLines.push(...pendingBlanks.slice(0, continuationEnd + 1));
+        pendingBlanks = pendingBlanks.slice(continuationEnd + 1);
+      }
       if (currentLines.length > 0 && currentType) {
         groups.push({
           type: currentType,
@@ -289,7 +310,8 @@ export class RubyClassBodyChunker {
         // Only when not already inside a block (transparent blocks handle depth internally)
         const opensDo = blockDepth === 0 && DO_END_REGEX.test(trimmed);
         const kwMatch = trimmed.match(/^(\w+)/);
-        const opensKeywordBlock = blockDepth === 0 && !!kwMatch && KEYWORD_BLOCK_OPENERS.has(kwMatch[1]);
+        const opensKeywordBlock =
+          blockDepth === 0 && !!kwMatch && KEYWORD_BLOCK_OPENERS.has(kwMatch[1]) && !HASH_KEY_ROW.test(trimmed);
 
         if (opensDo || opensKeywordBlock) {
           // Unclassified line that opens a block → start new "other" group
@@ -505,6 +527,7 @@ export function extractBodyChunks(
     ...containerInlineNestedContainers(containerNode, childNodes, code),
   ];
   const shortMethods = containerShortMethods(containerNode, childNodes, code);
+  const dslMembers = containerDslMembers(containerNode, code);
   const withHeader = (group: BodyGroup): string => {
     const groupContent = groupText(group);
     return classHeader ? `${classHeader}\n${groupContent}` : groupContent;
@@ -550,9 +573,14 @@ export function extractBodyChunks(
     const maxLine = Math.max(...group.lineRanges.map((r) => r.end));
     const groupLines = new Set(group.lines.map((l) => l.sourceLine));
     const declaredMemberNames = constants.filter((c) => groupLines.has(c.line)).map((c) => c.name);
-    const declaredMethodMembers = [...shortMethods]
+    // Short defs and DSL statements interleave in source order (bd tea-rags-mcp-5ivtb).
+    const declaredMethodMembers = [
+      ...[...shortMethods].map(([line, method]) => [line, [method]] as const),
+      ...dslMembers,
+    ]
       .filter(([line]) => groupLines.has(line))
-      .map(([, method]) => method);
+      .sort(([a], [b]) => a - b)
+      .flatMap(([, members]) => members);
 
     results.push({
       content: withHeader(group),
@@ -740,6 +768,100 @@ function containerShortMethods(
   };
   collect(containerBody(containerNode));
   return methods;
+}
+
+/** Argument shapes that name a DSL call as written: `:title`, `Library::Author`, `"admin"`. */
+const DSL_CALL_NAME_ARGUMENTS = new Set(["simple_symbol", "constant", "scope_resolution", "string"]);
+
+/**
+ * The addresses a container's class-level DSL statements take, keyed by the
+ * statement's 1-based start line (bd tea-rags-mcp-5ivtb), so the body chunk
+ * holding the row names them in `memberSymbolIds` and the class outline draws
+ * them. A receiverless call to a catalogued macro qualifies; the `included do`
+ * / `class_methods do` wrappers do not — their inner rows are what is read.
+ *
+ * - A statement whose operand names a method the codegraph declares for it
+ *   (`walker/macro-expansion.ts`) takes THAT method's id, so the outline id
+ *   and the graph agree: `has_many :chapters` → `#chapters`, `scope :recent` →
+ *   `.recent`, `enum :status, {…}` → `#status`, `attr_reader :a, :b` → `#a`,
+ *   `#b`.
+ * - Any other statement — `validates :title`, `before_save :x`, `include M`,
+ *   `aasm do`, an enum over a constant — declares no method of that name and
+ *   is named by its call, the macro plus its first argument as written, the
+ *   way an RSpec scope is named (`Owner.validates :title`); the `.` marks it
+ *   class-level, and a repeat of the same call within the container takes
+ *   `~N`, as a repeated example does.
+ */
+/**
+ * The names a DSL call's operands could declare: its symbol arguments (only
+ * the first under `first-symbol`, all but the first under `skip-first`, as the
+ * codegraph reads them) and the keys of a leading hash (`enum status: {…}`).
+ */
+function dslOperandNames(entry: RubyDslEntry, args: AstNode | null): string[] {
+  const symbols = (args?.namedChildren ?? [])
+    .filter((arg) => arg.type === "simple_symbol")
+    .map((arg) => arg.text.replace(/^:/, ""));
+  const keys = (args?.namedChildren ?? []).flatMap((arg) => {
+    const key = arg.type === "pair" ? arg.childForFieldName("key") : null;
+    return key?.type === "hash_key_symbol" ? [key.text] : [];
+  });
+  if (entry.operands === "first-symbol") return symbols.slice(0, 1);
+  if (entry.operands === "skip-first") return symbols.slice(1);
+  // A hash key names an operand only for a structured macro (`enum status: {…}`);
+  // on any other call it is an option (`class_name:`), never a declared name.
+  return entry.declares ? symbols : [...symbols, ...keys];
+}
+
+/**
+ * The methods the codegraph synthesises for one operand of a DSL call: a
+ * structured macro's expander (`enum`, `aasm`) over the whole call, else the
+ * catalogue entry's `declares` for that operand — the two sources
+ * `walker/macro-expansion.ts` dispatches over for `cg_symbols`.
+ */
+function dslDeclaredMethods(
+  statement: AstNode,
+  macroName: string,
+  entry: RubyDslEntry,
+  operand: string,
+): { name: string; kind: "instance" | "static" }[] {
+  const structured = STRUCTURED_MACROS.find((expander) => expander.macroName === macroName);
+  if (structured) return structured.expand(statement, statement.startPosition.row + 1, statement.endPosition.row + 1);
+  return entry.declares?.(operand) ?? [];
+}
+
+function containerDslMembers(
+  containerNode: AstNode,
+  code: string,
+): Map<number, { name: string; methodKind: "instance" | "static" }[]> {
+  const members = new Map<number, { name: string; methodKind: "instance" | "static" }[]>();
+  const callNameCounts = new Map<string, number>();
+  for (const statement of containerBody(containerNode)?.namedChildren ?? []) {
+    if (statement.type !== "call" || statement.childForFieldName("receiver")) continue;
+    const macro = statement.childForFieldName("method");
+    if (!macro) continue;
+    const macroName = code.substring(macro.startIndex, macro.endIndex);
+    const entry = Object.hasOwn(RUBY_DSL, macroName) ? RUBY_DSL[macroName] : undefined;
+    if (entry === undefined || entry.category === "concern-hook") continue;
+    const args = statement.childForFieldName("arguments");
+    const named = dslOperandNames(entry, args).flatMap((operand) => {
+      const method = dslDeclaredMethods(statement, macroName, entry, operand).find((m) => m.name === operand);
+      return method ? [{ name: method.name, methodKind: method.kind }] : [];
+    });
+    if (named.length > 0) {
+      members.set(statement.startPosition.row + 1, named);
+      continue;
+    }
+    const first = args?.namedChildren[0];
+    const argument =
+      first && DSL_CALL_NAME_ARGUMENTS.has(first.type) && !first.text.includes("\n") ? ` ${first.text}` : "";
+    const callName = `${macroName}${argument}`;
+    const repeat = (callNameCounts.get(callName) ?? 0) + 1;
+    callNameCounts.set(callName, repeat);
+    members.set(statement.startPosition.row + 1, [
+      { name: repeat === 1 ? callName : `${callName}~${repeat}`, methodKind: "static" },
+    ]);
+  }
+  return members;
 }
 
 // ── ChunkingHook export ────────────────────────────────────────────
