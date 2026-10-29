@@ -158,6 +158,29 @@ describe("computeVersionPins", () => {
     expect(computeVersionPins(caps, root).faux?.walker?.digest).toBe(before);
   });
 
+  // bd tea-rags-mcp-5ivtb — Ruby's class-body hook names DSL members from the
+  // `dsl/` catalogue and the `walker/structured/` expanders, so an edit there
+  // moves chunk content exactly as an edit under `chunking/` does.
+  it("moves Ruby's chunking digest when a DSL catalogue entry or a structured expander changes", () => {
+    const rubyCaps = new Map([["ruby", { ...(caps.get("faux") as LanguageCapability), language: "ruby" }]]);
+    const hook = join(root, "src/core/domains/language/ruby/chunking/class-body-chunker.ts");
+    const catalogue = join(root, "src/core/domains/language/ruby/dsl/rails.ts");
+    const expander = join(root, "src/core/domains/language/ruby/walker/structured/enum.ts");
+    write(hook, "export const hook = 1;\n");
+    write(catalogue, 'export const scope = { category: "scope" };\n');
+    write(expander, "export const enumExpander = 1;\n");
+    const before = computeVersionPins(rubyCaps, root).ruby?.chunking?.digest;
+
+    write(catalogue, 'export const scope = { category: "scope", declares: () => [] };\n');
+    const afterCatalogue = computeVersionPins(rubyCaps, root).ruby?.chunking?.digest;
+    write(expander, "export const enumExpander = 2;\n");
+    const afterExpander = computeVersionPins(rubyCaps, root).ruby?.chunking?.digest;
+
+    expect(afterCatalogue).not.toBe(before);
+    expect(afterExpander).not.toBe(afterCatalogue);
+    rmSync(join(root, "src/core/domains/language/ruby"), { recursive: true, force: true });
+  });
+
   it("omits an axis whose sources do not exist", () => {
     write(walkerFile, "export const walk = () => 1;\n");
 

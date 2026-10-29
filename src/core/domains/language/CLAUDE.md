@@ -666,10 +666,12 @@
   EXCEPT `chunking/**` and `capability.ts` (axis `walker` — so `kernel.ts`,
   `index.ts`, `python/vocabulary/`, `swift/vocabulary/*.json`,
   `ruby/schema|type-ref|codegraph-exclusions|gemfile` are all in it), and
-  `chunking/` + its chunker hooks (axis `chunking`), and pins the digest to
-  `versions.<axis>` in `version-pins.json`. Any change under those paths — a
-  comment included — turns the test red until you either bump the axis (output
-  moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
+  `chunking/` + its chunker hooks + any vertical file a hook imports from
+  outside `chunking/`, listed in `CHUNKING_IMPORTED_SOURCES` and digested on
+  both axes (axis `chunking`), and pins the digest to `versions.<axis>` in
+  `version-pins.json`. Any change under those paths — a comment included — turns
+  the test red until you either bump the axis (output moved) or re-pin
+  (`npm run pin:lang-versions`, byte-identical claim,
   `Versions: unchanged — <why>` in the commit body). `capability.ts` is excluded
   because it HOLDS the numbers: digesting it would make every bump invalidate
   its own pin. `codegraphSchema` has no digest; it is judged by hand. Sources
