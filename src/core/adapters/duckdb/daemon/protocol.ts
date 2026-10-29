@@ -222,6 +222,7 @@ export const DAEMON_OPS = [
   // Short-name suggestions for an id get_callers / get_callees cannot find
   // (agent turn economy N6). REQUIRED like getSymbolVisibilities.
   "lookupSymbolIdsByShortName",
+  "getContainerMemberSymbolIds",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
   // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
   // "unknown daemon op" — a tolerated legacy op, see `LEGACY_TOLERATED_OPS`.
@@ -416,6 +417,7 @@ export interface DaemonOpParamsMap {
   findSymbolChunk: { symbolId: SymbolId };
   getSymbolVisibilities: { symbolIds: SymbolId[] };
   lookupSymbolIdsByShortName: { shortName: string; limit: number };
+  getContainerMemberSymbolIds: { containerSymbolId: SymbolId; limit: number };
   getSymbolLineRangesBulk: { relPaths: readonly RelPath[] };
   diffSymbolSignals: NoDaemonOpParams;
   aggregateIdentifiersByType: IdentifierTypeAggregateQuery;

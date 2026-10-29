@@ -73,6 +73,10 @@ export class DaemonSymbolFileStoreProxy implements CodegraphSymbolFileStore {
     return (await this.ops.call("lookupSymbolIdsByShortName", { shortName, limit })) as SymbolId[];
   }
 
+  async getContainerMemberSymbolIds(containerSymbolId: SymbolId, limit: number): Promise<SymbolId[]> {
+    return (await this.ops.call("getContainerMemberSymbolIds", { containerSymbolId, limit })) as SymbolId[];
+  }
+
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     // Server serialises the Map as `[key, value][]` entries — rebuild here. A
     // tolerated legacy op: a daemon that predates it answers "no rows known",

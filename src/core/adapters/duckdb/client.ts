@@ -359,6 +359,10 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.symbolFiles.lookupSymbolIdsByShortName(shortName, limit);
   }
 
+  async getContainerMemberSymbolIds(containerSymbolId: SymbolId, limit: number): Promise<SymbolId[]> {
+    return this.symbolFiles.getContainerMemberSymbolIds(containerSymbolId, limit);
+  }
+
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbolFiles.getSymbolLineRangesBulk(relPaths);
   }

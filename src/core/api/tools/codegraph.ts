@@ -73,6 +73,12 @@ const EMPTY_GRAPH_ANSWER_CONTRACT =
   "unknownFile, treeOnly (only in your tree, its graph not ready: find_symbol). " +
   "treeGraphUnavailable → rows whose file your tree changed carry treeState; queriedTreeState = the queried one's.";
 
+/** Container rollup shared by get_callers / get_callees (bd tea-rags-mcp-znzv3). */
+const CONTAINER_MEMBER_ROLLUP_CONTRACT =
+  "Class/module id → also its direct members' edges: row member = member reached (#run, .call), one row per " +
+  "caller+member (callee: member+target); memberRollup {members, internalCallers|internalCallees} counts edges " +
+  "between its own members, not listed. ";
+
 /** Lower-bound notices shared by get_callers / get_callees / trace_path / find_cycles (bd tea-rags-mcp-nknkg.1). */
 const GRAPH_NOTICES_CONTRACT =
   " notices[] = answer stands but is a lower bound (Rust edges static-only: rustc driver did not index).";
@@ -122,6 +128,7 @@ const CALLEE_ROWS: ResponseRowsPolicy = {
 const CALLER_COLUMN_ORDER = [
   "sourceSymbolId",
   "sourceRelPath",
+  "member",
   "callExpression",
   "visibility",
   "origin",
@@ -129,6 +136,7 @@ const CALLER_COLUMN_ORDER = [
   "p",
 ] as const;
 const CALLEE_COLUMN_ORDER = [
+  "member",
   "targetSymbolId",
   "targetRelPath",
   "callExpression",
@@ -145,6 +153,7 @@ const CALL_TREE_COLUMN_ORDER = [
   "depth",
   "parent",
   "symbolId",
+  "member",
   "relPath",
   "edgeKind",
   "confidence",
@@ -558,7 +567,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     name: "get_callers",
     title: "Get Callers",
     description:
-      `Return symbols that invoke given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
+      `Return symbols that invoke given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}${CONTAINER_MEMBER_ROLLUP_CONTRACT}` +
       "Top-level visibility = queried symbol's declared level; each caller carries its own " +
       "(private|protected|public; absent = unknown). " +
       "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
@@ -582,7 +591,7 @@ const CODEGRAPH_TOOLS: readonly CodegraphToolDef[] = [
     name: "get_callees",
     title: "Get Callees",
     description:
-      `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
+      `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}${CONTAINER_MEMBER_ROLLUP_CONTRACT}` +
       "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
       "Calls whose target symbol the resolver could not pin are not rows: unresolved = their count, " +
       "unresolvedCalls = up to 5 distinct call expressions. One row per target symbol; count = call sites folded in. " +

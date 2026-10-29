@@ -789,6 +789,30 @@ describe("DaemonGraphDbClient — lookupSymbolIdsByShortName (bd tea-rags-mcp-wr
   });
 });
 
+describe("DaemonGraphDbClient — getContainerMemberSymbolIds (bd tea-rags-mcp-znzv3)", () => {
+  it("proxies the container member read through the daemon socket with the container id and limit", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getContainerMemberSymbolIds" ? ["Shop::Basket#add", "Shop::Basket.build"] : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, fixturePhysicalCollectionName("code_x_v1"));
+    await client.init();
+    const result = await client.getContainerMemberSymbolIds("Shop::Basket", 500);
+    await client.close();
+
+    expect(result).toEqual(["Shop::Basket#add", "Shop::Basket.build"]);
+    expect(seen.find((r) => r.op === "getContainerMemberSymbolIds")?.params).toMatchObject({
+      collection: "code_x_v1",
+      containerSymbolId: "Shop::Basket",
+      limit: 500,
+    });
+  });
+});
+
 describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hme.1)", () => {
   it("proxies the convention-privacy candidate read through the daemon socket with the languages", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));

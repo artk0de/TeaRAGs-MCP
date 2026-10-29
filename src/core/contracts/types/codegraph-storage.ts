@@ -1229,6 +1229,15 @@ export interface CodegraphSymbolFileStore {
    * tool offers for an id the graph does not hold (agent turn economy N6).
    */
   lookupSymbolIdsByShortName: (shortName: string, limit: number) => Promise<SymbolId[]>;
+  /**
+   * Distinct DIRECT members of a container (bd tea-rags-mcp-znzv3): the ids
+   * `<container>#m` / `<container>.m` whose member segment holds no further
+   * `#`, `.` or `::`, declared in any file — when `containerSymbolId` has a
+   * definition of a container kind (class, module, interface, enum) or of no
+   * recorded kind. Ordered by symbolId, at most `limit`; a callable or an
+   * unknown id answers `[]`.
+   */
+  getContainerMemberSymbolIds: (containerSymbolId: SymbolId, limit: number) => Promise<SymbolId[]>;
 
   /**
    * Each requested file's persisted symbol ranges (bd tea-rags-mcp-9i2ow) — the
