@@ -175,6 +175,44 @@ function drawnScopeIds(roots: ScrollChunk[]): Set<string> {
   );
 }
 
+/**
+ * The line a file-outline root draws: a member is named by its qualified id (a
+ * bare `rerank` loses its class), a top-level symbol by its name.
+ */
+function rootLabelOf(row: ScrollChunk): string {
+  const name = row.payload.name as string | undefined;
+  const symbolId = outlineIdOf(row);
+  return (row.payload.parentSymbolId ? (symbolId ?? name) : (name ?? symbolId)) ?? "";
+}
+
+/**
+ * The member ids each outline line's code chunks declare in
+ * `memberSymbolIds` (bd tea-rags-mcp-1x85g: a class-body chunker packs
+ * constants and short defs into the container's header window), keyed by the
+ * line the chunk draws, in line order, each id once. Test chunks are drawn by
+ * scope instead and never contribute.
+ */
+function declaredMembersByLabel(
+  roots: ScrollChunk[],
+  childrenByParent: Map<string, ScrollChunk[]>,
+): Map<string, string[]> {
+  const labelled = [
+    ...roots.map((row) => ({ row, label: rootLabelOf(row) })),
+    ...[...childrenByParent.values()].flat().map((row) => ({ row, label: outlineIdOf(row) ?? "" })),
+  ].sort((a, b) => (Number(a.row.payload.startLine) || 0) - (Number(b.row.payload.startLine) || 0));
+  const byLabel = new Map<string, string[]>();
+  for (const { row, label } of labelled) {
+    const members = row.payload.memberSymbolIds;
+    if (label === "" || isTestChunk(row) || !Array.isArray(members)) continue;
+    const list = byLabel.get(label) ?? [];
+    for (const id of members) {
+      if (typeof id === "string" && id !== label && !list.includes(id)) list.push(id);
+    }
+    byLabel.set(label, list);
+  }
+  return byLabel;
+}
+
 function contentSizeOf(chunks: ScrollChunk[]): number {
   return chunks.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
 }
@@ -298,10 +336,19 @@ export const CodeChunkGrouper = {
     // no address, and the windows of one split symbol share one: neither draws
     // a line of its own.
     const drawn = new Set<string>();
+    const declared = declaredMembersByLabel(roots, childrenByParent);
     const draw = (indent: string, label: string, row: ScrollChunk): void => {
       if (label === "" || drawn.has(label)) return;
       drawn.add(label);
       lines.push(`${indent}${label}${visibilitySuffix(row, visibilityOf)}`);
+      // Members a class-level window declares without chunks of their own
+      // (constants, short defs) are addresses too: listed under the container,
+      // undecorated, as `CodeChunkGrouper.group` lists them.
+      for (const id of declared.get(label) ?? []) {
+        if (drawn.has(id)) continue;
+        drawn.add(id);
+        lines.push(`${indent}  ${id}`);
+      }
     };
     for (const root of roots) {
       if (isTestExampleChunk(root)) {
@@ -320,8 +367,7 @@ export const CodeChunkGrouper = {
         }
       }
       const name = root.payload.name as string | undefined;
-      const symbolId = outlineIdOf(root);
-      draw("  ", (root.payload.parentSymbolId ? (symbolId ?? name) : (name ?? symbolId)) ?? "", root);
+      draw("  ", rootLabelOf(root), root);
       const children = name ? childrenByParent.get(name) : undefined;
       if (children) {
         for (const child of children) draw("    ", outlineIdOf(child) ?? "", child);
