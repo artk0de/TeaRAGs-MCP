@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.52.1",
+  "version": "0.53.0",
   "author": {
     "name": "artk0de"
   },
@@ -24,6 +24,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-fresh.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+            "timeout": 3
           }
         ]
       }
@@ -40,6 +45,11 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh --harness claude",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+            "timeout": 3
           }
         ]
       }
@@ -51,6 +61,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh --harness claude",
+            "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": "^(Read|Bash)$|^mcp__.*tea-rags.*__find_symbol$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
             "timeout": 3
           }
         ]
@@ -74,6 +94,16 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-worktree-clone.sh",
             "timeout": 120
+          }
+        ]
+      },
+      {
+        "matcher": "^(Read|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*tea-rags.*__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+            "timeout": 3
           }
         ]
       }

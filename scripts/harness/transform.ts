@@ -25,6 +25,12 @@ export interface CodeToolNames {
    */
   foldsSearchLiteral?: boolean;
   /**
+   * Clause the code search tool carries ONCE, where a source defines it (`The default code search tool:`),
+   * never at every mention. Claude Code: some builds ship no Grep tool and point at shell grep, and the
+   * Bash tool's zsh aborts a whole command list on an unquoted glob (NOMATCH) or `=word` (EQUALS).
+   */
+  codeSearchToolNote?: string;
+  /**
    * The client's own file reader, named where sources say "default code read tool": Claude Code /
    * Cursor `Read tool`, Codex `shell sed -n '<start>,<end>p' <one file>` (one file per command, enforced
    * by its `one-file-read.sh` hook).
@@ -219,9 +225,19 @@ function withCaseOf(match: string, name: string): string {
  * package runs only this rule; its sources are already in the Claude Code dialect otherwise.
  */
 export function nameCodeTools(md: string, tools: CodeToolNames): string {
-  return foldSearchLiterals(md, tools)
+  return noteCodeSearchDefinition(foldSearchLiterals(md, tools), tools)
     .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+search\s+tool\b/g, (match) => withCaseOf(match, tools.codeSearchTool))
     .replace(/\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+read\s+tool\b/g, (match) => withCaseOf(match, tools.codeReadTool));
+}
+
+/** The defining "(The) default code search tool:" → "<codeSearchTool> (<note>):" when the dialect carries a note. */
+function noteCodeSearchDefinition(md: string, tools: CodeToolNames): string {
+  const note = tools.codeSearchToolNote;
+  if (note === undefined) return md;
+  return md.replace(
+    /\b(?:[Tt]he\s+)?[Dd]efault\s+code\s+search\s+tool:/,
+    (match) => `${withCaseOf(match, tools.codeSearchTool)} (${note}):`,
+  );
 }
 
 /** "default code search tool `"<X>" <dir>`" → `` `<codeSearchTool> "<X>" <dir>` `` when the dialect folds it. */

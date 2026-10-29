@@ -156,6 +156,19 @@ export default tseslint.config(
     },
   },
 
+  // ── Plugin hook scripts: plain Node ESM shipped verbatim, outside every tsconfig ──
+  {
+    files: ["plugins/**/scripts/*.mjs", ".claude-plugin/**/scripts/*.mjs"],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: globals.node,
+    },
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      "no-empty": ["error", { allowEmptyCatch: true }],
+    },
+  },
+
   // ── Dependency direction guard — full layer matrix ──
   // Spec: docs/superpowers/specs/2026-05-27-dependency-direction-guard-design.md
   // Allowed targets per layer (everything else is an error, incl. `import type`):

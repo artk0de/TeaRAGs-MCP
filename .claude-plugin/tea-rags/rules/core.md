@@ -11,7 +11,7 @@ alone, never ask; only a `collection` → it alone; after either say
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Grep tool: `-l` first or a line cap, in the anchor's dir when
+Grep tool (absent → Bash `grep`; zsh: quote globs `--include='*.rb'`, no `echo ===`): `-l` first or a line cap, in the anchor's dir when
 known, else `<src dir>` (a dir under cwd, never cwd itself), never a search for
 the dir. No find/Glob to locate code.
 

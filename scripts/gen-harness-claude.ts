@@ -31,9 +31,15 @@ export const CLAUDE_PACKAGES_DIR = ".claude-plugin";
 
 /**
  * Claude Code's built-in tools for the code tool roles (bd tea-rags-mcp-onli7). The Grep tool needs
- * no system rg, so the Claude Code package never names rg / ripgrep.
+ * no system rg, so the Claude Code package never names rg / ripgrep. Some Claude Code builds ship no
+ * Grep tool and answer "grep via the Bash tool", whose shell is zsh: an unquoted glob (NOMATCH) or a
+ * `=word` (EQUALS) kills the rest of the command list. The defining line says so once.
  */
-export const CLAUDE_CODE_TOOLS: CodeToolNames = { codeSearchTool: "Grep tool", codeReadTool: "Read tool" };
+export const CLAUDE_CODE_TOOLS: CodeToolNames = {
+  codeSearchTool: "Grep tool",
+  codeSearchToolNote: "absent → Bash `grep`; zsh: quote globs `--include='*.rb'`, no `echo ===`",
+  codeReadTool: "Read tool",
+};
 
 /** A package file's bytes: SKILL.md loses `codex-description`; Markdown names the code tools. */
 function renderClaudeFile(path: string, content: Buffer): Buffer {
