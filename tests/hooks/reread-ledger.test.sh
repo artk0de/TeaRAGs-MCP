@@ -15,14 +15,26 @@ HOOK="$ROOT/plugins/tea-rags/scripts/reread-ledger.mjs"
 PASS=0; FAIL=0
 note() { if [ "$1" = 0 ]; then PASS=$((PASS+1)); echo "ok   - $2"; else FAIL=$((FAIL+1)); echo "FAIL - $2"; fi; }
 
-STATE="$(mktemp -d)"; REPO="$(mktemp -d)"
-trap 'rm -rf "$STATE" "$REPO"' EXIT
+STATE="$(mktemp -d)"; REPO="$(mktemp -d)"; FAKEBIN="$(mktemp -d)"
+trap 'rm -rf "$STATE" "$REPO" "$FAKEBIN"' EXIT
 mkdir -p "$REPO/sub"
 for i in $(seq 1 30); do echo "const line$i = $i;"; done > "$REPO/a.ts"
 for i in $(seq 1 12); do echo "def b$i; end"; done > "$REPO/sub/b.rb"
 
+# Fake `tea-rags`: `project indexed …` prints $FAKE_OUT (default: not indexed) and
+# exits like the real one (0 indexed, 1 not); every call is logged to calls.log.
+cat > "$FAKEBIN/tea-rags" <<'EOF'
+#!/usr/bin/env bash
+[ "$1 $2" = "project indexed" ] || exit 3
+echo "$*" >> "$(dirname "$0")/calls.log"
+printf '%s\n' "${FAKE_OUT:-{\"indexed\":false\}}"
+case "${FAKE_OUT:-}" in *'"indexed":true'*) exit 0 ;; *) exit 1 ;; esac
+EOF
+chmod +x "$FAKEBIN/tea-rags"
+export FAKE_OUT='{"indexed":false}'
+
 run() { # <json> → OUT, CODE
-  OUT=$(printf '%s' "$1" | TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null)
+  OUT=$(printf '%s' "$1" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null)
   CODE=$?
 }
 EMPTY='{}'
@@ -142,6 +154,100 @@ noted "turn 1, Read"; note $? "the note names the turn the lines were returned i
 run '{"hook_event_name":"SessionStart","session_id":"s16","source":"compact"}'
 pre s16 Read "$(read_in "$A" 1 5)"
 silent; note $? "compaction drops the session ledger (the lines left the context)"
+
+# --- Read results, Claude Code's PostToolUse shape: tool_response.file
+read_out() { # <file> [startLine] [numLines] — the tool_response Claude Code sends for a Read
+  local total; total=$(wc -l < "$1" | tr -d ' ')
+  jq -cn --arg f "$1" --arg c "$(cat "$1")" --argjson s "${2:-1}" --argjson n "${3:-$total}" --argjson t "$total" \
+    '{type: "text", file: {filePath: $f, content: $c, numLines: $n, startLine: $s, totalLines: $t}}'
+}
+post s30 Read "$(read_in "$A")" "$(read_out "$A")"
+post s30 Bash "$(bash_in "grep -n line10 a.ts")" '{"stdout":"10:const line10 = 10;"}'
+pre s30 Read "$(read_in "$A")"
+noted "lines 1–30 of a.ts already returned (turn 1, Read)"; note $? "a later grep inside a Read range keeps the range labelled Read"
+post s31 Read "$(read_in "$A")" "$(read_out "$A")"
+FS_BODY=$(jq -cn --arg c "$(sed -n 20,29p "$A")" '[{type: "text", text: ({results: [{payload: {relativePath: "a.ts", symbolId: "line20", startLine: 20, endLine: 29, content: $c}}]} | tojson)}]')
+post s31 mcp__tea-rags__find_symbol '{"symbol":"line20"}' "$FS_BODY"
+pre s31 Bash "$(bash_in "sed -n 1,12p a.ts")"
+noted "lines 1–12 of a.ts already returned (turn 1, Read)"; note $? "whole-file Read, then find_symbol bodies → sed of the head is noted as Read"
+post s32 Read "$(read_in "$A" 5 10)" "$(read_out "$A" 5 10)"
+pre s32 Read "$(read_in "$A" 5 10)"
+noted "lines 5–14 of a.ts" "Read"; note $? "tool_response.file startLine/numLines give the printed range"
+pre s32 Read "$(read_in "$A" 15 10)"
+silent; note $? "lines past the printed range are not noted"
+post s33 Bash "$(bash_in "grep -n line10 a.ts")" '{"stdout":"10:const line10 = 10;"}'
+post s33 Read "$(read_in "$A")" "$(read_out "$A")"
+pre s33 Read "$(read_in "$A")"
+noted "lines 1–30 of a.ts already returned (turn 1, Read)"; note $? "a Read covering an earlier grep line relabels it Read"
+
+# --- indexed-source nudge: a raw read of an indexed source file → find_symbol(relativePath:)
+mkdir -p "$REPO/config" "$REPO/db/migrate" "$REPO/spec"
+echo "x: 1" > "$REPO/config/app.yml"; echo "Rails.application.configure do; end" > "$REPO/config/app.rb"
+echo "class CreateOrders; end" > "$REPO/db/migrate/001_create_orders.rb"; echo "describe A do; end" > "$REPO/spec/a_spec.rb"
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
+NUDGE='a.ts is indexed source — find_symbol(relativePath: "a.ts") returns it'
+run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
+pre s40 Read "$(read_in "$A")"
+noted "$NUDGE" "full text ≤150 lines, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
+pre s40 Read "$(read_in "$A" 3 4)"
+silent; note $? "the nudge fires once per file per turn"
+run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
+pre s40 Bash "$(bash_in "sed -n 3,9p a.ts")"
+noted "$NUDGE"; note $? "next turn, a Bash sed of the same file → nudged again"
+pre s41 Bash "$(bash_in "cat a.ts | head -20")"
+noted "$NUDGE"; note $? "Bash cat of an indexed source file → nudge"
+pre s42 Bash "$(bash_in "grep -n line3 a.ts")"
+silent; note $? "a grep is a search, not a read → no nudge"
+pre s43 Read "$(read_in "$REPO/config/app.rb")"
+silent; note $? "config/ (zone the core routes to the read tool) → no nudge"
+pre s43 Bash "$(bash_in "cat db/migrate/001_create_orders.rb")"
+silent; note $? "a migration → no nudge"
+pre s43 Read "$(read_in "$REPO/spec/a_spec.rb")"
+silent; note $? "a spec → no nudge"
+pre s43 Read "$(read_in "$REPO/config/app.yml")"
+silent; note $? "a data file → no nudge"
+export FAKE_OUT='{"indexed":false}'
+pre s44 Read "$(read_in "$A")"
+silent; note $? "a file outside the index → no nudge"
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
+OUT=$(printf '%s' "$(event PreToolUse s45 Read "$(read_in "$A")")" | TEA_RAGS_BIN="$FAKEBIN/none" TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null); CODE=$?
+[ "$CODE" = 0 ] && ! printf '%s' "$OUT" | grep -qF 'indexed source'; note $? "TEA_RAGS_BIN names no binary → no nudge, fail open"
+post s46 Read "$(read_in "$A")" "$(read_out "$A")"
+pre s46 Read "$(read_in "$A")"
+noted "already returned"; note $? "lines already held → the re-read note"
+! context | grep -qF "indexed source"; note $? "… and no nudge beside it"
+rm -f "$FAKEBIN/calls.log"
+pre s47 Read "$(read_in "$A")"; pre s47 Read "$(read_in "$A")"
+[ "$(wc -l < "$FAKEBIN/calls.log" | tr -d ' ')" = 1 ]; note $? "the index lookup runs once per file per turn (cached)"
+# The nudge and search-drift's streak deny never fire on the same call, whichever hook runs first.
+DRIFT="$ROOT/plugins/tea-rags/scripts/search-drift.sh"
+both_hooks() { # <sid> <order: drift-first|ledger-first> → DENY (0/1), NUDGED (0/1)
+  local json; json=$(event PreToolUse "$1" Read "$(read_in "$A")")
+  local d l
+  if [ "$2" = drift-first ]; then
+    d=$(printf '%s' "$json" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_NOW=5000 TEA_RAGS_HOOK_STATE_DIR="$STATE" bash "$DRIFT" --harness claude 2>/dev/null)
+    l=$(printf '%s' "$json" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_NOW=5000 TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null)
+  else
+    l=$(printf '%s' "$json" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_NOW=5000 TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null)
+    d=$(printf '%s' "$json" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_NOW=5000 TEA_RAGS_HOOK_STATE_DIR="$STATE" bash "$DRIFT" --harness claude 2>/dev/null)
+  fi
+  DENY=0; NUDGED=0
+  printf '%s' "$d" | grep -qF '"permissionDecision": "deny"' && DENY=1
+  printf '%s' "$l" | grep -qF 'indexed source' && NUDGED=1
+  return 0
+}
+for order in drift-first ledger-first; do
+  overlap=0 denies=0 nudges=0
+  for i in 1 2 3 4 5 6; do
+    run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"dn-$order\",\"prompt\":\"p\"}"
+    both_hooks "dn-$order" "$order"
+    [ "$DENY" = 1 ] && [ "$NUDGED" = 1 ] && overlap=$((overlap + 1))
+    denies=$((denies + DENY)); nudges=$((nudges + NUDGED))
+  done
+  [ "$overlap" = 0 ] && [ "$denies" -ge 1 ] && [ "$nudges" -ge 1 ]
+  note $? "$order: search-drift deny and the nudge never on the same call (denies=$denies nudges=$nudges overlap=$overlap)"
+done
+export FAKE_OUT='{"indexed":false}'
 
 # --- bounded state, fail-open
 for i in $(seq 1 20); do post s17 Read "$(read_in "$A" "$i" 1)"; done
