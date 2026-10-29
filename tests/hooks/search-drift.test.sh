@@ -138,6 +138,15 @@ for H in claude codex cursor; do
   note $? "$H: tea-rags call passes through"
   run "$H" "$(pre "$H" s2 grep "$C")"; run "$H" "$(pre "$H" s2 grep "$C")"; allowed "$H"; note $? "$H: tea-rags call resets the counter"
 
+  if [ "$H" = codex ]; then
+    # Codex code mode names a nested MCP tool as a normalized JS identifier: `tea-rags` → `tea_rags`.
+    fresh
+    run "$H" "$(pre "$H" s2n grep "$C")"; run "$H" "$(pre "$H" s2n grep "$C")"
+    run "$H" "$(jq -cn '{hook_event_name:"PostToolUse",session_id:"s2n",cwd:"/repo",tool_name:"mcp__tea_rags__find_symbol",tool_input:{},tool_response:{}}')"
+    run "$H" "$(pre "$H" s2n grep "$C")"; allowed "$H"
+    note $? "codex: a code-mode tea-rags call (mcp__tea_rags__*) resets the counter"
+  fi
+
   fresh
   export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
   run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"; run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"; allowed "$H"; note $? "$H: indexed read 2 allowed"
@@ -269,8 +278,8 @@ note $? "claude: PostToolUse(tea-rags MCP) wires search-drift"
 CJ="$ROOT/harness/codex/tea-rags/hooks/hooks.json"
 jq -e '.hooks.PreToolUse[].hooks[] | select(.command | test("search-drift.sh --harness codex"))' "$CJ" >/dev/null
 note $? "codex: PreToolUse wires search-drift"
-jq -e '.hooks.PostToolUse[] | select(.matcher | test("tea-rags")) | .hooks[] | select(.command | test("search-drift.sh --harness codex"))' "$CJ" >/dev/null
-note $? "codex: PostToolUse(tea-rags MCP) wires search-drift"
+jq -e '.hooks.PostToolUse[] | select(.matcher as $m | ("mcp__tea-rags__find_symbol" | test($m)) and ("mcp__tea_rags__find_symbol" | test($m))) | .hooks[] | select(.command | test("search-drift.sh --harness codex"))' "$CJ" >/dev/null
+note $? "codex: PostToolUse(tea-rags MCP, direct or code-mode name) wires search-drift"
 UJ="$ROOT/harness/cursor/tea-rags/hooks/hooks.json"
 jq -e '.hooks.preToolUse[] | select(.matcher | test("Grep")) | select(.command | test("search-drift.sh\"? --harness cursor"))' "$UJ" >/dev/null
 note $? "cursor: preToolUse wires search-drift"

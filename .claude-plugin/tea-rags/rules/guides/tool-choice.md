@@ -26,8 +26,10 @@ then fetch only that one — wrong pick costs a wasted fetch. In Claude Code
 `find_symbol` and `hybrid_search` are always loaded — call them directly, no
 `ToolSearch` first. Every tea-rags tool is **`mcp__tea-rags__<name>`** — e.g.
 `mcp__tea-rags__find_symbol`, `mcp__tea-rags__semantic_search`,
-`mcp__tea-rags__get_callers`. Names appear bare below — prepend the prefix when
-calling.
+`mcp__tea-rags__get_callers` (clients that expose tools as code identifiers
+normalize it to `mcp__tea_rags__<name>`, e.g. Codex code mode:
+`tools.mcp__tea_rags__<name>` inside `exec`). Names appear bare below — prepend
+the prefix when calling.
 
 ## Tree
 

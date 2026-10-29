@@ -156,6 +156,12 @@ numeric filter value unknown / bare raw number, no label →
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.
 
+**tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server
+`tea-rags`. Code mode (an `exec` tool that runs JS): call them inside `exec` as
+`await tools.mcp__tea_rags__<tool>({...})`, list them with
+`ALL_TOOLS.filter(t => t.name.includes("tea_rags"))` (`"tea-rags"` matches
+none). Otherwise they are direct tools — call them as listed.
+
 **Skills are not loaded for you** — except this core: `$tea-rags-core` IS this
 text, never open its `SKILL.md`. A task a skill covers (`$name` /
 `$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would

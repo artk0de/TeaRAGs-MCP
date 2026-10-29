@@ -1,6 +1,6 @@
 {
   "name": "tea-rags",
-  "version": "0.53.0",
+  "version": "0.53.2",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
