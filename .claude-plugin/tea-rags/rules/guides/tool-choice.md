@@ -8,10 +8,11 @@ pick → guide `skill-choice`; banned moves, fallbacks → guide
 
 Meaning search, reads, graph, analytics → tea-rags (semantic_search,
 hybrid_search for symbol + intent, find_symbol, find_similar, get_callers /
-get_callees / trace_path, rerank presets). Exact text → your Grep tool (not a tea-rags tool): occurrences of an identifier / constant / string
-("where is X used", "every call of X", "files containing X", a name the user
-calls a "pattern", an `a|b` of exact identifiers already seen in an answer),
-regex syntax, TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path
+get_callees / trace_path, rerank presets). Exact text → your Grep tool (not a
+tea-rags tool): occurrences of an identifier / constant / string ("where is X
+used", "every call of X", "files containing X", a name the user calls a
+"pattern", an `a|b` of exact identifiers already seen in an answer), regex
+syntax, TODO/FIXME/HACK/NOTE markers, phrases, error strings, import path
 strings; also the fallback when tea-rags is unavailable. An identifier's
 DEFINITION / body / outline = SYMBOL lookup → find_symbol; only its OCCURRENCES
 go to Grep tool.
@@ -26,8 +27,10 @@ then fetch only that one — wrong pick costs a wasted fetch. In Claude Code
 `find_symbol` and `hybrid_search` are always loaded — call them directly, no
 `ToolSearch` first. Every tea-rags tool is **`mcp__tea-rags__<name>`** — e.g.
 `mcp__tea-rags__find_symbol`, `mcp__tea-rags__semantic_search`,
-`mcp__tea-rags__get_callers`. Names appear bare below — prepend the prefix when
-calling.
+`mcp__tea-rags__get_callers` (clients that expose tools as code identifiers
+normalize it to `mcp__tea_rags__<name>`, e.g. Codex code mode:
+`tools.mcp__tea_rags__<name>` inside `exec`). Names appear bare below — prepend
+the prefix when calling.
 
 ## Tree
 
