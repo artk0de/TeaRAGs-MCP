@@ -538,6 +538,18 @@ describe("renderCodexHarness", () => {
     expect(codexRules).not.toContain("`hybrid_search` metaOnly");
   });
 
+  it("Codex rules say how to call tea-rags tools with code mode on and off", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
+    // codex-cli 0.162.1 code mode: nested tools are normalized JS identifiers (`tea-rags` → `tea_rags`).
+    expect(codexRules).toContain("`await tools.mcp__tea_rags__<tool>({...})`");
+    expect(codexRules).toContain('`ALL_TOOLS.filter(t => t.name.includes("tea_rags"))`');
+    expect(codexRules).toContain("Otherwise they are direct tools");
+    for (const path of ["AGENTS.tea-rags.md", "tea-rags/skills/tea-rags-core/SKILL.md"]) {
+      expect(rendered.get(path), path).toContain("tools.mcp__tea_rags__<tool>");
+    }
+  });
+
   it("no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep", async () => {
     const rendered = await renderCodexHarness(ROOT);
     for (const [path, text] of rendered) {

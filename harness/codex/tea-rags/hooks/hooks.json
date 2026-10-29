@@ -75,7 +75,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__.*tea-rags.*__",
+        "matcher": "^mcp__.*tea[-_]rags.*__",
         "hooks": [
           {
             "type": "command",

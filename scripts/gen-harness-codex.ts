@@ -72,8 +72,15 @@ const CODEX_DIALECT: HarnessDialect = {
  * Codex lists skills by description only — the body never enters context until
  * the model opens the file, unlike Claude Code's Skill tool. Measured: plans
  * built from this core instead of the skill (Task 14 eval).
+ * Leads with how to call a tea-rags tool: under code mode a model filtered `ALL_TOOLS` by "tea-rags",
+ * got `[]` and answered "tools unavailable". Core has no room for it ({@link CODEX_CORE_HOOK_BUDGET}).
  */
 const CODEX_SKILL_LOADING = `
+**tea-rags tools** (named bare here: \`find_symbol\`, …) are MCP tools of server \`tea-rags\`. Code mode
+(an \`exec\` tool that runs JS): call them inside \`exec\` as \`await tools.mcp__tea_rags__<tool>({...})\`,
+list them with \`ALL_TOOLS.filter(t => t.name.includes("tea_rags"))\` (\`"tea-rags"\` matches none).
+Otherwise they are direct tools — call them as listed.
+
 **Skills are not loaded for you** — except this core:
 \`$tea-rags-core\` IS this text, never open its \`SKILL.md\`. A task a skill covers (\`$name\` /
 \`$dino-<name>\`) → open its \`SKILL.md\` in this turn, BEFORE planning ("I
@@ -180,8 +187,13 @@ exit 0
 /** Codex tool names a shell command arrives under at PreToolUse. */
 const SHELL_TOOL_MATCHER = "^(Bash|shell|exec_command)$";
 
-/** Codex tool names of the tea-rags MCP server's tools (`mcp__<server>__<tool>`) at PostToolUse. */
-const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea-rags.*__";
+/**
+ * Codex tool names of the tea-rags MCP server's tools (`mcp__<server>__<tool>`) at PostToolUse. Both
+ * spellings: a direct call keeps the server name, code mode exposes a nested tool as a normalized JS
+ * identifier (`mcp__tea_rags__<tool>`; codex-cli 0.162.1). A code-mode session denied "3 reads … no
+ * tea-rags call" one read after two find_symbol / get_naming_lexicon scripts: the reset never matched.
+ */
+const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea[-_]rags.*__";
 
 /**
  * Codex PreToolUse hook: exit 2 (reason on stderr) for a shell command that
@@ -639,7 +651,10 @@ Agent-tool passages → "spawn a subagent"; \`AskUserQuestion\` → ask the user
   to ~467–470 chars, mid-word, no warning [L:codex skills-list probe].
 - No manifest field bundles AGENTS.md — core rules go into a skill and a user AGENTS.md snippet.
 - Resource tools: \`list_mcp_resources\`, \`read_mcp_resource{server, uri}\` [S:mcp_resource_spec.rs]; model-visible
-  MCP tool names may carry an \`mcp__<server>__\` prefix — prose names tools bare.
+  MCP tool names may carry an \`mcp__<server>__\` prefix — prose names tools bare. Code mode (\`code_mode_host\`,
+  stable on 0.162.1) hides them behind one \`exec\` (JS) tool: \`tools.mcp__tea_rags__<tool>\`, "normalized
+  JavaScript identifiers", listed in \`ALL_TOOLS\` [L:codex binary prompt text; probe 2026-10-29] —
+  \`codex-rules.txt\` says so for both modes.
 - Verified locally (2026-10-23): \`codex plugin --help\` → \`add | list | marketplace | remove\`;
   \`codex plugin marketplace --help\` → \`add | list | upgrade | remove\`; \`marketplace add <SOURCE>\` takes a local
   path; \`plugin add <PLUGIN[@MARKETPLACE]>\`. A local marketplace root holds \`.agents/plugins/marketplace.json\`

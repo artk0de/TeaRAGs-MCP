@@ -85,7 +85,8 @@ case "$EVENT" in
     TOOL=$(field '.tool_name')
     SERVER=$(field '.mcp_server_name')
     case "$TOOL|$SERVER" in
-      mcp__*tea-rags*__* | *"|"*tea-rags*) ;;
+      # Codex code mode names nested MCP tools as JS identifiers: `mcp__tea_rags__<tool>`.
+      mcp__*tea-rags*__* | mcp__*tea_rags*__* | *"|"*tea-rags*) ;;
       *) pass ;;
     esac
     # Cursor reports the call even when it failed; an error result resets nothing.
