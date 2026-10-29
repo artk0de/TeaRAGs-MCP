@@ -103,7 +103,8 @@ const LOCATOR_FIELDS = ["relativePath", "symbolId", "startLine", "endLine", "chu
  * `symbols` is the body of a find_symbol directory row (N2) — the file's
  * top-level symbols; no other row carries a top-level `symbols` key. `kind`
  * marks a find_symbol file row whose `content` is the file's full text, not
- * an outline (bd tea-rags-mcp-03yel); no stored chunk carries it.
+ * an outline (bd tea-rags-mcp-03yel), or a class row whose outline carries its
+ * inlined header code (`CONTAINER_HEADER_KIND`); no stored chunk carries it.
  */
 const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols", "kind"];
 

@@ -166,6 +166,25 @@ describe("answerBannerFor — find_symbol bodies", () => {
     ).toBe(MIXED_ANSWER_BANNER);
   });
 
+  // A class row carrying its header code is complete for the class-level part
+  // and an outline for its methods: neither outline-only nor "shown in full".
+  it("a class answer with its header inlined → the mixed banner", () => {
+    const answer = {
+      results: [
+        {
+          payload: {
+            symbolId: "Billing::Client",
+            relativePath: "app/billing/client.rb",
+            kind: "containerHeader",
+            content:
+              "Client\n  header 2–4: 1 const\n  Billing::Client::URL\n  Billing::Client#call (public)\n\n── header 2–4 ──\nclass Client\n  URL = 'x'",
+          },
+        },
+      ],
+    };
+    expect(answerBannerFor("find_symbol", { symbol: "Billing::Client" }, structured(answer))).toBe(MIXED_ANSWER_BANNER);
+  });
+
   it("symbols batch whose path entries came back as full file text → body banner", () => {
     const batch = {
       results: [

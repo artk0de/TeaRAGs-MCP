@@ -113,6 +113,12 @@ export interface SymbolBatchRow {
   resolvedAs?: string;
   /** The row answers a file-path address: its `content` is the file outline (or text), not a symbol body. */
   fileOutline?: boolean;
+  /**
+   * The request of the row whose content already carries this row's chunk —
+   * a header chunk several constant ids share, or one a class row inlined; this
+   * row then keeps its locator and drops the repeated body.
+   */
+  sameChunkAs?: string;
   result: ExploreResult;
 }
 
@@ -154,7 +160,7 @@ export class SymbolBatchDrill {
     const directory = answers.some((a) => a.pathNote === "directory");
     const downgraded = overLines.length > 0 || overBudget.length > 0 || directory;
     return {
-      rows: answers.flatMap((a) => a.rows),
+      rows: dedupeChunkBodies(answers.flatMap((a) => a.rows)),
       missing: answers.flatMap((a) => (a.miss ? [a.miss] : [])),
       ...firstWarning(answers),
       ...(downgraded ? { batchNotice: batchPathNotice(overLines, overBudget, directory) } : {}),
@@ -278,6 +284,34 @@ interface AddressAnswer {
  * its outline instead — unless the outline is no shorter, which saves nothing —
  * and the entries after it are still measured. Returns the paths outlined.
  */
+/**
+ * One chunk body per batch: a row whose chunk another row's content already
+ * carries — the same declaring chunk answering several constant ids, or a
+ * header chunk a class row inlined (`mergedChunkIds`) — keeps its locator and
+ * points at that row instead of repeating the body. The carrier is the row with
+ * the longer content, the earlier one on a tie; file-path rows carry nothing.
+ */
+function dedupeChunkBodies(rows: SymbolBatchRow[]): SymbolBatchRow[] {
+  const carried = (row: SymbolBatchRow): readonly unknown[] => {
+    if (row.fileOutline) return [];
+    const merged = row.result.payload?.mergedChunkIds;
+    return Array.isArray(merged) ? merged : [row.result.id];
+  };
+  return rows.map((row, i) => {
+    const body = row.result.payload?.content;
+    if (row.fileOutline || typeof body !== "string" || body.length === 0) return row;
+    const carrier = rows.find((other, j) => {
+      if (j === i || !carried(other).includes(row.result.id)) return false;
+      const text = other.result.payload?.content;
+      if (typeof text !== "string" || !text.includes(body)) return false;
+      return text.length > body.length || j < i;
+    });
+    if (!carrier) return row;
+    const { content: _repeated, ...payload } = row.result.payload ?? {};
+    return { ...row, sameChunkAs: carrier.request, result: { ...row.result, payload } };
+  });
+}
+
 function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: AddressAnswer[]; overBudget: string[] } {
   let spent = 0;
   const overBudget: string[] = [];

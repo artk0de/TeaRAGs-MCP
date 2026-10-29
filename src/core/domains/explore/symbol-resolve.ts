@@ -36,6 +36,8 @@ interface ContainerOutlinePlan {
    * constants, bd tea-rags-mcp-1x85g) — listed as outline members.
    */
   declaringWindows?: ScrollChunk[];
+  /** Every class-level chunk of the class, inlined as its header (whole, within the budget). */
+  headerChunks?: ScrollChunk[];
   /** Heading of a synthesised outline — the queried container id. */
   containerSymbolId: string;
   /** Ids a member or test may name as its parentSymbolId. */
@@ -113,7 +115,8 @@ export function resolveSymbols(
       plan.memberGroups.forEach(emit);
     }
   }
-  for (const plan of plans) results.push(renderContainerOutline(plan, visibilityOf));
+  // metaOnly drops every body, the header's included: it is never inlined there.
+  for (const plan of plans) results.push(renderContainerOutline(plan, visibilityOf, metaOnly !== true));
 
   // 2. Tests of an outlined class are dropped from the response.
   const outlinedIds = new Set(plans.flatMap((plan) => [...plan.ids]));
@@ -181,6 +184,7 @@ function planClassChunkOutlines(groups: ScrollChunk[][]): ContainerOutlinePlan[]
     plans.push({
       classChunk,
       declaringWindows: group.filter((c) => isClassLevelChunk(c) && Array.isArray(c.payload.memberSymbolIds)),
+      headerChunks: group.filter(isClassLevelChunk),
       containerSymbolId: typeof classChunk.payload.symbolId === "string" ? classChunk.payload.symbolId : "",
       ids,
       relativePath,
@@ -273,10 +277,20 @@ function planTestScopeOutlines(pendingGroups: ScrollChunk[][], query: string): C
   }));
 }
 
-function renderContainerOutline(plan: ContainerOutlinePlan, visibilityOf?: MemberVisibilityLookup): SearchResult {
+function renderContainerOutline(
+  plan: ContainerOutlinePlan,
+  visibilityOf?: MemberVisibilityLookup,
+  withHeader = false,
+): SearchResult {
   const memberChunks = plan.memberGroups.flatMap(outlineMemberChunks);
   return plan.classChunk
-    ? CodeChunkGrouper.group(plan.classChunk, memberChunks, visibilityOf, plan.declaringWindows)
+    ? CodeChunkGrouper.group(
+        plan.classChunk,
+        memberChunks,
+        visibilityOf,
+        plan.declaringWindows,
+        withHeader ? plan.headerChunks : [],
+      )
     : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf);
 }
 

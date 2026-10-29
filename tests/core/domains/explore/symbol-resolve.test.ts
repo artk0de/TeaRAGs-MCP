@@ -1024,7 +1024,9 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, "Foo::Bar");
 
       expect(results).toHaveLength(1);
-      expect(results[0].payload?.content).toBe("Bar\n  Foo::Bar#save\n  Foo::Bar#load");
+      expect(results[0].payload?.content).toBe(
+        "Bar\n  header 1–30\n  Foo::Bar#save\n  Foo::Bar#load\n\n── header 1–30 ──\nclass Bar\nend",
+      );
     });
 
     it("lists a class cut into several class-level blocks once, without its own id as a member", () => {
@@ -1070,7 +1072,17 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].payload?.content).toBe(
-        "Platform::Async::Operation::Worker\n  Platform::Async::Operation::Worker#perform",
+        [
+          "Platform::Async::Operation::Worker",
+          "  header 34–35",
+          "  header 126–126",
+          "  Platform::Async::Operation::Worker#perform",
+          "",
+          "── header 34–35 ──",
+          "# class body 34",
+          "── header 126–126 ──",
+          "# class body 126",
+        ].join("\n"),
       );
     });
 
@@ -1117,7 +1129,21 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, "User");
 
       expect(results).toHaveLength(1);
-      expect(results[0].payload).toMatchObject({ content: "User\n  User#perform", startLine: 4, endLine: 130 });
+      expect(results[0].payload).toMatchObject({
+        content: [
+          "User",
+          "  header 4–9",
+          "  header 126–130",
+          "  User#perform",
+          "",
+          "── header 4–9 ──",
+          "# class body 4",
+          "── header 126–130 ──",
+          "# class body 126",
+        ].join("\n"),
+        startLine: 4,
+        endLine: 130,
+      });
     });
 
     it("does not synthesise an outline when the shared parent is not a class/module container", () => {
@@ -1227,7 +1253,15 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].payload?.content).toBe(
-        [workerFqn, `  ${workerFqn}.record_class`, `  ${workerFqn}#perform`].join("\n"),
+        [
+          workerFqn,
+          "  header 34–35",
+          `  ${workerFqn}.record_class`,
+          `  ${workerFqn}#perform`,
+          "",
+          "── header 34–35 ──",
+          "class Worker\n  include Sidekiq::Job",
+        ].join("\n"),
       );
       expect(results.map((r) => r.payload?.relativePath)).not.toContain(workerSpec);
     });
@@ -1296,7 +1330,9 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, "Foo::Bar");
 
       expect(results).toHaveLength(1);
-      expect(results[0].payload?.content).toBe("Bar\n  Foo::Bar#save");
+      expect(results[0].payload?.content).toBe(
+        "Bar\n  header 1–30\n  Foo::Bar#save\n\n── header 1–30 ──\nclass Bar\nend",
+      );
     });
 
     it("drops test chunks from a response whose outline is synthesised from member chunks", () => {
