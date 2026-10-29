@@ -114,6 +114,24 @@ const SHARED_SOURCES: VersionAxisSources[] = [
 ];
 
 /**
+ * Sources outside `<lang>/chunking/` that a language's chunking hooks IMPORT,
+ * so an edit there moves chunk output exactly as an edit to the hook does.
+ * They stay on the walker axis too: a catalogue entry or an expander also
+ * moves edges, and each axis then decides its own bump. Ruby's class-body hook
+ * names DSL members from the `dsl/` catalogue and the `walker/structured/`
+ * expanders (bd tea-rags-mcp-5ivtb), and reads value-class containers and
+ * attached blocks through two `walker/shared/` files.
+ */
+const CHUNKING_IMPORTED_SOURCES: Readonly<Record<string, readonly string[]>> = {
+  ruby: [
+    `${LANGUAGE_ROOT}/ruby/dsl`,
+    `${LANGUAGE_ROOT}/ruby/walker/structured`,
+    `${LANGUAGE_ROOT}/ruby/walker/shared/ast-utils.ts`,
+    `${LANGUAGE_ROOT}/ruby/walker/shared/value-class-builder.ts`,
+  ],
+};
+
+/**
  * Which sources a language's `versions.<axis>` number vouches for. `chunking`
  * covers the language's chunking hooks on both sides of the chunker boundary;
  * `walker` covers everything else the vertical owns — walker, resolver chain,
@@ -132,7 +150,11 @@ export function versionAxisSources(language: string): VersionAxisSources[] {
   return [
     {
       axis: "chunking",
-      paths: [`${LANGUAGE_ROOT}/${language}/chunking`, `${HOOKS_ROOT}/${language}`],
+      paths: [
+        `${LANGUAGE_ROOT}/${language}/chunking`,
+        `${HOOKS_ROOT}/${language}`,
+        ...(CHUNKING_IMPORTED_SOURCES[language] ?? []),
+      ],
     },
     {
       axis: "walker",
