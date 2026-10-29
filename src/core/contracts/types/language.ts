@@ -579,6 +579,17 @@ export interface LanguageChunkerHooks {
    * row its `name` starts on.
    */
   containerHeader?: (node: AstNode, code: string) => string | undefined;
+  /**
+   * The 0-based rows of the comment block a TOP-LEVEL symbol emitted as one
+   * leaf chunk owns — the rows the language's own member comment-capture gives
+   * a method, so a leaf and a member read their comment by one rule. The engine
+   * opens the leaf chunk (or an oversized leaf's `#part1`) with them and moves
+   * its `startLine` there; the module remainder never takes a comment above a
+   * chunked symbol, so the rows have that one owner. Undefined → a leaf chunk
+   * starts at its node, as before: a language opts in only where its member
+   * rule already attaches comments.
+   */
+  leadingCommentRows?: (node: AstNode, codeLines: string[]) => ReadonlySet<number>;
 }
 
 /**

@@ -69,6 +69,13 @@ function testChunkLinks(result: BodyChunkResult): Pick<CodeChunk["metadata"], Te
   };
 }
 
+/** Character offset at which 0-based `row` of `code` starts. */
+function rowStartIndex(code: string, row: number): number {
+  let index = 0;
+  for (let r = 0; r < row; r++) index = code.indexOf("\n", index) + 1;
+  return index;
+}
+
 /**
  * Everything one `processChildren` pass holds constant while it routes each
  * child to an emitter. Bundled so the three emitters take (node, pass) instead
@@ -468,6 +475,7 @@ export class TreeSitterChunker implements CodeChunker {
         readImportSpecifiers: hooks.readImportSpecifiers,
         isModuleImport: hooks.isModuleImport,
         containerHeader: hooks.containerHeader,
+        leadingCommentRows: hooks.leadingCommentRows,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -753,6 +761,7 @@ export class TreeSitterChunker implements CodeChunker {
   private chunkOversizedNode(
     node: AstNode,
     parentName: string | undefined,
+    langConfig: LanguageConfig,
     code: string,
     filePath: string,
     language: string,
@@ -763,12 +772,30 @@ export class TreeSitterChunker implements CodeChunker {
       : "function";
     this.emitSplitSymbol(
       node,
-      { symbolId: this.buildSymbolId(parentName), name: parentName, chunkType },
+      {
+        symbolId: this.buildSymbolId(parentName),
+        name: parentName,
+        chunkType,
+        leadingStartRow: this.leafLeadingCommentRow(node, code, langConfig),
+      },
       code,
       filePath,
       language,
       chunks,
     );
+  }
+
+  /**
+   * 0-based first row of the comment block a top-level LEAF chunk opens with:
+   * the rows `LanguageChunkerHooks.leadingCommentRows` names (the language's
+   * member comment rule), undefined when the language declares none or the
+   * node has no comment. The module remainder skips a comment above a chunked
+   * symbol, so the leaf is those rows' one owner.
+   */
+  private leafLeadingCommentRow(node: AstNode, code: string, langConfig: LanguageConfig): number | undefined {
+    const rows = langConfig.leadingCommentRows?.(node, code.split("\n"));
+    if (rows === undefined || rows.size === 0) return undefined;
+    return Math.min(...rows);
   }
 
   /**
@@ -944,7 +971,7 @@ export class TreeSitterChunker implements CodeChunker {
     const content = code.substring(node.startIndex, node.endIndex);
     const isTooLarge = content.length > this.config.maxChunkSize;
     if (isTooLarge) {
-      this.chunkOversizedNode(node, parentName, code, filePath, language, chunks);
+      this.chunkOversizedNode(node, parentName, langConfig, code, filePath, language, chunks);
       return true;
     }
 
@@ -1056,10 +1083,17 @@ export class TreeSitterChunker implements CodeChunker {
       symbolId = this.buildSymbolId(nodeName, classOwner, classifyMethod(node), langConfig.scopeSeparator);
     }
     const parentSymbolId = namespaceOwner ?? classOwner;
-    if (oversized) {
+    const commentRow = this.leafLeadingCommentRow(node, code, langConfig);
+    // From the comment's first row, the node's own first row comes whole — a
+    // value-class container's `Const =` included.
+    const leafContent =
+      commentRow === undefined
+        ? this.withDeclaredHeaderRow(node, content.trim(), code, langConfig)
+        : code.substring(rowStartIndex(code, commentRow), node.endIndex).trim();
+    if (oversized || leafContent.length > this.config.maxChunkSize) {
       this.emitSplitSymbol(
         node,
-        { symbolId, name: nodeName, chunkType: this.getChunkType(node.type) },
+        { symbolId, name: nodeName, chunkType: this.getChunkType(node.type), leadingStartRow: commentRow },
         code,
         filePath,
         language,
@@ -1068,8 +1102,8 @@ export class TreeSitterChunker implements CodeChunker {
       return;
     }
     chunks.push({
-      content: this.withDeclaredHeaderRow(node, content.trim(), code, langConfig),
-      startLine: attributePrefix.startLine,
+      content: leafContent,
+      startLine: commentRow === undefined ? attributePrefix.startLine : commentRow + 1,
       endLine: this.computeEndLine(node),
       metadata: {
         filePath,

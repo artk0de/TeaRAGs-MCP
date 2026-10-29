@@ -46,6 +46,7 @@ import type {
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
 import {
+  collectMethodCommentRows,
   isRubyModuleImport,
   RubyChunkClassifier,
   rubyHooks,
@@ -105,6 +106,8 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
   isModuleImport: isRubyModuleImport,
   // `Row = Struct.new(…) do` is headed by its whole assignment row (bd tea-rags-mcp-mfnvp).
   containerHeader: valueClassContainerHeader,
+  // A top-level leaf chunk reads its comment by the method rule (comment-capture.ts).
+  leadingCommentRows: collectMethodCommentRows,
   // Names a top-level Rake task by its Rake name (bd tea-rags-mcp-k0602).
   classifier: new RubyChunkClassifier(),
   // Class-body DSL macros are represented in chunks by category grouping

@@ -516,18 +516,32 @@ export function extractBodyChunks(
   const fits = (group: BodyGroup): boolean => groupText(group).length <= budget;
   // The leading comment runs through the same grouper, so a comment block over
   // the budget is split at row boundaries here, never line-cut by the post-pass.
-  const bodyGroups = withLeadingComment(
-    bodyGrouper.groupLines(bodyLines, budget),
-    bodyGrouper.groupLines(containerLeadingCommentLines(containerNode, code), budget),
-    containerNode.startPosition.row + 1,
-    fits,
-  );
-  const groups = foldSubFloorGroups(bodyGroups, {
-    isSubFloor: (group) => withHeader(group).length < 50 && !declaresMember(group),
+  const plainGroups = bodyGrouper.groupLines(bodyLines, budget);
+  const commentGroups = bodyGrouper.groupLines(containerLeadingCommentLines(containerNode, code), budget);
+  // The floor measures the group's rows joined and trimmed, not the chunk text:
+  // the first row's indentation, kept for display, must not lift a lone
+  // `include` over it and take the container rows from the engine remainder.
+  const floorLength = (group: BodyGroup): number => {
+    const text = group.lines
+      .map((l) => l.text)
+      .join("\n")
+      .trim();
+    return classHeader ? classHeader.length + 1 + text.length : text.length;
+  };
+  const subFloorFold = {
+    isSubFloor: (group: BodyGroup) => floorLength(group) < 50 && !declaresMember(group),
     fits,
     merge: mergeBodyGroups,
-    startOf: (group) => group.lines[0].sourceLine,
-  });
+    startOf: (group: BodyGroup) => group.lines[0].sourceLine,
+  };
+  const bodyGroups = withLeadingComment(plainGroups, commentGroups, fits);
+  const groups =
+    commentGroups.length === 0 || foldSubFloorGroups(plainGroups, subFloorFold).length > 0
+      ? foldSubFloorGroups(bodyGroups, subFloorFold)
+      : commentOnlyHeaderBlock(foldSubFloorGroups(bodyGroups, subFloorFold), bodyGroups, {
+          headerLine: containerNode.startPosition.row + 1,
+          endLine: containerNode.endPosition.row + 1,
+        });
 
   const results: BodyChunkResult[] = [];
 
@@ -588,26 +602,18 @@ function containerLeadingCommentLines(containerNode: AstNode, code: string): Bod
  * method's leading comment opens the method chunk. `commentGroups` is that
  * comment already split to the budget; its last part joins the first body
  * group when the two fit together, else every part stays a group of its own.
- *
- * A container whose body is only methods has no body group, and the engine's
- * container remainder — which carried its declaration row — stays out once
- * this hook writes a chunk. Its comment then becomes the header block, which
- * claims that declaration row (1-based `headerLine`) too: the chunk text opens
- * with it.
+ * A container whose body is only methods has no body group: the comment parts
+ * are its groups.
  */
 function withLeadingComment(
   groups: BodyGroup[],
   commentGroups: BodyGroup[],
-  headerLine: number,
   fits: (group: BodyGroup) => boolean,
 ): BodyGroup[] {
   const last = commentGroups.at(-1);
   if (last === undefined) return groups;
+  if (groups.length === 0) return commentGroups;
   const leading = commentGroups.slice(0, -1);
-  if (groups.length === 0) {
-    const headerRow: BodyLine = { text: "", sourceLine: headerLine };
-    return [...leading, { ...last, lineRanges: computeLineRanges([...last.lines, headerRow]) }];
-  }
   const [headerGroup, ...rest] = groups;
   const joined = mergeBodyGroups(headerGroup, last);
   return fits(joined) ? [...leading, joined, ...rest] : [...commentGroups, ...groups];
@@ -645,6 +651,31 @@ function containerConstantAssignments(containerNode: AstNode, code: string): { n
     });
   }
   return constants;
+}
+
+/**
+ * The header block of a container whose own body would write no chunk — only
+ * methods, or rows all under the noise floor — so that only its leading
+ * comment makes this hook write one. Writing it keeps the engine's container
+ * remainder out, and that remainder held the declaration row, the closing
+ * `end` row and the sub-floor rows. So the block keeps them all: `folded` when
+ * the comment cleared the floor, else every group merged into one (a comment
+ * is never dropped as noise), with the declaration (`headerLine`, which the
+ * chunk text opens with) and `end` (`endLine`) rows added to the first group's
+ * ranges — one owner per row.
+ */
+function commentOnlyHeaderBlock(
+  folded: BodyGroup[],
+  bodyGroups: BodyGroup[],
+  containerRows: { headerLine: number; endLine: number },
+): BodyGroup[] {
+  const [headerGroup, ...rest] = folded.length > 0 ? folded : [bodyGroups.reduce(mergeBodyGroups)];
+  const claimed = [
+    ...headerGroup.lines,
+    { text: "", sourceLine: containerRows.headerLine },
+    { text: "", sourceLine: containerRows.endLine },
+  ].sort((a, b) => a.sourceLine - b.sourceLine);
+  return [{ ...headerGroup, lineRanges: computeLineRanges(claimed) }, ...rest];
 }
 
 /**

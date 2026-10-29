@@ -125,9 +125,37 @@ describe("Ruby container header block", () => {
       expect(carrier?.metadata.symbolId).toBe("Billing::InvoiceSettler");
       expect(carrier?.content).toContain("# Settles an invoice against the ledger; idempotent per invoice id.");
       // The container remainder stays out once the hook writes a chunk, so the
-      // header block keeps the declaration row it carried.
+      // header block keeps the declaration and `end` rows it carried.
       expect(owners.get(2)).toBe(1);
-      expect(carrier?.metadata.lineRanges).toEqual([{ start: 1, end: 2 }]);
+      expect(owners.get(10)).toBe(1);
+      expect(carrier?.metadata.lineRanges).toEqual([
+        { start: 1, end: 2 },
+        { start: 10, end: 10 },
+      ]);
+    });
+
+    it("is carried when the comment and every body row are each under the noise floor", async () => {
+      const code = [
+        "# require 'pdf'",
+        "",
+        "module Tech",
+        "  private",
+        "",
+        "  class Exporter < Base",
+        "    BATCH_SIZE = 500",
+        "",
+        "    def export_all_the_rows(account)",
+        "      account.ledger_rows.each_slice(BATCH_SIZE).map { |slice| render(slice) }",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n");
+      const chunks = await chunker.chunk(code, "/repo/app/tech.rb", "ruby");
+      const owners = ownersByRow(chunks);
+
+      for (const row of [1, 3, 4, 13]) expect(owners.get(row)).toBe(1);
+      expect([...owners.values()].every((count) => count === 1)).toBe(true);
     });
 
     it("splits a leading comment over the budget at row boundaries, each row claimed once", async () => {
@@ -234,6 +262,30 @@ describe("Ruby container header block", () => {
 
       const [answer] = resolveSymbols(rows, nestedId);
       expect(answer.payload?.content).toContain("class UnknownGatewayError < StandardError; end");
+    });
+  });
+
+  describe("noise floor", () => {
+    it("judges a body row by its text, not its indentation, so the remainder keeps the container rows", async () => {
+      const header = "class Billing::Query";
+      const row = "include Billing::QueryHelper";
+      // Under the 50-char floor as text, over it only with the row's indentation.
+      expect(`${header}\n${row}`.length).toBeLessThan(50);
+      expect(`${header}\n  ${row}`.length).toBeGreaterThanOrEqual(50);
+      const code = [
+        header,
+        `  ${row}`,
+        "",
+        "  def bookkeeping_inquiries_for(account)",
+        "    account.inquiries.where(kind: :bookkeeping).order(:created_at)",
+        "  end",
+        "end",
+        "",
+      ].join("\n");
+      const chunks = await chunker.chunk(code, "/repo/app/lib/billing/query.rb", "ruby");
+      const owners = ownersByRow(chunks);
+
+      for (const line of [1, 2, 7]) expect(owners.get(line)).toBe(1);
     });
   });
 
