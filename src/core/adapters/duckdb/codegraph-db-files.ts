@@ -17,7 +17,7 @@
  */
 
 import { existsSync, constants as fsConstants, mkdirSync, readdirSync } from "node:fs";
-import { copyFile, rename, unlink } from "node:fs/promises";
+import { copyFile, rename, rm, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
@@ -61,6 +61,20 @@ const CLONE_TMP_SUFFIX = ".clone-tmp";
  */
 const COMPACTION_TMP_SUFFIX = ".compact-tmp";
 
+/**
+ * Marks the EXPORT DATABASE directory a DuckDB 2.0 storage conversion writes
+ * beside the database before importing it into the compaction staging file
+ * (bd tea-rags-mcp-r1c0s). Same ownership as {@link COMPACTION_TMP_SUFFIX}: only
+ * the read-write lock holder converts, so a directory here is an interrupted
+ * conversion's leftover — cleared by the next conversion or by `removeFiles`.
+ */
+const STORAGE_EXPORT_TMP_SUFFIX = ".storage-export-tmp";
+
+/** Where a storage conversion of the database at `dbPath` exports it. */
+export function storageConversionExportPath(dbPath: string): string {
+  return `${dbPath}${STORAGE_EXPORT_TMP_SUFFIX}`;
+}
+
 /** Where a compaction of the database at `dbPath` stages its copy. */
 export function compactionStagingPath(dbPath: string): string {
   return `${dbPath}${COMPACTION_TMP_SUFFIX}`;
@@ -89,6 +103,8 @@ export type CodegraphDbArtifactOperation =
   | "duckdb-driver"
   /** A storage compaction staging its copy via `compactionStagingPath`. */
   | "storage-compaction"
+  /** A DuckDB 2.0 storage conversion exporting via `storageConversionExportPath`. */
+  | "storage-conversion"
   /** The ingest pipeline appending/draining a generation's input spill. */
   | "pipeline-spill";
 
@@ -103,6 +119,7 @@ export type CodegraphDbArtifactId =
   | "clone-staging-wal"
   | "compaction-staging-database"
   | "compaction-staging-wal"
+  | "storage-conversion-export"
   | "cross-pass-input-spill";
 
 /** One class of file the codegraph DB layout can produce on disk. */
@@ -184,8 +201,8 @@ export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescrip
     id: "compaction-staging-database",
     directory: ".",
     filenamePattern: `<stem>.duckdb${COMPACTION_TMP_SUFFIX}`,
-    createdBy: ["storage-compaction"],
-    removedBy: ["storage-compaction", "remove-files"],
+    createdBy: ["storage-compaction", "storage-conversion"],
+    removedBy: ["storage-compaction", "storage-conversion", "remove-files"],
     keptAcrossClone: true,
     visibleToListings: [],
   },
@@ -193,8 +210,20 @@ export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescrip
     id: "compaction-staging-wal",
     directory: ".",
     filenamePattern: `<stem>.duckdb${COMPACTION_TMP_SUFFIX}.wal`,
-    createdBy: ["storage-compaction"],
-    removedBy: ["storage-compaction", "remove-files"],
+    createdBy: ["storage-compaction", "storage-conversion"],
+    removedBy: ["storage-compaction", "storage-conversion", "remove-files"],
+    keptAcrossClone: true,
+    visibleToListings: [],
+  },
+  {
+    // A directory: EXPORT DATABASE always writes `schema.sql` + `load.sql`
+    // beside one file per table. `removeFiles` takes the whole directory.
+    id: "storage-conversion-export",
+    directory: ".",
+    filenamePattern: `<stem>.duckdb${STORAGE_EXPORT_TMP_SUFFIX}/schema.sql`,
+    createdBy: ["storage-conversion"],
+    removedBy: ["storage-conversion", "remove-files"],
+    // `cloneDatabase` leaves it: the next conversion of the stem clears it first.
     keptAcrossClone: true,
     visibleToListings: [],
   },
@@ -406,7 +435,8 @@ export class CodegraphDbFiles {
 
   /**
    * Unlink the collection's DuckDB file, its WAL sidecar, the clone and
-   * compaction staging pairs an interrupted operation may have left, and its
+   * compaction staging pairs and the storage-conversion export directory an
+   * interrupted operation may have left, and its
    * cross-pass input spill. Idempotent —
    * ENOENT means "already gone". Other unlink errors are swallowed too: a stale
    * file on disk is preferable to aborting a best-effort teardown, and the next
@@ -430,6 +460,9 @@ export class CodegraphDbFiles {
     const cloneStaging = cloneStagingPath(dbPath);
     await unlink(cloneStaging).catch(() => undefined);
     await unlink(`${cloneStaging}.wal`).catch(() => undefined);
+    // An interrupted DuckDB 2.0 conversion's export directory — a Parquet copy
+    // of the whole graph, invisible to every listing (bd tea-rags-mcp-r1c0s).
+    await rm(storageConversionExportPath(dbPath), { recursive: true, force: true }).catch(() => undefined);
     // The generation's cross-pass input spill, left behind by a run that never
     // reached the drain. Its lifetime is one run, but its NAME is the
     // generation, so no later run truncates it once the alias moves on.

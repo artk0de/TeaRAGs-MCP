@@ -20,7 +20,7 @@ import { dirname } from "node:path";
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
 
 import type { CodegraphStorageCompactionOutcome, CodegraphStorageFootprint } from "../../contracts/types/codegraph.js";
-import { compactionStagingPath } from "./codegraph-db-files.js";
+import { compactionStagingPath, storageConversionExportPath } from "./codegraph-db-files.js";
 import {
   readStorageFootprint,
   readStorageFormat,
@@ -547,7 +547,7 @@ export class DuckDbGraphSession {
       this.swapping = new Promise<void>((resolve) => {
         openGate = resolve;
       });
-      const exportDir = `${path}.storage-export-tmp`;
+      const exportDir = storageConversionExportPath(path);
       try {
         await this.waitForNativeCalls();
         if (this.streamConnections.size > 0) throw new Error("a stream still holds the database");
