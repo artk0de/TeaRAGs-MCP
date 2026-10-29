@@ -107,6 +107,8 @@ export interface LanguageConfig {
   isModuleImport?: (node: AstNode) => boolean;
   /** `LanguageChunkerHooks.containerHeader`, threaded the same way. */
   containerHeader?: (node: AstNode, code: string) => string | undefined;
+  /** `LanguageChunkerHooks.leadingCommentRows`, threaded the same way. */
+  leadingCommentRows?: (node: AstNode, codeLines: string[]) => ReadonlySet<number>;
 }
 
 /**

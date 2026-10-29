@@ -18,6 +18,7 @@ import {
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
 import { foldSubFloorGroups } from "../../kernel/index.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
+import { collectMethodCommentRows } from "./comment-capture.js";
 import { valueClassContainerBody, valueClassContainerHeader } from "./value-class-container.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
@@ -499,7 +500,10 @@ export function extractBodyChunks(
   // into a headerless `#part2` (bd tea-rags-mcp-j4jrn).
   const budget = bodyChunkContentBudget(config);
   const classHeader = extractClassHeader(containerNode, code);
-  const constants = containerConstantAssignments(containerNode, code);
+  const constants = [
+    ...containerConstantAssignments(containerNode, code),
+    ...containerInlineNestedContainers(containerNode, childNodes, code),
+  ];
   const shortMethods = containerShortMethods(containerNode, childNodes, code);
   const withHeader = (group: BodyGroup): string => {
     const groupContent = groupText(group);
@@ -509,12 +513,35 @@ export function extractBodyChunks(
     group.lines.some((l) => constants.some((c) => c.line === l.sourceLine) || shortMethods.has(l.sourceLine));
   // A sub-floor group folds into a neighbour instead of being dropped (bd
   // tea-rags-mcp-30qdc); a group declaring a member is never noise.
-  const groups = foldSubFloorGroups(bodyGrouper.groupLines(bodyLines, budget), {
-    isSubFloor: (group) => withHeader(group).length < 50 && !declaresMember(group),
-    fits: (group) => groupText(group).length <= budget,
+  const fits = (group: BodyGroup): boolean => groupText(group).length <= budget;
+  // The leading comment runs through the same grouper, so a comment block over
+  // the budget is split at row boundaries here, never line-cut by the post-pass.
+  const plainGroups = bodyGrouper.groupLines(bodyLines, budget);
+  const commentGroups = bodyGrouper.groupLines(containerLeadingCommentLines(containerNode, code), budget);
+  // The floor measures the group's rows joined and trimmed, not the chunk text:
+  // the first row's indentation, kept for display, must not lift a lone
+  // `include` over it and take the container rows from the engine remainder.
+  const floorLength = (group: BodyGroup): number => {
+    const text = group.lines
+      .map((l) => l.text)
+      .join("\n")
+      .trim();
+    return classHeader ? classHeader.length + 1 + text.length : text.length;
+  };
+  const subFloorFold = {
+    isSubFloor: (group: BodyGroup) => floorLength(group) < 50 && !declaresMember(group),
+    fits,
     merge: mergeBodyGroups,
-    startOf: (group) => group.lines[0].sourceLine,
-  });
+    startOf: (group: BodyGroup) => group.lines[0].sourceLine,
+  };
+  const bodyGroups = withLeadingComment(plainGroups, commentGroups, fits);
+  const groups =
+    commentGroups.length === 0 || foldSubFloorGroups(plainGroups, subFloorFold).length > 0
+      ? foldSubFloorGroups(bodyGroups, subFloorFold)
+      : commentOnlyHeaderBlock(foldSubFloorGroups(bodyGroups, subFloorFold), bodyGroups, {
+          headerLine: containerNode.startPosition.row + 1,
+          endLine: containerNode.endPosition.row + 1,
+        });
 
   const results: BodyChunkResult[] = [];
 
@@ -540,11 +567,56 @@ export function extractBodyChunks(
   return results;
 }
 
+/**
+ * A group's rows as chunk text: each row with its own indentation, leading and
+ * trailing blank rows dropped, and every run of blank rows — the gaps left
+ * where the container's methods were taken out — collapsed to one blank row.
+ * Text only: the group's `lineRanges` still name every source row it claims.
+ */
 function groupText(group: BodyGroup): string {
-  return group.lines
-    .map((l) => l.text)
-    .join("\n")
-    .trim();
+  const textRows: string[] = [];
+  for (const { text } of group.lines) {
+    if (text.trim().length > 0) textRows.push(text);
+    else if (textRows.length > 0 && textRows[textRows.length - 1] !== "") textRows.push("");
+  }
+  return textRows.join("\n").trimEnd();
+}
+
+/**
+ * The comment block directly above the container's declaration, as body lines
+ * — the same rows `collectMethodCommentRows` gives a method (up to one blank
+ * row between block and declaration). A nested container's block is a row the
+ * enclosing comment-capture promised to this container, so this container's
+ * header block is the one chunk that carries it.
+ */
+function containerLeadingCommentLines(containerNode: AstNode, code: string): BodyLine[] {
+  const codeLines = code.split("\n");
+  return [...collectMethodCommentRows(containerNode, codeLines)]
+    .sort((a, b) => a - b)
+    .map((row) => ({ text: codeLines[row], sourceLine: row + 1 }));
+}
+
+/**
+ * The body groups with the container's leading comment joined to the first —
+ * the header block — so it opens the chunk that names the container, the way a
+ * method's leading comment opens the method chunk. `commentGroups` is that
+ * comment already split to the budget; its last part joins the first body
+ * group when the two fit together, else every part stays a group of its own.
+ * A container whose body is only methods has no body group: the comment parts
+ * are its groups.
+ */
+function withLeadingComment(
+  groups: BodyGroup[],
+  commentGroups: BodyGroup[],
+  fits: (group: BodyGroup) => boolean,
+): BodyGroup[] {
+  const last = commentGroups.at(-1);
+  if (last === undefined) return groups;
+  if (groups.length === 0) return commentGroups;
+  const leading = commentGroups.slice(0, -1);
+  const [headerGroup, ...rest] = groups;
+  const joined = mergeBodyGroups(headerGroup, last);
+  return fits(joined) ? [...leading, joined, ...rest] : [...commentGroups, ...groups];
 }
 
 /** Two body line groups as one, rows in source order, under the host's type. */
@@ -579,6 +651,58 @@ function containerConstantAssignments(containerNode: AstNode, code: string): { n
     });
   }
   return constants;
+}
+
+/**
+ * The header block of a container whose own body would write no chunk — only
+ * methods, or rows all under the noise floor — so that only its leading
+ * comment makes this hook write one. Writing it keeps the engine's container
+ * remainder out, and that remainder held the declaration row, the closing
+ * `end` row and the sub-floor rows. So the block keeps them all: `folded` when
+ * the comment cleared the floor, else every group merged into one (a comment
+ * is never dropped as noise), with the declaration (`headerLine`, which the
+ * chunk text opens with) and `end` (`endLine`) rows added to the first group's
+ * ranges — one owner per row.
+ */
+function commentOnlyHeaderBlock(
+  folded: BodyGroup[],
+  bodyGroups: BodyGroup[],
+  containerRows: { headerLine: number; endLine: number },
+): BodyGroup[] {
+  const [headerGroup, ...rest] = folded.length > 0 ? folded : [bodyGroups.reduce(mergeBodyGroups)];
+  const claimed = [
+    ...headerGroup.lines,
+    { text: "", sourceLine: containerRows.headerLine },
+    { text: "", sourceLine: containerRows.endLine },
+  ].sort((a, b) => a.sourceLine - b.sourceLine);
+  return [{ ...headerGroup, lineRanges: computeLineRanges(claimed) }, ...rest];
+}
+
+/**
+ * The nested classes / modules a container body declares with no body of their
+ * own — `class NotFound < StandardError; end`, `module Flags; end`, or the same
+ * spread over two rows — each with its 1-based line. Their rows reach this hook
+ * as body lines, so the body chunk holding them declares them as `Owner::Name`
+ * members exactly like a constant. A nested container the engine extracted as a
+ * child is its own chunk, never a member of this one.
+ */
+function containerInlineNestedContainers(
+  containerNode: AstNode,
+  extractedChildren: AstNode[],
+  code: string,
+): { name: string; line: number }[] {
+  const body = containerBody(containerNode);
+  if (!body) return [];
+  const extracted = new Set(extractedChildren.map((c) => c.startIndex));
+  const nested: { name: string; line: number }[] = [];
+  for (const statement of body.namedChildren) {
+    if (statement.type !== "class" && statement.type !== "module") continue;
+    if (extracted.has(statement.startIndex) || statement.childForFieldName("body")) continue;
+    const name = statement.childForFieldName("name");
+    if (!name) continue;
+    nested.push({ name: code.substring(name.startIndex, name.endIndex), line: statement.startPosition.row + 1 });
+  }
+  return nested;
 }
 
 /**

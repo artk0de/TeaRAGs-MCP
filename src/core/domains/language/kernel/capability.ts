@@ -112,6 +112,9 @@ export const sharedVersions: LanguageSupportVersions = {
   // chunk — a single-line node's `endLine` is its own row (it claimed the next
   // statement's row), the character fallback's overlap is content, not a claim,
   // and a leaf value-class container opens with its `Const =` assignment row.
+  // Same chunking 6: a top-level leaf chunk opens with the comment rows
+  // `LanguageChunkerHooks.leadingCommentRows` names; only Ruby declares it, so
+  // every other language's output is byte-identical.
   chunking: 6,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
   // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd

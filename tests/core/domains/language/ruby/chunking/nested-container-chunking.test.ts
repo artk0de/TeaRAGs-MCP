@@ -180,7 +180,7 @@ describe("Ruby chunking — nested-form containers and class constants (bd tea-r
         "class Billing::Reports::LedgerExporter\ndef initialize(account)\n    @account = account\n    @rows = []\n  end",
         "class Billing::Reports::LedgerExporter\ndef export\n    @rows = fetch_rows(HEADER_SQL)\n    @rows.each_slice(BATCH_SIZE).map { |slice| render(slice) }\n  end",
         "class Billing::Reports::LedgerExporter\ndef self.build(account)\n    new(account).tap { |exporter| exporter.export }\n  end",
-        "class Billing::Reports::LedgerExporter\nHEADER_SQL = <<~SQL\n    SELECT id, amount, posted_at\n    FROM ledger_entries\n    WHERE account_id = :account_id\n  SQL\n\n  BATCH_SIZE = 500",
+        "class Billing::Reports::LedgerExporter\n  HEADER_SQL = <<~SQL\n    SELECT id, amount, posted_at\n    FROM ledger_entries\n    WHERE account_id = :account_id\n  SQL\n\n  BATCH_SIZE = 500",
       ]);
     });
   });
