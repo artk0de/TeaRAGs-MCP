@@ -18,6 +18,7 @@ import {
   CODEGRAPH_DB_ARTIFACT_TAXONOMY,
   CodegraphDbFiles,
   compactionStagingPath,
+  storageConversionExportPath,
   type CodegraphDbArtifactDescriptor,
   type CodegraphDbArtifactId,
   type CodegraphDbArtifactOperation,
@@ -269,7 +270,7 @@ describe("CodegraphDbFiles", () => {
 
       for (let step = 0; step < opCount; step += 1) {
         const stem = pickStem();
-        const op = Math.floor(rng() * 8);
+        const op = Math.floor(rng() * 9);
         switch (op) {
           // The DuckDB driver materialises a generation database.
           case 0:
@@ -306,6 +307,15 @@ describe("CodegraphDbFiles", () => {
               writeFileSync(`${compactionStagingPath(files.pathFor(stem))}.wal`, "half");
               predicted.add(predictedPath(stem, artifact("compaction-staging-wal")));
             }
+            break;
+          }
+          // A SIGKILL mid DuckDB 2.0 storage conversion left its EXPORT DATABASE
+          // directory behind (bd tea-rags-mcp-r1c0s).
+          case 8: {
+            const exportDir = storageConversionExportPath(files.pathFor(stem));
+            mkdirSync(exportDir, { recursive: true });
+            writeFileSync(join(exportDir, "schema.sql"), "half");
+            predicted.add(predictedPath(stem, artifact("storage-conversion-export")));
             break;
           }
           // cloneDatabase — no-op without a source database, refused for a
@@ -366,6 +376,20 @@ describe("CodegraphDbFiles", () => {
       expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.compact-tmp"))).toBe(false);
       expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp"))).toBe(false);
       expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp.wal"))).toBe(false);
+    });
+
+    it("removeFiles reclaims an interrupted storage conversion's export directory", async () => {
+      seed("code_a_v1");
+      const exportDir = storageConversionExportPath(join(codegraphDir, "code_a_v1.duckdb"));
+      mkdirSync(exportDir, { recursive: true });
+      writeFileSync(join(exportDir, "schema.sql"), "half");
+      writeFileSync(join(exportDir, "cg_symbols.parquet"), "half");
+
+      await files.removeCollection(fixturePhysicalCollectionName("code_a_v1"));
+
+      // The export is this database's leftover: a purge takes it, or a deleted
+      // collection leaks a Parquet copy of its graph (bd tea-rags-mcp-r1c0s).
+      expect(existsSync(exportDir)).toBe(false);
     });
 
     it("a shadow-refused clone leaves the disk untouched", async () => {

@@ -20,18 +20,21 @@ import { dirname } from "node:path";
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
 
 import type { CodegraphStorageCompactionOutcome, CodegraphStorageFootprint } from "../../contracts/types/codegraph.js";
-import { compactionStagingPath } from "./codegraph-db-files.js";
+import { compactionStagingPath, storageConversionExportPath } from "./codegraph-db-files.js";
 import {
   readStorageFootprint,
+  readStorageFormat,
   removeStagedCopy,
   snapshotStagingPath,
   walHoldsData,
   writeCompactedCopy,
+  writeStorageFormatCopy,
   type CompactedCopyVerdict,
 } from "./database-file-compaction.js";
 import {
   CodegraphSnapshotExportFailedError,
   CodegraphStorageCompactionFailedError,
+  CodegraphStorageConversionFailedError,
   DuckDbStreamIncompleteError,
 } from "./errors.js";
 import { asBindable, bindParams } from "./sql-binding.js";
@@ -524,8 +527,53 @@ export class DuckDbGraphSession {
     });
   }
 
+  /** Procedural migration preflight: shares compaction's queue, gate and atomic publish. */
+  async convertStorageToCurrentFormat(): Promise<boolean> {
+    return this.serialize(async () => {
+      const { path } = this.options;
+      // Query DuckDB's own metadata. Opening/closing an fd to read the header
+      // here would release this process's POSIX fcntl writer lock on the inode.
+      const storageFormat = await this.onConnection(async (conn) => readStorageFormat(conn));
+      if (storageFormat === "v2.0.0+") return false;
+      if (this.options.accessMode === "READ_ONLY" || this.streamConnections.size > 0) {
+        throw new CodegraphStorageConversionFailedError(
+          path,
+          "copy",
+          undefined,
+          "an exclusive writable session is required",
+        );
+      }
+      let openGate!: () => void;
+      this.swapping = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const exportDir = storageConversionExportPath(path);
+      try {
+        await this.waitForNativeCalls();
+        if (this.streamConnections.size > 0) throw new Error("a stream still holds the database");
+        if (storageFormat !== "v1.0.0+") throw new Error(`unsupported DuckDB storage format: ${storageFormat}`);
+        rmSync(exportDir, { recursive: true, force: true });
+        await this.swapInCompactedCopy(exportDir);
+        return true;
+      } catch (err) {
+        throw new CodegraphStorageConversionFailedError(
+          path,
+          err instanceof CodegraphStorageCompactionFailedError ? err.stage : "copy",
+          err instanceof Error ? err : undefined,
+        );
+      } finally {
+        try {
+          rmSync(exportDir, { recursive: true, force: true });
+        } finally {
+          this.swapping = undefined;
+          openGate();
+        }
+      }
+    });
+  }
+
   /** Steps 3–6 of {@link compactDatabaseFile}; the gate is closed and no native call runs. */
-  private async swapInCompactedCopy(): Promise<number> {
+  private async swapInCompactedCopy(exportDir?: string): Promise<number> {
     const { path } = this.options;
     const conn = this.requireConn();
     const { instance } = this;
@@ -538,7 +586,9 @@ export class DuckDbGraphSession {
       await conn.run("CHECKPOINT");
       memoryLimit = (await conn.runAndReadAll("SELECT current_setting('memory_limit') AS m")).getRowObjectsJson()[0]
         ?.m as string | undefined;
-      const verdict: CompactedCopyVerdict = await writeCompactedCopy(conn, staging);
+      const verdict: CompactedCopyVerdict = exportDir
+        ? await writeStorageFormatCopy(conn, staging, exportDir)
+        : await writeCompactedCopy(conn, staging);
       if (verdict.kind === "mismatch") {
         await removeStagedCopy(staging);
         throw new CodegraphStorageCompactionFailedError(path, "copy", undefined, verdict.detail);
@@ -742,6 +792,9 @@ export class DuckDbGraphSession {
           yield row;
         }
       }
+      // A stream the driver ended early still holds the connection: DuckDB 2.0
+      // refuses the count below with "Resource In Use" until it is released.
+      result.closeSync();
       // Only after the drain: a count issued mid-stream would itself end it.
       const expected = await this.onStreamConnection(conn, yielded, async (c) => {
         const reader = await c.runAndReadAll(`SELECT count(*) AS n FROM (${sql}) AS streamed`);

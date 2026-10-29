@@ -22,6 +22,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface MigrationCapableClient {
+  convertStorageToCurrentFormat?: () => Promise<boolean>;
   exec: (sql: string) => Promise<void>;
   run: (sql: string, params?: unknown[]) => Promise<void>;
   queryAll: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
@@ -43,9 +44,14 @@ export interface SqlDatabaseMigration {
  * tables whose names are only known from the catalog (bd tea-rags-mcp-bdnfu).
  * `run` executes inside the same BEGIN/COMMIT as a SQL migration and is
  * recorded in `schema_migrations` under `filename` exactly like one; a throw
- * rolls back everything it did and leaves it unrecorded. It has no `.sql` twin.
+ * rolls back the transactional body and leaves it unrecorded. Optional `prepare`
+ * runs before all transactions, even for a recorded migration: native file work
+ * must be idempotent and publish atomically because it cannot be rolled back by
+ * SQL. It has no `.sql` twin.
  */
 export interface ProceduralDatabaseMigration {
+  /** Native file work must run before any transaction, including on restored snapshots. */
+  readonly prepare?: (client: MigrationCapableClient) => Promise<void>;
   readonly filename: string;
   readonly run: (client: MigrationCapableClient) => Promise<void>;
 }
@@ -61,13 +67,17 @@ export async function runMigrations(
   client: MigrationCapableClient,
   source: string | readonly DatabaseMigration[],
 ): Promise<MigrationResult> {
+  const migrations = typeof source === "string" ? loadFromDisk(source) : [...source].sort(byFilename);
+  // Storage rewrites cannot run inside BEGIN. Prepare even a recorded migration:
+  // a restored snapshot may carry its ledger but still use old physical storage.
+  for (const migration of migrations) {
+    if (!isSqlDatabaseMigration(migration)) await migration.prepare?.(client);
+  }
   await client.exec(
     "CREATE TABLE IF NOT EXISTS schema_migrations (filename VARCHAR PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
   );
   const appliedRows = await client.queryAll<{ filename: string }>("SELECT filename FROM schema_migrations");
   const applied = new Set(appliedRows.map((r) => r.filename));
-
-  const migrations = typeof source === "string" ? loadFromDisk(source) : [...source].sort(byFilename);
 
   const result: MigrationResult = { applied: [], skipped: [] };
   for (const migration of migrations) {

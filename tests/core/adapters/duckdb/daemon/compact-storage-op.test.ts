@@ -25,6 +25,7 @@ import {
 } from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import * as compactionPolicy from "../../../../../src/core/adapters/duckdb/storage-compaction.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -104,9 +105,8 @@ describe("compactStorage daemon op", () => {
     try {
       const { graphDb } = await pool.acquire(collection);
       const db = graphDb as DuckDbGraphClient;
-      // Six dead generations, not four: the footprint counts schema_migrations
-      // rows as LIVE rows, so at four the stored/live ratio sits exactly on the
-      // 2× threshold and the next migration tips it to "skipped".
+      // Exercise repeated writes before the forced swap; 2.0 checkpoints now
+      // vacuum these deleted versions instead of accumulating engine bloat.
       for (let run = 0; run < 6; run++) {
         await db.run("DELETE FROM cg_symbols_files");
         for (let f = 0; f < 20; f++) {
@@ -115,6 +115,9 @@ describe("compactStorage daemon op", () => {
         await db.checkpoint();
       }
 
+      // 2.0 vacuums indexed deletes. Admit one real swap; the next request still
+      // uses the real policy and must report belowThreshold.
+      vi.spyOn(compactionPolicy, "shouldCompactCodegraphStorage").mockReturnValueOnce(true);
       const res = await server.handle({ id: 7, op: "compactStorage", params: { collection } });
 
       expect(res.ok).toBe(true);

@@ -82,7 +82,7 @@ const TARGET_OWNER_SQL = String.raw`regexp_extract(target_symbol_id, '([A-Za-z0-
 const FRAMEWORK_ROUTED_CALL_SQL = String.raw`inh.source_rel_path IS NULL AND NOT (
   len(list_filter(
     regexp_split_to_array(call_expression, '[^A-Za-z0-9_$]+'),
-    token -> token <> '' AND contains(
+    lambda token: token <> '' AND contains(
       '_' || rtrim(regexp_extract(target_symbol_id, '([^#.]+)$', 1), '?!=') || '_',
       '_' || token || '_'
     )

@@ -72,6 +72,7 @@ import { SQL_065_CG_RESIDUAL_CALIBRATION } from "./065-cg-residual-calibration.j
 import { SQL_066_CG_RUSTC_DRIVER_STATUS } from "./066-cg-rustc-driver-status.js";
 import { SQL_067_CG_DROP_EDGE_FILE_TARGET_INDEX } from "./067-cg-drop-edge-file-target-index.js";
 import { SQL_068_CG_CREATE_EDGE_FILE_TARGET_INDEX } from "./068-cg-create-edge-file-target-index.js";
+import { STORAGE_FORMAT_2_MIGRATION } from "./069-cg-storage-format-2.js";
 
 export type { DatabaseMigration } from "../runner.js";
 
@@ -149,4 +150,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   // 067 + 068 rebuild one index across two transactions — see 067's docblock.
   { filename: "067-cg-drop-edge-file-target-index.sql", sql: SQL_067_CG_DROP_EDGE_FILE_TARGET_INDEX },
   { filename: "068-cg-create-edge-file-target-index.sql", sql: SQL_068_CG_CREATE_EDGE_FILE_TARGET_INDEX },
+  STORAGE_FORMAT_2_MIGRATION,
 ];

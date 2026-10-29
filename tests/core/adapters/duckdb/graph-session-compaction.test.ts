@@ -15,11 +15,12 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { compactionStagingPath } from "../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { CodegraphStorageCompactionFailedError } from "../../../../src/core/adapters/duckdb/errors.js";
+import * as compactionPolicy from "../../../../src/core/adapters/duckdb/storage-compaction.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
@@ -36,9 +37,13 @@ describe("DuckDbGraphClient#compactStorage", () => {
     db = new DuckDbGraphClient({ path, compactionPolicy: EAGER });
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
+    // 2.0 vacuums indexed deletes at CHECKPOINT. Force policy eligibility here
+    // to keep exercising the real copy/swap/gate, independently of engine bloat.
+    vi.spyOn(compactionPolicy, "shouldCompactCodegraphStorage").mockReturnValue(true);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await db.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -85,10 +90,10 @@ describe("DuckDbGraphClient#compactStorage", () => {
     return Number(r.n);
   }
 
-  it("rewrites a bloated file: every row, key and index survives, the dead versions do not", async () => {
+  it("a verified rewrite preserves every row, key and index in 2.0 storage", async () => {
     await churnSymbols(50, 6);
     const before = await snapshot();
-    expect(await storedRows("cg_symbols")).toBe(6 * 200);
+    expect(await storedRows("cg_symbols")).toBe(200);
     const inodeBefore = statSync(path).ino;
 
     const outcome = await db.compactStorage();
@@ -99,14 +104,14 @@ describe("DuckDbGraphClient#compactStorage", () => {
     expect(statSync(path).ino).not.toBe(inodeBefore);
     expect(existsSync(compactionStagingPath(path))).toBe(false);
     if (outcome.kind === "compacted") {
-      expect(outcome.liveRows).toBeLessThan(outcome.storedRows);
+      expect(outcome.liveRows).toBe(outcome.storedRows);
       expect(outcome.bytesAfter).toBe(statSync(path).size);
     }
   });
 
   it("the same client keeps reading and writing after the swap, and identifies the new file", async () => {
     await churnSymbols(20, 4);
-    await db.compactStorage();
+    expect((await db.compactStorage()).kind).toBe("compacted");
 
     await db.upsertFile({ relPath: "src/after.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     const [r] = await db.queryAll<{ n: number | bigint }>(
@@ -145,7 +150,19 @@ describe("DuckDbGraphClient#compactStorage", () => {
     expect(Number(r.n)).toBe(1);
   });
 
+  it("checkpoint vacuums indexed deletes in 2.0 storage, so the file needs no rewrite", async () => {
+    vi.restoreAllMocks();
+    await churnSymbols(50, 6);
+    const before = await snapshot();
+    const inode = statSync(path).ino;
+    expect(await storedRows("cg_symbols")).toBe(200);
+    expect(await db.compactStorage()).toMatchObject({ kind: "skipped", reason: "belowThreshold" });
+    expect(await snapshot()).toEqual(before);
+    expect(statSync(path).ino).toBe(inode);
+  });
+
   it("skips a file below the threshold and leaves it untouched", async () => {
+    vi.restoreAllMocks();
     await db.close();
     db = new DuckDbGraphClient({ path });
     await db.init();

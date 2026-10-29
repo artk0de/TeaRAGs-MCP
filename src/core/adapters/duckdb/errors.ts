@@ -794,3 +794,22 @@ export class CodegraphSnapshotExportFailedError extends InfraError {
     this.stage = stage;
   }
 }
+
+/** A format upgrade failed; older tea-rags builds cannot read successfully converted files. */
+export class CodegraphStorageConversionFailedError extends InfraError {
+  readonly stage: "copy" | "publish" | "reopen";
+
+  constructor(dbPath: string, stage: "copy" | "publish" | "reopen", cause?: Error, detail?: string) {
+    super({
+      code: "INFRA_CODEGRAPH_STORAGE_CONVERSION_FAILED",
+      message: `DuckDB 2.0 storage conversion of ${dbPath} failed at ${stage}${detail ? `: ${detail}` : ""}`,
+      hint:
+        stage === "reopen"
+          ? "The verified DuckDB 2.0 file is in place. Retry with this or a newer tea-rags build; older builds cannot open it."
+          : "The original database remains usable. Stop other codegraph writers, check free disk space and retry with this build.",
+      httpStatus: 500,
+      cause,
+    });
+    this.stage = stage;
+  }
+}

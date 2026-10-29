@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 import { DuckDbGraphSession } from "../../../../../../src/core/adapters/duckdb/graph-session.js";
-import { createDatabaseMigrationApplier } from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
+import {
+  createDatabaseMigrationApplier,
+  runMigrations,
+} from "../../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const DROP = "067-cg-drop-edge-file-target-index.sql";
 const CREATE = "068-cg-create-edge-file-target-index.sql";
@@ -68,7 +70,7 @@ describe("067 + 068 rebuild the file edge target index", () => {
 
     const outcome = await runMigrations(db, DATABASE_MIGRATIONS);
 
-    expect(outcome.applied).toEqual([DROP, CREATE]);
+    expect(outcome.applied).toEqual([DROP, CREATE, "069-cg-storage-format-2.ts"]);
     const after = await indexOf();
     expect(after).toHaveLength(1);
     expect(after[0].index_oid).not.toEqual(before.index_oid);
@@ -144,7 +146,7 @@ describe("067 + 068 rebuild the file edge target index", () => {
       signal: null,
       stderr: "",
     });
-    expect(JSON.parse(child.stdout)).toEqual([DROP, CREATE]);
+    expect(JSON.parse(child.stdout)).toEqual([DROP, CREATE, "069-cg-storage-format-2.ts"]);
     db = new DuckDbGraphClient({ path });
     await db.init();
     expect(await indexOf()).toHaveLength(1);
