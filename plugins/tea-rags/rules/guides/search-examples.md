@@ -30,7 +30,7 @@ examples per tool.
 **By symbol name (symbol param):**
 - Instance method → symbol="Reranker#rerank" (# = instance)
 - Static method → symbol="Reranker.create" (. = static)
-- Class outline → symbol="Reranker" (outline: member symbolIds, NO bodies, tests excluded)
+- Class outline → symbol="Reranker" (header code + outline: method symbolIds, NO method bodies, tests excluded)
 - Drill from outline/TOC → symbol="<id copied from an outline line>" (one member / doc section)
 - Existence check → symbol="myFunc", metaOnly=true (no content)
 - With signals → symbol="Reranker#score", rerank="hotspots" (ranking overlay)
@@ -154,7 +154,7 @@ inflate limit. Results stop matching intent → reformulate, don't paginate.
 
 - Class with risk overlay →
   find_symbol(symbol: "PaymentService", rerank: "hotspots")
-  Returns class outline (member ids, no bodies) PLUS rankingOverlay with churn/ownership/bugFixRate;
+  Returns class header code + outline (method ids, no method bodies) PLUS rankingOverlay with churn/ownership/bugFixRate;
   drill a member with find_symbol(symbol: "PaymentService#charge").
 - Method with risk overlay →
   find_symbol(symbol: "PaymentService#charge", rerank: "hotspots")

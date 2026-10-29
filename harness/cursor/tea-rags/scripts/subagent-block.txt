@@ -25,6 +25,6 @@ Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids)
 
 **Shell:** `cat`/`sed`/`head` to read source code → `find_symbol`. grep stays for exact text, regex, command output.
 
-**After a hit:** never read the file after `find_symbol` — method = full body; class / file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
+**After a hit:** never read the file after `find_symbol` — method = full body; class = header code + outline of method ids; file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
 
 **Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; tool pick → `tool-choice`; banned move, fallback → `prohibited-patterns`; `treeState`, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.
