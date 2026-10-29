@@ -6,58 +6,140 @@
  * includes, short defs, fields). Every header chunk is listed in line order
  * with a composition read off its `memberSymbolIds`; whole chunks are inlined,
  * in line order, while their summed text stays within
- * {@link CONTAINER_HEADER_CHAR_BUDGET}; a chunk past it stays an address — each
- * member id it declares answers exactly that chunk.
+ * {@link CONTAINER_HEADER_CHAR_BUDGET} and within what the answer's shared
+ * {@link BATCH_FULL_TEXT_CHAR_BUDGET} still holds; a chunk past either stays an
+ * address — each member id it declares answers exactly that chunk.
  */
-import { CONTAINER_HEADER_CHAR_BUDGET } from "../../../contracts/types/symbol-batch.js";
+import type { SearchResult } from "../../../contracts/types/search-result.js";
+import {
+  BATCH_FULL_TEXT_CHAR_BUDGET,
+  CONTAINER_HEADER_CHAR_BUDGET,
+  CONTAINER_HEADER_DRAFT_KEY,
+  CONTAINER_HEADER_KIND,
+} from "../../../contracts/types/symbol-batch.js";
 import type { ScrollChunk } from "./types.js";
 
-/** What a container answer adds for its header chunks. */
-export interface ContainerHeaderSection {
-  /** One line per header chunk, in line order, indented as outline members. */
-  listing: string[];
-  /** The notice line when a chunk was not inlined, else undefined. */
-  notice?: string;
-  /** The inlined chunks, each under its `── header a–b ──` rule, in line order. */
-  inlined: string[];
-  /** Ids of the inlined chunks — the chunks whose text the answer carries. */
-  inlinedChunkIds: (string | number)[];
+export { CONTAINER_HEADER_DRAFT_KEY };
+
+/** One header chunk as the answer lists and may inline it. */
+interface HeaderChunkDraft {
+  id: string | number;
+  range: string;
+  composition: string;
+  text: string;
 }
+
+/** Everything a container row's content is rendered from, budget aside. */
+export interface ContainerHeaderDraft {
+  /** The container's own outline line. */
+  ownerLine: string;
+  /** Its member outline lines, already formatted. */
+  memberLines: string[];
+  /** Its header chunks, in line order. */
+  chunks: HeaderChunkDraft[];
+}
+
+/** A container row's content under one allowance. */
+export interface RenderedContainerHeader {
+  content: string;
+  /** Ids of the inlined chunks — the chunks whose text the content carries. */
+  inlinedChunkIds: (string | number)[];
+  /** Chars of header text inlined: what the row draws on the answer budget. */
+  spent: number;
+}
+
+type NotInlinedReason = "class" | "answer";
 
 const CONSTANT_NAME = /^[A-Z][A-Z0-9_]*$/;
 
-/** Plan the header section of `ownerId`'s answer from its class-level chunks. */
-export function renderContainerHeader(ownerId: string, headerChunks: readonly ScrollChunk[]): ContainerHeaderSection {
+/** The draft of `ownerId`'s answer from its outline lines and class-level chunks. */
+export function draftContainerHeader(
+  ownerId: string,
+  ownerLine: string,
+  memberLines: string[],
+  headerChunks: readonly ScrollChunk[],
+): ContainerHeaderDraft {
   const sorted = [...headerChunks].sort((a, b) => lineOf(a, "startLine") - lineOf(b, "startLine"));
+  return {
+    ownerLine,
+    memberLines,
+    chunks: sorted.map((row) => ({
+      id: row.id,
+      range: `${lineOf(row, "startLine")}–${lineOf(row, "endLine")}`,
+      composition: compositionOf(ownerId, row.payload.memberSymbolIds),
+      text: typeof row.payload.content === "string" ? row.payload.content : "",
+    })),
+  };
+}
+
+/**
+ * Render a container row: the owner line, one line per header chunk, the
+ * member lines, a notice when a chunk stayed an address, then the inlined
+ * chunks. Whole chunks are inlined in line order while the per-class budget
+ * AND `allowance` (the answer budget still unspent) both admit them; a chunk is
+ * never cut.
+ */
+export function renderContainerHeader(draft: ContainerHeaderDraft, allowance = Infinity): RenderedContainerHeader {
   const listing: string[] = [];
   const inlined: string[] = [];
   const inlinedChunkIds: (string | number)[] = [];
+  const reasons = new Set<NotInlinedReason>();
   let spent = 0;
   let open = true;
   let unaddressed = false;
-  for (const chunk of sorted) {
-    const text = typeof chunk.payload.content === "string" ? chunk.payload.content : "";
-    const range = `${lineOf(chunk, "startLine")}–${lineOf(chunk, "endLine")}`;
-    open = open && text.length > 0 && spent + text.length <= CONTAINER_HEADER_CHAR_BUDGET;
-    const composition = compositionOf(ownerId, chunk.payload.memberSymbolIds);
-    const line = `  header ${range}${composition ? `: ${composition}` : ""}`;
+  for (const chunk of draft.chunks) {
+    const line = `  header ${chunk.range}${chunk.composition ? `: ${chunk.composition}` : ""}`;
+    const withinClass = chunk.text.length > 0 && spent + chunk.text.length <= CONTAINER_HEADER_CHAR_BUDGET;
+    const withinAnswer = spent + chunk.text.length <= allowance;
+    open = open && withinClass && withinAnswer;
     if (open) {
-      spent += text.length;
-      inlined.push(`── header ${range} ──\n${text}`);
+      spent += chunk.text.length;
+      inlined.push(`── header ${chunk.range} ──\n${chunk.text}`);
       inlinedChunkIds.push(chunk.id);
       listing.push(line);
       continue;
     }
-    listing.push(`${line} — not inlined`);
-    if (!composition) unaddressed = true;
+    const reason: NotInlinedReason = withinClass && !withinAnswer ? "answer" : "class";
+    reasons.add(reason);
+    listing.push(`${line} — not inlined${reason === "answer" ? " (answer budget)" : ""}`);
+    if (!chunk.composition) unaddressed = true;
   }
-  const notInlined = sorted.length - inlinedChunkIds.length;
-  const notice =
-    notInlined === 0
-      ? undefined
-      : `(header chunks marked not inlined are past the ${CONTAINER_HEADER_CHAR_BUDGET}-char per-class header budget; ` +
-        `each member id such a chunk declares answers that chunk${unaddressed ? "; one declaring none is addressed only by its lines" : ""})`;
-  return { listing, ...(notice ? { notice } : {}), inlined, inlinedChunkIds };
+  const notice = reasons.size === 0 ? undefined : noticeOf(reasons, unaddressed);
+  const outline = [draft.ownerLine, ...listing, ...draft.memberLines, ...(notice ? [notice] : [])];
+  const content = [...outline, ...(inlined.length > 0 ? ["", ...inlined] : [])].join("\n");
+  return { content, inlinedChunkIds, spent };
+}
+
+/**
+ * Re-render a container row under `allowance` — the answer budget still
+ * unspent where this row stands in the answer. Undefined for a row carrying no
+ * draft (not a container row with header chunks). The payload keeps its draft
+ * so a later, smaller allowance can re-render it again.
+ */
+export function spendContainerHeaderAllowance<R extends Pick<SearchResult, "payload">>(
+  result: R,
+  allowance: number,
+): { result: R; spent: number } | undefined {
+  const draft = result.payload?.[CONTAINER_HEADER_DRAFT_KEY] as ContainerHeaderDraft | undefined;
+  if (!draft) return undefined;
+  const rendered = renderContainerHeader(draft, allowance);
+  const { kind: _kind, ...rest } = result.payload ?? {};
+  const payload: Record<string, unknown> = {
+    ...rest,
+    content: rendered.content,
+    mergedChunkIds: rendered.inlinedChunkIds,
+    ...(rendered.inlinedChunkIds.length > 0 ? { kind: CONTAINER_HEADER_KIND } : {}),
+  };
+  return { result: { ...result, payload }, spent: rendered.spent };
+}
+
+function noticeOf(reasons: ReadonlySet<NotInlinedReason>, unaddressed: boolean): string {
+  const limits = [
+    ...(reasons.has("class") ? [`the ${CONTAINER_HEADER_CHAR_BUDGET}-char per-class header budget`] : []),
+    ...(reasons.has("answer") ? [`the ${BATCH_FULL_TEXT_CHAR_BUDGET}-char answer budget for inlined text`] : []),
+  ];
+  const none = unaddressed ? "; one declaring none is addressed only by its lines" : "";
+  return `(header chunks marked not inlined are past ${limits.join(" or ")}; each member id such a chunk declares answers that chunk${none})`;
 }
 
 /**

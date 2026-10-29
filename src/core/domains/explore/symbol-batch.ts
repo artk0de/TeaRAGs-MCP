@@ -19,6 +19,7 @@ import {
 } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
+import { spendContainerHeaderAllowance } from "./chunk-grouping/index.js";
 import { containerMemberMessage, findContainerMembers, rankByNamespaceProximity } from "./member-miss.js";
 import type { FileOutlineStrategy } from "./strategies/file-outline.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
@@ -318,7 +319,17 @@ function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: Add
   const budgeted = answers.map((answer) => {
     const outline = answer.outlineBehindFullText;
     const row = answer.rows[0];
-    if (!outline || !row) return answer;
+    if (!outline) {
+      // A container row inlines its header from the same budget, in request order.
+      const rows = answer.rows.map((r) => {
+        const rendered = spendContainerHeaderAllowance(r.result, Math.max(0, BATCH_FULL_TEXT_CHAR_BUDGET - spent));
+        if (!rendered) return r;
+        spent += rendered.spent;
+        return { ...r, result: rendered.result };
+      });
+      return { ...answer, rows };
+    }
+    if (!row) return answer;
     const size = contentLengthOf(row.result);
     if (spent + size <= BATCH_FULL_TEXT_CHAR_BUDGET || contentLengthOf(outline) >= size) {
       spent += size;

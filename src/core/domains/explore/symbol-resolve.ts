@@ -6,12 +6,14 @@
  */
 
 import type { SearchResult } from "../../contracts/types/search-result.js";
+import { BATCH_FULL_TEXT_CHAR_BUDGET } from "../../contracts/types/symbol-batch.js";
 import {
   CodeChunkGrouper,
   DocChunkGrouper,
   isTestChunk,
   isTestExampleChunk,
   memberOwnerOf,
+  spendContainerHeaderAllowance,
   splitFragmentBase,
   splitFragmentOwnRows,
   type MemberVisibilityLookup,
@@ -152,7 +154,15 @@ export function resolveSymbols(
     results.push(isDocumentationSection(pending) ? DocChunkGrouper.mergeSection(pending) : mergeChunks(pending));
   }
 
-  const sorted = sortResults(results, query);
+  // Every container row of the answer draws its inlined header on ONE budget,
+  // in result order: a namespace reopened in many files never multiplies it.
+  let allowance = BATCH_FULL_TEXT_CHAR_BUDGET;
+  const sorted = sortResults(results, query).map((r) => {
+    const spent = spendContainerHeaderAllowance(r, allowance);
+    if (!spent) return r;
+    allowance -= spent.spent;
+    return spent.result;
+  });
 
   if (metaOnly) {
     for (const r of sorted) {

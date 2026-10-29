@@ -206,7 +206,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     description:
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
       "symbol mode: function/method → merged full body; class/module → member OUTLINE " +
-      `(method ids, no method bodies, tests excluded) + header chunks (consts, DSL, fields) listed by lines, inlined whole up to ${CONTAINER_HEADER_CHAR_BUDGET} chars (kind:'containerHeader'; rest: 'not inlined', their member ids answer them); ` +
+      `(method ids, no method bodies, tests excluded) + header chunks (consts, DSL, fields) listed by lines, inlined whole up to ${CONTAINER_HEADER_CHAR_BUDGET} chars per class, ${BATCH_FULL_TEXT_CHAR_BUDGET} per answer shared with file text (kind:'containerHeader'; rest: 'not inlined', their member ids answer them); ` +
       "doc:<hash> → full section content. " +
       `relativePath mode: small code file (≤${FULL_TEXT_MAX_LINES} lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; ` +
       "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +

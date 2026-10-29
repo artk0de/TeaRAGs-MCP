@@ -38,6 +38,14 @@ export const CONTAINER_HEADER_CHAR_BUDGET = 6_000;
 export const CONTAINER_HEADER_KIND = "containerHeader";
 
 /**
+ * Internal payload key holding a container row's header draft (bd: one
+ * inlined-text budget per answer): whatever re-renders the row under a smaller
+ * answer allowance reads it, and `stripInternalFields` drops it before an
+ * answer leaves the core.
+ */
+export const CONTAINER_HEADER_DRAFT_KEY = "containerHeaderDraft";
+
+/**
  * A find_symbol batch address (agent turn economy N1) no symbol answered: the
  * address as requested, why, and — when the working tree deleted the file the
  * index holds it in — `treeState: "deleted"`.

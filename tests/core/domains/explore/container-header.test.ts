@@ -7,7 +7,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { CONTAINER_HEADER_CHAR_BUDGET } from "../../../../src/core/contracts/types/symbol-batch.js";
+import { stripInternalFields } from "../../../../src/core/api/public/dto/sanitize.js";
+import {
+  BATCH_FULL_TEXT_CHAR_BUDGET,
+  CONTAINER_HEADER_CHAR_BUDGET,
+} from "../../../../src/core/contracts/types/symbol-batch.js";
 import type { ScrollChunk } from "../../../../src/core/domains/explore/chunk-grouping/types.js";
 import type { ExploreResult } from "../../../../src/core/domains/explore/strategies/types.js";
 import { SymbolBatchDrill } from "../../../../src/core/domains/explore/symbol-batch.js";
@@ -125,6 +129,12 @@ describe("container header + outline (find_symbol on a class id)", () => {
     expect(row.payload?.kind).toBeUndefined();
   });
 
+  it("keeps the header draft internal: it never reaches an answer", () => {
+    const [row] = resolveSymbols([head, call, tail], OWNER);
+
+    expect(stripInternalFields(row.payload ?? {})).not.toHaveProperty("containerHeaderDraft");
+  });
+
   it("inlines nothing under metaOnly", () => {
     const [row] = resolveSymbols([head, call, tail], OWNER, true);
 
@@ -193,5 +203,99 @@ describe("SymbolBatchDrill — one header chunk body per batch", () => {
 
     expect(answer.rows[1].sameChunkAs).toBeUndefined();
     expect(contentOf(answer.rows[1].result)).toContain(HEAD_TEXT);
+  });
+});
+
+describe("one inlined-text budget per find_symbol answer", () => {
+  /** A container `owner` opened in `file`, its one header chunk `size` chars of text. */
+  const container = (owner: string, file: string, size: number): ScrollChunk => ({
+    id: `${file}#h`,
+    payload: {
+      symbolId: owner,
+      name: owner,
+      chunkType: "block",
+      parentType: "module",
+      parentSymbolId: owner,
+      relativePath: file,
+      language: "ruby",
+      startLine: 1,
+      endLine: 10,
+      content: `module ${owner}\n${"#".repeat(size - owner.length - 8)}`,
+      memberSymbolIds: [`${owner}::CONST`],
+    },
+  });
+  const inlinedText = (rows: { payload?: Record<string, unknown> }[]): number =>
+    rows.reduce(
+      (sum, r) =>
+        sum +
+        contentOf(r)
+          .split("\n── header ")
+          .slice(1)
+          .reduce((n, piece) => n + piece.slice(piece.indexOf("\n") + 1).length, 0),
+      0,
+    );
+  const batchOver = (chunks: ScrollChunk[], outlineFor?: () => unknown) =>
+    new SymbolBatchDrill(
+      (symbol) =>
+        ({
+          execute: async () =>
+            resolveSymbols(
+              chunks.filter((c) => c.payload.symbolId === symbol),
+              symbol,
+            ) as ExploreResult[],
+          codegraphWarning: undefined,
+        }) as any,
+      outlineFor as any,
+    );
+
+  it("spends the shared budget in result order across a namespace reopened in many files", () => {
+    const files = Array.from({ length: 6 }, (_, i) => `app/ns/file_${i}.rb`);
+    const rows = resolveSymbols(
+      files.map((f) => container("Ns", f, 5_500)),
+      "Ns",
+    );
+
+    const inlined = rows.filter((r) => r.payload?.kind === "containerHeader");
+    expect(inlined.map((r) => r.payload?.relativePath)).toEqual(files.slice(0, 4));
+    expect(inlinedText(rows)).toBeLessThanOrEqual(BATCH_FULL_TEXT_CHAR_BUDGET);
+    expect(contentOf(rows[4])).toContain("  header 1–10: 1 const — not inlined (answer budget)");
+    expect(contentOf(rows[4])).toContain(`past the ${BATCH_FULL_TEXT_CHAR_BUDGET}-char answer budget`);
+    expect(contentOf(rows[4])).not.toContain("── header");
+  });
+
+  it("spends one budget over a 20-container batch, in request order", async () => {
+    const owners = Array.from({ length: 20 }, (_, i) => `Svc${i}`);
+    const answer = await batchOver(owners.map((o) => container(o, `app/${o}.rb`, 3_000))).execute(owners, {
+      collectionName: "c",
+      limit: 50,
+    });
+
+    const kinds = answer.rows.map((r) => r.result.payload?.kind);
+    expect(kinds.slice(0, 8)).toEqual(Array(8).fill("containerHeader"));
+    expect(kinds.slice(8).every((k) => k === undefined)).toBe(true);
+    expect(inlinedText(answer.rows.map((r) => r.result))).toBeLessThanOrEqual(BATCH_FULL_TEXT_CHAR_BUDGET);
+    expect(contentOf(answer.rows[8].result)).toContain("— not inlined (answer budget)");
+    expect(answer.rows[8].result.payload?.mergedChunkIds).toEqual([]);
+  });
+
+  it("charges a file path's full text and a container header to the same budget", async () => {
+    const fileText = "x".repeat(BATCH_FULL_TEXT_CHAR_BUDGET - 1_000);
+    const outlineFor = () => ({
+      execute: async () => [
+        { id: "f", score: 1, payload: { relativePath: "lib/a.rb", kind: "file", content: fileText } },
+      ],
+      directory: false,
+      fullTextWithheld: false,
+      outlineBehindFullText: { id: "f", score: 1, payload: { relativePath: "lib/a.rb", content: "lib/a.rb\n  A" } },
+      emptyAnswer: undefined,
+    });
+    const answer = await batchOver([container("Svc", "app/svc.rb", 3_000)], outlineFor).execute(["lib/a.rb", "Svc"], {
+      collectionName: "c",
+      limit: 50,
+    });
+
+    expect(contentOf(answer.rows[0].result)).toBe(fileText);
+    expect(answer.rows[1].result.payload?.kind).toBeUndefined();
+    expect(contentOf(answer.rows[1].result)).toContain("— not inlined (answer budget)");
   });
 });
