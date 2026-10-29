@@ -27,6 +27,15 @@ export const SEARCH_ANCHOR_BANNER =
 
 export const BODY_SHOWN_BANNER = `${BANNER_PREFIX}Body shown in full — answer from it; do not reopen the file.`;
 
+/**
+ * A find_symbol answer holding bodies AND outlines: only the bodies are
+ * complete. It states the call shape, never a member id — an agent reads
+ * exactly the example a banner names, not what it needs.
+ */
+export const MIXED_ANSWER_BANNER =
+  `${BANNER_PREFIX}Bodies shown in full — answer from them; outline rows list ids → ` +
+  "ONE find_symbol(symbols:[needed ids]), not a file read.";
+
 /** "default code search tool" is plugin vocabulary: the Codex/Cursor transforms map it to the host's tool. */
 export function emptyGraphBanner(tool: GraphBannerTool, shortName: string): string {
   const edgeNoun = tool === "get_callers" ? "callers" : "callees";
@@ -95,7 +104,21 @@ function pendingFilesBannerFor(result: McpToolResult): string | undefined {
 
 function findSymbolBanner(request: Record<string, unknown>, answer: Record<string, unknown>): string | undefined {
   if (request.relativePath !== undefined || request.metaOnly === true) return undefined;
-  return resultRows(answer).some(isBodyRow) ? BODY_SHOWN_BANNER : undefined;
+  const rows = resultRows(answer);
+  if (!rows.some(isFullRow)) return undefined;
+  return rows.some(isOutlineRow) ? MIXED_ANSWER_BANNER : BODY_SHOWN_BANNER;
+}
+
+/** A row whose content is complete: a symbol body, or a batch path entry answered with the file's text. */
+function isFullRow(row: Record<string, unknown>): boolean {
+  return isBodyRow(row) || payloadOf(row).kind === "file";
+}
+
+/** A row listing member ids to drill rather than code: a class / container / file outline. Doc rows are neither. */
+function isOutlineRow(row: Record<string, unknown>): boolean {
+  const { symbolId, content } = payloadOf(row);
+  if (typeof content !== "string" || (typeof symbolId === "string" && symbolId.startsWith("doc:"))) return false;
+  return !isFullRow(row);
 }
 
 function emptyGraphBannerFor(

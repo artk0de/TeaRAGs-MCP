@@ -12,7 +12,11 @@
  */
 
 import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
-import { BATCH_FULL_TEXT_MAX_LINES, type SymbolBatchMiss } from "../../contracts/types/symbol-batch.js";
+import {
+  BATCH_FULL_TEXT_CHAR_BUDGET,
+  FULL_TEXT_MAX_LINES,
+  type SymbolBatchMiss,
+} from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
 import { containerMemberMessage, findContainerMembers, rankByNamespaceProximity } from "./member-miss.js";
@@ -27,10 +31,26 @@ export const UNKNOWN_SYMBOL_HINT = "retry a partial address (Class or bare name)
 /** The next step an unknown path entry calls for. */
 const UNKNOWN_PATH_HINT = "retry a suggested path, or find_symbol(relativePath: <dir>)";
 
-/** Said once per batch answer in which a path entry was outlined instead of read, or a directory refused. */
-const BATCH_PATH_NOTICE =
-  `paths answer as outline in a batch (full text only ≤${BATCH_FULL_TEXT_MAX_LINES} lines; ` +
-  "a directory → missing) — read bodies by the member ids";
+/**
+ * Said once per batch answer in which a path entry was outlined instead of
+ * read, or a directory refused: which paths, and why. It names the call
+ * shape, never a member id — an agent reads exactly the example a notice
+ * names, not what it needs.
+ */
+function batchPathNotice(overLines: readonly string[], overBudget: readonly string[], directory: boolean): string {
+  const parts: string[] = [];
+  if (overLines.length > 0) {
+    parts.push(`over ${FULL_TEXT_MAX_LINES} lines, outlined: ${overLines.join(", ")} — read bodies by the member ids`);
+  }
+  if (overBudget.length > 0) {
+    parts.push(
+      `past the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char full-text budget, outlined: ${overBudget.join(", ")} — ` +
+        `find_symbol(relativePath: <path>) answers one file in full up to ${FULL_TEXT_MAX_LINES} lines`,
+    );
+  }
+  if (directory) parts.push("a directory → missing");
+  return parts.join("; ");
+}
 
 /**
  * Extensions a bare root-level name (`README.md`, `package.json`) is read as a
@@ -107,18 +127,19 @@ export interface SymbolBatchAnswer {
 
 export class SymbolBatchDrill {
   /**
-   * `outlineFor` answers a path entry (q1g6s.4) under a strict full-text line
-   * cap — a file outline, not the text a single `relativePath:` may return
-   * (yz10n); without it every entry is a symbol address.
+   * `outlineFor` answers a path entry (q1g6s.4) under the `relativePath:`
+   * full-text rule; the batch then caps the summed full text at
+   * {@link BATCH_FULL_TEXT_CHAR_BUDGET} (yz10n). Without it every entry is a
+   * symbol address.
    */
   constructor(
     private readonly strategyFor: (symbol: string) => SymbolSearchStrategy,
-    private readonly outlineFor?: (relativePath: string, fullTextMaxLines: number) => FileOutlineStrategy,
+    private readonly outlineFor?: (relativePath: string) => FileOutlineStrategy,
   ) {}
 
   async execute(addresses: readonly string[], ctx: ExploreContext): Promise<SymbolBatchAnswer> {
     const slots = new Semaphore(ADDRESS_CONCURRENCY);
-    const answers = await Promise.all(
+    const resolved = await Promise.all(
       addresses.map(async (address) => {
         const release = await slots.acquire();
         try {
@@ -128,24 +149,30 @@ export class SymbolBatchDrill {
         }
       }),
     );
+    const { answers, overBudget } = withinFullTextBudget(resolved);
+    const overLines = answers.flatMap((a) => (a.pathNote === "overLines" ? [a.rows[0]?.request ?? ""] : []));
+    const directory = answers.some((a) => a.pathNote === "directory");
+    const downgraded = overLines.length > 0 || overBudget.length > 0 || directory;
     return {
       rows: answers.flatMap((a) => a.rows),
       missing: answers.flatMap((a) => (a.miss ? [a.miss] : [])),
       ...firstWarning(answers),
-      ...(answers.some((a) => a.pathDowngraded) ? { batchNotice: BATCH_PATH_NOTICE } : {}),
+      ...(downgraded ? { batchNotice: batchPathNotice(overLines, overBudget, directory) } : {}),
     };
   }
 
   private async resolve(address: string, ctx: ExploreContext): Promise<AddressAnswer> {
     if (this.outlineFor && isFilePathAddress(address)) {
-      const outline = this.outlineFor(address, BATCH_FULL_TEXT_MAX_LINES);
+      const outline = this.outlineFor(address);
       const results = await outline.execute(ctx);
       // A directory listing is a whole-tree read: refused here, answered by `relativePath:` alone.
-      if (outline.directory) return { rows: [], miss: directoryEntryMiss(address), pathDowngraded: true };
+      if (outline.directory) return { rows: [], miss: directoryEntryMiss(address), pathNote: "directory" };
       if (results.length > 0) {
+        const behind = outline.outlineBehindFullText;
         return {
           rows: results.map((result) => ({ request: address, fileOutline: true, result })),
-          pathDowngraded: outline.fullTextWithheld,
+          ...(outline.fullTextWithheld ? { pathNote: "overLines" as const } : {}),
+          ...(behind ? { outlineBehindFullText: behind } : {}),
         };
       }
       // A file with no symbol chunk is no symbol either: its reason is the miss.
@@ -239,8 +266,39 @@ interface AddressAnswer {
   rows: SymbolBatchRow[];
   miss?: SymbolBatchMiss;
   warning?: string;
-  /** A path entry answered short of what `relativePath:` gives: outline for text, or a refused directory. */
-  pathDowngraded?: boolean;
+  /** A path entry answered with an outline for its size (`overLines`), or a directory entry refused. */
+  pathNote?: "overLines" | "directory";
+  /** A path entry answered with full text: the outline it answers instead past the batch's budget. */
+  outlineBehindFullText?: ExploreResult;
+}
+
+/**
+ * Full text for the path entries in request order while their summed text
+ * stays within {@link BATCH_FULL_TEXT_CHAR_BUDGET}; an entry past it answers
+ * its outline instead — unless the outline is no shorter, which saves nothing —
+ * and the entries after it are still measured. Returns the paths outlined.
+ */
+function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: AddressAnswer[]; overBudget: string[] } {
+  let spent = 0;
+  const overBudget: string[] = [];
+  const budgeted = answers.map((answer) => {
+    const outline = answer.outlineBehindFullText;
+    const row = answer.rows[0];
+    if (!outline || !row) return answer;
+    const size = contentLengthOf(row.result);
+    if (spent + size <= BATCH_FULL_TEXT_CHAR_BUDGET || contentLengthOf(outline) >= size) {
+      spent += size;
+      return answer;
+    }
+    overBudget.push(row.request);
+    return { ...answer, rows: [{ ...row, result: outline }] };
+  });
+  return { answers: budgeted, overBudget };
+}
+
+function contentLengthOf(result: ExploreResult): number {
+  const content = result.payload?.content;
+  return typeof content === "string" ? content.length : 0;
 }
 
 function firstWarning(answers: readonly AddressAnswer[]): { codegraphWarning?: string } {

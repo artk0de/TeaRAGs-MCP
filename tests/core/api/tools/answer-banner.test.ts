@@ -9,6 +9,7 @@ import {
   answerBannerFor,
   BODY_SHOWN_BANNER,
   emptyGraphBanner,
+  MIXED_ANSWER_BANNER,
   pendingFilesBanner,
   SEARCH_ANCHOR_BANNER,
   symbolShortName,
@@ -77,6 +78,15 @@ describe("banner texts", () => {
     );
     expect(emptyGraphBanner("get_callees", "settle")).toContain("Empty ≠ no callees:");
   });
+
+  it("the mixed-answer banner names the call shape, never a concrete id", () => {
+    expect(MIXED_ANSWER_BANNER.startsWith("↳ ")).toBe(true);
+    expect(MIXED_ANSWER_BANNER).not.toContain("\n");
+    expect(MIXED_ANSWER_BANNER.length).toBeLessThanOrEqual(200);
+    expect(MIXED_ANSWER_BANNER).toBe(
+      "↳ Bodies shown in full — answer from them; outline rows list ids → ONE find_symbol(symbols:[needed ids]), not a file read.",
+    );
+  });
 });
 
 describe("symbolShortName", () => {
@@ -129,6 +139,42 @@ describe("answerBannerFor — find_symbol bodies", () => {
       missing: [],
     };
     expect(answerBannerFor("find_symbol", { symbols: ["formatMcpResponse", "x"] }, structured(batch))).toBe(
+      BODY_SHOWN_BANNER,
+    );
+  });
+
+  // A batch mixing bodies with outlines is not "shown in full": the banner said
+  // so for 2 bodies among 11 rows and the agent reopened both files.
+  it("symbols batch mixing bodies and outlines → the mixed banner, never the body banner", () => {
+    const batch = {
+      results: {
+        columns: ["payload.request", "payload.symbolId", "payload.relativePath", "payload.content"],
+        rows: [
+          ["formatMcpResponse", "formatMcpResponse", "src/a.ts", "function formatMcpResponse() {\n  return 1;\n}"],
+          ["ExploreFacade", "ExploreFacade", "src/f.ts", "ExploreFacade\n  ExploreFacade#semanticSearch (public)"],
+          ["src/b.ts", null, "src/b.ts", "src/b.ts\n  helper\n  other"],
+        ],
+      },
+      missing: [],
+    };
+    expect(
+      answerBannerFor(
+        "find_symbol",
+        { symbols: ["formatMcpResponse", "ExploreFacade", "src/b.ts"] },
+        structured(batch),
+      ),
+    ).toBe(MIXED_ANSWER_BANNER);
+  });
+
+  it("symbols batch whose path entries came back as full file text → body banner", () => {
+    const batch = {
+      results: [
+        { payload: { request: "src/a.ts", kind: "file", relativePath: "src/a.ts", content: "export const a = 1;\n" } },
+        { payload: { request: "src/b.ts", kind: "file", relativePath: "src/b.ts", content: "export const b = 2;\n" } },
+      ],
+      missing: [],
+    };
+    expect(answerBannerFor("find_symbol", { symbols: ["src/a.ts", "src/b.ts"] }, structured(batch))).toBe(
       BODY_SHOWN_BANNER,
     );
   });

@@ -379,6 +379,88 @@ describe("CodeChunkGrouper", () => {
     });
   });
 
+  // A class-body chunker packs constants and short defs into the container's
+  // header window and declares them in `memberSymbolIds`; each id is a
+  // find_symbol address, so the file outline lists it under its container, as
+  // the class-id outline already does.
+  describe("groupFile on a class whose header window declares members", () => {
+    const OWNER = "Payments::Registry";
+    const PATH = "app/services/payments/registry.rb";
+    const row = (id: string, payload: Record<string, unknown>): ScrollChunk => ({
+      id,
+      payload: { relativePath: PATH, language: "ruby", parentSymbolId: OWNER, parentType: "class", ...payload },
+    });
+    const header = row("h", {
+      chunkType: "block",
+      name: OWNER,
+      symbolId: OWNER,
+      startLine: 2,
+      endLine: 14,
+      content:
+        "class Payments::Registry\n  ADAPTERS = {}.freeze\n  FEATURE_FLAGS = [].freeze\n  def adapters = ADAPTERS",
+      memberSymbolIds: [`${OWNER}::ADAPTERS`, `${OWNER}::FEATURE_FLAGS`, `${OWNER}#adapters`],
+    });
+    const call = row("m", {
+      chunkType: "function",
+      name: "call",
+      symbolId: `${OWNER}#call`,
+      startLine: 16,
+      endLine: 30,
+      content: "def call\nend",
+    });
+
+    it("lists the header window's declared members under the container line", () => {
+      const result = CodeChunkGrouper.groupFile([call, header]);
+
+      expect(result.payload?.content).toBe(
+        [
+          PATH,
+          `  ${OWNER}`,
+          `    ${OWNER}::ADAPTERS`,
+          `    ${OWNER}::FEATURE_FLAGS`,
+          `    ${OWNER}#adapters`,
+          `  ${OWNER}#call`,
+        ].join("\n"),
+      );
+    });
+
+    it("files a later window's members under the container too, each id once", () => {
+      const tail = row("t", {
+        chunkType: "block",
+        name: OWNER,
+        symbolId: OWNER,
+        startLine: 32,
+        endLine: 36,
+        content: "class Payments::Registry\n  LIMIT = 5\n  def adapters = ADAPTERS",
+        memberSymbolIds: [`${OWNER}::LIMIT`, `${OWNER}#adapters`],
+      });
+
+      const result = CodeChunkGrouper.groupFile([header, call, tail]);
+
+      expect(result.payload?.content).toBe(
+        [
+          PATH,
+          `  ${OWNER}`,
+          `    ${OWNER}::ADAPTERS`,
+          `    ${OWNER}::FEATURE_FLAGS`,
+          `    ${OWNER}#adapters`,
+          `    ${OWNER}::LIMIT`,
+          `  ${OWNER}#call`,
+        ].join("\n"),
+      );
+    });
+
+    it("decorates only the container's own line with declared visibility, as the class-id outline does", () => {
+      const result = CodeChunkGrouper.groupFile([header, call], (_path, id) =>
+        id === `${OWNER}#call` ? "private" : id === `${OWNER}#adapters` ? "private" : undefined,
+      );
+
+      const lines = (result.payload?.content as string).split("\n");
+      expect(lines).toContain(`    ${OWNER}#adapters`);
+      expect(lines).toContain(`  ${OWNER}#call (private)`);
+    });
+  });
+
   describe("groupFile on a test file (outline by example, tea-rags-mcp-msv3l)", () => {
     const specPath = "spec/models/user_spec.rb";
     const testChunk = (

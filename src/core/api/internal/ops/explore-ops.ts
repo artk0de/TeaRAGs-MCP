@@ -476,8 +476,7 @@ export class ExploreOps {
     const workingTreeView = await pendingView;
     const drill = new SymbolBatchDrill(
       (symbol) => this.buildSymbolSearchStrategy(request, symbol),
-      (relativePath, fullTextMaxLines) =>
-        this.buildFileOutlineStrategy(relativePath, request.language, fullTextMaxLines),
+      (relativePath) => this.buildFileOutlineStrategy(relativePath, request.language),
     );
     const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
     const fields = request.fields ?? (request.rerank ? undefined : BATCH_LEAN_FIELDS);
@@ -884,17 +883,13 @@ export class ExploreOps {
   }
 
   /** The path-mode strategy for one file or directory — single `relativePath` and every batch path entry alike. */
-  private buildFileOutlineStrategy(
-    relativePath: string,
-    language: string | undefined,
-    fullTextMaxLines?: number,
-  ): FileOutlineStrategy {
+  private buildFileOutlineStrategy(relativePath: string, language: string | undefined): FileOutlineStrategy {
     return new FileOutlineStrategy(
       this.qdrant,
       this.reranker,
       this.payloadSignals,
       this.essentialKeys,
-      { relativePath, language, ...(fullTextMaxLines !== undefined ? { fullTextMaxLines } : {}) },
+      { relativePath, language },
       this.visibilityResolver,
     );
   }

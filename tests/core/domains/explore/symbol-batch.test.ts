@@ -321,8 +321,7 @@ describe("SymbolBatchDrill", () => {
       indexHolds(index);
       const pathDrill = new SymbolBatchDrill(
         (symbol) => new SymbolSearchStrategy(qdrant, reranker, [], [], registry, { symbol }),
-        (relativePath, fullTextMaxLines) =>
-          new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath, fullTextMaxLines }),
+        (relativePath) => new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath }),
       );
       const view = fakeWorkingTreeView({
         unindexed: { "db/migrate/001_create.rb": { isDirectory: false, ignoreRule: "db/migrate/" } },
