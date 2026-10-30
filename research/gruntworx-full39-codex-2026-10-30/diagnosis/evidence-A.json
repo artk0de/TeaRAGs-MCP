@@ -1,0 +1,197 @@
+{
+  "actor": "A",
+  "source": "research/gruntworx-full39-codex-2026-10-30/A/events.jsonl.gz",
+  "analysis_script": "analyze.py",
+  "derived_input_sha256": "82ca156b5cdcf255146f76637af071220793f0f8302ce48142d72f0b6392596e",
+  "turn_count": 39,
+  "unique_raw_response_completions": 260,
+  "raw_response_usage_including_compaction": {
+    "totalTokens": 31752286,
+    "inputTokens": 31633623,
+    "cachedInputTokens": 31032704,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 118663,
+    "reasoningOutputTokens": 78360
+  },
+  "archived_thread_usage": {
+    "totalTokens": 31257056,
+    "inputTokens": 31142253,
+    "cachedInputTokens": 30543744,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 114803,
+    "reasoningOutputTokens": 78360
+  },
+  "raw_minus_thread_usage": {
+    "totalTokens": 495230,
+    "inputTokens": 491370,
+    "cachedInputTokens": 488960,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 3860,
+    "reasoningOutputTokens": 0
+  },
+  "compactions": [
+    {
+      "question": "Q05",
+      "id": "01a18aeb-dc90-7f80-bc49-765eb3d22080",
+      "duration_ms": 10101
+    },
+    {
+      "question": "Q32",
+      "id": "01a18af5-3396-7ee3-9c43-bdb8911c84c0",
+      "duration_ms": 15639
+    }
+  ],
+  "reported_tool_duration_ms_sum": 44269,
+  "tools": {
+    "shell": 96,
+    "list_projects": 1,
+    "semantic_search": 37,
+    "read_mcp_resource": 25,
+    "get_callees": 25,
+    "find_symbol": 95,
+    "find_similar": 1,
+    "hybrid_search": 1,
+    "get_index_status": 1
+  },
+  "resources": {
+    "tea-rags://guide/navigation": 23,
+    "tea-rags://guide/tool-choice": 1,
+    "tea-rags://guide/degraded": 1
+  },
+  "hook_counts": {
+    "sessionStart": 12,
+    "userPromptSubmit": 117,
+    "preToolUse": 291,
+    "postToolUse": 405
+  },
+  "hook_duration_ms_sums": {
+    "sessionStart": 3040,
+    "userPromptSubmit": 11530,
+    "preToolUse": 27043,
+    "postToolUse": 27009
+  },
+  "hook_runs": 825,
+  "reported_hook_duration_ms_sum": 68622,
+  "nonempty_hook_outputs": 48,
+  "hook_output_groups": [
+    {
+      "sha256": "6acb340af0d7c87c32640dfd3c4563cea15734c73b517a87b3226b23bda0505c",
+      "count": 39,
+      "chars": 366,
+      "prefix": "tea-rags routing (this turn):\n- source code via find_symbol; config/migrations/specs, stubs → shell "
+    },
+    {
+      "sha256": "5b6ce1d724ed89fc09239340531189585a64d66779a7e8f352e8cf4792af12eb",
+      "count": 3,
+      "chars": 9649,
+      "prefix": "# tea-rags core\n\n**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):\nou"
+    },
+    {
+      "sha256": "ad3740258b1e4396f07705689f5c779408b5253fe16fb1c62010b3f76158c2b9",
+      "count": 3,
+      "chars": 1686,
+      "prefix": "**tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server `tea-rags`. Code mode"
+    },
+    {
+      "sha256": "0bb94cd52f7f7392983166fb7f9c32a29fec6e64c594480fa991a8a86f0d16f8",
+      "count": 3,
+      "chars": 136,
+      "prefix": "# tea-rags prime — /Users/Shared/nav-ab/repo-master\n\nQdrant warm-up pending — index queries will be "
+    }
+  ],
+  "navigation": {
+    "identical_reads": 23,
+    "body_chars_each": 19668,
+    "body_chars_sum": 452364,
+    "questions": [
+      "Q01",
+      "Q02",
+      "Q03",
+      "Q03",
+      "Q03",
+      "Q03",
+      "Q05",
+      "Q05",
+      "Q06",
+      "Q08",
+      "Q09",
+      "Q11",
+      "Q12",
+      "Q13",
+      "Q15",
+      "Q15",
+      "Q19",
+      "Q20",
+      "Q21",
+      "Q22",
+      "Q23",
+      "Q27",
+      "Q29"
+    ],
+    "body_identity_provenance": "Parent supplemental raw-payload aggregation; read count reproduced by analyze.py"
+  },
+  "canonical_explore_skill": {
+    "identical_successful_cat_calls_before_first_compaction": 5,
+    "questions": [
+      "Q01",
+      "Q02",
+      "Q03",
+      "Q04",
+      "Q05"
+    ],
+    "additional_differently_formatted_read_question": "Q15",
+    "scope": "The five exact repeated commands completed with exit_code0; post-compaction rereads are not automatically redundant."
+  },
+  "expensive_question_examples": [
+    {
+      "question": "Q03",
+      "reported_turn_duration_ms": 180539,
+      "raw_responses": 32,
+      "tool_items": 31,
+      "reported_tool_duration_ms_sum": 1818,
+      "reported_hook_duration_ms_sum": 6785,
+      "output_tokens": 21317,
+      "reasoning_tokens": 17108
+    },
+    {
+      "question": "Q04",
+      "reported_turn_duration_ms": 78569,
+      "raw_responses": 5,
+      "tool_items": 4,
+      "reported_tool_duration_ms_sum": 271,
+      "reported_hook_duration_ms_sum": 1219,
+      "output_tokens": 10155,
+      "reasoning_tokens": 8705
+    }
+  ],
+  "supplemental_find_symbol_aggregation": {
+    "calls": 95,
+    "batchNotice_count": 0,
+    "header_chars": 178747,
+    "content_chars": 355759,
+    "header_share": 0.5024384485002488,
+    "provenance": "Parent supplemental raw-payload aggregation; not all header content is redundant."
+  },
+  "supplemental_tool_metadata_dumps": [
+    {
+      "question": "Q01",
+      "call_id": "call_79857684e83449eb975ab8eba96a7b68",
+      "input": "text(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")));",
+      "delivered_chars": 40821,
+      "truncation_notice_original_tokens": 34620
+    },
+    {
+      "question": "Q32",
+      "call_id": "call_fbce0ed009d543f095e78de04da30511",
+      "input_shape": "const hits=ALL_TOOLS.filter(...); text(hits);",
+      "delivered_chars": 40821,
+      "truncation_notice_original_tokens": 34620
+    }
+  ],
+  "limitations": [
+    "One guarded trajectory; five proxy rejections remain a confound.",
+    "Summed durations can overlap and are not a critical-path partition.",
+    "No original pre-filter payload is available for four text rejections.",
+    "Character volumes are not token counts or measured removable waste."
+  ]
+}

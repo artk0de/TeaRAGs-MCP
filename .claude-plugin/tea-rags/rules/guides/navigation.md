@@ -1,18 +1,20 @@
-# Navigation — after any search
+# Navigation — result contracts and next steps
 
-Read before finishing any search. Routing + invariants: `tea-rags://guide/core`.
+Consult for an unfamiliar result or navigation contract; reuse this guide while
+retained in context. Routing + invariants: `tea-rags://guide/core`.
 
 ## Principles
 
-**Chunk is the source of truth — for languages with full AST chunking.** Results
-carry code + metadata (git signals ride a `rerank`). Don't re-read files to
-"verify" or "understand"; `find_symbol` returns full method body / class outline
-(ids to drill) — no `Read`. Holds where `tea-rags://guide/language-capability`
-rates **AST = full** (native: ts/js/python/go/java/rust/ruby/ bash). For **AST =
-none** (sql/jsonc/json + any non-native on CharacterChunker) a chunk may split a
-symbol mid-body — there `Read` is legit fallback for exact code; markdown is
-**partial** (section-level, fine for docs). `Read` always allowed to MODIFY —
-never _needed_ to gather code for a full-AST language.
+**A complete fresh body from ANY tea-rags tool is authoritative read code.**
+This includes `semantic_search`, not just `find_symbol`: never confirm the same
+body through another call, `Read`, `cat` or `sed`. Metadata-only rows,
+signatures, outlines and container headers are not method bodies. Refresh only
+affected edited/stale code or evidence missing after compaction; reuse
+everything else.
+
+Full-AST chunks preserve symbol bodies; partial/non-AST chunks may split them
+(`tea-rags://guide/language-capability`). Fetch only actually missing text,
+never re-read a complete fresh body because it came from search.
 
 **`#partN` = fragment, never the unit of reasoning (MANDATORY).** Result
 `symbolId` ends `#partN` (or `name` says `part i/N`) → oversized symbol, split
@@ -33,14 +35,17 @@ doc TOC) — doc is the subject, no verification needed. Tests = executable spec
 (what system SHOULD do); src↔test conflict → report both facts. Axis roles +
 broad-search splitting: `rules/references/axis-splitting.md`.
 
-## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
+## Conditional next steps
 
-**First search rarely returns a complete answer.** A chunk shows where the
-symbol lives — not the whole picture. Before synthesizing from a single chunk,
-ask: _need full body / file structure / a neighbor / doc sections?_ If yes —
-next call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is
-instant (no embedding), returns merged definitions, file outlines, or doc TOCs
-from the same index.
+**Check the evidence gap before another call.** If returned code or retained
+context supports the requested facts, answer. Need a missing body, structure,
+helper or doc section? Fetch that address with `find_symbol`, not another
+discovery search or `Read`. Discovery starts `metaOnly:true` with a small set
+(e.g. `limit:5`), then choose anchors before fetching bodies. Batch only methods
+needed now, not containing classes/trees; headers/shared declarations only when
+required. Each read closes a missing fact, never prefetches for a future
+question. Exhaustive asks may expand deliberately; a small page never proves
+absence.
 
 **Results are a table** `{ columns, rows }` from two results on (one result: a
 plain record list; record arrays in text tools too): `result.X` below = column
@@ -48,8 +53,9 @@ plain record list; record arrays in text tools too): `result.X` below = column
 null = absent. Shape: `tea-rags://guide/overview` `## Response shape`.
 
 **Answer carries `truncated`** (12k-token response budget hit) → rows are
-partial: run `truncated.next` verbatim or narrow by a knob its `message` names;
-never re-run the same call (`tea-rags://guide/pagination`).
+partial, never proof of a complete inventory or absence. If needed evidence is
+missing, run `truncated.next` or narrow as its `message` directs; do not fetch
+unneeded pages or repeat the same call (`tea-rags://guide/pagination`).
 
 | After search returns…                       | If you need…                            | Next call                                                                                                                                 |
 | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,8 +227,8 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 
 ### Optimal routes (navigate, don't re-search)
 
-- After ANY search → next call is `find_symbol`, never another search, never
-  `Read`. The chunk already names the symbol/path you need.
+- Need more evidence from a hit → `find_symbol` at its address. No extra call
+  when its full body or retained context already answers the question.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
 - Class API → `find_symbol(symbol: "ClassName")` = header code + outline (method
   ids, no method bodies); bodies → ONE `find_symbol(symbols: [<member ids>])`

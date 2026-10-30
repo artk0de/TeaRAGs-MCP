@@ -1,20 +1,22 @@
 **tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server `tea-rags`. Code mode
 (an `exec` tool that runs JS): call them inside `exec` as `await tools.mcp__tea_rags__<tool>({...})`,
-list them with `ALL_TOOLS.filter(t => t.name.includes("tea_rags"))` (`"tea-rags"` matches none).
+list names with `ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)`
+(`"tea-rags"` matches none). Read only the needed tool's description; never dump
+the entire catalog with full descriptions.
 Otherwise they are direct tools — call them as listed.
 
 **Skills are not loaded for you** — except this core:
 `$tea-rags-core` IS this text, never open its `SKILL.md`. A task a skill covers (`$name` /
-`$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I
-would read the skill" is not reading it), then every reference file or
-`tea-rags://` resource it marks MANDATORY for your case. A skill that hands off
-to another skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`,
-`$data-driven-generation` …) → open that `SKILL.md` too. Plan from that text,
-not from this core. `repair/<family>.md`, `rules/…` in any skill or
-reference = the plugin root (the folder holding `skills/`), never the skill's
-own folder. Every skill you name in a plan → open its `SKILL.md` with its own command
-first; a plan from memory is not reading it. A skill path you did not open with a
-command in this turn is invalid in a plan — open it first.
+`$dino-<name>`) → read its `SKILL.md` before using it, unless its instructions
+are already in the current context. Reuse loaded skills, references and guides
+across follow-ups; a new turn alone is not a reason to read them again.
+Retained current text satisfies a workflow's read-before-use requirements.
+Reopen only changed instructions or material missing after compaction.
+Load only the selected workflow's needed references and handoffs, using the
+listed skill paths rather than inventing paths or loading adjacent skills.
+Every skill you name in a plan must be available in context; a plan from memory
+is not reading it. `repair/<family>.md`, `rules/…` resolve from the plugin root
+(the folder holding `skills/`), never the skill's own folder.
 
 **Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
 the next step still serves the user's request (search / `$explore` over the

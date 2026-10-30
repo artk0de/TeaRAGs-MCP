@@ -1,0 +1,34 @@
+{
+  "actor": "B",
+  "source": "research/gruntworx-full39-codex-2026-10-30/B/events.jsonl.gz",
+  "analysis_script": "analyze.py",
+  "derived_input_sha256": "f971b9ea6a82368ed6cbed6632ea76d5b1c9cbfe42d2ad57c9ddba32b39376ed",
+  "turn_count": 39,
+  "unique_raw_response_completions": 103,
+  "raw_response_usage": {
+    "totalTokens": 9927528,
+    "inputTokens": 9904913,
+    "cachedInputTokens": 9717888,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 22615,
+    "reasoningOutputTokens": 4602
+  },
+  "archived_thread_usage": {
+    "totalTokens": 9927528,
+    "inputTokens": 9904913,
+    "cachedInputTokens": 9717888,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 22615,
+    "reasoningOutputTokens": 4602
+  },
+  "raw_matches_thread_usage": true,
+  "compactions": [],
+  "tools": {
+    "shell": 64
+  },
+  "reported_tool_duration_ms_sum": 25510,
+  "resources": {},
+  "hook_counts": {},
+  "repeated_exact_calls": [],
+  "scope": "Descriptive counters from the existing raw stream only; no new actor or upstream calls."
+}

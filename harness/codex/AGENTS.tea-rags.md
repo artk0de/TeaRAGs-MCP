@@ -2,18 +2,18 @@
 
 **Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):
 output past ~10k tokens loses its middle (`…N tokens truncated…`), and a rule
-you did not see is not a rule you may guess. Saw that marker → re-read the file
-in ranges (`sed -n`).
+you did not see is not a rule you may guess. Missing instructions → read only
+their missing ranges (`sed -n`). For source, follow the tea-rags continuation
+only if needed code is missing; never reread retained bodies because output was
+truncated.
 
 **Each step takes the tool its routing row names.**
 
-**Addressing.** Every tea-rags read call, each next/planned call you write
-included (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +
-`path=<this task's cwd>` (tree, re-checks too). Alias: digest `project`,
-SubagentStart line or `workingTree.project`; unknown/"not registered" → `path`
-alone, never ask; only a `collection` → it alone; after either say
-`next: project=<workingTree.project> + path`. No cwd → call now, `project`
-alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
+**Addressing.** Every read or suggested call: `project=<alias>` +
+`path=<task cwd>`. Alias: digest, SubagentStart or `workingTree.project`.
+Unknown/"not registered" → `path` alone, never ask; only a `collection` → it
+alone; then use `project=<workingTree.project> + path`. No cwd → `project`
+alone. `workingTree.tree` ≠ cwd → discard those rows, re-call with `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
 Shell rg -l --hidden --glob '!.git': `-l` filenames first for
@@ -39,9 +39,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
 - behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
-  → ONE `semantic_search(query: "a ||| b ||| c")` (≤5 phrasings fused; real ids
-  among them → `hybrid_search(metaOnly)`) → anchor → depth-2 callees/callers →
-  ONE batch; never text search
+  → ONE `semantic_search(query: "a ||| b ||| c", metaOnly:true, limit:5)` (≤5
+  phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`). Choose
+  anchors before bodies; expand only as needed, never text search for meaning
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → shell rg
   -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these
@@ -86,20 +86,19 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 
 **Invariants.**
 
-- NEVER call for what you have (row, body, outline, edge in context) → use it;
-  never re-query/re-read/re-verify, not "to be sure", not on follow-up. New
-  search only for unseen code.
-- After `find_symbol`: small file (`kind: "file"`) = full text, nothing after;
-  outline → drill. Needed at once → ONE `find_symbol(symbols: [...])`: NAMED
-  `Class#method` ids (rows, outline, edges) and several FILES; never a dir.
-- Anchor = the row whose symbol/path names the task's field or behaviour — any
-  row, not row 1, nor the first anchor you drilled; a later answer's row naming
-  it better → new anchor. Which files change / end to end / every place → next
-  call, before any new search or answer:
-  `1. get_callers/get_callees(symbolId: <anchor id>, depth: 2)`,
-  `find_co_changed` `2. ONE find_symbol(symbols: [anchor + needed ids])`. Before
-  answering: every row that named the behaviour is in the answer, or why it's a
-  false lead.
+- Reuse held code, outlines, edges and instructions (skills/guides) on
+  follow-ups. Refresh only affected edited/stale or missing material, including
+  after compaction. Each read closes a current evidence gap, not a future
+  question; a held body may need zero calls.
+- Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are
+  authoritative code, not hints. Never confirm the same body via `find_symbol`,
+  Read or shell. Metadata/outline/signature/container header ≠ method body.
+  Batch only missing bodies: `find_symbol(symbols:[<ids or file paths>])`, never
+  dirs.
+- Anchor = the hit for the requested behaviour. Flow/impact → needed edges
+  (`depth: 2`); change-impact may need `find_co_changed`. Batch required
+  methods, not classes/trees; headers/shared declarations only if needed. Stop
+  once supported.
 - `symbolId` ends `#partN` = fragment →
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - `empty.reason: unknownPath` with suggestions →
@@ -142,38 +141,40 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 **Read `tea-rags://guide/<topic>` when** →
 `read_mcp_resource(server: "tea-rags", uri: "tea-rags://guide/<topic>")`, never
 a bare `list_mcp_resources` (list only with `server: "tea-rags"`) (no resource
-tool → `tea-rags resource <uri>`): after any search → `navigation`; 0/too many
-hits, `truncated`, `empty.reason`, ambiguous name, when to stop → `pagination`;
-tool pick → `tool-choice`; skill/preset → `skill-choice`; research question →
-`research-questions`; banned move, fallback → `prohibited-patterns`; stale
-banner, drift, `treeState`, linked worktree → `freshness`; embedding/qdrant
-error, `denseUnavailable` → `degraded`; raw `filter:` → `filters`; `rerank`,
-labels → `presets`, `signals`, `signal-labels`; graph/AST, other language →
-`language-capability`; architecture / `review_changes` answer →
-`architecture`/`review`; no prime digest → `tea-rags://project/<alias>/digest`;
-numeric filter value unknown / bare raw number, no label →
-`…/metrics?language=<lang>&section=thresholds`.
+tool → `tea-rags resource <uri>`): unfamiliar result/navigation contract →
+`navigation`; 0/too many hits, `truncated`, `empty.reason`, ambiguous name, when
+to stop → `pagination`; tool pick → `tool-choice`; skill/preset →
+`skill-choice`; research question → `research-questions`; banned move, fallback
+→ `prohibited-patterns`; stale banner, drift, `treeState`, linked worktree →
+`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw
+`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;
+graph/AST, other language → `language-capability`; architecture /
+`review_changes` answer → `architecture`/`review`; no prime digest →
+`tea-rags://project/<alias>/digest`; numeric filter value unknown / bare raw
+number, no label → `…/metrics?language=<lang>&section=thresholds`.
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.
 
 **tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server
 `tea-rags`. Code mode (an `exec` tool that runs JS): call them inside `exec` as
-`await tools.mcp__tea_rags__<tool>({...})`, list them with
-`ALL_TOOLS.filter(t => t.name.includes("tea_rags"))` (`"tea-rags"` matches
-none). Otherwise they are direct tools — call them as listed.
+`await tools.mcp__tea_rags__<tool>({...})`, list names with
+`ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)`
+(`"tea-rags"` matches none). Read only the needed tool's description; never dump
+the entire catalog with full descriptions. Otherwise they are direct tools —
+call them as listed.
 
 **Skills are not loaded for you** — except this core: `$tea-rags-core` IS this
 text, never open its `SKILL.md`. A task a skill covers (`$name` /
-`$dino-<name>`) → open its `SKILL.md` in this turn, BEFORE planning ("I would
-read the skill" is not reading it), then every reference file or `tea-rags://`
-resource it marks MANDATORY for your case. A skill that hands off to another
-skill (a `$dino-*` wrapper → `$bug-hunt`, `$explore`, `$data-driven-generation`
-…) → open that `SKILL.md` too. Plan from that text, not from this core.
-`repair/<family>.md`, `rules/…` in any skill or reference = the plugin root (the
-folder holding `skills/`), never the skill's own folder. Every skill you name in
-a plan → open its `SKILL.md` with its own command first; a plan from memory is
-not reading it. A skill path you did not open with a command in this turn is
-invalid in a plan — open it first.
+`$dino-<name>`) → read its `SKILL.md` before using it, unless its instructions
+are already in the current context. Reuse loaded skills, references and guides
+across follow-ups; a new turn alone is not a reason to read them again. Retained
+current text satisfies a workflow's read-before-use requirements. Reopen only
+changed instructions or material missing after compaction. Load only the
+selected workflow's needed references and handoffs, using the listed skill paths
+rather than inventing paths or loading adjacent skills. Every skill you name in
+a plan must be available in context; a plan from memory is not reading it.
+`repair/<family>.md`, `rules/…` resolve from the plugin root (the folder holding
+`skills/`), never the skill's own folder.
 
 **Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
 the next step still serves the user's request (search / `$explore` over the code

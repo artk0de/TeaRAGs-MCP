@@ -544,7 +544,7 @@ describe("renderCodexHarness", () => {
     const codexRules = (rendered.get("tea-rags/scripts/codex-rules.txt") ?? "").replace(/\s+/g, " ");
     // codex-cli 0.162.1 code mode: nested tools are normalized JS identifiers (`tea-rags` → `tea_rags`).
     expect(codexRules).toContain("`await tools.mcp__tea_rags__<tool>({...})`");
-    expect(codexRules).toContain('`ALL_TOOLS.filter(t => t.name.includes("tea_rags"))`');
+    expect(codexRules).toContain('`ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)`');
     expect(codexRules).toContain("Otherwise they are direct tools");
     for (const path of ["AGENTS.tea-rags.md", "tea-rags/skills/tea-rags-core/SKILL.md"]) {
       expect(rendered.get(path), path).toContain("tools.mcp__tea_rags__<tool>");
@@ -632,22 +632,24 @@ describe("renderCodexHarness", () => {
     expect(script).not.toContain("CLAUDE_");
   });
 
-  it("tells the core to open a skill's SKILL.md and its mandatory references before planning", async () => {
+  it("loads only a selected workflow's missing instructions and needed references", async () => {
     const rendered = await renderCodexHarness(ROOT);
 
     for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
-      expect(rendered.get(path)).toMatch(/open its `SKILL\.md`/);
-      expect(rendered.get(path)).toMatch(/MANDATORY/);
+      const text = (rendered.get(path) ?? "").replace(/\s+/g, " ");
+      expect(text).toMatch(/read its `SKILL\.md` before using it, unless its instructions/);
+      expect(text).toMatch(/Load only the selected workflow's needed references and handoffs/);
     }
   });
 
-  // Codex T22: "I would read the skill" planned instead of read; a wrapper's hand-off target never opened.
-  it("tells the core to read the skill in the same turn, and the skill a wrapper hands off to", async () => {
+  // Full39: a fresh-read mandate on every turn repeated unchanged instructions.
+  it("reuses current instructions across follow-ups and reloads changed or compacted material", async () => {
     const rendered = await renderCodexHarness(ROOT);
 
     for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
-      expect(rendered.get(path)).toMatch(/this turn/);
-      expect(rendered.get(path)).toMatch(/hands off to/);
+      const text = (rendered.get(path) ?? "").replace(/\s+/g, " ");
+      expect(text).toMatch(/Reuse loaded skills, references and guides across follow-ups/);
+      expect(text).toMatch(/Reopen only changed instructions or material missing after compaction/);
     }
   });
 
@@ -691,10 +693,8 @@ describe("renderCodexHarness", () => {
       expect(firstLines).toMatch(/Read\s+ONE\s+file\s+per\s+command/);
       expect(body).toMatch(/Every\s+skill\s+you\s+name\s+in\s+a\s+plan/);
       expect(body).toMatch(/a\s+plan\s+from\s+memory\s+is\s+not\s+reading\s+it/);
-      // Codex T22 r7: a plan cited skill paths it never opened.
-      expect(body).toMatch(
-        /A\s+skill\s+path\s+you\s+did\s+not\s+open\s+with\s+a\s+command\s+in\s+this\s+turn\s+is\s+invalid\s+in\s+a\s+plan\s+—\s+open\s+it\s+first\./,
-      );
+      // Loaded instructions remain usable on follow-ups; requiring a fresh
+      // read in each turn caused repeated skill reads in the full39 run.
       expect(body.match(/ONE file per command/g)).toHaveLength(1);
     }
   });

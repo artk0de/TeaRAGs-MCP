@@ -1,7 +1,13 @@
 # PRE-GEN Pattern
 
-From Step 0. Gathers actionable context for code generation — files, risk
-signals, overlay labels.
+The explicit pre-change branch gathers actionable context — files, risk signals,
+overlay labels.
+
+Only an explicit pre-change investigation uses this branch. A factual follow-up
+inside a design discussion stays a factual question. Reuse held bodies and
+overlay labels; do not repeat discovery or signal lookup for unchanged material.
+Discovery starts with metadata and a small set; select targets before bodies. No
+speculative class/header/tree reads for possible future questions.
 
 ## PG-1. DISCOVER
 
@@ -15,23 +21,27 @@ Target area files, first matching branch:
   outline, then `find_symbol(symbol=<id from outline>)` — no symbol lookup, no
   `hybrid_search` / `semantic_search` on it
 - **Behavior/intent** → `semantic_search` (query=$ARGUMENTS, metaOnly=true,
-  limit=10, documentation="exclude")
+  limit=5 initially, documentation="exclude"; expand only for missing targets)
 - **Known symbol** → `find_symbol` (symbol=<id>) for definition; surrounding
-  area → `hybrid_search` (query=$ARGUMENTS, metaOnly=true, limit=10,
+  area → `hybrid_search` (query=$ARGUMENTS, metaOnly=true, limit=5 initially,
   documentation="exclude")
 
 Add `pathPattern` if module known, `language` if polyglot.
 `documentation="exclude"` keeps RFC/docs out of result slots.
 
-**Checkpoint:** 3-5 target paths found?
+**Checkpoint:** enough relevant targets for the requested change context?
 
-- YES → extract pathPattern → PG-2
-- NO → reformulate (narrower scope, other angle), retry once
+- YES → use those targets in PG-2; do not fill an arbitrary quota
+- NO → search only for the missing responsibility, retry once
 
 ## PG-2. SIGNAL LOOKUP
 
-All key symbols from PG-1 (2-5) in ONE `find_symbol` with rerank for overlay
-labels (instant, no embedding; rows keyed by `request`, misses in `missing[]`).
+Needed symbols from PG-1 (typically 2-5, not a minimum) in ONE `find_symbol`
+with rerank for overlay labels (instant, no embedding; rows keyed by `request`,
+misses in `missing[]`).
+
+If bodies are held, fetch missing signals with `metaOnly:true`. Otherwise
+include only method bodies that must be inspected for this change.
 
 ```
 find_symbol:
