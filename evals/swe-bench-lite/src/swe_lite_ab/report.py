@@ -33,6 +33,8 @@ class Row:
     index_in_run_seconds: float
     api_seconds: float
     gold_before_search: bool
+    stratum: str = ""            # tasks.stratum: patch size × issue kind
+    memorised: bool | None = None  # probe.py hit: the model named a gold file from the task text alone; None = not probed
 
 
 def _pairs(rows: list[Row]) -> list[tuple[Row, Row]]:
@@ -148,6 +150,12 @@ def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
     lines.append("")
     lines += _section("Gold file named in issue", [p for p in pairs if p[0].mentioned])
     lines += _section("Gold file not named", [p for p in pairs if not p[0].mentioned])
+    if any(p[0].memorised is not None for p in pairs):
+        # Headline stratum: neither recalled by the model nor handed to it by the task text.
+        lines += _section("Not memorised and not named",
+                          [p for p in pairs if p[0].memorised is False and not p[0].mentioned])
+    for s in sorted({p[0].stratum for p in pairs if p[0].stratum}):
+        lines += _section(f"Stratum {s}", [p for p in pairs if p[0].stratum == s])
     lines += _repo_strata(pairs)
     lines += _section("Exploratory: not searched-for in arm 0", [p for p in pairs if not p[0].gold_before_search])
     return "\n".join(lines) + "\n"
@@ -162,9 +170,10 @@ def write_csv(rows: list[Row], path: Path) -> Path:
     return path
 
 
-def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -> list[Row]:
+def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str,
+               memorised: dict[str, bool] | None = None) -> list[Row]:
     from . import config
-    from .tasks import gold_files, mentions_gold_file
+    from .tasks import gold_files, mentions_gold_file, stratum
     from .transcript import parse
 
     rows = []
@@ -183,7 +192,8 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
                             m.gold_touched, m.turns_to_gold, max(0.0, wall_raw - m.index_in_run_seconds),
-                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search))
+                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search,
+                            stratum(t), (memorised or {}).get(t.instance_id)))
     return rows
 
 

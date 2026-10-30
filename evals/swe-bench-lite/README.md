@@ -77,6 +77,107 @@ The single-arm `run --arm <arm>` stage remains for dev tuning (arm 1 only on
 `dev-django-5`, or `dev-5` for the second run). With it, `collect` for an arm must follow that arm's `run`
 immediately, before another `run` wipes the working tree.
 
+## SWE-rebench (decontaminated run)
+
+Lite is in the model's training data: on django the agent opens the gold file
+with its first tool call, with no search at all, and neither arm needs
+TeaRAGs. The decontaminated run uses `nebius/SWE-rebench-leaderboard`, which
+adds issues every month (through 2026-05 at the time of writing) over ~400
+smaller repositories.
+
+```bash
+uv run swe-lite-ab select --profile rebench   # tasks/rebench-2026.json
+uv run swe-lite-ab prepare --tasks rebench-2026
+# ... same stages as above with --tasks rebench-2026
+```
+
+- A task list is `{"dataset": "rebench", "ids": [...]}`; a bare id list is Lite.
+  Every stage reads the dataset from the list.
+- `runs/rebench.jsonl` is written once from the Hub and holds the rows as
+  swebench 5.x harness instances (`rebench.to_instance`): the image is the
+  task's `docker_image`, and `eval_script` applies the test patch and runs
+  `install_config.test_cmd` under `/opt/conda` env `testbed` (the rebench
+  images keep conda there, not under `/opt/miniconda3`). `evaluate` passes that
+  file as `--dataset_name`, so no rebench harness fork is needed. Checked on
+  `copier-org__copier-2646`: gold patch resolved, a no-op patch unresolved.
+- Interface tasks (non-empty `interface` column, 49 rows) are dropped: their
+  spec names the gold file's path, and without it the tests demand API names
+  the agent cannot know.
+- Profile `rebench`: every task created since 2026-01 whose patch touches at
+  least 2 files and 40 changed lines (`large-bug`, `large-feature`), plus 20
+  seeded `small-bug` tasks as the one-file control. The kind is an issue-text
+  keyword heuristic (`tasks.stratum`); the report has a section per stratum.
+
+## SWE-bench Pro (Python + TypeScript)
+
+Source: `ScaleAI/SWE-bench_Pro`, split `test` (V2, 642 rows). Kept: every
+`repo_language == "python"` row (ansible, openlibrary, qutebrowser — 237) and the
+three TypeScript repos (`protonmail/webclients`, `element-hq/element-web`,
+`tutao/tutanota` — 111; labelled js/ts, but their patches are `.ts`/`.tsx`).
+Go and NodeBB (plain JS) are dropped: the experiment is scoped to Python and
+TypeScript, the two languages it compares arms on. The task kind
+comes from the dataset's `issue_specificity` (any `*_bug` label → bug).
+
+Needs the tooling checkout (`SWE_PRO_OS`, default
+`/Users/Shared/swe-lite-ab/swe-bench-pro-os`): every task's agent input is its
+`v2/tasks/<id>/instruction.md` (PR description + requirements + new
+interfaces), and the snapshot `runs/pro.jsonl` stores that text as the
+`problem_statement`, so `mentions_gold_file` and the agent see the same thing.
+
+```bash
+uv run swe-lite-ab select --profile pro                     # tasks/pro-py-ts.json (all 348)
+uv run swe-lite-ab probe --tasks pro-py-ts --parallel 4     # runs/probe.jsonl (resumable)
+# ... prepare / index / run-paired / collect with --tasks <list>
+uv run swe-lite-ab evaluate --arm arm0 --tasks <list>       # local verifier, see below
+uv run swe-lite-ab report --tasks <list>
+```
+
+**Memorisation probe.** `claude -p` with only the repo name and the
+instruction text — `--tools ""`, an empty `--strict-mcp-config`, a fresh
+`CLAUDE_CONFIG_DIR`, cwd an empty dir under `/Users/Shared/swe-lite-ab/probe` —
+asked to list the files that must change. `hit` = any predicted path equals a
+gold file. When `runs/probe.jsonl` exists, the report fills the `memorised`
+column and adds the **Not memorised and not named** section: the headline
+stratum, where neither recall nor the task text hands the agent the file.
+
+**Grading.** No swebench harness: `pro.grade` runs the V2 verifier contract per
+task — `docker run --rm --platform linux/amd64` of
+`ghcr.io/scaleapi/swe-bench_pro-v2:<id>`, the task's `tests/` mounted read-only
+at `/tests`, the model patch read-only at `/model.patch`, `git apply` in `/app`
+(fallback `/testbed`; an empty patch skips it, a non-applying one is
+unresolved), then the unchanged `bash /tests/test.sh`. Exit 0 = resolved.
+Verifier logs go to `runs/<arm>/eval/<run_id>/<id>.log`; the report lands where
+`evaluate.report_path` puts every other dataset's, so `report` is unchanged.
+
+## Component localization benchmark (retrieval only, no LLM)
+
+Measures tea-rags search on its own: for each task, rank the repository's files
+for the issue text and score where the gold-patch files land.
+
+```bash
+uv run swe-lite-ab prepare  --tasks loc-10
+uv run swe-lite-ab index    --tasks loc-10
+uv run swe-lite-ab localize --tasks loc-10   # → results/localize-loc-10-<date>.md
+```
+
+- **Query**: the ORIGINAL issue text from `OpenHands/SWE-bench_Pro-locagent`
+  (`problem_statement`, snapshot `runs/locagent.jsonl`) — not Pro's
+  `instruction.md`, which lists file paths. Capped at 6000 chars; truncation is
+  noted in the report.
+- **Configurations**: `semantic-relevance`, `hybrid-relevance`,
+  `hybrid-bugHunt`, `hybrid-hotspots` (`tea-rags call`, `language: python`,
+  `filter: {}` so bugHunt/hotspots do not add their production filter — every
+  config searches the same chunks and only the ranking differs), and `bm25`, a
+  lexical baseline over git-tracked `.py` files (whole files plus path tokens,
+  code-aware tokenization). Chunks are paged until 50 distinct files.
+- **Metrics** per task × config: rank of the first gold file, recall@1/5/10,
+  hit@k, MRR — over gold `.py` files (primary) and every gold file
+  (secondary); a gold file outside the top 50 counts as not found. Tasks without
+  a gold `.py` are reported, not scored.
+- **Output**: top-50 rankings in `runs/localize/<id>/<config>.json`, per-task
+  metrics in `runs/localize.jsonl`. `--tasks` also accepts a temporary list
+  `runs/<name>.json` (e.g. the subset whose indexes are ready).
+
 ## `.contextignore` per repository
 
 `contextignore/<owner>__<repo>` is copied into every task repository of that
