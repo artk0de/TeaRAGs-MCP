@@ -1,0 +1,19 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/batch-B2-Q36-known-migrations/workspace",
+  "alias": "routing-batch-b2-q36-known-migrations",
+  "files": {
+    "db/migrate/20261001090000_create_report_exports.rb": "class CreateReportExports < ActiveRecord::Migration[7.2]\n  def change\n    create_table :report_exports do |t|\n      t.bigint :tenant_id, null: false\n      t.string :file_key, null: false\n      t.timestamps\n    end\n  end\nend\n",
+    "db/migrate/20261002100000_add_state_to_report_exports.rb": "class AddStateToReportExports < ActiveRecord::Migration[7.2]\n  def change\n    add_column :report_exports, :status, :string, null: false, default: 'queued'\n    add_column :report_exports, :completed_at, :datetime\n  end\nend\n",
+    "db/migrate/20261003110000_index_report_exports_for_tenant.rb": "class IndexReportExportsForTenant < ActiveRecord::Migration[7.2]\n  def up\n    add_index :report_exports, [:tenant_id, :status], name: :idx_report_exports_tenant_status\n  end\n\n  def down\n    remove_index :report_exports, name: :idx_report_exports_tenant_status\n  end\nend\n"
+  },
+  "raw_tool_responses": {},
+  "find_symbol_bodies": {},
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

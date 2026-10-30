@@ -31,10 +31,8 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `db/migrate/` (`:<table>`, `"<table>"` before "absent"), never
   `semantic_search`. Other file/dir path, lines N–M, doc TOC, how `<dir>` works
   / what's in it → `find_symbol(relativePath:)` outline first, then ONE batch of
-  the needed ids (N–M: ids spanning it); no structure word (architecture,
-  structure, organized, end to end, backbone, walk me through) → never codegraph
-  / `get_architecture_report`; its imports → `get_callees(relativePath:)`
-  (`imports[]`; a row's `imports` = a count)
+  needed ids (N–M: spanning ids); known method id → body, no outline. Imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count)
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
@@ -71,11 +69,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - a name's fit → `get_naming_lexicon(names:[{name,kind}])`; naming a T value →
   `types:[T]`
 - project's embedding/Qdrant/env → `list_projects(project:)`
-- research — layers/wrong-way deps of `<dir>` →
-  `get_architecture_report(pathPattern)`; implements `<P>` → `get_callers` +
-  `hybrid_search(<P>, metaOnly)`; registered/configured `<X>` →
-  `hybrid_search("<X> register config")`; ticket `<T>` →
-  `semantic_search(taskId: <T>, level: "chunk")` → ONE
+- research — layers/wrong-way deps of `<dir>` → explicit diagnosis/refactoring
+  only: `get_architecture_report(pathPattern)`; never for context gathering or
+  overviews. Implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`;
+  registered/configured `<X>` → `hybrid_search("<X> register config")`; ticket
+  `<T>` → `semantic_search(taskId: <T>, level: "chunk")` → ONE
   `find_symbol(symbols: <touched ids>)`, no grep; owners/recent
   churn/debt/don't-touch →
   `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
@@ -88,11 +86,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   follow-ups. Refresh only affected edited/stale or missing material, including
   after compaction. Each read closes a current evidence gap, not a future
   question; a held body may need zero calls.
+- Batch missing symbols/files → `find_symbol(symbols:)`, never dirs;
+  config/spec/migrations → concurrent bounded per-file reads.
 - Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are
   authoritative code, not hints. Never confirm the same body via `find_symbol`,
   Read or shell. Metadata/outline/signature/container header ≠ method body.
-  Batch only missing bodies: `find_symbol(symbols:[<ids or file paths>])`, never
-  dirs.
 - Anchor = the hit for the requested behaviour. Flow/impact → needed edges
   (`depth: 2`); change-impact may need `find_co_changed`. Batch required
   methods, not classes/trees; headers/shared declarations only if needed. Stop

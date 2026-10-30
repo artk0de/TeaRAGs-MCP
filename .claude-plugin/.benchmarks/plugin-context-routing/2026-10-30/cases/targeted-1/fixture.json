@@ -1,0 +1,47 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-1/workspace",
+  "alias": "routing-targeted-1",
+  "files": {
+    "src/retrieval/planner.ts": "export class RetrievalPlanner {\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ncandidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ndescribePlan(limit: number): string {\n  return `requested: ${limit}`;\n\n\n\n}\n}\n"
+  },
+  "raw_tool_responses": [
+    {
+      "tool": "find_symbol",
+      "symbol": "RetrievalPlanner#candidateCount",
+      "result": {
+        "workingTree": {
+          "project": "routing-targeted-1",
+          "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-1/workspace"
+        },
+        "results": [
+          {
+            "payload": {
+              "relativePath": "src/retrieval/planner.ts",
+              "symbolId": "RetrievalPlanner#candidateCount",
+              "startLine": 42,
+              "endLine": 45,
+              "content": "candidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "find_symbol_bodies": {
+    "RetrievalPlanner#candidateCount": {
+      "relativePath": "src/retrieval/planner.ts",
+      "symbolId": "RetrievalPlanner#candidateCount",
+      "startLine": 42,
+      "endLine": 45,
+      "content": "candidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}"
+    }
+  },
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

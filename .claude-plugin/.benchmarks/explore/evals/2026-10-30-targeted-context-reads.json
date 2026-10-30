@@ -1,0 +1,375 @@
+{
+  "skill_name": "explore",
+  "suite": "targeted-context-reads",
+  "date": "2026-10-30",
+  "plugin_version": "0.53.8",
+  "runner_contract": {
+    "actor_input": "Load the plugin under test, then replay actor_context.messages in order and deliver prompt as the next user message. Supply actor_context.project and cwd as session metadata. Do not expose expected_output, assertions, failure_mode, grading, or tool_fixtures to the actor.",
+    "fixtures": "All project paths, code, and reference text below are synthetic. No checkout or live index is required. Dispatch find_symbol from tool_fixtures by requested symbol, including a singleton symbols array. Add request to batch result rows when adapting to symbols mode. The simulator may record and reject other retrievals; they remain visible to the grader. Rebind project/cwd consistently if the runner requires a local temporary directory. Materialize each cases fixture.files relative to its isolated cwd for realistic shell fallbacks; correctness alone does not excuse an unnecessary retrieval.",
+    "freshness": "Seeded tool results and fixture responses are current for the supplied cwd; there are no intervening source/reference edits. Retain every seeded message in the actor's visible context. Do not simulate compaction or an unavailable reference.",
+    "grading": "Grade the actual post-prompt tool trace and final answer. Seeded calls are history and do not count as new calls. Accept tool-name namespace variations and singleton/batch find_symbol forms. A proposed call in prose does not satisfy a required read. No instruction-text regex checks. Do not count loading the plugin under test against code/reference retrieval budgets."
+  },
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "For a requested limit of 10, what candidate count does the retrieval planner choose? What is the maximum count for a large requested limit?",
+      "actor_context": {
+        "project": "context-read-fixture",
+        "cwd": "/workspace/context-read-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "semantic_search",
+              "arguments": {
+                "project": "context-read-fixture",
+                "path": "/workspace/context-read-fixture",
+                "query": "retrieval planner candidate count limit cap",
+                "metaOnly": true,
+                "limit": 5
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "semantic_search",
+            "result": {
+              "workingTree": {
+                "project": "context-read-fixture",
+                "tree": "/workspace/context-read-fixture"
+              },
+              "results": {
+                "columns": [
+                  "relativePath",
+                  "symbolId",
+                  "startLine",
+                  "endLine",
+                  "signature"
+                ],
+                "rows": [
+                  [
+                    "src/retrieval/planner.ts",
+                    "RetrievalPlanner#candidateCount",
+                    42,
+                    45,
+                    "candidateCount(limit: number): number"
+                  ],
+                  [
+                    "src/retrieval/planner.ts",
+                    "RetrievalPlanner#describePlan",
+                    70,
+                    75,
+                    "describePlan(limit: number): string"
+                  ]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "tool_fixtures": [
+        {
+          "tool": "find_symbol",
+          "symbol": "RetrievalPlanner#candidateCount",
+          "result": {
+            "workingTree": {
+              "project": "context-read-fixture",
+              "tree": "/workspace/context-read-fixture"
+            },
+            "results": [
+              {
+                "payload": {
+                  "relativePath": "src/retrieval/planner.ts",
+                  "symbolId": "RetrievalPlanner#candidateCount",
+                  "startLine": 42,
+                  "endLine": 45,
+                  "content": "candidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected_output": "Reads the already located RetrievalPlanner#candidateCount body directly, then reports 40 candidates for limit 10 and a ceiling of 160.",
+      "failure_mode": "q02-search-id-to-directory-file-class-round-trip",
+      "assertions": [
+        {
+          "text": "First post-prompt code retrieval is find_symbol for RetrievalPlanner#candidateCount, with project and matching cwd; metaOnly is absent or false.",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Retrieves only that needed method; does not rediscover via search, directory listing, file/class outline, or whole-file read.",
+          "type": "negative"
+        },
+        {
+          "text": "Final answer gives 40 and 160, derived from the retrieved body.",
+          "type": "correctness"
+        }
+      ],
+      "grading": {
+        "required_body_ids": [
+          "RetrievalPlanner#candidateCount"
+        ],
+        "max_post_prompt_code_retrievals": 1,
+        "answer_facts": {
+          "limit_10": 40,
+          "ceiling": 160
+        }
+      },
+      "fixture": {
+        "files": {
+          "src/retrieval/planner.ts": "export class RetrievalPlanner {\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ncandidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ndescribePlan(limit: number): string {\n  return `requested: ${limit}`;\n\n\n\n}\n}\n"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "prompt": "Which delays does the retry scheduler return for attempts 0, 1, and 4?",
+      "actor_context": {
+        "project": "context-read-fixture",
+        "cwd": "/workspace/context-read-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "semantic_search",
+              "arguments": {
+                "project": "context-read-fixture",
+                "path": "/workspace/context-read-fixture",
+                "query": "retry scheduler attempt delay",
+                "metaOnly": false,
+                "limit": 1
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "semantic_search",
+            "result": {
+              "workingTree": {
+                "project": "context-read-fixture",
+                "tree": "/workspace/context-read-fixture"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry/scheduler.ts",
+                    "symbolId": "RetryScheduler#delayMs",
+                    "startLine": 18,
+                    "endLine": 20,
+                    "content": "delayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "tool_fixtures": [],
+      "expected_output": "Answers 250 ms, 500 ms, and 2000 ms from the complete current method already returned by semantic_search, without another retrieval.",
+      "failure_mode": "complete-fresh-search-result-confirmatory-body-read",
+      "assertions": [
+        {
+          "text": "Makes no post-prompt code retrieval or search; the complete current method is already visible.",
+          "type": "negative"
+        },
+        {
+          "text": "Final answer correctly maps attempts 0, 1, and 4 to 250, 500, and 2000 milliseconds respectively.",
+          "type": "correctness"
+        }
+      ],
+      "grading": {
+        "max_post_prompt_code_retrievals": 0,
+        "answer_facts": {
+          "attempt_0_ms": 250,
+          "attempt_1_ms": 500,
+          "attempt_4_ms": 2000
+        }
+      },
+      "fixture": {
+        "files": {
+          "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "prompt": "Now shorten that explanation to two bullets, keeping the code location.",
+      "actor_context": {
+        "project": "context-read-fixture",
+        "cwd": "/workspace/context-read-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "read_file",
+              "arguments": {
+                "path": "/workspace/context-read-fixture/.agents/skills/explain-code/references/response-style.md"
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "read_file",
+            "result": {
+              "path": "/workspace/context-read-fixture/.agents/skills/explain-code/references/response-style.md",
+              "content": "# Code explanation style\nDescribe the behavior requested by the user. Keep numeric units explicit. Include the source path and line for each implementation claim.\n"
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "context-read-fixture",
+                "tree": "/workspace/context-read-fixture"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry/scheduler.ts",
+                    "symbolId": "RetryScheduler#delayMs",
+                    "startLine": 18,
+                    "endLine": 20,
+                    "content": "delayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "assistant",
+            "content": "RetryScheduler#delayMs starts at 250 milliseconds for attempt 0 and doubles the delay for each additional attempt. The Math.min expression caps the delay at 2000 milliseconds, so attempt 4 returns 2000 milliseconds. The implementation is in src/retry/scheduler.ts:18."
+          }
+        ]
+      },
+      "tool_fixtures": [],
+      "expected_output": "Rephrases the retained explanation as two bullets, preserving the 250 ms exponential schedule, 2000 ms cap, and source location. Does not reread the already retained current reference or source.",
+      "failure_mode": "follow-up-rereads-retained-current-skill-reference",
+      "assertions": [
+        {
+          "text": "Makes no post-prompt read of the retained response-style reference, skill, or code, including reads hidden in shell/CLI wrappers.",
+          "type": "negative"
+        },
+        {
+          "text": "Final answer has two bullets and preserves the base delay, doubling behavior, cap, and src/retry/scheduler.ts:18 location.",
+          "type": "correctness"
+        }
+      ],
+      "grading": {
+        "max_post_prompt_retrievals": 0,
+        "answer_bullet_count": 2,
+        "answer_facts": {
+          "base_ms": 250,
+          "growth": "doubles per attempt",
+          "ceiling_ms": 2000,
+          "source": "src/retry/scheduler.ts:18"
+        }
+      },
+      "fixture": {
+        "files": {
+          "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n",
+          ".agents/skills/explain-code/references/response-style.md": "# Code explanation style\nDescribe the behavior requested by the user. Keep numeric units explicit. Include the source path and line for each implementation claim.\n"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "prompt": "What does RetryScheduler#shouldRetry return for status 429, 503, and 400?",
+      "actor_context": {
+        "project": "context-read-fixture",
+        "cwd": "/workspace/context-read-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "find_symbol",
+              "arguments": {
+                "project": "context-read-fixture",
+                "path": "/workspace/context-read-fixture",
+                "symbol": "RetryScheduler"
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "context-read-fixture",
+                "tree": "/workspace/context-read-fixture"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry/scheduler.ts",
+                    "symbolId": "RetryScheduler",
+                    "kind": "class",
+                    "startLine": 5,
+                    "endLine": 120,
+                    "content": "RetryScheduler (class outline)\n  18-20 RetryScheduler#delayMs(attempt: number): number\n  34-36 RetryScheduler#shouldRetry(status: number): boolean\n  80-96 RetryScheduler#recordAttempt(status: number): void"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "tool_fixtures": [
+        {
+          "tool": "find_symbol",
+          "symbol": "RetryScheduler#shouldRetry",
+          "result": {
+            "workingTree": {
+              "project": "context-read-fixture",
+              "tree": "/workspace/context-read-fixture"
+            },
+            "results": [
+              {
+                "payload": {
+                  "relativePath": "src/retry/scheduler.ts",
+                  "symbolId": "RetryScheduler#shouldRetry",
+                  "startLine": 34,
+                  "endLine": 36,
+                  "content": "shouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected_output": "Fetches RetryScheduler#shouldRetry directly before stating behavior, then answers true for 429 and 503 and false for 400. The outline alone does not establish these values.",
+      "failure_mode": "outline-mistaken-for-read-body",
+      "assertions": [
+        {
+          "text": "Actually retrieves the shouldRetry body with find_symbol, project and matching cwd; metaOnly is absent or false, and does so before claiming its return values.",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does not answer from the outline or reread the directory/file/class; fetches no unrelated method bodies.",
+          "type": "negative"
+        },
+        {
+          "text": "Final answer reports 429=true, 503=true, 400=false from the body response.",
+          "type": "correctness"
+        }
+      ],
+      "grading": {
+        "required_body_ids": [
+          "RetryScheduler#shouldRetry"
+        ],
+        "max_post_prompt_code_retrievals": 1,
+        "answer_facts": {
+          "status_429": true,
+          "status_503": true,
+          "status_400": false
+        }
+      },
+      "fixture": {
+        "files": {
+          "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n"
+        }
+      }
+    }
+  ]
+}

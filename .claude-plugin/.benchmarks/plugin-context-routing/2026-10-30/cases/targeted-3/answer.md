@@ -1,0 +1,2 @@
+- Starts at 250 milliseconds for attempt 0 and doubles each attempt.
+- Caps at 2000 milliseconds, so attempt 4 returns 2000 milliseconds. Code: [scheduler.ts:18](src/retry/scheduler.ts:18).

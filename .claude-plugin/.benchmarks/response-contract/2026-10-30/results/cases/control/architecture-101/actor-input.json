@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/architecture-101/workspace",
+  "project": "routing-architecture-101",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"workspace_context\",\n    \"content\": \"Synthetic TypeScript repository at /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/architecture-101/workspace. All four source files are indexed; codegraph is enabled and all local imports resolve. No source changes are requested in this evaluation.\"\n  }\n]\n\nCurrent user request:\nIn src/auth, which supposedly provider-neutral contracts and execution paths still assume OAuth-style access tokens, expiry, or refresh tokens? Explain what currently happens for API-key authentication and session renewal, citing the implementation points."
+}

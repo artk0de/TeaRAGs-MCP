@@ -123,9 +123,10 @@ follow-ups. Choose mode by what you hold:
 | Test scope id                                                 | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                                                   |
 | 2+ ids of any kind above, or several file paths (never a dir) | `symbols: ["<id1>", "<path>"]`    | one row per hit keyed by `request`; misses in `missing[]`                         |
 
-**Mode B — `relativePath:` (you have a file or directory path) — USE THIS
-MORE.** With no symbol, just a path. Agents under-use it; it is the correct
-route, not `Read`, not `ls` / a glob listing, not `semantic_search`:
+**Mode B — `relativePath:` (path known, needed method ids unknown).** If search
+or a retained outline already supplies the needed ids, read their bodies
+directly in ONE `find_symbol(symbols:[…])`; skip directory, file and class
+outlines. Otherwise use the path to resolve only missing ids:
 
 - **`relativePath: "docs/file.md"` → the doc's heading TOC** (one hash per
   heading). THE way to map a markdown doc before reading it. Whenever a task
@@ -229,6 +230,10 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 
 - Need more evidence from a hit → `find_symbol` at its address. No extra call
   when its full body or retained context already answers the question.
+- Hit already has the needed method id → direct body; several → ONE batch. Never
+  add enclosing directory/file/class discovery first. Known independent
+  config/spec/migration reads → concurrent bounded per-file commands in one
+  code-mode wrapper, without intermediate model turns.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
 - Class API → `find_symbol(symbol: "ClassName")` = header code + outline (method
   ids, no method bodies); bodies → ONE `find_symbol(symbols: [<member ids>])`

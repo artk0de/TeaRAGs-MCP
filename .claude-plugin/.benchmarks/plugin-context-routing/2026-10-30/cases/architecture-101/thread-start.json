@@ -1,0 +1,67 @@
+{
+  "thread": {
+    "id": "01a18d6f-7fd8-71f1-9096-6ad781b2b2fc",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/workspace",
+        "runtimeWorkspaceRoots": [
+          "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/workspace"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a18d6f-7fd8-71f1-9096-6ad781b2b2fc",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "medium",
+    "createdAt": 1793374257,
+    "updatedAt": 1793374257,
+    "recencyAt": 1793374257,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/home/sessions/2026/10/30/rollout-2026-10-30T18-30-57-01a18d6f-7fd8-71f1-9096-6ad781b2b2fc.jsonl",
+    "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/workspace",
+    "cliVersion": "0.166.0",
+    "originator": "gruntworx-planning-benchmark",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": null,
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "model": "gpt-6.1-sol",
+  "modelProvider": "openai",
+  "serviceTier": null,
+  "disabledPluginIds": [],
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/workspace",
+  "runtimeWorkspaceRoots": [
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-101/workspace"
+  ],
+  "instructionSources": [],
+  "approvalPolicy": "never",
+  "approvalsReviewer": "user",
+  "sandbox": {
+    "type": "readOnly",
+    "networkAccess": false
+  },
+  "activePermissionProfile": {
+    "id": "routing_eval",
+    "extends": null
+  },
+  "reasoningEffort": "medium",
+  "multiAgentMode": "explicitRequestOnly"
+}

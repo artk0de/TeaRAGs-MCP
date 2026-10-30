@@ -1,0 +1,18 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-3/workspace",
+  "alias": "routing-targeted-3",
+  "files": {
+    "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n",
+    ".agents/skills/explain-code/references/response-style.md": "# Code explanation style\nDescribe the behavior requested by the user. Keep numeric units explicit. Include the source path and line for each implementation claim.\n"
+  },
+  "raw_tool_responses": [],
+  "find_symbol_bodies": {},
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

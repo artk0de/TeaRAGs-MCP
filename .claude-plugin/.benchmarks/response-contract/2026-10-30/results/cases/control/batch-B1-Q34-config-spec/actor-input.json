@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B1-Q34-config-spec/workspace",
+  "project": "routing-batch-b1-q34-config-spec",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"tool\",\n    \"name\": \"workspace_context\",\n    \"content\": \"cwd: /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B1-Q34-config-spec/workspace; project: routing-batch-b1-q34-config-spec; healthy current index. Config and RSpec DSL files are available on disk. No file contents have been read in this session.\"\n  }\n]\n\nCurrent user request:\nCompare the retry settings in config/report_delivery.yml and config/environments/test_delivery.yml with the expectations in spec/requests/report_delivery_spec.rb and spec/jobs/report_delivery_job_spec.rb. Point out any disagreement and cite the relevant file for each conclusion."
+}

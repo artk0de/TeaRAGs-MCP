@@ -1,0 +1,12 @@
+{
+  "key": "architecture-102",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "d8d5a515d8c8421a9c96da877c1c7ab8c6284b0679e61ebfdd83f5d264daadca",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d6f-8701-70c0-aad9-ceeef96a7f0c",
+  "turn_id": "01a18d6f-872a-7821-a1f1-b30b62cee4eb",
+  "status": "completed",
+  "wall_seconds": 47.584
+}

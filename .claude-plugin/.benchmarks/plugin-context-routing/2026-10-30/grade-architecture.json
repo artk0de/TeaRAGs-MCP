@@ -1,0 +1,330 @@
+{
+  "reviewer": "root, independent of architecture case author",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "plugin_version": "0.53.8",
+  "results": [
+    {
+      "case": "architecture-101",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "final_answer_present": true,
+        "independent_manual_semantics_review": true,
+        "no_architecture_report": true,
+        "no_diagnostics_or_architecture_guide_reads": true,
+        "source_bodies_from_at_least_two_files": true
+      },
+      "manual_semantics_review": "Correctly distinguishes optional refreshToken from the expired-session guard; explains MAX_SAFE_INTEGER API-key expiry and throwing refresh implementation.",
+      "report_calls": [],
+      "diagnostic_read_ids": [],
+      "source_body_evidence": {
+        "src/auth/contracts.ts": [
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732"
+        ],
+        "src/auth/session/SessionService.ts": [
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732"
+        ],
+        "src/auth/providers/ApiKeyAuthenticator.ts": [
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732"
+        ],
+        "src/auth/AuthController.ts": [
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732",
+          "exec-c8ba7e66-7564-4930-a67a-fb58ea5d3732"
+        ]
+      },
+      "final_answer": [
+        "The abstraction still assumes an OAuth-style token lifecycle in both its contracts and its session execution.\n\n- **Result contract:** [`AuthResult`](src/auth/contracts.ts:1) requires `accessToken` and `expiresAt`, with an optional `refreshToken`. Every provider must represent its credentials as an expiring access token.\n- **Provider contract:** [`Authenticator`](src/auth/contracts.ts:6) requires `refresh(refreshToken: string)` for every provider, even providers that cannot refresh.\n- **Login path:** [`SessionService.login`](src/auth/session/SessionService.ts:7) stores the authentication result and returns only `result.accessToken`.\n- **Renewal path:** [`SessionService.renew`](src/auth/session/SessionService.ts:12) implements the token lifecycle directly: a missing session throws `\"missing session\"`; an unexpired session returns its existing access token; an expired session requires a refresh token or throws `\"refresh token required\"`. With a refresh token, it calls the provider’s `refresh`, replaces the stored result, and returns the new access token. Equality with `expiresAt` counts as expired.\n\nFor **API-key authentication**, [`ApiKeyAuthenticator.authenticate`](src/auth/providers/ApiKeyAuthenticator.ts:4) simply wraps the supplied key as `accessToken`, sets `expiresAt` to `Number.MAX_SAFE_INTEGER`, and supplies no refresh token. This method performs no key validation. [`SessionService.createDefault`](src/auth/session/SessionService.ts:5) selects this provider.\n\nConsequently, ordinary API-key renewal just returns the same key while `now < Number.MAX_SAFE_INTEGER`. At or beyond that expiry value, renewal throws `\"refresh token required\"` before calling the provider. The provider’s mandatory [`refresh`](src/auth/providers/ApiKeyAuthenticator.ts:7) method itself always throws `\"API keys do not refresh\"`.\n\nThe [`controller`](src/auth/AuthController.ts:4) delegates login and renewal directly to the session service, so it adds no provider-specific handling. API keys fit the abstraction through a practically non-expiring token representation, rather than through an explicit non-refreshable credential contract."
+      ]
+    },
+    {
+      "case": "architecture-102",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "final_answer_present": true,
+        "independent_manual_semantics_review": true,
+        "no_architecture_report": true,
+        "no_diagnostics_or_architecture_guide_reads": true,
+        "source_bodies_from_at_least_two_files": true
+      },
+      "manual_semantics_review": "Correct controller -> session -> provider flow, injected/default provider construction, and local-only session deletion on logout. No violation audit substituted for overview.",
+      "report_calls": [],
+      "diagnostic_read_ids": [],
+      "source_body_evidence": {
+        "src/auth/session/SessionService.ts": [
+          "exec-b4d19dc4-60df-4077-b27a-5f3128e1f69d",
+          "exec-09c249ea-908d-4d02-ab8c-dfa3dd38286c",
+          "exec-80a8a7b2-c1ec-4e3f-9aa5-7d9eb350484e",
+          "exec-a0b1668c-4f51-4109-a6b5-ae4ba8b563ec",
+          "exec-4395c6e8-9547-4aab-bfbf-9957651ac130"
+        ],
+        "src/auth/contracts.ts": [
+          "exec-6761645f-1a64-405d-863a-e664fa22f8b8",
+          "exec-5906bd0a-90df-4608-b3b8-e6b4454b3b6c"
+        ],
+        "src/auth/AuthController.ts": [
+          "exec-07b23544-40d7-4812-a12b-0a8044d2e55a",
+          "exec-f28eba7a-3e69-4927-bedb-d899eadf7f53",
+          "exec-c1549739-8fe0-4f92-a9c5-570664184804",
+          "exec-a4fbb53a-671a-43ff-84d3-3cd3f00e9d05"
+        ],
+        "src/auth/providers/ApiKeyAuthenticator.ts": [
+          "exec-32bf4827-cf7b-4b00-82e4-9f3423df076e",
+          "exec-7700b160-6602-47dc-a963-11148f1ce8cc",
+          "exec-a25ada5e-c0b5-4810-a57d-886d16484641"
+        ]
+      },
+      "final_answer": [
+        "`src/auth` flows from **`AuthController` → `SessionService` → an `Authenticator` provider**. The service owns session state and coordinates authentication.\n\n| Component | Current responsibility |\n|---|---|\n| [AuthController](src/auth/AuthController.ts:3) | Request-facing entry within this module. Receives a `SessionService` and delegates `login`, `renew`, and `logout` directly to it. |\n| [Provider contract](src/auth/contracts.ts:1) | `Authenticator` exposes asynchronous `authenticate(input)` and `refresh(refreshToken)`. Both return `AuthResult`: an access token, optional refresh token, and expiry timestamp. |\n| [SessionService](src/auth/session/SessionService.ts:7) | Stores and retrieves sessions by ID, decides whether renewal is needed, and removes sessions on logout. Its constructor accepts the provider interface; `createDefault()` supplies `ApiKeyAuthenticator`. |\n| [ApiKeyAuthenticator](src/auth/providers/ApiKeyAuthenticator.ts:4) | Returns the supplied key as the access token, with `Number.MAX_SAFE_INTEGER` as expiry and no refresh token. Its `refresh()` throws. |\n\nThe calls behave as follows:\n\n- **Login:** controller → service → provider’s `authenticate()` → service stores the result under the session ID → returns the access token.\n- **Renew:** controller → service looks up the session. A valid session returns its existing token. An expired session requires a refresh token, calls the provider’s `refresh()`, and replaces the stored result. Missing sessions or refresh tokens throw. See [renew](src/auth/session/SessionService.ts:12).\n- **Logout:** controller → service → deletes the session entry. The controller returns no value. See [logout](src/auth/session/SessionService.ts:21).\n\nFor logout UX, the key boundary is that **logout currently removes local session state only**. The provider contract has no logout or revocation operation. There is also a concrete-provider helper, [`revokeLocalSession()`](src/auth/providers/ApiKeyAuthenticator.ts:10), that calls back into `SessionService.logout()`; the controller’s logout path does not use it.\n\nThese flows are verified from method bodies; the graph tool returned no edge data for the queried entry points."
+      ]
+    },
+    {
+      "case": "architecture-103",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "final_answer_present": true,
+        "independent_manual_semantics_review": true,
+        "scoped_report": true,
+        "diagnostics_skill_read": true,
+        "phase_1_reference_read": true
+      },
+      "manual_semantics_review": "Correct supplied component cycle and stability delta; identifies both concrete-provider construction and provider-to-session back edge; qualifies absent method edges/history.",
+      "report_calls": [
+        {
+          "id": "exec-f86ff201-be8d-44c2-abd2-09eb5914646d",
+          "arguments": {
+            "project": "routing-architecture-103",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-103/workspace",
+            "pathPattern": "src/auth/**"
+          }
+        }
+      ],
+      "diagnostic_read_ids": [
+        "exec-635789a5-a4a0-4990-9c81-155d6999b8f9",
+        "exec-ada5bd77-c0d2-47ad-8616-ef77ba81ff41",
+        "exec-6b1b1e48-bbd8-4415-a882-3d995d23993d",
+        "exec-6a111fb4-01d8-4897-8bda-35df53766a4a"
+      ],
+      "source_body_evidence": {
+        "src/auth/session/SessionService.ts": [
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c"
+        ],
+        "src/auth/providers/ApiKeyAuthenticator.ts": [
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c",
+          "exec-cc5024da-df34-495a-9103-d2dfbf02a42c"
+        ],
+        "src/auth/contracts.ts": [
+          "exec-2925eaba-fffe-4ff8-882d-98957931beef",
+          "exec-2925eaba-fffe-4ff8-882d-98957931beef"
+        ]
+      },
+      "final_answer": [
+        "The first boundary to correct is **provider → session**. The report identifies one structural root cause: `providers` depends back on the `session` component that consumes it.\n\n- **Dependency cycle and stability violation.** The graph reports `session → providers` with instability **0.25 → 0.75**, a delta of **0.50**, carried by one file edge and one call. [SessionService.createDefault](src/auth/session/SessionService.ts:5) constructs `ApiKeyAuthenticator`, despite the constructor already accepting the `Authenticator` interface.\n- **Provider owns session orchestration.** [ApiKeyAuthenticator.revokeLocalSession](src/auth/providers/ApiKeyAuthenticator.ts:10) accepts a concrete `SessionService` and calls `logout`. This confirms the report’s `cycleWithDependents: true`: provider implementation and session lifecycle know about each other.\n- **The contract assumes too much.** [Authenticator](src/auth/contracts.ts:6) requires `refresh`, while [ApiKeyAuthenticator.refresh](src/auth/providers/ApiKeyAuthenticator.ts:7) always throws because API keys cannot refresh. This is a source-supported abstraction mismatch, separate from the reported dependency violation.\n\nCorrect the provider-to-session boundary first: session lifecycle orchestration should own local logout; the provider should not require `SessionService`. This removes the back-reference responsible for the cycle. Then separate provider selection from session behavior so the service uses its existing injected contract without constructing a concrete provider. Finally, represent refresh as an explicit capability rather than requiring every authenticator to support it.\n\nThe report judged **all four component dependencies across three components**, with **one stable-dependency violation and one root cause**. No containment, low-support, tooling, or test-support exclusions were reported.\n\nLimits: no layering findings were returned, so this does not establish a complete layer hierarchy. Co-change history was unavailable, so the report’s “structural” label does not establish operational urgency. Method-edge queries returned `noEdgeFixture`; the cycle diagnosis rests on the component graph and retrieved source bodies. No files were edited."
+      ]
+    },
+    {
+      "case": "architecture-104",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "final_answer_present": true,
+        "independent_manual_semantics_review": true,
+        "scoped_report": true,
+        "diagnostics_skill_read": true,
+        "phase_1_reference_read": true,
+        "concrete_move_simulated": true
+      },
+      "manual_semantics_review": "Separates default construction into proposed composition module, removes provider knowledge of session, preserves shared contracts, actually requests restructure simulation, and qualifies missing plan ordering.",
+      "report_calls": [
+        {
+          "id": "exec-ddb3d61d-8718-4d46-848a-c5f01d403c71",
+          "arguments": {
+            "project": "routing-architecture-104",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-104/workspace",
+            "pathPattern": "src/auth/**"
+          }
+        },
+        {
+          "id": "exec-f59a8947-7679-4fe1-95df-e2eda5ea2dd7",
+          "arguments": {
+            "project": "routing-architecture-104",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-104/workspace",
+            "restructurePlan": {
+              "candidates": [
+                {
+                  "id": "stable-dependencies-auth",
+                  "rationale": "stableDependencies:src/auth/session->src/auth/providers",
+                  "ops": [
+                    {
+                      "removeEdge": {
+                        "from": "src/auth/session/SessionService.ts",
+                        "to": "src/auth/providers/ApiKeyAuthenticator.ts"
+                      }
+                    },
+                    {
+                      "removeEdge": {
+                        "from": "src/auth/providers/ApiKeyAuthenticator.ts",
+                        "to": "src/auth/session/SessionService.ts"
+                      }
+                    },
+                    {
+                      "addFile": {
+                        "file": "src/auth/composition/createDefaultSessionService.ts",
+                        "component": "src/auth/composition",
+                        "abstract": false
+                      }
+                    },
+                    {
+                      "addEdge": {
+                        "from": "src/auth/composition/createDefaultSessionService.ts",
+                        "to": "src/auth/session/SessionService.ts"
+                      }
+                    },
+                    {
+                      "addEdge": {
+                        "from": "src/auth/composition/createDefaultSessionService.ts",
+                        "to": "src/auth/providers/ApiKeyAuthenticator.ts"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "includeReportCandidates": false
+            }
+          }
+        },
+        {
+          "id": "exec-2c6c2f0a-2669-4a28-afad-4d93206ec525",
+          "arguments": {
+            "project": "routing-architecture-104",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-104/workspace",
+            "restructure": {
+              "ops": [
+                {
+                  "removeEdge": {
+                    "from": "src/auth/session/SessionService.ts",
+                    "to": "src/auth/providers/ApiKeyAuthenticator.ts"
+                  }
+                },
+                {
+                  "removeEdge": {
+                    "from": "src/auth/providers/ApiKeyAuthenticator.ts",
+                    "to": "src/auth/session/SessionService.ts"
+                  }
+                },
+                {
+                  "addFile": {
+                    "file": "src/auth/composition/createDefaultSessionService.ts",
+                    "component": "src/auth/composition",
+                    "abstract": false
+                  }
+                },
+                {
+                  "addEdge": {
+                    "from": "src/auth/composition/createDefaultSessionService.ts",
+                    "to": "src/auth/session/SessionService.ts"
+                  }
+                },
+                {
+                  "addEdge": {
+                    "from": "src/auth/composition/createDefaultSessionService.ts",
+                    "to": "src/auth/providers/ApiKeyAuthenticator.ts"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "diagnostic_read_ids": [
+        "exec-ac5a7f07-30ae-4131-ad0a-8bdf36819a0e",
+        "exec-b7767d81-0082-4bb8-b842-96eda051cbdd",
+        "exec-57df4b9e-1618-44ee-b63f-6b03372c0362",
+        "exec-a6a8df3c-b540-4305-9c99-54763b547894"
+      ],
+      "source_body_evidence": {
+        "src/auth/contracts.ts": [
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7"
+        ],
+        "src/auth/session/SessionService.ts": [
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7"
+        ],
+        "src/auth/providers/ApiKeyAuthenticator.ts": [
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7"
+        ],
+        "src/auth/AuthController.ts": [
+          "exec-7401fe76-823d-4f3b-9db8-a331800057b7",
+          "exec-79d3c677-df20-48c0-b599-7d19eba54196"
+        ]
+      },
+      "final_answer": [
+        "Move concrete provider wiring into an outer composition module, and remove local session revocation from the provider.\n\nThe root cause is a dependency cycle:\n\n- [`SessionService.createDefault()`](src/auth/session/SessionService.ts:5) constructs `ApiKeyAuthenticator`.\n- [`ApiKeyAuthenticator.revokeLocalSession()`](src/auth/providers/ApiKeyAuthenticator.ts:10) accepts `SessionService` and calls `logout()`.\n\nThe architecture report judged all four component dependencies across three components. It found one stable-dependencies violation: session → providers, with instability rising from 0.25 to 0.75. There is no co-change history, so these metrics establish structural coupling rather than measured maintenance impact.\n\nThe proposed order is:\n\n1. **Move default construction outward.** Extract `createDefault()` into a proposed `src/auth/composition/createDefaultSessionService.ts`. It should construct `new SessionService(new ApiKeyAuthenticator())`. Remove the concrete-provider import from `SessionService`; retain its existing `Authenticator` constructor parameter.\n\n2. **Keep local session lifecycle in the session/application layer.** Remove `ApiKeyAuthenticator.revokeLocalSession()` and migrate its callers to `SessionService.logout()` through application orchestration. [`AuthController.logout()`](src/auth/AuthController.ts:6) already provides that delegation. The provider method only deletes local session state; it performs no provider-side revocation.\n\n3. **Keep the shared contracts stable.** Retain `Authenticator` and `AuthResult` in [`contracts.ts`](src/auth/contracts.ts:1). No additional interface is needed for the current behavior.\n\nThe concrete candidate operations are:\n\n```text\nremoveEdge src/auth/session/SessionService.ts\n        -> src/auth/providers/ApiKeyAuthenticator.ts\nremoveEdge src/auth/providers/ApiKeyAuthenticator.ts\n        -> src/auth/session/SessionService.ts\naddFile   src/auth/composition/createDefaultSessionService.ts\naddEdge   composition/createDefaultSessionService.ts -> session/SessionService.ts\naddEdge   composition/createDefaultSessionService.ts -> providers/ApiKeyAuthenticator.ts\n```\n\nThe target direction is composition → session and provider, with session and provider depending on shared contracts.\n\nThe combined extraction simulation reported **one stable-dependencies violation resolved and none introduced**. The planning call did not return ordered steps, so the order above is a recommendation, not a server-validated sequence. Caller queries also returned no usable fixture edges; caller migration remains an implementation check.\n\nDuring implementation, verify default construction, login, renewal, and logout behavior, then compare the architecture review against the expected resolution. Any unexpected finding should trigger a revised plan before continuing.\n\nNo files were edited."
+      ]
+    },
+    {
+      "case": "architecture-105",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "final_answer_present": true,
+        "independent_manual_semantics_review": true,
+        "scoped_report": true,
+        "diagnostics_skill_read": true,
+        "phase_1_reference_read": true
+      },
+      "manual_semantics_review": "Explicit diagnostic invocation produces the supplied stability violation with both source edges and injected-contract repair direction; no invented detector cleanliness or urgency.",
+      "report_calls": [
+        {
+          "id": "exec-70f7c536-fdf8-41a9-81e5-dd910bfe5a9d",
+          "arguments": {
+            "project": "routing-architecture-105",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-105/workspace",
+            "pathPattern": "src/auth/**"
+          }
+        }
+      ],
+      "diagnostic_read_ids": [
+        "exec-77624e86-d8b2-4a7d-af6c-ce88fcf3d5e6",
+        "exec-a6c86dce-9991-4771-aab8-5b7183b5f7df",
+        "exec-b18678cc-8c3a-4c1e-863c-e0c19ae3aa45"
+      ],
+      "source_body_evidence": {
+        "src/auth/session/SessionService.ts": [
+          "exec-7df3948d-feec-46ba-8859-198c9f458892",
+          "exec-7df3948d-feec-46ba-8859-198c9f458892"
+        ],
+        "src/auth/providers/ApiKeyAuthenticator.ts": [
+          "exec-7df3948d-feec-46ba-8859-198c9f458892"
+        ]
+      },
+      "final_answer": [
+        "`src/auth/**` has **one stable-dependency violation and one root cause**: session and provider components depend on each other.\n\nThe root cause is `src/auth/providers`, with instability **0.75**, while its dependent `src/auth/session` has instability **0.25**. The dependency crosses sibling components, with a delta of **0.50**.\n\nSource evidence confirms both directions:\n\n- [SessionService.ts:5](src/auth/session/SessionService.ts#L5): `createDefault()` constructs `ApiKeyAuthenticator`, coupling session code to a concrete provider.\n- [ApiKeyAuthenticator.ts:10](src/auth/providers/ApiKeyAuthenticator.ts#L10): `revokeLocalSession()` calls `SessionService.logout()`, creating the reverse dependency.\n- [SessionService.ts:6](src/auth/session/SessionService.ts#L6): the constructor already accepts `Authenticator`, providing an existing abstraction for decoupling.\n\nThe repair direction is to supply the provider through that constructor and remove the provider’s knowledge of `SessionService`. No changes or remedy simulations were performed.\n\nThe report judged **4 of 4 component dependencies across 3 components**, excluding zero containment dependencies, low-support dependencies, tooling files, or test-support files. Impact tiers were **not built because there is no co-change history**, so urgency is unproven despite the row’s `structural` label. Other detector results were absent; they cannot be declared clean."
+      ]
+    }
+  ],
+  "passed": 5,
+  "total": 5,
+  "limitations": [
+    "Manual semantic verdicts are recorded explicitly; rerunning mechanical checks does not independently redo the answer review.",
+    "Synthetic MCP responses exercise routing, not real index/codegraph algorithms or performance."
+  ]
+}

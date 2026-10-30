@@ -1,0 +1,329 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "plugin_version": "0.53.8",
+  "case_count": 16,
+  "cases": [
+    {
+      "arm": "control",
+      "key": "targeted-1",
+      "status": {
+        "key": "targeted-1",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "fecf4e97649b991c9a3d8bad823c6638407b1eb911d6486aff013bafd1c9e687",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-02a0-71b1-81b4-7f4099a1b32b",
+        "turn_id": "01a18d89-0943-7bc3-95ce-a558c06677bd",
+        "status": "completed",
+        "wall_seconds": 14.759
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 13,
+      "hook_completed_notifications": 13
+    },
+    {
+      "arm": "control",
+      "key": "targeted-2",
+      "status": {
+        "key": "targeted-2",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "299ba91cf6fc96d792c5c8f602fc5b0b9242c4f09ccd7bc769da786affc37b1d",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-3da0-7081-9be8-e5f9c6a64072",
+        "turn_id": "01a18d89-42dc-74c0-8187-482c53f3d15b",
+        "status": "completed",
+        "wall_seconds": 6.408
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 7,
+      "hook_completed_notifications": 7
+    },
+    {
+      "arm": "control",
+      "key": "batch-B1-Q34-config-spec",
+      "status": {
+        "key": "batch-B1-Q34-config-spec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "d6ad8fd9fdc077ef59616e1f09f35dfa132853410a8fb0887034d8b9b34d2fa9",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-57df-7721-804c-fb1542d0b49b",
+        "turn_id": "01a18d89-5f41-7c10-acae-8b8b921053c2",
+        "status": "completed",
+        "wall_seconds": 14.63
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 23,
+      "hook_completed_notifications": 23
+    },
+    {
+      "arm": "control",
+      "key": "batch-B2-Q36-known-migrations",
+      "status": {
+        "key": "batch-B2-Q36-known-migrations",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "2971015fd05559fb926c7f3b947c2422ea97308f85a1889e034fed81ff5b826b",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-9511-7b20-bf02-f1366f91427e",
+        "turn_id": "01a18d89-a6b2-7833-bc1f-d9279b8b780d",
+        "status": "completed",
+        "wall_seconds": 18.008
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 19,
+      "hook_completed_notifications": 19
+    },
+    {
+      "arm": "control",
+      "key": "architecture-101",
+      "status": {
+        "key": "architecture-101",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "b1a8eac36f42dfa5e61edc8e45705428d9871189d6953ce3a039bf8c95bb7889",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-bf48-70e3-9f91-64d7ca88800d",
+        "turn_id": "01a18d89-c5a9-77c2-9504-68487f95993e",
+        "status": "completed",
+        "wall_seconds": 33.785
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 21,
+      "hook_completed_notifications": 21
+    },
+    {
+      "arm": "control",
+      "key": "architecture-102",
+      "status": {
+        "key": "architecture-102",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "f7e3b61e912b1b20202857cac853185059ef19f031f5acfce857f15f52cc39a8",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8a-46c9-76a3-9d91-ec8bb25c7032",
+        "turn_id": "01a18d8a-4ed7-74b2-9fca-b22ff6553f2d",
+        "status": "completed",
+        "wall_seconds": 56.706
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 63,
+      "hook_completed_notifications": 63
+    },
+    {
+      "arm": "control",
+      "key": "response-201",
+      "status": {
+        "key": "response-201",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "3e64c0af74dc3a8a55d3a37edf0fa26bd8d5815080312e3b090083177575317b",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8a-f2b1-7ad2-80a1-a6d76e4270a1",
+        "turn_id": "01a18d8a-f837-7c03-8405-3b8b69b20d93",
+        "status": "completed",
+        "wall_seconds": 21.667
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 11,
+      "hook_completed_notifications": 11
+    },
+    {
+      "arm": "control",
+      "key": "response-202",
+      "status": {
+        "key": "response-202",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "b1cdee9ae410b0cd74880684c1b455092be8ceac5f92bd3a89be0b38746fe2c0",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8b-63aa-70d0-aa74-01369d84c141",
+        "turn_id": "01a18d8b-692a-7db1-ba61-faa66269387e",
+        "status": "completed",
+        "wall_seconds": 49.556
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 15,
+      "hook_completed_notifications": 15
+    },
+    {
+      "arm": "candidate",
+      "key": "targeted-1",
+      "status": {
+        "key": "targeted-1",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "a7c7d31f3f44744f00e7ef0f9d1661b6c7a48c2676b4f59ad10eebd7a0d732aa",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-02a0-7e80-922c-9f83cc0b78b2",
+        "turn_id": "01a18d89-098c-7eb3-8c95-40cb0ef76459",
+        "status": "completed",
+        "wall_seconds": 13.264
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 9,
+      "hook_completed_notifications": 9
+    },
+    {
+      "arm": "candidate",
+      "key": "targeted-2",
+      "status": {
+        "key": "targeted-2",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "2f4d26c2f0a910991c1e185146f353deb911e43db66e118989ace6332460aa88",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-3741-7980-acae-2976a1e18d69",
+        "turn_id": "01a18d89-3d1a-7db1-8271-0febf151a2f2",
+        "status": "completed",
+        "wall_seconds": 8.454
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 7,
+      "hook_completed_notifications": 7
+    },
+    {
+      "arm": "candidate",
+      "key": "batch-B1-Q34-config-spec",
+      "status": {
+        "key": "batch-B1-Q34-config-spec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "149af66ca1f931477865e1348cb0e308183ca04189fac60ac98f41b8ff1f8073",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-5974-7000-8411-a2949dff4425",
+        "turn_id": "01a18d89-5e9d-7161-8094-e5536774735d",
+        "status": "completed",
+        "wall_seconds": 15.129
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 23,
+      "hook_completed_notifications": 23
+    },
+    {
+      "arm": "candidate",
+      "key": "batch-B2-Q36-known-migrations",
+      "status": {
+        "key": "batch-B2-Q36-known-migrations",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "bba1c1d5733ff2ec97177791f1c80ed947212810ae8542745540930c6cb98409",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-91f1-7e03-a76f-fe40acd93449",
+        "turn_id": "01a18d89-9711-7370-b684-185028b8dc08",
+        "status": "completed",
+        "wall_seconds": 11.398
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 19,
+      "hook_completed_notifications": 19
+    },
+    {
+      "arm": "candidate",
+      "key": "architecture-101",
+      "status": {
+        "key": "architecture-101",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "b6ba0fe8013a42a09fa48f9aaff2505f025c0240d2d0aa8b6a7745fb9dbc4da0",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d89-dbef-79a0-8e25-57ceb1da02e3",
+        "turn_id": "01a18d89-e162-7712-9dfa-573cb9c53836",
+        "status": "completed",
+        "wall_seconds": 27.164
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 19,
+      "hook_completed_notifications": 19
+    },
+    {
+      "arm": "candidate",
+      "key": "architecture-102",
+      "status": {
+        "key": "architecture-102",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "6347507338e184b5f8f3d2fc6618304ce4f07dd8d7cc37a2e261d2da2a1549c0",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8a-447b-7433-8f8a-298c40218393",
+        "turn_id": "01a18d8a-4b43-7ff0-ab92-8722964db176",
+        "status": "completed",
+        "wall_seconds": 44.346
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 61,
+      "hook_completed_notifications": 61
+    },
+    {
+      "arm": "candidate",
+      "key": "response-201",
+      "status": {
+        "key": "response-201",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "606f49b92f0a782a65d62eb8c435a2904ae1359ff028e8e3f49408800b69f92c",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8b-268a-7d03-a990-dd2e9222580b",
+        "turn_id": "01a18d8b-2bfe-7472-b557-4cd590c4558a",
+        "status": "completed",
+        "wall_seconds": 15.349
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 11,
+      "hook_completed_notifications": 11
+    },
+    {
+      "arm": "candidate",
+      "key": "response-202",
+      "status": {
+        "key": "response-202",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "actor_input_sha256": "4efe74334db071324879a9e690a9018c6fcf814cefad736c41187960e73ad722",
+        "attempt": 1,
+        "valid": true,
+        "thread_id": "01a18d8b-4893-70d1-b646-79c21e591b8a",
+        "turn_id": "01a18d8b-4d5e-72d2-9f88-a415982286dd",
+        "status": "completed",
+        "wall_seconds": 55.168
+      },
+      "final_answer_present": true,
+      "turn_started_notifications": 1,
+      "hook_started_notifications": 15,
+      "hook_completed_notifications": 15
+    }
+  ],
+  "completed_count": 16
+}

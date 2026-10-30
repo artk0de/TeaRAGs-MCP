@@ -1,0 +1,12 @@
+{
+  "key": "response-201",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "3e64c0af74dc3a8a55d3a37edf0fa26bd8d5815080312e3b090083177575317b",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d8a-f2b1-7ad2-80a1-a6d76e4270a1",
+  "turn_id": "01a18d8a-f837-7c03-8405-3b8b69b20d93",
+  "status": "completed",
+  "wall_seconds": 21.667
+}

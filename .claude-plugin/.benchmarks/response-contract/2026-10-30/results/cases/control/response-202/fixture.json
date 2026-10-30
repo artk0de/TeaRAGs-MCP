@@ -1,0 +1,24 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-202/workspace",
+  "alias": "routing-response-202",
+  "files": {
+    "src/queue/RetryController.ts": "export type RetryDecision =\n  | { retry: false; reason: \"status\" | \"budget\" }\n  | { retry: true; delayMs: number };\n\nexport class RetryController {\n  plan(status: number, attempt: number, retryAfterMs?: number): RetryDecision {\n    if (!Number.isInteger(attempt) || attempt < 0) {\n      throw new RangeError(\"attempt must be a non-negative integer\");\n    }\n    if (status !== 429 && status !== 503) {\n      return { retry: false, reason: \"status\" };\n    }\n    if (attempt >= 3) {\n      return { retry: false, reason: \"budget\" };\n    }\n    const exponential = Math.min(100 * 2 ** attempt, 500);\n    const requested = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs >= 0\n      ? retryAfterMs\n      : exponential;\n    return { retry: true, delayMs: Math.min(Math.max(exponential, requested), 500) };\n  }\n}\n"
+  },
+  "raw_tool_responses": {},
+  "find_symbol_bodies": {
+    "RetryController#plan": {
+      "relativePath": "src/queue/RetryController.ts",
+      "startLine": 6,
+      "endLine": 21,
+      "body": "  plan(status: number, attempt: number, retryAfterMs?: number): RetryDecision {\n    if (!Number.isInteger(attempt) || attempt < 0) {\n      throw new RangeError(\"attempt must be a non-negative integer\");\n    }\n    if (status !== 429 && status !== 503) {\n      return { retry: false, reason: \"status\" };\n    }\n    if (attempt >= 3) {\n      return { retry: false, reason: \"budget\" };\n    }\n    const exponential = Math.min(100 * 2 ** attempt, 500);\n    const requested = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs >= 0\n      ? retryAfterMs\n      : exponential;\n    return { retry: true, delayMs: Math.min(Math.max(exponential, requested), 500) };\n  }"
+    }
+  },
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

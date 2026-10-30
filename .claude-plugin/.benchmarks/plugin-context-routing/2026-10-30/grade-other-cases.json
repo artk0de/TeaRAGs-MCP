@@ -1,0 +1,524 @@
+{
+  "run": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "arm": "current plugin 0.53.8 only",
+  "independent_grader": "/root/eval_architecture_gate",
+  "pass_count": 8,
+  "case_count": 8,
+  "cases": [
+    {
+      "case": "targeted-1",
+      "verdict": "PASS",
+      "turn_id": "01a18d6e-d009-7fd1-9bb1-d0111a55285d",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "targeted-1",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "5bf784ff9ebc37af41689a4d92b9c9fff94adb15d722515a3a90664da37018a8",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6e-cfc3-7d73-b14a-fe98a8219904",
+            "turn_id": "01a18d6e-d009-7fd1-9bb1-d0111a55285d",
+            "status": "completed",
+            "wall_seconds": 14.175
+          }
+        },
+        {
+          "criterion": "one direct correctly addressed body retrieval",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-80643c72-895d-48a9-be45-224b16202159",
+            "arguments": {
+              "project": "routing-targeted-1",
+              "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-1/workspace",
+              "symbols": [
+                "RetrievalPlanner#candidateCount"
+              ]
+            }
+          }
+        },
+        {
+          "criterion": "nonempty body actually returned",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-80643c72-895d-48a9-be45-224b16202159",
+            "returned_body": {
+              "RetrievalPlanner#candidateCount": "candidateCount(limit: number): number {\n  const expanded = Math.max(limit * 4, 32);\n  return Math.min(expanded, 160);\n}"
+            }
+          }
+        },
+        {
+          "criterion": "answer facts and requested form",
+          "pass": true,
+          "evidence": "For a requested limit of **10**, the planner chooses **40 candidates**. For large limits, the maximum is **160**.\n\nThe formula is `min(max(limit \u00d7 4, 32), 160)` in [planner.ts](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-1/workspace/src/retrieval/planner.ts:42)."
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_0b9dbff1442b9fea016ae4b80931c881919c7c3f299402fd65",
+        "ctc_0b9dbff1442b9fea016ae4b80dd36c81919115691998000266"
+      ],
+      "mcp_ids": [
+        "exec-80643c72-895d-48a9-be45-224b16202159"
+      ],
+      "source_command_ids": [],
+      "native_timing": "not required"
+    },
+    {
+      "case": "targeted-2",
+      "verdict": "PASS",
+      "turn_id": "01a18d6e-d094-7530-8c8e-9aabfc779a68",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "targeted-2",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "929ec3e7212c43d25845a1408540fa266272ad00db509658ef2b452ca50fad32",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6e-d066-7370-9a0a-052706dce705",
+            "turn_id": "01a18d6e-d094-7530-8c8e-9aabfc779a68",
+            "status": "completed",
+            "wall_seconds": 4.903
+          }
+        },
+        {
+          "criterion": "no redundant retrieval",
+          "pass": true,
+          "evidence": {
+            "mcp_ids": [],
+            "source_command_ids": [],
+            "all_command_ids": []
+          }
+        },
+        {
+          "criterion": "answer facts and requested form",
+          "pass": true,
+          "evidence": "The scheduler returns:\n\n- Attempt 0: **250 ms**\n- Attempt 1: **500 ms**\n- Attempt 4: **2,000 ms** (capped)"
+        }
+      ],
+      "wrapper_ids": [],
+      "mcp_ids": [],
+      "source_command_ids": [],
+      "native_timing": "not required"
+    },
+    {
+      "case": "targeted-3",
+      "verdict": "PASS",
+      "turn_id": "01a18d6e-e4cc-7f22-ac50-6f3717941283",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "targeted-3",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "4310e025b45bd78a309bfe9545cc351c5f26ecb0f0af2f218c7d62e2c5a33b94",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6e-e499-7040-8739-00a168f9ccea",
+            "turn_id": "01a18d6e-e4cc-7f22-ac50-6f3717941283",
+            "status": "completed",
+            "wall_seconds": 5.309
+          }
+        },
+        {
+          "criterion": "no redundant retrieval",
+          "pass": true,
+          "evidence": {
+            "mcp_ids": [],
+            "source_command_ids": [],
+            "all_command_ids": []
+          }
+        },
+        {
+          "criterion": "answer facts and requested form",
+          "pass": true,
+          "evidence": "- Starts at 250 milliseconds for attempt 0 and doubles each attempt.\n- Caps at 2000 milliseconds, so attempt 4 returns 2000 milliseconds. Code: [scheduler.ts:18](src/retry/scheduler.ts:18)."
+        }
+      ],
+      "wrapper_ids": [],
+      "mcp_ids": [],
+      "source_command_ids": [],
+      "native_timing": "not required"
+    },
+    {
+      "case": "targeted-4",
+      "verdict": "PASS",
+      "turn_id": "01a18d6e-fa5e-7251-9904-9b04bba4fed0",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "targeted-4",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "63769b064f3f9b8cfd9c90b829d80c64200482a2db78eeffd003809d1dfb94db",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6e-fa27-79e0-b810-0fe7403cb30a",
+            "turn_id": "01a18d6e-fa5e-7251-9904-9b04bba4fed0",
+            "status": "completed",
+            "wall_seconds": 10.279
+          }
+        },
+        {
+          "criterion": "one direct correctly addressed body retrieval",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-46464d60-ae26-4cf4-8ae5-bc53f229f4f0",
+            "arguments": {
+              "project": "routing-targeted-4",
+              "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-4/workspace",
+              "symbol": "RetryScheduler#shouldRetry"
+            }
+          }
+        },
+        {
+          "criterion": "nonempty body actually returned",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-46464d60-ae26-4cf4-8ae5-bc53f229f4f0",
+            "returned_body": {
+              "RetryScheduler#shouldRetry": "shouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}"
+            }
+          }
+        },
+        {
+          "criterion": "answer facts and requested form",
+          "pass": true,
+          "evidence": "`RetryScheduler#shouldRetry` returns:\n\n- `429` \u2192 `true`\n- `503` \u2192 `true`\n- `400` \u2192 `false`\n\nIt checks `status === 429 || status === 503`."
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_086eecdd351172a7016ae4b815dda08191bb390df9d7908086"
+      ],
+      "mcp_ids": [
+        "exec-46464d60-ae26-4cf4-8ae5-bc53f229f4f0"
+      ],
+      "source_command_ids": [],
+      "native_timing": "not required"
+    },
+    {
+      "case": "batch-B1-Q34-config-spec",
+      "verdict": "PASS",
+      "turn_id": "01a18d6f-0894-7123-ab96-2f0cc5a04fc3",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "batch-B1-Q34-config-spec",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "dc9a0517bcfe190c8a1afc7b316c2e9e83f3fb44ae1d6c5fd1ae2cb081671387",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6f-0858-7cf2-bbd4-cc4c3faa94d5",
+            "turn_id": "01a18d6f-0894-7123-ab96-2f0cc5a04fc3",
+            "status": "completed",
+            "wall_seconds": 17.167
+          }
+        },
+        {
+          "criterion": "every required per-file bounded read returned real bytes",
+          "pass": true,
+          "evidence": {
+            "config/report_delivery.yml": {
+              "tool_id": "exec-c5374eb0-a56a-452f-856d-5d91d9b3e526",
+              "command": "/bin/zsh -c \"sed -n '1,240p' config/report_delivery.yml\"",
+              "output_bytes": 127,
+              "started_ms": 1793374234294,
+              "completed_ms": 1793374234294
+            },
+            "spec/jobs/report_delivery_job_spec.rb": {
+              "tool_id": "exec-08e4e4a1-9a6d-4ee8-af98-3cf314e03970",
+              "command": "/bin/zsh -c \"sed -n '1,240p' spec/jobs/report_delivery_job_spec.rb\"",
+              "output_bytes": 383,
+              "started_ms": 1793374234294,
+              "completed_ms": 1793374234294
+            },
+            "config/environments/test_delivery.yml": {
+              "tool_id": "exec-98bbcf01-6fae-4377-8368-e5d2b17925e0",
+              "command": "/bin/zsh -c \"sed -n '1,240p' config/environments/test_delivery.yml\"",
+              "output_bytes": 76,
+              "started_ms": 1793374234297,
+              "completed_ms": 1793374234297
+            },
+            "spec/requests/report_delivery_spec.rb": {
+              "tool_id": "exec-91103449-f37c-4cdf-9613-6d4063b6dd6d",
+              "command": "/bin/zsh -c \"sed -n '1,240p' spec/requests/report_delivery_spec.rb\"",
+              "output_bytes": 274,
+              "started_ms": 1793374234298,
+              "completed_ms": 1793374234298
+            }
+          }
+        },
+        {
+          "criterion": "one executed Promise batch of known independent reads",
+          "pass": true,
+          "evidence": {
+            "wrapper_id": "ctc_0d69e82735a8e1d3016ae4b8188e488191b30b4098024cf0ea",
+            "wrapper_call_id": "call_ce2a6c6a8b894a9b8526656e4216a3be",
+            "code": "const paths = [\"config/report_delivery.yml\",\"config/environments/test_delivery.yml\",\"spec/requests/report_delivery_spec.rb\",\"spec/jobs/report_delivery_job_spec.rb\"];\nconst results = await Promise.allSettled(paths.map(path => tools.exec_command({cmd:`sed -n '1,240p' ${path}`, max_output_tokens:4000})));\nresults.forEach((r,i)=>text({file:paths[i],result:r.status===\"fulfilled\"?r.value:r.reason}));\n"
+          }
+        },
+        {
+          "criterion": "answer facts",
+          "pass": true,
+          "evidence": "| Setting | Main config (`test` inherits defaults) | Test environment config | Request spec expects | Job spec expects for test |\n|---|---:|---:|---:|---:|\n| Attempts | 5 | 2 | 2 | \u2014 |\n| Delay (seconds) | 30 | 0 | 0 | 10 |\n| Retry on timeout | true | false | false | \u2014 |\n\n- **The test configurations differ on all three settings:** [config/report_delivery.yml](config/report_delivery.yml:1) defines defaults inherited by `test`; [config/environments/test_delivery.yml](config/environments/test_delivery.yml:1) supplies different values. Whether these override the defaults depends on the configuration loader.\n- **The request spec matches the test environment config:** it expects `2`, `0`, and `false` in [report_delivery_spec.rb](spec/requests/report_delivery_spec.rb:3).\n- **The job spec\u2019s test delay disagrees with both configs and the request spec:** it expects **10 seconds** in [report_delivery_job_spec.rb](spec/jobs/report_delivery_job_spec.rb:10), whereas the configs specify **30** and **0**.\n- **Production expectations agree:** the job spec expects `5` attempts, `30` seconds, and timeout retries enabled in [report_delivery_job_spec.rb](spec/jobs/report_delivery_job_spec.rb:2), matching production\u2019s inherited defaults."
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_0d69e82735a8e1d3016ae4b8188e488191b30b4098024cf0ea"
+      ],
+      "mcp_ids": [],
+      "source_command_ids": [
+        "exec-c5374eb0-a56a-452f-856d-5d91d9b3e526",
+        "exec-08e4e4a1-9a6d-4ee8-af98-3cf314e03970",
+        "exec-98bbcf01-6fae-4377-8368-e5d2b17925e0",
+        "exec-91103449-f37c-4cdf-9613-6d4063b6dd6d"
+      ],
+      "native_timing": "UNVERIFIABLE: zero-ms/staggered native scheduler timing; workflow judged by executed wrapper and returned bytes"
+    },
+    {
+      "case": "batch-B2-Q36-known-migrations",
+      "verdict": "PASS",
+      "turn_id": "01a18d6f-23ad-7b83-898a-89b96e560b4f",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "batch-B2-Q36-known-migrations",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "dba698f38507ee54e57a1b007b02ec06f0e045c02bb4d52dd45f4250a77a2bc3",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6f-237b-7d13-81cd-bc278b512078",
+            "turn_id": "01a18d6f-23ad-7b83-898a-89b96e560b4f",
+            "status": "completed",
+            "wall_seconds": 12.902
+          }
+        },
+        {
+          "criterion": "every required per-file bounded read returned real bytes",
+          "pass": true,
+          "evidence": {
+            "db/migrate/20261002100000_add_state_to_report_exports.rb": {
+              "tool_id": "exec-ca36ba5e-1415-4e64-b8c6-b5102c25249b",
+              "command": "/bin/zsh -c \"sed -n '1,200p' db/migrate/20261002100000_add_state_to_report_exports.rb\"",
+              "output_bytes": 222,
+              "started_ms": 1793374240763,
+              "completed_ms": 1793374240763
+            },
+            "db/migrate/20261003110000_index_report_exports_for_tenant.rb": {
+              "tool_id": "exec-15e82823-fda6-4a67-af03-a91711a3cd88",
+              "command": "/bin/zsh -c \"sed -n '1,200p' db/migrate/20261003110000_index_report_exports_for_tenant.rb\"",
+              "output_bytes": 270,
+              "started_ms": 1793374240763,
+              "completed_ms": 1793374240763
+            },
+            "db/migrate/20261001090000_create_report_exports.rb": {
+              "tool_id": "exec-5694de7d-0c5c-4641-b79b-ce9b9ec01ac1",
+              "command": "/bin/zsh -c \"sed -n '1,200p' db/migrate/20261001090000_create_report_exports.rb\"",
+              "output_bytes": 224,
+              "started_ms": 1793374240771,
+              "completed_ms": 1793374240771
+            }
+          }
+        },
+        {
+          "criterion": "one executed Promise batch of known independent reads",
+          "pass": true,
+          "evidence": {
+            "wrapper_id": "ctc_016ba7a589f92f16016ae4b81f24a08191b5cb21babc09824a",
+            "wrapper_call_id": "call_cdcbd50381634bac9d502d5d89a9b3d4",
+            "code": "const paths = [\"db/migrate/20261001090000_create_report_exports.rb\",\"db/migrate/20261002100000_add_state_to_report_exports.rb\",\"db/migrate/20261003110000_index_report_exports_for_tenant.rb\"];\nconst results = await Promise.allSettled(paths.map(p => tools.exec_command({cmd:`sed -n '1,200p' ${p}`,max_output_tokens:2000})));\nresults.forEach((r,i)=>text({path:paths[i],result:r}));\n"
+          }
+        },
+        {
+          "criterion": "answer facts",
+          "pass": true,
+          "evidence": "After all three migrations, `report_exports` has:\n\n| Column | Type | Constraints/default |\n|---|---|---|\n| `id` | bigint | Rails-generated primary key |\n| `tenant_id` | bigint | NOT NULL |\n| `file_key` | string | NOT NULL |\n| `status` | string | NOT NULL, defaults to `'queued'` |\n| `completed_at` | datetime | Nullable |\n| `created_at`, `updated_at` | datetime | Rails timestamps |\n\nThe last migration, `20261003110000_index_report_exports_for_tenant.rb`, adds the composite index `idx_report_exports_tenant_status` on `(tenant_id, status)`, supporting efficient lookup by tenant and status.\n\nRolling it back removes only that index. The columns and stored data remain intact; queries still work but lose the index\u2019s performance benefit."
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_016ba7a589f92f16016ae4b81f24a08191b5cb21babc09824a"
+      ],
+      "mcp_ids": [],
+      "source_command_ids": [
+        "exec-ca36ba5e-1415-4e64-b8c6-b5102c25249b",
+        "exec-15e82823-fda6-4a67-af03-a91711a3cd88",
+        "exec-5694de7d-0c5c-4641-b79b-ce9b9ec01ac1"
+      ],
+      "native_timing": "UNVERIFIABLE: zero-ms/staggered native scheduler timing; workflow judged by executed wrapper and returned bytes"
+    },
+    {
+      "case": "batch-B3-known-source-methods",
+      "verdict": "PASS",
+      "turn_id": "01a18d6f-4c3c-7e92-a621-b175094aec56",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "batch-B3-known-source-methods",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "001c615ea6e4cbb3a9d0a8d4ea5f1ea3d602366263828887ea135bc2ef66c071",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6f-4c04-70b1-af6f-402c4e588e07",
+            "turn_id": "01a18d6f-4c3c-7e92-a621-b175094aec56",
+            "status": "completed",
+            "wall_seconds": 14.827
+          }
+        },
+        {
+          "criterion": "single symbols batch, no source shell reads",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-e95e0abb-3146-452b-82df-fd0cc3bdb587",
+            "arguments": {
+              "project": "routing-batch-b3-known-source-methods",
+              "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B3-known-source-methods/workspace",
+              "symbols": [
+                "ReportRetryPolicy#retry_timeout?",
+                "EmailDelivery#retry_timeout?",
+                "WebhookDelivery#retry_timeout?"
+              ]
+            }
+          }
+        },
+        {
+          "criterion": "three actual nonempty method bodies",
+          "pass": true,
+          "evidence": {
+            "tool_id": "exec-e95e0abb-3146-452b-82df-fd0cc3bdb587",
+            "returned_bodies": {
+              "ReportRetryPolicy#retry_timeout?": "def retry_timeout?(attempt:)\n  @settings.retry_on_timeout && attempt < @settings.attempts\nend",
+              "EmailDelivery#retry_timeout?": "def retry_timeout?(attempt:)\n  @retry_policy.retry_timeout?(attempt: attempt)\nend",
+              "WebhookDelivery#retry_timeout?": "def retry_timeout?(attempt:)\n  false\nend"
+            }
+          }
+        },
+        {
+          "criterion": "answer distinguishes strict limit, delegation and false",
+          "pass": true,
+          "evidence": "- [ReportRetryPolicy#retry_timeout?](app/services/report_retry_policy.rb:4) permits retry only when `retry_on_timeout` is enabled **and** `attempt < attempts`. At the configured limit, it denies retry.\n- [EmailDelivery#retry_timeout?](app/adapters/email_delivery.rb:8) delegates to its retry policy, passing `attempt` unchanged, so it follows that policy\u2019s decision.\n- [WebhookDelivery#retry_timeout?](app/adapters/webhook_delivery.rb:8) always returns `false`, regardless of settings or attempt number.\n\nThus, email can retry timeouts when its policy allows; webhook never retries timeouts through this method."
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_01c585ea9763f2ed016ae4b828b2188191a3cf8383cbf1441d",
+        "ctc_01c585ea9763f2ed016ae4b82c02c881918621a88c997c1052"
+      ],
+      "mcp_ids": [
+        "exec-e95e0abb-3146-452b-82df-fd0cc3bdb587"
+      ],
+      "source_command_ids": [],
+      "native_timing": "not required"
+    },
+    {
+      "case": "batch-B4-dependent-discovery-control",
+      "verdict": "PASS",
+      "turn_id": "01a18d6f-568d-7330-9d13-b929e8f0a41c",
+      "checks": [
+        {
+          "criterion": "native actor completed once",
+          "pass": true,
+          "evidence": {
+            "key": "batch-B4-dependent-discovery-control",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "actor_input_sha256": "5b314eee9e349ea48b56874e5a1365be9c86adb1f0df88e2f94d7b7a2716da76",
+            "attempt": 1,
+            "valid": true,
+            "thread_id": "01a18d6f-5666-7d91-a661-a8a405f4561c",
+            "turn_id": "01a18d6f-568d-7330-9d13-b929e8f0a41c",
+            "status": "completed",
+            "wall_seconds": 10.326
+          }
+        },
+        {
+          "criterion": "every required per-file bounded read returned real bytes",
+          "pass": true,
+          "evidence": {
+            "config/delivery_manifest.yml": {
+              "tool_id": "exec-ae6f047f-0a3e-434a-96b1-abb8c3739cf7",
+              "command": "/bin/zsh -c \"sed -n '1,200p' config/delivery_manifest.yml\"",
+              "output_bytes": 101,
+              "started_ms": 1793374252002,
+              "completed_ms": 1793374252003
+            },
+            "config/delivery/test_isolated.yml": {
+              "tool_id": "exec-666b9729-3a39-48b8-b851-09741fe5efc6",
+              "command": "/bin/zsh -c \"sed -n '1,200p' config/delivery/test_isolated.yml\"",
+              "output_bytes": 68,
+              "started_ms": 1793374254915,
+              "completed_ms": 1793374254915
+            },
+            "config/delivery/production_east.yml": {
+              "tool_id": "exec-f7fb0c6e-7d35-42a0-8acd-d134e4f6eb45",
+              "command": "/bin/zsh -c \"sed -n '1,200p' config/delivery/production_east.yml\"",
+              "output_bytes": 70,
+              "started_ms": 1793374254915,
+              "completed_ms": 1793374254916
+            }
+          }
+        },
+        {
+          "criterion": "one executed Promise batch of known independent reads",
+          "pass": true,
+          "evidence": {
+            "wrapper_id": "ctc_071ea401f3877d19016ae4b82d77c88191b4189e1c5302bb60",
+            "wrapper_call_id": "call_f78c8041039c485cb3d9f462854aac68",
+            "code": "const results = await Promise.allSettled([\ntools.exec_command({cmd:\"sed -n '1,200p' config/delivery/production_east.yml\",max_output_tokens:3000}),\ntools.exec_command({cmd:\"sed -n '1,200p' config/delivery/test_isolated.yml\",max_output_tokens:3000})\n]); for(let i=0;i<results.length;i++) text({file:i===0?\"config/delivery/production_east.yml\":\"config/delivery/test_isolated.yml\",result:results[i]});\n"
+          }
+        },
+        {
+          "criterion": "dependent manifest completed before child dispatch",
+          "pass": true,
+          "evidence": {
+            "manifest_id": "exec-ae6f047f-0a3e-434a-96b1-abb8c3739cf7",
+            "manifest_completed_ms": 1793374252003,
+            "child_started_ms": [
+              1793374254915,
+              1793374254915
+            ]
+          }
+        },
+        {
+          "criterion": "answer facts",
+          "pass": true,
+          "evidence": "`test_isolated` disables timeout retries (`retry_on_timeout: false`).\n\n| Selected environment | Retry delay |\n|---|---:|\n| `production_east` | 45 seconds |\n| `test_isolated` | 0 seconds |"
+        }
+      ],
+      "wrapper_ids": [
+        "ctc_071ea401f3877d19016ae4b82b614c81919ee09b8f9aa437c5",
+        "ctc_071ea401f3877d19016ae4b82d77c88191b4189e1c5302bb60"
+      ],
+      "mcp_ids": [],
+      "source_command_ids": [
+        "exec-ae6f047f-0a3e-434a-96b1-abb8c3739cf7",
+        "exec-666b9729-3a39-48b8-b851-09741fe5efc6",
+        "exec-f7fb0c6e-7d35-42a0-8acd-d134e4f6eb45"
+      ],
+      "native_timing": "UNVERIFIABLE: zero-ms/staggered native scheduler timing; workflow judged by executed wrapper and returned bytes"
+    }
+  ],
+  "limitations": [
+    "No baseline arm was run; these results establish current behavior on synthetic fixtures, not a measured before/after improvement.",
+    "Native file-operation overlap is not measurable at sufficient timer precision; executed Promise batches and actual output bytes establish the workflow."
+  ]
+}

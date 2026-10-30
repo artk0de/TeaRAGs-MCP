@@ -27,8 +27,9 @@ formatting. Take first matching branch.
 │   → /tea-rags:analytics-rerank (single call, not a scan)
 ├─ Risk/health of an AREA, most dangerous modules (multi-preset scan, tiers)
 │   → /tea-rags:risk-assessment
-├─ Layout / dependency direction / SDP, "is the codebase laid out correctly"
+├─ Explicit architecture diagnosis/audit or structural refactoring
 │   → /tea-rags:architecture-diagnostics
+│   Never for context gathering, code overviews or behavior/contract questions
 ├─ Plan a refactoring (ordered, simulated fix steps) → /tea-rags:refactoring-planning
 ├─ What in this MR to look at first → /tea-rags:mr-review
 ├─ Which tests cover the behaviour I change → /tea-rags:tests-as-context

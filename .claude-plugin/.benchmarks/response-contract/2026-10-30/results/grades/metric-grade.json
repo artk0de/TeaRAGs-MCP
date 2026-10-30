@@ -1,0 +1,2045 @@
+{
+  "run": ".tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000",
+  "cases": {
+    "control:targeted-1": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1",
+      "turn_id": "01a18d89-0943-7bc3-95ce-a558c06677bd",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 53263,
+        "inputTokens": 52900,
+        "cachedInputTokens": 37888,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 363,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_01eee7e9cce85dfb016ae4bebd5fe081919073c2be2d8e6e49": {
+          "line": 56,
+          "usage": {
+            "totalTokens": 16417,
+            "inputTokens": 16263,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 154,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_01eee7e9cce85dfb016ae4bec2317481919323093a409ad190": {
+          "line": 76,
+          "usage": {
+            "totalTokens": 18195,
+            "inputTokens": 18103,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 92,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_01eee7e9cce85dfb016ae4bec507648191a5190c02b5f96eb7": {
+          "line": 199,
+          "usage": {
+            "totalTokens": 18651,
+            "inputTokens": 18534,
+            "cachedInputTokens": 17920,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 117,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 53263,
+        "inputTokens": 52900,
+        "cachedInputTokens": 37888,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 363,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 3,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 13,
+      "hook_completed_count": 13,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 34,
+      "final_answer_characters": 386,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 1,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 13032,
+      "controller_wall_seconds": 14.759,
+      "pair_id": "targeted-1",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "known_body_first_and_only_source_read": true,
+          "body_observed_and_current_addressed": true,
+          "answer_40_and_160": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native completed mcpToolCall exec-0a819ab9-b3bb-4cf7-b8e8-7b4035226c75 calls find_symbol with only RetrievalPlanner#candidateCount, matching project/cwd and symbols singleton. structuredContent includes the actual Math.max(limit * 4, 32) / Math.min(expanded, 160) body. The only other tool reads candidate-plugin explore/SKILL.md, which is excluded from source retrieval counts. Final answer gives 40, maximum 160 and planner.ts:42."
+      }
+    },
+    "control:targeted-2": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-2",
+      "turn_id": "01a18d89-42dc-74c0-8187-482c53f3d15b",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 16280,
+        "inputTokens": 16215,
+        "cachedInputTokens": 8960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 65,
+        "reasoningOutputTokens": 20
+      },
+      "responses": {
+        "resp_054425eaaa056b4c016ae4becb9248819181bddfd0fb80a08f": {
+          "line": 85,
+          "usage": {
+            "totalTokens": 16280,
+            "inputTokens": 16215,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 65,
+            "reasoningOutputTokens": 20
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 16280,
+        "inputTokens": 16215,
+        "cachedInputTokens": 8960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 65,
+        "reasoningOutputTokens": 20
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 1,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 7,
+      "hook_completed_count": 7,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 19,
+      "final_answer_characters": 96,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 0,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 5052,
+      "controller_wall_seconds": 6.408,
+      "pair_id": "targeted-2",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_post_prompt_code_retrieval": true,
+          "answer_250_500_2000_ms": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native item/completed trace has no commandExecution or mcpToolCall items. The retained complete RetryScheduler#delayMs body supplies the formula. Final answer maps attempts 0/1/4 to 250/500/2000 ms; the uncapped 4000 ms remark is arithmetically correct."
+      }
+    },
+    "control:batch-B1-Q34-config-spec": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B1-Q34-config-spec",
+      "turn_id": "01a18d89-5f41-7c10-acae-8b8b921053c2",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 33141,
+        "inputTokens": 32751,
+        "cachedInputTokens": 16000,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 390,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_0ff732fe3741f47d016ae4bed318e081919ba3ff0b7b38d1a8": {
+          "line": 63,
+          "usage": {
+            "totalTokens": 16200,
+            "inputTokens": 16078,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 122,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0ff732fe3741f47d016ae4bed6df6081919cdd2125db1b0e00": {
+          "line": 375,
+          "usage": {
+            "totalTokens": 16941,
+            "inputTokens": 16673,
+            "cachedInputTokens": 16000,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 268,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 33141,
+        "inputTokens": 32751,
+        "cachedInputTokens": 16000,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 390,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 23,
+      "hook_completed_count": 23,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 149,
+      "final_answer_characters": 1133,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 4,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 12726,
+      "controller_wall_seconds": 14.63,
+      "pair_id": "batch-B1-Q34-config-spec",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "all_required_bounded_file_bytes": true,
+          "one_actual_promise_batch": true,
+          "relevant_code_locations": true
+        },
+        "evidence": {
+          "manual_review": "Both answers correctly compare main test defaults 5/30/true with overrides/request specs 2/0/false, identify job-spec delay 10, confirm production agreement, and qualify unspecified config precedence.",
+          "word_count": 149,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-05b20fb4-a60e-49d3-8971-c4df0bbdaed7",
+            "exec-e9058150-750d-4a91-9f38-9c8452f7a140",
+            "exec-5aeeacbe-e224-4ad3-8907-66e5d0a9efe5",
+            "exec-e4b3e091-03a3-4db3-b2e0-8d55919315af"
+          ]
+        },
+        "final_answer": "| Setting | Main config’s `test` values | Test environment config | Request spec expects |\n|---|---:|---:|---:|\n| Attempts | 5 | 2 | 2 |\n| Delay (seconds) | 30 | 0 | 0 |\n| Retry on timeout | true | false | false |\n\nThe disagreements are:\n\n- The main config’s `test` section inherits **5 attempts, 30 seconds, timeout retries enabled**, differing on all three values from the test environment config and request spec. See [main config](config/report_delivery.yml:1), [test environment config](config/environments/test_delivery.yml:1), and [request spec](spec/requests/report_delivery_spec.rb:3).\n- The job spec expects a **10-second test delay**, conflicting with both the test environment config and request spec (**0 seconds**), and the main config’s inherited value (**30 seconds**). See [job spec](spec/jobs/report_delivery_job_spec.rb:10).\n\nThe production expectations in the [job spec](spec/jobs/report_delivery_job_spec.rb:2) agree with the [main config](config/report_delivery.yml:6): **5 attempts, 30 seconds, timeout retries enabled**.\n\nThese files alone don’t establish which test configuration takes precedence at runtime."
+      }
+    },
+    "control:batch-B2-Q36-known-migrations": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations",
+      "turn_id": "01a18d89-a6b2-7833-bc1f-d9279b8b780d",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 33023,
+        "inputTokens": 32653,
+        "cachedInputTokens": 24960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 370,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_0fa0faab4e15955f016ae4bee54bbc8191b631e14100c26d21": {
+          "line": 66,
+          "usage": {
+            "totalTokens": 16238,
+            "inputTokens": 16062,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 176,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0fa0faab4e15955f016ae4beea42f88191a04b2a73b9ff6258": {
+          "line": 294,
+          "usage": {
+            "totalTokens": 16785,
+            "inputTokens": 16591,
+            "cachedInputTokens": 16000,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 194,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 33023,
+        "inputTokens": 32653,
+        "cachedInputTokens": 24960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 370,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 19,
+      "hook_completed_count": 19,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 106,
+      "final_answer_characters": 793,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 3,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 13484,
+      "controller_wall_seconds": 18.008,
+      "pair_id": "batch-B2-Q36-known-migrations",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "all_required_bounded_file_bytes": true,
+          "one_actual_promise_batch": true,
+          "relevant_code_locations": true
+        },
+        "evidence": {
+          "manual_review": "Both answers preserve all columns/defaults, the tenant/status index and index-only rollback; no claim that rollback removes table, columns or data.",
+          "word_count": 106,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-1131561c-2729-4fe4-9e67-74197da760cb",
+            "exec-e7bd8389-029b-4adc-ae5f-31e76844cb4b",
+            "exec-32bbfeab-5a64-4365-ad76-60354f2b2121"
+          ]
+        },
+        "final_answer": "After all three migrations, `report_exports` contains:\n\n| Column | Type | Constraints/default |\n|---|---|---|\n| `id` | bigint | Rails-generated primary key |\n| `tenant_id` | bigint | NOT NULL |\n| `file_key` | string | NOT NULL |\n| `created_at`, `updated_at` | datetime | Rails timestamps |\n| `status` | string | NOT NULL, default `'queued'` |\n| `completed_at` | datetime | Nullable |\n\nThe last migration, [20261003110000_index_report_exports_for_tenant.rb](db/migrate/20261003110000_index_report_exports_for_tenant.rb), adds the composite index `idx_report_exports_tenant_status` on `(tenant_id, status)`, enabling efficient lookup by tenant and status.\n\nRolling it back removes only that index. The columns and stored data remain; queries still work but lose this index’s performance benefit."
+      }
+    },
+    "control:architecture-101": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/architecture-101",
+      "turn_id": "01a18d89-c5a9-77c2-9504-68487f95993e",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 116986,
+        "inputTokens": 115939,
+        "cachedInputTokens": 83584,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1047,
+        "reasoningOutputTokens": 12
+      },
+      "responses": {
+        "resp_02ea65855a606c52016ae4beed3c448191b8a04ae5c1636790": {
+          "line": 68,
+          "usage": {
+            "totalTokens": 16187,
+            "inputTokens": 16016,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 171,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02ea65855a606c52016ae4bef163bc81919a2764d4091c6d2c": {
+          "line": 88,
+          "usage": {
+            "totalTokens": 18436,
+            "inputTokens": 18318,
+            "cachedInputTokens": 16000,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 118,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02ea65855a606c52016ae4bef48f608191a48fbffe1752021b": {
+          "line": 100,
+          "usage": {
+            "totalTokens": 18974,
+            "inputTokens": 18871,
+            "cachedInputTokens": 18304,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 103,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02ea65855a606c52016ae4bef7e72c8191b468d4ffe1388d53": {
+          "line": 111,
+          "usage": {
+            "totalTokens": 19841,
+            "inputTokens": 19705,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 136,
+            "reasoningOutputTokens": 12
+          }
+        },
+        "resp_02ea65855a606c52016ae4befb6ba481919322ae7c824626be": {
+          "line": 133,
+          "usage": {
+            "totalTokens": 21093,
+            "inputTokens": 20973,
+            "cachedInputTokens": 19584,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 120,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02ea65855a606c52016ae4beffdd288191b114b474d7b3870f": {
+          "line": 538,
+          "usage": {
+            "totalTokens": 22455,
+            "inputTokens": 22056,
+            "cachedInputTokens": 20736,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 399,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 116986,
+        "inputTokens": 115939,
+        "cachedInputTokens": 83584,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1047,
+        "reasoningOutputTokens": 12
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 6,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 21,
+      "hook_completed_count": 21,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 210,
+      "final_answer_characters": 1934,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 5,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 32137,
+      "controller_wall_seconds": 33.785,
+      "pair_id": "architecture-101",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_architecture_report": true,
+          "no_diagnostic_workflow_read": true,
+          "at_least_two_observed_source_paths": true,
+          "contract_semantics": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native completed source tools return actual bodies from all four auth files. find_symbol exec-0f20b746-2d15-4d6a-a5b6-17d358a84e3b returns createDefault, renew and API-key authenticate; exec-ca8fa8fb-03e0-4313-9eca-0c5e94a0a212 returns both interfaces, login, provider refresh and controller methods. No get_architecture_report or architecture-diagnostics/reference/resource read occurs; the only command reads explore/SKILL.md. Final answer distinguishes optional refreshToken in AuthResult from required provider refresh interface and the expired-session missing-refresh throw, includes MAX_SAFE_INTEGER behavior and relevant locations."
+      }
+    },
+    "control:architecture-102": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/architecture-102",
+      "turn_id": "01a18d8a-4ed7-74b2-9fca-b22ff6553f2d",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 207004,
+        "inputTokens": 205087,
+        "cachedInputTokens": 178944,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1917,
+        "reasoningOutputTokens": 91
+      },
+      "responses": {
+        "resp_0e9016b95d2287ec016ae4bf1071908191a0f8d2ea7f71b031": {
+          "line": 70,
+          "usage": {
+            "totalTokens": 16182,
+            "inputTokens": 16015,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 167,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf14a3488191a57f4a66b31cbde9": {
+          "line": 92,
+          "usage": {
+            "totalTokens": 18456,
+            "inputTokens": 18165,
+            "cachedInputTokens": 16000,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 291,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf19b85c8191a70034900255a058": {
+          "line": 173,
+          "usage": {
+            "totalTokens": 21285,
+            "inputTokens": 21032,
+            "cachedInputTokens": 18304,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 253,
+            "reasoningOutputTokens": 12
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf1f92e0819199167b4046ad0c16": {
+          "line": 200,
+          "usage": {
+            "totalTokens": 22312,
+            "inputTokens": 22100,
+            "cachedInputTokens": 21120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 212,
+            "reasoningOutputTokens": 17
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf24fe748191b114e6c9533571de": {
+          "line": 213,
+          "usage": {
+            "totalTokens": 23589,
+            "inputTokens": 23508,
+            "cachedInputTokens": 22144,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 81,
+            "reasoningOutputTokens": 20
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf2aafbc8191b95cfd8890767e3d": {
+          "line": 226,
+          "usage": {
+            "totalTokens": 23762,
+            "inputTokens": 23653,
+            "cachedInputTokens": 23424,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 109,
+            "reasoningOutputTokens": 18
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf2f1a0c81918558a16d7e2db85e": {
+          "line": 241,
+          "usage": {
+            "totalTokens": 24406,
+            "inputTokens": 24268,
+            "cachedInputTokens": 23552,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 138,
+            "reasoningOutputTokens": 14
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf347b808191b67fb26d4b1f855a": {
+          "line": 280,
+          "usage": {
+            "totalTokens": 26532,
+            "inputTokens": 26352,
+            "cachedInputTokens": 24192,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 180,
+            "reasoningOutputTokens": 10
+          }
+        },
+        "resp_0e9016b95d2287ec016ae4bf3a15f081918ee42080ba2c2673": {
+          "line": 833,
+          "usage": {
+            "totalTokens": 30480,
+            "inputTokens": 29994,
+            "cachedInputTokens": 26368,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 486,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 207004,
+        "inputTokens": 205087,
+        "cachedInputTokens": 178944,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1917,
+        "reasoningOutputTokens": 91
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 9,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 63,
+      "hook_completed_count": 63,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 272,
+      "final_answer_characters": 2332,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 3,
+        "mcpToolCall": 23,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 54626,
+      "controller_wall_seconds": 56.706,
+      "pair_id": "architecture-102",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_architecture_report": true,
+          "no_diagnostic_workflow_read": true,
+          "at_least_two_observed_source_paths": true,
+          "overview_semantics": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native completed find_symbol results contain actual AuthController, Authenticator/AuthResult, SessionService and ApiKeyAuthenticator method/interface bodies from all four paths. Successful examples include exec-6151ff79-3642-4436-9c81-681ec608478e returning SessionService#logout, exec-d0b5d6af-d180-4227-8c6e-6300dc129d5e returning createDefault and exec-85bd8be0-09ab-4698-8cd6-a61037d63c50 returning revokeLocalSession. No get_architecture_report or architecture-diagnostics/reference/architecture-guide read occurs. Ordinary explore architecture-pattern and entry-point references are allowed. Final answer explains controller delegation, provider interface, session ownership, factory, callback and synchronous local deletion with no provider revocation/status. It explicitly limits graph claims to source methods because no edge data was returned.",
+        "observations": [
+          "A navigation-guide resource lookup failed. The actor recovered via actual source reads; this optional lookup is not a frozen mandatory-quality failure.",
+          "The mixed class/method batch returned outlines under the disclosed fixture adapter behavior, followed by successful individual body reads."
+        ]
+      }
+    },
+    "control:response-201": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201",
+      "turn_id": "01a18d8a-f837-7c03-8405-3b8b69b20d93",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 34274,
+        "inputTokens": 32890,
+        "cachedInputTokens": 19712,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1384,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_0b590c744469379a016ae4bf3bac948191a31ba738c234a68e": {
+          "line": 70,
+          "usage": {
+            "totalTokens": 16103,
+            "inputTokens": 16029,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 74,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0b590c744469379a016ae4bf3f64608191bd9aaf71998b648f": {
+          "line": 1394,
+          "usage": {
+            "totalTokens": 18171,
+            "inputTokens": 16861,
+            "cachedInputTokens": 15872,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 1310,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 34274,
+        "inputTokens": 32890,
+        "cachedInputTokens": 19712,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1384,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 11,
+      "hook_completed_count": 11,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 457,
+      "final_answer_characters": 5219,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 20241,
+      "controller_wall_seconds": 21.667,
+      "pair_id": "response-201",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "actual_config_bytes_read": true,
+          "all_twelve_rows_exact_in_order": true
+        },
+        "evidence": {
+          "manual_review": "Complete twelve-row tables preserve names, order, exact numeric cells, full purpose sentences and per-row locations. Explicit complete-table request overrides default cap.",
+          "word_count": 457,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-7e4bd4a4-d50d-43bb-8c53-64a4ba545e59"
+          ],
+          "row_checks": [
+            {
+              "name": "mail_receipt",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "mail_digest",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "webhook_order",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "webhook_stock",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "export_small",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "export_large",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "audit_write",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "metrics_flush",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "image_resize",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "search_update",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "payment_notice",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "cache_warm",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            }
+          ]
+        },
+        "final_answer": "| Name | attempts | delay_ms | timeout_ms | Purpose | Code location |\n|---|---:|---:|---:|---|---|\n| mail_receipt | 3 | 100 | 1000 | Retry transient receipt delivery failures while keeping each receipt attempt short enough that the checkout confirmation path can recover promptly during downstream mail disruptions. | [delivery_policies.yml:2](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:2) |\n| mail_digest | 5 | 300 | 5000 | Allow digest delivery several recovery attempts because digest content is useful for a longer period and a brief delay rarely changes the recipient experience. | [delivery_policies.yml:7](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:7) |\n| webhook_order | 4 | 200 | 2000 | Retry order notifications with bounded waiting so a temporary receiver outage can recover without leaving the delivery worker occupied for an unbounded amount of time. | [delivery_policies.yml:12](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:12) |\n| webhook_stock | 2 | 50 | 500 | Limit stock notification retries because newer inventory updates quickly replace older values and stale delivery work should not dominate the notification processing queue. | [delivery_policies.yml:17](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:17) |\n| export_small | 3 | 250 | 4000 | Retry small export jobs when transient storage failures occur while keeping a moderate timeout that prevents one missing storage response from blocking the worker indefinitely. | [delivery_policies.yml:22](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:22) |\n| export_large | 6 | 500 | 20000 | Give large export uploads longer attempts and additional retries because rebuilding their output is expensive and transient storage interruptions should not immediately discard completed computation. | [delivery_policies.yml:27](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:27) |\n| audit_write | 5 | 150 | 3000 | Preserve audit delivery during short outages with several bounded retries so temporary downstream failure does not turn a recoverable audit event into an immediate loss. | [delivery_policies.yml:32](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:32) |\n| metrics_flush | 2 | 25 | 250 | Keep metrics flush work brief and inexpensive because later flushes supersede some observations and prolonged retry traffic could interfere with the application workload being measured. | [delivery_policies.yml:37](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:37) |\n| image_resize | 4 | 400 | 10000 | Retry image transformations after transient processing failures while allowing enough time for a transformation attempt to complete without granting the image worker an unlimited execution window. | [delivery_policies.yml:42](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:42) |\n| search_update | 3 | 100 | 1500 | Retry search index updates with short bounded waits so transient index service errors recover while fresh catalog changes continue to move through the update queue. | [delivery_policies.yml:47](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:47) |\n| payment_notice | 7 | 200 | 2500 | Allow additional payment notification retries because delivery is operationally important while keeping each attempt bounded to avoid locking a worker behind an unavailable notification receiver. | [delivery_policies.yml:52](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:52) |\n| cache_warm | 1 | 0 | 750 | Make cache warming a single best effort attempt because normal request handling can populate the cache later and repeated warming failures should not consume delivery capacity. | [delivery_policies.yml:57](/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-201/workspace/config/delivery_policies.yml:57) |"
+      }
+    },
+    "control:response-202": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/response-202",
+      "turn_id": "01a18d8b-692a-7db1-ba61-faa66269387e",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 74019,
+        "inputTokens": 72401,
+        "cachedInputTokens": 56832,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1618,
+        "reasoningOutputTokens": 130
+      },
+      "responses": {
+        "resp_02c0e3fecbfc240f016ae4bf58788081919b6490002e5e529b": {
+          "line": 76,
+          "usage": {
+            "totalTokens": 16298,
+            "inputTokens": 16127,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 171,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02c0e3fecbfc240f016ae4bf5dabd48191856d85db3b19447c": {
+          "line": 93,
+          "usage": {
+            "totalTokens": 18223,
+            "inputTokens": 18135,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 88,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02c0e3fecbfc240f016ae4bf606e008191904c2cbcecc75577": {
+          "line": 105,
+          "usage": {
+            "totalTokens": 19019,
+            "inputTokens": 18925,
+            "cachedInputTokens": 18048,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 94,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_02c0e3fecbfc240f016ae4bf64f8fc819185d4289a5274c0b9": {
+          "line": 1248,
+          "usage": {
+            "totalTokens": 20479,
+            "inputTokens": 19214,
+            "cachedInputTokens": 18816,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 1265,
+            "reasoningOutputTokens": 130
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 74019,
+        "inputTokens": 72401,
+        "cachedInputTokens": 56832,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1618,
+        "reasoningOutputTokens": 130
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 4,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 15,
+      "hook_completed_count": 15,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 657,
+      "final_answer_characters": 4489,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 2,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 48132,
+      "controller_wall_seconds": 49.556,
+      "pair_id": "response-202",
+      "arm": "control",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "actual_plan_body_read": true,
+          "requested_deep_length": true,
+          "code_and_locations": true,
+          "all_ten_examples_present": true
+        },
+        "evidence": {
+          "manual_review": "Independently read both final answers: all ten examples correct, attempt validation before status before budget, finite nonnegative hint rule and both bounds, no side effects, valid caller-side TypeScript example. Both exceed requested 450 words.",
+          "word_count": 657,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-62f1a366-86ba-4340-be92-1ad14a0d14f2",
+            "exec-4dc3d29d-3a4b-4f13-ae31-b102ad3d2db1"
+          ]
+        },
+        "final_answer": "`RetryController#plan` synchronously decides whether a retry is allowed and, if so, returns a delay in milliseconds. It **does not sleep or make network calls**: its body only validates inputs, checks conditions, calculates numbers, and returns an object or throws an exception. See [RetryController.ts:6](src/queue/RetryController.ts:6).\n\nThe validation and decision order matters:\n\n1. **Validate `attempt` first.** It must satisfy `Number.isInteger(attempt)` and be non-negative. Negative numbers, fractions, `NaN`, and either infinity throw `RangeError(\"attempt must be a non-negative integer\")`. This happens before checking the status, so an invalid attempt throws even when that status would otherwise prevent a retry. See [RetryController.ts:7](src/queue/RetryController.ts:7).\n2. **Check the status.** Only `429` and `503` qualify. Every other status immediately returns `{ retry: false, reason: \"status\" }`. There is no separate status validation or coercion.\n3. **Check the attempt budget.** For either eligible status, attempts `3` and above return `{ retry: false, reason: \"budget\" }`. Attempts `0`, `1`, and `2` proceed to delay calculation. Because the status check comes first, an ineligible status with attempt `3` still produces reason `\"status\"`, not `\"budget\"`. These branches are at [RetryController.ts:10](src/queue/RetryController.ts:10).\n\nFor an allowed retry, the method calculates:\n\n```ts\nexponential = Math.min(100 * 2 ** attempt, 500);\n```\n\nThe baseline therefore doubles from **100 ms at attempt 0**, to **200 ms at attempt 1**, to **400 ms at attempt 2**. Although this expression has a 500 ms ceiling, the budget check prevents reaching attempt `3`, where the uncapped exponential would become 800 ms.\n\nThe optional `retryAfterMs` is accepted only when it is supplied, finite, and greater than or equal to zero. Zero and non-negative fractional values are accepted; the method does not round them. An omitted value, explicit `undefined`, `NaN`, either infinity, or a negative value is ignored, with the exponential baseline used instead. An invalid hint does **not** throw. See [RetryController.ts:16](src/queue/RetryController.ts:16).\n\nThe final calculation applies both bounds:\n\n```ts\ndelayMs = Math.min(Math.max(exponential, requested), 500);\n```\n\nThe inner `Math.max` establishes the **attempt-specific lower bound**: an accepted hint cannot shorten the exponential delay. The outer `Math.min` establishes the **500 ms upper bound**: even a much larger accepted hint cannot exceed it. Thus, acceptance of a hint does not guarantee that its exact value appears in the result. The return expression is at [RetryController.ts:20](src/queue/RetryController.ts:20).\n\nHere are all the requested examples. A missing third argument means the hint is omitted.\n\n| Arguments `(status, attempt, retryAfterMs?)` | Result | Explanation |\n|---|---|---|\n| `(429, 0)` | `{ retry: true, delayMs: 100 }` | Eligible status, first baseline. |\n| `(503, 2)` | `{ retry: true, delayMs: 400 }` | Eligible status, third permitted attempt value. |\n| `(429, 3)` | `{ retry: false, reason: \"budget\" }` | Attempt budget exhausted. |\n| `(400, 0)` | `{ retry: false, reason: \"status\" }` | Status is ineligible. |\n| `(400, -1)` | Throws `RangeError` | Attempt validation precedes status rejection. |\n| `(429, 1, 50)` | `{ retry: true, delayMs: 200 }` | Hint accepted, then raised to the baseline. |\n| `(429, 1, 400)` | `{ retry: true, delayMs: 400 }` | Hint lies between both bounds. |\n| `(429, 1, 900)` | `{ retry: true, delayMs: 500 }` | Hint accepted, then capped. |\n| `(429, 1, NaN)` | `{ retry: true, delayMs: 200 }` | Non-finite hint ignored. |\n| `(429, 1, -10)` | `{ retry: true, delayMs: 200 }` | Negative hint ignored. |\n\nThere are exactly three returned object shapes: `{ retry: false, reason: \"status\" }`, `{ retry: false, reason: \"budget\" }`, and `{ retry: true, delayMs: number }`. Rejected decisions contain no `delayMs`; successful decisions contain no `reason`. Invalid attempts return no object because they throw.\n\nA caller can consume the result like this, assuming `controller` is an existing `RetryController` instance:\n\n```ts\nconst decision = controller.plan(429, 1, 400);\n\nif (decision.retry) {\n  setTimeout(() => {\n    void retryRequest();\n  }, decision.delayMs);\n} else {\n  console.log(\"Retry declined:\", decision.reason);\n}\n```\n\nHere the **caller’s `setTimeout`** schedules the retry, and `retryRequest` performs the application work. `plan` itself does neither."
+      }
+    },
+    "candidate:targeted-1": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/targeted-1",
+      "turn_id": "01a18d89-098c-7eb3-8c95-40cb0ef76459",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 50285,
+        "inputTokens": 50068,
+        "cachedInputTokens": 36608,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 217,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_03cc9e34218a010a016ae4bebda5348191b08434741332e447": {
+          "line": 54,
+          "usage": {
+            "totalTokens": 16449,
+            "inputTokens": 16394,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 55,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_03cc9e34218a010a016ae4bec0cefc81918dc9e9cc8b19fadb": {
+          "line": 64,
+          "usage": {
+            "totalTokens": 16713,
+            "inputTokens": 16620,
+            "cachedInputTokens": 16256,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 93,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_03cc9e34218a010a016ae4bec3c8e081919c994583355dcab2": {
+          "line": 139,
+          "usage": {
+            "totalTokens": 17123,
+            "inputTokens": 17054,
+            "cachedInputTokens": 16512,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 69,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 50285,
+        "inputTokens": 50068,
+        "cachedInputTokens": 36608,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 217,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 3,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 9,
+      "hook_completed_count": 9,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 33,
+      "final_answer_characters": 235,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 0,
+        "mcpToolCall": 1,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 11461,
+      "controller_wall_seconds": 13.264,
+      "pair_id": "targeted-1",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "known_body_first_and_only_source_read": true,
+          "body_observed_and_current_addressed": true,
+          "answer_40_and_160": true,
+          "response_contract": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native completed mcpToolCall exec-058b6983-01b7-4672-b34a-73e82adeb744 calls find_symbol directly for RetrievalPlanner#candidateCount with matching project/cwd. structuredContent returns the exact four-line body. No other completed source retrieval appears. Final answer directly gives 40 / max 160, formula and planner.ts line 42, remains below 180 whitespace words, and adds no search narrative or plan."
+      }
+    },
+    "candidate:targeted-2": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/targeted-2",
+      "turn_id": "01a18d89-3d1a-7db1-8271-0febf151a2f2",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 16435,
+        "inputTokens": 16348,
+        "cachedInputTokens": 3840,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 87,
+        "reasoningOutputTokens": 25
+      },
+      "responses": {
+        "resp_0d5e24974814a24e016ae4beca33488191820c89138d2e482d": {
+          "line": 102,
+          "usage": {
+            "totalTokens": 16435,
+            "inputTokens": 16348,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 87,
+            "reasoningOutputTokens": 25
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 16435,
+        "inputTokens": 16348,
+        "cachedInputTokens": 3840,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 87,
+        "reasoningOutputTokens": 25
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 1,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 7,
+      "hook_completed_count": 7,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 27,
+      "final_answer_characters": 160,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 0,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 6945,
+      "controller_wall_seconds": 8.454,
+      "pair_id": "targeted-2",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_post_prompt_code_retrieval": true,
+          "answer_250_500_2000_ms": true,
+          "response_contract": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native item/completed trace has no commandExecution or mcpToolCall items. Final answer gives 250/500/2000 ms from the retained complete body and its correct formula, with three bullets and fewer than 180 whitespace words. No search narrative, repeated conclusion or unsolicited plan."
+      }
+    },
+    "candidate:batch-B1-Q34-config-spec": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/batch-B1-Q34-config-spec",
+      "turn_id": "01a18d89-5e9d-7161-8094-e5536774735d",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 33355,
+        "inputTokens": 32992,
+        "cachedInputTokens": 25088,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 363,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_01f4ea17d6a13813016ae4bed304248191be06cbe00cab6de4": {
+          "line": 63,
+          "usage": {
+            "totalTokens": 16339,
+            "inputTokens": 16208,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 131,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_01f4ea17d6a13813016ae4bed83e248191aa61b5c5358b4fa6": {
+          "line": 339,
+          "usage": {
+            "totalTokens": 17016,
+            "inputTokens": 16784,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 232,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 33355,
+        "inputTokens": 32992,
+        "cachedInputTokens": 25088,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 363,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 23,
+      "hook_completed_count": 23,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 122,
+      "final_answer_characters": 897,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 4,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 13797,
+      "controller_wall_seconds": 15.129,
+      "pair_id": "batch-B1-Q34-config-spec",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "all_required_bounded_file_bytes": true,
+          "one_actual_promise_batch": true,
+          "relevant_code_locations": true,
+          "ordinary_default_word_cap": true
+        },
+        "evidence": {
+          "manual_review": "Both answers correctly compare main test defaults 5/30/true with overrides/request specs 2/0/false, identify job-spec delay 10, confirm production agreement, and qualify unspecified config precedence.",
+          "word_count": 122,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-9bad2399-de7f-46f4-88be-cf5613a70d7c",
+            "exec-ced30ed1-2f82-4afd-90a2-34a2942fd68a",
+            "exec-f8485123-5ffd-4885-9fac-d54c6d938793",
+            "exec-56c80d8c-0524-4a82-87c7-1c9fb51a6a0a"
+          ]
+        },
+        "final_answer": "| Setting | Main config (`test` inherits defaults) | Test override | Request spec | Job spec |\n|---|---:|---:|---:|---:|\n| Attempts | 5 | 2 | 2 | — |\n| Delay (seconds) | 30 | 0 | 0 | 10 |\n| Retry on timeout | true | false | false | — |\n\n- The [main config](config/report_delivery.yml) and [test override](config/environments/test_delivery.yml) differ on all three test settings. The [request spec](spec/requests/report_delivery_spec.rb:3) matches the test override.\n- The [job spec’s test-delay expectation](spec/jobs/report_delivery_job_spec.rb:10) is **10 seconds**, disagreeing with both configs (30 and 0) and the request spec (0).\n- The [job spec’s production expectations](spec/jobs/report_delivery_job_spec.rb:3)—5 attempts, 30 seconds, timeout retries enabled—match the [main config](config/report_delivery.yml).\n\nThese files alone don’t establish which config takes precedence at runtime."
+      }
+    },
+    "candidate:batch-B2-Q36-known-migrations": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/batch-B2-Q36-known-migrations",
+      "turn_id": "01a18d89-9711-7370-b684-185028b8dc08",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 33289,
+        "inputTokens": 32916,
+        "cachedInputTokens": 19968,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 373,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_04d825ac51b5acf6016ae4bee1521081919176b85bbd64c201": {
+          "line": 68,
+          "usage": {
+            "totalTokens": 16370,
+            "inputTokens": 16192,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 178,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_04d825ac51b5acf6016ae4bee4d8348191bec0c1f06164db29": {
+          "line": 297,
+          "usage": {
+            "totalTokens": 16919,
+            "inputTokens": 16724,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 195,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 33289,
+        "inputTokens": 32916,
+        "cachedInputTokens": 19968,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 373,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 19,
+      "hook_completed_count": 19,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 103,
+      "final_answer_characters": 792,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 3,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 10076,
+      "controller_wall_seconds": 11.398,
+      "pair_id": "batch-B2-Q36-known-migrations",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "all_required_bounded_file_bytes": true,
+          "one_actual_promise_batch": true,
+          "relevant_code_locations": true,
+          "ordinary_default_word_cap": true
+        },
+        "evidence": {
+          "manual_review": "Both answers preserve all columns/defaults, the tenant/status index and index-only rollback; no claim that rollback removes table, columns or data.",
+          "word_count": 103,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-a0b9a997-886f-4fa0-8dc5-4c4a06c8241d",
+            "exec-4f38dfb4-4f3f-4639-8fc9-3ba4c78b7ae0",
+            "exec-e4635cab-2623-4e87-a0c0-6116910c7de3"
+          ]
+        },
+        "final_answer": "After all three migrations, `report_exports` contains:\n\n| Column | Type | Constraints/default |\n|---|---|---|\n| `id` | bigint | Rails-generated primary key |\n| `tenant_id` | bigint | NOT NULL |\n| `file_key` | string | NOT NULL |\n| `status` | string | NOT NULL, defaults to `'queued'` |\n| `completed_at` | datetime | Nullable |\n| `created_at`, `updated_at` | datetime | Rails timestamps |\n\nThe final migration, [20261003110000_index_report_exports_for_tenant.rb](db/migrate/20261003110000_index_report_exports_for_tenant.rb), adds the non-unique composite index `idx_report_exports_tenant_status` on `(tenant_id, status)`, supporting efficient lookups by tenant and status.\n\nRolling back that migration removes only this index. The table, columns, defaults, and existing records remain intact."
+      }
+    },
+    "candidate:architecture-101": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/architecture-101",
+      "turn_id": "01a18d89-e162-7712-9dfa-573cb9c53836",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 95572,
+        "inputTokens": 94727,
+        "cachedInputTokens": 76800,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 845,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_0dcd9c695071ba2d016ae4bef4510c8191b36c80480d2762fa": {
+          "line": 67,
+          "usage": {
+            "totalTokens": 16313,
+            "inputTokens": 16145,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 168,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0dcd9c695071ba2d016ae4befa140081919175c1fd2a01b6c3": {
+          "line": 87,
+          "usage": {
+            "totalTokens": 18415,
+            "inputTokens": 18296,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 119,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0dcd9c695071ba2d016ae4befd79548191bbf6d666c6350d37": {
+          "line": 99,
+          "usage": {
+            "totalTokens": 18945,
+            "inputTokens": 18856,
+            "cachedInputTokens": 18176,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 89,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0dcd9c695071ba2d016ae4bf004de4819181dcae4a83829f42": {
+          "line": 117,
+          "usage": {
+            "totalTokens": 20067,
+            "inputTokens": 19905,
+            "cachedInputTokens": 18816,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 162,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0dcd9c695071ba2d016ae4bf047e508191aba293e50daaef79": {
+          "line": 430,
+          "usage": {
+            "totalTokens": 21832,
+            "inputTokens": 21525,
+            "cachedInputTokens": 19840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 307,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 95572,
+        "inputTokens": 94727,
+        "cachedInputTokens": 76800,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 845,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 5,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 19,
+      "hook_completed_count": 19,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 147,
+      "final_answer_characters": 1405,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 4,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 25753,
+      "controller_wall_seconds": 27.164,
+      "pair_id": "architecture-101",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_architecture_report": true,
+          "no_diagnostic_workflow_read": true,
+          "at_least_two_observed_source_paths": true,
+          "contract_semantics": true,
+          "response_contract": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native find_symbol exec-c1c2fa74-509a-4aee-9745-c25523e622ea returns actual bodies from contracts.ts, SessionService.ts, ApiKeyAuthenticator.ts and AuthController.ts. Other calls are scoped metadata search, directory outline and get_callees; no diagnostic workflow or report is activated. Final answer explains required accessToken/expiry and refresh interface, optional refreshToken, API-key sentinel expiry, expired missing-refresh rejection and direct renewal delegation with citations. It has 147 whitespace words and five bullets, leads with the requested lifecycle finding and adds no search narrative or unsolicited plan."
+      }
+    },
+    "candidate:architecture-102": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/architecture-102",
+      "turn_id": "01a18d8a-4b43-7ff0-ab92-8722964db176",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 206111,
+        "inputTokens": 204526,
+        "cachedInputTokens": 183680,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1585,
+        "reasoningOutputTokens": 73
+      },
+      "responses": {
+        "resp_0780a7f2f854730a016ae4bf0f4b408191ad2d8a61a7cf49d0": {
+          "line": 70,
+          "usage": {
+            "totalTokens": 16317,
+            "inputTokens": 16146,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 171,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf1334ec81918388a96beecc6c0a": {
+          "line": 92,
+          "usage": {
+            "totalTokens": 18515,
+            "inputTokens": 18300,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 215,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf17099c8191a58d610f93416809": {
+          "line": 154,
+          "usage": {
+            "totalTokens": 21302,
+            "inputTokens": 21085,
+            "cachedInputTokens": 18304,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 217,
+            "reasoningOutputTokens": 12
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf1c18e48191ab16987f501f3438": {
+          "line": 175,
+          "usage": {
+            "totalTokens": 22300,
+            "inputTokens": 22121,
+            "cachedInputTokens": 21120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 179,
+            "reasoningOutputTokens": 18
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf1fa88c819196cb743b562f8099": {
+          "line": 188,
+          "usage": {
+            "totalTokens": 23371,
+            "inputTokens": 23324,
+            "cachedInputTokens": 22144,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 47,
+            "reasoningOutputTokens": 11
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf22fa2881919721c96e7a93b019": {
+          "line": 201,
+          "usage": {
+            "totalTokens": 23542,
+            "inputTokens": 23435,
+            "cachedInputTokens": 23168,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 107,
+            "reasoningOutputTokens": 15
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf263ab881919e1c8c6b1a99c4b9": {
+          "line": 216,
+          "usage": {
+            "totalTokens": 24042,
+            "inputTokens": 23866,
+            "cachedInputTokens": 23424,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 176,
+            "reasoningOutputTokens": 17
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf2c29ec81918f8c42cb32821380": {
+          "line": 270,
+          "usage": {
+            "totalTokens": 26809,
+            "inputTokens": 26662,
+            "cachedInputTokens": 23808,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 147,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_0780a7f2f854730a016ae4bf2feb7c8191a6e29ed19f56e8dc": {
+          "line": 644,
+          "usage": {
+            "totalTokens": 29913,
+            "inputTokens": 29587,
+            "cachedInputTokens": 26624,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 326,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 206111,
+        "inputTokens": 204526,
+        "cachedInputTokens": 183680,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1585,
+        "reasoningOutputTokens": 73
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 9,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 61,
+      "hook_completed_count": 61,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 164,
+      "final_answer_characters": 1508,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 3,
+        "mcpToolCall": 22,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 42592,
+      "controller_wall_seconds": 44.346,
+      "pair_id": "architecture-102",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "no_architecture_report": true,
+          "no_diagnostic_workflow_read": true,
+          "at_least_two_observed_source_paths": true,
+          "overview_semantics": true,
+          "response_contract": true,
+          "unsupported_claims": false
+        },
+        "evidence": "Native completed body results cover all four auth paths, including exec-eb95a7d7-b4a2-44b6-bbe8-ee4f58785f6b for AuthController#logout, exec-b72cbab5-9543-44e9-bb22-3049a1bc0def for SessionService#logout, exec-901fe0d2-cd88-4e26-afea-140ef736070c for createDefault and exec-a7b94f07-e664-4c7f-8a80-617701b6562f for provider callback. No architecture report or diagnostic-workflow read occurs. Final answer directly describes the controller-service-provider flow, contract, session ownership/default provider and local synchronous logout behavior with citations; 164 whitespace words and four bullets satisfy the response default.",
+        "observations": [
+          "The optional navigation-guide read failed as in control, and required implementation bodies were subsequently obtained.",
+          "Mixed class/method batch outline behavior also occurs in control; it limits generalization to real find_symbol behavior."
+        ]
+      }
+    },
+    "candidate:response-201": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-201",
+      "turn_id": "01a18d8b-2bfe-7472-b557-4cd590c4558a",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 33963,
+        "inputTokens": 33149,
+        "cachedInputTokens": 19840,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 814,
+        "reasoningOutputTokens": 0
+      },
+      "responses": {
+        "resp_093e720e9452eca7016ae4bf48cf8c8191a9ffcab02b4a9c3c": {
+          "line": 64,
+          "usage": {
+            "totalTokens": 16230,
+            "inputTokens": 16162,
+            "cachedInputTokens": 3840,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 68,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_093e720e9452eca7016ae4bf4c15e08191a5deae1ea8c1cfa9": {
+          "line": 824,
+          "usage": {
+            "totalTokens": 17733,
+            "inputTokens": 16987,
+            "cachedInputTokens": 16000,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 746,
+            "reasoningOutputTokens": 0
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 33963,
+        "inputTokens": 33149,
+        "cachedInputTokens": 19840,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 814,
+        "reasoningOutputTokens": 0
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 2,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 11,
+      "hook_completed_count": 11,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 457,
+      "final_answer_characters": 3419,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 0,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 13937,
+      "controller_wall_seconds": 15.349,
+      "pair_id": "response-201",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "actual_config_bytes_read": true,
+          "all_twelve_rows_exact_in_order": true
+        },
+        "evidence": {
+          "manual_review": "Complete twelve-row tables preserve names, order, exact numeric cells, full purpose sentences and per-row locations. Explicit complete-table request overrides default cap.",
+          "word_count": 457,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-92dc2eef-5d0d-45b7-a0e7-e89fba50a14c"
+          ],
+          "row_checks": [
+            {
+              "name": "mail_receipt",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "mail_digest",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "webhook_order",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "webhook_stock",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "export_small",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "export_large",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "audit_write",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "metrics_flush",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "image_resize",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "search_update",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "payment_notice",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            },
+            {
+              "name": "cache_warm",
+              "passed": true,
+              "numbers": true,
+              "full_purpose": true,
+              "location": true
+            }
+          ]
+        },
+        "final_answer": "| Name | attempts | delay_ms | timeout_ms | Purpose | Code location |\n|---|---:|---:|---:|---|---|\n| mail_receipt | 3 | 100 | 1000 | Retry transient receipt delivery failures while keeping each receipt attempt short enough that the checkout confirmation path can recover promptly during downstream mail disruptions. | [delivery_policies.yml:2](config/delivery_policies.yml:2) |\n| mail_digest | 5 | 300 | 5000 | Allow digest delivery several recovery attempts because digest content is useful for a longer period and a brief delay rarely changes the recipient experience. | [delivery_policies.yml:7](config/delivery_policies.yml:7) |\n| webhook_order | 4 | 200 | 2000 | Retry order notifications with bounded waiting so a temporary receiver outage can recover without leaving the delivery worker occupied for an unbounded amount of time. | [delivery_policies.yml:12](config/delivery_policies.yml:12) |\n| webhook_stock | 2 | 50 | 500 | Limit stock notification retries because newer inventory updates quickly replace older values and stale delivery work should not dominate the notification processing queue. | [delivery_policies.yml:17](config/delivery_policies.yml:17) |\n| export_small | 3 | 250 | 4000 | Retry small export jobs when transient storage failures occur while keeping a moderate timeout that prevents one missing storage response from blocking the worker indefinitely. | [delivery_policies.yml:22](config/delivery_policies.yml:22) |\n| export_large | 6 | 500 | 20000 | Give large export uploads longer attempts and additional retries because rebuilding their output is expensive and transient storage interruptions should not immediately discard completed computation. | [delivery_policies.yml:27](config/delivery_policies.yml:27) |\n| audit_write | 5 | 150 | 3000 | Preserve audit delivery during short outages with several bounded retries so temporary downstream failure does not turn a recoverable audit event into an immediate loss. | [delivery_policies.yml:32](config/delivery_policies.yml:32) |\n| metrics_flush | 2 | 25 | 250 | Keep metrics flush work brief and inexpensive because later flushes supersede some observations and prolonged retry traffic could interfere with the application workload being measured. | [delivery_policies.yml:37](config/delivery_policies.yml:37) |\n| image_resize | 4 | 400 | 10000 | Retry image transformations after transient processing failures while allowing enough time for a transformation attempt to complete without granting the image worker an unlimited execution window. | [delivery_policies.yml:42](config/delivery_policies.yml:42) |\n| search_update | 3 | 100 | 1500 | Retry search index updates with short bounded waits so transient index service errors recover while fresh catalog changes continue to move through the update queue. | [delivery_policies.yml:47](config/delivery_policies.yml:47) |\n| payment_notice | 7 | 200 | 2500 | Allow additional payment notification retries because delivery is operationally important while keeping each attempt bounded to avoid locking a worker behind an unavailable notification receiver. | [delivery_policies.yml:52](config/delivery_policies.yml:52) |\n| cache_warm | 1 | 0 | 750 | Make cache warming a single best effort attempt because normal request handling can populate the cache later and repeated warming failures should not consume delivery capacity. | [delivery_policies.yml:57](config/delivery_policies.yml:57) |"
+      }
+    },
+    "candidate:response-202": {
+      "directory": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-202",
+      "turn_id": "01a18d8b-4d5e-72d2-9f88-a415982286dd",
+      "valid": true,
+      "issues": [],
+      "usage": {
+        "totalTokens": 74713,
+        "inputTokens": 72939,
+        "cachedInputTokens": 62336,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1774,
+        "reasoningOutputTokens": 154
+      },
+      "responses": {
+        "resp_028d6a40c090a81e016ae4bf5172448191857eee1e7843db56": {
+          "line": 77,
+          "usage": {
+            "totalTokens": 16429,
+            "inputTokens": 16257,
+            "cachedInputTokens": 8960,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 172,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_028d6a40c090a81e016ae4bf587b808191bb8d4ba042b301bc": {
+          "line": 94,
+          "usage": {
+            "totalTokens": 18357,
+            "inputTokens": 18268,
+            "cachedInputTokens": 16256,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 89,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_028d6a40c090a81e016ae4bf5b064481918114054d37278625": {
+          "line": 106,
+          "usage": {
+            "totalTokens": 19156,
+            "inputTokens": 19061,
+            "cachedInputTokens": 18176,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 95,
+            "reasoningOutputTokens": 0
+          }
+        },
+        "resp_028d6a40c090a81e016ae4bf5db5c881919b58f10c1cdb5d5f": {
+          "line": 1377,
+          "usage": {
+            "totalTokens": 20771,
+            "inputTokens": 19353,
+            "cachedInputTokens": 18944,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 1418,
+            "reasoningOutputTokens": 154
+          }
+        }
+      },
+      "thread_total": {
+        "totalTokens": 74713,
+        "inputTokens": 72939,
+        "cachedInputTokens": 62336,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1774,
+        "reasoningOutputTokens": 154
+      },
+      "scope_mismatches": {},
+      "compactions": [],
+      "response_count": 4,
+      "turn_started_count": 1,
+      "attempt": 1,
+      "hook_started_count": 15,
+      "hook_completed_count": 15,
+      "actual_model": "gpt-6.1-sol",
+      "actual_effort": "medium",
+      "final_answer_sources_present": [
+        "turn_completed",
+        "raw_final_items",
+        "thread_read"
+      ],
+      "final_answer_sources_match": true,
+      "final_answer_word_count": 697,
+      "final_answer_characters": 4973,
+      "word_count_method": "Whitespace-separated words in native final-answer text, including markdown",
+      "native_tool_counts": {
+        "commandExecution": 1,
+        "mcpToolCall": 2,
+        "dynamicToolCall": 0
+      },
+      "native_turn_duration_ms": 53923,
+      "controller_wall_seconds": 55.168,
+      "pair_id": "response-202",
+      "arm": "candidate",
+      "quality": {
+        "pass": true,
+        "checks": {
+          "completed_once": true,
+          "one_final_answer": true,
+          "independent_manual_semantics_review": true,
+          "actual_plan_body_read": true,
+          "requested_deep_length": true,
+          "code_and_locations": true,
+          "all_ten_examples_present": true
+        },
+        "evidence": {
+          "manual_review": "Independently read both final answers: all ten examples correct, attempt validation before status before budget, finite nonnegative hint rule and both bounds, no side effects, valid caller-side TypeScript example. Both exceed requested 450 words.",
+          "word_count": 697,
+          "word_count_method": "Whitespace separated, including Markdown",
+          "tool_ids": [
+            "exec-5a1d7f5c-b4ff-422f-b14a-43e749fd8407",
+            "exec-ba89e9b5-363c-4404-aea5-b4d59415e956"
+          ]
+        },
+        "final_answer": "`RetryController#plan` synchronously decides whether a request should be retried and, if so, returns a delay in milliseconds. It retries only statuses **429 and 503**, with eligible attempt values **0, 1, and 2**. It does not sleep, schedule a timer, or make network calls; the caller must act on its result.\n\n### Validation and decision order\n\nThe method evaluates its inputs in this exact order ([lines 6–15][validation]):\n\n1. **Validate `attempt`.** It must satisfy `Number.isInteger(attempt)` and be non-negative. Negative numbers, fractions, `NaN`, and infinities cause a `RangeError` with the message `\"attempt must be a non-negative integer\"`. This check happens before checking the status, so an invalid attempt throws even for a status that would otherwise be rejected.\n2. **Check `status`.** Any value other than numeric `429` or `503` returns `{ retry: false, reason: \"status\" }`. There is no separate status-validation exception.\n3. **Check the retry budget.** For either eligible status, `attempt >= 3` returns `{ retry: false, reason: \"budget\" }`. Consequently, attempt `3` and every larger valid integer are rejected.\n4. **Calculate a delay.** Only eligible statuses with attempts `0`, `1`, or `2` reach this step.\n\nThe ordering determines the reason returned. For example, `(400, 3)` returns the `\"status\"` reason, because status rejection occurs before budget rejection. `(400, -1)` throws before either decision can be returned.\n\n### Delay calculation and `retryAfterMs`\n\nThe exponential baseline is ([lines 16–20][delay]):\n\n```ts\nconst exponential = Math.min(100 * 2 ** attempt, 500);\n```\n\nFor the three eligible attempts, this produces **100, 200, and 400 ms**, respectively. Although the calculation includes a 500 ms ceiling, the budget check prevents attempt `3` from reaching it.\n\nAn optional `retryAfterMs` is accepted when it is defined, finite according to `Number.isFinite`, and greater than or equal to zero. Zero and positive fractions are accepted; it does not have to be an integer. Omitted values, explicit `undefined`, `NaN`, either infinity, and negative values are ignored, causing the exponential baseline to be used instead. There is no numeric-string coercion.\n\nThe final calculation is:\n\n```ts\nMath.min(Math.max(exponential, requested), 500)\n```\n\nThis imposes **both bounds**: the exponential baseline is the minimum delay, and **500 ms** is the maximum delay. An accepted suggestion below the baseline therefore cannot shorten the wait. A suggestion above 500 is accepted as an input but capped in the returned result. These checks and calculations are skipped entirely when validation throws or an earlier branch returns.\n\n### Worked examples\n\nHere, each tuple means `(status, attempt, retryAfterMs?)`.\n\n| Input | Evaluation | Result |\n|---|---|---|\n| `(429, 0)` | Baseline `100`; suggestion omitted | `{ retry: true, delayMs: 100 }` |\n| `(503, 2)` | Baseline `400`; suggestion omitted | `{ retry: true, delayMs: 400 }` |\n| `(429, 3)` | Eligible status, exhausted budget | `{ retry: false, reason: \"budget\" }` |\n| `(400, 0)` | Valid attempt, ineligible status | `{ retry: false, reason: \"status\" }` |\n| `(400, -1)` | Attempt validation fails first | Throws `RangeError(\"attempt must be a non-negative integer\")` |\n| `(429, 1, 50)` | Baseline `200`; accepted `50` is below the floor | `{ retry: true, delayMs: 200 }` |\n| `(429, 1, 400)` | Accepted `400` lies between the bounds | `{ retry: true, delayMs: 400 }` |\n| `(429, 1, 900)` | Accepted `900` exceeds the ceiling | `{ retry: true, delayMs: 500 }` |\n| `(429, 1, NaN)` | Suggestion ignored; baseline `200` | `{ retry: true, delayMs: 200 }` |\n| `(429, 1, -10)` | Negative suggestion ignored; baseline `200` | `{ retry: true, delayMs: 200 }` |\n\n### Returned shapes and caller usage\n\nThe implementation returns exactly three object shapes: `{ retry: false, reason: \"status\" }`, `{ retry: false, reason: \"budget\" }`, or `{ retry: true, delayMs: number }`. Rejections contain no `delayMs`; approvals contain no `reason`. Invalid attempts throw instead of returning an object ([method implementation][validation]).\n\nFor example, with `RetryController` available in scope:\n\n```ts\nfunction scheduleRetry(\n  controller: RetryController,\n  retryRequest: () => void,\n): void {\n  const decision = controller.plan(503, 2);\n\n  if (decision.retry) {\n    setTimeout(retryRequest, decision.delayMs); // 400 ms\n  } else {\n    console.log(`Retry declined: ${decision.reason}`);\n  }\n}\n```\n\nThe timer belongs to this caller. `plan` itself only validates inputs, performs arithmetic, and returns its decision.\n\n[validation]: /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-202/workspace/src/queue/RetryController.ts:6\n[delay]: /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-202/workspace/src/queue/RetryController.ts:16"
+      }
+    }
+  },
+  "pairs": [
+    {
+      "pair_id": "targeted-1",
+      "arms": {
+        "control": "control:targeted-1",
+        "candidate": "candidate:targeted-1"
+      },
+      "valid": true,
+      "reasoning_control": 0,
+      "reasoning_candidate": 0,
+      "reasoning_reduction": null,
+      "output_control": 363,
+      "output_candidate": 217,
+      "native_duration_control_ms": 13032,
+      "native_duration_candidate_ms": 11461
+    },
+    {
+      "pair_id": "targeted-2",
+      "arms": {
+        "control": "control:targeted-2",
+        "candidate": "candidate:targeted-2"
+      },
+      "valid": true,
+      "reasoning_control": 20,
+      "reasoning_candidate": 25,
+      "reasoning_reduction": -0.25,
+      "output_control": 65,
+      "output_candidate": 87,
+      "native_duration_control_ms": 5052,
+      "native_duration_candidate_ms": 6945
+    },
+    {
+      "pair_id": "batch-B1-Q34-config-spec",
+      "arms": {
+        "control": "control:batch-B1-Q34-config-spec",
+        "candidate": "candidate:batch-B1-Q34-config-spec"
+      },
+      "valid": true,
+      "reasoning_control": 0,
+      "reasoning_candidate": 0,
+      "reasoning_reduction": null,
+      "output_control": 390,
+      "output_candidate": 363,
+      "native_duration_control_ms": 12726,
+      "native_duration_candidate_ms": 13797
+    },
+    {
+      "pair_id": "batch-B2-Q36-known-migrations",
+      "arms": {
+        "control": "control:batch-B2-Q36-known-migrations",
+        "candidate": "candidate:batch-B2-Q36-known-migrations"
+      },
+      "valid": true,
+      "reasoning_control": 0,
+      "reasoning_candidate": 0,
+      "reasoning_reduction": null,
+      "output_control": 370,
+      "output_candidate": 373,
+      "native_duration_control_ms": 13484,
+      "native_duration_candidate_ms": 10076
+    },
+    {
+      "pair_id": "architecture-101",
+      "arms": {
+        "control": "control:architecture-101",
+        "candidate": "candidate:architecture-101"
+      },
+      "valid": true,
+      "reasoning_control": 12,
+      "reasoning_candidate": 0,
+      "reasoning_reduction": 1.0,
+      "output_control": 1047,
+      "output_candidate": 845,
+      "native_duration_control_ms": 32137,
+      "native_duration_candidate_ms": 25753
+    },
+    {
+      "pair_id": "architecture-102",
+      "arms": {
+        "control": "control:architecture-102",
+        "candidate": "candidate:architecture-102"
+      },
+      "valid": true,
+      "reasoning_control": 91,
+      "reasoning_candidate": 73,
+      "reasoning_reduction": 0.1978021978021978,
+      "output_control": 1917,
+      "output_candidate": 1585,
+      "native_duration_control_ms": 54626,
+      "native_duration_candidate_ms": 42592
+    },
+    {
+      "pair_id": "response-201",
+      "arms": {
+        "control": "control:response-201",
+        "candidate": "candidate:response-201"
+      },
+      "valid": true,
+      "reasoning_control": 0,
+      "reasoning_candidate": 0,
+      "reasoning_reduction": null,
+      "output_control": 1384,
+      "output_candidate": 814,
+      "native_duration_control_ms": 20241,
+      "native_duration_candidate_ms": 13937
+    },
+    {
+      "pair_id": "response-202",
+      "arms": {
+        "control": "control:response-202",
+        "candidate": "candidate:response-202"
+      },
+      "valid": true,
+      "reasoning_control": 130,
+      "reasoning_candidate": 154,
+      "reasoning_reduction": -0.18461538461538463,
+      "output_control": 1618,
+      "output_candidate": 1774,
+      "native_duration_control_ms": 48132,
+      "native_duration_candidate_ms": 53923
+    }
+  ],
+  "summary": {
+    "decision": "INCONCLUSIVE_LOW_BASELINE",
+    "reasoning_control": 253,
+    "reasoning_candidate": 252,
+    "aggregate_reasoning_reduction": 0.003952569169960474,
+    "output_control": 7154,
+    "output_candidate": 6058,
+    "output_reduction": 0.15320100642996926,
+    "native_duration_control_ms": 199430,
+    "native_duration_candidate_ms": 178484,
+    "native_duration_reduction": 0.10502933360076218,
+    "controller_wall_control_ms": 215519,
+    "controller_wall_candidate_ms": 190272,
+    "controller_wall_reduction": 0.11714512409578738,
+    "exact_candidate_over_control_ratios": {
+      "reported_reasoning": "252/253",
+      "output": "6058/7154",
+      "native_turn_duration": "178484/199430",
+      "controller_wall": "190272/215519"
+    },
+    "nonzero_control_pairs": 4,
+    "paired_reductions": 2,
+    "majority_reductions": false,
+    "quality_complete": true,
+    "control_quality_pass": true,
+    "candidate_quality_pass": true,
+    "quality_nonregression": true,
+    "low_baseline": true,
+    "low_baseline_rule": {
+      "min_control_reasoning": 500,
+      "min_nonzero_pairs": 3
+    },
+    "scope_valid": true
+  },
+  "interpretation": "One observation per arm per case. This is an observational screening gate, not statistical proof. Exact reported reasoning token counters are distinct from answer length; a native zero does not prove absence of internal reasoning and may leave the hypothesis below the observable floor."
+}

@@ -1,0 +1,12 @@
+{
+  "after_eval_change": "Canonical formatting then regeneration only; no response-contract addition.",
+  "changed_files": [
+    {
+      "path": "scripts/core.txt",
+      "tested_sha256": "28a818eea30c03304cd7c391d818cfa0e65c16e0b36e09784ba5e315edf2e7cd",
+      "formatted_sha256": "788c212d838e38f129f2ab1db04a94076a5003ef9d3847e8f6b1d4c64e31cdba",
+      "whitespace_normalized_equal": true
+    }
+  ],
+  "all_other_files_byte_identical": true
+}

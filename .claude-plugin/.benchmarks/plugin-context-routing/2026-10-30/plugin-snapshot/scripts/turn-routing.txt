@@ -1,0 +1,6 @@
+tea-rags routing (this turn):
+- source code via find_symbol; config/migrations/specs, stubs → shell sed -n '<start>,<end>p' <one file>
+- behaviour/concept words → semantic_search
+- how it works / impact → get_callees / get_callers
+- exact text, all X in a dir, absence → shell rg -l --hidden --glob '!.git'
+- ids or files needed at once: ONE find_symbol(symbols:[…])

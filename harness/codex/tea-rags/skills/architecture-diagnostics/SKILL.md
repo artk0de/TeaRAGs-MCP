@@ -1,17 +1,24 @@
 ---
 name: architecture-diagnostics
 description:
-  'Check code layout — dependency direction, SDP violations, module borders,
-  leaking abstractions, silent coupling, zone of pain, hub-like deps, layer map
-  / move candidates. Triggers "is architecture right", "layering violations",
-  "which layer", "wrong dependency direction", "shotgun surgery", "архитектурные
-  нарушения". NOT risk/health (risk-assessment), NOT one failure (bug-hunt), NOT
-  plain cycle listing (find_cycles).'
+  "Use for explicitly requested architecture diagnostics or structural
+  refactoring: dependency/layer violations and move candidates. Not for context
+  gathering, code overviews, behavior/contract questions, or routine feature
+  work."
 ---
 
 # Architecture Diagnostics
 
 Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
+
+**Activation gate — before metrics, references or reports.** Run only for an
+explicit request to diagnose/audit architecture, an explicit invocation of this
+skill, or a structural-refactoring task. Never activate to gather context for
+another task. Explaining how a subsystem is organized or which contracts assume
+OAuth is source investigation, not a diagnostic request, even when it mentions
+architecture, boundaries or abstractions. Use the relevant source bodies/edges
+instead; do not load this workflow's references or call
+`get_architecture_report`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.

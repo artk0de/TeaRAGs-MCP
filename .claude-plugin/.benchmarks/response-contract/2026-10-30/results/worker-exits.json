@@ -1,0 +1,82 @@
+[
+  {
+    "arm": "candidate",
+    "key": "targeted-1",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "targeted-1",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "targeted-2",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "targeted-2",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "batch-B1-Q34-config-spec",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "batch-B1-Q34-config-spec",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "batch-B2-Q36-known-migrations",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "batch-B2-Q36-known-migrations",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "architecture-101",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "architecture-101",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "architecture-102",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "architecture-102",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "response-201",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "response-201",
+    "exit_code": 0
+  },
+  {
+    "arm": "candidate",
+    "key": "response-202",
+    "exit_code": 0
+  },
+  {
+    "arm": "control",
+    "key": "response-202",
+    "exit_code": 0
+  }
+]

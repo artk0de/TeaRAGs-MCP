@@ -1,0 +1,251 @@
+{
+  "raw_responses": [
+    {
+      "responseId": "resp_0d5e24974814a24e016ae4beca33488191820c89138d2e482d",
+      "usage": {
+        "totalTokens": 16435,
+        "inputTokens": 16348,
+        "cachedInputTokens": 3840,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 87,
+        "reasoningOutputTokens": 25
+      },
+      "usageMetadata": {
+        "amount": null,
+        "metadata": {
+          "input_tokens": 16348,
+          "input_tokens_details": {
+            "cached_tokens": 3840,
+            "cache_write_tokens": 0
+          },
+          "output_tokens": 87,
+          "output_tokens_details": {
+            "reasoning_tokens": 25
+          },
+          "total_tokens": 16435,
+          "attribution": {
+            "items": {
+              "at_01a18d89-4360-70c2-9ce8-8970eeee9046": {
+                "input_tokens": 4955,
+                "cached_tokens": 3840,
+                "cache_write_tokens": 0,
+                "output_tokens": 0
+              },
+              "msg_01a18d89-4360-70c2-9ce8-8985caf053c4": {
+                "input_tokens": 4152,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 4152,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4360-70c2-9ce8-899748e308c5": {
+                "input_tokens": 1974,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 1670,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 104,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  },
+                  {
+                    "input_tokens": 200,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4360-70c2-9ce8-89aa6d183d16": {
+                "input_tokens": 534,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 534,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4360-70c2-9ce8-89b6b3308bc4": {
+                "input_tokens": 56,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 56,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4360-70c2-9ce8-89cef826e8c5": {
+                "input_tokens": 799,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 799,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4404-73e3-8b2a-340db7dc9f8a": {
+                "input_tokens": 2739,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 2739,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4404-73e3-8b2a-341701965a06": {
+                "input_tokens": 573,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 573,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4404-73e3-8b2a-342180db87bf": {
+                "input_tokens": 103,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 103,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4490-7881-bcdd-10ca6d899416": {
+                "input_tokens": 352,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 352,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_01a18d89-4492-7c92-8e31-8760f5fcbe00": {
+                "input_tokens": 109,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 0,
+                "content": [
+                  {
+                    "input_tokens": 109,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 0
+                  }
+                ]
+              },
+              "msg_0d5e24974814a24e016ae4bece1c048191b519dac61448c26e": {
+                "input_tokens": 0,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 62,
+                "content": [
+                  {
+                    "input_tokens": 0,
+                    "cached_tokens": 0,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 62
+                  }
+                ]
+              },
+              "rs_0d5e24974814a24e016ae4bece1c108191b46f7c91eee0fdf2": {
+                "input_tokens": 2,
+                "cached_tokens": 0,
+                "cache_write_tokens": 0,
+                "output_tokens": 25
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "raw_response_totals": {
+    "inputTokens": 16348,
+    "cachedInputTokens": 3840,
+    "outputTokens": 87,
+    "reasoningOutputTokens": 25,
+    "totalTokens": 16435
+  },
+  "last_thread_token_usage": {
+    "total": {
+      "totalTokens": 16435,
+      "inputTokens": 16348,
+      "cachedInputTokens": 3840,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 87,
+      "reasoningOutputTokens": 25
+    },
+    "last": {
+      "totalTokens": 16435,
+      "inputTokens": 16348,
+      "cachedInputTokens": 3840,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 87,
+      "reasoningOutputTokens": 25
+    },
+    "modelContextWindow": 475000
+  },
+  "wall_seconds": 8.454,
+  "status": "completed",
+  "native_tool_counts": {
+    "commandExecution": 0,
+    "mcpToolCall": 0,
+    "dynamicToolCall": 0
+  },
+  "outer_tool_call_count": 0,
+  "final_answer_characters": 160,
+  "turn_started_notifications": 1,
+  "hook_started_notifications": 7,
+  "hook_completed_notifications": 7,
+  "compaction_events": []
+}

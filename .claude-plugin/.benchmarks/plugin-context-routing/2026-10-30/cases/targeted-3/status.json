@@ -1,0 +1,12 @@
+{
+  "key": "targeted-3",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "4310e025b45bd78a309bfe9545cc351c5f26ecb0f0af2f218c7d62e2c5a33b94",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d6e-e499-7040-8739-00a168f9ccea",
+  "turn_id": "01a18d6e-e4cc-7f22-ac50-6f3717941283",
+  "status": "completed",
+  "wall_seconds": 5.309
+}

@@ -1,0 +1,17 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-2/workspace",
+  "alias": "routing-targeted-2",
+  "files": {
+    "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n"
+  },
+  "raw_tool_responses": [],
+  "find_symbol_bodies": {},
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

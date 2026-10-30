@@ -1,0 +1,307 @@
+{
+  "skill_name": "response-contract",
+  "suite_name": "explicit-detail-guards",
+  "schema_version": 1,
+  "actor_input_contract": "Only prompt, raw actor_context and materialized/raw fixture data may reach actors. expected and grading remain controller-only. Substitute the isolated cwd for /work/auth-demo consistently.",
+  "evals": [
+    {
+      "id": 201,
+      "name": "explicit-complete-table-overrides-default-cap",
+      "prompt": "Read config/delivery_policies.yml and produce one complete table with one row for every configured policy, preserving file order. Include the exact name, attempts, delay_ms, timeout_ms, and full purpose text verbatim for every row. Do not shorten or group the purpose text. Include a code location for each row.",
+      "actor_context": "Synthetic current repository at /work/auth-demo. config/delivery_policies.yml is available on disk; its contents have not been read in this session.",
+      "fixture": {
+        "files": {
+          "config/delivery_policies.yml": "policies:\n  - name: mail_receipt\n    attempts: 3\n    delay_ms: 100\n    timeout_ms: 1000\n    purpose: Retry transient receipt delivery failures while keeping each receipt attempt short enough that the checkout confirmation path can recover promptly during downstream mail disruptions.\n  - name: mail_digest\n    attempts: 5\n    delay_ms: 300\n    timeout_ms: 5000\n    purpose: Allow digest delivery several recovery attempts because digest content is useful for a longer period and a brief delay rarely changes the recipient experience.\n  - name: webhook_order\n    attempts: 4\n    delay_ms: 200\n    timeout_ms: 2000\n    purpose: Retry order notifications with bounded waiting so a temporary receiver outage can recover without leaving the delivery worker occupied for an unbounded amount of time.\n  - name: webhook_stock\n    attempts: 2\n    delay_ms: 50\n    timeout_ms: 500\n    purpose: Limit stock notification retries because newer inventory updates quickly replace older values and stale delivery work should not dominate the notification processing queue.\n  - name: export_small\n    attempts: 3\n    delay_ms: 250\n    timeout_ms: 4000\n    purpose: Retry small export jobs when transient storage failures occur while keeping a moderate timeout that prevents one missing storage response from blocking the worker indefinitely.\n  - name: export_large\n    attempts: 6\n    delay_ms: 500\n    timeout_ms: 20000\n    purpose: Give large export uploads longer attempts and additional retries because rebuilding their output is expensive and transient storage interruptions should not immediately discard completed computation.\n  - name: audit_write\n    attempts: 5\n    delay_ms: 150\n    timeout_ms: 3000\n    purpose: Preserve audit delivery during short outages with several bounded retries so temporary downstream failure does not turn a recoverable audit event into an immediate loss.\n  - name: metrics_flush\n    attempts: 2\n    delay_ms: 25\n    timeout_ms: 250\n    purpose: Keep metrics flush work brief and inexpensive because later flushes supersede some observations and prolonged retry traffic could interfere with the application workload being measured.\n  - name: image_resize\n    attempts: 4\n    delay_ms: 400\n    timeout_ms: 10000\n    purpose: Retry image transformations after transient processing failures while allowing enough time for a transformation attempt to complete without granting the image worker an unlimited execution window.\n  - name: search_update\n    attempts: 3\n    delay_ms: 100\n    timeout_ms: 1500\n    purpose: Retry search index updates with short bounded waits so transient index service errors recover while fresh catalog changes continue to move through the update queue.\n  - name: payment_notice\n    attempts: 7\n    delay_ms: 200\n    timeout_ms: 2500\n    purpose: Allow additional payment notification retries because delivery is operationally important while keeping each attempt bounded to avoid locking a worker behind an unavailable notification receiver.\n  - name: cache_warm\n    attempts: 1\n    delay_ms: 0\n    timeout_ms: 750\n    purpose: Make cache warming a single best effort attempt because normal request handling can populate the cache later and repeated warming failures should not consume delivery capacity.\n"
+        }
+      },
+      "expected": "Actually reads the configuration, then produces all twelve rows in source order with all requested scalar values, complete verbatim purpose text and per-row code locations. The explicit complete-table requirements override the default response length cap.",
+      "grading": {
+        "required_reads": [
+          "config/delivery_policies.yml"
+        ],
+        "checks": [
+          {
+            "id": "observed-config",
+            "required": true,
+            "criterion": "A post-prompt bounded source read returns actual delivery_policies.yml bytes; an unsupported or empty retrieval does not count."
+          },
+          {
+            "id": "complete-table",
+            "required": true,
+            "criterion": "One table contains exactly all twelve policies in file order. Every row includes exact attempts, delay_ms, timeout_ms and full purpose text; no ellipsis, summarization, grouped rows or omitted cells."
+          },
+          {
+            "id": "locations",
+            "required": true,
+            "criterion": "Each row includes the source path and the line of that policy entry or its scalar block."
+          },
+          {
+            "id": "override",
+            "required": true,
+            "criterion": "Does not refuse or truncate the explicitly requested complete table to satisfy a six-bullet or 180-word default. Finishing the complete table is required in both arms."
+          }
+        ],
+        "expected_rows": [
+          {
+            "name": "mail_receipt",
+            "attempts": 3,
+            "delay_ms": 100,
+            "timeout_ms": 1000,
+            "purpose": "Retry transient receipt delivery failures while keeping each receipt attempt short enough that the checkout confirmation path can recover promptly during downstream mail disruptions.",
+            "startLine": 2
+          },
+          {
+            "name": "mail_digest",
+            "attempts": 5,
+            "delay_ms": 300,
+            "timeout_ms": 5000,
+            "purpose": "Allow digest delivery several recovery attempts because digest content is useful for a longer period and a brief delay rarely changes the recipient experience.",
+            "startLine": 7
+          },
+          {
+            "name": "webhook_order",
+            "attempts": 4,
+            "delay_ms": 200,
+            "timeout_ms": 2000,
+            "purpose": "Retry order notifications with bounded waiting so a temporary receiver outage can recover without leaving the delivery worker occupied for an unbounded amount of time.",
+            "startLine": 12
+          },
+          {
+            "name": "webhook_stock",
+            "attempts": 2,
+            "delay_ms": 50,
+            "timeout_ms": 500,
+            "purpose": "Limit stock notification retries because newer inventory updates quickly replace older values and stale delivery work should not dominate the notification processing queue.",
+            "startLine": 17
+          },
+          {
+            "name": "export_small",
+            "attempts": 3,
+            "delay_ms": 250,
+            "timeout_ms": 4000,
+            "purpose": "Retry small export jobs when transient storage failures occur while keeping a moderate timeout that prevents one missing storage response from blocking the worker indefinitely.",
+            "startLine": 22
+          },
+          {
+            "name": "export_large",
+            "attempts": 6,
+            "delay_ms": 500,
+            "timeout_ms": 20000,
+            "purpose": "Give large export uploads longer attempts and additional retries because rebuilding their output is expensive and transient storage interruptions should not immediately discard completed computation.",
+            "startLine": 27
+          },
+          {
+            "name": "audit_write",
+            "attempts": 5,
+            "delay_ms": 150,
+            "timeout_ms": 3000,
+            "purpose": "Preserve audit delivery during short outages with several bounded retries so temporary downstream failure does not turn a recoverable audit event into an immediate loss.",
+            "startLine": 32
+          },
+          {
+            "name": "metrics_flush",
+            "attempts": 2,
+            "delay_ms": 25,
+            "timeout_ms": 250,
+            "purpose": "Keep metrics flush work brief and inexpensive because later flushes supersede some observations and prolonged retry traffic could interfere with the application workload being measured.",
+            "startLine": 37
+          },
+          {
+            "name": "image_resize",
+            "attempts": 4,
+            "delay_ms": 400,
+            "timeout_ms": 10000,
+            "purpose": "Retry image transformations after transient processing failures while allowing enough time for a transformation attempt to complete without granting the image worker an unlimited execution window.",
+            "startLine": 42
+          },
+          {
+            "name": "search_update",
+            "attempts": 3,
+            "delay_ms": 100,
+            "timeout_ms": 1500,
+            "purpose": "Retry search index updates with short bounded waits so transient index service errors recover while fresh catalog changes continue to move through the update queue.",
+            "startLine": 47
+          },
+          {
+            "name": "payment_notice",
+            "attempts": 7,
+            "delay_ms": 200,
+            "timeout_ms": 2500,
+            "purpose": "Allow additional payment notification retries because delivery is operationally important while keeping each attempt bounded to avoid locking a worker behind an unavailable notification receiver.",
+            "startLine": 52
+          },
+          {
+            "name": "cache_warm",
+            "attempts": 1,
+            "delay_ms": 0,
+            "timeout_ms": 750,
+            "purpose": "Make cache warming a single best effort attempt because normal request handling can populate the cache later and repeated warming failures should not consume delivery capacity.",
+            "startLine": 57
+          }
+        ]
+      }
+    },
+    {
+      "id": 202,
+      "name": "explicit-deep-detail-overrides-default-cap",
+      "prompt": "Explain RetryController#plan in src/queue/RetryController.ts in depth, using at least 450 words. Cover the validation and decision order; every status and attempt branch; accepted and ignored retryAfterMs values; exponential delay and both bounds; and the returned object shapes. Include worked examples for (429,0), (503,2), (429,3), (400,0), (400,-1), (429,1,50), (429,1,400), (429,1,900), (429,1,NaN), and (429,1,-10). State whether the method sleeps or makes network calls, provide a short TypeScript example that uses its result, and cite the relevant code locations. Preserve every requested item even if the answer needs several sections.",
+      "actor_context": "Synthetic current TypeScript repository at /work/auth-demo. The source file is indexed and current. No source bodies are retained in this session.",
+      "fixture": {
+        "files": {
+          "src/queue/RetryController.ts": "export type RetryDecision =\n  | { retry: false; reason: \"status\" | \"budget\" }\n  | { retry: true; delayMs: number };\n\nexport class RetryController {\n  plan(status: number, attempt: number, retryAfterMs?: number): RetryDecision {\n    if (!Number.isInteger(attempt) || attempt < 0) {\n      throw new RangeError(\"attempt must be a non-negative integer\");\n    }\n    if (status !== 429 && status !== 503) {\n      return { retry: false, reason: \"status\" };\n    }\n    if (attempt >= 3) {\n      return { retry: false, reason: \"budget\" };\n    }\n    const exponential = Math.min(100 * 2 ** attempt, 500);\n    const requested = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs >= 0\n      ? retryAfterMs\n      : exponential;\n    return { retry: true, delayMs: Math.min(Math.max(exponential, requested), 500) };\n  }\n}\n"
+        },
+        "find_symbol_bodies": {
+          "RetryController#plan": {
+            "relativePath": "src/queue/RetryController.ts",
+            "startLine": 6,
+            "endLine": 21,
+            "body": "  plan(status: number, attempt: number, retryAfterMs?: number): RetryDecision {\n    if (!Number.isInteger(attempt) || attempt < 0) {\n      throw new RangeError(\"attempt must be a non-negative integer\");\n    }\n    if (status !== 429 && status !== 503) {\n      return { retry: false, reason: \"status\" };\n    }\n    if (attempt >= 3) {\n      return { retry: false, reason: \"budget\" };\n    }\n    const exponential = Math.min(100 * 2 ** attempt, 500);\n    const requested = retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs >= 0\n      ? retryAfterMs\n      : exponential;\n    return { retry: true, delayMs: Math.min(Math.max(exponential, requested), 500) };\n  }"
+          }
+        }
+      },
+      "expected": "Obtains the actual plan method body, explains all requested branches and examples in at least 450 words, includes a short accurate TypeScript usage example and relevant locations. The detail request overrides default length and layout limits.",
+      "grading": {
+        "required_body_ids": [
+          "RetryController#plan"
+        ],
+        "minimum_answer_words": 450,
+        "checks": [
+          {
+            "id": "observed-body",
+            "required": true,
+            "criterion": "Actually obtains a nonempty plan body through source lookup or a bounded file read before reasoning about behavior."
+          },
+          {
+            "id": "deep-format",
+            "required": true,
+            "criterion": "At least 450 words, relevant source citations, and a short valid TypeScript usage example; no refusal or truncation due to default length limits."
+          },
+          {
+            "id": "decision-order",
+            "required": true,
+            "criterion": "Explains that attempt validation precedes status filtering, which precedes budget. Thus (400,-1) throws despite unsupported status; unsupported status returns status reason before budget evaluation."
+          },
+          {
+            "id": "retry-after",
+            "required": true,
+            "criterion": "Only finite nonnegative retryAfterMs is used; undefined, NaN, infinities and negatives fall back to exponential. Requested delay cannot lower exponential or exceed 500ms cap."
+          },
+          {
+            "id": "all-examples",
+            "required": true,
+            "criterion": "All ten requested example calls receive the exact expected decision or exception, with units."
+          },
+          {
+            "id": "effect-scope",
+            "required": true,
+            "criterion": "States this method calculates and returns a decision; it neither sleeps nor performs network calls. Does not invent retry execution behavior."
+          }
+        ],
+        "expected_examples": [
+          {
+            "args": [
+              "429",
+              "0"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 100
+            }
+          },
+          {
+            "args": [
+              "503",
+              "2"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 400
+            }
+          },
+          {
+            "args": [
+              "429",
+              "3"
+            ],
+            "result": {
+              "retry": false,
+              "reason": "budget"
+            }
+          },
+          {
+            "args": [
+              "400",
+              "0"
+            ],
+            "result": {
+              "retry": false,
+              "reason": "status"
+            }
+          },
+          {
+            "args": [
+              "400",
+              "-1"
+            ],
+            "throws": "RangeError"
+          },
+          {
+            "args": [
+              "429",
+              "1",
+              "50"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 200
+            }
+          },
+          {
+            "args": [
+              "429",
+              "1",
+              "400"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 400
+            }
+          },
+          {
+            "args": [
+              "429",
+              "1",
+              "900"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 500
+            }
+          },
+          {
+            "args": [
+              "429",
+              "1",
+              "NaN"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 200
+            }
+          },
+          {
+            "args": [
+              "429",
+              "1",
+              "-10"
+            ],
+            "result": {
+              "retry": true,
+              "delayMs": 200
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

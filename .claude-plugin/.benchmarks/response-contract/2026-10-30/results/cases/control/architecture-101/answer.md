@@ -1,0 +1,9 @@
+The OAuth assumptions remain in both the shared contracts and the session flow:
+
+- **Contracts:** [`AuthResult`](src/auth/contracts.ts:1) requires `accessToken` and `expiresAt`, with an optional `refreshToken`. [`Authenticator`](src/auth/contracts.ts:6) requires every provider to implement `refresh(refreshToken)`, even providers without refresh support.
+- **API-key authentication:** [`ApiKeyAuthenticator.authenticate`](src/auth/providers/ApiKeyAuthenticator.ts:4) returns the supplied key unchanged as `accessToken`, sets `expiresAt` to `Number.MAX_SAFE_INTEGER`, and supplies no refresh token. Its implementation performs no key validation. [`refresh`](src/auth/providers/ApiKeyAuthenticator.ts:7) always throws `"API keys do not refresh"`.
+- **Session creation:** [`SessionService.createDefault`](src/auth/session/SessionService.ts:5) selects the API-key provider. [`login`](src/auth/session/SessionService.ts:7) stores the authentication result and returns only its `accessToken`—the raw API key for this provider.
+- **Renewal:** [`SessionService.renew`](src/auth/session/SessionService.ts:12) throws `"missing session"` for an unknown ID. While `expiresAt > now`, it simply returns the stored access token. Otherwise, it requires a refresh token, invokes the provider’s `refresh`, replaces the stored result, and returns the new access token. Thus API-key renewal normally returns the same key indefinitely; at or beyond the expiry sentinel, it throws `"refresh token required"` before reaching the provider’s unsupported-refresh method.
+- **Controller path:** [`AuthController.login` and `renew`](src/auth/AuthController.ts:4) delegate directly to these session methods, preserving those assumptions.
+
+The interface permits a missing refresh token, but the renewal path requires one whenever expiry is reached. API keys fit this model through a synthetic expiry value rather than an explicit non-expiring credential contract.

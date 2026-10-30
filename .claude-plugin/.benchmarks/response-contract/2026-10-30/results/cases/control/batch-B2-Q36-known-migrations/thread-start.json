@@ -1,0 +1,67 @@
+{
+  "thread": {
+    "id": "01a18d89-9511-7b20-bf02-f1366f91427e",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/workspace",
+        "runtimeWorkspaceRoots": [
+          "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/workspace"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a18d89-9511-7b20-bf02-f1366f91427e",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "medium",
+    "createdAt": 1793375970,
+    "updatedAt": 1793375970,
+    "recencyAt": 1793375970,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/home/sessions/2026/10/30/rollout-2026-10-30T18-59-30-01a18d89-9511-7b20-bf02-f1366f91427e.jsonl",
+    "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/workspace",
+    "cliVersion": "0.166.0",
+    "originator": "gruntworx-planning-benchmark",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": null,
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "model": "gpt-6.1-sol",
+  "modelProvider": "openai",
+  "serviceTier": null,
+  "disabledPluginIds": [],
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/workspace",
+  "runtimeWorkspaceRoots": [
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/batch-B2-Q36-known-migrations/workspace"
+  ],
+  "instructionSources": [],
+  "approvalPolicy": "never",
+  "approvalsReviewer": "user",
+  "sandbox": {
+    "type": "readOnly",
+    "networkAccess": false
+  },
+  "activePermissionProfile": {
+    "id": "routing_eval",
+    "extends": null
+  },
+  "reasoningEffort": "medium",
+  "multiAgentMode": "explicitRequestOnly"
+}

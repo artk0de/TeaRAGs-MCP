@@ -1,0 +1,107 @@
+{
+  "experiment": "response-contract-code-investigation-2026-10-30",
+  "status": "preregistered-before-candidate-results",
+  "design": "paired current-control versus private candidate; eight fixed cases, one fresh native actor per case per arm; 16 actor sessions total; no retries or follow-ups",
+  "hypothesis": "A final-response contract reduces aggregate reasoningOutputTokens without reducing correctness, evidence quality or compliance with explicit detail requirements.",
+  "selected_cases": [
+    {
+      "key": "targeted-1",
+      "source": ".claude-plugin/.benchmarks/explore/evals/2026-10-30-targeted-context-reads.json",
+      "id": 1,
+      "stratum": "missing method body"
+    },
+    {
+      "key": "targeted-2",
+      "source": ".claude-plugin/.benchmarks/explore/evals/2026-10-30-targeted-context-reads.json",
+      "id": 2,
+      "stratum": "retained complete body"
+    },
+    {
+      "key": "batch-B1-Q34-config-spec",
+      "source": ".claude-plugin/.benchmarks/search-cascade/evals/2026-10-30-independent-read-batches.json",
+      "id": "B1-Q34-config-spec",
+      "stratum": "config/spec comparison"
+    },
+    {
+      "key": "batch-B2-Q36-known-migrations",
+      "source": ".claude-plugin/.benchmarks/search-cascade/evals/2026-10-30-independent-read-batches.json",
+      "id": "B2-Q36-known-migrations",
+      "stratum": "known migration schema"
+    },
+    {
+      "key": "architecture-101",
+      "source": ".claude-plugin/.benchmarks/architecture-diagnostics/evals/2026-10-30-explicit-activation.json",
+      "id": 101,
+      "stratum": "contract behavior, diagnostics negative"
+    },
+    {
+      "key": "architecture-102",
+      "source": ".claude-plugin/.benchmarks/architecture-diagnostics/evals/2026-10-30-explicit-activation.json",
+      "id": 102,
+      "stratum": "subsystem overview, diagnostics negative"
+    },
+    {
+      "key": "response-201",
+      "source": ".claude-plugin/.benchmarks/response-contract/2026-10-30/evals.json",
+      "id": 201,
+      "stratum": "explicit complete table guard"
+    },
+    {
+      "key": "response-202",
+      "source": ".claude-plugin/.benchmarks/response-contract/2026-10-30/evals.json",
+      "id": 202,
+      "stratum": "explicit deep detail guard"
+    }
+  ],
+  "arms": {
+    "A": "Frozen current shipped plugin 0.53.8, unchanged",
+    "B": "Byte-identical private package except candidate.txt appended once to scripts/codex-rules.txt. No production changes."
+  },
+  "candidate_sha256": "34fdd8dee005e8e0f76294b05c85b917de357d62d3641878c26a49ce6350ffca",
+  "source_sha256": {
+    ".claude-plugin/.benchmarks/explore/evals/2026-10-30-targeted-context-reads.json": "c3914c2f121992d0ff478e80cc8aa5b0f16a61e89b4403856d571c4c57e747d4",
+    ".claude-plugin/.benchmarks/search-cascade/evals/2026-10-30-independent-read-batches.json": "41d89cf8eff7c5cc0ba1c2ec7ebb2ea8c0c699126cfb3f018f7f6da63b453579",
+    ".claude-plugin/.benchmarks/architecture-diagnostics/evals/2026-10-30-explicit-activation.json": "313635991dc42ac377dabca52733eb261d199fa1b7c005fe1fb2e7b4d7c11375",
+    ".claude-plugin/.benchmarks/response-contract/2026-10-30/evals.json": "75e05e0f1da1878d092256f3cd1fc2e946bd6bc089db43991c6d139b7c90b275"
+  },
+  "controls": {
+    "model": "gpt-6.1-sol",
+    "reasoning_effort": "medium",
+    "repeats_per_case_arm": 1,
+    "fresh_native_session": true,
+    "same_prompts_and_fixtures": "Exact same actor text and raw fixture bytes after normalizing only isolated cwd and project alias. Record a normalized equality proof. Same schemas, permissions, tool adapter and plugin snapshot; no answer criteria in actor input.",
+    "ordering": "Fixed alternating AB/BA across selected_cases order; two-worker concurrency allowed, preserve within-pair arm order. No warm shared conversation state.",
+    "out_of_scope": [
+      "No full Gruntworx benchmark",
+      "No effort/model changes",
+      "No instruction to conceal reasoning",
+      "No production application before decision gate"
+    ]
+  },
+  "primary_metric": {
+    "field": "reasoningOutputTokens",
+    "source": "Native completed-turn total token usage once per actor. Never sum cumulative updates. Missing/unsupported telemetry invalidates the decision.",
+    "aggregate_reduction": "1 - sum(B.reasoningOutputTokens)/sum(A.reasoningOutputTokens), including all eight paired cases",
+    "required_aggregate_reduction": 0.2,
+    "paired_requirement": "B reasoningOutputTokens must be strictly below A in more than half of pairs whose A reasoningOutputTokens > 0. Zero-control pairs remain in aggregate and all quality checks but are excluded from this majority denominator.",
+    "small_baseline_rule": "INCONCLUSIVE if aggregate control reasoningOutputTokens < 500, or fewer than three cases have nonzero control reasoningOutputTokens. Root fixed this heuristic before runs; no case replacement is allowed based on the floor or prior outcomes."
+  },
+  "quality_gate": {
+    "rule": "Every required existing-case and new guard criterion passes in both arms, with no candidate correctness, instruction-following, evidence/retrieval, unsupported-claim or explicit-detail regression. Empty/no-tool guesses cannot pass required reads. If control fails a mandatory criterion, the experiment is INCONCLUSIVE rather than evidence for applying candidate.",
+    "existing_cases": "Use frozen suite criteria, including the pre-run scheduler fairness correction: actual Promise.all/allSettled dispatch + returned per-file bytes establishes batching; scheduler timing alone does not fail workflow.",
+    "candidate_response_contract": "For ordinary cases, direct answer first; at most 180 words and six bullets or one compact table; only necessary facts, locations and conclusion-affecting caveats. No search narrative, repeated conclusion or unsolicited plan. Explicit complete/detail requests override caps.",
+    "guard_grader": "Root independently grades B1/B2 and new201/202. The metric grader independently grades targeted1/2 and architecture101/102. No author grades their own new runtime cases."
+  },
+  "secondary_metrics": [
+    "outputTokens",
+    "wall_seconds",
+    "tool call and source retrieval counts",
+    "final answer word count"
+  ],
+  "decision": {
+    "APPLY_PRIVATE_CANDIDATE_TO_PRODUCTION": "Only if primary telemetry is complete, baseline is not small, aggregate decrease >=20%, strict decrease occurs on a majority of eligible pairs, and every quality gate passes. Root may then apply the exact tested bytes.",
+    "DO_NOT_APPLY": "Any candidate quality or instruction regression, or adequate-baseline primary decrease below threshold or missing majority improvement.",
+    "INCONCLUSIVE": "Missing telemetry, zero/small reasoning baseline, control quality failure or invalid A/B equality. Do not apply.",
+    "interpretation": "N=1 per case/arm is a small exploratory paired test, not statistical proof; disclose variability and avoid generalizing a measured gain beyond this fixture set."
+  }
+}

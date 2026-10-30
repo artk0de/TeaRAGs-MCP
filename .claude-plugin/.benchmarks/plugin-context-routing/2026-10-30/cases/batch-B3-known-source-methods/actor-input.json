@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B3-known-source-methods/workspace",
+  "project": "routing-batch-b3-known-source-methods",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"tool\",\n    \"name\": \"find_symbol\",\n    \"content\": \"project: routing-batch-b3-known-source-methods; tree: /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B3-known-source-methods/workspace; current code, no pending files.\\napp/services/report_retry_policy.rb\\n  ReportRetryPolicy#retry_timeout? — signature only; body not loaded\\napp/adapters/email_delivery.rb\\n  EmailDelivery#retry_timeout? — signature only; body not loaded\\napp/adapters/webhook_delivery.rb\\n  WebhookDelivery#retry_timeout? — signature only; body not loaded\\n\"\n  }\n]\n\nCurrent user request:\nCompare how the retry policy and the two delivery adapters decide whether to retry a timeout. Explain any behavior difference using the methods in the retained outlines."
+}

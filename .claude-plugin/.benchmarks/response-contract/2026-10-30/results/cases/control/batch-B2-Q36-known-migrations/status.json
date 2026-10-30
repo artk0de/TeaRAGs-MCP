@@ -1,0 +1,12 @@
+{
+  "key": "batch-B2-Q36-known-migrations",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "2971015fd05559fb926c7f3b947c2422ea97308f85a1889e034fed81ff5b826b",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d89-9511-7b20-bf02-f1366f91427e",
+  "turn_id": "01a18d89-a6b2-7833-bc1f-d9279b8b780d",
+  "status": "completed",
+  "wall_seconds": 18.008
+}

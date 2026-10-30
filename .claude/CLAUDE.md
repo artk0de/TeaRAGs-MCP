@@ -31,6 +31,8 @@ explicitly, don't omit.
 
 ## Process Rules
 
+Plugin changes also follow the behavioral eval gate in the root `AGENTS.md`.
+
 `.claude/rules/` holds 41 path-scoped rule files — the loader surfaces the ones
 whose `paths:` globs match what you touch, so do not enumerate them here. Read
 `.claude/rules/plugin-guidance-layers.md` first: it defines the guidance layers

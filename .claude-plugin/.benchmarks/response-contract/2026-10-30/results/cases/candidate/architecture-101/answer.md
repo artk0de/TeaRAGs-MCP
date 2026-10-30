@@ -1,0 +1,7 @@
+The contracts are provider-neutral in name, but encode an OAuth-style token lifecycle:
+
+- [AuthResult](src/auth/contracts.ts:1) requires `accessToken` and `expiresAt`, with an optional `refreshToken`. [Authenticator](src/auth/contracts.ts:6) requires every provider to implement `refresh(refreshToken)`, regardless of whether it supports renewal.
+- [API-key authentication](src/auth/providers/ApiKeyAuthenticator.ts:4) simply returns the supplied key as `accessToken`, assigns `Number.MAX_SAFE_INTEGER` as expiry, and supplies no refresh token. This method performs no validation. Its required [refresh implementation](src/auth/providers/ApiKeyAuthenticator.ts:7) always throws `"API keys do not refresh"`.
+- [SessionService](src/auth/session/SessionService.ts:5) defaults to that API-key provider. [Login](src/auth/session/SessionService.ts:7) stores the result and returns its `accessToken`—therefore the original API key.
+- [Renewal](src/auth/session/SessionService.ts:12) throws `"missing session"` if absent; returns the existing token while `expiresAt > now`; otherwise requires a refresh token, calls `refresh`, and stores the replacement. Ordinary API-key renewal therefore returns the same key. At or beyond its sentinel expiry, it throws `"refresh token required"` before reaching the provider.
+- [AuthController.renew](src/auth/AuthController.ts:5) delegates directly to this same renewal path.

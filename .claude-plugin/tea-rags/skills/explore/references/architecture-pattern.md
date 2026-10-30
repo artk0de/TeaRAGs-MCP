@@ -5,6 +5,11 @@ files many others depend on) via `architecturalHub` rerank over codegraph
 fan-graph signals → answer reflects real dependency centrality, not prose that
 says "architecture".
 
+This route explains existing structure; it is not architecture diagnostics. Do
+not load `architecture-diagnostics` or call `get_architecture_report` for
+orientation. Those require an explicit diagnostic request, explicit skill
+invocation or structural refactoring.
+
 Plan line 1, copied: `Codegraph: on|off — <source>`, decided per SKILL.md
 "Codegraph availability": THIS request states it → that; a graph tool seen in
 your tool list → on; not seen → registry read decides. Never the digest.

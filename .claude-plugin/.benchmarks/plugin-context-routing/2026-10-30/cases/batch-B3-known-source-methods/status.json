@@ -1,0 +1,12 @@
+{
+  "key": "batch-B3-known-source-methods",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "001c615ea6e4cbb3a9d0a8d4ea5f1ea3d602366263828887ea135bc2ef66c071",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d6f-4c04-70b1-af6f-402c4e588e07",
+  "turn_id": "01a18d6f-4c3c-7e92-a621-b175094aec56",
+  "status": "completed",
+  "wall_seconds": 14.827
+}

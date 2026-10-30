@@ -1,0 +1,20 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/batch-B1-Q34-config-spec/workspace",
+  "alias": "routing-batch-b1-q34-config-spec",
+  "files": {
+    "config/report_delivery.yml": "default: &default\n  attempts: 5\n  delay_seconds: 30\n  retry_on_timeout: true\n\nproduction:\n  <<: *default\n\ntest:\n  <<: *default\n",
+    "config/environments/test_delivery.yml": "report_delivery:\n  attempts: 2\n  delay_seconds: 0\n  retry_on_timeout: false\n",
+    "spec/requests/report_delivery_spec.rb": "RSpec.describe 'Report delivery requests' do\n  it 'uses test retry settings' do\n    settings = ReportDelivery.settings_for(:test)\n    expect(settings.attempts).to eq(2)\n    expect(settings.delay_seconds).to eq(0)\n    expect(settings.retry_on_timeout).to eq(false)\n  end\nend\n",
+    "spec/jobs/report_delivery_job_spec.rb": "RSpec.describe ReportDeliveryJob do\n  it 'retries a production timeout' do\n    settings = ReportDelivery.settings_for(:production)\n    expect(settings.attempts).to eq(5)\n    expect(settings.delay_seconds).to eq(30)\n    expect(settings.retry_on_timeout).to eq(true)\n  end\n\n  it 'uses the test delay' do\n    expect(ReportDelivery.settings_for(:test).delay_seconds).to eq(10)\n  end\nend\n"
+  },
+  "raw_tool_responses": {},
+  "find_symbol_bodies": {},
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

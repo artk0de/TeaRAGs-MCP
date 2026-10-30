@@ -1,0 +1,3 @@
+- Attempt 0: **250 ms**
+- Attempt 1: **500 ms**
+- Attempt 4: **2,000 ms** (capped from 4,000 ms)

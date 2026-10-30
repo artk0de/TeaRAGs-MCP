@@ -1,0 +1,106 @@
+{
+  "study": ".tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000",
+  "reviewer_scope": "Independent quality review of targeted-1, targeted-2, architecture-101 and architecture-102 in both arms. Root reviews batch cases and new guards.",
+  "status": "complete; 8 assigned outcomes reviewed",
+  "cases": {
+    "control:targeted-1": {
+      "pass": true,
+      "checks": {
+        "known_body_first_and_only_source_read": true,
+        "body_observed_and_current_addressed": true,
+        "answer_40_and_160": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native completed mcpToolCall exec-0a819ab9-b3bb-4cf7-b8e8-7b4035226c75 calls find_symbol with only RetrievalPlanner#candidateCount, matching project/cwd and symbols singleton. structuredContent includes the actual Math.max(limit * 4, 32) / Math.min(expanded, 160) body. The only other tool reads candidate-plugin explore/SKILL.md, which is excluded from source retrieval counts. Final answer gives 40, maximum 160 and planner.ts:42."
+    },
+    "candidate:targeted-1": {
+      "pass": true,
+      "checks": {
+        "known_body_first_and_only_source_read": true,
+        "body_observed_and_current_addressed": true,
+        "answer_40_and_160": true,
+        "response_contract": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native completed mcpToolCall exec-058b6983-01b7-4672-b34a-73e82adeb744 calls find_symbol directly for RetrievalPlanner#candidateCount with matching project/cwd. structuredContent returns the exact four-line body. No other completed source retrieval appears. Final answer directly gives 40 / max 160, formula and planner.ts line 42, remains below 180 whitespace words, and adds no search narrative or plan."
+    },
+    "control:targeted-2": {
+      "pass": true,
+      "checks": {
+        "no_post_prompt_code_retrieval": true,
+        "answer_250_500_2000_ms": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native item/completed trace has no commandExecution or mcpToolCall items. The retained complete RetryScheduler#delayMs body supplies the formula. Final answer maps attempts 0/1/4 to 250/500/2000 ms; the uncapped 4000 ms remark is arithmetically correct."
+    },
+    "candidate:targeted-2": {
+      "pass": true,
+      "checks": {
+        "no_post_prompt_code_retrieval": true,
+        "answer_250_500_2000_ms": true,
+        "response_contract": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native item/completed trace has no commandExecution or mcpToolCall items. Final answer gives 250/500/2000 ms from the retained complete body and its correct formula, with three bullets and fewer than 180 whitespace words. No search narrative, repeated conclusion or unsolicited plan."
+    },
+    "control:architecture-101": {
+      "pass": true,
+      "checks": {
+        "no_architecture_report": true,
+        "no_diagnostic_workflow_read": true,
+        "at_least_two_observed_source_paths": true,
+        "contract_semantics": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native completed source tools return actual bodies from all four auth files. find_symbol exec-0f20b746-2d15-4d6a-a5b6-17d358a84e3b returns createDefault, renew and API-key authenticate; exec-ca8fa8fb-03e0-4313-9eca-0c5e94a0a212 returns both interfaces, login, provider refresh and controller methods. No get_architecture_report or architecture-diagnostics/reference/resource read occurs; the only command reads explore/SKILL.md. Final answer distinguishes optional refreshToken in AuthResult from required provider refresh interface and the expired-session missing-refresh throw, includes MAX_SAFE_INTEGER behavior and relevant locations."
+    },
+    "candidate:architecture-101": {
+      "pass": true,
+      "checks": {
+        "no_architecture_report": true,
+        "no_diagnostic_workflow_read": true,
+        "at_least_two_observed_source_paths": true,
+        "contract_semantics": true,
+        "response_contract": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native find_symbol exec-c1c2fa74-509a-4aee-9745-c25523e622ea returns actual bodies from contracts.ts, SessionService.ts, ApiKeyAuthenticator.ts and AuthController.ts. Other calls are scoped metadata search, directory outline and get_callees; no diagnostic workflow or report is activated. Final answer explains required accessToken/expiry and refresh interface, optional refreshToken, API-key sentinel expiry, expired missing-refresh rejection and direct renewal delegation with citations. It has 147 whitespace words and five bullets, leads with the requested lifecycle finding and adds no search narrative or unsolicited plan."
+    },
+    "control:architecture-102": {
+      "pass": true,
+      "checks": {
+        "no_architecture_report": true,
+        "no_diagnostic_workflow_read": true,
+        "at_least_two_observed_source_paths": true,
+        "overview_semantics": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native completed find_symbol results contain actual AuthController, Authenticator/AuthResult, SessionService and ApiKeyAuthenticator method/interface bodies from all four paths. Successful examples include exec-6151ff79-3642-4436-9c81-681ec608478e returning SessionService#logout, exec-d0b5d6af-d180-4227-8c6e-6300dc129d5e returning createDefault and exec-85bd8be0-09ab-4698-8cd6-a61037d63c50 returning revokeLocalSession. No get_architecture_report or architecture-diagnostics/reference/architecture-guide read occurs. Ordinary explore architecture-pattern and entry-point references are allowed. Final answer explains controller delegation, provider interface, session ownership, factory, callback and synchronous local deletion with no provider revocation/status. It explicitly limits graph claims to source methods because no edge data was returned.",
+      "observations": [
+        "A navigation-guide resource lookup failed. The actor recovered via actual source reads; this optional lookup is not a frozen mandatory-quality failure.",
+        "The mixed class/method batch returned outlines under the disclosed fixture adapter behavior, followed by successful individual body reads."
+      ]
+    },
+    "candidate:architecture-102": {
+      "pass": true,
+      "checks": {
+        "no_architecture_report": true,
+        "no_diagnostic_workflow_read": true,
+        "at_least_two_observed_source_paths": true,
+        "overview_semantics": true,
+        "response_contract": true,
+        "unsupported_claims": false
+      },
+      "evidence": "Native completed body results cover all four auth paths, including exec-eb95a7d7-b4a2-44b6-bbe8-ee4f58785f6b for AuthController#logout, exec-b72cbab5-9543-44e9-bb22-3049a1bc0def for SessionService#logout, exec-901fe0d2-cd88-4e26-afea-140ef736070c for createDefault and exec-a7b94f07-e664-4c7f-8a80-617701b6562f for provider callback. No architecture report or diagnostic-workflow read occurs. Final answer directly describes the controller-service-provider flow, contract, session ownership/default provider and local synchronous logout behavior with citations; 164 whitespace words and four bullets satisfy the response default.",
+      "observations": [
+        "The optional navigation-guide read failed as in control, and required implementation bodies were subsequently obtained.",
+        "Mixed class/method batch outline behavior also occurs in control; it limits generalization to real find_symbol behavior."
+      ]
+    }
+  },
+  "summary": {
+    "reviewed": 8,
+    "passed": 8,
+    "all_assigned_quality_pass": true
+  }
+}

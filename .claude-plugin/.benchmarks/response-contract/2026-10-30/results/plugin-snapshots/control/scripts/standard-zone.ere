@@ -1,0 +1,1 @@
+(^|[/[:space:]'"=])(config|spec|specs|test|tests|__tests__|fixtures|db|migrate|migrations|initializers|routes)(/|[[:space:]'"]|$)|(_spec|_test|\.spec|\.test)\.[A-Za-z]+([[:space:]'"]|$)|(^|/)routes\.[A-Za-z]+|\.(ya?ml|json|toml|ini|sql|rake|lock|env)([[:space:]'"]|$)

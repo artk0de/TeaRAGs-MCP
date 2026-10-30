@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-105/workspace",
+  "project": "routing-architecture-105",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"workspace_context\",\n    \"content\": \"Synthetic TypeScript repository at /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-105/workspace. All four source files are indexed; codegraph is enabled and all local imports resolve. No source changes are requested in this evaluation.\"\n  }\n]\n\nCurrent user request:\nUse $architecture-diagnostics on src/auth/** and present the diagnosis with evidence. Do not edit files."
+}

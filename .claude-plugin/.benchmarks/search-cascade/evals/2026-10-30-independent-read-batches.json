@@ -1,0 +1,193 @@
+{
+  "skill_name": "search-cascade",
+  "date": "2026-10-30",
+  "iteration": "independent-read-batches",
+  "regressions": [
+    "Q34",
+    "Q36"
+  ],
+  "method": {
+    "style": "Behavioral runtime eval: one isolated actor session per case and arm, executing real tool dispatches against materialized fixture files or an instrumented find_symbol adapter.",
+    "arms": [
+      "baseline",
+      "current"
+    ],
+    "actor_input": "Supply only case.actor, the selected plugin instructions and the normal tool schemas. Materialize case.fixture before the actor starts; do not send fixture contents or case.grading to the actor. Render fixture.initial_context as retained tool results, without adding navigation advice.",
+    "tool_runtime": "Replace __FIXTURE_ROOT__ with an isolated absolute directory. Shell reads execute there and return actual file bytes. find_symbol responses are keyed by exact requested symbol ids; symbols returns all requested bodies in one response. Unsupported paths or ids return an explicit not-found result; never invent a discovery response. Record outer wrapper id, actor turn id, nested tool name/arguments, dispatch-start and completion times. Preserve native scheduling behavior; do not add artificial delays.",
+    "grading": "Grade the actual trace plus the final answer. Count dispatched operations, not promised calls or text mentioning Promise.all. A file batch means one executed outer code-mode invocation dispatches every required independent per-file bounded shell read through Promise.all or Promise.allSettled, with runtime evidence that all required operations ran. A single shell command reading multiple files, a sequential await loop inside one wrapper, separate outer invocations, missing operations or a no-tools response fails that workflow criterion. When native timestamps show every read starting before the first completion, record overlapping execution. If native scheduling serializes a correct dispatched Promise batch or timestamps lack sufficient resolution, mark concurrency timing UNVERIFIABLE while grading the batching workflow separately; do not call scheduler serialization a workflow failure. Bounds must be finite and cover the relevant fixture content; the precise sed range is not prescribed. find_symbol symbols batching is one MCP request carrying the set of required ids, irrespective of array order. Do not award a pass for echoing plugin instructions. Keep grading data outside actor prompts and feedback until the session ends.",
+    "report": "Per case and arm retain actor transcript, nested dispatch trace, final answer, correctness verdict, batching-workflow verdict, concurrency-timing observation, failed criteria and dispatch/turn counts. Run both arms on identical fixtures and tool schemas. Report failures even when the current arm improves over baseline; never substitute instruction-text assertions for execution."
+  },
+  "cases": [
+    {
+      "id": "B1-Q34-config-spec",
+      "actor": {
+        "prompt": "Compare the retry settings in config/report_delivery.yml and config/environments/test_delivery.yml with the expectations in spec/requests/report_delivery_spec.rb and spec/jobs/report_delivery_job_spec.rb. Point out any disagreement and cite the relevant file for each conclusion.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "read-batch-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: read-batch-fixture; healthy current index. Config and RSpec DSL files are available on disk. No file contents have been read in this session."
+          }
+        ],
+        "files": {
+          "config/report_delivery.yml": "default: &default\n  attempts: 5\n  delay_seconds: 30\n  retry_on_timeout: true\n\nproduction:\n  <<: *default\n\ntest:\n  <<: *default\n",
+          "config/environments/test_delivery.yml": "report_delivery:\n  attempts: 2\n  delay_seconds: 0\n  retry_on_timeout: false\n",
+          "spec/requests/report_delivery_spec.rb": "RSpec.describe 'Report delivery requests' do\n  it 'uses test retry settings' do\n    settings = ReportDelivery.settings_for(:test)\n    expect(settings.attempts).to eq(2)\n    expect(settings.delay_seconds).to eq(0)\n    expect(settings.retry_on_timeout).to eq(false)\n  end\nend\n",
+          "spec/jobs/report_delivery_job_spec.rb": "RSpec.describe ReportDeliveryJob do\n  it 'retries a production timeout' do\n    settings = ReportDelivery.settings_for(:production)\n    expect(settings.attempts).to eq(5)\n    expect(settings.delay_seconds).to eq(30)\n    expect(settings.retry_on_timeout).to eq(true)\n  end\n\n  it 'uses the test delay' do\n    expect(ReportDelivery.settings_for(:test).delay_seconds).to eq(10)\n  end\nend\n"
+        }
+      },
+      "grading": {
+        "required_reads": [
+          "config/report_delivery.yml",
+          "config/environments/test_delivery.yml",
+          "spec/requests/report_delivery_spec.rb",
+          "spec/jobs/report_delivery_job_spec.rb"
+        ],
+        "dispatch": "All four paths are known before any read. Require exactly one executed outer code-mode read batch dispatching four bounded per-file shell reads via Promise.all/allSettled. Verify all four runtime operations; grade concurrency timing separately under method.grading. No discovery call or intervening actor reasoning turn is needed.",
+        "answer": "Production expectations agree at attempts=5, delay_seconds=30 and retry_on_timeout=true. Request specs agree with test overrides at 2, 0 and false. The job spec's test delay expectation of 10 disagrees with configured 0; cite both affected files.",
+        "fail_if": [
+          "One outer model/tool turn per file",
+          "Per-file reads deliberately serialized by sequential awaits inside one wrapper",
+          "One shell command or loop reads several files",
+          "Semantic or symbol search for these known config/DSL paths",
+          "Answer omits the job-spec test-delay mismatch"
+        ]
+      }
+    },
+    {
+      "id": "B2-Q36-known-migrations",
+      "actor": {
+        "prompt": "Using the migrations already located below, explain the final report_exports schema and which later change enables lookup by tenant and status. Mention what happens when that last migration is rolled back.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "read-batch-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "exec_command",
+            "arguments": {
+              "cmd": "rg -l --hidden --glob '!.git' 'report_exports' db/migrate/"
+            },
+            "content": "db/migrate/20261001090000_create_report_exports.rb\ndb/migrate/20261002100000_add_state_to_report_exports.rb\ndb/migrate/20261003110000_index_report_exports_for_tenant.rb\n"
+          }
+        ],
+        "files": {
+          "db/migrate/20261001090000_create_report_exports.rb": "class CreateReportExports < ActiveRecord::Migration[7.2]\n  def change\n    create_table :report_exports do |t|\n      t.bigint :tenant_id, null: false\n      t.string :file_key, null: false\n      t.timestamps\n    end\n  end\nend\n",
+          "db/migrate/20261002100000_add_state_to_report_exports.rb": "class AddStateToReportExports < ActiveRecord::Migration[7.2]\n  def change\n    add_column :report_exports, :status, :string, null: false, default: 'queued'\n    add_column :report_exports, :completed_at, :datetime\n  end\nend\n",
+          "db/migrate/20261003110000_index_report_exports_for_tenant.rb": "class IndexReportExportsForTenant < ActiveRecord::Migration[7.2]\n  def up\n    add_index :report_exports, [:tenant_id, :status], name: :idx_report_exports_tenant_status\n  end\n\n  def down\n    remove_index :report_exports, name: :idx_report_exports_tenant_status\n  end\nend\n"
+        }
+      },
+      "grading": {
+        "required_reads": [
+          "db/migrate/20261001090000_create_report_exports.rb",
+          "db/migrate/20261002100000_add_state_to_report_exports.rb",
+          "db/migrate/20261003110000_index_report_exports_for_tenant.rb"
+        ],
+        "dispatch": "The retained rg result supplies all required paths. Require one executed outer code-mode batch dispatching three bounded per-file shell reads via Promise.all/allSettled, with all three operations observed. Grade native concurrency timing separately. Migration application order affects interpretation, not whether their contents can be read independently.",
+        "answer": "Final table includes the implicit id, non-null tenant_id and file_key, timestamps, non-null status defaulting to queued and nullable completed_at. The third migration adds the named composite tenant_id/status index. Its down removes only that index, retaining the table and columns.",
+        "fail_if": [
+          "Repeated filename search despite all three retained paths",
+          "Three separate outer read turns",
+          "Serial per-file awaits",
+          "Shell command reads multiple migration files",
+          "Claims rollback drops the table or status column"
+        ]
+      }
+    },
+    {
+      "id": "B3-known-source-methods",
+      "actor": {
+        "prompt": "Compare how the retry policy and the two delivery adapters decide whether to retry a timeout. Explain any behavior difference using the methods in the retained outlines.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "read-batch-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "content": "project: read-batch-fixture; tree: __FIXTURE_ROOT__; current code, no pending files.\napp/services/report_retry_policy.rb\n  ReportRetryPolicy#retry_timeout? — signature only; body not loaded\napp/adapters/email_delivery.rb\n  EmailDelivery#retry_timeout? — signature only; body not loaded\napp/adapters/webhook_delivery.rb\n  WebhookDelivery#retry_timeout? — signature only; body not loaded\n"
+          }
+        ],
+        "find_symbol_bodies": {
+          "ReportRetryPolicy#retry_timeout?": {
+            "relativePath": "app/services/report_retry_policy.rb",
+            "startLine": 4,
+            "endLine": 6,
+            "body": "def retry_timeout?(attempt:)\n  @settings.retry_on_timeout && attempt < @settings.attempts\nend"
+          },
+          "EmailDelivery#retry_timeout?": {
+            "relativePath": "app/adapters/email_delivery.rb",
+            "startLine": 8,
+            "endLine": 10,
+            "body": "def retry_timeout?(attempt:)\n  @retry_policy.retry_timeout?(attempt: attempt)\nend"
+          },
+          "WebhookDelivery#retry_timeout?": {
+            "relativePath": "app/adapters/webhook_delivery.rb",
+            "startLine": 8,
+            "endLine": 10,
+            "body": "def retry_timeout?(attempt:)\n  false\nend"
+          }
+        }
+      },
+      "grading": {
+        "required_symbols": [
+          "ReportRetryPolicy#retry_timeout?",
+          "EmailDelivery#retry_timeout?",
+          "WebhookDelivery#retry_timeout?"
+        ],
+        "dispatch": "Require exactly one find_symbol request with symbols containing all three known method ids and project/path addressing. No file/class outlines need refreshing; retained outlines contain addresses but no bodies. Three concurrent single-symbol requests still fail the symbols-batch criterion.",
+        "answer": "Policy requires retry_on_timeout and an attempt strictly below the configured attempts limit. Email delegates to that policy. Webhook always returns false, regardless of policy or attempt.",
+        "fail_if": [
+          "One find_symbol call per method",
+          "Concurrent singular-symbol calls in place of symbols batching",
+          "Requeries file or class outlines",
+          "Reads source with shell or Read",
+          "Treats the outlines as if bodies were already present"
+        ]
+      }
+    },
+    {
+      "id": "B4-dependent-discovery-control",
+      "actor": {
+        "prompt": "Check the delivery environment files selected by config/delivery_manifest.yml. Which selected environment disables timeout retries, and what retry delay does each selected environment use?",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "read-batch-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: read-batch-fixture; healthy current index. No config contents or directory listings are retained."
+          }
+        ],
+        "files": {
+          "config/delivery_manifest.yml": "selected_environments:\n  - config/delivery/production_east.yml\n  - config/delivery/test_isolated.yml\n",
+          "config/delivery/production_east.yml": "environment: production_east\nretry_on_timeout: true\ndelay_seconds: 45\n",
+          "config/delivery/test_isolated.yml": "environment: test_isolated\nretry_on_timeout: false\ndelay_seconds: 0\n"
+        }
+      },
+      "grading": {
+        "required_reads": [
+          "config/delivery_manifest.yml",
+          "config/delivery/production_east.yml",
+          "config/delivery/test_isolated.yml"
+        ],
+        "dispatch": "Legitimate two-stage dependency: first read the known manifest with a bounded single-file read. Only its result reveals the selected paths. Then require a second executed outer code-mode invocation dispatching both selected bounded per-file config reads via Promise.all/allSettled; verify both operations ran and grade native concurrency timing separately. Do not require unknown paths to have been batched with the manifest. Count the first stage as necessary discovery, not as a batching regression.",
+        "answer": "test_isolated disables timeout retries and has delay_seconds=0; production_east enables them and has delay_seconds=45.",
+        "fail_if": [
+          "Guesses child paths before the manifest result",
+          "Reads all config files via a glob or recursive dump",
+          "Serializes the two selected config reads after paths are known",
+          "Skips reading a selected file and fabricates its settings"
+        ]
+      }
+    }
+  ]
+}

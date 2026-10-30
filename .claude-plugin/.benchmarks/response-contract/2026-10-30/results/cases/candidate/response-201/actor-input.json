@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-201/workspace",
+  "project": "routing-response-201",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"workspace_context\",\n    \"content\": \"Synthetic current repository at /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/response-201/workspace. config/delivery_policies.yml is available on disk; its contents have not been read in this session.\"\n  }\n]\n\nCurrent user request:\nRead config/delivery_policies.yml and produce one complete table with one row for every configured policy, preserving file order. Include the exact name, attempts, delay_ms, timeout_ms, and full purpose text verbatim for every row. Do not shorten or group the purpose text. Include a code location for each row."
+}

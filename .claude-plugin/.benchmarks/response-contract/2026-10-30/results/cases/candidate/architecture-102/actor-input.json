@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/architecture-102/workspace",
+  "project": "routing-architecture-102",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"workspace_context\",\n    \"content\": \"Synthetic TypeScript repository at /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/candidate/cases/architecture-102/workspace. All four source files are indexed; codegraph is enabled and all local imports resolve. No source changes are requested in this evaluation.\"\n  }\n]\n\nCurrent user request:\nBefore I work on logout UX, explain the current architecture of src/auth: the request entry point, provider contract, session owner, and how calls flow between them. I need an overview of the existing implementation."
+}

@@ -1,0 +1,34 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B3-known-source-methods/workspace",
+  "alias": "routing-batch-b3-known-source-methods",
+  "files": {},
+  "raw_tool_responses": {},
+  "find_symbol_bodies": {
+    "ReportRetryPolicy#retry_timeout?": {
+      "relativePath": "app/services/report_retry_policy.rb",
+      "startLine": 4,
+      "endLine": 6,
+      "body": "def retry_timeout?(attempt:)\n  @settings.retry_on_timeout && attempt < @settings.attempts\nend"
+    },
+    "EmailDelivery#retry_timeout?": {
+      "relativePath": "app/adapters/email_delivery.rb",
+      "startLine": 8,
+      "endLine": 10,
+      "body": "def retry_timeout?(attempt:)\n  @retry_policy.retry_timeout?(attempt: attempt)\nend"
+    },
+    "WebhookDelivery#retry_timeout?": {
+      "relativePath": "app/adapters/webhook_delivery.rb",
+      "startLine": 8,
+      "endLine": 10,
+      "body": "def retry_timeout?(attempt:)\n  false\nend"
+    }
+  },
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

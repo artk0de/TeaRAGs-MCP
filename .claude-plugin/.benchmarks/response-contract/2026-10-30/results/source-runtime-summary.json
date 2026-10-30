@@ -1,0 +1,187 @@
+{
+  "existing_process_eof": true,
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "case_arm_count": 16,
+  "completed_count": 16,
+  "one_native_turn_each": true,
+  "new_launches_by_monitor": 0,
+  "cases": [
+    {
+      "arm": "control",
+      "pair_id": "targeted-1",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 14.759,
+      "thread_id": "01a18d89-02a0-71b1-81b4-7f4099a1b32b",
+      "hook_started": 13,
+      "hook_completed": 13
+    },
+    {
+      "arm": "control",
+      "pair_id": "targeted-2",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 6.408,
+      "thread_id": "01a18d89-3da0-7081-9be8-e5f9c6a64072",
+      "hook_started": 7,
+      "hook_completed": 7
+    },
+    {
+      "arm": "control",
+      "pair_id": "batch-B1-Q34-config-spec",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 14.63,
+      "thread_id": "01a18d89-57df-7721-804c-fb1542d0b49b",
+      "hook_started": 23,
+      "hook_completed": 23
+    },
+    {
+      "arm": "control",
+      "pair_id": "batch-B2-Q36-known-migrations",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 18.008,
+      "thread_id": "01a18d89-9511-7b20-bf02-f1366f91427e",
+      "hook_started": 19,
+      "hook_completed": 19
+    },
+    {
+      "arm": "control",
+      "pair_id": "architecture-101",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 33.785,
+      "thread_id": "01a18d89-bf48-70e3-9f91-64d7ca88800d",
+      "hook_started": 21,
+      "hook_completed": 21
+    },
+    {
+      "arm": "control",
+      "pair_id": "architecture-102",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 56.706,
+      "thread_id": "01a18d8a-46c9-76a3-9d91-ec8bb25c7032",
+      "hook_started": 63,
+      "hook_completed": 63
+    },
+    {
+      "arm": "control",
+      "pair_id": "response-201",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 21.667,
+      "thread_id": "01a18d8a-f2b1-7ad2-80a1-a6d76e4270a1",
+      "hook_started": 11,
+      "hook_completed": 11
+    },
+    {
+      "arm": "control",
+      "pair_id": "response-202",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 49.556,
+      "thread_id": "01a18d8b-63aa-70d0-aa74-01369d84c141",
+      "hook_started": 15,
+      "hook_completed": 15
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "targeted-1",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 13.264,
+      "thread_id": "01a18d89-02a0-7e80-922c-9f83cc0b78b2",
+      "hook_started": 9,
+      "hook_completed": 9
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "targeted-2",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 8.454,
+      "thread_id": "01a18d89-3741-7980-acae-2976a1e18d69",
+      "hook_started": 7,
+      "hook_completed": 7
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "batch-B1-Q34-config-spec",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 15.129,
+      "thread_id": "01a18d89-5974-7000-8411-a2949dff4425",
+      "hook_started": 23,
+      "hook_completed": 23
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "batch-B2-Q36-known-migrations",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 11.398,
+      "thread_id": "01a18d89-91f1-7e03-a76f-fe40acd93449",
+      "hook_started": 19,
+      "hook_completed": 19
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "architecture-101",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 27.164,
+      "thread_id": "01a18d89-dbef-79a0-8e25-57ceb1da02e3",
+      "hook_started": 19,
+      "hook_completed": 19
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "architecture-102",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 44.346,
+      "thread_id": "01a18d8a-447b-7433-8f8a-298c40218393",
+      "hook_started": 61,
+      "hook_completed": 61
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "response-201",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 15.349,
+      "thread_id": "01a18d8b-268a-7d03-a990-dd2e9222580b",
+      "hook_started": 11,
+      "hook_completed": 11
+    },
+    {
+      "arm": "candidate",
+      "pair_id": "response-202",
+      "status": "completed",
+      "attempt": 1,
+      "turn_started_notifications": 1,
+      "wall_seconds": 55.168,
+      "thread_id": "01a18d8b-4893-70d1-b646-79c21e591b8a",
+      "hook_started": 15,
+      "hook_completed": 15
+    }
+  ]
+}

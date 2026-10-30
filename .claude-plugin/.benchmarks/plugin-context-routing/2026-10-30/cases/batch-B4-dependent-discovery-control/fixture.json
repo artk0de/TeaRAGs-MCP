@@ -1,0 +1,19 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B4-dependent-discovery-control/workspace",
+  "alias": "routing-batch-b4-dependent-discovery-control",
+  "files": {
+    "config/delivery_manifest.yml": "selected_environments:\n  - config/delivery/production_east.yml\n  - config/delivery/test_isolated.yml\n",
+    "config/delivery/production_east.yml": "environment: production_east\nretry_on_timeout: true\ndelay_seconds: 45\n",
+    "config/delivery/test_isolated.yml": "environment: test_isolated\nretry_on_timeout: false\ndelay_seconds: 0\n"
+  },
+  "raw_tool_responses": {},
+  "find_symbol_bodies": {},
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

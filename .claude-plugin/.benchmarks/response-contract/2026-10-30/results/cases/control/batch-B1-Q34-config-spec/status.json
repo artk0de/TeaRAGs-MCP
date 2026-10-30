@@ -1,0 +1,12 @@
+{
+  "key": "batch-B1-Q34-config-spec",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "d6ad8fd9fdc077ef59616e1f09f35dfa132853410a8fb0887034d8b9b34d2fa9",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d89-57df-7721-804c-fb1542d0b49b",
+  "turn_id": "01a18d89-5f41-7c10-acae-8b8b921053c2",
+  "status": "completed",
+  "wall_seconds": 14.63
+}

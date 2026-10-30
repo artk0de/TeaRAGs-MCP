@@ -1,0 +1,12 @@
+{
+  "key": "batch-B4-dependent-discovery-control",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "5b314eee9e349ea48b56874e5a1365be9c86adb1f0df88e2f94d7b7a2716da76",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18d6f-5666-7d91-a661-a8a405f4561c",
+  "turn_id": "01a18d6f-568d-7330-9d13-b929e8f0a41c",
+  "status": "completed",
+  "wall_seconds": 10.326
+}

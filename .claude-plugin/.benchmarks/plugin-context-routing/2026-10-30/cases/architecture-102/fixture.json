@@ -1,0 +1,167 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/architecture-102/workspace",
+  "alias": "routing-architecture-102",
+  "files": {
+    "src/auth/contracts.ts": "export interface AuthResult {\n  accessToken: string;\n  refreshToken?: string;\n  expiresAt: number;\n}\nexport interface Authenticator {\n  authenticate(input: string): Promise<AuthResult>;\n  refresh(refreshToken: string): Promise<AuthResult>;\n}\n",
+    "src/auth/session/SessionService.ts": "import type { Authenticator, AuthResult } from \"../contracts\";\nimport { ApiKeyAuthenticator } from \"../providers/ApiKeyAuthenticator\";\nexport class SessionService {\n  private sessions = new Map<string, AuthResult>();\n  static createDefault() { return new SessionService(new ApiKeyAuthenticator()); }\n  constructor(private authenticator: Authenticator) {}\n  async login(id: string, input: string) {\n    const result = await this.authenticator.authenticate(input);\n    this.sessions.set(id, result);\n    return result.accessToken;\n  }\n  async renew(id: string, now: number) {\n    const session = this.sessions.get(id);\n    if (!session) throw new Error(\"missing session\");\n    if (session.expiresAt > now) return session.accessToken;\n    if (!session.refreshToken) throw new Error(\"refresh token required\");\n    const next = await this.authenticator.refresh(session.refreshToken);\n    this.sessions.set(id, next);\n    return next.accessToken;\n  }\n  logout(id: string) { this.sessions.delete(id); }\n}\n",
+    "src/auth/providers/ApiKeyAuthenticator.ts": "import type { Authenticator, AuthResult } from \"../contracts\";\nimport { SessionService } from \"../session/SessionService\";\nexport class ApiKeyAuthenticator implements Authenticator {\n  async authenticate(key: string): Promise<AuthResult> {\n    return { accessToken: key, expiresAt: Number.MAX_SAFE_INTEGER };\n  }\n  async refresh(_refreshToken: string): Promise<AuthResult> {\n    throw new Error(\"API keys do not refresh\");\n  }\n  revokeLocalSession(sessions: SessionService, id: string) { sessions.logout(id); }\n}\n",
+    "src/auth/AuthController.ts": "import { SessionService } from \"./session/SessionService\";\nexport class AuthController {\n  constructor(private sessions: SessionService) {}\n  login(id: string, input: string) { return this.sessions.login(id, input); }\n  renew(id: string, now: number) { return this.sessions.renew(id, now); }\n  logout(id: string) { this.sessions.logout(id); }\n}\n"
+  },
+  "raw_tool_responses": {
+    "get_architecture_report": {
+      "reportId": "auth-gate-r1",
+      "scope": {
+        "pathPattern": "src/auth/**"
+      },
+      "componentCount": 3,
+      "componentEdgeCount": 4,
+      "judgedEdgeCount": 4,
+      "rootCauses": [
+        {
+          "targetComponent": "src/auth/providers",
+          "targetInstability": 0.75,
+          "violationCount": 1,
+          "maxInstabilityDelta": 0.5,
+          "sources": [
+            "src/auth/session"
+          ],
+          "cycleWithDependents": true,
+          "tier": "structural"
+        }
+      ],
+      "violations": {
+        "stableDependencies": [
+          {
+            "sourceComponent": "src/auth/session",
+            "targetComponent": "src/auth/providers",
+            "sourceInstability": 0.25,
+            "targetInstability": 0.75,
+            "instabilityDelta": 0.5,
+            "tier": "structural",
+            "evidence": {
+              "directoryRelation": "disjoint",
+              "fileEdgeCount": 1,
+              "fileEdges": [
+                {
+                  "sourceRelPath": "src/auth/session/SessionService.ts",
+                  "targetRelPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+                  "importedNames": [
+                    "ApiKeyAuthenticator"
+                  ],
+                  "callWeight": 1
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "summary": {
+        "stableDependencies": {
+          "violationCount": 1,
+          "excludedContainmentCount": 0,
+          "excludedLowSupportCount": 0
+        },
+        "nonProduction": {
+          "excludedFileCount": 0
+        },
+        "testSupport": {
+          "excludedFileCount": 0
+        },
+        "impactTiers": {
+          "built": false,
+          "reason": "no co-change history"
+        }
+      },
+      "exclusionReasons": []
+    },
+    "resolve_metrics": {
+      "codegraphEnabled": true,
+      "built": true,
+      "edgeCount": 4,
+      "resolvedRate": 1.0
+    },
+    "get_architecture_report.restructure": {
+      "baselineReportId": "auth-gate-r1",
+      "delta": {
+        "resolved": {
+          "stableDependencies": 1
+        },
+        "introduced": {},
+        "net": 1
+      }
+    }
+  },
+  "find_symbol_bodies": {},
+  "architecture_report": {
+    "reportId": "auth-gate-r1",
+    "scope": {
+      "pathPattern": "src/auth/**"
+    },
+    "componentCount": 3,
+    "componentEdgeCount": 4,
+    "judgedEdgeCount": 4,
+    "rootCauses": [
+      {
+        "targetComponent": "src/auth/providers",
+        "targetInstability": 0.75,
+        "violationCount": 1,
+        "maxInstabilityDelta": 0.5,
+        "sources": [
+          "src/auth/session"
+        ],
+        "cycleWithDependents": true,
+        "tier": "structural"
+      }
+    ],
+    "violations": {
+      "stableDependencies": [
+        {
+          "sourceComponent": "src/auth/session",
+          "targetComponent": "src/auth/providers",
+          "sourceInstability": 0.25,
+          "targetInstability": 0.75,
+          "instabilityDelta": 0.5,
+          "tier": "structural",
+          "evidence": {
+            "directoryRelation": "disjoint",
+            "fileEdgeCount": 1,
+            "fileEdges": [
+              {
+                "sourceRelPath": "src/auth/session/SessionService.ts",
+                "targetRelPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+                "importedNames": [
+                  "ApiKeyAuthenticator"
+                ],
+                "callWeight": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "summary": {
+      "stableDependencies": {
+        "violationCount": 1,
+        "excludedContainmentCount": 0,
+        "excludedLowSupportCount": 0
+      },
+      "nonProduction": {
+        "excludedFileCount": 0
+      },
+      "testSupport": {
+        "excludedFileCount": 0
+      },
+      "impactTiers": {
+        "built": false,
+        "reason": "no co-change history"
+      }
+    },
+    "exclusionReasons": []
+  },
+  "metrics": {
+    "codegraphEnabled": true,
+    "built": true,
+    "edgeCount": 4,
+    "resolvedRate": 1.0
+  }
+}

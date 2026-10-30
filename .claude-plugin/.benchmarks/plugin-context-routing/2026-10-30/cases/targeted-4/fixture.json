@@ -1,0 +1,47 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-4/workspace",
+  "alias": "routing-targeted-4",
+  "files": {
+    "src/retry/scheduler.ts": "\n\n\n\nexport class RetryScheduler {\n\n\n\n\n\n\n\n\n\n\n\n\ndelayMs(attempt: number): number {\n  return Math.min(250 * 2 ** attempt, 2000);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\nshouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nrecordAttempt(status: number): void {\n  void status;\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n}\n"
+  },
+  "raw_tool_responses": [
+    {
+      "tool": "find_symbol",
+      "symbol": "RetryScheduler#shouldRetry",
+      "result": {
+        "workingTree": {
+          "project": "routing-targeted-4",
+          "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/targeted-4/workspace"
+        },
+        "results": [
+          {
+            "payload": {
+              "relativePath": "src/retry/scheduler.ts",
+              "symbolId": "RetryScheduler#shouldRetry",
+              "startLine": 34,
+              "endLine": 36,
+              "content": "shouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "find_symbol_bodies": {
+    "RetryScheduler#shouldRetry": {
+      "relativePath": "src/retry/scheduler.ts",
+      "symbolId": "RetryScheduler#shouldRetry",
+      "startLine": 34,
+      "endLine": 36,
+      "content": "shouldRetry(status: number): boolean {\n  return status === 429 || status === 503;\n}"
+    }
+  },
+  "architecture_report": {},
+  "metrics": {
+    "signals": {},
+    "labelMap": {},
+    "codegraphEnabled": true,
+    "built": true,
+    "resolvedRate": 1.0
+  }
+}

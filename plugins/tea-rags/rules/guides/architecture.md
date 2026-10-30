@@ -3,6 +3,11 @@
 Call contract (params, modes, paging) = tool schema. This guide = how to read
 the answer. Diagnosis, not prescription.
 
+Use only for an explicit architecture diagnostic/audit request, explicit
+`architecture-diagnostics` invocation or structural refactoring. Never call the
+report to gather context for code overviews, behavior/contract questions or
+routine implementation. Relevant source bodies and targeted edges answer those.
+
 ## Shape
 
 - Typed violations, per-line evidence, per detector;

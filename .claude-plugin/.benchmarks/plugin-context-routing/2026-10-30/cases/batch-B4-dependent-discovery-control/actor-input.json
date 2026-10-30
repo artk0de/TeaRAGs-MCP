@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B4-dependent-discovery-control/workspace",
+  "project": "routing-batch-b4-dependent-discovery-control",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"tool\",\n    \"name\": \"workspace_context\",\n    \"content\": \"cwd: /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B4-dependent-discovery-control/workspace; project: routing-batch-b4-dependent-discovery-control; healthy current index. No config contents or directory listings are retained.\"\n  }\n]\n\nCurrent user request:\nCheck the delivery environment files selected by config/delivery_manifest.yml. Which selected environment disables timeout retries, and what retry delay does each selected environment use?"
+}

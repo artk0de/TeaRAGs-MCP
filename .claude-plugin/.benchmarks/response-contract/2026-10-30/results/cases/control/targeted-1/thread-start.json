@@ -1,0 +1,67 @@
+{
+  "thread": {
+    "id": "01a18d89-02a0-71b1-81b4-7f4099a1b32b",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/workspace",
+        "runtimeWorkspaceRoots": [
+          "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/workspace"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a18d89-02a0-71b1-81b4-7f4099a1b32b",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "medium",
+    "createdAt": 1793375930,
+    "updatedAt": 1793375930,
+    "recencyAt": 1793375930,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/home/sessions/2026/10/30/rollout-2026-10-30T18-58-50-01a18d89-02a0-71b1-81b4-7f4099a1b32b.jsonl",
+    "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/workspace",
+    "cliVersion": "0.166.0",
+    "originator": "gruntworx-planning-benchmark",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": null,
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "model": "gpt-6.1-sol",
+  "modelProvider": "openai",
+  "serviceTier": null,
+  "disabledPluginIds": [],
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/workspace",
+  "runtimeWorkspaceRoots": [
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/response-contract-runs/20261030-184546-954844000/control/cases/targeted-1/workspace"
+  ],
+  "instructionSources": [],
+  "approvalPolicy": "never",
+  "approvalsReviewer": "user",
+  "sandbox": {
+    "type": "readOnly",
+    "networkAccess": false
+  },
+  "activePermissionProfile": {
+    "id": "routing_eval",
+    "extends": null
+  },
+  "reasoningEffort": "medium",
+  "multiAgentMode": "explicitRequestOnly"
+}

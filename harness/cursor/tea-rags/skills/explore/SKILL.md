@@ -26,6 +26,14 @@ needed now, not containing classes/trees; headers/shared declarations need their
 own evidence gap. Every read closes a missing fact in this question, never
 prefetches for a future one.
 
+Search/outline already supplies the needed method ids → read those methods
+directly in ONE `find_symbol(symbols:[…])`. Do not first list their directory,
+outline their file, or fetch their containing class. A known filename alone may
+still need its outline to identify a method; retain that outline for follow-ups.
+For known independent config/spec/migration reads, dispatch a single batch: one
+bounded default code read command per file, concurrently in one code-mode
+wrapper where available. Do not insert model turns between independent reads.
+
 | Need                                                                | Route                                                                                                                                      |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                         |
@@ -48,7 +56,10 @@ already held. Recipes are not minimum call counts: continue only to close an
 identified evidence gap.
 
 - Explicit cycles → [cycle-pattern](./references/cycle-pattern.md).
-- Dependency direction/layer violations → `architecture-diagnostics`.
+- Explicit architecture diagnosis/audit, explicit `architecture-diagnostics`
+  invocation, or structural refactoring → `architecture-diagnostics`. Never use
+  it or `get_architecture_report` to gather context, explain contracts or give a
+  code overview; read the relevant implementations instead.
 - Explicit structure/architecture →
   [architecture-pattern](./references/architecture-pattern.md); entry points →
   [entry-point-pattern](./references/entry-point-pattern.md).

@@ -1,26 +1,27 @@
 ---
 name: architecture-diagnostics
 description: >-
-  Check code layout: dependency direction, module borders, Stable Dependencies
-  Principle violations, leaking abstractions (imports past adopted facade),
-  silent coupling (files changing together, no import/call between),
-  main-sequence distance (zone of pain / uselessness), hub-like dependencies
-  (high Ca AND Ce), inferred layer stack (SCC-condensed levels, knots,
-  back-edges, layer map, move candidates) with evidence per line, grouped into
-  root causes. Use when asked "is architecture right", "layering violations",
-  "layer map", "which layer", "levels", "move candidate", "wrong dependency
-  direction", "SDP", "stable depends on unstable", "module borders", "facade
-  bypass", "deep imports", "leaking abstraction", "hidden coupling", "change
-  together", "shotgun surgery", "zone of pain", "main sequence", "abstractness",
-  "hub-like dependency", "архитектурные нарушения" — NOT for risk/health of code
-  (use risk-assessment), NOT for one failure (use bug-hunt), NOT for plain cycle
-  listing (find_cycles).
+  Diagnose structural violations for an explicit architecture audit, an explicit
+  invocation of this skill, or structural refactoring. Assess dependency/layer
+  violations, coupling and move candidates. Not for context gathering, code
+  overviews, behavior or contract questions, or routine feature work.
+  Risk/health uses risk-assessment; failures use bug-hunt; plain cycles use
+  find_cycles.
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 
 # Architecture Diagnostics
 
 Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
+
+**Activation gate — before metrics, references or reports.** Run only for an
+explicit request to diagnose/audit architecture, an explicit invocation of this
+skill, or a structural-refactoring task. Never activate to gather context for
+another task. Explaining how a subsystem is organized or which contracts assume
+OAuth is source investigation, not a diagnostic request, even when it mentions
+architecture, boundaries or abstractions. Use the relevant source bodies/edges
+instead; do not load this workflow's references or call
+`get_architecture_report`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license `cat`
 / `grep` / `Read` over code — `tea-rags://guide/freshness`.

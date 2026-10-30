@@ -15,6 +15,11 @@ research/codex-q24-validated-2026-10-30/
 research/codex-q03-tool-replay-2026-10-30/
 research/gruntworx-full39-codex-2026-10-30/
 research/gruntworx-full39-codex61-2026-10-30/
+.claude-plugin/.benchmarks/plugin-context-routing/2026-10-30/
+.claude-plugin/.benchmarks/response-contract/2026-10-30/
+.claude-plugin/.benchmarks/explore/evals/2026-10-30-targeted-context-reads.json
+.claude-plugin/.benchmarks/architecture-diagnostics/evals/2026-10-30-explicit-activation.json
+.claude-plugin/.benchmarks/search-cascade/evals/2026-10-30-independent-read-batches.json
 
 # Vendored third-party crates: cargo verifies every file against
 # .cargo-checksum.json, so a reformat breaks `cargo build --offline`.

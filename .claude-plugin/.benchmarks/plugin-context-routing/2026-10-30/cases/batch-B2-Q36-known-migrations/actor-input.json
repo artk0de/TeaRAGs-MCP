@@ -1,0 +1,5 @@
+{
+  "cwd": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/plugin-routing-evals/runs/20261030-182853-286087000/cases/batch-B2-Q36-known-migrations/workspace",
+  "project": "routing-batch-b2-q36-known-migrations",
+  "text": "Retained session context, in chronological order:\n[\n  {\n    \"role\": \"tool\",\n    \"name\": \"exec_command\",\n    \"arguments\": {\n      \"cmd\": \"rg -l --hidden --glob '!.git' 'report_exports' db/migrate/\"\n    },\n    \"content\": \"db/migrate/20261001090000_create_report_exports.rb\\ndb/migrate/20261002100000_add_state_to_report_exports.rb\\ndb/migrate/20261003110000_index_report_exports_for_tenant.rb\\n\"\n  }\n]\n\nCurrent user request:\nUsing the migrations already located below, explain the final report_exports schema and which later change enables lookup by tenant and status. Mention what happens when that last migration is rolled back."
+}

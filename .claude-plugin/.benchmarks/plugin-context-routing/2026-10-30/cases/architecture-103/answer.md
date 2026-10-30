@@ -1,0 +1,11 @@
+The first boundary to correct is **provider → session**. The report identifies one structural root cause: `providers` depends back on the `session` component that consumes it.
+
+- **Dependency cycle and stability violation.** The graph reports `session → providers` with instability **0.25 → 0.75**, a delta of **0.50**, carried by one file edge and one call. [SessionService.createDefault](src/auth/session/SessionService.ts:5) constructs `ApiKeyAuthenticator`, despite the constructor already accepting the `Authenticator` interface.
+- **Provider owns session orchestration.** [ApiKeyAuthenticator.revokeLocalSession](src/auth/providers/ApiKeyAuthenticator.ts:10) accepts a concrete `SessionService` and calls `logout`. This confirms the report’s `cycleWithDependents: true`: provider implementation and session lifecycle know about each other.
+- **The contract assumes too much.** [Authenticator](src/auth/contracts.ts:6) requires `refresh`, while [ApiKeyAuthenticator.refresh](src/auth/providers/ApiKeyAuthenticator.ts:7) always throws because API keys cannot refresh. This is a source-supported abstraction mismatch, separate from the reported dependency violation.
+
+Correct the provider-to-session boundary first: session lifecycle orchestration should own local logout; the provider should not require `SessionService`. This removes the back-reference responsible for the cycle. Then separate provider selection from session behavior so the service uses its existing injected contract without constructing a concrete provider. Finally, represent refresh as an explicit capability rather than requiring every authenticator to support it.
+
+The report judged **all four component dependencies across three components**, with **one stable-dependency violation and one root cause**. No containment, low-support, tooling, or test-support exclusions were reported.
+
+Limits: no layering findings were returned, so this does not establish a complete layer hierarchy. Co-change history was unavailable, so the report’s “structural” label does not establish operational urgency. Method-edge queries returned `noEdgeFixture`; the cycle diagnosis rests on the component graph and retrieved source bodies. No files were edited.

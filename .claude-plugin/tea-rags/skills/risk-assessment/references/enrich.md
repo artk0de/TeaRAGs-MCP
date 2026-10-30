@@ -60,7 +60,11 @@ risk not assessed (never claim "no cycles" / "no hubs"). See
   — escalate (tag Risk Type, sort to top of its tier): change there ripples
   across many dependents. Amplifier on already-identified risk, NOT a 5th MERGE
   preset — clean high-fanIn hub with healthy git signals is backbone, not risk.
-- **Structural-violation amplifier (`get_architecture_report`).** Run once:
+- **Structural-violation amplifier (`get_architecture_report`).** Only when the
+  task explicitly requests architecture diagnostics or structural refactoring; a
+  risk/health scan alone does not authorize it. Reuse an existing report where
+  available. Otherwise skip this amplifier; do not load the diagnostics skill or
+  report merely to gather context. Eligible task: run once:
   `get_architecture_report(path: "<your working directory>", pathPattern: "<same scope>", detectors: ["stableDependencies", "mainSequence", "hubLikeDependency"])`
   — only the three groups it reads. Candidate inside a component with an SDP,
   mainSequence or hubLike violation (match on the component's files, same
