@@ -1,0 +1,7 @@
+{
+  "case": "E3-exhaustive-work-list",
+  "arm": "baseline",
+  "rc": 0,
+  "wall_seconds": 15.3,
+  "plugin": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags"
+}

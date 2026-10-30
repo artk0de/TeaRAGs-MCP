@@ -1,0 +1,7 @@
+{
+  "case": "E2-class-contract-inherited",
+  "arm": "baseline",
+  "rc": 0,
+  "wall_seconds": 29.5,
+  "plugin": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags"
+}

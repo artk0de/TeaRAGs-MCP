@@ -1,0 +1,12 @@
+{
+  "key": "e-E1-table-state-no-schema-r1",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "b2e048478953e05097c5f0493f391566a5aae64ab5cfed4be57dc0e1500ff230",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18ef3-56e2-7f12-b1aa-43fb40e4fa39",
+  "turn_id": "01a18ef3-5735-7f62-ac53-bc0641e2822f",
+  "status": "completed",
+  "wall_seconds": 18.339
+}

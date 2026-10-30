@@ -1,0 +1,178 @@
+{
+  "skill_name": "search-cascade",
+  "date": "2026-10-31",
+  "iteration": "migration-history-class-contract (4mffb)",
+  "method": {
+    "style": "Behavioral runtime eval: one isolated actor session per case, arm and run, executing real tool dispatches against materialized fixture files and an instrumented fixture tea-rags MCP server.",
+    "arms": ["baseline", "current"],
+    "actor_input": "Supply only case.actor, the plugin as installed through its shipped injection path and the fixture tool schemas. Materialize case.fixture.files before the actor starts; never send fixture contents or case.grading to the actor.",
+    "tool_runtime": "Replace __FIXTURE_ROOT__ with an isolated absolute directory. Shell reads execute there. find_symbol answers from the fixture files: a Ruby class id returns its container header (class line with ancestor, class-level DSL) plus a member outline; a method id returns its body; a file path returns its outline. hybrid_search/semantic_search with scope \"migrations\" return one row per migration operation (relativePath, operation, table, columns, version) and honour a filter on payload key table; operations nested in a safety_assured block carry table null, mirroring the current chunker. Graph tools return noEdgeFixture.",
+    "grading": "Grade the actual dispatched trace plus the final answer against case.grading. Promised calls, plans in prose or echoed instructions do not count.",
+    "report": "Per case, arm and run retain actor transcript, MCP audit, final answer and verdict with failed criteria. Failed attempts are kept."
+  },
+  "cases": [
+    {
+      "id": "E1-table-state-no-schema",
+      "actor": {
+        "prompt": "In this Rails app, which columns, indexes and foreign keys does the ledger_payouts table have right now? Answer with the current state, not the history.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "payout-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: payout-fixture; healthy current index. Nothing has been read in this session."
+          }
+        ],
+        "files": {
+          "Gemfile": "source 'https://rubygems.org'\ngem 'rails', '~> 7.2'\ngem 'pg'\ngem 'strong_migrations'\n",
+          "app/models/ledger_payout.rb": "class LedgerPayout < ApplicationRecord\n  belongs_to :account\n  belongs_to :initiator, polymorphic: true\nend\n",
+          "app/models/ledger_entry.rb": "class LedgerEntry < ApplicationRecord\n  belongs_to :ledger_payout, optional: true\nend\n",
+          "db/migrate/20250101090000_create_ledger_payouts.rb": "class CreateLedgerPayouts < ActiveRecord::Migration[7.2]\n  def change\n    create_table :ledger_payouts do |t|\n      t.references :account, null: false, foreign_key: true, index: false\n      t.references :requester, polymorphic: true, null: false, index: false\n      t.string :state, null: false, default: 'pending'\n      t.integer :amount_cents, null: false\n      t.timestamps\n    end\n\n    add_index :ledger_payouts, %i[account_id requester_type requester_id],\n      name: 'idx_ledger_payouts_on_account_requester'\n  end\nend\n",
+          "db/migrate/20250102090000_create_ledger_entries.rb": "class CreateLedgerEntries < ActiveRecord::Migration[7.2]\n  def change\n    create_table :ledger_entries do |t|\n      t.references :account, null: false, foreign_key: true\n      t.integer :amount_cents, null: false\n      t.timestamps\n    end\n  end\nend\n",
+          "db/migrate/20250103090000_add_settlement_fields_to_billing.rb": "class AddSettlementFieldsToBilling < ActiveRecord::Migration[7.2]\n  def change\n    add_column :billing_accounts, :settlement_day, :integer\n    add_column :ledger_payouts, :settled_at, :datetime\n  end\nend\n",
+          "db/migrate/20250104090000_backfill_ledger_payout_states.rb": "class BackfillLedgerPayoutStates < ActiveRecord::Migration[7.2]\n  disable_ddl_transaction!\n\n  def up\n    execute \"UPDATE ledger_payouts SET state = 'pending' WHERE state IS NULL\"\n  end\n\n  def down; end\nend\n",
+          "db/migrate/20250105090000_rename_requester_to_initiator_on_payouts.rb": "class RenameRequesterToInitiatorOnPayouts < ActiveRecord::Migration[7.2]\n  def change\n    # Safe: nothing reads these columns yet.\n    safety_assured do\n      rename_column :ledger_payouts, :requester_type, :initiator_type\n      rename_column :ledger_payouts, :requester_id, :initiator_id\n    end\n\n    rename_index :ledger_payouts,\n      'idx_ledger_payouts_on_account_requester',\n      'idx_ledger_payouts_on_account_initiator'\n  end\nend\n",
+          "db/migrate/20250106090000_add_payout_reference_to_ledger_entries.rb": "class AddPayoutReferenceToLedgerEntries < ActiveRecord::Migration[7.2]\n  def change\n    add_reference :ledger_entries, :ledger_payout, foreign_key: { to_table: :ledger_payouts }, index: true\n  end\nend\n",
+          "db/migrate/20250107090000_make_payouts_unique_per_account.rb": "class MakePayoutsUniquePerAccount < ActiveRecord::Migration[7.2]\n  disable_ddl_transaction!\n\n  def change\n    remove_index :ledger_payouts, name: 'idx_ledger_payouts_on_account_initiator', algorithm: :concurrently\n    add_index :ledger_payouts, :account_id, unique: true, where: \"state = 'active'\",\n      name: 'idx_ledger_payouts_one_active_per_account', algorithm: :concurrently\n  end\nend\n",
+          "db/migrate/20250108090000_add_settled_at_index_to_ledger_payouts.rb": "class AddSettledAtIndexToLedgerPayouts < ActiveRecord::Migration[7.2]\n  disable_ddl_transaction!\n\n  def change\n    add_index :ledger_payouts, :settled_at, algorithm: :concurrently\n  end\nend\n"
+        }
+      },
+      "grading": {
+        "answer": "Columns: id, account_id (not null), initiator_type and initiator_id (renamed from requester_*; not null), state (string, not null, default 'pending'), amount_cents (integer, not null), settled_at (datetime), created_at, updated_at. Indexes: idx_ledger_payouts_one_active_per_account (unique account_id WHERE state = 'active') and index on settled_at; the composite account/requester index was renamed then removed. Foreign keys carried by ledger_payouts: account_id -> accounts. ledger_entries.ledger_payout_id -> ledger_payouts is an incoming FK owned by ledger_entries (may be mentioned as incoming, must not be listed as a column of ledger_payouts).",
+        "required_reads": [
+          "db/migrate/20250101090000_create_ledger_payouts.rb",
+          "db/migrate/20250103090000_add_settlement_fields_to_billing.rb",
+          "db/migrate/20250105090000_rename_requester_to_initiator_on_payouts.rb",
+          "db/migrate/20250107090000_make_payouts_unique_per_account.rb",
+          "db/migrate/20250108090000_add_settled_at_index_to_ledger_payouts.rb"
+        ],
+        "fail_if": [
+          "requester_type or requester_id reported as current columns",
+          "idx_ledger_payouts_on_account_requester or idx_ledger_payouts_on_account_initiator reported as a current index",
+          "settled_at column or its index missing",
+          "account_id -> accounts foreign key missing",
+          "any required_reads file never read (content not returned to the actor by any tool)",
+          "semantic_search used to establish the table state"
+        ],
+        "route_note": "Pass is outcome-based; whether the actor found the migration set through a literal search or hybrid_search(scope: migrations) is recorded, not graded."
+      }
+    },
+    {
+      "id": "E2-class-contract-inherited",
+      "actor": {
+        "prompt": "What retry, discard and throttling behaviour applies to Vendors::AcmeSyncJob, and how many pages does it fetch at most? Cite where each setting is declared.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "sync-jobs-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: sync-jobs-fixture; healthy current index. Nothing has been read in this session."
+          }
+        ],
+        "files": {
+          "app/jobs/application_job.rb": "class ApplicationJob < ActiveJob::Base\n  retry_on Net::ReadTimeout, wait: :polynomially_longer, attempts: 5\n  discard_on ActiveJob::DeserializationError\n  around_perform :with_account_scope\n\n  def self.throttle(limit:, period:)\n    self.throttle_settings = { limit: limit, period: period }\n  end\n\n  def with_account_scope(&block)\n    Current.set(account_id: arguments.first, &block)\n  end\nend\n",
+          "app/jobs/vendors/base_sync_job.rb": "module Vendors\n  class BaseSyncJob < ApplicationJob\n    queue_as :vendor_sync\n    retry_on Vendors::RateLimited, wait: 30.seconds, attempts: 10\n    throttle limit: 20, period: 1.minute\n\n    def perform(account_id, cursor = nil)\n      max_pages.times do\n        cursor = fetch_page(cursor)\n        break if cursor.nil?\n      end\n    end\n\n    def fetch_page(_cursor)\n      raise NotImplementedError\n    end\n\n    def max_pages\n      50\n    end\n  end\nend\n",
+          "app/jobs/vendors/acme_sync_job.rb": "module Vendors\n  class AcmeSyncJob < BaseSyncJob\n    def fetch_page(cursor)\n      response = AcmeClient.new.list_invoices(cursor: cursor)\n      Invoices::Import.call(response.items)\n      response.next_cursor\n    end\n\n    def max_pages\n      200\n    end\n  end\nend\n",
+          "app/jobs/vendors/globex_sync_job.rb": "module Vendors\n  class GlobexSyncJob < BaseSyncJob\n    discard_on Globex::AccountClosed\n\n    def fetch_page(cursor)\n      GlobexClient.new.page(cursor)\n    end\n  end\nend\n"
+        }
+      },
+      "grading": {
+        "answer": "Retries: Vendors::RateLimited wait 30s, 10 attempts (Vendors::BaseSyncJob); Net::ReadTimeout polynomially_longer, 5 attempts (ApplicationJob). Discard: ActiveJob::DeserializationError (ApplicationJob); Globex::AccountClosed does NOT apply (GlobexSyncJob sibling). Throttle: limit 20 per 1 minute (BaseSyncJob, via ApplicationJob.throttle). Max pages: 200 (AcmeSyncJob#max_pages overrides BaseSyncJob 50). Queue vendor_sync may be mentioned.",
+        "required_reads": [
+          "class header of Vendors::BaseSyncJob (retry_on / throttle lines)",
+          "class header of ApplicationJob (retry_on / discard_on lines)",
+          "Vendors::AcmeSyncJob#max_pages body or the AcmeSyncJob file"
+        ],
+        "fail_if": [
+          "ApplicationJob retry_on Net::ReadTimeout or discard_on DeserializationError missing",
+          "BaseSyncJob RateLimited retry or throttle 20/1 minute missing",
+          "max pages reported as 50",
+          "Globex::AccountClosed discard attributed to AcmeSyncJob",
+          "a setting stated without its declaring class"
+        ]
+      }
+    },
+    {
+      "id": "E3-exhaustive-work-list",
+      "actor": {
+        "prompt": "Which models include the Auditable concern, and which audit events does each of them declare? I need the complete list.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "audit-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: audit-fixture; healthy current index. Nothing has been read in this session."
+          }
+        ],
+        "files": {
+          "app/models/concerns/auditable.rb": "module Auditable\n  extend ActiveSupport::Concern\n\n  class_methods do\n    def audits(*events)\n      self.audited_events = events\n    end\n  end\nend\n",
+          "app/models/invoice.rb": "class Invoice < ApplicationRecord\n  include Auditable\n  belongs_to :account\n\n  audits :created, :voided\nend\n",
+          "app/models/payment.rb": "class Payment < ApplicationRecord\n  include Auditable\n  include Refundable\n\n  belongs_to :invoice\n  audits :captured, :refunded, :disputed\nend\n",
+          "app/models/user.rb": "class User < ApplicationRecord\n  include Auditable\n  has_many :memberships\n\n  audits :signed_in, :password_changed\nend\n",
+          "app/models/membership.rb": "class Membership < ApplicationRecord\n  include Auditable\n  belongs_to :user\n  belongs_to :account\n\n  audits :role_changed\nend\n",
+          "app/models/account.rb": "class Account < ApplicationRecord\n  include Auditable\n  has_many :invoices\n  has_many :memberships\n\n  audits :plan_changed, :suspended, :reactivated\nend\n",
+          "app/models/api_token.rb": "class ApiToken < ApplicationRecord\n  include Auditable\n  belongs_to :user\n\n  audits :issued, :revoked\nend\n",
+          "app/models/webhook_endpoint.rb": "class WebhookEndpoint < ApplicationRecord\n  # TODO: include Auditable once delivery logs move to the audit store\n  belongs_to :account\nend\n",
+          "app/models/refundable.rb": "module Refundable\n  extend ActiveSupport::Concern\nend\n"
+        }
+      },
+      "grading": {
+        "answer": "Invoice: created, voided. Payment: captured, refunded, disputed. User: signed_in, password_changed. Membership: role_changed. Account: plan_changed, suspended, reactivated. ApiToken: issued, revoked. WebhookEndpoint mentions Auditable only in a TODO comment and does not include it.",
+        "required_reads": [
+          "app/models/invoice.rb",
+          "app/models/payment.rb",
+          "app/models/user.rb",
+          "app/models/membership.rb",
+          "app/models/account.rb",
+          "app/models/api_token.rb"
+        ],
+        "fail_if": [
+          "any of the six models or its events missing or wrong",
+          "WebhookEndpoint listed as including Auditable",
+          "events inferred for a file whose content was never returned to the actor"
+        ],
+        "route_note": "Shell reads (cat/sed) of indexed model files are recorded as a route deviation, not an outcome failure."
+      }
+    },
+    {
+      "id": "C1-table-absence-control",
+      "actor": {
+        "prompt": "Does this Rails app have a payout_disputes table? Yes or no, with the evidence.",
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "payout-fixture"
+      },
+      "fixture": {
+        "initial_context": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "cwd: __FIXTURE_ROOT__; project: payout-fixture; healthy current index. Nothing has been read in this session."
+          }
+        ],
+        "files": {
+          "Gemfile": "source 'https://rubygems.org'\ngem 'rails', '~> 7.2'\ngem 'pg'\n",
+          "app/models/ledger_payout.rb": "class LedgerPayout < ApplicationRecord\n  belongs_to :account\n  # Disputes are tracked in the support tool, not in this app.\nend\n",
+          "db/migrate/20250101090000_create_ledger_payouts.rb": "class CreateLedgerPayouts < ActiveRecord::Migration[7.2]\n  def change\n    create_table :ledger_payouts do |t|\n      t.references :account, null: false, foreign_key: true\n      t.string :state, null: false\n      t.timestamps\n    end\n  end\nend\n",
+          "db/migrate/20250103090000_create_payout_reviews.rb": "class CreatePayoutReviews < ActiveRecord::Migration[7.2]\n  def change\n    create_table :payout_reviews do |t|\n      t.references :ledger_payout, null: false, foreign_key: true\n      t.string :outcome\n      t.timestamps\n    end\n  end\nend\n"
+        }
+      },
+      "grading": {
+        "answer": "No: no migration creates payout_disputes and no schema file defines it; the existing tables are ledger_payouts and payout_reviews.",
+        "fail_if": [
+          "answers yes or hedges without evidence",
+          "absence concluded without a literal search over db/ (db/schema.rb and/or db/migrate)",
+          "absence concluded from semantic_search or hybrid_search alone"
+        ]
+      }
+    }
+  ]
+}
