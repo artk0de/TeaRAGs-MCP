@@ -1,4 +1,4 @@
-export type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
+export type { ContainerAncestorLookup, MemberVisibilityLookup, ScrollChunk } from "./types.js";
 export { CodeChunkGrouper, isTestChunk, isTestExampleChunk } from "./code.js";
 export { CONTAINER_HEADER_DRAFT_KEY, spendContainerHeaderAllowance } from "./container-header.js";
 export { DIRECTORY_FILE_CAP, DirectoryChunkGrouper, type DirectoryGrouping } from "./directory.js";

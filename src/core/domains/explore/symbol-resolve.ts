@@ -16,6 +16,7 @@ import {
   spendContainerHeaderAllowance,
   splitFragmentBase,
   splitFragmentOwnRows,
+  type ContainerAncestorLookup,
   type MemberVisibilityLookup,
   type ScrollChunk,
 } from "./chunk-grouping/index.js";
@@ -88,12 +89,16 @@ interface ContainerOutlinePlan {
  * @param visibilityOf - declared visibility of an outline member, rendered as
  *   `Class#m (private)`; consulted ONLY for outline member lines (bd
  *   tea-rags-mcp-sqqkz)
+ * @param ancestorsOf - direct ancestors of an outlined container, rendered as
+ *   `  extends Base` under its owner line; consulted ONLY for container
+ *   outlines (bd tea-rags-mcp-82cot)
  */
 export function resolveSymbols(
   chunks: ScrollChunk[],
   query?: string,
   metaOnly?: boolean,
   visibilityOf?: MemberVisibilityLookup,
+  ancestorsOf?: ContainerAncestorLookup,
 ): SearchResult[] {
   // 0. A member a container body chunk DECLARES (a Ruby constant, bd
   //    tea-rags-mcp-1x85g) is answered by that chunk as its body, never by an
@@ -118,7 +123,7 @@ export function resolveSymbols(
     }
   }
   // metaOnly drops every body, the header's included: it is never inlined there.
-  for (const plan of plans) results.push(renderContainerOutline(plan, visibilityOf, metaOnly !== true));
+  for (const plan of plans) results.push(renderContainerOutline(plan, visibilityOf, metaOnly !== true, ancestorsOf));
 
   // 2. Tests of an outlined class are dropped from the response.
   const outlinedIds = new Set(plans.flatMap((plan) => [...plan.ids]));
@@ -291,6 +296,7 @@ function renderContainerOutline(
   plan: ContainerOutlinePlan,
   visibilityOf?: MemberVisibilityLookup,
   withHeader = false,
+  ancestorsOf?: ContainerAncestorLookup,
 ): SearchResult {
   const memberChunks = plan.memberGroups.flatMap(outlineMemberChunks);
   return plan.classChunk
@@ -300,8 +306,9 @@ function renderContainerOutline(
         visibilityOf,
         plan.declaringWindows,
         withHeader ? plan.headerChunks : [],
+        ancestorsOf,
       )
-    : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf);
+    : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf, ancestorsOf);
 }
 
 /**

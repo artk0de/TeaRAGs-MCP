@@ -33,6 +33,8 @@ interface HeaderChunkDraft {
 export interface ContainerHeaderDraft {
   /** The container's own outline line. */
   ownerLine: string;
+  /** Its direct-ancestor lines, already formatted (bd tea-rags-mcp-82cot). */
+  ancestorLines: string[];
   /** Its member outline lines, already formatted. */
   memberLines: string[];
   /** Its header chunks, in line order. */
@@ -56,12 +58,14 @@ const CONSTANT_NAME = /^[A-Z][A-Z0-9_]*$/;
 export function draftContainerHeader(
   ownerId: string,
   ownerLine: string,
+  ancestorLines: string[],
   memberLines: string[],
   rows: readonly ScrollChunk[],
 ): ContainerHeaderDraft {
   const sorted = [...rows].sort((a, b) => lineOf(a, "startLine") - lineOf(b, "startLine"));
   return {
     ownerLine,
+    ancestorLines,
     memberLines,
     chunks: sorted.map((row) => ({
       id: row.id,
@@ -105,7 +109,13 @@ export function renderContainerHeader(draft: ContainerHeaderDraft, allowance = I
     if (!chunk.composition) unaddressed = true;
   }
   const notice = reasons.size === 0 ? undefined : noticeOf(reasons, unaddressed);
-  const outline = [draft.ownerLine, ...listing, ...draft.memberLines, ...(notice ? [notice] : [])];
+  const outline = [
+    draft.ownerLine,
+    ...draft.ancestorLines,
+    ...listing,
+    ...draft.memberLines,
+    ...(notice ? [notice] : []),
+  ];
   const content = [...outline, ...(inlined.length > 0 ? ["", ...inlined] : [])].join("\n");
   return { content, inlinedChunkIds, spent };
 }

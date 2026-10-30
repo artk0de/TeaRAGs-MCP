@@ -25,7 +25,11 @@ import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
-import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
+import type {
+  ContainerAncestorResolver,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
@@ -110,6 +114,11 @@ export interface ExploreOpsDeps {
    * find_symbol outline lines (bd tea-rags-mcp-sqqkz); absent → undecorated.
    */
   visibilityResolver?: SymbolVisibilityResolver;
+  /**
+   * Optional — present when codegraph is wired. Direct ancestors for
+   * find_symbol class outlines (bd tea-rags-mcp-82cot); absent → none listed.
+   */
+  containerAncestorResolver?: ContainerAncestorResolver;
   /**
    * Per-language structural-signal floors from the composition root. Reaches
    * `IndexMetricsQuery` so `get_index_metrics` and prime render the same
@@ -247,6 +256,7 @@ export class ExploreOps {
   private readonly recomputeService?: StatsRecomputeService;
   private readonly chunkResolver?: SymbolChunkResolver;
   private readonly visibilityResolver?: SymbolVisibilityResolver;
+  private readonly containerAncestorResolver?: ContainerAncestorResolver;
   private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
   private readonly workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
   private readonly historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
@@ -264,6 +274,7 @@ export class ExploreOps {
     this.collectionEmbeddings = deps.collectionEmbeddings;
     this.chunkResolver = deps.chunkResolver;
     this.visibilityResolver = deps.visibilityResolver;
+    this.containerAncestorResolver = deps.containerAncestorResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
     this.workingTreeOverlay = deps.workingTreeOverlay;
     this.historyAnchor = deps.historyAnchor;
@@ -910,6 +921,7 @@ export class ExploreOps {
       { symbol, language: request.language, pathPattern: request.pathPattern },
       this.chunkResolver,
       this.visibilityResolver,
+      this.containerAncestorResolver,
     );
   }
 

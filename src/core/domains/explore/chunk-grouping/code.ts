@@ -8,7 +8,7 @@ import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
 import { CONTAINER_HEADER_DRAFT_KEY, draftContainerHeader, spendContainerHeaderAllowance } from "./container-header.js";
 import { splitFragmentBase } from "./split-fragment.js";
-import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
+import type { ContainerAncestorLookup, MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
 /** Sort chunks by startLine ascending. */
 function sortByLine(chunks: ScrollChunk[]): ScrollChunk[] {
@@ -53,6 +53,23 @@ function visibilitySuffix(row: ScrollChunk, visibilityOf: MemberVisibilityLookup
   if (visibilityOf === undefined || symbolId === undefined) return "";
   const level = visibilityOf((row.payload.relativePath as string | undefined) ?? "", symbolId);
   return level === undefined ? "" : ` (${level})`;
+}
+
+/**
+ * One line per direct ancestor of the container, in the lookup's order (bd
+ * tea-rags-mcp-82cot): `  extends <id>` for a superclass, `  <kind> <id>` for
+ * every other inheritance kind. The id is the ancestor's resolved symbolId — the
+ * address `find_symbol` answers; an ancestor the index never resolved to a
+ * symbol keeps its name as written and says so, so it is never taken for an
+ * indexed address.
+ */
+function ancestorLines(containerSymbolId: string, ancestorsOf: ContainerAncestorLookup | undefined): string[] {
+  return (ancestorsOf?.(containerSymbolId) ?? []).map((edge) => {
+    const keyword = edge.kind === "super" ? "extends" : edge.kind;
+    return edge.ancestorSymbolId === null
+      ? `  ${keyword} ${edge.ancestorFqName} (unresolved)`
+      : `  ${keyword} ${edge.ancestorSymbolId}`;
+  });
 }
 
 /**
@@ -229,6 +246,7 @@ export const CodeChunkGrouper = {
     visibilityOf?: MemberVisibilityLookup,
     declaringWindows: ScrollChunk[] = [],
     rows: ScrollChunk[] = [],
+    ancestorsOf?: ContainerAncestorLookup,
   ): SearchResult {
     const sorted = sortByLine(memberChunks);
 
@@ -241,8 +259,9 @@ export const CodeChunkGrouper = {
     // per-class budget holds (`renderContainerHeader`); the draft rides the
     // payload so the answer's shared budget can re-render the row smaller.
     const containerId = typeof classChunk.payload.symbolId === "string" ? classChunk.payload.symbolId : className;
-    const draft = rows.length > 0 ? draftContainerHeader(containerId, className, lines, rows) : undefined;
-    const outlineContent = [className, ...lines].join("\n");
+    const ancestors = ancestorLines(containerId, ancestorsOf);
+    const draft = rows.length > 0 ? draftContainerHeader(containerId, className, ancestors, lines, rows) : undefined;
+    const outlineContent = [className, ...ancestors, ...lines].join("\n");
 
     const allChunks = [classChunk, ...sorted];
 
@@ -284,6 +303,7 @@ export const CodeChunkGrouper = {
     containerSymbolId: string,
     memberChunks: ScrollChunk[],
     visibilityOf?: MemberVisibilityLookup,
+    ancestorsOf?: ContainerAncestorLookup,
   ): SearchResult {
     const sorted = sortByLine(memberChunks);
     const anchor = sorted[0];
@@ -294,7 +314,11 @@ export const CodeChunkGrouper = {
       relativePath: anchor.payload.relativePath,
       language: anchor.payload.language,
       fileExtension: anchor.payload.fileExtension,
-      content: [containerSymbolId, ...memberLines(sorted, visibilityOf)].join("\n"),
+      content: [
+        containerSymbolId,
+        ...ancestorLines(containerSymbolId, ancestorsOf),
+        ...memberLines(sorted, visibilityOf),
+      ].join("\n"),
       startLine: Math.min(...sorted.map((c) => Number(c.payload.startLine) || 0)),
       endLine: Math.max(...sorted.map((c) => Number(c.payload.endLine) || 0)),
       git: fileGit(anchor),

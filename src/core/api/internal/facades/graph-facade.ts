@@ -30,6 +30,7 @@ import { join } from "node:path";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
   CalleeEdge,
+  InheritanceEdge,
   PersistedSymbolLineRanges,
   RelPath,
   SymbolChunkLocation,
@@ -41,6 +42,7 @@ import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answ
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { WorkingTree, WorkingTreeGraphReader, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import { recordTreeGraphState, type WorkingTreeOverlay } from "../../../domains/explore/index.js";
+import { compareMroPosition } from "../../../domains/trajectory/codegraph/hierarchy-view/index.js";
 import {
   resolveInheritedMemberDefiner,
   type InheritedMemberGraph,
@@ -699,6 +701,34 @@ export class GraphFacade {
     return this.withReadHandle(
       addr,
       async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds),
+      [],
+      readTreeGraph,
+    );
+  }
+
+  /**
+   * Direct ancestors of each container the find_symbol class outline names (bd
+   * tea-rags-mcp-82cot), in MRO order per container — the order
+   * `compareMroPosition` gives the ancestors of one type. Same read contract as
+   * {@link getSymbolVisibilities}: throws when a graph exists but cannot be
+   * read, `[]` when there is none.
+   */
+  async getContainerAncestors(
+    addr: GraphAddressing,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ): Promise<InheritanceEdge[]> {
+    return this.withReadHandle(
+      addr,
+      async (handle) => {
+        const position = (e: InheritanceEdge) => ({ kind: e.kind, ordinal: e.ordinal ?? 0 });
+        const out: InheritanceEdge[] = [];
+        for (const symbolId of symbolIds) {
+          const edges = await handle.graphDb.getSupertypes(symbolId);
+          out.push(...[...edges].sort((a, b) => compareMroPosition(position(a), position(b))));
+        }
+        return out;
+      },
       [],
       readTreeGraph,
     );

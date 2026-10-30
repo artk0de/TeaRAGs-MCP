@@ -12,16 +12,20 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { StatsCache } from "../../../adapters/filesystem/stats-cache.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
-import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
+import type {
+  ContainerAncestorResolver,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../../../contracts/types/codegraph.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { PayloadSignalDescriptor, SignalFloors } from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
-} from "../../../domains/explore/errors/index.js";
-import type { ExploreRequestScope } from "../../../domains/explore/request-scope.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
-import type { WorkingTreeOverlay } from "../../../domains/explore/working-tree/index.js";
+  type ExploreRequestScope,
+  type RerankerPort,
+  type WorkingTreeOverlay,
+} from "../../../domains/explore/index.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type {
   ExploreCodeRequest,
@@ -55,6 +59,8 @@ export interface ExploreFacadeDeps {
   chunkResolver?: SymbolChunkResolver;
   /** Declared visibility for find_symbol outline lines (bd tea-rags-mcp-sqqkz). */
   visibilityResolver?: SymbolVisibilityResolver;
+  /** Direct ancestors for find_symbol class outlines (bd tea-rags-mcp-82cot). */
+  containerAncestorResolver?: ContainerAncestorResolver;
   /** Per-language structural-signal floors, threaded through to IndexMetricsQuery. */
   signalFloors?: ReadonlyMap<string, SignalFloors>;
   /**
@@ -87,6 +93,7 @@ export class ExploreFacade {
       collectionEmbeddings: deps.collectionEmbeddings,
       chunkResolver: deps.chunkResolver,
       visibilityResolver: deps.visibilityResolver,
+      containerAncestorResolver: deps.containerAncestorResolver,
       signalFloors: deps.signalFloors,
       enrichmentHealthFrameForPath: deps.enrichmentHealthFrameForPath,
       workingTreeOverlay: deps.workingTreeOverlay,

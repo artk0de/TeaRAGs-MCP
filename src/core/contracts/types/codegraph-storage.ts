@@ -864,6 +864,22 @@ export interface SymbolVisibilityResolver {
 }
 
 /**
+ * The read seam the find_symbol class outline uses to list each container's
+ * DIRECT ancestors (bd tea-rags-mcp-82cot) — one batched read per outline
+ * response, rows in MRO order per container, keyed by `sourceFqName`. May throw
+ * when the graph exists but cannot be read; the outline degrades to its
+ * undecorated form. Absent when codegraph is disabled. `readTreeGraph` as for
+ * {@link SymbolChunkResolver}.
+ */
+export interface ContainerAncestorResolver {
+  resolveContainerAncestors: (
+    collectionName: string,
+    symbolIds: readonly SymbolId[],
+    readTreeGraph?: WorkingTreeGraphReader,
+  ) => Promise<InheritanceEdge[]>;
+}
+
+/**
  * One symbol whose derived codegraph signals moved since the previous run's
  * baseline (bd tea-rags-mcp-a2ddb). Carries the FILE as well as the symbol
  * because the payload is addressed per file's Qdrant points — a bare

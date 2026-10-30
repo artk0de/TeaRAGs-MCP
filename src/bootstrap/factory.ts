@@ -128,7 +128,11 @@ import {
   type WorkingTreeGitSignalConfig,
   type WorkingTreeGraphCodegraphRuntime,
 } from "../core/api/index.js";
-import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
+import type {
+  ContainerAncestorResolver,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { EmbeddingConfig } from "../core/contracts/types/config.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
@@ -2293,6 +2297,7 @@ function createExploreSection(deps: {
     collectionEmbeddings,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
     visibilityResolver: createSymbolVisibilityResolver(codegraphContext?.graphFacade),
+    containerAncestorResolver: createContainerAncestorResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
     // The frame of `get_index_metrics`' enrichment health: the providers the
     // composition runs, not the ones the last run happened to touch
@@ -2647,5 +2652,20 @@ export function createSymbolVisibilityResolver(graphFacade?: GraphFacade): Symbo
       readTreeGraph
         ? graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds, readTreeGraph)
         : graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
+  };
+}
+
+/**
+ * Codegraph-backed seam for the direct ancestors on find_symbol class outlines
+ * (bd tea-rags-mcp-82cot). Undefined when codegraph is disabled → the outline
+ * lists no ancestor.
+ */
+export function createContainerAncestorResolver(graphFacade?: GraphFacade): ContainerAncestorResolver | undefined {
+  if (!graphFacade) return undefined;
+  return {
+    resolveContainerAncestors: async (collectionName, symbolIds, readTreeGraph) =>
+      readTreeGraph
+        ? graphFacade.getContainerAncestors({ collection: collectionName }, symbolIds, readTreeGraph)
+        : graphFacade.getContainerAncestors({ collection: collectionName }, symbolIds),
   };
 }

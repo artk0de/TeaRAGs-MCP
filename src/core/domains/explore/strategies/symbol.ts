@@ -68,6 +68,7 @@ import {
   type CodegraphUnavailableError,
 } from "../../../contracts/types/codegraph-unavailable.js";
 import type {
+  ContainerAncestorResolver,
   PersistedSymbolLineRanges,
   SymbolChunkLocation,
   SymbolChunkResolver,
@@ -82,6 +83,7 @@ import { isUnderOwner } from "../../../primitives/ids/index.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
 import { isTestExampleChunk, memberOwnerOf, splitFragmentBase, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
+import { lookupContainerAncestors } from "../outline-ancestors.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals, keepPathPatternMatches } from "../post-process.js";
 import type { RerankerPort } from "../reranker-port.js";
@@ -131,6 +133,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     private readonly input: SymbolSearchInput,
     private readonly chunkResolver?: SymbolChunkResolver,
     private readonly visibilityResolver?: SymbolVisibilityResolver,
+    private readonly containerAncestorResolver?: ContainerAncestorResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -203,13 +206,21 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // whole: it is outlined, not answered.
     const filtered = isFullyQualified(symbol) ? matched.map((chunk) => answerPackMember(chunk, symbol)) : matched;
 
-    // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
+    // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz),
+    // container outlines their direct ancestors (bd tea-rags-mcp-82cot);
     // metaOnly strips the outline text, so there is nothing to decorate.
+    const treeGraph = recordingTreeGraphReader(ctx.workingTreeView);
+    const ancestorsOf = await lookupContainerAncestors(
+      (lookup) => resolveSymbols(filtered, symbol, ctx.metaOnly, undefined, lookup),
+      ctx.metaOnly ? undefined : this.containerAncestorResolver,
+      ctx.collectionName,
+      treeGraph,
+    );
     const resolved = (await renderWithDeclaredVisibility(
-      (visibilityOf) => resolveSymbols(filtered, symbol, ctx.metaOnly, visibilityOf),
+      (visibilityOf) => resolveSymbols(filtered, symbol, ctx.metaOnly, visibilityOf, ancestorsOf),
       ctx.metaOnly ? undefined : this.visibilityResolver,
       ctx.collectionName,
-      recordingTreeGraphReader(ctx.workingTreeView),
+      treeGraph,
     )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
