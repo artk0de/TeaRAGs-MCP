@@ -1,0 +1,91 @@
+{
+  "fixture_kind": "synthetic raw-shaped excerpts; no future questions or expected answers",
+  "evals": [
+    {
+      "id": "B1-independent-reads",
+      "prompt": "Сопоставь config/api.yml и config/webhook.yml: enabled, max_attempts и задержки для attempt 0/2 по retryDelay.",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry.ts",
+                    "symbolId": "retryDelay",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "signature": "retryDelay(attempt: number): number"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/api.yml": "retry:\n  enabled: true\n  max_attempts: 3\n",
+          "config/webhook.yml": "retry:\n  enabled: false\n  max_attempts: 5\n",
+          "src/retry.ts": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+        },
+        "find_symbol_bodies": {
+          "retryDelay": {
+            "relativePath": "src/retry.ts",
+            "symbolId": "retryDelay",
+            "startLine": 1,
+            "endLine": 1,
+            "content": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+          }
+        },
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "symbols": ["retryDelay"]
+            },
+            "result": {
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry.ts",
+                    "symbolId": "retryDelay",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "content": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "B2-dependent-manifest-control",
+      "prompt": "Какие retry-политики выбраны в config/retries.yml и какие enabled/max_attempts заданы для каждой выбранной политики?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/retries.yml": "selected:\n  - api_fast\n  - webhook_safe\n",
+          "config/policies/api_fast.yml": "enabled: true\nmax_attempts: 2\n",
+          "config/policies/webhook_safe.yml": "enabled: false\nmax_attempts: 4\n",
+          "config/policies/unused.yml": "enabled: true\nmax_attempts: 9\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    }
+  ],
+  "scope": "Candidate v2 correction for config filename discovery; exact unchanged actor definitions for B1/B2; previous attempts retained"
+}

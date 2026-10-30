@@ -1,0 +1,74 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "runs_per_condition": 1,
+  "primary_metric": "underlying native model responses, including final",
+  "cases": {
+    "R1-retained-transport": {
+      "forbidden_tools": [
+        "semantic_search",
+        "hybrid_search",
+        "get_callers",
+        "get_callees"
+      ],
+      "required_facts": [
+        "default adapter when transport absent",
+        "injected test transport in spec",
+        "initializer does not pass transport"
+      ]
+    },
+    "R2-missing-selection-control": {
+      "required_source": ["Instead::BaseClient#adapter_spec"],
+      "required_facts": [
+        "default adapter when transport absent",
+        "injected test transport in spec",
+        "initializer does not pass transport"
+      ]
+    },
+    "M1-qualified-member": {
+      "forbidden_container_symbols": ["ContentTypes"],
+      "required_facts": [
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "macroEnabled MIME rejected"
+      ]
+    },
+    "M2-ambiguous-receiver-control": {
+      "required_facts": ["receiver ContentTypes", "macroEnabled MIME rejected"]
+    },
+    "B1-independent-reads": {
+      "one_wave_targets": [
+        "config/api.yml",
+        "config/webhook.yml",
+        "retryDelay"
+      ],
+      "required_facts": [
+        "api true 3",
+        "webhook false 5",
+        "200 and 800 milliseconds"
+      ]
+    },
+    "B2-dependent-manifest-control": {
+      "selected": ["api_fast", "webhook_safe"],
+      "excluded": ["unused"],
+      "required_facts": ["api_fast true 2", "webhook_safe false 4"]
+    },
+    "D1-directory-shape": {
+      "forbidden_directory_batch": true,
+      "required_facts": [
+        "app/services/billing/charge.rb",
+        "Charge",
+        "app/services/exports/send.rb",
+        "SendExport"
+      ]
+    },
+    "G1-missing-trigger-control": {
+      "required_graph": true,
+      "required_facts": [
+        "ContactsConsumer#consume",
+        "ContactsConsumer#handle_merged",
+        "MergeForContact#perform"
+      ]
+    }
+  }
+}

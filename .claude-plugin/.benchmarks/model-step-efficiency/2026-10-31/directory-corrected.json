@@ -1,0 +1,154 @@
+{
+  "fixture_correction": "D1 original Ruby directory fixture omitted top-level class declarations; original attempt retained. D2 provides complete explicit directory metadata for both conditions. No production change.",
+  "evals": [
+    {
+      "id": "D2-directory-complete-metadata",
+      "prompt": "Какие файлы и верхнеуровневые символы находятся в app/services/billing/ и app/services/exports/?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "app/services/billing/charge.rb": "class Charge\n  def perform\n    :charged\n  end\nend\n",
+          "app/services/exports/send.rb": "class SendExport\n  def perform\n    :sent\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/services/billing"
+            },
+            "result": {
+              "kind": "outline",
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": {
+                "columns": [
+                  "payload.relativePath",
+                  "payload.symbolId",
+                  "payload.kind",
+                  "payload.startLine",
+                  "payload.endLine"
+                ],
+                "rows": [
+                  ["app/services/billing/charge.rb", "Charge", "class", 1, 5],
+                  [
+                    "app/services/billing/charge.rb",
+                    "Charge#perform",
+                    "method",
+                    2,
+                    4
+                  ]
+                ]
+              },
+              "count": 2
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/services/billing/"
+            },
+            "result": {
+              "kind": "outline",
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": {
+                "columns": [
+                  "payload.relativePath",
+                  "payload.symbolId",
+                  "payload.kind",
+                  "payload.startLine",
+                  "payload.endLine"
+                ],
+                "rows": [
+                  ["app/services/billing/charge.rb", "Charge", "class", 1, 5],
+                  [
+                    "app/services/billing/charge.rb",
+                    "Charge#perform",
+                    "method",
+                    2,
+                    4
+                  ]
+                ]
+              },
+              "count": 2
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/services/exports"
+            },
+            "result": {
+              "kind": "outline",
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": {
+                "columns": [
+                  "payload.relativePath",
+                  "payload.symbolId",
+                  "payload.kind",
+                  "payload.startLine",
+                  "payload.endLine"
+                ],
+                "rows": [
+                  ["app/services/exports/send.rb", "SendExport", "class", 1, 5],
+                  [
+                    "app/services/exports/send.rb",
+                    "SendExport#perform",
+                    "method",
+                    2,
+                    4
+                  ]
+                ]
+              },
+              "count": 2
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/services/exports/"
+            },
+            "result": {
+              "kind": "outline",
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": {
+                "columns": [
+                  "payload.relativePath",
+                  "payload.symbolId",
+                  "payload.kind",
+                  "payload.startLine",
+                  "payload.endLine"
+                ],
+                "rows": [
+                  ["app/services/exports/send.rb", "SendExport", "class", 1, 5],
+                  [
+                    "app/services/exports/send.rb",
+                    "SendExport#perform",
+                    "method",
+                    2,
+                    4
+                  ]
+                ]
+              },
+              "count": 2
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

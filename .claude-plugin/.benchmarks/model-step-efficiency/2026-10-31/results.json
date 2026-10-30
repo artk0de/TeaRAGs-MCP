@@ -1,0 +1,359 @@
+{
+  "conditions": [
+    {
+      "condition": "control",
+      "plugin_version": "0.53.9",
+      "plugin_fingerprint": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+      "source_head": "8cabb11aee4027d071e767d6251c5cbd0cf40beb",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "cases": [
+        {
+          "case": "R1-retained-transport",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 72178,
+            "cachedInputTokens": 53120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 810,
+            "reasoningOutputTokens": 37,
+            "totalTokens": 72988
+          },
+          "uncached_input": 19058,
+          "standard_API_equivalent_USD": "0.051528"
+        },
+        {
+          "case": "R2-missing-selection-control",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 72669,
+            "cachedInputTokens": 53120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 763,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 73432
+          },
+          "uncached_input": 19549,
+          "standard_API_equivalent_USD": "0.05204"
+        },
+        {
+          "case": "M1-qualified-member",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 52511,
+            "cachedInputTokens": 34048,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 387,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 52898
+          },
+          "uncached_input": 18463,
+          "standard_API_equivalent_USD": "0.0442008"
+        },
+        {
+          "case": "M2-ambiguous-receiver-control",
+          "model_responses": 6,
+          "usage": {
+            "inputTokens": 109512,
+            "cachedInputTokens": 89728,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 687,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 110199
+          },
+          "uncached_input": 19784,
+          "standard_API_equivalent_USD": "0.0554108"
+        },
+        {
+          "case": "B1-independent-reads",
+          "model_responses": 2,
+          "usage": {
+            "inputTokens": 32763,
+            "cachedInputTokens": 16128,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 353,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 33116
+          },
+          "uncached_input": 16635,
+          "standard_API_equivalent_USD": "0.0384128"
+        },
+        {
+          "case": "B2-dependent-manifest-control",
+          "model_responses": 5,
+          "usage": {
+            "inputTokens": 81105,
+            "cachedInputTokens": 64256,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 349,
+            "reasoningOutputTokens": 28,
+            "totalTokens": 81454
+          },
+          "uncached_input": 16849,
+          "standard_API_equivalent_USD": "0.0436136"
+        },
+        {
+          "case": "D1-directory-shape",
+          "model_responses": 6,
+          "usage": {
+            "inputTokens": 109457,
+            "cachedInputTokens": 89600,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 795,
+            "reasoningOutputTokens": 128,
+            "totalTokens": 110252
+          },
+          "uncached_input": 19857,
+          "standard_API_equivalent_USD": "0.056624"
+        },
+        {
+          "case": "G1-missing-trigger-control",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 72688,
+            "cachedInputTokens": 53120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 630,
+            "reasoningOutputTokens": 26,
+            "totalTokens": 73318
+          },
+          "uncached_input": 19568,
+          "standard_API_equivalent_USD": "0.050748"
+        }
+      ],
+      "total_model_responses": 34,
+      "total_API_equivalent_USD": "0.3925780"
+    },
+    {
+      "condition": "candidate-v1",
+      "plugin_version": "0.53.9",
+      "plugin_fingerprint": "9fb3c097382f86eaa96f37ca0e01b3945b6af47d6ec0f8b92d89fa2fdd76674d",
+      "source_head": "8cabb11aee4027d071e767d6251c5cbd0cf40beb",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "cases": [
+        {
+          "case": "R1-retained-transport",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 71991,
+            "cachedInputTokens": 52736,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 551,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 72542
+          },
+          "uncached_input": 19255,
+          "standard_API_equivalent_USD": "0.0492936"
+        },
+        {
+          "case": "R2-missing-selection-control",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 72994,
+            "cachedInputTokens": 53376,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 794,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 73788
+          },
+          "uncached_input": 19618,
+          "standard_API_equivalent_USD": "0.0525136"
+        },
+        {
+          "case": "M1-qualified-member",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 52890,
+            "cachedInputTokens": 34304,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 441,
+            "reasoningOutputTokens": 7,
+            "totalTokens": 53331
+          },
+          "uncached_input": 18586,
+          "standard_API_equivalent_USD": "0.0450124"
+        },
+        {
+          "case": "M2-ambiguous-receiver-control",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 72174,
+            "cachedInputTokens": 53120,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 547,
+            "reasoningOutputTokens": 11,
+            "totalTokens": 72721
+          },
+          "uncached_input": 19054,
+          "standard_API_equivalent_USD": "0.04889"
+        },
+        {
+          "case": "B1-independent-reads",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 53217,
+            "cachedInputTokens": 43008,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 611,
+            "reasoningOutputTokens": 11,
+            "totalTokens": 53828
+          },
+          "uncached_input": 10209,
+          "standard_API_equivalent_USD": "0.0308288"
+        },
+        {
+          "case": "B2-dependent-manifest-control",
+          "model_responses": 5,
+          "usage": {
+            "inputTokens": 82196,
+            "cachedInputTokens": 48640,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 345,
+            "reasoningOutputTokens": 26,
+            "totalTokens": 82541
+          },
+          "uncached_input": 33556,
+          "standard_API_equivalent_USD": "0.075426"
+        },
+        {
+          "case": "D1-directory-shape",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 71468,
+            "cachedInputTokens": 52352,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 565,
+            "reasoningOutputTokens": 63,
+            "totalTokens": 72033
+          },
+          "uncached_input": 19116,
+          "standard_API_equivalent_USD": "0.0491172"
+        },
+        {
+          "case": "G1-missing-trigger-control",
+          "model_responses": 8,
+          "usage": {
+            "inputTokens": 151225,
+            "cachedInputTokens": 139264,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 988,
+            "reasoningOutputTokens": 84,
+            "totalTokens": 152213
+          },
+          "uncached_input": 11961,
+          "standard_API_equivalent_USD": "0.0477284"
+        }
+      ],
+      "total_model_responses": 35,
+      "total_API_equivalent_USD": "0.3988100"
+    },
+    {
+      "condition": "directory-control",
+      "plugin_version": "0.53.9",
+      "plugin_fingerprint": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+      "source_head": "8cabb11aee4027d071e767d6251c5cbd0cf40beb",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "cases": [
+        {
+          "case": "D2-directory-complete-metadata",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 52363,
+            "cachedInputTokens": 42112,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 484,
+            "reasoningOutputTokens": 8,
+            "totalTokens": 52847
+          },
+          "uncached_input": 10251,
+          "standard_API_equivalent_USD": "0.0295532"
+        }
+      ],
+      "total_model_responses": 3,
+      "total_API_equivalent_USD": "0.0295532"
+    },
+    {
+      "condition": "directory-candidate",
+      "plugin_version": "0.53.9",
+      "plugin_fingerprint": "9fb3c097382f86eaa96f37ca0e01b3945b6af47d6ec0f8b92d89fa2fdd76674d",
+      "source_head": "8cabb11aee4027d071e767d6251c5cbd0cf40beb",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "cases": [
+        {
+          "case": "D2-directory-complete-metadata",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 52901,
+            "cachedInputTokens": 34048,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 410,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 53311
+          },
+          "uncached_input": 18853,
+          "standard_API_equivalent_USD": "0.0452108"
+        }
+      ],
+      "total_model_responses": 3,
+      "total_API_equivalent_USD": "0.0452108"
+    },
+    {
+      "condition": "config-candidate-v2",
+      "plugin_version": "0.53.9",
+      "plugin_fingerprint": "76c348dbbf6c6bdf93509d7694c5dd26a970b0cd64c6b9626d476ea68ea6573a",
+      "source_head": "8cabb11aee4027d071e767d6251c5cbd0cf40beb",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "cases": [
+        {
+          "case": "B1-independent-reads",
+          "model_responses": 3,
+          "usage": {
+            "inputTokens": 53548,
+            "cachedInputTokens": 34688,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 630,
+            "reasoningOutputTokens": 37,
+            "totalTokens": 54178
+          },
+          "uncached_input": 18860,
+          "standard_API_equivalent_USD": "0.0474888"
+        },
+        {
+          "case": "B2-dependent-manifest-control",
+          "model_responses": 4,
+          "usage": {
+            "inputTokens": 65729,
+            "cachedInputTokens": 48768,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 264,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 65993
+          },
+          "uncached_input": 16961,
+          "standard_API_equivalent_USD": "0.0414388"
+        }
+      ],
+      "total_model_responses": 7,
+      "total_API_equivalent_USD": "0.0889276"
+    }
+  ],
+  "actor_runs": 20,
+  "retries_per_condition": 0,
+  "archive": {
+    "file": "evidence.tar.gz",
+    "sha256": "bd5935e275714ea10b1fe62b8b86a52dd06b2422190dbaf60c484b3a8eb4e78e",
+    "members_verified": 801
+  },
+  "limitations": [
+    "Same advertised plugin version0.53.9; fingerprints identify changed candidates",
+    "No full39 or statistical improvement claim",
+    "v2 tests B1/B2 only; do not create a synthetic full-suite total from mixed fingerprints",
+    "D1 PARTIAL remains open; D2 is a corrected fixture control",
+    "Cache-hit and load differed; Standard API estimates are not subscription bills",
+    "Review agent is separate from the20 case actors; reviewer token cost not measured"
+  ]
+}

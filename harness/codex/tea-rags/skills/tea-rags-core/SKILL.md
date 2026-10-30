@@ -173,7 +173,24 @@ Reuse known schemas. Never print full descriptions, repeated core instructions
 or return schemas; if that declaration is absent, use the listed tool interface.
 Otherwise they are direct tools — call them as listed.
 
-**Tool execution and waiting.** Dispatch already-needed independent calls
+**Choose missing facts before tools.** On follow-ups, use retained bodies,
+locators and edges to answer the current request; fetch only its remaining
+evidence gaps. Apply this check inside skills too: a behaviour question alone
+does not require discovery or graph traversal. Code that explicitly selects an
+adapter/implementation already proves that selection; graph is for a missing
+caller, trigger or flow/impact fact. Outlines, blocked reads and metadata do not
+prove an unseen body. When a caller names a qualified member, request that
+member directly, using its held id or qualified lookup. Inventory the owner only
+after a missing/ambiguous lookup; do not guess an ambiguous receiver. Stop when
+all requested facts are supported. For config filenames/policy names from a
+manifest, resolve paths with one scoped filename inventory
+(`rg --files <known config dir>`), then read the selected files. Searching a
+filename in file contents does not locate that file.
+
+**Tool execution and waiting.** Collect the already-known missing reads into one
+executor wave: `find_symbol(symbols:[…])` for methods/files; config/spec reads
+are bounded per-file calls. Directories use separate
+`find_symbol(relativePath:)` calls, never `symbols`. Dispatch independent calls
 together (`Promise.allSettled` / `Promise.all` in code mode); await
 prerequisites before dependent calls. Parallelism never justifies extra context
 reads or competing edits. Keep each result (or error) labelled by its input

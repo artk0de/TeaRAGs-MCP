@@ -1,0 +1,8 @@
+{
+  "advertised_plugin_version": "0.53.9",
+  "changed_files": ["scripts/codex-rules.txt", "skills/tea-rags-core/SKILL.md"],
+  "installed_equals_final_evaluated_candidate": true,
+  "fingerprint": "76c348dbbf6c6bdf93509d7694c5dd26a970b0cd64c6b9626d476ea68ea6573a",
+  "activation": "SessionStart instructions apply to new sessions; MCP server did not change",
+  "restore_source": "control/plugin-snapshot in evidence.tar.gz"
+}

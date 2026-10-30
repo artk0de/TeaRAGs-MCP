@@ -1,0 +1,345 @@
+{
+  "fixture_kind": "synthetic raw-shaped excerpts; no future questions or expected answers",
+  "evals": [
+    {
+      "id": "R1-retained-transport",
+      "prompt": "Как включается mock Instead: используется ли Mock::Adapter при обычной инициализации, как mock подключён в specs и что настроено в initializer?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "lib/instead/base_client.rb",
+                    "symbolId": "Instead::BaseClient",
+                    "startLine": 1,
+                    "endLine": 10,
+                    "content": "module Instead\n  class BaseClient\n    def initialize(transport: nil)\n      @transport = transport\n    end\n    def adapter_spec\n      @transport ? [:test, @transport] : Faraday.default_adapter\n    end\n  end\nend\n"
+                  }
+                },
+                {
+                  "payload": {
+                    "relativePath": "lib/instead/mock/adapter.rb",
+                    "symbolId": "Instead::Mock::Adapter",
+                    "startLine": 1,
+                    "endLine": 9,
+                    "content": "module Instead\n  module Mock\n    class Adapter < Faraday::Adapter\n      def call(env)\n        Mock::Router.call(env)\n      end\n    end\n  end\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "lib/instead/base_client.rb": "module Instead\n  class BaseClient\n    def initialize(transport: nil)\n      @transport = transport\n    end\n    def adapter_spec\n      @transport ? [:test, @transport] : Faraday.default_adapter\n    end\n  end\nend\n",
+          "lib/instead/mock/adapter.rb": "module Instead\n  module Mock\n    class Adapter < Faraday::Adapter\n      def call(env)\n        Mock::Router.call(env)\n      end\n    end\n  end\nend\n",
+          "config/initializers/instead.rb": "INSTEAD_CLIENT = Instead::BaseClient.new\n",
+          "spec/lib/instead/client_spec.rb": "RSpec.describe Instead::BaseClient do\n  subject(:client) { described_class.new(transport: Instead::Mock::Router.new) }\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "R2-missing-selection-control",
+      "prompt": "Как включается mock Instead: используется ли Mock::Adapter при обычной инициализации, как mock подключён в specs и что настроено в initializer?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "lib/instead/mock/adapter.rb",
+                    "symbolId": "Instead::Mock::Adapter",
+                    "startLine": 1,
+                    "endLine": 9,
+                    "content": "module Instead\n  module Mock\n    class Adapter < Faraday::Adapter\n      def call(env)\n        Mock::Router.call(env)\n      end\n    end\n  end\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "lib/instead/base_client.rb": "module Instead\n  class BaseClient\n    def initialize(transport: nil)\n      @transport = transport\n    end\n    def adapter_spec\n      @transport ? [:test, @transport] : Faraday.default_adapter\n    end\n  end\nend\n",
+          "lib/instead/mock/adapter.rb": "module Instead\n  module Mock\n    class Adapter < Faraday::Adapter\n      def call(env)\n        Mock::Router.call(env)\n      end\n    end\n  end\nend\n",
+          "config/initializers/instead.rb": "INSTEAD_CLIENT = Instead::BaseClient.new\n",
+          "spec/lib/instead/client_spec.rb": "RSpec.describe Instead::BaseClient do\n  subject(:client) { described_class.new(transport: Instead::Mock::Router.new) }\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "M1-qualified-member",
+      "prompt": "Какие MIME-типы excel? реально допускает и пройдёт ли application/vnd.ms-excel.sheet.macroEnabled.12?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "app/models/attachment_types.rb",
+                    "symbolId": "AttachmentTypes#excel?",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "content": "def excel?\n  file.attached? ? ContentTypes.excel?(file.content_type) : false\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/content_types.rb": "module ContentTypes\n  def self.excel?(mime)\n    [\"application/vnd.ms-excel\", \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"].include?(mime)\n  end\nend\n",
+          "app/models/attachment_types.rb": "module AttachmentTypes\ndef excel?\n  file.attached? ? ContentTypes.excel?(file.content_type) : false\nend\nend\n"
+        },
+        "find_symbol_bodies": {
+          "ContentTypes.excel?": {
+            "relativePath": "app/lib/content_types.rb",
+            "symbolId": "ContentTypes.excel?",
+            "startLine": 1,
+            "endLine": 5,
+            "content": "module ContentTypes\n  def self.excel?(mime)\n    [\"application/vnd.ms-excel\", \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"].include?(mime)\n  end\nend\n"
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "M2-ambiguous-receiver-control",
+      "prompt": "Какие MIME-типы разрешает эта проверка в DocumentAttachment и пройдёт ли XLSM MIME?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "app/models/document_attachment.rb",
+                    "symbolId": "DocumentAttachment#excel?",
+                    "startLine": 1,
+                    "endLine": 3,
+                    "content": "def excel?\n  types.excel?(file.content_type)\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/models/document_attachment.rb": "class DocumentAttachment\n  def types\n    ContentTypes\n  end\n  def excel?\n    types.excel?(file.content_type)\n  end\nend\n",
+          "app/lib/content_types.rb": "module ContentTypes\n  def self.excel?(mime)\n    [\"application/vnd.ms-excel\", \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"].include?(mime)\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "ContentTypes.excel?": {
+            "relativePath": "app/lib/content_types.rb",
+            "symbolId": "ContentTypes.excel?",
+            "startLine": 1,
+            "endLine": 5,
+            "content": "module ContentTypes\n  def self.excel?(mime)\n    [\"application/vnd.ms-excel\", \"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"].include?(mime)\n  end\nend\n"
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "B1-independent-reads",
+      "prompt": "Сопоставь config/api.yml и config/webhook.yml: enabled, max_attempts и задержки для attempt 0/2 по retryDelay.",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry.ts",
+                    "symbolId": "retryDelay",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "signature": "retryDelay(attempt: number): number"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/api.yml": "retry:\n  enabled: true\n  max_attempts: 3\n",
+          "config/webhook.yml": "retry:\n  enabled: false\n  max_attempts: 5\n",
+          "src/retry.ts": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+        },
+        "find_symbol_bodies": {
+          "retryDelay": {
+            "relativePath": "src/retry.ts",
+            "symbolId": "retryDelay",
+            "startLine": 1,
+            "endLine": 1,
+            "content": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+          }
+        },
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "symbols": ["retryDelay"]
+            },
+            "result": {
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry.ts",
+                    "symbolId": "retryDelay",
+                    "startLine": 1,
+                    "endLine": 1,
+                    "content": "export function retryDelay(attempt: number) { return Math.min(200 * 2 ** attempt, 1600); }\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "B2-dependent-manifest-control",
+      "prompt": "Какие retry-политики выбраны в config/retries.yml и какие enabled/max_attempts заданы для каждой выбранной политики?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/retries.yml": "selected:\n  - api_fast\n  - webhook_safe\n",
+          "config/policies/api_fast.yml": "enabled: true\nmax_attempts: 2\n",
+          "config/policies/webhook_safe.yml": "enabled: false\nmax_attempts: 4\n",
+          "config/policies/unused.yml": "enabled: true\nmax_attempts: 9\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "D1-directory-shape",
+      "prompt": "Какие файлы и верхнеуровневые символы находятся в app/services/billing/ и app/services/exports/?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "app/services/billing/charge.rb": "class Charge\n  def perform\n    :charged\n  end\nend\n",
+          "app/services/exports/send.rb": "class SendExport\n  def perform\n    :sent\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "G1-missing-trigger-control",
+      "prompt": "Как событие CRM приводит к MergeForContact#perform? Покажи цепочку вызовов.",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "tool": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "app/services/merge_for_contact.rb",
+                    "symbolId": "MergeForContact#perform",
+                    "startLine": 1,
+                    "endLine": 4,
+                    "content": "def perform\n  move_documents\n  remove_source\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/services/merge_for_contact.rb": "class MergeForContact\ndef perform\n  move_documents\n  remove_source\nend\nend\n",
+          "app/consumers/contacts_consumer.rb": "class ContactsConsumer\n  def consume(event)\n    handle_merged(event) if event.type == :merged\n  end\n  def handle_merged(event)\n    MergeForContact.new(event).perform\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": [
+          {
+            "tool": "get_callers",
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "edges": [
+                {
+                  "caller": "ContactsConsumer#handle_merged",
+                  "callee": "MergeForContact#perform"
+                },
+                {
+                  "caller": "ContactsConsumer#consume",
+                  "callee": "ContactsConsumer#handle_merged"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
