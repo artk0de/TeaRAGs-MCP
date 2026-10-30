@@ -153,7 +153,8 @@ export const SearchResultOutputSchema = {
         "(suggestions = nearest existing prefix), filteredOut (what to drop, filter: {}), noMatch. find_symbol: " +
         "unknownSymbol (single symbol; suggestions = the real id: other #/. separator, #partN parent, same short name; " +
         "batch misses stay in missing[]), ambiguous (partial path, several ids = suggestions), " +
-        "unknownPath (suggestions = nearest paths), noSymbols (no symbol chunks: default code read tool). Act on it; empty with reason ≠ grep needed.",
+        "unknownPath (suggestions = nearest paths), noSymbols (no symbol chunks: default code read tool), " +
+        "table:<name>: noTableOperations (no migration names it) / notBuilt (no migration corpus). Act on it; empty with reason ≠ grep needed.",
     ),
   missing: z
     .array(
@@ -180,6 +181,36 @@ export const SearchResultOutputSchema = {
     .optional()
     .describe(
       "find_symbol directory path: results = its files (relativePath, language, symbols); subdirs one level down.",
+    ),
+  table: z
+    .object({
+      table: z.string(),
+      columns: z.array(
+        z.object({
+          name: z.string(),
+          type: z.string().optional(),
+          origin: z.string(),
+          renamedFrom: z.string().optional(),
+        }),
+      ),
+      indexes: z.array(
+        z.object({
+          name: z.string().optional(),
+          columns: z.array(z.string()),
+          unique: z.boolean(),
+          origin: z.string(),
+          renamedFrom: z.string().optional(),
+        }),
+      ),
+      foreignKeys: z.array(z.object({ toTable: z.string(), column: z.string(), origin: z.string() })),
+      dropped: z.object({ origin: z.string(), renamedTo: z.string().optional() }).optional(),
+      unfolded: z.array(z.object({ symbolId: z.string(), operation: z.string(), reason: z.string() })),
+      provenance: z.array(z.string()),
+    })
+    .optional()
+    .describe(
+      "find_symbol table:<name>: current state from change/up migrations in version order (down ignored). " +
+        "origin/provenance = migration:<id>, drill via find_symbol. unfolded = ops not applied (raw SQL, unknown).",
     ),
   truncated: z
     .object({

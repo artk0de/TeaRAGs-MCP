@@ -39,8 +39,10 @@ export type EmptyAnswerReason =
   | "pathPatternMatchesNothing"
   /** Points exist without the filters / preset filter; the filters removed them. */
   | "filteredOut"
-  /** Co-change has never been built for this collection. */
+  /** Co-change (or, for find_symbol `table:`, the migration corpus) has never been built for this collection. */
   | "notBuilt"
+  /** find_symbol `table:<name>`: the migration corpus holds no `change`/`up` operation on that table. */
+  | "noTableOperations"
   /** The file has no commit history in the co-change window. */
   | "noHistory"
   /** `list_projects` `project` names no registered alias; suggestions = nearest aliases. */

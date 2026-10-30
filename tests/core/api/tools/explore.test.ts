@@ -165,6 +165,25 @@ describe("registerSearchTools", () => {
     expect(result.structuredContent.confidence).toEqual({ value: 0.23, label: "low" });
   });
 
+  it("passes find_symbol's folded table state through to structuredContent (nplgm)", async () => {
+    const table = {
+      table: "orders",
+      columns: [{ name: "id", type: "primary_key", origin: "migration:db/migrate/1_orders.rb:create_table:1" }],
+      indexes: [],
+      foreignKeys: [],
+      unfolded: [],
+      provenance: ["migration:db/migrate/1_orders.rb:create_table:1"],
+    };
+    const { captured } = makeHarness({ findSymbol: vi.fn().mockResolvedValue({ results: [], table }) });
+    const tool = captured.find((t) => t.name === "find_symbol");
+
+    const result = (await tool!.handler({ path: "/x", symbol: "table:orders" }, {})) as {
+      structuredContent: { table?: unknown };
+    };
+
+    expect(result.structuredContent.table).toEqual(table);
+  });
+
   it("omits confidence from structuredContent when the operation does not report it", async () => {
     const { captured } = makeHarness();
     const tool = captured.find((t) => t.name === "rank_chunks");

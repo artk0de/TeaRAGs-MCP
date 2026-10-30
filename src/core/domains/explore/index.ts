@@ -35,6 +35,7 @@ export type { RerankPreset } from "./rerank/presets/index.js";
 export { CodeChunkGrouper, DocChunkGrouper } from "./chunk-grouping/index.js";
 export type { ScrollChunk } from "./chunk-grouping/index.js";
 export { IndexMetricsQuery } from "./queries/index-metrics.js";
+export { MIGRATION_ID_PREFIX, MigrationCorpusQuery, RAILS_TABLE_ID_PREFIX } from "./queries/migration-corpus.js";
 export { SymbolBatchDrill, type SymbolBatchAnswer, type SymbolBatchRow } from "./symbol-batch.js";
 export { SymbolMissExplainer } from "./symbol-miss.js";
 export {

@@ -10,6 +10,7 @@ import { CodeChunkGrouper } from "../../../../src/core/domains/explore/chunk-gro
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 import { resolveSymbols } from "../../../../src/core/domains/explore/symbol-resolve.js";
+import { foldRailsTableMigrations } from "../../../../src/core/domains/language/index.js";
 import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
@@ -478,5 +479,47 @@ describe("SearchResultOutputSchema — find_symbol batch, directory and empty an
     const batchNotice = "paths answer as outline in a batch";
 
     expect(schema.parse({ results: EMPTY_TABLE, batchNotice }).batchNotice).toBe(batchNotice);
+  });
+});
+
+describe("SearchResultOutputSchema — find_symbol table:<name> (nplgm)", () => {
+  const operation = (version: string, name: string, content: string) => ({
+    symbolId: `migration:db/migrate/${version}_orders.rb:${name}:1`,
+    version,
+    operation: name,
+    direction: "change",
+    table: "orders",
+    columns: [],
+    content,
+  });
+  const schema = z.object(SearchResultOutputSchema).strict();
+
+  it("strictly accepts a real fold result carrying renames, indexes, foreign keys and unfolded ops", () => {
+    const table = foldRailsTableMigrations("orders", [
+      operation(
+        "1",
+        "create_table",
+        "create_table :orders do |t|\n  t.references :user, foreign_key: true\n  t.string :code\n  t.send(:x)\nend",
+      ),
+      operation("2", "rename_column", "rename_column :orders, :code, :reference"),
+      operation("3", "add_index", "add_index :orders, :reference, unique: true, name: 'idx_a'"),
+      operation("4", "rename_index", "rename_index :orders, 'idx_a', 'idx_b'"),
+    ]);
+
+    expect(table.columns.find((column) => column.name === "reference")?.renamedFrom).toBe("code");
+    expect(table.indexes.find((index) => index.name === "idx_b")?.renamedFrom).toBe("idx_a");
+    expect(table.foreignKeys).toHaveLength(1);
+    expect(table.unfolded).toHaveLength(1);
+    expect(schema.parse(overTheWire({ results: EMPTY_TABLE, table })).table).toEqual(table);
+  });
+
+  it("strictly accepts a dropped table", () => {
+    const table = foldRailsTableMigrations("orders", [
+      operation("1", "create_table", "create_table :orders do |t|\nend"),
+      operation("2", "rename_table", "rename_table :orders, :purchases"),
+    ]);
+
+    expect(table.dropped?.renamedTo).toBe("purchases");
+    expect(schema.parse(overTheWire({ results: EMPTY_TABLE, table })).table).toEqual(table);
   });
 });

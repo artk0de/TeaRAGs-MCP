@@ -47,7 +47,10 @@ import {
   EmptyFilterPresetError,
   FileOutlineStrategy,
   IndexMetricsQuery,
+  MIGRATION_ID_PREFIX,
+  MigrationCorpusQuery,
   QUERY_VARIANT_SEPARATOR,
+  RAILS_TABLE_ID_PREFIX,
   SimilarSearchStrategy,
   splitQueryVariants,
   SymbolBatchDrill,
@@ -70,6 +73,7 @@ import { migrationCollectionName } from "../../../domains/ingest/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
 import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/language-config/index.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/index.js";
+import { foldRailsTableMigrations } from "../../../domains/language/index.js";
 import { compileFilterPreset, type TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
   projectSearchResultPayloads,
@@ -253,6 +257,7 @@ export class ExploreOps {
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
   private readonly indexMetricsQuery?: IndexMetricsQuery;
+  private readonly migrationCorpusQuery: MigrationCorpusQuery;
   private readonly recomputeService?: StatsRecomputeService;
   private readonly chunkResolver?: SymbolChunkResolver;
   private readonly visibilityResolver?: SymbolVisibilityResolver;
@@ -299,6 +304,7 @@ export class ExploreOps {
       this.payloadSignals,
       this.essentialKeys,
     );
+    this.migrationCorpusQuery = new MigrationCorpusQuery(deps.qdrant, foldRailsTableMigrations);
     if (deps.statsCache) {
       this.indexMetricsQuery = new IndexMetricsQuery(
         deps.qdrant,
@@ -425,6 +431,9 @@ export class ExploreOps {
       request.project,
       { nameOnly: true },
     );
+    if (request.symbol?.startsWith(RAILS_TABLE_ID_PREFIX) || request.symbol?.startsWith(MIGRATION_ID_PREFIX)) {
+      return this.findMigrationSymbol(request, request.symbol, migrationCollectionName(collectionName));
+    }
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
     if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, workingTreeView);
     const strategy = this.buildFindSymbolStrategy(request);
@@ -891,6 +900,47 @@ export class ExploreOps {
         ? this.registry.buildMergedFilter(req, resolved, level)
         : this.registry.buildMergedFilter(req, resolved, level, historyAnchorSec);
     return { filter, presetFilterNotice };
+  }
+
+  /**
+   * `table:<name>` / `migration:<id>` — answered from the migration corpus
+   * (bd tea-rags-mcp-nplgm): the table's folded current state, or one
+   * migration operation chunk (the drill target of the state's provenance).
+   */
+  private async findMigrationSymbol(
+    request: FindSymbolRequest,
+    symbol: string,
+    migrationCollection: string,
+  ): Promise<ExploreResponse> {
+    if (symbol.startsWith(RAILS_TABLE_ID_PREFIX)) {
+      const table = symbol.slice(RAILS_TABLE_ID_PREFIX.length);
+      const answer = await this.migrationCorpusQuery.tableState(migrationCollection, table);
+      if (answer.kind === "state") return { results: [], table: answer.state };
+      const empty: EmptyAnswerExplanation =
+        answer.kind === "noCorpus"
+          ? {
+              reason: "notBuilt",
+              message: "No migration corpus is indexed for this project — table:<name> needs an indexed db/migrate.",
+            }
+          : {
+              reason: "noTableOperations",
+              message: `No change/up migration operation names table ${table}: absent from db/migrate, or created only by raw SQL or a computed name.`,
+            };
+      return { results: [], empty };
+    }
+    const points = await this.migrationCorpusQuery.operation(migrationCollection, symbol);
+    if (points.length === 0) {
+      return {
+        results: [],
+        empty: { reason: "unknownSymbol", message: `${symbol} is not a migration chunk id in the migration corpus.` },
+      };
+    }
+    return {
+      results: points.map(({ id, payload }) => {
+        const { content, ...locator } = payload;
+        return { id, score: 1, payload: request.metaOnly ? locator : { ...locator, content } };
+      }),
+    };
   }
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {

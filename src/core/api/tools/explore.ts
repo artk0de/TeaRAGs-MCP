@@ -129,6 +129,7 @@ function formatStructuredResult(
       ...(response.missing && { missing: response.missing }),
       ...(response.batchNotice && { batchNotice: response.batchNotice }),
       ...(response.directory && { directory: response.directory }),
+      ...(response.table && { table: response.table }),
     },
     // A degraded ranking is said in text too: a reader of the text channel
     // would otherwise take a BM25-only answer for a hybrid one.
@@ -208,6 +209,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "symbol mode: function/method → merged full body; class/module → member OUTLINE " +
       `(method ids, no method bodies, tests excluded) + header chunks (consts, DSL, fields) listed by lines, inlined whole up to ${CONTAINER_HEADER_CHAR_BUDGET} chars per class, ${BATCH_FULL_TEXT_CHAR_BUDGET} per answer shared with file text, which takes priority (kind:'containerHeader'; rest: 'not inlined', their member ids answer them); ` +
       "doc:<hash> → full section content. " +
+      "table:<name> → Rails table current state folded from migrations (`table`); migration:<id> → that operation. " +
       `relativePath mode: small code file (≤${FULL_TEXT_MAX_LINES} lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; ` +
       "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
       "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +

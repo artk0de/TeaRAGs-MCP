@@ -4,6 +4,7 @@
 
 import type { DirectoryOutline } from "../../../contracts/types/directory-outline.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
+import type { RailsTableState } from "../../../contracts/types/rails-table-state.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
 import type { SymbolBatchMiss } from "../../../contracts/types/symbol-batch.js";
@@ -322,6 +323,13 @@ export interface ExploreResponse {
    * working-tree marker apply to them unchanged.
    */
   directory?: DirectoryOutline;
+  /**
+   * find_symbol `symbol: "table:<name>"` only: the Rails table's current state
+   * folded from its `change`/`up` migration operations in version order
+   * (`down` ignored). `results` stays empty; every fact carries the migration
+   * chunk id it came from, drillable as `find_symbol(symbol: "migration:…")`.
+   */
+  table?: RailsTableState;
 }
 
 // ---------------------------------------------------------------------------
