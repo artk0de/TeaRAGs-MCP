@@ -19,6 +19,7 @@ import {
 } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
+import { spendContainerHeaderAllowance } from "./chunk-grouping/index.js";
 import { containerMemberMessage, findContainerMembers, rankByNamespaceProximity } from "./member-miss.js";
 import type { FileOutlineStrategy } from "./strategies/file-outline.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
@@ -45,7 +46,7 @@ function batchPathNotice(overLines: readonly string[], overBudget: readonly stri
   if (overBudget.length > 0) {
     parts.push(
       `past the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char full-text budget, outlined: ${overBudget.join(", ")} — ` +
-        `find_symbol(relativePath: <path>) answers one file in full up to ${FULL_TEXT_MAX_LINES} lines`,
+        `continue with find_symbol(symbols:${JSON.stringify(overBudget)})`,
     );
   }
   if (directory) parts.push("a directory → missing");
@@ -113,6 +114,12 @@ export interface SymbolBatchRow {
   resolvedAs?: string;
   /** The row answers a file-path address: its `content` is the file outline (or text), not a symbol body. */
   fileOutline?: boolean;
+  /**
+   * The request of the row whose content already carries this row's chunk —
+   * a header chunk several constant ids share, or one a class row inlined; this
+   * row then keeps its locator and drops the repeated body.
+   */
+  sameChunkAs?: string;
   result: ExploreResult;
 }
 
@@ -154,7 +161,7 @@ export class SymbolBatchDrill {
     const directory = answers.some((a) => a.pathNote === "directory");
     const downgraded = overLines.length > 0 || overBudget.length > 0 || directory;
     return {
-      rows: answers.flatMap((a) => a.rows),
+      rows: dedupeChunkBodies(answers.flatMap((a) => a.rows)),
       missing: answers.flatMap((a) => (a.miss ? [a.miss] : [])),
       ...firstWarning(answers),
       ...(downgraded ? { batchNotice: batchPathNotice(overLines, overBudget, directory) } : {}),
@@ -278,12 +285,43 @@ interface AddressAnswer {
  * its outline instead — unless the outline is no shorter, which saves nothing —
  * and the entries after it are still measured. Returns the paths outlined.
  */
+/**
+ * One chunk body per batch: a row whose chunk another row's content already
+ * carries — the same declaring chunk answering several constant ids, or a
+ * header chunk a class row inlined (`mergedChunkIds`) — keeps its locator and
+ * points at that row instead of repeating the body. The carrier is the row with
+ * the longer content, the earlier one on a tie; file-path rows carry nothing.
+ */
+function dedupeChunkBodies(rows: SymbolBatchRow[]): SymbolBatchRow[] {
+  const carried = (row: SymbolBatchRow): readonly unknown[] => {
+    if (row.fileOutline) return [];
+    const merged = row.result.payload?.mergedChunkIds;
+    return Array.isArray(merged) ? merged : [row.result.id];
+  };
+  return rows.map((row, i) => {
+    const body = row.result.payload?.content;
+    if (row.fileOutline || typeof body !== "string" || body.length === 0) return row;
+    const carrier = rows.find((other, j) => {
+      if (j === i || !carried(other).includes(row.result.id)) return false;
+      const text = other.result.payload?.content;
+      if (typeof text !== "string" || !text.includes(body)) return false;
+      return text.length > body.length || j < i;
+    });
+    if (!carrier) return row;
+    const { content: _repeated, ...payload } = row.result.payload ?? {};
+    return { ...row, sameChunkAs: carrier.request, result: { ...row.result, payload } };
+  });
+}
+
 function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: AddressAnswer[]; overBudget: string[] } {
   let spent = 0;
   const overBudget: string[] = [];
   const budgeted = answers.map((answer) => {
     const outline = answer.outlineBehindFullText;
     const row = answer.rows[0];
+    // Reserve requested file text before optional container headers, regardless
+    // of where those headers occur in the request. File entries retain their
+    // request-order priority when the files alone exceed the shared budget.
     if (!outline || !row) return answer;
     const size = contentLengthOf(row.result);
     if (spent + size <= BATCH_FULL_TEXT_CHAR_BUDGET || contentLengthOf(outline) >= size) {
@@ -293,7 +331,16 @@ function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: Add
     overBudget.push(row.request);
     return { ...answer, rows: [{ ...row, result: outline }] };
   });
-  return { answers: budgeted, overBudget };
+  const withHeaders = budgeted.map((answer) => ({
+    ...answer,
+    rows: answer.rows.map((row) => {
+      const rendered = spendContainerHeaderAllowance(row.result, Math.max(0, BATCH_FULL_TEXT_CHAR_BUDGET - spent));
+      if (!rendered) return row;
+      spent += rendered.spent;
+      return { ...row, result: rendered.result };
+    }),
+  }));
+  return { answers: withHeaders, overBudget };
 }
 
 function contentLengthOf(result: ExploreResult): number {

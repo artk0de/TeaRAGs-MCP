@@ -15,6 +15,7 @@
  * the model `structuredContent` instead of `content` when both exist (live,
  * 2026-10-28), so a content-only banner never reached it there.
  */
+import { CONTAINER_HEADER_KIND } from "../../contracts/types/symbol-batch.js";
 import { foldColumnTables } from "./columns.js";
 import type { McpToolResult } from "./format.js";
 import { readAnswer } from "./response-budget.js";
@@ -33,8 +34,8 @@ export const BODY_SHOWN_BANNER = `${BANNER_PREFIX}Body shown in full — answer 
  * exactly the example a banner names, not what it needs.
  */
 export const MIXED_ANSWER_BANNER =
-  `${BANNER_PREFIX}Bodies shown in full — answer from them; outline rows list ids → ` +
-  "ONE find_symbol(symbols:[needed ids]), not a file read.";
+  `${BANNER_PREFIX}Body rows are complete; class headers may be inlined beside method ids. Outline ids → ` +
+  "ONE find_symbol(symbols:[needed ids]).";
 
 /** "default code search tool" is plugin vocabulary: the Codex/Cursor transforms map it to the host's tool. */
 export function emptyGraphBanner(tool: GraphBannerTool, shortName: string): string {
@@ -109,16 +110,25 @@ function findSymbolBanner(request: Record<string, unknown>, answer: Record<strin
   return rows.some(isOutlineRow) ? MIXED_ANSWER_BANNER : BODY_SHOWN_BANNER;
 }
 
-/** A row whose content is complete: a symbol body, or a batch path entry answered with the file's text. */
+/**
+ * A row whose content is complete: a symbol body, a batch path entry answered
+ * with the file's text, or a class row carrying its header code (complete for
+ * its class-level part).
+ */
 function isFullRow(row: Record<string, unknown>): boolean {
-  return isBodyRow(row) || payloadOf(row).kind === "file";
+  const { kind } = payloadOf(row);
+  return isBodyRow(row) || kind === "file" || kind === CONTAINER_HEADER_KIND;
 }
 
-/** A row listing member ids to drill rather than code: a class / container / file outline. Doc rows are neither. */
+/**
+ * A row listing member ids to drill rather than code: a class / container /
+ * file outline — a class row with its header inlined included, its methods are
+ * still ids. Doc rows are neither.
+ */
 function isOutlineRow(row: Record<string, unknown>): boolean {
-  const { symbolId, content } = payloadOf(row);
+  const { symbolId, content, kind } = payloadOf(row);
   if (typeof content !== "string" || (typeof symbolId === "string" && symbolId.startsWith("doc:"))) return false;
-  return !isFullRow(row);
+  return kind === CONTAINER_HEADER_KIND || !isFullRow(row);
 }
 
 function emptyGraphBannerFor(

@@ -287,7 +287,7 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
           expect(response.batchNotice).toContain(`${BATCH_FULL_TEXT_CHAR_BUDGET}-char`);
           expect(response.batchNotice).toContain("src/a/three.ts");
           expect(response.batchNotice).not.toContain("src/a/two.ts");
-          expect(response.batchNotice).toContain("find_symbol(relativePath: <path>)");
+          expect(response.batchNotice).toContain('find_symbol(symbols:["src/a/three.ts"])');
           expect(response.batchNotice).not.toContain("fn2");
         });
 

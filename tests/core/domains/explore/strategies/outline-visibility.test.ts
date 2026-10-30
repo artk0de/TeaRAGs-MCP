@@ -96,6 +96,9 @@ const runExplore = async (strat: unknown, metaOnly = false) =>
   });
 
 const DECORATED_MEMBERS = ["  Svc#run (public)", "  Svc#helper (private)", "  Svc#hook (protected)", "  Svc#legacy"];
+/** A class-chunk outline: the header chunk listed, the members, then the header inlined. */
+const withSvcHeader = (members: string[]): string =>
+  ["Svc", "  header 1–40", ...members, "", "── header 1–40 ──", "class Svc {}"].join("\n");
 
 describe("find_symbol outline — declared visibility (bd tea-rags-mcp-sqqkz)", () => {
   it("class outline: each member line shows its known visibility, NULL stays bare", async () => {
@@ -103,7 +106,7 @@ describe("find_symbol outline — declared visibility (bd tea-rags-mcp-sqqkz)", 
     const results = await runExplore(symbolStrategy("Svc", [CLASS_CHUNK, ...MEMBERS], vis));
 
     expect(results).toHaveLength(1);
-    expect(results[0].payload.content).toBe(["Svc", ...DECORATED_MEMBERS].join("\n"));
+    expect(results[0].payload.content).toBe(withSvcHeader(DECORATED_MEMBERS));
     expect(vis.resolveSymbolVisibilities).toHaveBeenCalledTimes(1);
     expect(vis.resolveSymbolVisibilities.mock.calls[0][0]).toBe("col");
   });
@@ -127,9 +130,7 @@ describe("find_symbol outline — declared visibility (bd tea-rags-mcp-sqqkz)", 
   it("no resolver (codegraph off) renders today's outline", async () => {
     const results = await runExplore(symbolStrategy("Svc", [CLASS_CHUNK, ...MEMBERS]));
 
-    expect(results[0].payload.content).toBe(
-      ["Svc", "  Svc#run", "  Svc#helper", "  Svc#hook", "  Svc#legacy"].join("\n"),
-    );
+    expect(results[0].payload.content).toBe(withSvcHeader(["  Svc#run", "  Svc#helper", "  Svc#hook", "  Svc#legacy"]));
   });
 
   it("a throwing resolver (codegraph unreadable) degrades silently to today's outline", async () => {

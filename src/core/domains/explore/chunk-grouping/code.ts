@@ -6,6 +6,7 @@
 
 import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
 import type { SearchResult } from "../../../contracts/types/search-result.js";
+import { CONTAINER_HEADER_DRAFT_KEY, draftContainerHeader, spendContainerHeaderAllowance } from "./container-header.js";
 import { splitFragmentBase } from "./split-fragment.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
@@ -227,6 +228,7 @@ export const CodeChunkGrouper = {
     memberChunks: ScrollChunk[],
     visibilityOf?: MemberVisibilityLookup,
     declaringWindows: ScrollChunk[] = [],
+    rows: ScrollChunk[] = [],
   ): SearchResult {
     const sorted = sortByLine(memberChunks);
 
@@ -235,6 +237,11 @@ export const CodeChunkGrouper = {
     // (Ruby constants, `memberSymbolIds` — bd tea-rags-mcp-1x85g) lists them
     // among the members, in line order; the window itself stays the header's.
     const lines = memberLines(sortByLine([...memberChunks, ...declaringWindows]), visibilityOf);
+    // The header chunks themselves: listed, then inlined whole while the
+    // per-class budget holds (`renderContainerHeader`); the draft rides the
+    // payload so the answer's shared budget can re-render the row smaller.
+    const containerId = typeof classChunk.payload.symbolId === "string" ? classChunk.payload.symbolId : className;
+    const draft = rows.length > 0 ? draftContainerHeader(containerId, className, lines, rows) : undefined;
     const outlineContent = [className, ...lines].join("\n");
 
     const allChunks = [classChunk, ...sorted];
@@ -255,9 +262,13 @@ export const CodeChunkGrouper = {
       codegraph: fileCodegraph(classChunk),
       chunkCount: allChunks.length,
       contentSize: contentSizeOf(allChunks),
+      ...(draft ? { [CONTAINER_HEADER_DRAFT_KEY]: draft } : {}),
     };
 
-    return { id: classChunk.id, score: 1.0, payload };
+    const outline: SearchResult = { id: classChunk.id, score: 1.0, payload };
+    // A row carrying header code is no longer outline-only: `kind` says so,
+    // `mergedChunkIds` names the chunks whose text it carries (batch dedupe).
+    return spendContainerHeaderAllowance(outline, Infinity)?.result ?? outline;
   },
 
   /**

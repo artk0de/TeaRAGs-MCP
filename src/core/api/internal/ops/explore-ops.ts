@@ -495,10 +495,11 @@ export class ExploreOps {
     // mode (bd tea-rags-mcp-y3trx).
     const leanMetaOnly = request.metaOnly === true && !request.fields && !request.rerank;
     const results = projection.results.map((row, i) => {
-      const { request: address, resolvedAs, fileOutline } = answer.rows[i];
+      const { request: address, resolvedAs, fileOutline, sameChunkAs } = answer.rows[i];
       const { content: _body, ...bodyless } = row.payload ?? {};
       const payload = leanMetaOnly && !fileOutline ? bodyless : row.payload;
-      return { ...row, payload: { request: address, ...(resolvedAs ? { resolvedAs } : {}), ...payload } };
+      const marks = { ...(resolvedAs ? { resolvedAs } : {}), ...(sameChunkAs ? { sameChunkAs } : {}) };
+      return { ...row, payload: { request: address, ...marks, ...payload } };
     });
     const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
     return {

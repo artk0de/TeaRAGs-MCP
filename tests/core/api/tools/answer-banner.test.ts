@@ -84,7 +84,7 @@ describe("banner texts", () => {
     expect(MIXED_ANSWER_BANNER).not.toContain("\n");
     expect(MIXED_ANSWER_BANNER.length).toBeLessThanOrEqual(200);
     expect(MIXED_ANSWER_BANNER).toBe(
-      "↳ Bodies shown in full — answer from them; outline rows list ids → ONE find_symbol(symbols:[needed ids]), not a file read.",
+      "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
     );
   });
 });
@@ -164,6 +164,31 @@ describe("answerBannerFor — find_symbol bodies", () => {
         structured(batch),
       ),
     ).toBe(MIXED_ANSWER_BANNER);
+  });
+
+  // A class row carrying its header code is complete for the class-level part
+  // and an outline for its methods: neither outline-only nor "shown in full".
+  it("the mixed banner distinguishes inlined headers from method bodies", () => {
+    expect(MIXED_ANSWER_BANNER).toContain("headers");
+    expect(MIXED_ANSWER_BANNER).toContain("method ids");
+    expect(MIXED_ANSWER_BANNER).not.toContain("Bodies shown in full");
+  });
+
+  it("a class answer with its header inlined → the mixed banner", () => {
+    const answer = {
+      results: [
+        {
+          payload: {
+            symbolId: "Billing::Client",
+            relativePath: "app/billing/client.rb",
+            kind: "containerHeader",
+            content:
+              "Client\n  header 2–4: 1 const\n  Billing::Client::URL\n  Billing::Client#call (public)\n\n── header 2–4 ──\nclass Client\n  URL = 'x'",
+          },
+        },
+      ],
+    };
+    expect(answerBannerFor("find_symbol", { symbol: "Billing::Client" }, structured(answer))).toBe(MIXED_ANSWER_BANNER);
   });
 
   it("symbols batch whose path entries came back as full file text → body banner", () => {
