@@ -39,3 +39,7 @@ src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.json
 **/tea-rags/rules/guides/signal-labels.md
 **/tea-rags/rules/guides/search-examples.md
 **/tea-rags/rules/guides/indexing.md
+
+# Tool-name substitution changes this generated table's widths. Preserve the
+# generator output so packaging is idempotent after commit hooks format files.
+.claude-plugin/tea-rags/rules/guides/navigation.md
