@@ -110,4 +110,100 @@ end`;
     expect(chunks[0].columns).toEqual(["reference"]);
     expect(chunks[1].columns).toEqual(["vendor_id", "reference"]);
   });
+
+  async function migrationChunks(code: string, path: string) {
+    const parser = new TreeSitterChunker(
+      { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
+      new DefaultSymbolIdComposer(),
+      new LanguageFactory(),
+    );
+    const { tree } = await parser.chunkWithTree(code, path, "ruby");
+    return chunkRailsMigration(tree!.rootNode, code, path);
+  }
+
+  it("descends into a block wrapper and records the operations it wraps", async () => {
+    const code = `class RenameOwnerColumns < ActiveRecord::Migration[7.0]
+  def change
+    safety_assured do
+      rename_column :vendor_links, :actor_type, :owner_type
+      rename_column :vendor_links, :actor_id, :owner_id
+    end
+    rename_index :vendor_links, 'idx_old', 'idx_new'
+  end
+end`;
+    const chunks = await migrationChunks(code, "db/migrate/20261028000003_rename_owner_columns.rb");
+    expect(chunks).toEqual([
+      expect.objectContaining({
+        operation: "rename_column",
+        table: "vendor_links",
+        columns: ["actor_type", "owner_type"],
+        direction: "change",
+        startLine: 4,
+        endLine: 4,
+      }),
+      expect.objectContaining({
+        operation: "rename_column",
+        table: "vendor_links",
+        columns: ["actor_id", "owner_id"],
+        direction: "change",
+        startLine: 5,
+        endLine: 5,
+      }),
+      expect.objectContaining({ operation: "rename_index", table: "vendor_links", direction: "change" }),
+    ]);
+  });
+
+  it("descends through nested wrappers, brace blocks and loops, inheriting the direction", async () => {
+    const code = `class AddVendorIndexes < ActiveRecord::Migration[7.0]
+  def up
+    transaction do
+      %i[vendor_id reference].each do |column|
+        add_index :orders, column
+      end
+      safety_assured { remove_column :orders, :legacy }
+    end
+  end
+end`;
+    const chunks = await migrationChunks(code, "db/migrate/20261028000004_add_vendor_indexes.rb");
+    expect(chunks.map((chunk) => [chunk.operation, chunk.table, chunk.direction])).toEqual([
+      ["add_index", "orders", "up"],
+      ["remove_column", "orders", "up"],
+    ]);
+    expect(chunks[1].columns).toEqual(["legacy"]);
+  });
+
+  it("keeps a wrapper that wraps no call as its own chunk", async () => {
+    const code = `class Noop < ActiveRecord::Migration[7.0]
+  def change
+    safety_assured do
+      # intentionally empty
+    end
+  end
+end`;
+    const chunks = await migrationChunks(code, "db/migrate/20261028000005_noop.rb");
+    expect(chunks).toEqual([expect.objectContaining({ operation: "safety_assured", columns: [] })]);
+  });
+
+  it("keeps builder blocks, reversible directions and raw SQL as before", async () => {
+    const code = `class BuildLinks < ActiveRecord::Migration[7.0]
+  def change
+    create_join_table :vendors, :orders do |t|
+      t.index :vendor_id
+    end
+    reversible do |dir|
+      dir.up { execute "UPDATE vendors SET active = true" }
+      dir.down { change_column_default :vendors, :active, nil }
+    end
+  end
+end`;
+    const chunks = await migrationChunks(code, "db/migrate/20261028000006_build_links.rb");
+    expect(chunks.map((chunk) => [chunk.operation, chunk.direction])).toEqual([
+      ["create_join_table", "change"],
+      ["execute", "up"],
+      ["change_column_default", "down"],
+    ]);
+    expect(chunks[0]).toMatchObject({ table: "vendors", columns: ["vendor_id"] });
+    expect(chunks[1].content).toBe('execute "UPDATE vendors SET active = true"');
+    expect(chunks[1]).not.toHaveProperty("table");
+  });
 });

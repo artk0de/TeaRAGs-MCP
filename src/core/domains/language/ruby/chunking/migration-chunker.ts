@@ -17,6 +17,7 @@ export interface MigrationChunk {
 
 const MIGRATION_OPERATIONS = new Set([
   "create_table",
+  "create_join_table",
   "drop_table",
   "rename_table",
   "change_table",
@@ -53,8 +54,15 @@ function methodOf(node: AstNode): string | undefined {
   );
 }
 
+/** Operations whose block yields a table builder, so the block's builder calls are columns. */
+const BUILDER_OPERATIONS = new Set(["create_table", "create_join_table", "change_table"]);
+
+function blockOf(node: AstNode): AstNode | undefined {
+  return node.namedChildren.find((child) => child.type === "do_block" || child.type === "block");
+}
+
 function blockColumns(node: AstNode): string[] {
-  const operationBlock = node.namedChildren.find((child) => child.type === "do_block" || child.type === "block");
+  const operationBlock = blockOf(node);
   if (!operationBlock) return [];
   const parameters = operationBlock.namedChildren.find((child) => child.type === "block_parameters");
   const builder = parameters?.namedChildren.find((child) => child.type === "identifier")?.text;
@@ -90,18 +98,26 @@ export function chunkRailsMigration(root: AstNode, code: string, filePath: strin
         (MIGRATION_OPERATIONS.has(operation) ||
           (direction && operation !== "reversible" && operation !== "up" && operation !== "down"))
       ) {
+        // A block wrapper (safety_assured, transaction, `list.each do |x|`) is not
+        // an operation itself: the operations live in its block. It stays one chunk
+        // only when its block holds no call at all.
+        const wrappedBlock = MIGRATION_OPERATIONS.has(operation) ? undefined : blockOf(node);
+        if (wrappedBlock) {
+          const recordedBefore = migrationChunks.length;
+          visit(wrappedBlock, direction);
+          if (migrationChunks.length > recordedBefore) return;
+        }
         const args = argumentsOf(node);
         const table = operation === "execute" ? undefined : literal(args[0]);
-        const columns =
-          operation === "create_table" || operation === "change_table"
-            ? blockColumns(node)
-            : operation === "rename_column"
-              ? [literal(args[1]), literal(args[2])].filter((value): value is string => value !== undefined)
-              : operation.includes("column") || operation.includes("reference") || operation.includes("index")
-                ? (args[1]?.type === "array" ? args[1].namedChildren.map(literal) : [literal(args[1])]).filter(
-                    (value): value is string => value !== undefined,
-                  )
-                : [];
+        const columns = BUILDER_OPERATIONS.has(operation)
+          ? blockColumns(node)
+          : operation === "rename_column"
+            ? [literal(args[1]), literal(args[2])].filter((value): value is string => value !== undefined)
+            : operation.includes("column") || operation.includes("reference") || operation.includes("index")
+              ? (args[1]?.type === "array" ? args[1].namedChildren.map(literal) : [literal(args[1])]).filter(
+                  (value): value is string => value !== undefined,
+                )
+              : [];
         migrationChunks.push({
           chunkType: "migration",
           content: code.slice(node.startIndex, node.endIndex),

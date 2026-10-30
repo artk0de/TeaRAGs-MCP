@@ -11,6 +11,13 @@ import {
   type MigrationDirectoryExclusion,
 } from "./migration-files.js";
 
+/**
+ * Revision of the migration corpus build. Bump it when the migration chunk set
+ * or its payload moves: a stored corpus with another revision is rebuilt in
+ * full instead of synced incrementally.
+ */
+const MIGRATION_CORPUS_REVISION = "migration-v3";
+
 interface MigrationCorpusStore {
   createCollection: (name: string, dimensions: number, distance: "Cosine", sparse: boolean) => Promise<void>;
   collectionExists: (name: string) => Promise<boolean>;
@@ -90,7 +97,7 @@ export async function rebuildMigrationCorpus(options: {
   const { synchronizer } = options;
   const hasSnapshot = synchronizer ? await synchronizer.initialize() : false;
   const metadata = previous ? (await qdrant.getPoint?.(previous, INDEXING_METADATA_ID))?.payload : undefined;
-  const migrationConfig = JSON.stringify(["migration-v2", chunkSize, embeddings.getModel?.()]);
+  const migrationConfig = JSON.stringify([MIGRATION_CORPUS_REVISION, chunkSize, embeddings.getModel?.()]);
   const incremental = !!previous && hasSnapshot && metadata?.migrationConfig === migrationConfig;
   const changes = incremental && synchronizer ? await synchronizer.detectChanges(files) : undefined;
   if (changes && metadata?.indexingComplete === false && Array.isArray(metadata.migrationPendingPaths)) {
@@ -137,7 +144,7 @@ export async function rebuildMigrationCorpus(options: {
   const digest = createHash("sha256")
     .update(
       JSON.stringify([
-        "migration-v2",
+        MIGRATION_CORPUS_REVISION,
         chunkSize,
         embeddings.getModel?.(),
         sourceFiles.map(({ filePath, code }) => [relative(root, filePath), code]),
