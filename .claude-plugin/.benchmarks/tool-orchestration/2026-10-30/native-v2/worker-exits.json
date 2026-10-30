@@ -1,0 +1,22 @@
+[
+  {
+    "key": "O5-dependent-discovery-control",
+    "process_reaped": true,
+    "exit_code": 0
+  },
+  {
+    "key": "O4-independent-mixed-tool-batch",
+    "process_reaped": true,
+    "exit_code": 0
+  },
+  {
+    "key": "P1-retained-field-projection-locators",
+    "process_reaped": true,
+    "exit_code": 0
+  },
+  {
+    "key": "O6-new-route-inventory-pending-control",
+    "process_reaped": true,
+    "exit_code": 0
+  }
+]

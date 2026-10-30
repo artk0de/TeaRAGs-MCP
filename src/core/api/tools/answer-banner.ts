@@ -23,8 +23,8 @@ import { readAnswer } from "./response-budget.js";
 const BANNER_PREFIX = "↳ ";
 
 export const SEARCH_ANCHOR_BANNER =
-  `${BANNER_PREFIX}Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → ` +
-  "get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).";
+  `${BANNER_PREFIX}Choose the row answering the question. Read only missing bodies with find_symbol; ` +
+  "reuse full bodies already held. Use graph only for missing flow/impact facts.";
 
 export const BODY_SHOWN_BANNER = `${BANNER_PREFIX}Body shown in full — answer from it; do not reopen the file.`;
 
@@ -67,7 +67,13 @@ export function answerBannerFor(tool: string, args: unknown, result: McpToolResu
   const read = readAnswer(result);
   if (!read) return undefined;
   const request = isRecord(args) ? args : {};
-  if (SEARCH_ROW_TOOLS.has(tool)) return resultRows(read.answer).some(hasSymbolId) ? SEARCH_ANCHOR_BANNER : undefined;
+  if (SEARCH_ROW_TOOLS.has(tool)) {
+    const rows = resultRows(read.answer);
+    if (request.metaOnly !== true && rows.some(isFullRow)) {
+      return rows.every(isFullRow) && !rows.some(isOutlineRow) ? BODY_SHOWN_BANNER : MIXED_ANSWER_BANNER;
+    }
+    return rows.some(hasSymbolId) ? SEARCH_ANCHOR_BANNER : undefined;
+  }
   if (tool === "find_symbol") return findSymbolBanner(request, read.answer);
   if (isGraphBannerTool(tool)) return emptyGraphBannerFor(tool, request, read.answer);
   return undefined;
@@ -116,8 +122,12 @@ function findSymbolBanner(request: Record<string, unknown>, answer: Record<strin
  * its class-level part).
  */
 function isFullRow(row: Record<string, unknown>): boolean {
-  const { kind } = payloadOf(row);
-  return isBodyRow(row) || kind === "file" || kind === CONTAINER_HEADER_KIND;
+  const { kind, content } = payloadOf(row);
+  return (
+    typeof content === "string" &&
+    content.trim().length > 0 &&
+    (isBodyRow(row) || kind === "file" || kind === CONTAINER_HEADER_KIND)
+  );
 }
 
 /**

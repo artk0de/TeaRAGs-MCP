@@ -489,6 +489,10 @@ export class ExploreOps {
         ...(result.treeState ? { treeState: result.treeState } : {}),
       })),
       fields,
+      undefined,
+      // Internal batch defaults must not warn about optional absent fields;
+      // mandatory source-locator warnings still pass through without `fields`.
+      request.fields !== undefined,
     );
     // metaOnly's lean default drops a symbol row's body, but a file-path row's
     // `content` IS the outline metaOnly asks for — it stays, as in relativePath
@@ -505,7 +509,7 @@ export class ExploreOps {
     return {
       results,
       missing: answer.missing,
-      ...(request.fields && projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
+      ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
       ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
       ...(answer.batchNotice ? { batchNotice: answer.batchNotice } : {}),
       ...(workingTree ? { workingTree } : {}),

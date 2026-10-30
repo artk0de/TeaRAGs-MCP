@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "verdict": "4_FULL_PASS_1_PARTIAL_ORACLE_LIMITATION",
+    "native_cases_completed_once": 5,
+    "full_pass": 4,
+    "partial": 1,
+    "model_failure": 0,
+    "new_runs_or_retries_by_reviewer": 0,
+    "interpretation": "Five focused native fixture cases, one actor each. This is behavioral evidence, not a causal performance comparison or a full benchmark."
+  },
+  "runtime_integrity": {
+    "actual_model": "gpt-6.1-sol",
+    "actual_effort": "medium",
+    "unique_threads": 5,
+    "native_turn_starts_per_case": 1,
+    "attempt_per_case": 1,
+    "all_hook_starts_match_completions": true,
+    "native_mcp_calls_total": 5,
+    "source_context_calls_total": 3,
+    "plugin_instruction_reads_total": 1,
+    "metadata_lookup_wrappers_total": 4,
+    "scope": "Two inspector calls, two find_symbol body calls, one justified get_callees call; source-context count excludes metadata introspection and the one explore skill read."
+  },
+  "cases": {
+    "M1-missing-argument-schema": {
+      "verdict": "PASS",
+      "schema_discovery_wrappers": 1,
+      "delivered_descriptor_characters": 405,
+      "executor_header_characters_separate": 47,
+      "core_or_return_schema_delivered": false,
+      "unrelated_tool_descriptors_delivered": false,
+      "actual_mcp_call_count": 1,
+      "native_call_id": "exec-b530eeb7-887c-4549-9580-9ed0e9491d38",
+      "metadata_wrapper_id": "ctc_0b3c5829c711fb48016ae4ee6ed4f08191817d7e3bd7876d9b",
+      "evidence": "The missing schema is absent from the initial no-turn model catalog. Actual delivered metadata contains only one inspect_delivery_queue argument declaration with all six required fields; no shared core text or output type. The native tool receives the correct project/cwd, acme, production, invoice_exports and includeRetryPolicy=true, and returns the exact fixture snapshot. Final answer correctly gives 17 queued messages, 5 maximum attempts and queue-snapshot-217.",
+      "fixture_heaviness": {
+        "advertised_MCP_description_characters": 9819,
+        "input_schema_compact_json_characters": 596,
+        "output_schema_compact_json_characters": 1244,
+        "limit": "These are provided fixture sizes, not a measured before/after native descriptor or token-saving percentage."
+      }
+    },
+    "M2-retained-argument-schema": {
+      "verdict": "PASS",
+      "schema_discovery_wrappers": 0,
+      "actual_mcp_call_count": 1,
+      "native_call_id": "exec-4f2c4859-a47e-445e-a56f-dfc28759510f",
+      "evidence": "Uses the retained current inputSchema directly, without ALL_TOOLS/schema rediscovery. The one real inspector call has correct boreal/production/audit_events arguments and returns the exact fixture result. Final answer correctly gives 8 queued messages, 2 maximum attempts and queue-snapshot-418."
+    },
+    "S1-full-body-point-question": {
+      "verdict": "PASS",
+      "post_prompt_source_context_calls": 0,
+      "post_prompt_tool_calls": 0,
+      "evidence": "Actor input contains the complete current candidateCount body and the full-body banner produced by the actual source wrapper. The actor makes no tool call, gives 40 / max 160 and cites planner.ts:2. The body was actually retained, so this is supported context reuse rather than a no-tools guess."
+    },
+    "S2-metadata-needs-body": {
+      "verdict": "PARTIAL_ORACLE_LIMITATION",
+      "routing": "PASS",
+      "numeric_facts": "PASS",
+      "citation": "PASS",
+      "unit_quality": "UNSUPPORTED_BY_FIXTURE",
+      "model_failure": false,
+      "post_prompt_source_context_calls": 1,
+      "native_call_id": "exec-e9805cbc-0437-4510-83dd-b984cf58f46d",
+      "evidence": "The retained search result is signature/address only with the actual conditional metadata banner. One completed find_symbol call retrieves the exact RetryPolicy#retryDelay body; no outline, directory or graph rediscovery. Final answer gives 100/200/500, correctly applies the cap and cites policy.ts:3.",
+      "oracle_defect": "Frozen grading prose requires milliseconds, but the prompt, signature, body and source file establish no time unit. The final answer gives numeric delays without inventing a unit. Preserve the original case and criteria; do not mark it a full quality pass or a model failure.",
+      "future_case_correction_only": "A later separately authorized case can establish units in the source, for example retryDelayMs or an explicit source contract, and request them. No current fixture was changed and no retry was run."
+    },
+    "S3-full-body-downstream-gap": {
+      "verdict": "PASS",
+      "post_prompt_source_context_calls": 2,
+      "plugin_instruction_reads": 1,
+      "native_graph_call_id": "exec-0970928f-57b4-4a03-8cbb-45766706d134",
+      "native_body_call_id": "exec-b8289dfd-98b4-48cb-a0cc-39f8f397eb98",
+      "evidence": "The complete retained InvoiceDispatcher#send body only delegates. The actor appropriately obtains a missing caller-to-policy edge and then the actual RetryPolicy#schedule body, without reopening send. It correctly answers up to 3 total attempts, 100 ms and 200 ms waits after the first two failures, and an immediate third-error rethrow. Both dispatcher and policy locations are cited. The explore skill is loaded once and recorded separately from source retrieval.",
+      "scope_note": "clock.sleep appears in returned application backoff code. It is legitimate program behavior, not a model waiting-tool call. These cases make no sleep-compliance or asynchronous-question behavior claim."
+    }
+  },
+  "limitations": [
+    "Synthetic controller fixtures exercise actual native tool dispatch and delivered output; they are not live production queue or corpus answers.",
+    "No old-rule control arm or repeated trial was run, so no causal speed/token improvement is claimed.",
+    "S2 contains an unsupported unit oracle; all original raw inputs and grading are preserved.",
+    "The metadata/search snapshot and the older wait-only snapshot share version 0.53.9 but have different recorded fingerprints; they must not be treated as identical packages.",
+    "Profile tool exposure is verified, but metadata/search cases do not test pending wait or unanswered-question behavior."
+  ]
+}

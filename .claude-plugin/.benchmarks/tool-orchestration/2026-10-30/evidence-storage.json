@@ -1,0 +1,57 @@
+[
+  {
+    "directory": "metadata-search-results",
+    "original_files": 262,
+    "original_bytes": 1855399,
+    "archive": "evidence.tar.gz",
+    "archive_bytes": 1168650,
+    "archive_sha256": "63f1e65f78e7123321c02b5f6d2461eb89e56e46753598b7a39c2b2980c4911d",
+    "all_original_member_bytes_verified": true,
+    "member_inventory_sha256": "a84ee1c5464bef672a95c8dc8eaa8690b7f2fb4d089b7726545c99380173b6d9",
+    "original_inner_inventories_unchanged": true
+  },
+  {
+    "directory": "orchestration-results",
+    "original_files": 232,
+    "original_bytes": 2044358,
+    "archive": "evidence.tar.gz",
+    "archive_bytes": 1125184,
+    "archive_sha256": "cea846f159246d195f065993b40b8cf22d54c84ecebc96d06d717bb2e594ac32",
+    "all_original_member_bytes_verified": true,
+    "member_inventory_sha256": "08dd303437408ca8b721db44facad0d2464c2adea01ee16c8842b52a907821da",
+    "original_inner_inventories_unchanged": true
+  },
+  {
+    "directory": "native-v2",
+    "original_files": 183,
+    "original_bytes": 1414834,
+    "archive": "evidence.tar.gz",
+    "archive_bytes": 648718,
+    "archive_sha256": "7984343289e1900e53f755fa369ce0681bd80b8a1b26c9058ccb381db910d80f",
+    "all_original_member_bytes_verified": true,
+    "member_inventory_sha256": "e9b107cb4f0e01e329fb37a1bf71385fed3c65f8fba3a492bd6b44ebcaf1550d",
+    "original_inner_inventories_unchanged": true
+  },
+  {
+    "directory": "projection-results",
+    "original_files": 13,
+    "original_bytes": 196327,
+    "archive": "evidence.tar.gz",
+    "archive_bytes": 52607,
+    "archive_sha256": "b483ffb957d77b9df1e7c8dcce0ce9c84c154b38892d44f96398ed9c5962aa1e",
+    "all_original_member_bytes_verified": true,
+    "member_inventory_sha256": "57942fe4de35612636de249ca194aaf2833fe2f2f2d76ccdd791aed6a7c3fd9c",
+    "original_inner_inventories_unchanged": true
+  },
+  {
+    "directory": "policy-scope-results",
+    "original_files": 134,
+    "original_bytes": 951524,
+    "archive": "evidence.tar.gz",
+    "archive_bytes": 402826,
+    "archive_sha256": "db1f5f480af30eb26c8b607f9791fd6a83582b493de1f8d4400b6436a2551d33",
+    "all_original_member_bytes_verified": true,
+    "member_inventory_sha256": "952ba221c6acd1dc6c0ec95cf0a7e853ff8eabbd4eaf67bddd9c6b44177b6b28",
+    "original_inner_inventories_unchanged": true
+  }
+]

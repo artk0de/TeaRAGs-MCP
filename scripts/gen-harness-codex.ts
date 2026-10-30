@@ -79,9 +79,24 @@ const CODEX_SKILL_LOADING = `
 **tea-rags tools** (named bare here: \`find_symbol\`, …) are MCP tools of server \`tea-rags\`. Code mode
 (an \`exec\` tool that runs JS): call them inside \`exec\` as \`await tools.mcp__tea_rags__<tool>({...})\`,
 list names with \`ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)\`
-(\`"tea-rags"\` matches none). Read only the needed tool's description; never dump
-the entire catalog with full descriptions.
+(\`"tea-rags"\` matches none). If a needed argument schema is missing, select ONE
+named tool and print only \`tool.description.split("exec tool declaration:")[1]?.split("Promise<")[0]\`.
+Reuse known schemas. Never print full descriptions, repeated core instructions or
+return schemas; if that declaration is absent, use the listed tool interface.
 Otherwise they are direct tools — call them as listed.
+
+**Tool execution and waiting.** Dispatch already-needed independent calls together
+(\`Promise.allSettled\` / \`Promise.all\` in code mode); await prerequisites before
+dependent calls. Parallelism never justifies extra context reads or competing edits.
+Keep each result (or error) labelled by its input path/id; emit the labelled results
+after awaiting the batch, never anonymous output in completion order. Inspect all
+settled outcomes and cover every requested item.
+A returned result is ready. A running executor with a cell/session id needs its
+matching native \`wait\` / \`write_stdin\`, reusing that id; do not restart the work.
+For subagents use the harness's agent-wait or completion notification. For user
+input ask the question, then yield control until the reply; clarification is allowed.
+Continue independent work when useful. Never use \`sleep\`, shell/Python/JS timer
+delays or busy polling to await tools, agents or users.
 
 **Skills are not loaded for you** — except this core:
 \`$tea-rags-core\` IS this text, never open its \`SKILL.md\`. A task a skill covers (\`$name\` /

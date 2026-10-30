@@ -70,7 +70,7 @@ describe("banner texts", () => {
       expect(text.length).toBeLessThanOrEqual(200);
     }
     expect(SEARCH_ANCHOR_BANNER).toBe(
-      "↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).",
+      "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
     );
     expect(BODY_SHOWN_BANNER).toBe("↳ Body shown in full — answer from it; do not reopen the file.");
     expect(emptyGraphBanner("get_callers", "step_ready?")).toBe(
@@ -109,8 +109,65 @@ describe("answerBannerFor — search answers with rows", () => {
     },
   );
 
-  it("a single-row (untabulated) answer also gets it", () => {
-    expect(answerBannerFor("semantic_search", {}, structured(methodBody))).toBe(SEARCH_ANCHOR_BANNER);
+  it("a complete method body from search is already evidence, not a mandatory graph step", () => {
+    expect(answerBannerFor("semantic_search", {}, structured(methodBody))).toBe(BODY_SHOWN_BANNER);
+  });
+
+  it("tabulated complete bodies from search get the body banner", () => {
+    const answer = {
+      results: {
+        columns: ["payload.symbolId", "payload.content"],
+        rows: [["retryDelay", "function retryDelay() {\n  return 250;\n}"]],
+      },
+    };
+    expect(answerBannerFor("hybrid_search", {}, structured(answer))).toBe(BODY_SHOWN_BANNER);
+  });
+
+  it("a full file returned by search is already evidence without a symbol id", () => {
+    const answer = {
+      results: [{ payload: { relativePath: "src/retry.ts", kind: "file", content: "export const delay = 250;\n" } }],
+    };
+    expect(answerBannerFor("semantic_search", {}, structured(answer))).toBe(BODY_SHOWN_BANNER);
+  });
+
+  it("search mixing a body and metadata does not claim all bodies were read", () => {
+    const answer = {
+      results: [
+        ...methodBody.results,
+        { payload: { symbolId: "PayoutSettler#book", signature: "book(payout: Payout)" } },
+      ],
+    };
+    expect(answerBannerFor("semantic_search", {}, structured(answer))).toBe(MIXED_ANSWER_BANNER);
+  });
+
+  it("a search container header still leaves its method bodies unread", () => {
+    const answer = {
+      results: [
+        { payload: { symbolId: "RetryPolicy", kind: "containerHeader", content: "RetryPolicy\n  RetryPolicy#delay" } },
+      ],
+    };
+    expect(answerBannerFor("semantic_search", {}, structured(answer))).toBe(MIXED_ANSWER_BANNER);
+  });
+
+  it("metadata asks for missing bodies and keeps graph conditional on a flow or impact gap", () => {
+    const banner = answerBannerFor("semantic_search", { metaOnly: true }, structured(searchRows));
+    expect(banner).toContain("missing bodies with find_symbol");
+    expect(banner).toContain("graph only for missing flow/impact facts");
+    expect(banner).not.toContain("→ get_callees");
+  });
+
+  it.each(["file", "containerHeader"])("a metadata %s kind without content does not claim source was read", (kind) => {
+    const answer = { results: [{ payload: { symbolId: "RetryPolicy", kind } }] };
+    expect(answerBannerFor("semantic_search", {}, structured(answer))).toBe(SEARCH_ANCHOR_BANNER);
+  });
+
+  it("metaOnly remains metadata guidance even if its result carries content", () => {
+    expect(answerBannerFor("semantic_search", { metaOnly: true }, structured(methodBody))).toBe(SEARCH_ANCHOR_BANNER);
+  });
+
+  it("a missing file body beside a real body does not make the entire search answer complete", () => {
+    const answer = { results: [...methodBody.results, { payload: { symbolId: "RetryPolicy", kind: "file" } }] };
+    expect(answerBannerFor("semantic_search", {}, structured(answer))).toBe(MIXED_ANSWER_BANNER);
   });
 
   it("no rows, file-level rows without symbolId → no banner", () => {

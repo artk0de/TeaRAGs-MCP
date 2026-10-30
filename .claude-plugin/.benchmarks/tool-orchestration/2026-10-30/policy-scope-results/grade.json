@@ -1,0 +1,153 @@
+{
+  "reviewer": "/root/eval_architecture_gate",
+  "candidate_fingerprint_sha256": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+  "cases": [
+    {
+      "case": "G1-all-manifest-policies",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "actual_three_file_bytes": true,
+        "actual_manifest_and_selected_bytes_delivered": true,
+        "one_final_answer": true,
+        "all_selected_values_and_paths": true,
+        "disabled_subset_named": true
+      },
+      "diagnostics": {
+        "manifest_before_children": true,
+        "executed_labelled_batch": true,
+        "timing_overlap": "UNVERIFIABLE: zero-ms operations/staggered native scheduling; not a primary scope criterion",
+        "source_tool_count": 3,
+        "outer_call_count": 2
+      },
+      "evidence": {
+        "thread_id": "01a18e6e-aabc-7b00-9e6f-e98a2dd5e04f",
+        "turn_id": "01a18e6e-ab30-7673-b1cd-b30886146c85",
+        "source_item_ids": {
+          "config/active_retry.yml": "exec-474bf3c1-5cc6-46bb-bbe2-26e8e06e2adc",
+          "config/retry/zone_kappa.yml": "exec-97c60d19-7a42-4e13-9079-fa92a8f2f0e8",
+          "config/retry/zone_sigma.yml": "exec-fcf9edc8-7777-44f2-ad70-ec28c685e2b7"
+        },
+        "delivered_selected_bytes": {
+          "config/retry/zone_kappa.yml": {
+            "chunk_id": "10722b",
+            "wall_time_seconds": 8.625e-06,
+            "exit_code": 0,
+            "original_token_count": 15,
+            "output": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n"
+          },
+          "config/retry/zone_sigma.yml": {
+            "chunk_id": "62ccf0",
+            "wall_time_seconds": 9.709e-06,
+            "exit_code": 0,
+            "original_token_count": 15,
+            "output": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+          }
+        },
+        "outer_calls": [
+          {
+            "type": "custom_tool_call",
+            "id": "ctc_0a4e3c47e3ce63a7016ae4f98939408191b8aaac0b9dee6606",
+            "status": "completed",
+            "call_id": "call_a8d67bcc58bc4c1ca76b9f18a63bc829",
+            "name": "exec",
+            "input": "text(await tools.exec_command({cmd:\"sed -n '1,220p' config/active_retry.yml\",max_output_tokens:4000}));\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a18e6e-ab30-7673-b1cd-b30886146c85",
+              "create_time": 1793390985.2305171
+            }
+          },
+          {
+            "type": "custom_tool_call",
+            "id": "ctc_0a4e3c47e3ce63a7016ae4f98b9404819180f3bf1679e8b0bc",
+            "status": "completed",
+            "call_id": "call_ab4b5ee075984530a83584f1420f3437",
+            "name": "exec",
+            "input": "const paths=[\"config/retry/zone_kappa.yml\",\"config/retry/zone_sigma.yml\"]; const r=await Promise.allSettled(paths.map(p=>tools.exec_command({cmd:`sed -n '1,220p' ${p}`,max_output_tokens:4000})));r.forEach((v,i)=>text({path:paths[i],result:v}));\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a18e6e-ab30-7673-b1cd-b30886146c85",
+              "create_time": 1793390987.5901256
+            }
+          }
+        ],
+        "final_answer": "[config/active_retry.yml](config/active_retry.yml) lists these two policies:\n\n| Policy name | retry_on_timeout | delay_ms | Source |\n|---|---|---|---|\n| regional_primary | true | 350 | [zone_kappa.yml](config/retry/zone_kappa.yml) |\n| isolated_preview | false | 0 | [zone_sigma.yml](config/retry/zone_sigma.yml) |\n\n**isolated_preview** disables timeout retries."
+      }
+    },
+    {
+      "case": "G2-disabled-subset-only",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "actual_three_file_bytes": true,
+        "actual_manifest_and_selected_bytes_delivered": true,
+        "one_final_answer": true,
+        "filtered_disabled_values_and_path": true,
+        "no_unasked_enabled_policy": true
+      },
+      "diagnostics": {
+        "manifest_before_children": true,
+        "executed_labelled_batch": true,
+        "timing_overlap": "UNVERIFIABLE: zero-ms operations/staggered native scheduling; not a primary scope criterion",
+        "source_tool_count": 3,
+        "outer_call_count": 2
+      },
+      "evidence": {
+        "thread_id": "01a18e6e-aabc-7ac3-aee2-aadc2654cee9",
+        "turn_id": "01a18e6e-ab30-7541-a85e-88bff6afd63a",
+        "source_item_ids": {
+          "config/active_retry.yml": "exec-521b4489-a9d4-49da-bf57-d0ef2d6e3f50",
+          "config/retry/zone_kappa.yml": "exec-32100a47-9e15-4108-b07f-737bd464ee06",
+          "config/retry/zone_sigma.yml": "exec-0c6273b9-b543-4836-89f8-5e76933091cb"
+        },
+        "delivered_selected_bytes": {
+          "config/retry/zone_kappa.yml": {
+            "chunk_id": "a2b970",
+            "wall_time_seconds": 6.875e-06,
+            "exit_code": 0,
+            "original_token_count": 15,
+            "output": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n"
+          },
+          "config/retry/zone_sigma.yml": {
+            "chunk_id": "7b5a62",
+            "wall_time_seconds": 8.042e-06,
+            "exit_code": 0,
+            "original_token_count": 15,
+            "output": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+          }
+        },
+        "outer_calls": [
+          {
+            "type": "custom_tool_call",
+            "id": "ctc_000de87363fd92f9016ae4f98a12dc81919ce716d551f49208",
+            "status": "completed",
+            "call_id": "call_8408d438d9784769a89832452f295b45",
+            "name": "exec",
+            "input": "text(await tools.exec_command({cmd:\"sed -n '1,200p' config/active_retry.yml\",max_output_tokens:3000}));\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a18e6e-ab30-7541-a85e-88bff6afd63a",
+              "create_time": 1793390986.0770342
+            }
+          },
+          {
+            "type": "custom_tool_call",
+            "id": "ctc_000de87363fd92f9016ae4f98c758c81919b561a18bd22eab1",
+            "status": "completed",
+            "call_id": "call_f86e742be8ca45aeac2830f7c835de9d",
+            "name": "exec",
+            "input": "const paths=[\"config/retry/zone_kappa.yml\",\"config/retry/zone_sigma.yml\"];\nconst results=await Promise.allSettled(paths.map(path=>tools.exec_command({cmd:`sed -n '1,200p' ${path}`,max_output_tokens:3000})));\nresults.forEach((r,i)=>text({path:paths[i],result:r}));\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a18e6e-ab30-7541-a85e-88bff6afd63a",
+              "create_time": 1793390988.4962242
+            }
+          }
+        ],
+        "final_answer": "| Policy | delay_ms | Source path |\n|---|---:|---|\n| isolated_preview | 0 | config/retry/zone_sigma.yml |"
+      }
+    }
+  ],
+  "summary": {
+    "PASS": 2,
+    "FAIL": 0
+  },
+  "interpretation": "Two new explicit-scope conditions, one actor each, unchanged fixtures/context and exact same candidate. Both PASS supports a prompt-scope interpretation on these observations; it does not repair/relabel the earlier strict O5 FAIL or establish general completeness behavior. No production rule changed for this diagnostic."
+}

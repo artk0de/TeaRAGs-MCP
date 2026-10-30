@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { App, SchemaBuilder } from "../../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../../src/core/api/public/dto/explore.js";
+import { projectSearchResultPayloads } from "../../../../src/core/api/public/dto/payload-projection.js";
 import { registerSearchTools } from "../../../../src/core/api/tools/explore.js";
 import type { McpToolResult } from "../../../../src/core/api/tools/format.js";
 import {
@@ -57,6 +58,43 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
 }
 
 describe("registerSearchTools", () => {
+  it.each([
+    ["semantic_search", "semanticSearch", { query: "sameName" }],
+    ["hybrid_search", "hybridSearch", { query: "sameName" }],
+    ["rank_chunks", "rankChunks", { rerank: "hotspots" }],
+    ["find_similar", "findSimilar", { positiveCode: ["function sameName() { return 1; }"] }],
+    ["find_symbol", "findSymbol", { symbol: "sameName" }],
+  ] as const)("%s serializes real source paths when fields excludes them", async (toolName, appMethod, input) => {
+    const rows = [
+      {
+        id: "opaque-a",
+        score: 1,
+        payload: { relativePath: "src/a.ts", symbolId: "sameName", content: "return 1;", language: "typescript" },
+      },
+      {
+        id: "opaque-b",
+        score: 0.9,
+        payload: { relativePath: "src/b.ts", symbolId: "sameName", content: "return 2;", language: "typescript" },
+      },
+    ];
+    const { captured } = makeHarness({
+      [appMethod]: vi.fn(async (request: { fields?: string[] }) => projectSearchResultPayloads(rows, request.fields)),
+    });
+    const tool = captured.find((entry) => entry.name === toolName)!;
+    const result = (await tool.handler({ path: "/x", ...input, fields: ["symbolId", "content"] }, {})) as McpToolResult;
+    const projected = recordsOf((result.structuredContent as { results: Parameters<typeof recordsOf>[0] }).results);
+
+    expect(projected.map((row) => (row.payload as Record<string, unknown>).relativePath)).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+    ]);
+    expect(projected.every((row) => !("language" in (row.payload as Record<string, unknown>)))).toBe(true);
+    expect(projected.map((row) => (row.payload as Record<string, unknown>).content)).toEqual([
+      "return 1;",
+      "return 2;",
+    ]);
+  });
+
   it("registers exactly the five search tools in order", () => {
     const { captured } = makeHarness();
     expect(captured.map((t) => t.name)).toEqual([

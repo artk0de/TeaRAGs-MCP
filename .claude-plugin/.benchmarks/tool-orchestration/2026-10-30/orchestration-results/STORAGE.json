@@ -1,0 +1,11 @@
+{
+  "directory": "orchestration-results",
+  "original_files": 232,
+  "original_bytes": 2044358,
+  "archive": "evidence.tar.gz",
+  "archive_bytes": 1125184,
+  "archive_sha256": "cea846f159246d195f065993b40b8cf22d54c84ecebc96d06d717bb2e594ac32",
+  "all_original_member_bytes_verified": true,
+  "member_inventory_sha256": "08dd303437408ca8b721db44facad0d2464c2adea01ee16c8842b52a907821da",
+  "original_inner_inventories_unchanged": true
+}

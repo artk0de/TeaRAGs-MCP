@@ -1,0 +1,5 @@
+{
+  "exitCode": 71,
+  "stdout": "",
+  "stderr": "sandbox-exec: sandbox_apply: Operation not permitted\n"
+}

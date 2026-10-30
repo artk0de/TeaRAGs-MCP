@@ -383,7 +383,7 @@ function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
       .array(z.string())
       .optional()
       .describe(
-        `Payload dot-path allow-list, e.g. ['relativePath', 'git.file.commitCount']. EXACT: nothing added back. ${
+        `Payload dot-path allow-list; relativePath always retained. Missing upstream paths → fieldsWarning. ${
           omittedHint
         }Paths: tea-rags://schema/signals.`,
       ),

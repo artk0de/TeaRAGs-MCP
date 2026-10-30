@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+    "debug",
+    "prompt-input"
+  ],
+  "exit_code": 0,
+  "stdout_sha256": "c548a69b30c21ff60cf7dcd190d35c8ddc4a71fe994c7eca195f1fbe86f837c5",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,170 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "plugin_version": "0.53.9",
+  "scope": "One fresh native actor per case, five cases, no retries. Private wait/parallel-only snapshot; later metadata edits are outside this snapshot.",
+  "pending_protocol": "Actor itself starts one real FIFO-barrier job in the same native runtime. Controller releases after observing actual native pending output, independently of subsequent tool choice. No sleep, timer or polling release.",
+  "cases": [
+    {
+      "key": "O1-running-exec-cell",
+      "runtime_status": "timeout",
+      "wall_seconds": 180.176,
+      "pending_state_exercised": false,
+      "sleep_exposed": true,
+      "attempt": 1
+    },
+    {
+      "key": "O2-running-unified-session",
+      "runtime_status": "completed",
+      "wall_seconds": 14.643,
+      "pending_state_exercised": true,
+      "sleep_exposed": true,
+      "attempt": 1
+    },
+    {
+      "key": "O3-required-user-clarification",
+      "runtime_status": "completed",
+      "wall_seconds": 9.877,
+      "pending_state_exercised": null,
+      "sleep_exposed": true,
+      "attempt": 1
+    },
+    {
+      "key": "O4-independent-mixed-tool-batch",
+      "runtime_status": "completed",
+      "wall_seconds": 15.812,
+      "pending_state_exercised": null,
+      "sleep_exposed": false,
+      "attempt": 1
+    },
+    {
+      "key": "O5-dependent-discovery-control",
+      "runtime_status": "completed",
+      "wall_seconds": 17.256,
+      "pending_state_exercised": null,
+      "sleep_exposed": false,
+      "attempt": 1
+    }
+  ],
+  "grade": {
+    "reviewer": "/root/eval_targeted_reads",
+    "root_EOF_confirmed": true,
+    "actor_attempts_modified": false,
+    "new_model_calls_by_grader": 0,
+    "method": "Review actual native calls/outputs/final answers plus fixture state audit. O1/O2 independently cross-graded by architecture agent. No instruction regex assertions or pendingflag-only passes.",
+    "cases": [
+      {
+        "case": "O1-running-exec-cell",
+        "verdict": "INCONCLUSIVE_HARNESS_FAILURE",
+        "independent_review": "grade-o1-o2-independent.json",
+        "native_wait_choice": "PASS_PARTIAL",
+        "cause": "Actual pending output is a string; controller accepted only content arrays and failed to releaseFIFO until timeout cleanup. Same-runtime cell2 and9matching native wait calls are real, but no terminal result was delivered.",
+        "start_call_id": "call_63d8acb5803d403a96da256c41b03cb9",
+        "cell_id": "2",
+        "clock_sleep_exposed": true,
+        "clock_or_timer_invocations": 0
+      },
+      {
+        "case": "O2-running-unified-session",
+        "verdict": "PASS",
+        "independent_review": "grade-o1-o2-independent.json",
+        "session_id": 69338,
+        "ready_job_pid": 205,
+        "resume_call_id": "call_c8e751505cea4c74ab2436518a8c57e2",
+        "terminal_exit_code": 0,
+        "actual_result": {
+          "valid": 3,
+          "rejected": 1
+        },
+        "clock_sleep_exposed": true,
+        "clock_or_timer_invocations": 0
+      },
+      {
+        "case": "O3-required-user-clarification",
+        "verdict": "PASS",
+        "native_question_call_id": "call_d89b0d7d8a72499d96581a2e7d5b20b2",
+        "native_tool": "request_user_input_async",
+        "native_acceptance": {
+          "accepted": true
+        },
+        "actual_question": "What time should tomorrow’s export run on October 31, in Europe/Moscow time?",
+        "missing_local_time_requested": true,
+        "timezone_preserved": true,
+        "human_answers_supplied": 0,
+        "attempted_writes": 0,
+        "workspace_unchanged": true,
+        "clock_sleep_exposed": true,
+        "clock_or_timer_invocations": 0,
+        "limitation": "No item/tool/requestUserInput client callback occurred; native async question accepted and yielded as UI/final messages. Thus this case proves async question use, not the separately implemented blocking-question callback branch."
+      },
+      {
+        "case": "O4-independent-mixed-tool-batch",
+        "verdict": "FAIL",
+        "batch_dispatch": "PASS",
+        "batch_call_id": "call_eb7ce1d558e34a2c9086e5e601280f1c",
+        "actual_http_read_item_id": "exec-7b4d6db5-706c-4710-a27b-896d656cc1c0",
+        "actual_webhook_read_item_id": "exec-1647a40b-2e15-4aef-b56e-7d3c6a926ba3",
+        "actual_body_item_id": "exec-463c1e0c-2711-43d3-ae72-908682da5357",
+        "actual_input_values": {
+          "http": 3,
+          "webhook": 5
+        },
+        "final_answer_values": {
+          "http": 5,
+          "webhook": 3
+        },
+        "cause": "Promise.allSettled dispatched all3real reads, but each branch printed anonymous output at completion. Webhook5 arrived beforeHTTP3. Final answer swapped their identities, making HTTP attempt2 yes instead offalse.",
+        "answer_correctness": "FAIL",
+        "clock_sleep_exposed": false,
+        "clock_or_timer_invocations": 0
+      },
+      {
+        "case": "O5-dependent-discovery-control",
+        "verdict": "FAIL",
+        "manifest_dependency": "PASS",
+        "child_batch_dispatch": "PASS",
+        "manifest_item_id": "exec-88aff2ca-a3dd-4380-bd61-796d135267f0",
+        "batch_call_id": "call_fccd45b16e63445595553489fcb790b1",
+        "child_items": [
+          "exec-a57f25f7-9068-4f9c-b491-0ece1121be66",
+          "exec-f8cac4ac-c56e-4182-a60f-2477428a30c0"
+        ],
+        "actual_read_values": {
+          "regional_primary": {
+            "retry_on_timeout": true,
+            "delay_ms": 350
+          },
+          "isolated_preview": {
+            "retry_on_timeout": false,
+            "delay_ms": 0
+          }
+        },
+        "final_answer_covered": [
+          "isolated_preview: false,0ms"
+        ],
+        "missing_requested_item": "regional_primary350ms delay",
+        "cause": "Correctly awaited the manifest then retrieved both children in one labelled Promise.allSettled batch. Final response omitted regional_primary delay despite request for each selected policy.",
+        "answer_completeness": "FAIL",
+        "clock_sleep_exposed": false,
+        "clock_or_timer_invocations": 0
+      }
+    ],
+    "summary": {
+      "PASS": 2,
+      "FAIL": 2,
+      "INCONCLUSIVE_HARNESS_FAILURE": 1
+    },
+    "limits": [
+      "One fresh actor/condition per case, no retries. O4/O5 failures retained.",
+      "O1 correct wait selection is partial evidence only; completed retrieval remains inconclusive duecontrollerbug.",
+      "This wait-only0.53.9 snapshot predates final labelled-output/completeness fix and later metadata changes.",
+      "No performance or general agent-wait capability claim is made."
+    ]
+  },
+  "limitations": [
+    "O1/O2 initial job-start actions are documented prompt adaptations; no fabricated retained handle was seeded.",
+    "FIFO barrier/yield durations exercise waiting behavior and are not a performance benchmark.",
+    "O1/O2/O3 expose clock.sleep; O4/O5 use sleep removal. Native user question requests remain unanswered, with cleanup interruption after the assessment endpoint.",
+    "Agent waiting policy is not exercised by these five cases. No global profile was changed."
+  ]
+}

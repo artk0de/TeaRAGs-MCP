@@ -1,0 +1,10 @@
+[
+  {
+    "key": "G1-all-manifest-policies",
+    "exit_code": 0
+  },
+  {
+    "key": "G2-disabled-subset-only",
+    "exit_code": 0
+  }
+]

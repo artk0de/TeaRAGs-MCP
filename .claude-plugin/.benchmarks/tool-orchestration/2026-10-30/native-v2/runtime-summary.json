@@ -1,0 +1,91 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "case_count": 4,
+  "cases": [
+    {
+      "key": "O4-independent-mixed-tool-batch",
+      "status": {
+        "key": "O4-independent-mixed-tool-batch",
+        "attempt": 1,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "valid_runtime": true,
+        "actor_input_sha256": "b26c9bc9bbc3930be9ff963413b7222aad97226f8be1b48537f33f86b5950ef7",
+        "setup_model_turns": 0,
+        "assessed_model_turns": 1,
+        "thread_id": "01a18e63-7d2c-7201-b84f-be37e3c2fb66",
+        "turn_id": "01a18e63-7da5-7302-aae3-b6d4b2c89256",
+        "status": "completed",
+        "pending_state_exercised": null,
+        "wall_seconds": 13.404
+      },
+      "native_turns": 1,
+      "hooks_started": 21,
+      "hooks_completed": 21
+    },
+    {
+      "key": "O5-dependent-discovery-control",
+      "status": {
+        "key": "O5-dependent-discovery-control",
+        "attempt": 1,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "valid_runtime": true,
+        "actor_input_sha256": "fdd9cf7a02661acda4c154554d685ed6b6b1670384a124b07bf1cf799239d77c",
+        "setup_model_turns": 0,
+        "assessed_model_turns": 1,
+        "thread_id": "01a18e63-7d2c-7e13-beff-b91256931d28",
+        "turn_id": "01a18e63-7da5-7072-9866-cb4a695339b1",
+        "status": "completed",
+        "pending_state_exercised": null,
+        "wall_seconds": 11.038
+      },
+      "native_turns": 1,
+      "hooks_started": 23,
+      "hooks_completed": 23
+    },
+    {
+      "key": "O6-new-route-inventory-pending-control",
+      "status": {
+        "key": "O6-new-route-inventory-pending-control",
+        "attempt": 1,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "valid_runtime": true,
+        "actor_input_sha256": "b4646613fa2d79f3eda1ab2970b761cfe4890f56011823dbede4ae654df437c6",
+        "setup_model_turns": 0,
+        "assessed_model_turns": 1,
+        "thread_id": "01a18e63-a8be-7372-a79c-f09acaed9545",
+        "turn_id": "01a18e63-a8e2-7ff3-808a-051743fd5999",
+        "status": "completed",
+        "pending_state_exercised": true,
+        "wall_seconds": 44.707
+      },
+      "native_turns": 1,
+      "hooks_started": 9,
+      "hooks_completed": 9
+    },
+    {
+      "key": "P1-retained-field-projection-locators",
+      "status": {
+        "key": "P1-retained-field-projection-locators",
+        "attempt": 1,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "valid_runtime": true,
+        "actor_input_sha256": "4902f1f5759d0f6fc6146fe8e54ff06e32dd59f69004e2e4dd7a3672dafebda6",
+        "setup_model_turns": 0,
+        "assessed_model_turns": 1,
+        "thread_id": "01a18e63-b1f0-7f63-a496-90a853a89fd3",
+        "turn_id": "01a18e63-b218-7d12-9590-b77eb28a8de0",
+        "status": "completed",
+        "pending_state_exercised": null,
+        "wall_seconds": 5.749
+      },
+      "native_turns": 1,
+      "hooks_started": 7,
+      "hooks_completed": 7
+    }
+  ]
+}

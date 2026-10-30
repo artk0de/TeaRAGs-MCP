@@ -1,0 +1,5 @@
+{
+  "blocked_preparation_model_turns": 0,
+  "reason": "Nested macOS sandbox_apply denied native boundary probe; preserved, then approved outer-sandbox-free preparation completed. No actor retry.",
+  "failed_manifest_sha256": "7fea2ec239990cfa991fd6d9052d2ad15ba89ef0b14b2df8e300795ba5fb7159"
+}

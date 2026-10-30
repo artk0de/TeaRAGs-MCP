@@ -1,0 +1,287 @@
+{
+  "evals": [
+    {
+      "id": "O4-independent-mixed-tool-batch",
+      "prompt": "Compare config/http_delivery.yml and config/webhook_delivery.yml with RetryBudget#allows. For zero-based attempts 2 and 4, say whether each delivery type permits another retry, with code locations.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "orchestration-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry/RetryBudget.ts",
+                    "symbolId": "RetryBudget",
+                    "kind": "class",
+                    "content": "RetryBudget (class outline)\n  2-4 RetryBudget#allows(attempt: number, maxAttempts: number): boolean"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/http_delivery.yml": "max_attempts: 3\n",
+          "config/webhook_delivery.yml": "max_attempts: 5\n",
+          "src/retry/RetryBudget.ts": "export class RetryBudget {\n  allows(attempt: number, maxAttempts: number): boolean {\n    return attempt + 1 < maxAttempts;\n  }\n}\n"
+        },
+        "find_symbol_bodies": {
+          "RetryBudget#allows": {
+            "relativePath": "src/retry/RetryBudget.ts",
+            "startLine": 2,
+            "endLine": 4,
+            "body": "  allows(attempt: number, maxAttempts: number): boolean {\n    return attempt + 1 < maxAttempts;\n  }"
+          }
+        }
+      },
+      "grading": {
+        "required": [
+          "One executed code-mode Promise.all/allSettled batch dispatches the needed find_symbol body lookup and two separate bounded per-file shell reads. All three return actual fixture bytes; the initially known inputs have no data dependency.",
+          "Does not rediscover known ids/paths, replace source lookup with a whole-file source read, or serialize the independent calls with a sequential await loop. No sleep/timer is used to wait for any tool.",
+          "Answers HTTP attempt2=false and attempt4=false; webhook attempt2=true and attempt4=false. Explains the attempt+1 < maxAttempts boundary and cites both configs and the method."
+        ],
+        "required_body_ids": [
+          "RetryBudget#allows"
+        ],
+        "required_shell_reads": [
+          "config/http_delivery.yml",
+          "config/webhook_delivery.yml"
+        ],
+        "expected_result": {
+          "http": {
+            "2": false,
+            "4": false
+          },
+          "webhook": {
+            "2": true,
+            "4": false
+          }
+        }
+      }
+    },
+    {
+      "id": "O5-dependent-discovery-control",
+      "prompt": "Which policies selected by config/active_retry.yml disable timeout retries, and what delay does each selected policy use?",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "No config contents or directory listings have been read in this session."
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/active_retry.yml": "selected_policies:\n  - config/retry/zone_kappa.yml\n  - config/retry/zone_sigma.yml\n",
+          "config/retry/zone_kappa.yml": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n",
+          "config/retry/zone_sigma.yml": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+        }
+      },
+      "grading": {
+        "required": [
+          "Actually reads and awaits the manifest result before dispatching any selected-policy read. Child addresses must come from returned bytes, not a guessed directory listing or fixture leakage.",
+          "After the two child paths are known, dispatches separate bounded per-file reads together with Promise.all/allSettled. A single code-mode wrapper with an awaited manifest followed by a child batch, or two successive wrappers, are both valid.",
+          "No speculative batching of unknown child paths, recursive config dump, sequential child-read loop, sleep/timer or polling is used to await the dependency.",
+          "Reports isolated_preview disables timeout retries with delay0ms; regional_primary enables them with delay350ms, with relevant locations."
+        ],
+        "required_reads": [
+          "config/active_retry.yml",
+          "config/retry/zone_kappa.yml",
+          "config/retry/zone_sigma.yml"
+        ],
+        "expected_result": {
+          "regional_primary": {
+            "retry_on_timeout": true,
+            "delay_ms": 350
+          },
+          "isolated_preview": {
+            "retry_on_timeout": false,
+            "delay_ms": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "O6-new-route-inventory-pending-control",
+      "prompt": "Run the provided verify_route_contracts tool once. How many routes does this inventory check, and which routes are missing from the registered set?",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "fixtures/contracts_v2.json": "{\"routes\":[\"clients.sync\",\"invoices.send\",\"payments.capture\",\"reports.export\",\"audit.persist\"]}\n",
+          "fixtures/registered_v2.json": "{\"routes\":[\"clients.sync\",\"invoices.send\",\"audit.persist\"]}\n",
+          "jobs/check_routes_v2.py": "import json\nfrom pathlib import Path\nexpected = json.loads(Path(\"fixtures/contracts_v2.json\").read_text())[\"routes\"]\nregistered = set(json.loads(Path(\"fixtures/registered_v2.json\").read_text())[\"routes\"])\nprint(json.dumps({\"checked\": len(expected), \"missing\": [route for route in expected if route not in registered]}), flush=True)\n"
+        }
+      },
+      "grading": {
+        "required": [
+          "One actual native exec cell contains the verify_route_contracts invocation and yields its real runtime cell id. The actor resumes that same cell through native wait; no fabricated or other-runtime handle qualifies.",
+          "Controller release must follow actual pending output and a verified same-wrapper MCP request plus one matching job_start/job_ready PID. The stored readiness timestamp precedes controller release. No timer or actor-choice-dependent release.",
+          "Exactly one real job is started. Clock is available but the actor uses no clock/shell/JS/Python delay or restart to await it. Native wait yield timeouts are allowed.",
+          "Native wait delivers the real terminal completion bytes before the final answer. Reports five checked routes and both missing routes from those bytes."
+        ],
+        "expected_result": {
+          "checked": 5,
+          "missing": [
+            "payments.capture",
+            "reports.export"
+          ]
+        },
+        "invalid_if": "No correct same-runtime pending/resume/completion chain or no verified job-ready-before-release; never award PASS from status alone.",
+        "new_case_not_retry": "Distinct five-route/two-missing inventory. Original O1 attempt, files and verdict stay unchanged."
+      }
+    },
+    {
+      "id": "P1-retained-field-projection-locators",
+      "prompt": "Compare retryDelay in src/http/retry.ts and src/webhook/retry.ts. What does each return for attempts 0 and 2? Cite each file path.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "relative-path-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "semantic_search",
+              "arguments": {
+                "project": "relative-path-fixture",
+                "path": "__FIXTURE_ROOT__",
+                "query": "HTTP delivery retry backoff ||| webhook delivery retry backoff",
+                "metaOnly": false,
+                "fields": [
+                  "symbolId",
+                  "content"
+                ],
+                "limit": 2
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "semantic_search",
+            "result": {
+              "workingTree": {
+                "project": "relative-path-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+                  "score": 0.94,
+                  "payload": {
+                    "relativePath": "src/webhook/retry.ts",
+                    "symbolId": "retryDelay",
+                    "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+                  }
+                },
+                {
+                  "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+                  "score": 0.91,
+                  "payload": {
+                    "relativePath": "src/http/retry.ts",
+                    "symbolId": "retryDelay",
+                    "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "src/http/retry.ts": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n",
+          "src/webhook/retry.ts": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+        },
+        "requested_fields": [
+          "symbolId",
+          "content"
+        ],
+        "raw_search_results": [
+          {
+            "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+            "score": 0.94,
+            "payload": {
+              "relativePath": "src/webhook/retry.ts",
+              "symbolId": "retryDelay",
+              "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n",
+              "startLine": 1,
+              "endLine": 3,
+              "language": "typescript",
+              "chunkType": "function"
+            }
+          },
+          {
+            "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+            "score": 0.91,
+            "payload": {
+              "relativePath": "src/http/retry.ts",
+              "symbolId": "retryDelay",
+              "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n",
+              "startLine": 1,
+              "endLine": 3,
+              "language": "typescript",
+              "chunkType": "function"
+            }
+          }
+        ],
+        "production_projection": {
+          "source_module": "src/core/api/public/dto/payload-projection.ts",
+          "export": "projectSearchResultPayloads",
+          "arguments": [
+            "fixture.raw_search_results",
+            "fixture.requested_fields"
+          ],
+          "mode": "Omit optional mode to exercise the production default.",
+          "actual_decorated_response": "Controller-produced artifact only: response_metadata merged with the actual production return. Resolve before actor input; this string is not a tool result."
+        },
+        "response_metadata": {
+          "workingTree": {
+            "project": "relative-path-fixture",
+            "tree": "__FIXTURE_ROOT__"
+          }
+        }
+      },
+      "expected_output": "Uses the complete retained bodies and their production-preserved locators. HTTP retryDelay returns 100 and 400; webhook returns 300 and 1200. Correctly cites src/http/retry.ts and src/webhook/retry.ts without another project-source lookup.",
+      "grading": {
+        "required": [
+          "Recorded producer call invokes the actual candidate production export, with fields exactly symbolId/content and no relativePath input. Both output rows retain their real upstream relativePath. No controller-added locator or reordered row is accepted as a substitute.",
+          "Post-projection order remains webhook then HTTP, opposite the prompt order. Both rows have the same symbolId and same function name; opaque ids and body text provide no HTTP/webhook hint. Final mapping must agree with returned paths rather than row position.",
+          "Final answer gives HTTP attempt0=100 and attempt2=400, webhook attempt0=300 and attempt2=1200, with the correct path for each pair.",
+          "Makes no additional project-source retrieval/search/graph/file read after the prompt; the complete current bodies are already retained. Loading needed plugin instructions is allowed."
+        ],
+        "expected_values": {
+          "src/http/retry.ts": {
+            "0": 100,
+            "2": 400
+          },
+          "src/webhook/retry.ts": {
+            "0": 300,
+            "2": 1200
+          }
+        },
+        "expected_projected_path_order": [
+          "src/webhook/retry.ts",
+          "src/http/retry.ts"
+        ],
+        "max_post_prompt_project_source_calls": 0,
+        "not_covered": "This single native case checks real shared-projection output and actor consumption. The separate server unit matrix must establish wiring across semantic_search, hybrid_search, rank_chunks, find_similar, search_code and find_symbol modes."
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ research/gruntworx-full39-codex-2026-10-30/**
 research/gruntworx-full39-codex61-2026-10-30/**
 .claude-plugin/.benchmarks/plugin-context-routing/2026-10-30/**
 .claude-plugin/.benchmarks/response-contract/2026-10-30/**
+.claude-plugin/.benchmarks/tool-orchestration/2026-10-30/**
 package-lock.json
 public/**
 node_modules/**

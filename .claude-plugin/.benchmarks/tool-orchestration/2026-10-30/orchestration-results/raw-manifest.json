@@ -1,0 +1,140 @@
+{
+  "O1-running-exec-cell/events.jsonl": {
+    "source_sha256": "3e34613a18aa4bec5931021e673b7c0abca914f2f2fbed318726ab2295e624f3",
+    "uncompressed_bytes": 233567,
+    "gzip_sha256": "8d9cb983fc02ceb6e84295140cfe2bc6968ea8b887102aafc5a12b9270c447ea",
+    "gzip_bytes": 41849
+  },
+  "O1-running-exec-cell/received-timeline.jsonl": {
+    "source_sha256": "abbd5136284bf4eded54892decb79fcdadaf3d98fab69ebc0fe61022f9332eef",
+    "uncompressed_bytes": 257095,
+    "gzip_sha256": "44f2a93e2d2aaa70d0f4f6f4e72390a65a042395ce7880a15afabad93ae15420",
+    "gzip_bytes": 44741
+  },
+  "O1-running-exec-cell/turn-events.json": {
+    "source_sha256": "4f786f8a51a04f53e0f37b5c3100ca824f1241ddf7a59e2c51488f93fbed7c9a",
+    "uncompressed_bytes": 323554,
+    "gzip_sha256": "84481fdbb0d64d4eb70d9d189edf82d4f5a4bd7fcce4c5a3000b430d629203f1",
+    "gzip_bytes": 43590
+  },
+  "O1-running-exec-cell/preflight-no-turn/tool-catalog.json": {
+    "source_sha256": "f9a26ad499b414687c639c5cee4d0dfe7a0247b55a423534f1b0ea22d53ee04a",
+    "uncompressed_bytes": 65478,
+    "gzip_sha256": "e9f7f93e871ce0d9594d1475577ee6d6cfc6c14ecd75f8a8d07e490c3278d477",
+    "gzip_bytes": 19933
+  },
+  "O1-running-exec-cell/preflight-sleep-removed-no-turn/tool-catalog.json": {
+    "source_sha256": "1e9b6993709718202c178a9204c97405dd3321ec75d0ab7b04448a6b659e1305",
+    "uncompressed_bytes": 64596,
+    "gzip_sha256": "8ec9423d5d733c049a57dfee492b598f66b01be2f1b195ae64ba5e161e5c16a6",
+    "gzip_bytes": 19840
+  },
+  "O2-running-unified-session/events.jsonl": {
+    "source_sha256": "fd2ab278e606fc7d304a5ed8b116528a0e59f780a51656586c6c2078a380e3bd",
+    "uncompressed_bytes": 154218,
+    "gzip_sha256": "013d57a09b740dc79465b7ffb163c870875ac01cd97ec20ea5fd076b53c96c6c",
+    "gzip_bytes": 32427
+  },
+  "O2-running-unified-session/received-timeline.jsonl": {
+    "source_sha256": "370baef8888aeb90041d769b45c9d981d8f1fbdeaabb59d7e6e56981b21ec7f6",
+    "uncompressed_bytes": 166703,
+    "gzip_sha256": "ad558c4e2f9e54aa01802feb337036be131f5873047e76c4211c82d757b95ced",
+    "gzip_bytes": 33976
+  },
+  "O2-running-unified-session/turn-events.json": {
+    "source_sha256": "f340b9c8c7a2d13bb98cfdca85796786eb57c4ce3f5ea7b0eacbbea37a94fb29",
+    "uncompressed_bytes": 185756,
+    "gzip_sha256": "2815c570598b15590d8aff1d29f2f2bb7b7529b1a5e814d9f008a7172396074f",
+    "gzip_bytes": 32939
+  },
+  "O2-running-unified-session/preflight-no-turn/tool-catalog.json": {
+    "source_sha256": "b5765a60463a97a6d92ca75cbad8d3d292d8e75102108be1ac2bdb4d1570529c",
+    "uncompressed_bytes": 65520,
+    "gzip_sha256": "37d9620263407ac3a5f0986917e8ebd4e46a5625ce78cdee78e5f07a7f30f0ef",
+    "gzip_bytes": 19935
+  },
+  "O2-running-unified-session/preflight-sleep-removed-no-turn/tool-catalog.json": {
+    "source_sha256": "c12435eb358f5ac30800abc3f2158e722dac5c008e2a3762b5fd309b3d1d3067",
+    "uncompressed_bytes": 64638,
+    "gzip_sha256": "eb0e698a0d8d5d9dafe6e79d2b84ad4fc2b3a4ff67239982847bc9fcc8b7fab3",
+    "gzip_bytes": 19842
+  },
+  "O3-required-user-clarification/events.jsonl": {
+    "source_sha256": "1c0fc8b21d4378a5671e35ac44232c03a5f0f73e7bb7b860f65ce3846f4f630a",
+    "uncompressed_bytes": 145973,
+    "gzip_sha256": "a5a8bb07bc5a1095e48687467eeaa58e3f1272ae7b19c2fee3e9de2b20e7d0f7",
+    "gzip_bytes": 33270
+  },
+  "O3-required-user-clarification/received-timeline.jsonl": {
+    "source_sha256": "448c1257d9f55b7dc80f437721b4c94899a8ea15a21d102d623dacdb7dd9b340",
+    "uncompressed_bytes": 157200,
+    "gzip_sha256": "f2b7db5ec3f79a9a501835fedb6721680336006a65aa320fcaffbdb9323e8535",
+    "gzip_bytes": 34956
+  },
+  "O3-required-user-clarification/turn-events.json": {
+    "source_sha256": "c54d9f1f77c77e70c6ccb2b4e424829de6765a0dd46fe754f4ac325469b59131",
+    "uncompressed_bytes": 169899,
+    "gzip_sha256": "289bfd15d4bfc32e55ae2959451cf17f131284c14705935c177f38e86d24cca8",
+    "gzip_bytes": 33559
+  },
+  "O3-required-user-clarification/preflight-no-turn/tool-catalog.json": {
+    "source_sha256": "e970c2d862f0242e8725523191f9b2644f9a43011538adb8a6bfcd044b36173d",
+    "uncompressed_bytes": 65548,
+    "gzip_sha256": "eb957eec72aad39b0e506ed1cf1ff1a4c5459498060b1ece9a5287c39a3e915e",
+    "gzip_bytes": 19937
+  },
+  "O3-required-user-clarification/preflight-sleep-removed-no-turn/tool-catalog.json": {
+    "source_sha256": "a53dc55d60d0bb34e002234881c9f6d7915a18102808d47a1f7557dec5ae4fb1",
+    "uncompressed_bytes": 64666,
+    "gzip_sha256": "382c265945e858445490eeb68a0bfd11d57e16cc65c9311db7e63c20cafd6b52",
+    "gzip_bytes": 19839
+  },
+  "O4-independent-mixed-tool-batch/events.jsonl": {
+    "source_sha256": "15bb5c6fb2b3a49a1230bd19a8e1fdf4035743af80b451a450dc7c9cb13a6952",
+    "uncompressed_bytes": 259660,
+    "gzip_sha256": "08096a257dbad6d5cad801c9ac1afae0959c01a487778f52111d6d234db634d5",
+    "gzip_bytes": 46914
+  },
+  "O4-independent-mixed-tool-batch/received-timeline.jsonl": {
+    "source_sha256": "12a746b4c2b58cff1c4ffbbf2264f07894a3b985f62c368a4b092d4bb67aa8f9",
+    "uncompressed_bytes": 290322,
+    "gzip_sha256": "699e0bb8d4feb5fde4532890daa32a8a351c91f6d88f8d5be322b4adab36ced8",
+    "gzip_bytes": 50910
+  },
+  "O4-independent-mixed-tool-batch/turn-events.json": {
+    "source_sha256": "2b66696143a78c056965aa827d476677e952ef3f2ba57aa3eec6601168e353df",
+    "uncompressed_bytes": 294899,
+    "gzip_sha256": "bbddc90bade94b8905714fe91ddaf4c6d13534e6591bf0610a781ef7e18e60a3",
+    "gzip_bytes": 44074
+  },
+  "O4-independent-mixed-tool-batch/preflight-no-turn/tool-catalog.json": {
+    "source_sha256": "e750cc1c073e86dafa63aafb02d019f710b8ba5a7dd2e9e424e1c482f4fc83c7",
+    "uncompressed_bytes": 64673,
+    "gzip_sha256": "df9f9acbf534e8b52a434308573d745fc38681934b2cd627b7f186c4b9bc791c",
+    "gzip_bytes": 19842
+  },
+  "O5-dependent-discovery-control/events.jsonl": {
+    "source_sha256": "6a2d6d695256e0eae4cdcab70b61c2b5586931480f3bde5134c73605566e4718",
+    "uncompressed_bytes": 218536,
+    "gzip_sha256": "c044e0eaa5854cd26f615118afc79ab778f30b9def60c34cf1c0def643575397",
+    "gzip_bytes": 42227
+  },
+  "O5-dependent-discovery-control/received-timeline.jsonl": {
+    "source_sha256": "7297302e78793a3fb1f23fd64a985ca31fa01d860babdae0b98250598c240245",
+    "uncompressed_bytes": 237258,
+    "gzip_sha256": "5cb835e578c70caa9c3c8458bcc9bee4b2d0ff99c50e59c204b89f6448d81e32",
+    "gzip_bytes": 44846
+  },
+  "O5-dependent-discovery-control/turn-events.json": {
+    "source_sha256": "c69f11d2ae84c4a5f94ddfe8cf484718f6aeba127b0b7d013a0d3294fa81dae4",
+    "uncompressed_bytes": 247501,
+    "gzip_sha256": "6f5de0b7f089e90e98d468eb7b0aa1fba24c25813ea968a664aa06c29ff44301",
+    "gzip_bytes": 39941
+  },
+  "O5-dependent-discovery-control/preflight-no-turn/tool-catalog.json": {
+    "source_sha256": "5610b0812924130aac95fb70506caef55e772d6131651dd01e301e31e9415639",
+    "uncompressed_bytes": 64666,
+    "gzip_sha256": "6c233e9025d5815cafd682eea4e6eca23d356197f8cbda550c88ba00f6809d96",
+    "gzip_bytes": 19845
+  }
+}

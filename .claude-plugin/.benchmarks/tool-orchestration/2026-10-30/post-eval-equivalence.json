@@ -1,0 +1,7 @@
+{
+  "change": "Destructure the existing relativePath property access to satisfy prefer-destructuring; no runtime contract change.",
+  "before_source_sha256": "fa453c2d0e8018771951e235deb5a062400910cfa572b8fb71500cb52804cedf",
+  "after_source_sha256": "7013e19ad99926edaf8cb6289bcdb0982dbca7c9ca402c9544eeae8abd245291",
+  "same_actual_P1_return": true,
+  "model_reruns": 0
+}

@@ -1,0 +1,150 @@
+{
+  "skill_name": "tool-orchestration",
+  "suite_name": "mandatory-search-relative-path",
+  "schema_version": 1,
+  "runner_contract": {
+    "actor_input": "Send only prompt and resolved actor_context. Replace the tool message result_from_producer with the actual producer artifact. Never send raw_search_results, fixture.files, producer setup, expected_output, grading or this contract to the actor.",
+    "producer": "Before the actor starts, invoke the candidate production export projectSearchResultPayloads with fixture.raw_search_results and the exact fixture.requested_fields. Do not add relativePath to the input fields, implement a substitute projector, merge raw payloads back, sort rows, or copy an expected result. Wrap the returned object in fixture.response_metadata and retain the actual search call/result as prior context.",
+    "evidence": "Record production module/source SHA, exact call arguments, raw producer return, final decorated search response and hashes. Verify each raw content equals the matching materialized source fixture. The producer return must supply the actual upstream relativePath for each row. Missing production export or missing locators is INVALID/FAIL, never an occasion to hardcode them.",
+    "freshness": "The fixtures and produced result are current for the same isolated cwd, without edits, truncation or compaction between seeding and the actor turn. Full function bodies have already been delivered by the retained result.",
+    "trace": "Grade actual post-prompt tool calls and final facts. Plugin instruction/skill loading does not count as a project-source retrieval. A promise to avoid reads is not evidence; inspect the actual native tool trace. No actor/model run is authorized by writing this case."
+  },
+  "evals": [
+    {
+      "id": "P1-retained-field-projection-locators",
+      "prompt": "Compare retryDelay in src/http/retry.ts and src/webhook/retry.ts. What does each return for attempts 0 and 2? Cite each file path.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "relative-path-fixture",
+        "messages": [
+          {
+            "role": "assistant",
+            "tool_call": {
+              "name": "semantic_search",
+              "arguments": {
+                "project": "relative-path-fixture",
+                "path": "__FIXTURE_ROOT__",
+                "query": "HTTP delivery retry backoff ||| webhook delivery retry backoff",
+                "metaOnly": false,
+                "fields": [
+                  "symbolId",
+                  "content"
+                ],
+                "limit": 2
+              }
+            }
+          },
+          {
+            "role": "tool",
+            "name": "semantic_search",
+            "result": {
+              "workingTree": {
+                "project": "relative-path-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+                  "score": 0.94,
+                  "payload": {
+                    "relativePath": "src/webhook/retry.ts",
+                    "symbolId": "retryDelay",
+                    "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+                  }
+                },
+                {
+                  "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+                  "score": 0.91,
+                  "payload": {
+                    "relativePath": "src/http/retry.ts",
+                    "symbolId": "retryDelay",
+                    "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "src/http/retry.ts": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n",
+          "src/webhook/retry.ts": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+        },
+        "requested_fields": [
+          "symbolId",
+          "content"
+        ],
+        "raw_search_results": [
+          {
+            "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+            "score": 0.94,
+            "payload": {
+              "relativePath": "src/webhook/retry.ts",
+              "symbolId": "retryDelay",
+              "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n",
+              "startLine": 1,
+              "endLine": 3,
+              "language": "typescript",
+              "chunkType": "function"
+            }
+          },
+          {
+            "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+            "score": 0.91,
+            "payload": {
+              "relativePath": "src/http/retry.ts",
+              "symbolId": "retryDelay",
+              "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n",
+              "startLine": 1,
+              "endLine": 3,
+              "language": "typescript",
+              "chunkType": "function"
+            }
+          }
+        ],
+        "production_projection": {
+          "source_module": "src/core/api/public/dto/payload-projection.ts",
+          "export": "projectSearchResultPayloads",
+          "arguments": [
+            "fixture.raw_search_results",
+            "fixture.requested_fields"
+          ],
+          "mode": "Omit optional mode to exercise the production default.",
+          "actual_decorated_response": "Controller-produced artifact only: response_metadata merged with the actual production return. Resolve before actor input; this string is not a tool result."
+        },
+        "response_metadata": {
+          "workingTree": {
+            "project": "relative-path-fixture",
+            "tree": "__FIXTURE_ROOT__"
+          }
+        }
+      },
+      "expected_output": "Uses the complete retained bodies and their production-preserved locators. HTTP retryDelay returns 100 and 400; webhook returns 300 and 1200. Correctly cites src/http/retry.ts and src/webhook/retry.ts without another project-source lookup.",
+      "grading": {
+        "required": [
+          "Recorded producer call invokes the actual candidate production export, with fields exactly symbolId/content and no relativePath input. Both output rows retain their real upstream relativePath. No controller-added locator or reordered row is accepted as a substitute.",
+          "Post-projection order remains webhook then HTTP, opposite the prompt order. Both rows have the same symbolId and same function name; opaque ids and body text provide no HTTP/webhook hint. Final mapping must agree with returned paths rather than row position.",
+          "Final answer gives HTTP attempt0=100 and attempt2=400, webhook attempt0=300 and attempt2=1200, with the correct path for each pair.",
+          "Makes no additional project-source retrieval/search/graph/file read after the prompt; the complete current bodies are already retained. Loading needed plugin instructions is allowed."
+        ],
+        "expected_values": {
+          "src/http/retry.ts": {
+            "0": 100,
+            "2": 400
+          },
+          "src/webhook/retry.ts": {
+            "0": 300,
+            "2": 1200
+          }
+        },
+        "expected_projected_path_order": [
+          "src/webhook/retry.ts",
+          "src/http/retry.ts"
+        ],
+        "max_post_prompt_project_source_calls": 0,
+        "not_covered": "This single native case checks real shared-projection output and actor consumption. The separate server unit matrix must establish wiring across semantic_search, hybrid_search, rank_chunks, find_similar, search_code and find_symbol modes."
+      }
+    }
+  ]
+}

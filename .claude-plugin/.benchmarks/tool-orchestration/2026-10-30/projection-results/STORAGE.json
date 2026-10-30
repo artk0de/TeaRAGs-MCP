@@ -1,0 +1,11 @@
+{
+  "directory": "projection-results",
+  "original_files": 13,
+  "original_bytes": 196327,
+  "archive": "evidence.tar.gz",
+  "archive_bytes": 52607,
+  "archive_sha256": "b483ffb957d77b9df1e7c8dcce0ce9c84c154b38892d44f96398ed9c5962aa1e",
+  "all_original_member_bytes_verified": true,
+  "member_inventory_sha256": "57942fe4de35612636de249ca194aaf2833fe2f2f2d76ccdd791aed6a7c3fd9c",
+  "original_inner_inventories_unchanged": true
+}

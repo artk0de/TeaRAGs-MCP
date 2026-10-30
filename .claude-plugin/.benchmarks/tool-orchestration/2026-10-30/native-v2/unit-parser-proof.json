@@ -1,0 +1,38 @@
+{
+  "kind": "Offline archival replay; no actor execution or original attempt modification",
+  "historical_test_first_sequence": "Exact-string regression was observed RED before pending.py fix, then GREEN. This stored subprocess proof is a later replay using the immutable executed old parser and original native output, not a claim of captured historical test stdout.",
+  "old_runner_sha256": "2d8a0535799516a622ee3bfd7d035cae9e3699f63e65dcd45e3ece16549442d5",
+  "original_native_event": {
+    "method": "rawResponseItem/completed",
+    "params": {
+      "threadId": "01a18e46-6cad-7022-90c1-8ede62e72e30",
+      "turnId": "01a18e46-6d33-7401-9afb-0ca2a4cd4a12",
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "ctco_01a18e47-2b76-7d51-99c4-2d8a0c752f67",
+        "call_id": "call_63d8acb5803d403a96da256c41b03cb9",
+        "output": "Script running with cell ID 2\nWall time 31.0 seconds\nOutput:\n",
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "01a18e46-6d33-7401-9afb-0ca2a4cd4a12",
+          "create_time": 1793388391.286615
+        }
+      }
+    },
+    "emittedAtMs": 1793388391288
+  },
+  "old_pure_parser_source": "def output_texts(event):\n    if event.get(\"method\") != \"rawResponseItem/completed\":\n        return []\n    item = event.get(\"params\", {}).get(\"item\", {})\n    if item.get(\"type\") != \"custom_tool_call_output\":\n        return []\n    return [x.get(\"text\", \"\") for x in item.get(\"output\", []) if isinstance(x, dict)]",
+  "red": {
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "F\n======================================================================\nFAIL: test_actual_pending_string_must_not_be_discarded (__main__.OriginalParserRegression)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<string>\", line 12, in test_actual_pending_string_must_not_be_discarded\nAssertionError: Lists differ: [] != ['Script running with cell ID 2\\nWall time 31.0 seconds\\nOutput:\\n']\n\nSecond list contains 1 additional elements.\nFirst extra element 0:\n'Script running with cell ID 2\\nWall time 31.0 seconds\\nOutput:\\n'\n\n- []\n+ ['Script running with cell ID 2\\nWall time 31.0 seconds\\nOutput:\\n']\n\n----------------------------------------------------------------------\nRan 1 test in 0.001s\n\nFAILED (failures=1)\n",
+    "reason": "Assertion: original parser drops actual native output string"
+  },
+  "green": {
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "........\n----------------------------------------------------------------------\nRan 8 tests in 0.000s\n\nOK\n",
+    "test_source_sha256": "1d0d843edd0793f9a69a8854f6aac05ca2894c6c76278df8772a7b3b24ce06f7",
+    "parser_sha256": "4d45a0f5738eba89c6e334adf45131899d4b9da0b8c4ae734cbc7273c5482ad0"
+  },
+  "model_turns": 0
+}

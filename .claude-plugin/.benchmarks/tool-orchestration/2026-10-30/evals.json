@@ -1,0 +1,246 @@
+{
+  "skill_name": "tool-orchestration",
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "runner_contract": {
+    "actor_input": "Load the candidate plugin normally. Supply only prompt, actor_context and the real raw tool messages named by fixture setup. Materialize fixture.files. Keep grading, setup implementation, expected values and this runner contract outside actor context.",
+    "stateful_cases": "Cases O1/O2 require a real pending operation in the SAME runtime whose native wait/write_stdin tools the actor receives. Start the job exactly once, retain the actual native initial tool call/result, and substitute its actual id in retained context. A made-up cell/session id, static canned completion, or a controller-owned handle the actor cannot resume invalidates the case. If the harness cannot establish this boundary, report UNSUPPORTED instead of running a fake version or awarding PASS.",
+    "completion": "The pending job waits on a controller-owned pipe/event, never a timer. Once the first post-prompt actor tool dispatch starts, release that event independently of which tool the actor chose. The real process computes its output from fixture source files. Record initial pending state, id ownership, release, native resume request, actual returned bytes, terminal state and cleanup. Cancel any surviving fixture job after the case. Do not leak grader facts through tools.",
+    "trace": "Record actual outer code-mode calls, nested operation ids/arguments, returned file/body bytes, dispatch and completion events, native pending/completed states, final answer and user-input requests. A mentioned or proposed tool call is not execution. Namespace variants are acceptable. No instruction-text regex checks.",
+    "batching": "An executed Promise.all/allSettled wrapper dispatching all needed independent operations establishes batching when each nested operation returns its real fixture bytes. Native overlap supports the finding; a serialized runtime scheduler alone does not fail an otherwise correct executed batch. A sequential await loop or one shell command reading several files does not establish this batching behavior.",
+    "wait_scope": "A native wait/write_stdin call may use its normal yield or poll timeout. That is an event-driven resume operation, not a sleep. Grade the purpose of any delay: sleeping to await tools, agents or a user is forbidden; source code that merely contains a timer is not itself an agent waiting action.",
+    "execution_gate": "Do not start any actor/model run before the concurrent frozen GruntWorx A39 process has reached EOF. These cases may be prepared and validated offline first. Use fresh isolated actor sessions and workspaces; do not change the A39 runtime or its frozen files."
+  },
+  "evals": [
+    {
+      "id": "O1-running-exec-cell",
+      "prompt": "Give me the completed route-contract check result: how many routes were checked, and which route is missing?",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "native_setup": {
+          "kind": "live_code_mode_exec_cell",
+          "job": "route_contract_check",
+          "initial_state": "pending",
+          "initial_result_source": "Actual native exec yield, including its generated cell_id; retain its original text verbatim.",
+          "completion_source": "Real process runs jobs/check_routes.py after controller pipe/event release; its output is returned through the existing exec cell.",
+          "release": "First post-prompt actor tool dispatch begins, regardless of tool choice.",
+          "unsupported_if": "The actor cannot resume this exact real cell in its native runtime.",
+          "retained_messages": "Insert the actual earlier assistant tool invocation and native 'Script running with cell ID ...' result from fixture.native_setup. No job output has been delivered yet."
+        },
+        "files": {
+          "fixtures/contracts.json": "{\"routes\":[\"billing.create\",\"billing.retry\",\"webhook.deliver\",\"audit.persist\"]}\n",
+          "fixtures/registered.json": "{\"routes\":[\"billing.create\",\"webhook.deliver\",\"audit.persist\"]}\n",
+          "jobs/check_routes.py": "import json\nfrom pathlib import Path\nexpected = json.loads(Path('fixtures/contracts.json').read_text())['routes']\nregistered = set(json.loads(Path('fixtures/registered.json').read_text())['routes'])\nprint(json.dumps({'checked': len(expected), 'missing': [route for route in expected if route not in registered]}), flush=True)\n"
+        }
+      },
+      "grading": {
+        "required": [
+          "Actual native wait resumes the exact retained exec cell and returns its real completion/output before the final answer. If a genuine runtime transition yields a unified session, a subsequent native session resume is allowed and must also be observed.",
+          "The route-check job starts once; it is neither restarted nor duplicated. No sleep/timer call or shell sleep is used to wait for the operation.",
+          "Final answer reports checked=4 and missing billing.retry, grounded in the delivered completion output."
+        ],
+        "expected_result": {
+          "checked": 4,
+          "missing": [
+            "billing.retry"
+          ]
+        },
+        "invalid_if": "The initial handle or completion bytes are fabricated, or the recorded handle belongs to another runtime."
+      }
+    },
+    {
+      "id": "O2-running-unified-session",
+      "prompt": "What did the running export validation finish with: how many rows are valid and how many were rejected?",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "native_setup": {
+          "kind": "live_unified_exec_session",
+          "job": "export_validation",
+          "initial_state": "running",
+          "initial_result_source": "Actual exec_command yield containing the generated session_id.",
+          "completion_source": "Real process runs jobs/validate_export.py after controller pipe/event release and writes output to the retained session.",
+          "release": "First post-prompt actor tool dispatch begins, regardless of tool choice.",
+          "unsupported_if": "The actor's native write_stdin cannot resume this exact real session.",
+          "retained_messages": "Insert the actual earlier exec_command invocation and its native still-running result containing session_id from fixture.native_setup. No validation output has been delivered yet."
+        },
+        "files": {
+          "fixtures/export_rows.json": "[{\"id\":\"r1\",\"amount\":12},{\"id\":\"r2\",\"amount\":-2},{\"id\":\"r3\",\"amount\":0},{\"id\":\"r4\",\"amount\":7}]\n",
+          "jobs/validate_export.py": "import json\nfrom pathlib import Path\nrows = json.loads(Path('fixtures/export_rows.json').read_text())\nvalid = sum(row['amount'] >= 0 for row in rows)\nprint(json.dumps({'valid': valid, 'rejected': len(rows) - valid}), flush=True)\n"
+        }
+      },
+      "grading": {
+        "required": [
+          "Actual native write_stdin resumes the retained session_id with empty/omitted chars and retrieves terminal output before the final answer.",
+          "The validation job starts exactly once. No fresh exec_command reruns it, and no sleep/timer or shell sleep is used to await completion.",
+          "Final answer gives valid=3 and rejected=1 from the real completed process output."
+        ],
+        "expected_result": {
+          "valid": 3,
+          "rejected": 1
+        },
+        "invalid_if": "A mock auto-completion, made-up session id, or inaccessible controller session replaces the actual actor-runtime state."
+      }
+    },
+    {
+      "id": "O3-required-user-clarification",
+      "prompt": "Move tomorrow's export job to my preferred time.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "read_file",
+            "result": {
+              "relativePath": "config/export_job.yml",
+              "content": "timezone: Europe/Moscow\nscheduled_time: '19:00'\n"
+            }
+          },
+          {
+            "role": "user",
+            "content": "The timezone stays Europe/Moscow. I have not picked the new time yet."
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/export_job.yml": "timezone: Europe/Moscow\nscheduled_time: '19:00'\n"
+        },
+        "user_reply": null
+      },
+      "grading": {
+        "required": [
+          "Asks which local time the user wants. A concise final clarification question or an available native user-input request is valid; asking this necessary question must not be penalized.",
+          "Yields the turn while the answer is missing. Does not change the schedule, invent a preferred time, start a background waiter, or use sleep/timers/polling to await the user.",
+          "Preserves the known Europe/Moscow timezone rather than treating the current 19:00 schedule as the user's new preference."
+        ],
+        "expected_workspace": {
+          "config/export_job.yml": "timezone: Europe/Moscow\nscheduled_time: '19:00'\n"
+        },
+        "note": "No user response is supplied during this case. Completion is the necessary question and yielded control, not an edited file."
+      }
+    },
+    {
+      "id": "O4-independent-mixed-tool-batch",
+      "prompt": "Compare config/http_delivery.yml and config/webhook_delivery.yml with RetryBudget#allows. For zero-based attempts 2 and 4, say whether each delivery type permits another retry, with code locations.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "result": {
+              "workingTree": {
+                "project": "orchestration-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "payload": {
+                    "relativePath": "src/retry/RetryBudget.ts",
+                    "symbolId": "RetryBudget",
+                    "kind": "class",
+                    "content": "RetryBudget (class outline)\n  2-4 RetryBudget#allows(attempt: number, maxAttempts: number): boolean"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/http_delivery.yml": "max_attempts: 3\n",
+          "config/webhook_delivery.yml": "max_attempts: 5\n",
+          "src/retry/RetryBudget.ts": "export class RetryBudget {\n  allows(attempt: number, maxAttempts: number): boolean {\n    return attempt + 1 < maxAttempts;\n  }\n}\n"
+        },
+        "find_symbol_bodies": {
+          "RetryBudget#allows": {
+            "relativePath": "src/retry/RetryBudget.ts",
+            "startLine": 2,
+            "endLine": 4,
+            "body": "  allows(attempt: number, maxAttempts: number): boolean {\n    return attempt + 1 < maxAttempts;\n  }"
+          }
+        }
+      },
+      "grading": {
+        "required": [
+          "One executed code-mode Promise.all/allSettled batch dispatches the needed find_symbol body lookup and two separate bounded per-file shell reads. All three return actual fixture bytes; the initially known inputs have no data dependency.",
+          "Does not rediscover known ids/paths, replace source lookup with a whole-file source read, or serialize the independent calls with a sequential await loop. No sleep/timer is used to wait for any tool.",
+          "Answers HTTP attempt2=false and attempt4=false; webhook attempt2=true and attempt4=false. Explains the attempt+1 < maxAttempts boundary and cites both configs and the method."
+        ],
+        "required_body_ids": [
+          "RetryBudget#allows"
+        ],
+        "required_shell_reads": [
+          "config/http_delivery.yml",
+          "config/webhook_delivery.yml"
+        ],
+        "expected_result": {
+          "http": {
+            "2": false,
+            "4": false
+          },
+          "webhook": {
+            "2": true,
+            "4": false
+          }
+        }
+      }
+    },
+    {
+      "id": "O5-dependent-discovery-control",
+      "prompt": "Which policies selected by config/active_retry.yml disable timeout retries, and what delay does each selected policy use?",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "workspace_context",
+            "content": "No config contents or directory listings have been read in this session."
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/active_retry.yml": "selected_policies:\n  - config/retry/zone_kappa.yml\n  - config/retry/zone_sigma.yml\n",
+          "config/retry/zone_kappa.yml": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n",
+          "config/retry/zone_sigma.yml": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+        }
+      },
+      "grading": {
+        "required": [
+          "Actually reads and awaits the manifest result before dispatching any selected-policy read. Child addresses must come from returned bytes, not a guessed directory listing or fixture leakage.",
+          "After the two child paths are known, dispatches separate bounded per-file reads together with Promise.all/allSettled. A single code-mode wrapper with an awaited manifest followed by a child batch, or two successive wrappers, are both valid.",
+          "No speculative batching of unknown child paths, recursive config dump, sequential child-read loop, sleep/timer or polling is used to await the dependency.",
+          "Reports isolated_preview disables timeout retries with delay0ms; regional_primary enables them with delay350ms, with relevant locations."
+        ],
+        "required_reads": [
+          "config/active_retry.yml",
+          "config/retry/zone_kappa.yml",
+          "config/retry/zone_sigma.yml"
+        ],
+        "expected_result": {
+          "regional_primary": {
+            "retry_on_timeout": true,
+            "delay_ms": 350
+          },
+          "isolated_preview": {
+            "retry_on_timeout": false,
+            "delay_ms": 0
+          }
+        }
+      }
+    }
+  ]
+}

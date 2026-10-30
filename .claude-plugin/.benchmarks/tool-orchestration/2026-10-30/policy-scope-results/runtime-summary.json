@@ -1,0 +1,39 @@
+{
+  "case_count": 2,
+  "cases": [
+    {
+      "key": "G1-all-manifest-policies",
+      "status": {
+        "key": "G1-all-manifest-policies",
+        "attempt": 1,
+        "valid_runtime": true,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "thread_id": "01a18e6e-aabc-7b00-9e6f-e98a2dd5e04f",
+        "turn_id": "01a18e6e-ab30-7673-b1cd-b30886146c85",
+        "status": "completed",
+        "wall_seconds": 11.638
+      },
+      "native_turns": 1,
+      "hooks_started": 19,
+      "hooks_completed": 19
+    },
+    {
+      "key": "G2-disabled-subset-only",
+      "status": {
+        "key": "G2-disabled-subset-only",
+        "attempt": 1,
+        "valid_runtime": true,
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "thread_id": "01a18e6e-aabc-7ac3-aee2-aadc2654cee9",
+        "turn_id": "01a18e6e-ab30-7541-a85e-88bff6afd63a",
+        "status": "completed",
+        "wall_seconds": 11.476
+      },
+      "native_turns": 1,
+      "hooks_started": 19,
+      "hooks_completed": 19
+    }
+  ]
+}

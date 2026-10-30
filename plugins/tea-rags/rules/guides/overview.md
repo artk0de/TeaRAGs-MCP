@@ -104,10 +104,10 @@ Default false; rank_chunks default true (analytics — false to include code).
 ### fields
 - Dot-path allow-list applied server-side before serialization — cuts response size.
 - Nesting matters: signals under `git.{file,chunk}.*` and `codegraph.symbols.{file,chunk}.*` (tea-rags://guide/signals).
-- EXACT: nothing added back, relativePath included. A prefix selects its whole subtree (["git"]).
+- A real nonempty relativePath is always retained as the source locator, even when fields omits it. Every other payload field stays allowlisted. A prefix selects its whole subtree (["git"]).
 - Omitted → per-mode default: metaOnly → locator only; content → locator + content + navigation + symbols + kind;
   content + rerank → full payload. Raw git.* / codegraph.* under metaOnly → name them in fields.
-- Path no result carried → fieldsWarning, not failure.
+- Requested path no result carried → fieldsWarning, not failure. Missing/invalid upstream relativePath → fieldsWarning naming the affected result ids; no file path is invented.
 
 ### find_similar
 - positiveCode: any code block; each string = one example, embedded on the fly.

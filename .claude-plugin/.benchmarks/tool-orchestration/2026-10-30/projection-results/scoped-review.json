@@ -1,0 +1,53 @@
+{
+  "provenance": "Summary transcribed from actual scoped review_changes response, not its full raw response. Direct source wiring and budget observations were read during implementation. No additional review/model calls during archival.",
+  "scope": [
+    "src/core/api/public/dto/payload-projection.ts",
+    "src/core/api/internal/ops/explore-ops.ts",
+    "src/core/api/tools/schemas.ts",
+    "tests/core/api/public/dto/payload-projection.test.ts",
+    "tests/core/api/internal/ops/explore-ops-fields-projection.test.ts",
+    "tests/core/api/tools/explore.test.ts",
+    "plugins/tea-rags/rules/guides/overview.md"
+  ],
+  "reviewSections": [
+    "naming",
+    "incompleteChange",
+    "cohesion",
+    "architecture",
+    "norms"
+  ],
+  "baseCommit": "177bf56bbd8dcd5e14a74eba2ff6f00f3dda3a36",
+  "indexLag": {
+    "indexedCommit": "65c40bd4c59ae2bc81be163bfe3bf894957d5519",
+    "treeCommit": "177bf56bbd8dcd5e14a74eba2ff6f00f3dda3a36"
+  },
+  "findings": {
+    "naming": [],
+    "introducedArchitecture": [],
+    "newNormEdges": []
+  },
+  "limitations": [
+    "Historical co-change suggestions are advisory, not proof of a missing change.",
+    "A pre-existing persisting splitCandidates.merge signal for dto/tools was left out of scope.",
+    "Markdown had no codegraph language; tests had nonProduction naming exclusions.",
+    "Index lag prevents claiming a complete current architecture proof."
+  ],
+  "wiring": {
+    "projectionCallers": [
+      "ExploreOps#executeExplore",
+      "ExploreOps#findSymbolBatch"
+    ],
+    "sharedExecuteTools": [
+      "semantic_search",
+      "hybrid_search",
+      "rank_chunks",
+      "find_similar",
+      "find_symbol(single)"
+    ],
+    "batchFindSymbol": "Same projection; internal defaults suppress only optional-field warnings, while missing-locator warnings are forwarded.",
+    "serialization": "Five registered server handlers serialize real projection output; nested column-table decoding asserts both locators and requested content, with unrequested language absent.",
+    "responseBudget": "enforceResponseBudget trims collections by row count; surviving rows retain their complete columns.",
+    "graphCallers": "get_callers has no fields input and uses relative relPath tree rows; no graph schema change in this patch."
+  },
+  "relatedSchemaTest": "Existing fields-hint tests in tests/core/api/tools/schemas.test.ts retain their default constant and lean-hint contracts; no public result DTO was added."
+}

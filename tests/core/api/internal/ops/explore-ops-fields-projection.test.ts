@@ -159,7 +159,10 @@ describe("ExploreOps — fields projection", () => {
       fields: ["git.file.commitCount"],
     });
 
-    expect(response.results[0]?.payload).toEqual({ git: { file: { commitCount: 12 } } });
+    expect(response.results[0]?.payload).toEqual({
+      relativePath: "tests/bootstrap/env-snapshot.test.ts",
+      git: { file: { commitCount: 12 } },
+    });
     expect(response.fieldsWarning).toBeUndefined();
   });
 
@@ -187,7 +190,10 @@ describe("ExploreOps — fields projection", () => {
       fields: ["git.chunk.commitCount"],
     });
 
-    expect(response.results[0]?.payload).toEqual({ git: { chunk: { commitCount: 3 } } });
+    expect(response.results[0]?.payload).toEqual({
+      relativePath: "tests/bootstrap/env-snapshot.test.ts",
+      git: { chunk: { commitCount: 3 } },
+    });
   });
 
   it("findSimilar returns only the requested payload paths", async () => {
@@ -230,7 +236,7 @@ describe("ExploreOps — fields projection", () => {
       fields: ["git.commitCount"],
     });
 
-    expect(response.results[0]?.payload).toEqual({});
+    expect(response.results[0]?.payload).toEqual({ relativePath: "tests/bootstrap/env-snapshot.test.ts" });
     expect(response.fieldsWarning).toContain("git.commitCount");
     expect(response.fieldsWarning).toContain("git.file.commitCount");
   });

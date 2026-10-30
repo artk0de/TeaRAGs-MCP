@@ -7,9 +7,8 @@
  * before serialization.
  *
  * Two decisions this file pins:
- *   - The projection is EXACTLY what was asked for. No path is added back in,
- *     `relativePath` included — an allow-list that quietly keeps extras is the
- *     same defect in a smaller size.
+ *   - Requested fields stay allowlisted, with the real relativePath retained
+ *     as mandatory source identity. Other unrequested payload fields stay out.
  *   - A path that matched NOTHING across every result is reported rather than
  *     silently dropped. Returning `{}` and saying nothing is the trap an agent
  *     caller cannot debug; "no result carried git.commitCount, same leaf lives
@@ -77,14 +76,20 @@ describe("projectSearchResultPayloads", () => {
   it("keeps only the requested dot-paths, rebuilt at the same nesting", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["git.file.commitCount"]);
 
-    expect(outcome.results[0]?.payload).toEqual({ git: { file: { commitCount: 12 } } });
-    expect(outcome.results[1]?.payload).toEqual({ git: { file: { commitCount: 31 } } });
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: "tests/bootstrap/env-snapshot.test.ts",
+      git: { file: { commitCount: 12 } },
+    });
+    expect(outcome.results[1]?.payload).toEqual({
+      relativePath: "src/bootstrap/env-snapshot.ts",
+      git: { file: { commitCount: 31 } },
+    });
   });
 
-  it("does NOT re-add relativePath or any other field the caller left out", () => {
+  it("retains mandatory relativePath but no other field the caller left out", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["git.file.commitCount"]);
 
-    expect(outcome.results[0]?.payload).not.toHaveProperty("relativePath");
+    expect(outcome.results[0]?.payload?.relativePath).toBe("tests/bootstrap/env-snapshot.test.ts");
     expect(outcome.results[0]?.payload).not.toHaveProperty("members");
     expect(outcome.results[0]?.payload).not.toHaveProperty("language");
   });
@@ -113,14 +118,20 @@ describe("projectSearchResultPayloads", () => {
   it("copies a whole namespace when the path names one, arrays included", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["git.file.authors"]);
 
-    expect(outcome.results[0]?.payload).toEqual({ git: { file: { authors: ["A", "B"] } } });
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: "tests/bootstrap/env-snapshot.test.ts",
+      git: { file: { authors: ["A", "B"] } },
+    });
   });
 
   it("omits a path from the result that lacks it, without warning when another result has it", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["git.chunk.commitCount"]);
 
-    expect(outcome.results[0]?.payload).toEqual({ git: { chunk: { commitCount: 3 } } });
-    expect(outcome.results[1]?.payload).toEqual({});
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: "tests/bootstrap/env-snapshot.test.ts",
+      git: { chunk: { commitCount: 3 } },
+    });
+    expect(outcome.results[1]?.payload).toEqual({ relativePath: "src/bootstrap/env-snapshot.ts" });
     expect(outcome.fieldsWarning).toBeUndefined();
   });
 
@@ -169,8 +180,26 @@ describe("projectSearchResultPayloads", () => {
   it("does not descend through a non-object value", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["relativePath.length"]);
 
-    expect(outcome.results[0]?.payload).toEqual({});
+    expect(outcome.results[0]?.payload).toEqual({ relativePath: "tests/bootstrap/env-snapshot.test.ts" });
     expect(outcome.fieldsWarning).toContain("relativePath.length");
+  });
+
+  it("warns with unlocated result ids without inventing paths or losing requested-field warnings", () => {
+    const results: SearchResult[] = [
+      { id: "missing-path", score: 1, payload: { symbolId: "Worker#run", content: "return 1;" } },
+      { id: "invalid-path", score: 0.5, payload: { relativePath: " ", symbolId: "Worker#run" } },
+    ];
+
+    for (const fields of [undefined, ["symbolId", "missing.field"]]) {
+      const outcome = projectSearchResultPayloads(results, fields);
+      expect(outcome.fieldsWarning).toContain("missing-path");
+      expect(outcome.fieldsWarning).toContain("invalid-path");
+      expect(outcome.results[0]?.payload).not.toHaveProperty("relativePath");
+      if (fields) {
+        expect(outcome.fieldsWarning).toContain("missing.field");
+        expect(outcome.results[1]?.payload).not.toHaveProperty("relativePath");
+      }
+    }
   });
 });
 
@@ -287,20 +316,23 @@ describe("projectSearchResultPayloads — default projection by call mode (N4)",
     expect(outcome.results[0]?.treeState).toBe("modified");
   });
 
-  it("applies `fields` exactly when given — the default projection never adds back", () => {
+  it("applies `fields` with only mandatory relativePath added", () => {
     const outcome = projectSearchResultPayloads([makeFullHit()], ["git.file.commitCount"], {
       metaOnly: true,
       reranked: false,
     });
 
-    expect(outcome.results[0]?.payload).toEqual({ git: { file: { commitCount: 12 } } });
+    expect(outcome.results[0]?.payload).toEqual({
+      relativePath: LOCATOR.relativePath,
+      git: { file: { commitCount: 12 } },
+    });
   });
 
   it('projects the whole git subtree for fields: ["git"], so the old answer stays reachable', () => {
     const hit = makeFullHit();
     const outcome = projectSearchResultPayloads([hit], ["git"], { metaOnly: true, reranked: false });
 
-    expect(outcome.results[0]?.payload).toEqual({ git: hit.payload?.git });
+    expect(outcome.results[0]?.payload).toEqual({ relativePath: LOCATOR.relativePath, git: hit.payload?.git });
   });
 });
 
@@ -419,13 +451,13 @@ describe("projectSearchResultPayloads — search tools' default fields (q1g6s.16
     expect(outcome.results[0]?.rankingOverlay).toEqual(overlay);
   });
 
-  it("applies explicit fields exactly on a search row — the default never adds back", () => {
+  it("applies explicit fields on a search row with its mandatory relativePath", () => {
     const outcome = projectSearchResultPayloads([makeFullHit()], ["chunkType"], {
       metaOnly: false,
       reranked: false,
       ...SEARCH,
     });
 
-    expect(outcome.results[0]?.payload).toEqual({ chunkType: "function" });
+    expect(outcome.results[0]?.payload).toEqual({ relativePath: LOCATOR.relativePath, chunkType: "function" });
   });
 });

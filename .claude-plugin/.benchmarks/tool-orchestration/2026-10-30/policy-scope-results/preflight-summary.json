@@ -1,0 +1,28 @@
+{
+  "ready": true,
+  "ROOTGO": false,
+  "model_turns": 0,
+  "candidate_fingerprint_sha256": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+  "cases": [
+    {
+      "key": "G1-all-manifest-policies",
+      "ready": true,
+      "model_turns": 0,
+      "trusted_hooks": 14,
+      "enabled_skills": 18,
+      "mcp": "connected",
+      "denied_paths": 8
+    },
+    {
+      "key": "G2-disabled-subset-only",
+      "ready": true,
+      "model_turns": 0,
+      "trusted_hooks": 14,
+      "enabled_skills": 18,
+      "mcp": "connected",
+      "denied_paths": 8
+    }
+  ],
+  "runner_sha256": "9b7f1143a31be8ab4368ced21e2e46e590ff73eb82cd57244818122d5ce40bdd",
+  "raw_context_and_fixture_equal_original_O5": true
+}

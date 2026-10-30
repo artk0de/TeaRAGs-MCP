@@ -1,0 +1,158 @@
+{
+  "scope": {
+    "source": "Saved native events only; no corpus queries, actor turns, encrypted-reasoning analysis, production edits or historical trace mutations.",
+    "questions": {
+      "Q01": "How is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?",
+      "Q05": "GruntWorx returns result files as PDF, XLS and XLSM. Does TaxDome restrict which file extensions a stored client document may have, and would an .xlsm file be stored and previewable?"
+    },
+    "traces": {
+      "new_Q01": ".tmp/codex538_A/runs/A/Q01-events.json",
+      "old_Q01": ".tmp/codex61/runs/A/Q01-events.json",
+      "new_Q05": ".tmp/codex538_A/runs/A/Q05-events.json",
+      "old_Q05": ".tmp/codex61/runs/A/Q05-events.json"
+    },
+    "counts": {
+      "new_Q01": {
+        "all_tools": 30,
+        "mcp": 19,
+        "shell": 11,
+        "graph_calls": [
+          "exec-28f3a799-bbad-464f-9c33-1d547d7502f1"
+        ]
+      },
+      "old_Q01": {
+        "all_tools": 21,
+        "mcp": 16,
+        "shell": 5,
+        "graph_calls": [
+          "exec-4a13e947-ea97-49aa-b709-593e55030b8e"
+        ]
+      },
+      "new_Q05": {
+        "all_tools": 14,
+        "mcp": 9,
+        "shell": 5,
+        "graph_calls": [
+          "exec-a8c15361-6227-41cf-a100-72ee23656aeb",
+          "exec-d22bf793-4bed-4b26-afa5-60a722aed82d"
+        ]
+      },
+      "old_Q05": {
+        "all_tools": 10,
+        "mcp": 5,
+        "shell": 5,
+        "graph_calls": []
+      }
+    },
+    "counting": "Only native item/completed mcpToolCall and commandExecution; metadata catalogue expansion is local code-mode work and does not add a nested tool call.",
+    "interpretation": "Counts are descriptive, not proof that every extra call is unnecessary or that a routing change will improve latency/quality."
+  },
+  "top_candidates": [
+    {
+      "id": "metadata-argument-schema-only",
+      "confidence": "CONFIRMED duplicated delivered instruction text; behavioral gain requires new test",
+      "proposed_mechanism": "When locating a tool, enumerate names. When call syntax is missing, extract only the selected tool argument declaration/schema; exclude its shared core instructions and return-contract sections already retained. Preserve necessary unique parameter documentation. Root owns implementation and metadata eval.",
+      "evidence": [
+        {
+          "trace": "new_Q01",
+          "wrapper_id": "ctc_01ea513854152a31016ae4c60ceb6881919bfff59d2ff240d5",
+          "wrapper_call_id": "call_7e0ec670141c4b1d9a971dd59e25c25f",
+          "delivered_output_id": "ctco_01a18da5-afc6-7e20-a9ce-995587a2c034",
+          "operation": "Prints complete selected descriptions for find_symbol, get_callees, get_callers and semantic_search alongside explore/SKILL.md.",
+          "delivered_chars": 39617,
+          "delivered_truncated": true,
+          "shared_core_marker_positions": [
+            2062,
+            16740,
+            20110
+          ],
+          "identical_core_prefix_chars": 3033,
+          "confirmed_duplicate_char_lower_bound": 6066,
+          "limit": "All character counts and matches use the actual custom_tool_call_output block delivered to the actor, including its truncation; the original untruncated buffer/token count is not used as consumed context."
+        },
+        {
+          "trace": "old_Q01",
+          "wrapper_id": "ctc_071bb8788ac12550016ae492c9aff8819193a02d4f5e1ccb69",
+          "operation": "Existing old behavior extracts find_symbol/get_callees descriptions beginning at exec tool declaration, avoiding their shared core prefix.",
+          "observed_code": "for(const n of [\"find_symbol\",\"get_callees\"]) {const d=ALL_TOOLS.find(t=>t.name===\"mcp__tea_rags__\"+n).description;text(d.slice(d.indexOf(\"exec tool declaration:\")));}",
+          "limit": "Old run also fetched a full semantic_search descriptor, so it is a useful working recipe rather than a zero-duplication ideal."
+        }
+      ],
+      "expected_effect": "Reduces avoidable delivered instruction bytes; does not by itself promise fewer calls, lower reasoning tokens or a speedup."
+    },
+    {
+      "id": "conditional-search-banner-not-forced-graph",
+      "confidence": "CONFIRMED source-complete graph detours; producer banner is directly observed",
+      "proposed_mechanism": "Change the search-result producer banner to route by the missing evidence: a known body/definition needs direct find_symbol only when missing; a complete current body can answer; call-flow/impact questions can require graph traversal. Do not attach an unconditional anchor -> get_callees step to every search answer. Root owns producer fix.",
+      "producer_key": "structuredContent.banner",
+      "exact_banner": "↳ Anchor = the row whose symbol names the asked behaviour (any row, not row 1) → get_callees(symbolId: <anchor>, depth: 2) → ONE find_symbol(symbols:[needed ids]).",
+      "evidence": [
+        {
+          "trace": "new_Q01",
+          "source_wrapper_id": "ctc_01ea513854152a31016ae4c6194c8c8191a3ca887f964ce4ce",
+          "source_tool_id": "exec-3c177d15-5d37-40f8-94eb-ef9aa5e7b8e3",
+          "source_delivered": "Full registry.rb lines 1–133, including adapter_for_provider and provider/connection/capability behavior. The same wrapper then delivers entryPoint search metadata with the unconditional banner.",
+          "banner_tool_id": "exec-b6cfa54a-f1c9-4c22-b26d-2d9855d2aff1",
+          "next_graph_tool_id": "exec-28f3a799-bbad-464f-9c33-1d547d7502f1",
+          "graph_result": "noEdges: Registry#adapter_for_provider is in the codegraph with no callees.",
+          "followup_tool_id": "exec-86ae570b-5154-4953-906c-457c459a92cb",
+          "followup": "Literal adapter_for_provider filename search follows the noEdges banner.",
+          "qualification": "The literal search supplied actual port files useful to the broad Q01 inventory; do not categorically forbid that search. The source-complete graph probe itself did not supply new implementation facts."
+        },
+        {
+          "trace": "new_Q05",
+          "source_wrapper_id": "ctc_01ea513854152a31016ae4c748b27881918d01f7be0552e902",
+          "source_tool_id": "exec-5d3e84e7-bcad-4c96-94ad-2a4f9af55ccf",
+          "source_delivered": {
+            "TaxPreparation::Document#previewable?": "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX.match?(file_extension) && file_size.positive?",
+            "TaxPreparation::Document#file_extension": "return nil if file.blob.blank?; file.blob.filename.extension"
+          },
+          "next_graph_tool_id": "exec-a8c15361-6227-41cf-a100-72ee23656aeb",
+          "graph_result": "depth1 previewable? -> file_extension, whose body was already delivered; depth2 file_extension -> unrelated dynamic Communication::ServiceAdmin::Tasks::TwilioConnection::AttachPhoneNumber::OptionalValue#blank?.",
+          "answer_use": "Final answer uses backend extension/preview regex, file size, ContentTypes.excel? and MIME/antivirus caveats; no Twilio or dependency-tree fact is used.",
+          "qualification": "UI renderer and MIME-classification reads closed legitimate preview-support gaps; they are not blanket-classified as waste."
+        }
+      ],
+      "old_control": "Old Q01 also has one get_callees call; old Q05 has none. This lever addresses common avoidable work and one Q05 extra call, not the entire +9/+4 tool-count difference."
+    }
+  ],
+  "other_observations_not_proposed_as_new_policy": [
+    {
+      "topic": "Directory arrays",
+      "evidence": "Q01 exec-ffd1f063-54fc-420d-a4bc-32dfbaf1ad58 passes two directories in symbols[], receives explicit directory/missing, then exec-4dc9907e and exec-76ac9c82 retry via relativePath. Another mixed file/directory batch misses two Instead directories before two relativePath lookups.",
+      "judgment": "One entirely unproductive batch plus a delayed discovery roundtrip, but the existing core/tool description already explicitly rejects directories in symbols[]. Root declined another redundant clause; no new policy proposed."
+    },
+    {
+      "topic": "Second Q05 graph and final constant miss",
+      "evidence": "exec-d22bf793-4bed-4b26-afa5-60a722aed82d returns 15 DocumentHelper.ts imports; exec-f255666c-36ba-45a9-bfa0-a1427602879b later fails scoped PREVIEWABLE_EXTENSIONS_REGEX with unknownSymbol.",
+      "judgment": "There was a real unresolved frontend declaration gap, so the import lookup is not treated as equivalent to the clearly redundant previewable? graph probe. No new blanket graph ban."
+    },
+    {
+      "topic": "Repeated body/skill loads",
+      "judgment": "No additional confirmed same-body or same-skill reread is claimed from these two new traces. Outline -> method reads are legitimate when the earlier answer delivered only an outline, or when whole-file content was budgeted out. No raw untruncated MCP buffer is counted as read."
+    }
+  ],
+  "paired_behavioral_cases": [
+    {
+      "id": "metadata-known-schema",
+      "actor_prompt": "What does Registry#adapter_for_provider do for an unknown provider? Cite the implementation.",
+      "raw_context": "Current project/cwd are known; find_symbol(project,path,symbols:[id]) signature and shared core rules are retained. Metadata identifies Registry#adapter_for_provider but contains no body. ALL_TOOLS contains four descriptions with identical shared core and unique argument declarations.",
+      "raw_fixture_body": "def adapter_for_provider(provider)\n  ADAPTERS.fetch(provider.to_sym) { raise UnknownProviderError, \"unknown provider\" }\nend",
+      "criteria_outside_actor": "Require actual nonempty method body before answering, correct UnknownProviderError/fetch behavior and code location. No repeated shared-core/return-contract dump; name-only discovery is allowed. Do not pass a no-tools guess.",
+      "control_condition": "Run the same prompt/body with the necessary call signature absent from retained context; allow inspection of the single needed argument declaration and require a successful source call. Schema discovery itself must not be banned."
+    },
+    {
+      "id": "source-complete-search-banner",
+      "actor_prompt": "Would a nonempty .xlsm client document be marked previewable, and why? Cite the implementation and configuration.",
+      "raw_context": "Fresh body for Document#previewable? checks PREVIEWABLE_EXTENSIONS_REGEX against file_extension and positive file size; fresh file_extension body returns the filename extension; settings excludes xlsm and includes pdf/xls/xlsx. A companion search result names the same anchor and passes through the real candidate/control banner producer.",
+      "raw_fixture_bodies": {
+        "previewable?": "PREVIEWABLE_EXTENSIONS_REGEX.match?(file_extension) && file_size.positive?",
+        "file_extension": "file.blob.filename.extension",
+        "configuration": "previewable_extensions_regexp: \"(pdf|xls|xlsx)$\""
+      },
+      "criteria_outside_actor": "Answer no from the actual retained bytes, positive-size condition and cited locations. Do not re-fetch those bodies or probe their callees merely because the result has an anchor. Ensure the fixture uses the real banner producer rather than freezing a policy hint in actor input.",
+      "control_condition": "Same definitions but explicit user request asks for two-level call flow or which helper supplies the extension; graph traversal is permitted/required as appropriate. Also test an incomplete body with an unresolved helper: allow graph/direct missing-body retrieval rather than declaring evidence complete."
+    }
+  ],
+  "implementation_status": "Recommendations only. No production/generated/rule edits, frozen-file changes or model runs by this audit."
+}

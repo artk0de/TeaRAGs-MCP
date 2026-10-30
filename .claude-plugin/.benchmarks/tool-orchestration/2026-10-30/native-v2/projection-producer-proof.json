@@ -1,0 +1,93 @@
+{
+  "export": "projectSearchResultPayloads",
+  "optional_mode_omitted": true,
+  "raw_arguments": [
+    [
+      {
+        "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+        "score": 0.94,
+        "payload": {
+          "relativePath": "src/webhook/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n",
+          "startLine": 1,
+          "endLine": 3,
+          "language": "typescript",
+          "chunkType": "function"
+        }
+      },
+      {
+        "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+        "score": 0.91,
+        "payload": {
+          "relativePath": "src/http/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n",
+          "startLine": 1,
+          "endLine": 3,
+          "language": "typescript",
+          "chunkType": "function"
+        }
+      }
+    ],
+    [
+      "symbolId",
+      "content"
+    ]
+  ],
+  "actual_return": {
+    "results": [
+      {
+        "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+        "score": 0.94,
+        "payload": {
+          "relativePath": "src/webhook/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+        }
+      },
+      {
+        "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+        "score": 0.91,
+        "payload": {
+          "relativePath": "src/http/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n"
+        }
+      }
+    ]
+  },
+  "actual_decorated_response": {
+    "workingTree": {
+      "project": "relative-path-fixture",
+      "tree": "__FIXTURE_ROOT__"
+    },
+    "results": [
+      {
+        "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+        "score": 0.94,
+        "payload": {
+          "relativePath": "src/webhook/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+        }
+      },
+      {
+        "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+        "score": 0.91,
+        "payload": {
+          "relativePath": "src/http/retry.ts",
+          "symbolId": "retryDelay",
+          "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n"
+        }
+      }
+    ]
+  },
+  "return_sha256": "fbcef501bb2ec804adb11e480ab0ec330551a604003024856ac1868ec38208a5",
+  "source_definition_sha256": "f2cfb1d9f20b191131d7e164bcf97a7728206b5d002738990e58488d16543e20",
+  "source_module": "src/core/api/public/dto/payload-projection.ts",
+  "source_module_sha256": "fa453c2d0e8018771951e235deb5a062400910cfa572b8fb71500cb52804cedf",
+  "actual_source_import": true,
+  "model_turns": 0,
+  "produced_case_sha256": "314ef2f2432ef5c53831d84a3b987f3efa4e327a8a5341b5256bec11cf6325d9"
+}

@@ -1,0 +1,74 @@
+{
+  "provenance": "Counts, timestamps, and console excerpts transcribed from captured tool stdout in the implementation session. Original stdout was not redirected to a log; these are not byte-for-byte raw console files. Snapshot hashes and scoped.diff were captured directly from the workspace at archive creation.",
+  "runs": [
+    {
+      "phase": "baseline",
+      "command": "npx vitest run tests/core/api/public/dto/payload-projection.test.ts tests/core/api/internal/ops/explore-ops-fields-projection.test.ts tests/core/api/tools/explore.test.ts --maxWorkers=4",
+      "exitCode": 0,
+      "testFiles": 3,
+      "passed": 100,
+      "failed": 0,
+      "startLocal": "22:37:42",
+      "durationMs": 620
+    },
+    {
+      "phase": "RED-before-production-edit",
+      "command": "npx vitest run tests/core/api/public/dto/payload-projection.test.ts tests/core/api/internal/ops/explore-ops-fields-projection.test.ts tests/core/api/tools/explore.test.ts --maxWorkers=4",
+      "exitCode": 1,
+      "testFiles": 3,
+      "passed": 95,
+      "failed": 11,
+      "startLocal": "22:43:44",
+      "durationMs": 803,
+      "limitation": "Five new server assertions initially used flat column keys even though recordsOf folds columns into nested payload. Their initial failure alone is not valid evidence of locator loss; DTO/ops RED directly establishes the defect. The decoder was corrected before GREEN."
+    },
+    {
+      "phase": "expanded-DTO-RED-before-production-edit",
+      "command": "npx vitest run tests/core/api/public/dto/payload-projection.test.ts --maxWorkers=4",
+      "exitCode": 1,
+      "testFiles": 1,
+      "passed": 21,
+      "failed": 9,
+      "startLocal": "22:44:49",
+      "durationMs": 174
+    },
+    {
+      "phase": "scoped-GREEN",
+      "command": "npx vitest run tests/core/api/public/dto/payload-projection.test.ts tests/core/api/internal/ops/explore-ops-fields-projection.test.ts tests/core/api/tools/explore.test.ts --maxWorkers=4",
+      "exitCode": 0,
+      "testFiles": 3,
+      "passed": 106,
+      "failed": 0,
+      "countsByFile": {
+        "payload-projection.test.ts": 30,
+        "explore-ops-fields-projection.test.ts": 7,
+        "explore.test.ts": 69
+      },
+      "startLocal": "22:48:59",
+      "durationMs": 659
+    },
+    {
+      "phase": "schema-valid-tool-input-matrix-GREEN",
+      "command": "npx vitest run tests/core/api/tools/explore.test.ts -t 'serializes real source paths when fields excludes them' --maxWorkers=4",
+      "exitCode": 0,
+      "testFiles": 1,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 64,
+      "startLocal": "22:51:31",
+      "durationMs": 468,
+      "purpose": "Final tests-only correction gives each tool schema-valid input. semantic_search/hybrid_search query; rank_chunks rerank; find_similar positiveCode; find_symbol symbol."
+    }
+  ],
+  "parentReportedBuild": {
+    "genPluginsExitCode": 0,
+    "freshBuildExitCode": 0,
+    "provenance": "Root reported successful final generation and fresh build after removing the duplicate hot-core invariant. Their original build logs are owned by root. No build rerun by this agent."
+  },
+  "notRun": [
+    "Full test suite",
+    "Actor/model trial",
+    "Commit"
+  ],
+  "runtimeEvidence": "Native P1 uses the actual producer and is owned by the separate v2 runner; no runtime verdict is claimed here."
+}

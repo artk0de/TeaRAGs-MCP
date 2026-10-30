@@ -1,0 +1,40 @@
+{
+  "files": [
+    {
+      "path": "src/core/api/public/dto/payload-projection.ts",
+      "sha256": "fa453c2d0e8018771951e235deb5a062400910cfa572b8fb71500cb52804cedf",
+      "bytes": 12210
+    },
+    {
+      "path": "src/core/api/internal/ops/explore-ops.ts",
+      "sha256": "5e1bd662a49099b29a270f64ffecb60b9d8354b4bccd44234c6099749d23442a",
+      "bytes": 62168
+    },
+    {
+      "path": "src/core/api/tools/schemas.ts",
+      "sha256": "fe4304f41f0b67fdc4923def952c81fd85f802ceefe6dc76171cdac5d728d576",
+      "bytes": 23208
+    },
+    {
+      "path": "tests/core/api/public/dto/payload-projection.test.ts",
+      "sha256": "ce87f691e51d872c4a6c6f143a867e1ee838cf64ac018cc0962427dabb0b7673",
+      "bytes": 18389
+    },
+    {
+      "path": "tests/core/api/internal/ops/explore-ops-fields-projection.test.ts",
+      "sha256": "37673964043f643598f2d33e8aaabafe2d8da46efde9091a9879301f58d82521",
+      "bytes": 9037
+    },
+    {
+      "path": "tests/core/api/tools/explore.test.ts",
+      "sha256": "f928a6b315c3e25d6d4a3b514a73722f3292767413c038ebbd8acbf923a0d650",
+      "bytes": 32325
+    },
+    {
+      "path": "plugins/tea-rags/rules/guides/overview.md",
+      "sha256": "759f5406a576aea635a95462bf4642561136eeffd6446d5ee32932703cb65a8f",
+      "bytes": 10430
+    }
+  ],
+  "scope": "Seven scoped source, test, and canonical overview files; generated plugin/build artifacts owned by root and frozen separately."
+}

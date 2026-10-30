@@ -16,9 +16,9 @@
  *
  * Two decisions live here:
  *
- *   - The result is EXACTLY what was asked for. Nothing is added back in,
- *     `relativePath` included. An allow-list that silently keeps extras is the
- *     same defect in a smaller size, and the caller can name the path.
+ *   - A real nonempty `relativePath` is mandatory source identity and comes
+ *     first. Every other payload field remains exactly allowlisted. Missing or
+ *     invalid upstream locators are reported by result id, never invented.
  *
  *   - A path that matched NOTHING in any returned payload is REPORTED. The
  *     payload shape is not statically knowable — `git.*` exists only where git
@@ -35,7 +35,7 @@ import type { SearchResult } from "./explore.js";
 /** Results after projection, plus the advisory about paths that matched nothing. */
 export interface PayloadProjectionOutcome {
   results: SearchResult[];
-  /** Present only when a requested path matched no result. Advisory — results still return. */
+  /** Advisory for unmatched requested fields or source rows without a valid relativePath. */
   fieldsWarning?: string;
 }
 
@@ -127,14 +127,36 @@ export function projectSearchResultPayloads(
   results: SearchResult[],
   fields: readonly string[] | undefined,
   mode?: PayloadProjectionMode,
+  reportUnmatchedFields = true,
 ): PayloadProjectionOutcome {
   const paths = normalizeFieldPaths(fields);
-  if (paths.length === 0) return { results: mode ? projectByMode(results, mode) : results };
+  const unlocated = results
+    .filter((result) => {
+      const relativePath = result.payload?.relativePath;
+      return typeof relativePath !== "string" || relativePath.trim().length === 0;
+    })
+    .map((result) => JSON.stringify(result.id));
+  const locatorWarning =
+    unlocated.length > 0
+      ? `relativePath: missing or invalid upstream locator for result(s) ${unlocated.join(", ")}`
+      : undefined;
+  if (paths.length === 0) {
+    return {
+      results: mode ? projectByMode(results, mode) : results,
+      ...(locatorWarning ? { fieldsWarning: locatorWarning } : {}),
+    };
+  }
 
   const matched = new Set<string>();
   const projected = results.map((result) => {
     if (!result.payload) return result;
-    return { ...result, payload: projectPayload(result.payload, paths, matched) };
+    const payload = projectPayload(result.payload, paths, matched);
+    const { relativePath } = result.payload;
+    return {
+      ...result,
+      payload:
+        typeof relativePath === "string" && relativePath.trim().length > 0 ? { relativePath, ...payload } : payload,
+    };
   });
 
   const unmatched = paths.filter((path) => !matched.has(path));
@@ -142,7 +164,14 @@ export function projectSearchResultPayloads(
   // batch, the same reason a detached enrichment run reports "not measured"
   // rather than "nothing broke".
   const fieldsWarning =
-    unmatched.length > 0 && results.length > 0 ? describeUnmatchedPaths(unmatched, results) : undefined;
+    [
+      reportUnmatchedFields && unmatched.length > 0 && results.length > 0
+        ? describeUnmatchedPaths(unmatched, results)
+        : undefined,
+      locatorWarning,
+    ]
+      .filter(Boolean)
+      .join("; ") || undefined;
 
   return { results: projected, ...(fieldsWarning ? { fieldsWarning } : {}) };
 }

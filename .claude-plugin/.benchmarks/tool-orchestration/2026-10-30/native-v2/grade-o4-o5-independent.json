@@ -1,0 +1,210 @@
+{
+  "independent_reviewer": "/root/eval_targeted_reads",
+  "root_EOF_confirmed": true,
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "plugin_version": "0.53.9",
+  "candidate_plugin_fingerprint_sha256": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+  "review_basis": "Actual native executed wrappers, native operation bytes, labelled delivered values and final answer content. Runtime completed status alone never awards PASS. No model reasoning content inspected.",
+  "cases": [
+    {
+      "case": "O4-independent-mixed-tool-batch",
+      "verdict": "PASS",
+      "native_completed_turns": 1,
+      "workspace_unchanged": true,
+      "raw_trace_sha256": "c4c31ab12131cf00f0abd6bcb6f6950fe7e4b19a2426f842932840bb8cfee389",
+      "final_answer": "[`RetryBudget#allows`](src/retry/RetryBudget.ts:3) permits another retry when `attempt + 1 < maxAttempts`.\n\n| Delivery type | Configured limit | Attempt 2 | Attempt 4 |\n|---|---:|---|---|\n| HTTP | [3](config/http_delivery.yml:1) | **No** — `3 < 3` is false | **No** — `5 < 3` is false |\n| Webhook | [5](config/webhook_delivery.yml:1) | **Yes** — `3 < 5` is true | **No** — `5 < 5` is false |",
+      "clock_sleep_available": false,
+      "invoked_clock_sleep_or_delay": false,
+      "native_operations": [
+        {
+          "type": "commandExecution",
+          "id": "exec-6d636404-5bf8-4ad2-aaee-ca2b0390ac7f",
+          "command": "/bin/zsh -c \"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O4-independent-mixed-tool-batch/home/plugins/cache/tea-rags/tea-rags/0.53.9/skills/explore/SKILL.md\"",
+          "aggregatedOutput": "---\nname: explore\ndescription:\n  \"Use for questions about existing code behavior, usages, structure, examples,\n  or explicit pre-change context that need investigation. Not bug symptoms,\n  implementation-plan authoring, or broad code-health audits.\"\n---\n\n# Explore\n\nAnswer the literal question with the smallest sufficient source investigation.\nReuse code, outlines, edges, skills and guides already retained in context.\nReload only changed material or instructions missing after compaction; a new\nquestion does not itself require rereading this skill.\n\n## Choose the needed evidence\n\nStart from what is known. If retained evidence answers the question, answer\nwithout tools. Otherwise select one route below, not a sequence of all routes.\nCore rules own project/path addressing, freshness, exact-text exceptions and\nresult contracts; do not fetch their guides again when those rules are known.\n\nKeep context small: discovery starts `metaOnly:true` with a small set (e.g.\n`limit:5`, adjusted to scope). Choose anchors before bodies. Batch only methods\nneeded now, not containing classes/trees; headers/shared declarations need their\nown evidence gap. Every read closes a missing fact in this question, never\nprefetches for a future one.\n\nSearch/outline already supplies the needed method ids → read those methods\ndirectly in ONE `find_symbol(symbols:[…])`. Do not first list their directory,\noutline their file, or fetch their containing class. A known filename alone may\nstill need its outline to identify a method; retain that outline for follow-ups.\nFor known independent config/spec/migration reads, dispatch a single batch: one\nbounded default code read command per file, concurrently in one code-mode\nwrapper where available. Do not insert model turns between independent reads.\n\n| Need                                                                | Route                                                                                                                                                                |\n| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                                                   |\n| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                                             |\n| Exact-name occurrences or complete inventory/absence in known paths | Shell rg -l --hidden --glob '!.git', filenames (`-l`) first; fetch enclosing bodies only for requested behavior/context. Ranked search is not proof of completeness. |\n| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.                                  |\n| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.                            |\n| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:\"only\", metaOnly:true`; a missing hit is not proof of no tests.                                            |\n\nA factual question about an existing integration is not automatically template\nmining or preparation to implement it. Neither future implementation context nor\nwords inside symbol names change the current question's intent. \"Lessons from\nthe existing integration\" stays factual unless an implementation template is\nrequested. An explicitly requested body remains a direct read.\n\n## Load only the selected detail\n\nUse a reference only when that branch is needed and its instructions are not\nalready held. Recipes are not minimum call counts: continue only to close an\nidentified evidence gap.\n\n- Explicit cycles → [cycle-pattern](./references/cycle-pattern.md).\n- Explicit architecture diagnosis/audit, explicit `architecture-diagnostics`\n  invocation, or structural refactoring → `architecture-diagnostics`. Never use\n  it or `get_architecture_report` to gather context, explain contracts or give a\n  code overview; read the relevant implementations instead.\n- Explicit structure/architecture →\n  [architecture-pattern](./references/architecture-pattern.md); entry points →\n  [entry-point-pattern](./references/entry-point-pattern.md).\n- Usage/impact needing more detail →\n  [usage-pattern](./references/usage-pattern.md); graph unavailable →\n  [trace-pattern](./references/trace-pattern.md).\n- Explicit pre-change investigation →\n  [pre-gen-pattern](./references/pre-gen-pattern.md): discover only missing\n  targets, then ONE needed-symbol overlay batch for DDG. Do not automatically\n  start implementation or a broad risk scan.\n- Explicit example/template/reuse or pattern collection →\n  [exemplar-pattern](./references/exemplar-pattern.md). One fitting example does\n  not require collecting all variants or similarity expansion.\n- Broad introduction needing several axes →\n  [explore-flow](./references/explore-flow.md). Do not search\n  tests/specifications merely because the source question is broad.\n- A name's fit → `get_naming_lexicon`; names introduced by a diff →\n  `review_changes(sections:[\"naming\"])`. Detailed naming interpretation →\n  [naming-pattern](./references/naming-pattern.md).\n- Ownership/recent activity →\n  [explain-pattern](./references/explain-pattern.md). History, risk scans,\n  planning and failures follow core's dedicated routes.\n\nUse an explicit current codegraph setting, otherwise availability in the tool\nlist; no probe call. Without graph evidence, label inferred calls/dependencies\nand never claim a proven absence of cycles or paths.\n\n## Evidence and stopping\n\nSource establishes behavior; tests establish expectations; docs describe intent.\nAdd tests or specifications only when requested or needed to resolve\nuncertainty. Verify a behavioral doc claim against source already held, or fetch\nits known symbol; discovery search is needed only when the location is unknown.\n\nA complete fresh body from ANY tea-rags tool, including `semantic_search`, is\nalready read authoritative code. Answer from it; no `find_symbol`, Read or shell\nconfirmation of the same body. Metadata/signatures/outlines/container headers\nare not method bodies. Refresh only affected edited/stale or missing evidence. A\nheld full body can answer a point question with zero further reads. An outline\nis an address map, not evidence of method behavior; fetch only the relevant\nmissing bodies in ONE batch. Reassemble `#partN` before reasoning about its\nwhole method. If needed content is truncated, follow the relevant continuation;\nunneeded pages are not required. Known paths and returned ids replace\nrediscovery.\n\nStop when the requested facts have evidence. State unresolved limits rather than\nexpanding into neighboring patterns, ownership, tests or design work. Answer\ndirectly with relevant `file:line` citations and a concise explanation; report\nan explicit inventory's coverage limit. No mandatory strategy preamble, workflow\nrecital or extra output format for a simple question.\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390253796,
+          "completedAtMs": 1793390253796,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "id": "exec-7d01a8b8-d3ea-4985-a004-2b2d83be8b55",
+          "command": "/bin/zsh -c \"sed -n '1,120p' config/http_delivery.yml\"",
+          "aggregatedOutput": "max_attempts: 3\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390257368,
+          "completedAtMs": 1793390257368,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "id": "exec-af5bfcc4-54a7-4304-834e-1349cd6a825e",
+          "command": "/bin/zsh -c \"sed -n '1,120p' config/webhook_delivery.yml\"",
+          "aggregatedOutput": "max_attempts: 5\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390257371,
+          "completedAtMs": 1793390257371,
+          "status": "completed"
+        },
+        {
+          "type": "mcpToolCall",
+          "id": "exec-6f1f447a-0ec8-4162-81b0-61908462c670",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "routing-orchestration-v2-o4-independent-mixed-tool-batch",
+            "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O4-independent-mixed-tool-batch/workspace",
+            "symbols": [
+              "RetryBudget#allows"
+            ]
+          },
+          "startedAtMs": 1793390257412,
+          "completedAtMs": 1793390257417,
+          "status": "completed"
+        }
+      ],
+      "executed_code_mode_calls": [
+        {
+          "id": "ctc_0e631282b32ecfcb016ae4f6abb1008191a0a85ca1635de1ac",
+          "call_id": "call_02f751c033b740389e84d1fe2abfd320",
+          "name": "exec",
+          "input": "text(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&t.name.includes(\"find_symbol\")).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\ntext(await tools.exec_command({cmd:\"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O4-independent-mixed-tool-batch/home/plugins/cache/tea-rags/tea-rags/0.53.9/skills/explore/SKILL.md\",max_output_tokens:5000}));\n"
+        },
+        {
+          "id": "ctc_0e631282b32ecfcb016ae4f6af77fc81918b3940b457f2ce21",
+          "call_id": "call_16d448fff5e14922aecf7bf4df867b60",
+          "name": "exec",
+          "input": "const results = await Promise.allSettled([\ntools.exec_command({cmd:\"sed -n '1,120p' config/http_delivery.yml\",max_output_tokens:2000}),\ntools.exec_command({cmd:\"sed -n '1,120p' config/webhook_delivery.yml\",max_output_tokens:2000}),\ntools.mcp__tea_rags__find_symbol({project:\"routing-orchestration-v2-o4-independent-mixed-tool-batch\",path:\"/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O4-independent-mixed-tool-batch/workspace\",symbols:[\"RetryBudget#allows\"]})\n]);\nresults.forEach((result,i)=>text({input:[\"config/http_delivery.yml\",\"config/webhook_delivery.yml\",\"RetryBudget#allows\"][i],result}));\n"
+        }
+      ],
+      "batch_call_id": "call_16d448fff5e14922aecf7bf4df867b60",
+      "batch_dispatch": "PASS",
+      "labelled_binding": "PASS",
+      "final_correctness": "PASS",
+      "actual_required_operations": {
+        "config/http_delivery.yml": "max_attempts:3",
+        "config/webhook_delivery.yml": "max_attempts:5",
+        "RetryBudget#allows": "attempt+1<maxAttempts"
+      },
+      "delivered_binding": {
+        "config/http_delivery.yml": 3,
+        "config/webhook_delivery.yml": 5
+      },
+      "expected_and_actual_decisions": {
+        "HTTP": {
+          "2": false,
+          "4": false
+        },
+        "Webhook": {
+          "2": true,
+          "4": false
+        }
+      },
+      "evidence": "One executed Promise.allSettled starts both bounded per-file shell reads and the actual missing-body MCP lookup. Results are labelled by input after await; each fulfilled value matches the actual native operation bytes. Final table preserves both file bindings and all four retry decisions with locations.",
+      "timing_note": "Both shell native durations round to0ms; observed overlap is unverifiable. Executed batched dispatch and all returned bytes establish workflow per preregistered scheduler-fairness rule.",
+      "unexercised": "All three outcomes fulfilled; rejection/error handling was not exercised."
+    },
+    {
+      "case": "O5-dependent-discovery-control",
+      "verdict": "FAIL",
+      "native_completed_turns": 1,
+      "workspace_unchanged": true,
+      "raw_trace_sha256": "1f48b7bf881672ecf2dbb2ae0cad47f1fef6e56cee9e9b81d204f62dc39b8c36",
+      "final_answer": "Only **`isolated_preview`** disables timeout retries (`retry_on_timeout: false`). It uses a delay of **0 ms** — [zone_sigma.yml](config/retry/zone_sigma.yml:1).",
+      "clock_sleep_available": false,
+      "invoked_clock_sleep_or_delay": false,
+      "native_operations": [
+        {
+          "type": "commandExecution",
+          "id": "exec-ad813ddb-5c1b-4c92-81d9-b4f4e6264c4b",
+          "command": "/bin/zsh -c \"sed -n '1,180p' config/active_retry.yml\"",
+          "aggregatedOutput": "selected_policies:\n  - config/retry/zone_kappa.yml\n  - config/retry/zone_sigma.yml\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390253720,
+          "completedAtMs": 1793390253721,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "id": "exec-d4943c87-5339-46cc-b76a-a3cc6fe6ad7d",
+          "command": "/bin/zsh -c \"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O5-dependent-discovery-control/home/plugins/cache/tea-rags/tea-rags/0.53.9/skills/explore/SKILL.md\"",
+          "aggregatedOutput": "---\nname: explore\ndescription:\n  \"Use for questions about existing code behavior, usages, structure, examples,\n  or explicit pre-change context that need investigation. Not bug symptoms,\n  implementation-plan authoring, or broad code-health audits.\"\n---\n\n# Explore\n\nAnswer the literal question with the smallest sufficient source investigation.\nReuse code, outlines, edges, skills and guides already retained in context.\nReload only changed material or instructions missing after compaction; a new\nquestion does not itself require rereading this skill.\n\n## Choose the needed evidence\n\nStart from what is known. If retained evidence answers the question, answer\nwithout tools. Otherwise select one route below, not a sequence of all routes.\nCore rules own project/path addressing, freshness, exact-text exceptions and\nresult contracts; do not fetch their guides again when those rules are known.\n\nKeep context small: discovery starts `metaOnly:true` with a small set (e.g.\n`limit:5`, adjusted to scope). Choose anchors before bodies. Batch only methods\nneeded now, not containing classes/trees; headers/shared declarations need their\nown evidence gap. Every read closes a missing fact in this question, never\nprefetches for a future one.\n\nSearch/outline already supplies the needed method ids → read those methods\ndirectly in ONE `find_symbol(symbols:[…])`. Do not first list their directory,\noutline their file, or fetch their containing class. A known filename alone may\nstill need its outline to identify a method; retain that outline for follow-ups.\nFor known independent config/spec/migration reads, dispatch a single batch: one\nbounded default code read command per file, concurrently in one code-mode\nwrapper where available. Do not insert model turns between independent reads.\n\n| Need                                                                | Route                                                                                                                                                                |\n| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                                                   |\n| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                                             |\n| Exact-name occurrences or complete inventory/absence in known paths | Shell rg -l --hidden --glob '!.git', filenames (`-l`) first; fetch enclosing bodies only for requested behavior/context. Ranked search is not proof of completeness. |\n| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.                                  |\n| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.                            |\n| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:\"only\", metaOnly:true`; a missing hit is not proof of no tests.                                            |\n\nA factual question about an existing integration is not automatically template\nmining or preparation to implement it. Neither future implementation context nor\nwords inside symbol names change the current question's intent. \"Lessons from\nthe existing integration\" stays factual unless an implementation template is\nrequested. An explicitly requested body remains a direct read.\n\n## Load only the selected detail\n\nUse a reference only when that branch is needed and its instructions are not\nalready held. Recipes are not minimum call counts: continue only to close an\nidentified evidence gap.\n\n- Explicit cycles → [cycle-pattern](./references/cycle-pattern.md).\n- Explicit architecture diagnosis/audit, explicit `architecture-diagnostics`\n  invocation, or structural refactoring → `architecture-diagnostics`. Never use\n  it or `get_architecture_report` to gather context, explain contracts or give a\n  code overview; read the relevant implementations instead.\n- Explicit structure/architecture →\n  [architecture-pattern](./references/architecture-pattern.md); entry points →\n  [entry-point-pattern](./references/entry-point-pattern.md).\n- Usage/impact needing more detail →\n  [usage-pattern](./references/usage-pattern.md); graph unavailable →\n  [trace-pattern](./references/trace-pattern.md).\n- Explicit pre-change investigation →\n  [pre-gen-pattern](./references/pre-gen-pattern.md): discover only missing\n  targets, then ONE needed-symbol overlay batch for DDG. Do not automatically\n  start implementation or a broad risk scan.\n- Explicit example/template/reuse or pattern collection →\n  [exemplar-pattern](./references/exemplar-pattern.md). One fitting example does\n  not require collecting all variants or similarity expansion.\n- Broad introduction needing several axes →\n  [explore-flow](./references/explore-flow.md). Do not search\n  tests/specifications merely because the source question is broad.\n- A name's fit → `get_naming_lexicon`; names introduced by a diff →\n  `review_changes(sections:[\"naming\"])`. Detailed naming interpretation →\n  [naming-pattern](./references/naming-pattern.md).\n- Ownership/recent activity →\n  [explain-pattern](./references/explain-pattern.md). History, risk scans,\n  planning and failures follow core's dedicated routes.\n\nUse an explicit current codegraph setting, otherwise availability in the tool\nlist; no probe call. Without graph evidence, label inferred calls/dependencies\nand never claim a proven absence of cycles or paths.\n\n## Evidence and stopping\n\nSource establishes behavior; tests establish expectations; docs describe intent.\nAdd tests or specifications only when requested or needed to resolve\nuncertainty. Verify a behavioral doc claim against source already held, or fetch\nits known symbol; discovery search is needed only when the location is unknown.\n\nA complete fresh body from ANY tea-rags tool, including `semantic_search`, is\nalready read authoritative code. Answer from it; no `find_symbol`, Read or shell\nconfirmation of the same body. Metadata/signatures/outlines/container headers\nare not method bodies. Refresh only affected edited/stale or missing evidence. A\nheld full body can answer a point question with zero further reads. An outline\nis an address map, not evidence of method behavior; fetch only the relevant\nmissing bodies in ONE batch. Reassemble `#partN` before reasoning about its\nwhole method. If needed content is truncated, follow the relevant continuation;\nunneeded pages are not required. Known paths and returned ids replace\nrediscovery.\n\nStop when the requested facts have evidence. State unresolved limits rather than\nexpanding into neighboring patterns, ownership, tests or design work. Answer\ndirectly with relevant `file:line` citations and a concise explanation; report\nan explicit inventory's coverage limit. No mandatory strategy preamble, workflow\nrecital or extra output format for a simple question.\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390253922,
+          "completedAtMs": 1793390253922,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "id": "exec-019671c9-61de-4349-a5b2-28ffee22496d",
+          "command": "/bin/zsh -c \"sed -n '1,180p' config/retry/zone_sigma.yml\"",
+          "aggregatedOutput": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390256152,
+          "completedAtMs": 1793390256152,
+          "status": "completed"
+        },
+        {
+          "type": "commandExecution",
+          "id": "exec-dde1d194-cc20-473e-8dff-1c798a01bf04",
+          "command": "/bin/zsh -c \"sed -n '1,180p' config/retry/zone_kappa.yml\"",
+          "aggregatedOutput": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n",
+          "exitCode": 0,
+          "startedAtMs": 1793390256158,
+          "completedAtMs": 1793390256158,
+          "status": "completed"
+        }
+      ],
+      "executed_code_mode_calls": [
+        {
+          "id": "ctc_0a6575ef267a190a016ae4f6abd2248191a6866e59e0b5616f",
+          "call_id": "call_3d63c8303528446b8ace0537e3c02a79",
+          "name": "exec",
+          "input": "text(await tools.exec_command({cmd:\"sed -n '1,180p' config/active_retry.yml\",max_output_tokens:2000}));\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&t.name.includes(\"find_symbol\")).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\ntext(await tools.exec_command({cmd:\"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O5-dependent-discovery-control/home/plugins/cache/tea-rags/tea-rags/0.53.9/skills/explore/SKILL.md\",max_output_tokens:5000}));\n"
+        },
+        {
+          "id": "ctc_0a6575ef267a190a016ae4f6af465081919e7237d8b4c3a386",
+          "call_id": "call_a1da8a25d7244e71b15cae54dced57f1",
+          "name": "exec",
+          "input": "const paths=[\"config/retry/zone_kappa.yml\",\"config/retry/zone_sigma.yml\"];\nconst results=await Promise.allSettled(paths.map(path=>tools.exec_command({cmd:`sed -n '1,180p' ${path}`,max_output_tokens:2000})));\nresults.forEach((result,i)=>text({path:paths[i],result}));\n"
+        }
+      ],
+      "manifest_dependency": "PASS",
+      "child_batch_dispatch": "PASS",
+      "labelled_binding": "PASS",
+      "final_completeness": "FAIL",
+      "manifest_item_id": "exec-ad813ddb-5c1b-4c92-81d9-b4f4e6264c4b",
+      "batch_call_id": "call_a1da8a25d7244e71b15cae54dced57f1",
+      "actual_selected_values": {
+        "regional_primary": {
+          "retry_on_timeout": true,
+          "delay_ms": 350
+        },
+        "isolated_preview": {
+          "retry_on_timeout": false,
+          "delay_ms": 0
+        }
+      },
+      "final_covered": [
+        "isolated_preview:false,0ms"
+      ],
+      "missing_requested_item": "regional_primary delay350ms",
+      "evidence": "Manifest completed at1793390253721 before child starts1793390256152/6158. Child completion order was sigma thenkappa, but post-await path labels correctly preserved kappa350/sigma0. Final answer still reports only isolated_preview0ms and omits the delay for regional_primary, failing the unchanged each-selected-policy criterion.",
+      "scope_basis": "The unchanged fixture criterion requires the delay of every policy selected by the manifest, including the policy whose timeout retries remain enabled."
+    }
+  ],
+  "summary": {
+    "PASS": 1,
+    "FAIL": 1
+  },
+  "original_attempts": {
+    "archive": ".claude-plugin/.benchmarks/tool-orchestration/2026-10-30/orchestration-results",
+    "O4": "FAIL preserved",
+    "O5": "FAIL preserved"
+  },
+  "limits": [
+    "One new candidate observation per unchanged case; no actor retries or additional calls by reviewer.",
+    "O4 now passes the actual mapping regression. O5 remains incomplete despite correct orchestration; no criterion was weakened.",
+    "O4/O5 clock.sleep was disabled; clock-available waiting/user-input evidence belongs to separate cases."
+  ]
+}

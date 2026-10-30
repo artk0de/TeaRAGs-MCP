@@ -1,0 +1,147 @@
+{
+  "scope": "Read-only saved-trace audit: new A39 versus historical A where relevant. No fresh MCP, corpus, model, indexing or proxy calls; no production changes.",
+  "verdict": "Two scoped proposals: make independent-call batching executable rather than nominal; distinguish configuration/framework wiring from a request for static caller edges. Q12's raw tool-count increase is not a clean regression.",
+  "findings": [
+    {
+      "id": "Q12-context-difference",
+      "classification": "Missing-body work is legitimate; count-only regression rejected",
+      "evidence": {
+        "old_Q01_call": "exec-31cca1f9-17ac-47b4-a1d7-9ee996d2fe3c",
+        "old_generic_merge_full_file_chars": 4413,
+        "old_generic_batch_destroy_full_file_chars": 2381,
+        "new_Q01_call": "exec-330822d8-d10f-4305-a1df-a567a9334c68",
+        "new_generic_merge_outline_chars": 1476,
+        "new_generic_batch_destroy_outline_chars": 874,
+        "new_Q01_helper_bodies_already_retained": [
+          "TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#merge_provider_records!",
+          "TaxPreparation::TaxAutomations::TaxPreparations::BatchDestroy#drop_provider_records!"
+        ],
+        "new_Q12_calls": [
+          "exec-c1a91dcd-3688-4f65-83fc-cf25fe86f961",
+          "exec-fc6fea95-5dc6-4951-9e25-f471d39c4603",
+          "exec-a8794824-39dd-4938-be5b-c4399d8da0fb",
+          "exec-488154fd-ab40-4e66-b902-d36661d716e4"
+        ],
+        "no_compaction_before_Q12": true
+      },
+      "assessment": "New Q12 correctly fetches unread generic merge perform/helpers and BatchDestroy.perform. The two previously read provider helpers are not fetched again. The caller graph identifies ContactsConsumer.handle_merged/consume, whose bodies also were not retained. Those bodies establish the CRM-event entry point and are defensible for the user's when-CRM-merges question. Historical Q12 needed only the two vendor files because generic implementation bodies were already prefetched in old Q01. Do not optimize this by banning graph use or suppressing required bodies."
+    },
+    {
+      "id": "independent-calls-serialized",
+      "classification": "Confirmed executed workflow defect",
+      "evidence": [
+        {
+          "turn": "Q12",
+          "wrapper": "ctc_01ea513854152a31016ae4c83022588191bcd68fe7f9b540c1",
+          "shape": "await get_callers(known MergeForContact.perform); await find_symbol(known BatchDestroy.perform and vendor destroy file)",
+          "why_independent": "The second call's constant arguments do not consume the first result. Both operations actually complete in separate sequential dispatches inside one wrapper. Later ContactsConsumer body reads legitimately depend on returned caller IDs."
+        },
+        {
+          "turn": "Q34",
+          "wrapper": "ctc_01ea513854152a31016ae4ca79853081918542f0d7456dc230",
+          "shape": "Three sequential awaits: scoped spec filename discovery, Gemfile dependency search, Gemfile.lock dependency search",
+          "why_independent": "All paths/queries are known at wrapper entry. The two manifest searches do not depend on the spec search, and neither manifest search depends on the other. The following wrapper also serializes two independent spec queries."
+        },
+        {
+          "turn": "Q36",
+          "wrapper": "ctc_01ea513854152a31016ae4cab8e21c8191a8b30a428eac0351",
+          "shape": "for (const file of seven known migration paths) { await exec_command(per-file bounded sed); }",
+          "why_independent": "The preceding rg result already located all paths. This is one wrapper but seven deliberately serialized awaits, not a Promise batch. Every read is bounded and one-file-per-command; the defect is serialization."
+        }
+      ],
+      "positive_control": {
+        "turn": "Q30",
+        "wrapper": "ctc_01ea513854152a31016ae4ca0dda1081919e5c16a9b85327af",
+        "assessment": "Four independent schema/migration reads actually run through Promise.allSettled in one wrapper. This is valid batching despite near-zero native durations and any scheduler serialization. Initial filename/line discovery and later discovered constraints can remain separate stages."
+      }
+    },
+    {
+      "id": "framework-wiring-is-not-static-callers",
+      "classification": "Scoped routing clarification supported; causal rule-forcing not proven",
+      "evidence": {
+        "turn": "Q02",
+        "user_intent": "What was the mock transport, how enabled, how used in specs, and still wired anywhere?",
+        "graph_call": "exec-aed664c3-1766-4102-85a8-e23aa639c50f",
+        "graph_arguments": "get_callers(Instead::Mock::Adapter#call, depth:2)",
+        "other_evidence": "Actual factory/client connection bodies, mock router bodies, spec support/setup bodies and literal occurrence searches were available. Framework/Faraday dispatch need not create an indexed direct caller of Adapter#call."
+      },
+      "assessment": "A static noEdges answer neither proves the adapter is unwired nor replaces checking registration/factory/spec references. Such a graph call can supplement a static-caller investigation, but should not be mandatory merely because the user asks whether a mock is wired. The saved trace does not prove the model's internal reason for calling it.",
+      "proxy_separation": "The legitimate noEdges text/banner was rejected once by the boundary proxy. That is a separate response-contract defect. Preserve it in run evidence; do not fix it by broadening plugin routing, pretending graph is unavailable, or treating a rejected response as proof of absent use."
+    }
+  ],
+  "duplicate_body_check": {
+    "result": "No confirmed identical full-body rereads in selected Q02/Q12/Q30/Q34/Q36 native columnar method/file results",
+    "method": "Streamed saved new-session events and matched current path + symbol + exact content SHA-256 against prior complete native method/file bodies. Outlines are not treated as bodies.",
+    "limits": "This is an exact native-body check, not proof that no semantically overlapping shell or differently formatted body ever recurred.",
+    "important_control": "Q34 client_spec.rb lines690-717 were not covered by Q02's retained lines1-200, so the later bounded read is legitimate. Equal search output alone is not a duplicate-body finding when query/scope expands."
+  },
+  "proposed_rules": [
+    {
+      "id": "R1-independent-dispatch",
+      "priority": "Confirmed; fold into existing 0.53.9 await/parallel work",
+      "text": "At each evidence stage, form all currently independent tool promises first and await Promise.all/Promise.allSettled once in one code-mode wrapper. A wrapper containing sequential awaits or a for/await read loop is not a batch. This includes independent searches, graph requests and already-addressed body reads, not only per-file shell reads. Keep one bounded read command per file. A read whose path/id is discovered by another result starts the next stage; do not guess or prefetch it."
+    },
+    {
+      "id": "R2-wiring-versus-call-edges",
+      "priority": "Narrow clarification; test before claiming performance gain",
+      "text": "For registration, feature/config switches, factory wiring and spec setup, use the relevant retained source/config facts and literal references to answer the wiring question. Do not require a static caller/callee graph solely to reconfirm framework-dispatched usage. Use graph tools when the requested fact is static callers, impact or a missing execution/event entry edge. A noEdges result is not evidence that a dynamic registration is unused; state the coverage limit."
+    }
+  ],
+  "eval_cases": [
+    {
+      "id": "E1-registered-framework-adapter",
+      "actor": {
+        "prompt": "Is the mock transport still wired, how is it enabled, and how do the specs turn it on?",
+        "retained_raw_facts": [
+          "Current Client#connection body builds Faraday with builder.adapter(Feature.enabled?(:vendor_mock) ? Vendor::Mock::Adapter : Faraday.default_adapter).",
+          "Current spec support body enables :vendor_mock around an example and restores it afterward. Complete current bodies and source coordinates are retained."
+        ]
+      },
+      "grader_only": "Answer from the held facts with locations; no mandatory get_callers(Adapter#call), no assertion that absent direct call edges imply unwired. If a complete occurrence inventory is explicitly requested instead, require scoped literal filename discovery and inspect missing reference bodies. Materialize literal source bytes for runtime; do not send this grading text or a tool-choice hint to the actor."
+    },
+    {
+      "id": "C1-real-static-impact",
+      "actor": {
+        "prompt": "Which indexed methods directly call Importer#run, and which callers would be affected if its return shape changes?",
+        "retained_raw_facts": ["Importer#run body and exact symbol id are retained; caller edges and caller bodies are not."]
+      },
+      "grader_only": "A real get_callers request remains appropriate and must not be suppressed by the wiring rule. Fetch only missing necessary caller bodies in one batch after real returned IDs; do not infer callers from a config registration."
+    },
+    {
+      "id": "C2-CRM-entry-and-missing-bodies",
+      "actor": {
+        "prompt": "Which CRM merge event reaches MergeForContact, and what happens to already-sent files?",
+        "retained_raw_facts": [
+          "MergeForContact file outline is retained, not its perform/helper bodies.",
+          "Provider merge hook body is retained. Consumer wiring and vendor merge/destroy bodies are not."
+        ]
+      },
+      "grader_only": "Permit graph discovery of the missing event entry point and require genuinely missing implementation bodies. Outline-only guessing fails. Consumer bodies cannot be required before their IDs are discovered. Already-known independent body and graph requests should share a Promise batch."
+    },
+    {
+      "id": "E2-known-migration-loop",
+      "actor": {
+        "prompt": "List indexes and foreign keys created or changed by the seven migrations in the retained filename-search output.",
+        "retained_raw_facts": ["Native filename-search output provides seven concrete fixture migration paths, with no contents yet retained."]
+      },
+      "grader_only": "Observe seven bounded per-file reads actually dispatched through one Promise batch. A single for loop with await fails even though it has one outer wrapper. Report overlap timing separately; zero-ms native durations do not make an actual Promise batch fail."
+    },
+    {
+      "id": "C3-dependent-discovery",
+      "actor": {
+        "prompt": "Read the selected validator and explain the configured validation behavior.",
+        "retained_raw_facts": ["Only config/validator.yml path is known; its contents select an implementation file that has not yet been seen."]
+      },
+      "grader_only": "Read the known config first, then the actual selected implementation. Do not demand impossible parallel reads of an unknown path or count this true dependency as a serialization regression."
+    },
+    {
+      "id": "E3-independent-search-manifest-stage",
+      "actor": {
+        "prompt": "Find the vendor contract specs under spec/vendors and identify the validation gem and locked version from Gemfile and Gemfile.lock.",
+        "retained_raw_facts": ["All three anchor paths are known; the spec filename is not known yet."]
+      },
+      "grader_only": "The scoped spec filename search and bounded manifest searches are independent and should actually dispatch in one batch. The later spec body read is allowed to depend on discovered path/line coordinates. Preserve answer correctness and coverage."
+    }
+  ],
+  "eval_limit": "These are scoped runtime-case designs, not executed results. Before running, materialize raw source/tool fixtures with real native responses and keep actor inputs separate from grader fields. No new benchmark or model run was launched by this audit."
+}

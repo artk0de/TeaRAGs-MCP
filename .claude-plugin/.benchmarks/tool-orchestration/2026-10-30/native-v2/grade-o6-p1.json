@@ -1,0 +1,170 @@
+{
+  "reviewer": "/root/eval_architecture_gate",
+  "method": "Offline native-call, actual-output and source-producer evidence; not runner-status grading",
+  "cases": [
+    {
+      "case": "O6-new-route-inventory-pending-control",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "one_native_turn": true,
+        "one_final_answer": true,
+        "single_real_job_and_tool": true,
+        "same_native_runtime_wrapper": true,
+        "same_job_ready_before_release": true,
+        "same_cell_native_wait": true,
+        "real_terminal_bytes_delivered": true,
+        "clock_available_no_delay_or_restart": true,
+        "final_facts_grounded": true
+      },
+      "evidence": {
+        "thread_id": "01a18e63-a8be-7372-a79c-f09acaed9545",
+        "turn_id": "01a18e63-a8e2-7ff3-808a-051743fd5999",
+        "final_answer": "The inventory checks **5 routes**. Missing from the registered set:\n\n- `payments.capture`\n- `reports.export`",
+        "actor_wall_seconds": 44.707,
+        "start_wrapper_id": "ctc_0dc334004bcd398f016ae4f6b964808191a5d6e4bb98fb607e",
+        "start_call_id": "call_f66b361f3a9642998930155d7d0e04f3",
+        "native_mcp_id": "exec-5443e773-c5d3-4d7b-9798-02a1c229bc68",
+        "job_pid": 11475,
+        "pending_output_id": "ctco_01a18e64-404d-7f71-b3de-50d04cade260",
+        "cell_id": "2",
+        "wait_id": "fc_0dc334004bcd398f016ae4f6dc26808191a7e90c44d47d6eb0",
+        "wait_output_id": "fco_01a18e64-51ee-7f83-a349-397444307f13",
+        "pending_lifecycle": [
+          {
+            "event": "actual_native_pending_observed",
+            "monotonic_ns": 74895190630541,
+            "kind": "exec_cell",
+            "cell_id": "2",
+            "call_id": "call_f66b361f3a9642998930155d7d0e04f3",
+            "observed_monotonic_ns": 74895190630541,
+            "output_id": "ctco_01a18e64-404d-7f71-b3de-50d04cade260"
+          },
+          {
+            "event": "matching_job_ready_verified",
+            "monotonic_ns": 74895190920083,
+            "wrapper_id": "ctc_0dc334004bcd398f016ae4f6b964808191a5d6e4bb98fb607e",
+            "call_id": "call_f66b361f3a9642998930155d7d0e04f3",
+            "native_mcp_call_id": "exec-5443e773-c5d3-4d7b-9798-02a1c229bc68",
+            "job_pid": 11475,
+            "job": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O6-new-route-inventory-pending-control/workspace/jobs/check_routes_v2.py",
+            "job_ready_monotonic_ns": 74864227790750,
+            "thread_id": "01a18e63-a8be-7372-a79c-f09acaed9545",
+            "turn_id": "01a18e63-a8e2-7ff3-808a-051743fd5999"
+          },
+          {
+            "event": "controller_fifo_released",
+            "monotonic_ns": 74895190932416,
+            "reason": "Matching native pending cell and same-wrapper single job_ready verified; independent of next actor choice",
+            "wrapper_id": "ctc_0dc334004bcd398f016ae4f6b964808191a5d6e4bb98fb607e",
+            "call_id": "call_f66b361f3a9642998930155d7d0e04f3",
+            "native_mcp_call_id": "exec-5443e773-c5d3-4d7b-9798-02a1c229bc68",
+            "job_pid": 11475,
+            "job": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O6-new-route-inventory-pending-control/workspace/jobs/check_routes_v2.py",
+            "job_ready_monotonic_ns": 74864227790750,
+            "thread_id": "01a18e63-a8be-7372-a79c-f09acaed9545",
+            "turn_id": "01a18e63-a8e2-7ff3-808a-051743fd5999"
+          }
+        ],
+        "job_events": [
+          {
+            "event": "job_start",
+            "timestamp_ns": 1793390266169297000,
+            "monotonic_ns": 74864193103625,
+            "request_id": null,
+            "method": "fixture/job",
+            "pid": 11475,
+            "job": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/tool-orchestration-v2/cases/O6-new-route-inventory-pending-control/workspace/jobs/check_routes_v2.py"
+          },
+          {
+            "event": "job_ready",
+            "timestamp_ns": 1793390266203987000,
+            "monotonic_ns": 74864227790750,
+            "request_id": null,
+            "method": "fixture/job",
+            "pid": 11475,
+            "ready": "ORCH_JOB_READY 11475"
+          },
+          {
+            "event": "job_end",
+            "timestamp_ns": 1793390297177929000,
+            "monotonic_ns": 74895201663541,
+            "request_id": null,
+            "method": "fixture/job",
+            "pid": 11475,
+            "exit_code": 0,
+            "output": "{\"checked\": 5, \"missing\": [\"payments.capture\", \"reports.export\"]}\n",
+            "stderr": ""
+          }
+        ],
+        "actual_delivered_terminal_result": {
+          "checked": 5,
+          "missing": [
+            "payments.capture",
+            "reports.export"
+          ]
+        }
+      }
+    },
+    {
+      "case": "P1-retained-field-projection-locators",
+      "verdict": "PASS",
+      "checks": {
+        "completed_once": true,
+        "one_native_turn": true,
+        "one_final_answer": true,
+        "actual_source_projection": true,
+        "fields_omit_path_output_preserves_it": true,
+        "actual_projected_bodies_seeded": true,
+        "zero_extra_context_calls": true,
+        "correct_path_mapping": true
+      },
+      "evidence": {
+        "thread_id": "01a18e63-b1f0-7f63-a496-90a853a89fd3",
+        "turn_id": "01a18e63-b218-7d12-9590-b77eb28a8de0",
+        "final_answer": "| File | Attempt 0 | Attempt 2 |\n|---|---:|---:|\n| [src/http/retry.ts](src/http/retry.ts) \u2014 `100 * 2 ** attempt` | 100 | 400 |\n| [src/webhook/retry.ts](src/webhook/retry.ts) \u2014 `300 * 2 ** attempt` | 300 | 1,200 |\n\nThe webhook delay is three times the HTTP delay at each attempt.",
+        "actor_wall_seconds": 5.749,
+        "source_module": "src/core/api/public/dto/payload-projection.ts",
+        "source_sha256": "fa453c2d0e8018771951e235deb5a062400910cfa572b8fb71500cb52804cedf",
+        "raw_requested_fields": [
+          "symbolId",
+          "content"
+        ],
+        "actual_projected_path_order": [
+          "src/webhook/retry.ts",
+          "src/http/retry.ts"
+        ],
+        "actual_producer_return": {
+          "results": [
+            {
+              "id": "197eea70-0db2-41b2-ae04-b5bc0d942120",
+              "score": 0.94,
+              "payload": {
+                "relativePath": "src/webhook/retry.ts",
+                "symbolId": "retryDelay",
+                "content": "export function retryDelay(attempt: number): number {\n  return 300 * 2 ** attempt;\n}\n"
+              }
+            },
+            {
+              "id": "8ee478d3-ec72-46ae-956c-d14299c87658",
+              "score": 0.91,
+              "payload": {
+                "relativePath": "src/http/retry.ts",
+                "symbolId": "retryDelay",
+                "content": "export function retryDelay(attempt: number): number {\n  return 100 * 2 ** attempt;\n}\n"
+              }
+            }
+          ]
+        },
+        "post_prompt_tool_count": 0
+      }
+    }
+  ],
+  "passed": 2,
+  "total": 2,
+  "limits": [
+    "One synthetic observation per case; no full benchmark or latency claim.",
+    "O6 is a new five-route control; original O1 remains inconclusive, not a corrected/retried actor attempt.",
+    "P1 proves actual shared projection plus native actor consumption for one fields case; server unit matrix covers other endpoints."
+  ]
+}

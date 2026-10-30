@@ -1,0 +1,19 @@
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+project_doc_max_bytes = 0
+[features]
+apps = false
+plugins = false
+hooks = false
+memories = false
+skip_host_skill_discovery = true
+skill_search = false
+remote_plugin = false
+shell_snapshot = false
+multi_agent = true
+default_mode_request_user_input = true
+unified_exec = true
+sleep_tool = false

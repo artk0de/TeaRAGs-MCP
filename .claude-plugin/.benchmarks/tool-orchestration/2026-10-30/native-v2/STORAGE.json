@@ -1,0 +1,11 @@
+{
+  "directory": "native-v2",
+  "original_files": 183,
+  "original_bytes": 1414834,
+  "archive": "evidence.tar.gz",
+  "archive_bytes": 648718,
+  "archive_sha256": "7984343289e1900e53f755fa369ce0681bd80b8a1b26c9058ccb381db910d80f",
+  "all_original_member_bytes_verified": true,
+  "member_inventory_sha256": "e9b107cb4f0e01e329fb37a1bf71385fed3c65f8fba3a492bd6b44ebcaf1550d",
+  "original_inner_inventories_unchanged": true
+}

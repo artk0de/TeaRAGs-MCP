@@ -1,0 +1,81 @@
+{
+  "skill_name": "tool-orchestration",
+  "suite_name": "explicit-policy-answer-scope",
+  "schema_version": 1,
+  "runner_contract": {
+    "actor_input": "Send only prompt and raw actor_context; materialize fixture.files. Keep grading, expected_output, required_plugin_snapshot and this contract outside actor input. Use fresh independent sessions with no earlier policy results or feedback.",
+    "candidate": "Use the exact final frozen v2 plugin snapshot, not a new production edit. One actor per new prompt; do not retry or replace earlier O5 attempts.",
+    "fixtures": "Both cases use the exact unchanged O5 raw fixture files and initially empty source context. No expected rows, selected policy contents or answer interpretation are seeded.",
+    "grading": "Primary scope criteria require real returned manifest/config bytes and correct final facts. Record actual dependency, batching and labelled-result behavior separately; do not infer answer quality from runtime completed status or Promise.all text alone.",
+    "interpretation": "The earlier O5 strict FAILs stay unchanged. Its phrase 'each selected policy' admits a plausible manifest-selected versus predicate-selected reading. These two explicit controls test both meanings without changing the plugin or weakening the old rubric. A G1 pass provides no evidence for an additional broad completeness rule."
+  },
+  "required_plugin_snapshot": {
+    "version": "0.53.9",
+    "source": ".tmp/tool-orchestration-v2/marketplace/harness/codex/tea-rags",
+    "inventory_fingerprint_sha256": "a6367025c7c9cd033bd68c6485316d136c790759ee93e9d6c3646e1c1b49941f",
+    "fingerprint": "sha256 of compact sorted-key JSON mapping each relative plugin file path to its SHA-256"
+  },
+  "evals": [
+    {
+      "id": "G1-all-manifest-policies",
+      "prompt": "For every policy listed in config/active_retry.yml, report its name, retry_on_timeout setting and delay_ms. Then name the policies that disable timeout retries. Include source paths.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [{ "role": "tool", "name": "workspace_context", "content": "No config contents or directory listings have been read in this session." }]
+      },
+      "fixture": {
+        "files": {
+          "config/active_retry.yml": "selected_policies:\n  - config/retry/zone_kappa.yml\n  - config/retry/zone_sigma.yml\n",
+          "config/retry/zone_kappa.yml": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n",
+          "config/retry/zone_sigma.yml": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+        }
+      },
+      "expected_output": "Covers both manifest-listed policies: regional_primary has retry_on_timeout=true and delay_ms=350; isolated_preview has retry_on_timeout=false and delay_ms=0. Identifies isolated_preview as the disabled subset and cites each matching config path.",
+      "grading": {
+        "required": [
+          "Obtains real manifest bytes and real contents of both selected configs; no fabricated result or guess from filenames.",
+          "Final answer covers every manifest-listed policy with its name, retry_on_timeout setting and delay_ms. Both regional_primary=true/350 and isolated_preview=false/0 must appear, correctly bound to their source paths.",
+          "Separately identifies isolated_preview as disabling timeout retries; does not omit the enabled policy from the requested complete policy report."
+        ],
+        "expected_rows": [
+          { "name": "regional_primary", "retry_on_timeout": true, "delay_ms": 350, "source": "config/retry/zone_kappa.yml" },
+          { "name": "isolated_preview", "retry_on_timeout": false, "delay_ms": 0, "source": "config/retry/zone_sigma.yml" }
+        ],
+        "expected_disabled": ["isolated_preview"],
+        "required_reads": ["config/active_retry.yml", "config/retry/zone_kappa.yml", "config/retry/zone_sigma.yml"],
+        "diagnostics": "Report manifest-before-children causality and actual labelled child-read batch. Zero-millisecond native scheduling does not itself fail a real executed batch."
+      }
+    },
+    {
+      "id": "G2-disabled-subset-only",
+      "prompt": "Among the policies listed in config/active_retry.yml, list only those with timeout retries disabled. Give only those policy names, their delay_ms values and source paths.",
+      "actor_context": {
+        "cwd": "__FIXTURE_ROOT__",
+        "project": "orchestration-fixture",
+        "messages": [{ "role": "tool", "name": "workspace_context", "content": "No config contents or directory listings have been read in this session." }]
+      },
+      "fixture": {
+        "files": {
+          "config/active_retry.yml": "selected_policies:\n  - config/retry/zone_kappa.yml\n  - config/retry/zone_sigma.yml\n",
+          "config/retry/zone_kappa.yml": "name: regional_primary\nretry_on_timeout: true\ndelay_ms: 350\n",
+          "config/retry/zone_sigma.yml": "name: isolated_preview\nretry_on_timeout: false\ndelay_ms: 0\n"
+        }
+      },
+      "expected_output": "Reports only isolated_preview, delay_ms=0, citing config/retry/zone_sigma.yml. Does not add the enabled regional_primary policy or its delay to the requested filtered answer.",
+      "grading": {
+        "required": [
+          "Obtains real manifest bytes and both selected configs so the disabled subset is established from actual source evidence.",
+          "Final answer reports isolated_preview with delay_ms=0 and the correct config/retry/zone_sigma.yml path.",
+          "Honors the explicit only-disabled scope: no enabled-policy row, enabled-policy delay or unrelated policy detail is added. Reading an enabled policy to evaluate the filter is necessary evidence, not an answer-scope violation."
+        ],
+        "expected_rows": [
+          { "name": "isolated_preview", "delay_ms": 0, "source": "config/retry/zone_sigma.yml" }
+        ],
+        "exclude_from_final_rows": ["regional_primary"],
+        "required_reads": ["config/active_retry.yml", "config/retry/zone_kappa.yml", "config/retry/zone_sigma.yml"],
+        "diagnostics": "Report actual dependency/batching and labelled values separately. A shorter correctly filtered answer is a pass; do not require unasked enabled-policy rows."
+      }
+    }
+  ]
+}

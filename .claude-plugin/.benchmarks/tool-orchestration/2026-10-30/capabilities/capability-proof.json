@@ -1,0 +1,81 @@
+{
+  "verdict": "PASS_NO_TURN_CATALOG_PROOF",
+  "model_calls": 0,
+  "method": "Standard codex debug prompt-input exports actual additional_tools without a model turn; app-server --strict-config --print-startup-config validates each isolated profile.",
+  "only_control_candidate_feature_difference": "features.sleep_tool true -> false",
+  "removed_tools": [
+    "clock.sleep"
+  ],
+  "added_tools": [],
+  "changed_retained_tool_definitions": [],
+  "local_feature_rows": {
+    "control": {
+      "sleep_tool": "sleep_tool                               stable             true",
+      "default_mode_request_user_input": "default_mode_request_user_input          under development  true"
+    },
+    "candidate": {
+      "sleep_tool": "sleep_tool                               stable             false",
+      "default_mode_request_user_input": "default_mode_request_user_input          under development  true"
+    }
+  },
+  "control_tools": [
+    "clock.sleep",
+    "collaboration.followup_task",
+    "collaboration.interrupt_agent",
+    "collaboration.list_agents",
+    "collaboration.send_message",
+    "collaboration.spawn_agent",
+    "collaboration.wait_agent",
+    "functions.exec",
+    "functions.request_user_input",
+    "functions.request_user_input_async",
+    "functions.wait"
+  ],
+  "candidate_tools": [
+    "collaboration.followup_task",
+    "collaboration.interrupt_agent",
+    "collaboration.list_agents",
+    "collaboration.send_message",
+    "collaboration.spawn_agent",
+    "collaboration.wait_agent",
+    "functions.exec",
+    "functions.request_user_input",
+    "functions.request_user_input_async",
+    "functions.wait"
+  ],
+  "future_benchmark_tools": [
+    "collaboration.followup_task",
+    "collaboration.interrupt_agent",
+    "collaboration.list_agents",
+    "collaboration.send_message",
+    "collaboration.spawn_agent",
+    "collaboration.wait_agent",
+    "functions.exec",
+    "functions.request_user_input",
+    "functions.request_user_input_async",
+    "functions.wait"
+  ],
+  "required_wait_and_question_tools_preserved": [
+    "functions.exec",
+    "functions.wait",
+    "functions.request_user_input",
+    "functions.request_user_input_async"
+  ],
+  "exec_command_and_write_stdin_declarations_retained": true,
+  "exec_description_identical_across_all_profiles": true,
+  "questions_configuration": "features.default_mode_request_user_input=true in both arms and the future-benchmark variant; it is not implied by sleep_tool=false.",
+  "agent_configuration": "Control/candidate enable multi_agent to show collaboration.wait_agent preservation. Future-benchmark sets multi_agent=false and still retains exec, wait, both question tools and nested write_stdin.",
+  "strict_config_exit_codes": {
+    "control": 0,
+    "candidate": 0,
+    "future-benchmark": 0
+  },
+  "global_config_unchanged": true,
+  "running_A39_untouched": true,
+  "limits": "This proves tool exposure and config acceptance, not model compliance or the runtime behavior of a pending wait/question. Runtime tests must follow A39 EOF and new explicit authorization.",
+  "official_sources": [
+    "https://learn.chatgpt.com/docs/app-server",
+    "https://learn.chatgpt.com/docs/config-file/config-reference"
+  ],
+  "local_authority": "Current binary help documents debug prompt-input; features list reports sleep_tool stable. Official config reference did not explicitly document sleep_tool."
+}

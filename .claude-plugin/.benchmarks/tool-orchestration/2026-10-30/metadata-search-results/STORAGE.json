@@ -1,0 +1,11 @@
+{
+  "directory": "metadata-search-results",
+  "original_files": 262,
+  "original_bytes": 1855399,
+  "archive": "evidence.tar.gz",
+  "archive_bytes": 1168650,
+  "archive_sha256": "63f1e65f78e7123321c02b5f6d2461eb89e56e46753598b7a39c2b2980c4911d",
+  "all_original_member_bytes_verified": true,
+  "member_inventory_sha256": "a84ee1c5464bef672a95c8dc8eaa8690b7f2fb4d089b7726545c99380173b6d9",
+  "original_inner_inventories_unchanged": true
+}
