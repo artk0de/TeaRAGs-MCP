@@ -1,0 +1,152 @@
+{
+  "C1-table-absence-control": {
+    "init": {
+      "plugins": [
+        {
+          "name": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags",
+          "source": "tea-rags@inline",
+          "version": "0.53.10"
+        },
+        {
+          "name": "cc-plugin-agents-md",
+          "path": "builtin",
+          "source": "cc-plugin-agents-md@builtin"
+        },
+        {
+          "name": "cc-plugin-plugin-authoring",
+          "path": "builtin",
+          "source": "cc-plugin-plugin-authoring@builtin"
+        }
+      ],
+      "mcp": [
+        {
+          "name": "tea-rags",
+          "status": "connected",
+          "source": "dynamic"
+        }
+      ],
+      "model": "claude-opus-5-5"
+    },
+    "steps": [
+      "Grep: {\"pattern\": \"payout_disputes\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/C1-table-absence-control/workspace/db/schema.rb\", \"output_mode\": \"content\"}",
+      "Grep: {\"pattern\": \"payout_disputes\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/C1-table-absence-control/workspace/db/migrate\", \"output_mode\": \"content\"}",
+      "Grep: {\"pattern\": \"create_table|payout|dispute\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/C1-table-absence-control/workspace/db\", \"output_mode\": \"content\", \"-i\": true}",
+      "Grep: {\"pattern\": \"payout_dispute|PayoutDispute\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/C1-table-absence-control/workspace\", \"output_mode\": \"files_with_matches\"}"
+    ],
+    "answer": "**No.** The app has no `payout_disputes` table.\n\nEvidence:\n- **Migrations:** `db/migrate/` creates only two tables:\n  - `ledger_payouts` in `db/migrate/20250101090000_create_ledger_payouts.rb:3`\n  - `payout_reviews` in `db/migrate/20250103090000_create_payout_reviews.rb:3`, which references `ledger_payout`\n- **No schema file:** there is no `db/schema.rb`. A case-insensitive search of everything under `db/` (including any `structure.sql`) for `create_table`, \"payout\" and \"dispute\" found only the two tables above.\n- **No code references:** searching the whole project for `payout_dispute` and `PayoutDispute` found nothing, so there is no model, association or migration for it either.\n\nThe closest table is `payout_reviews`."
+  },
+  "E1-table-state-no-schema": {
+    "init": {
+      "plugins": [
+        {
+          "name": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags",
+          "source": "tea-rags@inline",
+          "version": "0.53.10"
+        },
+        {
+          "name": "cc-plugin-agents-md",
+          "path": "builtin",
+          "source": "cc-plugin-agents-md@builtin"
+        },
+        {
+          "name": "cc-plugin-plugin-authoring",
+          "path": "builtin",
+          "source": "cc-plugin-plugin-authoring@builtin"
+        }
+      ],
+      "mcp": [
+        {
+          "name": "tea-rags",
+          "status": "connected",
+          "source": "dynamic"
+        }
+      ],
+      "model": "claude-opus-5-5"
+    },
+    "steps": [
+      "Grep: {\"pattern\": \"ledger_payouts\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/E1-table-state-no-schema/workspace/db\", \"output_mode\": \"files_with_matches\"}",
+      "Grep: {\"pattern\": \"payout\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/E1-table-state-no-schema/workspace/db\", \"output_mode\": \"files_with_matches\", \"-i\": true}",
+      "Bash: {\"command\": \"ls /private/tmp/4mffb-claude/baseline-20261031-013520/E1-table-state-no-schema/workspace/db /private/tmp/4mffb-claude/baseline-20261031-013520/E1-table-state-no-schema/workspace/db/migrate\", \"description\": \"…",
+      "Bash: {\"command\": \"cd /private/tmp/4mffb-claude/baseline-20261031-013520/E1-table-state-no-schema/workspace/db/migrate && for f in *.rb; do echo \\\"--- $f\\\"; cat \\\"$f\\\"; done\", \"description\": \"Print all migration files\"}"
+    ],
+    "answer": "This app has no `db/schema.rb` (and no `structure.sql`), so I worked this out by replaying all 8 migrations in `db/migrate/` in order. It assumes every migration has run. I couldn't check this against a live database.\n\n## `ledger_payouts`: current state\n\n### Columns\n| Column | Type | Null | Default | Origin |\n|---|---|---|---|---|\n| `id` | bigint (PK) | NOT NULL | | create |\n| `account_id` | bigint | NOT NULL | | create |\n| `initiator_type` | string | NOT NULL | | was `requester_type`, renamed in 20250105 |\n| `initiator_id` | bigint | NOT NULL | | was `requester_id`, renamed in 20250105 |\n| `state` | string | NOT NULL | `'pending'` | create |\n| `amount_cents` | integer | NOT NULL | | create |\n| `created_at` | datetime | NOT NULL | | create |\n| `updated_at` | datetime | NOT NULL | | create |\n| `settled_at` | datetime | nullable | | added in 20250103 |\n\n### Indexes\n| Name | Columns | Notes |\n|---|---|---|\n| `idx_ledger_payouts_one_active_per_account` | `account_id` | **unique, partial**: `WHERE state = 'active'` (20250107) |\n| `index_ledger_payouts_on_settled_at` | `settled_at` | Rails default name (20250108) |\n\nThese indexes no longer exist:\n- The original composite index `(account_id, requester_type, requester_id)` was renamed to `idx_ledger_payouts_on_account_initiator` and then removed in 20250107.\n- `t.references` never created its usual indexes for `account` or `requester`, because both were declared with `index: false`.\n- As a result, nothing indexes `initiator_type`/`initiator_id`, and only rows with `state = 'active'` are indexed on `account_id`.\n\n### Foreign keys\n- **Outgoing:** `ledger_payouts.account_id` → `accounts.id`, with Rails' default name `fk_rails_…`.\n- **No foreign key on `initiator_*`.** It's a polymorphic reference, so the database can't enforce one.\n- **Incoming:** `ledger_entries.ledger_payout_id` → `ledger_payouts.id` (20250106). This one is on `ledger_entries`, not on this table.\n\nTwo migrations change nothing structural:\n- `20250104_backfill_ledger_payout_states` only updates data.\n- `20250103` also adds `settlement_day`, but to `billing_accounts`, not this table."
+  },
+  "E2-class-contract-inherited": {
+    "init": {
+      "plugins": [
+        {
+          "name": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags",
+          "source": "tea-rags@inline",
+          "version": "0.53.10"
+        },
+        {
+          "name": "cc-plugin-agents-md",
+          "path": "builtin",
+          "source": "cc-plugin-agents-md@builtin"
+        },
+        {
+          "name": "cc-plugin-plugin-authoring",
+          "path": "builtin",
+          "source": "cc-plugin-plugin-authoring@builtin"
+        }
+      ],
+      "mcp": [
+        {
+          "name": "tea-rags",
+          "status": "connected",
+          "source": "dynamic"
+        }
+      ],
+      "model": "claude-opus-5-5"
+    },
+    "steps": [
+      "ToolSearch: {\"query\": \"select:mcp__tea-rags__find_symbol\", \"max_results\": 1}",
+      "mcp__tea-rags__find_symbol: {\"symbol\": \"Vendors::AcmeSyncJob\", \"project\": \"routing-claude-e2-class-contract-inherited\", \"path\": \"/tmp/4mffb-claude/baseline-20261031-013520/E2-class-contract-inherited/workspace\"}",
+      "mcp__tea-rags__find_symbol: {\"symbols\": [\"Vendors::AcmeSyncJob#max_pages\", \"Vendors::AcmeSyncJob#fetch_page\", \"Vendors::BaseSyncJob\", \"BaseSyncJob\"], \"project\": \"routing-claude-e2-class-contract-inherited\", \"path\": \"/tmp/4mffb-claude/baseline-20261…",
+      "Read: {\"file_path\": \"/tmp/4mffb-claude/baseline-20261031-013520/E2-class-contract-inherited/workspace/app/jobs/vendors/acme_sync_job.rb\"}",
+      "Read: {\"file_path\": \"/tmp/4mffb-claude/baseline-20261031-013520/E2-class-contract-inherited/workspace/app/jobs/vendors/base_sync_job.rb\"}",
+      "Grep: {\"pattern\": \"discard_on|retry_on|throttle|class ApplicationJob\", \"path\": \"/tmp/4mffb-claude/baseline-20261031-013520/E2-class-contract-inherited/workspace/app\", \"output_mode\": \"content\"}",
+      "Read: {\"file_path\": \"/tmp/4mffb-claude/baseline-20261031-013520/E2-class-contract-inherited/workspace/app/jobs/application_job.rb\"}"
+    ],
+    "answer": "`Vendors::AcmeSyncJob` (`app/jobs/vendors/acme_sync_job.rb`) declares none of these itself, except the page limit. Everything else comes from its parent classes: `AcmeSyncJob < BaseSyncJob < ApplicationJob`.\n\n**Retry** (comes from both parent classes)\n- `Vendors::RateLimited`: wait 30 seconds, up to 10 attempts. Declared at `app/jobs/vendors/base_sync_job.rb:4`.\n- `Net::ReadTimeout`: wait `:polynomially_longer` (the wait grows with each attempt), up to 5 attempts. Declared at `app/jobs/application_job.rb:2`.\n\n**Discard**\n- `ActiveJob::DeserializationError` is discarded, declared at `app/jobs/application_job.rb:3`.\n- The `discard_on Globex::AccountClosed` at `app/jobs/vendors/globex_sync_job.rb:3` belongs to a sibling job. It does **not** apply to Acme.\n\n**Throttling**\n- `throttle limit: 20, period: 1.minute` is declared at `app/jobs/vendors/base_sync_job.rb:5`.\n- The `throttle` class method that stores this setting is at `app/jobs/application_job.rb:6-8`. All it does there is save the settings, so whatever enforces the limit isn't in these job files.\n\n**Maximum pages: 200**\n- `AcmeSyncJob#max_pages` returns `200` (`app/jobs/vendors/acme_sync_job.rb:9-11`). This overrides the base default of `50` (`app/jobs/vendors/base_sync_job.rb:18-20`).\n- `BaseSyncJob#perform` runs `max_pages.times` and stops early if `fetch_page` returns a `nil` cursor (`app/jobs/vendors/base_sync_job.rb:7-12`). So one run fetches at most 200 pages, and fewer if the cursor runs out.\n\nThe job also uses the `:vendor_sync` queue (`base_sync_job.rb:3`) and an `around_perform :with_account_scope` hook (`application_job.rb:4`)."
+  },
+  "E3-exhaustive-work-list": {
+    "init": {
+      "plugins": [
+        {
+          "name": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags",
+          "source": "tea-rags@inline",
+          "version": "0.53.10"
+        },
+        {
+          "name": "cc-plugin-agents-md",
+          "path": "builtin",
+          "source": "cc-plugin-agents-md@builtin"
+        },
+        {
+          "name": "cc-plugin-plugin-authoring",
+          "path": "builtin",
+          "source": "cc-plugin-plugin-authoring@builtin"
+        }
+      ],
+      "mcp": [
+        {
+          "name": "tea-rags",
+          "status": "connected",
+          "source": "dynamic"
+        }
+      ],
+      "model": "claude-opus-5-5"
+    },
+    "steps": [
+      "Grep: {\"pattern\": \"Auditable\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/E3-exhaustive-work-list/workspace/app\", \"output_mode\": \"content\"}",
+      "Read: {\"file_path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/E3-exhaustive-work-list/workspace/app/models/concerns/auditable.rb\"}",
+      "Grep: {\"pattern\": \"audits\\\\b|audited_events\", \"path\": \"/private/tmp/4mffb-claude/baseline-20261031-013520/E3-exhaustive-work-list/workspace/app\", \"output_mode\": \"content\", \"-A\": 2}"
+    ],
+    "answer": "Six models include `Auditable`. Each one declares its events with a single `audits` call:\n\n| Model | Audit events |\n|---|---|\n| `Account` (`app/models/account.rb:6`) | `:plan_changed`, `:suspended`, `:reactivated` |\n| `ApiToken` (`app/models/api_token.rb:5`) | `:issued`, `:revoked` |\n| `Invoice` (`app/models/invoice.rb:5`) | `:created`, `:voided` |\n| `Membership` (`app/models/membership.rb:6`) | `:role_changed` |\n| `Payment` (`app/models/payment.rb:6`) | `:captured`, `:refunded`, `:disputed` |\n| `User` (`app/models/user.rb:5`) | `:signed_in`, `:password_changed` |\n\nThat's 13 events in total.\n\n- **Left out:** `WebhookEndpoint` doesn't include the concern. `app/models/webhook_endpoint.rb:2` only has a TODO comment saying to include it \"once delivery logs move to the audit store\", and the file has no `audits` call.\n- **How the concern stores events:** in `app/models/concerns/auditable.rb`, `audits(*events)` assigns the list to `self.audited_events` rather than adding to it. A second `audits` call in the same model would replace the first. None of these models calls it more than once, so the lists above are complete.\n\nI searched every file under `app/` for `Auditable`, `audits` and `audited_events`. I didn't search outside `app/`."
+  }
+}

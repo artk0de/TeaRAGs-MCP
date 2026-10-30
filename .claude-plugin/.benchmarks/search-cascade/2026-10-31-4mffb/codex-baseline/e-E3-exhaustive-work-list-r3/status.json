@@ -1,0 +1,12 @@
+{
+  "key": "e-E3-exhaustive-work-list-r3",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "9ded705041fb0fd5648429f313a0a878b139cd0f7282b1fa3bab6152d500e5a7",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18ef4-a6a0-77f3-9566-01ab07f9b9c8",
+  "turn_id": "01a18ef4-a708-7bc2-a5e1-e304554166fb",
+  "status": "completed",
+  "wall_seconds": 20.975
+}

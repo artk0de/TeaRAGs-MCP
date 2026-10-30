@@ -1,0 +1,12 @@
+{
+  "key": "e-E2-class-contract-inherited-r1",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "c7a5046f613ffb2e6d06c28628d158ce1a92d9f9e0c3b6b836640559def7e980",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18ef3-ab48-70f3-86ff-610f0341a19b",
+  "turn_id": "01a18ef3-ab7b-79e2-a77c-02e73927ed7e",
+  "status": "completed",
+  "wall_seconds": 21.937
+}

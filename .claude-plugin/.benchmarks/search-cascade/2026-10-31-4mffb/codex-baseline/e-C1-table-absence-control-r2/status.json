@@ -1,0 +1,12 @@
+{
+  "key": "e-C1-table-absence-control-r2",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "actor_input_sha256": "98de7902a0b05b6c497e4503236428c8e2e71031b5e82042279ecc5a3f6945f4",
+  "attempt": 1,
+  "valid": true,
+  "thread_id": "01a18ef4-fa78-7370-b606-c8f1f4960fd6",
+  "turn_id": "01a18ef4-fad1-7632-bbbe-8c8f13674bee",
+  "status": "completed",
+  "wall_seconds": 13.171
+}

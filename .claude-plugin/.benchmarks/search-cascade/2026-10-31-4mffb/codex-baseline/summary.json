@@ -1,0 +1,136 @@
+{
+  "e-C1-table-absence-control-r1": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/migrate/\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'create_table|CREATE TABLE|ActiveRecord::Schema|payout' db/\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250103090000_create_payout_reviews.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250101090000_create_ledger_payouts.rb\""
+    ],
+    "answer": "No—the repository has no `payout_disputes` table definition.\n\nEvidence: searching all of `db/migrate/` for `payout_disputes` returned no matches. The migrations create [`ledger_payouts`](db/migrate/20250101090000_create_ledger_payouts.rb:3) and [`payout_reviews`](db/migrate/20250103090000_create_payout_reviews.rb:3). `db/schema.rb` is absent.\n\nThis establishes repository state; a live database was not inspected."
+  },
+  "e-C1-table-absence-control-r2": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/migrate/\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'create_table|payout_disputes|ActiveRecord::Schema' db/\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250103090000_create_payout_reviews.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250101090000_create_ledger_payouts.rb\""
+    ],
+    "answer": "No—there is no `payout_disputes` table defined in this app’s database files.\n\nEvidence: searching all of `db/migrate/` found no `payout_disputes` references. The migrations create `ledger_payouts` and `payout_reviews`; `db/schema.rb` is absent."
+  },
+  "e-C1-table-absence-control-r3": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'payout_disputes' db/migrate/\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' '(:payout_disputes|\\\"payout_disputes\\\")' db/migrate/\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'create_table|CREATE TABLE|schema_format' db/ config/\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250101090000_create_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,160p' db/migrate/20250103090000_create_payout_reviews.rb\""
+    ],
+    "answer": "**No, according to the repository.** `db/schema.rb` is absent, and searching all of `db/migrate/` found no `payout_disputes` reference.\n\nThe table-creation migrations define `ledger_payouts` and `payout_reviews`, not `payout_disputes`. This establishes the repository state; a live database was not inspected."
+  },
+  "e-E1-table-state-no-schema-r1": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts' db/migrate/\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250107090000_make_payouts_unique_per_account.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250104090000_backfill_ledger_payout_states.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250101090000_create_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250106090000_add_payout_reference_to_ledger_entries.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250105090000_rename_requester_to_initiator_on_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250103090000_add_settlement_fields_to_billing.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250108090000_add_settled_at_index_to_ledger_payouts.rb\""
+    ],
+    "answer": "The current state defined by the migrations is below. `db/schema.rb` is absent, so this assumes all migrations have been applied.\n\n| Column | Type | Nullable | Default |\n|---|---|---|---|\n| `id` | bigint, primary key | No | Rails-generated |\n| `account_id` | bigint | No | — |\n| `initiator_type` | string | No | — |\n| `initiator_id` | bigint | No | — |\n| `state` | string | No | `'pending'` |\n| `amount_cents` | integer | No | — |\n| `created_at` | datetime | No | — |\n| `updated_at` | datetime | No | — |\n| `settled_at` | datetime | Yes | — |\n\nIndexes:\n\n- Primary key on `id`.\n- `idx_ledger_payouts_one_active_per_account`: **unique** on `account_id`, restricted to `WHERE state = 'active'`.\n- `index_ledger_payouts_on_settled_at`: non-unique on `settled_at`.\n\nForeign keys:\n\n- Outgoing: `ledger_payouts.account_id` → `accounts.id`.\n- Incoming: `ledger_entries.ledger_payout_id` → `ledger_payouts.id`"
+  },
+  "e-E1-table-state-no-schema-r2": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' ':ledger_payouts|\\\"ledger_payouts\\\"' db/migrate/\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250107090000_make_payouts_unique_per_account.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250108090000_add_settled_at_index_to_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250103090000_add_settlement_fields_to_billing.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250105090000_rename_requester_to_initiator_on_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250101090000_create_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250106090000_add_payout_reference_to_ledger_entries.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts|LedgerPayout|payouts|Payout' db/migrate/\"",
+      "shell: /bin/zsh -c \"sed -n '1,220p' db/migrate/20250104090000_backfill_ledger_payout_states.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' '.' db/\""
+    ],
+    "answer": "The current state implied by all migrations is below; this repository has no `db/schema.rb`.\n\n| Column | Type | Nullable | Default |\n|---|---|---|---|\n| `id` | bigint, primary key | No | Generated |\n| `account_id` | bigint | No | — |\n| `initiator_type` | string | No | — |\n| `initiator_id` | bigint | No | — |\n| `state` | string | No | `'pending'` |\n| `amount_cents` | integer | No | — |\n| `created_at` | datetime | No | — |\n| `updated_at` | datetime | No | — |\n| `settled_at` | datetime | Yes | — |\n\nIndexes:\n\n- Primary key on `id`.\n- `idx_ledger_payouts_one_active_per_account`: unique on `account_id`, where `state = 'active'`.\n- `index_ledger_payouts_on_settled_at`: nonunique on `settled_at`.\n\nForeign keys:\n\n- Outgoing: `ledger_payouts.account_id → accounts.id`.\n- Incoming: `ledger_entries.ledger_payout_id → ledger_payouts.id`.\n- The polymorphic `initiator` has no database foreign key.\n\nTher"
+  },
+  "e-E1-table-state-no-schema-r3": {
+    "steps": [
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts' db/schema.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'ledger_payouts' db/migrate/\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250107090000_make_payouts_unique_per_account.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250101090000_create_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250108090000_add_settled_at_index_to_ledger_payouts.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250106090000_add_payout_reference_to_ledger_entries.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250103090000_add_settlement_fields_to_billing.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250104090000_backfill_ledger_payout_states.rb\"",
+      "shell: /bin/zsh -c \"sed -n '1,240p' db/migrate/20250105090000_rename_requester_to_initiator_on_payouts.rb\"",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' '.' db/migrate/\"",
+      "shell: /bin/zsh -c \"sed -n '1,200p' db/migrate/20250102090000_create_ledger_entries.rb\""
+    ],
+    "answer": "There’s no `db/schema.rb`; the current state implied by all migrations is:\n\n| Column | Type | Nullable | Default |\n|---|---|---|---|\n| `id` | bigint, primary key | No | Rails-generated |\n| `account_id` | bigint | No | — |\n| `initiator_type` | string | No | — |\n| `initiator_id` | bigint | No | — |\n| `state` | string | No | `'pending'` |\n| `amount_cents` | integer | No | — |\n| `created_at` | datetime | No | — |\n| `updated_at` | datetime | No | — |\n| `settled_at` | datetime | Yes | — |\n\nIndexes:\n\n- Primary key on `id`.\n- `idx_ledger_payouts_one_active_per_account`: **unique** on `account_id`, where `state = 'active'`.\n- `index_ledger_payouts_on_settled_at`: non-unique on `settled_at`.\n\nForeign keys:\n\n- Outgoing: `ledger_payouts.account_id` → `accounts.id`.\n- Incoming: `ledger_entries.ledger_payout_id` → `ledger_payouts.id`.\n- The polymorphic `initiator` has no database foreign key.\n\nThis re"
+  },
+  "e-E2-class-contract-inherited-r1": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,240p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r1/home/plugins/cache/tea-rags/tea…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…"
+    ],
+    "answer": "`Vendors::AcmeSyncJob` inherits these settings through `Vendors::BaseSyncJob` and `ApplicationJob`:\n\n- **Retry rate limits:** `Vendors::RateLimited`, with a 30-second wait and 10 total attempts — [base_sync_job.rb:4](app/jobs/vendors/base_sync_job.rb:4).\n- **Retry read timeouts:** `Net::ReadTimeout`, with `:polynomially_longer` waits and 5 total attempts — [application_job.rb:2](app/jobs/application_job.rb:2).\n- **Discard:** `ActiveJob::DeserializationError` — [application_job.rb:3](app/jobs/application_job.rb:3).\n- **Throttling:** declared limit of 20 per minute — [base_sync_job.rb:5](app/jobs/vendors/base_sync_job.rb:5). The `throttle` method only stores these settings; it does not itself enforce them — [application_job.rb:6](app/jobs/application_job.rb:6).\n- **Maximum pages:** **200 per execution**, declared by Acme’s `max_pages` override — [acme_sync_job.rb:9](app/jobs/vendors/acme_s"
+  },
+  "e-E2-class-contract-inherited-r2": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r2/home/plugins/cache/tea-rags/tea…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…"
+    ],
+    "answer": "`Vendors::AcmeSyncJob` inherits these settings through `Vendors::BaseSyncJob` and `ApplicationJob`:\n\n| Behavior | Setting | Declared at |\n|---|---|---|\n| Retry read timeouts | `Net::ReadTimeout`: 5 attempts, `wait: :polynomially_longer` | [application_job.rb:2](app/jobs/application_job.rb:2) |\n| Retry rate limits | `Vendors::RateLimited`: 10 attempts, 30-second wait | [base_sync_job.rb:4](app/jobs/vendors/base_sync_job.rb:4) |\n| Discard | `ActiveJob::DeserializationError` | [application_job.rb:3](app/jobs/application_job.rb:3) |\n| Throttle | Limit 20 per minute | [base_sync_job.rb:5](app/jobs/vendors/base_sync_job.rb:5) |\n\nThe throttle helper only stores these settings; it doesn’t itself enforce them ([application_job.rb:6](app/jobs/application_job.rb:6)).\n\nIt fetches **at most 200 pages per execution**, as declared by its `max_pages` override ([acme_sync_job.rb:9](app/jobs/vendors/acme_"
+  },
+  "e-E2-class-contract-inherited-r3": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r3/home/plugins/cache/tea-rags/tea…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…",
+      "mcp find_symbol: {\"project\": \"routing-e-e2-class-contract-inherited\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E2-class-contract-inherited-r…"
+    ],
+    "answer": "`Vendors::AcmeSyncJob` inherits these settings:\n\n- **Retry rate limits:** `Vendors::RateLimited` waits **30 seconds**, with **10 total attempts**, declared in [base_sync_job.rb:4](app/jobs/vendors/base_sync_job.rb:4).\n- **Retry read timeouts:** `Net::ReadTimeout` uses `:polynomially_longer`, with **5 total attempts**, declared in [application_job.rb:2](app/jobs/application_job.rb:2).\n- **Discard:** `ActiveJob::DeserializationError`, declared in [application_job.rb:3](app/jobs/application_job.rb:3).\n- **Throttle:** **20 per minute**, declared in [base_sync_job.rb:5](app/jobs/vendors/base_sync_job.rb:5). The helper stores this as `throttle_settings` ([application_job.rb:6](app/jobs/application_job.rb:6)).\n- **Page limit:** **200 pages per execution**, overridden in [acme_sync_job.rb:9](app/jobs/vendors/acme_sync_job.rb:9). The inherited loop stops earlier if `fetch_page` returns `nil` ([ba"
+  },
+  "e-E3-exhaustive-work-list-r1": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,220p' '/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r1/home/plugins/cache/tea-rags/tea-ra…",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'Auditable' app/\"",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r1/worksp…",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r1/worksp…"
+    ],
+    "answer": "Six models include `Auditable`. This is the complete list from searching `app/` and checking every matching model:\n\n| Model | Declared audit events |\n|---|---|\n| [Account](app/models/account.rb:6) | `plan_changed`, `suspended`, `reactivated` |\n| [ApiToken](app/models/api_token.rb:5) | `issued`, `revoked` |\n| [Invoice](app/models/invoice.rb:5) | `created`, `voided` |\n| [Membership](app/models/membership.rb:6) | `role_changed` |\n| [Payment](app/models/payment.rb:6) | `captured`, `refunded`, `disputed` |\n| [User](app/models/user.rb:5) | `signed_in`, `password_changed` |\n\n`WebhookEndpoint` only mentions `include Auditable` in a TODO comment; it does not include the concern or declare audit events."
+  },
+  "e-E3-exhaustive-work-list-r2": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r2/home/plugins/cache/tea-rags/tea-rag…",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'Auditable' app/\"",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r2/worksp…",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r2/worksp…"
+    ],
+    "answer": "Six models include `Auditable`. This is the complete list across `app/`:\n\n| Model | Declared audit events |\n|---|---|\n| [Account](app/models/account.rb:6) | `plan_changed`, `suspended`, `reactivated` |\n| [ApiToken](app/models/api_token.rb:5) | `issued`, `revoked` |\n| [Invoice](app/models/invoice.rb:5) | `created`, `voided` |\n| [Membership](app/models/membership.rb:6) | `role_changed` |\n| [Payment](app/models/payment.rb:6) | `captured`, `refunded`, `disputed` |\n| [User](app/models/user.rb:5) | `signed_in`, `password_changed` |\n\n`WebhookEndpoint` only mentions `include Auditable` in a TODO comment; it does not include the concern or declare audit events."
+  },
+  "e-E3-exhaustive-work-list-r3": {
+    "steps": [
+      "shell: /bin/zsh -c \"sed -n '1,240p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r3/home/plugins/cache/tea-rags/tea-rag…",
+      "shell: /bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'Auditable' app/\"",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r3/worksp…",
+      "mcp find_symbol: {\"project\": \"routing-e-e3-exhaustive-work-list\", \"path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/runs/baseline-20261031-013357/cases/e-E3-exhaustive-work-list-r3/worksp…"
+    ],
+    "answer": "Six models include `Auditable`. The complete list from `app/` is:\n\n| Model | Declared audit events |\n|---|---|\n| [Account](app/models/account.rb:6) | `plan_changed`, `suspended`, `reactivated` |\n| [ApiToken](app/models/api_token.rb:5) | `issued`, `revoked` |\n| [Invoice](app/models/invoice.rb:5) | `created`, `voided` |\n| [Membership](app/models/membership.rb:6) | `role_changed` |\n| [Payment](app/models/payment.rb:6) | `captured`, `refunded`, `disputed` |\n| [User](app/models/user.rb:5) | `signed_in`, `password_changed` |\n\n`WebhookEndpoint` only mentions `include Auditable` in a TODO comment; it does not include the concern or declare audit events."
+  }
+}

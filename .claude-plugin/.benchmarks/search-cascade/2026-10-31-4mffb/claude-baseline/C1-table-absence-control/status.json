@@ -1,0 +1,7 @@
+{
+  "case": "C1-table-absence-control",
+  "arm": "baseline",
+  "rc": 0,
+  "wall_seconds": 11.4,
+  "plugin": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/agent-a2f5ec7b87cd60da2/.tmp/4mffb/baseline-claude-tea-rags"
+}
