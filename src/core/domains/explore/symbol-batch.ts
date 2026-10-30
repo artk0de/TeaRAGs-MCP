@@ -46,7 +46,8 @@ function batchPathNotice(overLines: readonly string[], overBudget: readonly stri
   if (overBudget.length > 0) {
     parts.push(
       `past the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char full-text budget, outlined: ${overBudget.join(", ")} — ` +
-        `continue with find_symbol(symbols:${JSON.stringify(overBudget)})`,
+        `choose only the member ids needed for the task from the outlines, then ONE find_symbol(symbols:[<needed ids>]) batch; ` +
+        `only if whole small files are explicitly needed, continue with find_symbol(symbols:${JSON.stringify(overBudget)})`,
     );
   }
   if (directory) parts.push("a directory → missing");

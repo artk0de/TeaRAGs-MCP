@@ -304,6 +304,34 @@ describe("one inlined-text budget per find_symbol answer", () => {
     expect(answer.batchNotice).toBeUndefined();
   });
 
+  it("routes a two-file budget overflow through task-relevant member ids before whole-file continuation", async () => {
+    const paths = ["lib/a.rb", "lib/deferred.rb"];
+    const fileText = "x".repeat(Math.floor(BATCH_FULL_TEXT_CHAR_BUDGET * 0.6));
+    const outlineFor = (relativePath = "") => ({
+      execute: async () => [
+        { id: relativePath, score: 1, payload: { relativePath, kind: "file", content: fileText, endLine: 100 } },
+      ],
+      directory: false,
+      fullTextWithheld: false,
+      outlineBehindFullText: {
+        id: relativePath,
+        score: 1,
+        payload: { relativePath, content: `${relativePath}\n  Service#needed\n  Service#unrelated` },
+      },
+    });
+    const answer = await batchOver([], outlineFor).execute(paths, { collectionName: "c", limit: 50 });
+
+    expect(contentOf(answer.rows[0].result)).toBe(fileText);
+    expect(contentOf(answer.rows[1].result)).toContain("Service#needed\n  Service#unrelated");
+    const notice = answer.batchNotice ?? "";
+    const memberRoute = notice.indexOf("choose only the member ids needed for the task from the outlines");
+    const wholeFileRoute = notice.indexOf("only if whole small files are explicitly needed");
+    expect(memberRoute).toBeGreaterThanOrEqual(0);
+    expect(notice).toContain("ONE find_symbol(symbols:[<needed ids>]) batch");
+    expect(wholeFileRoute).toBeGreaterThan(memberRoute);
+    expect(notice).toContain('find_symbol(symbols:["lib/deferred.rb"])');
+  });
+
   it("charges a file path's full text and a container header to the same budget", async () => {
     const fileText = "x".repeat(BATCH_FULL_TEXT_CHAR_BUDGET - 1_000);
     const outlineFor = () => ({
