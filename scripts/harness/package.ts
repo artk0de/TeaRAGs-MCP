@@ -26,11 +26,17 @@ export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME
  * Hook scripts every harness ships verbatim from `plugins/tea-rags/scripts/` (bd tea-rags-mcp-nknkg.2):
  * one implementation for Claude Code, Codex and Cursor, the harness picked by `--harness`.
  * `turn-routing.sh` re-injects the routing lines each user turn; `search-drift.sh` denies once after
- * a streak of concept-shaped text searches / source-code reads with no tea-rags call (literal searches and
- * config / spec / migration paths are neutral, bd tea-rags-mcp-nxg76). `standard-zone.ere` is that
- * zone pattern, read by `search-drift.sh` (and the Claude-only `reread-ledger.mjs`) from beside it.
+ * a streak of concept-shaped text searches with no tea-rags call (literal searches and config / spec /
+ * migration paths are neutral; reads are never denied, bd tea-rags-mcp-nxg76). `reread-ledger.mjs` owns
+ * read steering: the re-read note and the find_symbol nudge for raw reads of indexed source.
+ * `standard-zone.ere` is the zone pattern both read from beside them.
  */
-export const SHARED_HOOK_SCRIPTS = ["turn-routing.sh", "search-drift.sh", "standard-zone.ere"] as const;
+export const SHARED_HOOK_SCRIPTS = [
+  "turn-routing.sh",
+  "search-drift.sh",
+  "reread-ledger.mjs",
+  "standard-zone.ere",
+] as const;
 
 /** Single source of the per-turn routing lines (fenced block under "## The block to inject"). */
 export const TURN_ROUTING_SOURCE = "rules/references/turn-routing.md";

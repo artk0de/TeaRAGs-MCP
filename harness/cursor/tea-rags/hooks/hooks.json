@@ -27,18 +27,31 @@
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness cursor",
         "timeout": 5
+      },
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness cursor",
+        "timeout": 5
       }
     ],
     "postToolUse": [
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/turn-routing.sh\" --harness cursor",
         "timeout": 5
+      },
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness cursor",
+        "timeout": 10
       }
     ],
     "preToolUse": [
       {
-        "matcher": "Shell|Read|Grep",
+        "matcher": "Shell|Grep",
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness cursor",
+        "timeout": 10
+      },
+      {
+        "matcher": "Shell|Read",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness cursor",
         "timeout": 10
       }
     ],
@@ -46,6 +59,10 @@
       {
         "command": "bash \"${CURSOR_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness cursor",
         "timeout": 5
+      },
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness cursor",
+        "timeout": 10
       }
     ]
   }

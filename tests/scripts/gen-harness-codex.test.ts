@@ -285,13 +285,14 @@ describe("renderCodexHarness", () => {
     expect(rendered.has("tea-rags/.codex-plugin/plugin.json")).toBe(true);
   });
 
-  it("SessionStart runs three hooks — core, the Codex-only rules, then the prime digest; the digest hook is silent without the CLI", async () => {
+  it("SessionStart runs three context hooks — core, the Codex-only rules, then the prime digest — and the reread ledger; the digest hook is silent without the CLI", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
     expect(hooks.SessionStart.map((entry: { hooks: { command: string }[] }) => entry.hooks[0].command)).toEqual([
       `\${PLUGIN_ROOT}/scripts/session-start.sh`,
       `\${PLUGIN_ROOT}/scripts/session-codex-rules.sh`,
       `\${PLUGIN_ROOT}/scripts/session-digest.sh`,
+      `node "\${PLUGIN_ROOT}/scripts/reread-ledger.mjs" --harness codex`,
     ]);
 
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-tea-rags-"));
@@ -620,6 +621,7 @@ describe("renderCodexHarness", () => {
         hooks: [
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/one-file-read.sh`, timeout: 10 },
           { type: "command", command: `\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex`, timeout: 10 },
+          { type: "command", command: `node "\${PLUGIN_ROOT}/scripts/reread-ledger.mjs" --harness codex`, timeout: 10 },
         ],
       },
     ]);
