@@ -28,11 +28,16 @@ commits it.
   exit 2 for a shell command that prints two or more `.md` files (one file per
   command keeps a skill's output contract in view); then
   `${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex` — exit 2 once after 3
-  concept-shaped text searches (an alternation), 3 source-code reads or 4 mixed
-  with no tea-rags call (one deny per 120 s); literal searches and config / spec
-  / migration paths are neutral; reset by PostToolUse
-  (`^mcp__.*tea[-_]rags.*__`). No read deny: core routes config, DSL, migrations
-  and specs to shell reads (bd tea-rags-mcp-nxg76). UserPromptSubmit
+  concept-shaped text searches (an alternation) with no tea-rags call (one deny
+  per 120 s); literal searches and config / spec / migration paths are neutral;
+  reset by PostToolUse (`^mcp__.*tea[-_]rags.*__`). Reads are never denied (bd
+  tea-rags-mcp-nxg76); then
+  `node ${PLUGIN_ROOT}/scripts/reread-ledger.mjs --harness codex` — read
+  steering as `hookSpecificOutput.additionalContext`: a shell read of indexed
+  source gets one `find_symbol(relativePath:)` nudge per file per turn, a
+  re-read of lines already returned one note; it records on PostToolUse (shell
+  and `^mcp__.*tea[-_]rags.*__`), turns on UserPromptSubmit, drops its ledger on
+  SessionStart compact / clear. UserPromptSubmit
   `${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex` — the routing lines
   of `scripts/turn-routing.txt` as `hookSpecificOutput.additionalContext` every
   user turn.

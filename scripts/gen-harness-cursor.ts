@@ -110,6 +110,8 @@ export const HOOK_CONTEXT_MAX_CHARS = 10_000;
 
 /** Runs a plugin hook script: hooks start in the plugin directory, so the script path is quoted and run by bash. */
 const hookCommand = (script: string): string => `bash "${PLUGIN_ROOT_VAR}/scripts/${script}"`;
+/** The shared reread ledger is a Node script: run by `node`, the runtime the tea-rags CLI already needs. */
+const LEDGER_COMMAND = `node "${PLUGIN_ROOT_VAR}/scripts/reread-ledger.mjs"`;
 
 /**
  * Bash lines setting `BIN` to the `tea-rags` binary, or empty: `TEA_RAGS_BIN`, `PATH`, then the usual
@@ -303,10 +305,14 @@ Try an edit locally with \`npm run gen:plugins\`; the release regenerates this p
   \`scripts/after-shell-execution.sh\` (worktree-clone cleanup through the Claude \`cleanup-worktree-clone.sh\`, shipped
   verbatim). No \`preCompact\` hook: observational only. No read deny: core routes config, DSL, migrations and specs to
   the Read tool (bd tea-rags-mcp-nxg76).
-  Shared with Claude and Codex, shipped verbatim (\`--harness cursor\`): \`preToolUse\` (\`Shell|Read|Grep\`) →
-  \`scripts/search-drift.sh\` — \`permission: "deny"\` once after 3 concept-shaped text searches (an alternation), 3
-  source-code reads or 4 mixed with no tea-rags call (one deny per 120 s; literal searches and config / spec / migration
-  paths are neutral), reset by \`afterMCPExecution\` from server \`tea-rags\`; \`beforeSubmitPrompt\` +
+  Shared with Claude and Codex, shipped verbatim (\`--harness cursor\`): \`preToolUse\` (\`Shell|Grep\`) →
+  \`scripts/search-drift.sh\` — \`permission: "deny"\` once after 3 concept-shaped text searches (an alternation) with no
+  tea-rags call (one deny per 120 s; literal searches and config / spec / migration paths are neutral; reads are never
+  denied), reset by \`afterMCPExecution\` from server \`tea-rags\`; \`preToolUse\` (\`Shell|Read\`) +
+  \`postToolUse\` + \`afterMCPExecution\` + \`beforeSubmitPrompt\` → \`node scripts/reread-ledger.mjs\` — read steering:
+  a raw read of indexed source gets one \`find_symbol(relativePath:)\` nudge per file per turn, a re-read of lines
+  already returned (shell reads, tea-rags bodies) one note, both as \`additional_context\` on \`{"permission":"allow"}\`;
+  a Read result is not recorded (no line range in its hook input); \`beforeSubmitPrompt\` +
   \`postToolUse\` → \`scripts/turn-routing.sh\` — the prompt arms the turn (\`{"continue":true}\`), its first tool result
   carries \`scripts/turn-routing.txt\` as \`additional_context\` (beforeSubmitPrompt has no context channel; a turn with no
   tool call gets no re-inject).
@@ -572,15 +578,26 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
         // bd tea-rags-mcp-nknkg.2: beforeSubmitPrompt has no context channel, so it arms the turn and
         // the turn's first postToolUse delivers the routing lines as additional_context.
         // search-drift.sh resets its per-turn counters on the same prompt event (drift is within-turn).
+        // reread-ledger.mjs owns read steering (bd tea-rags-mcp-nxg76: reads are never denied): it
+        // notes at preToolUse (additional_context on allow, cursor-agent 2026.10.22 bundle), records
+        // shell reads at postToolUse and tea-rags rows at afterMCPExecution, turns on the prompt.
         beforeSubmitPrompt: [
           { command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 },
           { command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 5 },
+          { command: `${LEDGER_COMMAND} --harness cursor`, timeout: 5 },
         ],
-        postToolUse: [{ command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 }],
+        postToolUse: [
+          { command: `${hookCommand("turn-routing.sh")} --harness cursor`, timeout: 5 },
+          { command: `${LEDGER_COMMAND} --harness cursor`, timeout: 10 },
+        ],
         preToolUse: [
-          { matcher: "Shell|Read|Grep", command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 10 },
+          { matcher: "Shell|Grep", command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 10 },
+          { matcher: "Shell|Read", command: `${LEDGER_COMMAND} --harness cursor`, timeout: 10 },
         ],
-        afterMCPExecution: [{ command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 5 }],
+        afterMCPExecution: [
+          { command: `${hookCommand("search-drift.sh")} --harness cursor`, timeout: 5 },
+          { command: `${LEDGER_COMMAND} --harness cursor`, timeout: 10 },
+        ],
       },
     }),
   );

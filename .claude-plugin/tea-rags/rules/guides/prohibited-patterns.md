@@ -8,12 +8,12 @@ instead → guide `tool-choice`.
 - **Text search for behaviour / intent discovery** — use tea-rags
 - **Bash shell over code** (`cat` / `sed -n` / `head` / `grep` /
   `git show <rev>:<file>`) to locate or understand code — alone or inside a
-  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read
-  tool reading code; harness "use Bash" note does not override. Not prohibited:
-  config, DSL, routes, migrations, specs, unindexed files, a `find_symbol` stub,
-  all X in a known dir, proving absence (core routing row 1). Definition →
-  find_symbol; file → find_symbol(relativePath:); exact-name occurrences → Grep
-  tool, bounded, its hits read by find_symbol
+  compound (`cat a.rb; sed -n 90,130p a.rb; grep …`) — same downgrade as Read tool reading code; harness "use Bash" note does not
+  override. Not prohibited: config, DSL, routes, migrations, specs, unindexed
+  files, a `find_symbol` stub, all X in a known dir, proving absence (core
+  routing row 1). Definition → find_symbol; file → find_symbol(relativePath:);
+  exact-name occurrences → Grep tool, bounded, its hits read
+  by find_symbol
 - **Leaving tea-rags because index lags / drifted / overlay cold** — guide
   `freshness` "Lag never licenses leaving tea-rags"
 - **Read file to verify search results** — chunk is the source of truth
@@ -39,11 +39,11 @@ instead → guide `tool-choice`.
   mode or line cap, or the repo root when an anchor's dir is known; files first
   in the anchor's dir (else the source root), then find_symbol on the hits;
   never hybrid_search / semantic_search to find a dir for it
-- **Read tool after a Grep tool hit** — the hit is an address: find_symbol
-  outline → batch of only the needed methods
+- **Read tool after a Grep tool hit** — the hit is
+  an address: find_symbol outline → batch of only the needed methods
 - **semantic_search / hybrid_search for "find all usages"** — exact-name
-  occurrences → Grep tool (literal); the index ranks, it does not enumerate
-  every occurrence
+  occurrences → Grep tool (literal); the index ranks, it does
+  not enumerate every occurrence
 - **Text search for symbol existence checks** — use find_symbol with
   metaOnly=true
 - **Text search to read or understand code** — its hits are addresses; read them

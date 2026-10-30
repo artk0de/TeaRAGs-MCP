@@ -29,15 +29,20 @@ regenerates this package and commits it.
   `preCompact` hook: observational only. No read deny: core routes config, DSL,
   migrations and specs to the Read tool (bd tea-rags-mcp-nxg76). Shared with
   Claude and Codex, shipped verbatim (`--harness cursor`): `preToolUse`
-  (`Shell|Read|Grep`) → `scripts/search-drift.sh` — `permission: "deny"` once
-  after 3 concept-shaped text searches (an alternation), 3 source-code reads or
-  4 mixed with no tea-rags call (one deny per 120 s; literal searches and config
-  / spec / migration paths are neutral), reset by `afterMCPExecution` from
-  server `tea-rags`; `beforeSubmitPrompt` + `postToolUse` →
-  `scripts/turn-routing.sh` — the prompt arms the turn (`{"continue":true}`),
-  its first tool result carries `scripts/turn-routing.txt` as
-  `additional_context` (beforeSubmitPrompt has no context channel; a turn with
-  no tool call gets no re-inject).
+  (`Shell|Grep`) → `scripts/search-drift.sh` — `permission: "deny"` once after 3
+  concept-shaped text searches (an alternation) with no tea-rags call (one deny
+  per 120 s; literal searches and config / spec / migration paths are neutral;
+  reads are never denied), reset by `afterMCPExecution` from server `tea-rags`;
+  `preToolUse` (`Shell|Read`) + `postToolUse` + `afterMCPExecution` +
+  `beforeSubmitPrompt` → `node scripts/reread-ledger.mjs` — read steering: a raw
+  read of indexed source gets one `find_symbol(relativePath:)` nudge per file
+  per turn, a re-read of lines already returned (shell reads, tea-rags bodies)
+  one note, both as `additional_context` on `{"permission":"allow"}`; a Read
+  result is not recorded (no line range in its hook input);
+  `beforeSubmitPrompt` + `postToolUse` → `scripts/turn-routing.sh` — the prompt
+  arms the turn (`{"continue":true}`), its first tool result carries
+  `scripts/turn-routing.txt` as `additional_context` (beforeSubmitPrompt has no
+  context channel; a turn with no tool call gets no re-inject).
 - `tea-rags/skills/` — the tea-rags skills (17): every user-invocable one plus
   each internal skill a shipped skill names.
 - `dinopowers/` — the wrappers as `skills/dino-<s>/` (Claude Code

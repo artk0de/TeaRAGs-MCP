@@ -27,6 +27,15 @@
             "timeout": 60
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -52,6 +61,11 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
+            "timeout": 5
           }
         ]
       }
@@ -69,6 +83,11 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
+            "timeout": 10
           }
         ]
       }
@@ -81,6 +100,21 @@
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|shell|exec_command)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
+            "timeout": 10
           }
         ]
       }

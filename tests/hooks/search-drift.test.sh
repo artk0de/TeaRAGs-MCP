@@ -7,11 +7,12 @@
 #            (PreToolUse shell counts, PostToolUse tea-rags MCP resets)
 #   cursor — harness/cursor/tea-rags/scripts/search-drift.sh --harness cursor
 #            (preToolUse Shell|Read|Grep counts, afterMCPExecution tea-rags resets)
-# Per-session counters: DENY once after 3 consecutive concept searches done by
-# text search (an alternation), 3 reads of indexed source code, or 4 mixed, with
-# no tea-rags call between. Literal / -F searches and reads of, or searches scoped
-# to, config / DSL / migrations / specs are neutral (bd tea-rags-mcp-nxg76: core
-# routes them to the standard tools). At most one deny per
+# Per-session counter: DENY once after 3 concept searches done by text search (an
+# alternation) with no tea-rags call between. Literal / -F searches and searches
+# scoped to config / DSL / migrations / specs are neutral (bd tea-rags-mcp-nxg76:
+# core routes them to the standard tools). Reads are never denied and never
+# reminded — owner decision of nxg76, "так мы же убирали запрет на чтение"; the
+# reread ledger owns read steering on every harness. At most one deny per
 # 120 s; a deny resets the counters; edits are neutral; every error fails open
 # (Cursor: fail-open prints {"permission":"allow"}). A new user prompt
 # (UserPromptSubmit / beforeSubmitPrompt) resets the counters and keeps the deny
@@ -149,8 +150,13 @@ for H in claude codex cursor; do
 
   fresh
   export FAKE_OUT='{"indexed":true,"relativePath":"src/a.ts"}'
-  run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"; run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"; allowed "$H"; note $? "$H: indexed read 2 allowed"
-  run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"; denied "$H" "find_symbol"; note $? "$H: indexed read 3 denied, names find_symbol"
+  # Owner decision (nxg76): reads are never denied, and search-drift adds no reminder either.
+  for _ in 1 2 3 4 5 6; do
+    run "$H" "$(pre "$H" s3 read /repo/src/a.ts)"
+    allowed "$H" && [ -z "$ERR" ] && ! printf '%s' "$OUT" | grep -qE 'additional_?[Cc]ontext' || break
+  done
+  allowed "$H" && [ -z "$ERR" ] && ! printf '%s' "$OUT" | grep -qE 'additional_?[Cc]ontext'
+  note $? "$H: a streak of 6 indexed reads is never denied and gets no search-drift reminder"
 
   fresh
   export FAKE_OUT='{"indexed":false}'
@@ -160,8 +166,9 @@ for H in claude codex cursor; do
 
   fresh
   run "$H" "$(pre "$H" s5 grep "$C")"; run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"
-  run "$H" "$(pre "$H" s5 grep "$C")"; allowed "$H"; note $? "$H: mixed 3 allowed"
-  run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"; denied "$H"; note $? "$H: mixed 4 denied"
+  run "$H" "$(pre "$H" s5 grep "$C")"; allowed "$H"; note $? "$H: search, read, search allowed"
+  run "$H" "$(pre "$H" s5 read /repo/src/a.ts)"; allowed "$H"; note $? "$H: a read after searches is never denied"
+  run "$H" "$(pre "$H" s5 grep "$C")"; denied "$H" "semantic_search"; note $? "$H: reads neither count nor reset — the 3rd search is denied"
 
   fresh
   run "$H" "$(pre "$H" s6 grep "$C")"; run "$H" "$(pre "$H" s6 edit /repo/src/a.ts)"; allowed "$H"; note $? "$H: edit allowed"
@@ -220,7 +227,9 @@ for H in claude codex cursor; do
   for _ in 1 2 3; do
     run "$H" "$(pre "$H" z3 read /repo/src/a.ts | jq -c '.cwd="/work/test/repo" | .workspace_roots=["/work/test/repo"] | if .tool_input.file_path then .tool_input.file_path="/work/test/repo/src/a.ts" else .tool_input.command=(.tool_input.command | if type=="array" then (.[2]="cat src/a.ts") else . end) end')"
   done
-  denied "$H" "find_symbol"; note $? "$H: a zone word in the cwd does not exempt a source read"
+  # Was a deny before the owner decision (nxg76: reads are never blocked); the zone-word guard for
+  # reads now lives in reread-ledger.mjs (tests/hooks/reread-ledger.test.sh).
+  allowed "$H"; note $? "$H: a zone word in the cwd — source reads still never denied"
 
   fresh
   run "$H" "$(pre "$H" a grep "$C")"; run "$H" "$(pre "$H" a grep "$C")"

@@ -195,6 +195,9 @@ const SHELL_TOOL_MATCHER = "^(Bash|shell|exec_command)$";
  */
 const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea[-_]rags.*__";
 
+/** The shared reread ledger (Node script) — read steering: re-read note + indexed-source nudge. */
+const LEDGER_COMMAND = `node "${PLUGIN_ROOT_VAR}/scripts/reread-ledger.mjs"`;
+
 /**
  * Codex PreToolUse hook: exit 2 (reason on stderr) for a shell command that
  * prints two or more distinct `.md` files. Codex T22 eval: a SKILL.md read only
@@ -577,9 +580,12 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
   PreToolUse (\`${SHELL_TOOL_MATCHER}\`) \`\${PLUGIN_ROOT}/scripts/one-file-read.sh\` — exit 2 for a shell command that prints
   two or more \`.md\` files (one file per command keeps a skill's output contract in view); then
   \`\${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex\` — exit 2 once after 3 concept-shaped text searches
-  (an alternation), 3 source-code reads or 4 mixed with no tea-rags call (one deny per 120 s); literal searches and
-  config / spec / migration paths are neutral; reset by PostToolUse (\`${TEA_RAGS_MCP_TOOL_MATCHER}\`). No read deny:
-  core routes config, DSL, migrations and specs to shell reads (bd tea-rags-mcp-nxg76).
+  (an alternation) with no tea-rags call (one deny per 120 s); literal searches and config / spec / migration paths
+  are neutral; reset by PostToolUse (\`${TEA_RAGS_MCP_TOOL_MATCHER}\`). Reads are never denied (bd
+  tea-rags-mcp-nxg76); then \`node \${PLUGIN_ROOT}/scripts/reread-ledger.mjs --harness codex\` — read steering as
+  \`hookSpecificOutput.additionalContext\`: a shell read of indexed source gets one \`find_symbol(relativePath:)\`
+  nudge per file per turn, a re-read of lines already returned one note; it records on PostToolUse (shell and
+  \`${TEA_RAGS_MCP_TOOL_MATCHER}\`), turns on UserPromptSubmit, drops its ledger on SessionStart compact / clear.
   UserPromptSubmit \`\${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex\` — the routing lines of
   \`scripts/turn-routing.txt\` as \`hookSpecificOutput.additionalContext\` every user turn.
 - \`tea-rags/skills/\` — curated tea-rags skills (below).
@@ -801,6 +807,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
           { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-start.sh`, timeout: 10 }] },
           { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-codex-rules.sh`, timeout: 10 }] },
           { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-digest.sh`, timeout: 60 }] },
+          { hooks: [{ type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 }] },
         ],
         SubagentStart: [
           { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`, timeout: 30 }] },
@@ -810,6 +817,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
             hooks: [
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/turn-routing.sh --harness codex`, timeout: 5 },
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
+              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 5 },
             ],
           },
         ],
@@ -819,6 +827,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
             hooks: [
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/one-file-read.sh`, timeout: 10 },
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 10 },
+              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 },
             ],
           },
         ],
@@ -827,7 +836,12 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
             matcher: TEA_RAGS_MCP_TOOL_MATCHER,
             hooks: [
               { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
+              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 },
             ],
+          },
+          {
+            matcher: SHELL_TOOL_MATCHER,
+            hooks: [{ type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 }],
           },
         ],
       },

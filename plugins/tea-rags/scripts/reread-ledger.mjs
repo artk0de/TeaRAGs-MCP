@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Re-read ledger hook (Claude Code). Agents re-read lines they already hold: the
+// Re-read ledger hook (Claude Code, Codex, Cursor). Agents re-read lines they already hold: the
 // same file and an overlapping line range, a turn later, through sed, cat, Read
 // or find_symbol — or raw lines a tea-rags chunk already returned. Core says
 // "never call for what you have"; across turns that is not followed. This hook
@@ -21,10 +21,30 @@
 //                indexed`, the test search-drift.sh runs; never a standard-zone.ere
 //                path — config / DSL / routes / migrations / specs / data) → one
 //                nudge line naming find_symbol(relativePath:), once per file per
-//                turn, never beside the re-read note or a search-drift deny.
+//                turn, never beside the re-read note or a search-drift SEARCH
+//                deny (reads are never denied, bd tea-rags-mcp-nxg76: on every
+//                harness this nudge is the only read steering).
 //   UserPromptSubmit → next turn (the note names the turn).
 //   SessionStart compact | clear → drop the session ledger (the lines left the
 //                context); startup → prune ledgers idle for 7 days.
+//
+// One script, three harnesses (`--harness claude|codex|cursor`, default claude;
+// Codex and Cursor ship this file byte-identical). `harnessEvent` maps each
+// payload onto the Claude shape above; `harnessAnswer` renders the note:
+//   claude — as above; hookSpecificOutput.additionalContext.
+//   codex  — PreToolUse / PostToolUse(shell: Bash|shell|exec_command, argv or
+//            string command, workdir; tea-rags MCP under either spelling),
+//            UserPromptSubmit, SessionStart; hookSpecificOutput.additionalContext
+//            (PreToolUseHookSpecificOutputWire, codex-cli 0.162.1). No Read tool;
+//            apply_patch edits invalidate through the mtime + size stamp.
+//   cursor — preToolUse(Shell|Read) notes as {"permission":"allow",
+//            "additional_context"}; postToolUse(Shell) and afterMCPExecution
+//            (tea-rags server) record; beforeSubmitPrompt → next turn +
+//            {"continue":true}; ledgers idle 7 days are pruned there (no
+//            sessionStart keyed like the tool events). A Read result is not
+//            recorded: its hook input carries no line range. Every Cursor exit
+//            prints JSON (a permission hook with invalid stdout blocks).
+// Session key: session_id, else Cursor's conversation_id — search-drift.sh's.
 //
 // State: $TEA_RAGS_HOOK_STATE_DIR (default: the plugin-data dir, else
 // $TMPDIR/tea-rags-hooks — the store search-drift.sh uses), one directory per
@@ -49,12 +69,16 @@ const READ_DEFAULT_LIMIT = 2000;
 const MAX_COUNTED_BYTES = 8 * 1024 * 1024;
 const IDLE_LEDGER_MS = 7 * 24 * 3600 * 1000;
 const INDEXED_LOOKUP_TIMEOUT_MS = 1500;
-// search-drift.sh thresholds: a read streak of 3, 4 mixed, one deny per 120 s.
-const DRIFT_READ_STREAK = 3;
-const DRIFT_MIXED_STREAK = 4;
+// search-drift.sh thresholds: a streak of 3 concept searches, one deny per 120 s. Reads never count.
+const DRIFT_SEARCH_STREAK = 3;
 const DRIFT_COOLDOWN_SEC = 120;
 const DRIFT_JUST_DENIED_SEC = 5;
-const TEA_RAGS_TOOL = /^mcp__.*tea-rags.*__(\w+)$/;
+// Codex code mode spells a nested MCP tool as a JS identifier: `mcp__tea_rags__<tool>`.
+const TEA_RAGS_TOOL = /^mcp__.*tea[-_]rags.*__(\w+)$/;
+const HARNESSES = new Set(["claude", "codex", "cursor"]);
+const SHELL_TOOLS = new Set(["Bash", "shell", "exec_command", "Shell"]);
+/** cursor-agent refuses a hook's `additional_context` past this (HookAdditionalContextTooLargeError). */
+const CURSOR_CONTEXT_MAX_CHARS = 10000;
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 // ---------------------------------------------------------------- shell parsing
@@ -838,32 +862,129 @@ function requests(tool, input, cwd, lineCount) {
   return { files, symbols };
 }
 
+/** A shell command as one string: Codex may send an argv array, `[bash, -lc, <code>]` → `<code>`. */
+function shellCommandText(command) {
+  if (typeof command === "string") return command;
+  if (!Array.isArray(command) || !command.length) return null;
+  const argv = command.map(String);
+  if (argv.length >= 3 && /(^|\/)(ba|z|da)?sh$/.test(argv[0]) && /^-[a-z]*c$/.test(argv[1])) return argv[2];
+  return argv.map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replaceAll("'", "'\\''")}'`)).join(" ");
+}
+
+/** A JSON string Cursor hands over (tool_input, result_json) → its value; anything else as is. */
+function parsedJson(value) {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One harness payload → the Claude-shaped event the ledger reads
+ * (`{ hook_event_name, session_id, agent_id, cwd, tool_name, tool_input, tool_response, source }`), or
+ * null when the event carries nothing for the ledger. Shell tools become `Bash` with a string command,
+ * tea-rags MCP tools `mcp__tea-rags__<tool>`.
+ */
+export function harnessEvent(input, harness) {
+  if (!input || typeof input !== "object") return null;
+  const event = String(input.hook_event_name ?? "").toLowerCase();
+  const sessionId = input.session_id ?? input.conversation_id;
+  const base = {
+    hook_event_name: event,
+    session_id: sessionId,
+    agent_id: input.agent_id,
+    cwd: input.cwd ?? (Array.isArray(input.workspace_roots) ? input.workspace_roots[0] : undefined),
+    source: input.source,
+  };
+  if (harness === "claude") return { ...input, ...base };
+  if (event === "userpromptsubmit" || event === "beforesubmitprompt") {
+    return { ...base, hook_event_name: "userpromptsubmit" };
+  }
+  if (event === "sessionstart") return harness === "codex" ? base : null;
+  let tool = String(input.tool_name ?? "");
+  let toolInput = parsedJson(input.tool_input);
+  toolInput = toolInput && typeof toolInput === "object" ? { ...toolInput } : {};
+  let response = input.tool_response;
+  let hookEvent = event;
+  if (event === "aftermcpexecution") {
+    // Cursor: bare tool_name + mcp_server_name; the result is a JSON string of the MCP CallToolResult.
+    if (!/tea[-_]rags/.test(String(input.mcp_server_name ?? "")) && !TEA_RAGS_TOOL.test(tool)) return null;
+    if (!TEA_RAGS_TOOL.test(tool)) tool = `mcp__tea-rags__${tool}`;
+    response = parsedJson(input.result_json);
+    hookEvent = "posttooluse";
+  } else if (event === "posttooluse" && harness === "cursor") {
+    // Read: no line range in the hook input, so recording it could claim lines never printed.
+    // MCP:<tool>: recorded by afterMCPExecution, which names the server.
+    if (tool !== "Shell") return null;
+    response = parsedJson(input.tool_output);
+  } else if (event !== "pretooluse" && event !== "posttooluse") {
+    return null;
+  }
+  if (SHELL_TOOLS.has(tool)) {
+    const command = shellCommandText(toolInput.command);
+    if (!command) return null;
+    const dir = toolInput.workdir ?? toolInput.cwd;
+    if (typeof dir === "string" && dir) base.cwd = base.cwd ? resolve(base.cwd, dir) : dir;
+    tool = "Bash";
+    toolInput = { command };
+  }
+  return { ...base, hook_event_name: hookEvent, tool_name: tool, tool_input: toolInput, tool_response: response };
+}
+
+/** The ledger's answer → what the harness prints: the note in its non-blocking channel. */
+export function harnessAnswer(harness, event, lines) {
+  const context = lines.join("\n");
+  if (harness === "cursor") {
+    if (event === "pretooluse") {
+      return context
+        ? { permission: "allow", additional_context: context.slice(0, CURSOR_CONTEXT_MAX_CHARS) }
+        : { permission: "allow" };
+    }
+    return event === "userpromptsubmit" || event === "beforesubmitprompt" ? { continue: true } : {};
+  }
+  return context ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: context } } : null;
+}
+
 /** One hook event → the JSON to print, or null. */
-export function handleHookEvent(input, { stateDir, lineCount = fileLineCount, indexedLookup = cliIndexedLookup }) {
-  const event = String(input?.hook_event_name ?? "").toLowerCase();
+export function handleHookEvent(
+  raw,
+  { stateDir, harness = "claude", lineCount = fileLineCount, indexedLookup = cliIndexedLookup },
+) {
+  const rawEvent = String(raw?.hook_event_name ?? "").toLowerCase();
+  const lines = ledgerLines(harnessEvent(raw, harness), { stateDir, harness, lineCount, indexedLookup });
+  return harnessAnswer(harness, rawEvent, lines);
+}
+
+/** The ledger's lines for one Claude-shaped event (records and turn moves answer none). */
+function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup }) {
+  const event = String(input?.hook_event_name ?? "");
   const sid = String(input?.session_id ?? "").replace(/[^A-Za-z0-9_.-]/g, "_");
-  if (!event || !sid) return null;
+  if (!event || !sid) return [];
   const agent =
     typeof input.agent_id === "string" && input.agent_id ? `~${input.agent_id.replace(/[^A-Za-z0-9_.-]/g, "_")}` : "";
-  const ledger = new RereadLedger(join(stateDir, `reread-claude-${sid}${agent}`));
+  const ledger = new RereadLedger(join(stateDir, `reread-${harness}-${sid}${agent}`));
   const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : null;
   const tool = String(input.tool_name ?? "");
   const toolInput = input.tool_input && typeof input.tool_input === "object" ? input.tool_input : {};
 
   if (event === "userpromptsubmit") {
     ledger.nextTurn();
-    return null;
+    // Cursor has no sessionStart keyed like its tool events: prune on the prompt instead.
+    if (harness === "cursor") pruneIdleLedgers(stateDir);
+    return [];
   }
   if (event === "sessionstart") {
     if (input.source === "compact" || input.source === "clear") ledger.clear();
     else if (input.source === "startup") pruneIdleLedgers(stateDir);
-    return null;
+    return [];
   }
   if (event === "posttooluse") {
     recordPost(ledger, tool, toolInput, input.tool_response, cwd, lineCount);
-    return null;
+    return [];
   }
-  if (event !== "pretooluse") return null;
+  if (event !== "pretooluse") return [];
 
   const { files, symbols } = requests(tool, toolInput, cwd, lineCount);
   const notes = [];
@@ -889,40 +1010,61 @@ export function handleHookEvent(input, { stateDir, lineCount = fileLineCount, in
   }
   const lines = [];
   if (notes.length) lines.push(`tea-rags: ${[...new Set(notes)].slice(0, MAX_NOTES).join("; ")} — answer from them.`);
-  if ((tool === "Read" || tool === "Bash") && !driftDenyMayFire(stateDir, sid)) {
+  const searchDenied = tool === "Bash" && driftSearchDenyMayFire(stateDir, harness, sid, toolInput.command, cwd);
+  if ((tool === "Read" || tool === "Bash") && !searchDenied) {
     const fresh = files.map((f) => f.path).filter((path) => !held.has(path));
     const nudge = indexedSourceNudge(ledger, fresh, cwd, indexedLookup);
     if (nudge) lines.push(nudge);
   }
-  if (!lines.length) return null;
-  return { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: lines.join("\n") } };
+  return lines;
 }
 
 /**
- * Whether search-drift.sh may deny this same call: it runs beside this hook on the same
- * PreToolUse and its deny already names find_symbol, so the nudge stays out of that call.
- * Reads search-drift's per-session state ("<searches> <reads> <total> <last deny epoch>")
- * either before its update — this call would be read 3 or call 4 of a streak, cooldown
- * over — or after it: a deny just written. Errs toward silence: a counter already bumped
+ * Whether a shell command is a concept search the way search-drift.sh counts one: grep / egrep /
+ * fgrep / rg / ag / ack / git grep starting a command, with an alternation (`a|b`, `a\|b`, two -e)
+ * and no -F, not scoped to a standard-zone path (the cwd prefix stripped first).
+ */
+function conceptShellSearch(command, cwd) {
+  const searchStart =
+    /(^|[;&(`]|\|\||\$\()\s*(([A-Za-z_]\w*=\S*|sudo|command|env)\s+)*(grep|egrep|fgrep|rg|ag|ack|git\s+grep)(\s|$)/;
+  if (!searchStart.test(command)) return false;
+  if (/(^|\s)(-[A-Za-z]*F[A-Za-z]*|--fixed-strings)(\s|$)/.test(command)) return false;
+  const alternation =
+    command.includes("\\|") || /'[^']*\|[^']*'|"[^"]*\|[^"]*"/.test(command) || /(^|\s)-e\s.*\s-e\s/.test(command);
+  if (!alternation) return false;
+  const zone = standardZonePattern();
+  if (!zone) return false;
+  return !zone.test(cwd ? command.replaceAll(`${cwd}/`, "") : command);
+}
+
+/**
+ * Whether search-drift.sh may deny this same shell call as a concept search: it runs beside this
+ * hook on the same PreToolUse and its deny is the steering that call gets, so the nudge stays out
+ * of it. Reads are never denied (bd tea-rags-mcp-nxg76), so only a command that is both a ledger
+ * read and a concept search can collide. Reads search-drift's per-session state
+ * ("<searches> 0 0 <last deny epoch>") either before its update — this call would be search 3,
+ * cooldown over — or after it: a deny just written. Errs toward silence: a counter already bumped
  * by this call can only suppress a nudge, never let one through beside a deny.
  */
-function driftDenyMayFire(stateDir, sid) {
-  const file = join(stateDir, `drift-claude-${sid}`);
+function driftSearchDenyMayFire(stateDir, harness, sid, command, cwd) {
+  const file = join(stateDir, `drift-${harness}-${sid}`);
   let state;
   let writtenMs;
   try {
     state = readFileSync(file, "utf8").trim().split(/\s+/).map(Number);
     writtenMs = statSync(file).mtimeMs;
   } catch {
-    return false;
+    state = [0, 0, 0, 0];
+    writtenMs = 0;
   }
-  const [, reads, total, lastDeny] = state;
+  const [searches, , , lastDeny] = state;
   if (state.length < 4 || state.some((n) => !Number.isInteger(n))) return false;
   const now = Number.parseInt(process.env.TEA_RAGS_HOOK_NOW ?? "", 10) || Math.floor(Date.now() / 1000);
   if (lastDeny > 0 && now - lastDeny < DRIFT_JUST_DENIED_SEC) return true;
   // Written after this process started: search-drift already counted this call and allowed it.
   if (writtenMs >= Date.now() - process.uptime() * 1000) return false;
-  return (reads + 1 >= DRIFT_READ_STREAK || total + 1 >= DRIFT_MIXED_STREAK) && now - lastDeny >= DRIFT_COOLDOWN_SEC;
+  if (typeof command !== "string" || !conceptShellSearch(command, cwd)) return false;
+  return searches + 1 >= DRIFT_SEARCH_STREAK && now - lastDeny >= DRIFT_COOLDOWN_SEC;
 }
 
 /** The zone pattern search-drift.sh reads (standard-zone.ere beside this script) as a RegExp; null when absent. */
@@ -1078,23 +1220,23 @@ function pruneIdleLedgers(stateDir) {
 }
 
 function main() {
-  let raw;
-  try {
-    raw = readFileSync(0, "utf8");
-  } catch {
-    return;
-  }
+  const flag = process.argv.indexOf("--harness");
+  const harness = flag >= 0 && HARNESSES.has(process.argv[flag + 1]) ? process.argv[flag + 1] : "claude";
   const stateDir =
     process.env.TEA_RAGS_HOOK_STATE_DIR ||
     process.env.CLAUDE_PLUGIN_DATA ||
     process.env.PLUGIN_DATA ||
     join(process.env.TMPDIR || "/tmp", "tea-rags-hooks");
+  let input = null;
+  let out;
   try {
-    const out = handleHookEvent(JSON.parse(raw), { stateDir });
-    if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
+    input = JSON.parse(readFileSync(0, "utf8"));
+    out = handleHookEvent(input, { stateDir, harness });
   } catch {
-    // fail open: the tool call proceeds untouched
+    // fail open: the tool call proceeds untouched (Cursor still gets a pass-through JSON)
+    out = harnessAnswer(harness, String(input?.hook_event_name ?? "pretooluse").toLowerCase(), []);
   }
+  if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
