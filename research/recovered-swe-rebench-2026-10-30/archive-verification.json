@@ -1,0 +1,9 @@
+{
+  "source": "/private/tmp/tea-rags-recovered-swe-rebench-20261030T020930Z-d4586d39",
+  "destination": "/Users/artk0re/Dev/Tools/tea-rags-mcp/research/recovered-swe-rebench-2026-10-30",
+  "sourceFileCount": 41,
+  "copiedFilesVerified": 41,
+  "mismatches": [],
+  "originalManifestEntriesVerified": 36,
+  "secretScanHits": []
+}

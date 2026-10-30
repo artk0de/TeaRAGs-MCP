@@ -1,0 +1,10 @@
+[
+  {
+    "originalPath": "status.z",
+    "originalBytes": 1852,
+    "originalSha256": "ed7294eadd33ea3d62159a85b1914b20b1192919c2a312ac492b86ee9f4200a6",
+    "storedPath": "status.z.gz",
+    "encoding": "gzip",
+    "storedSha256": "e8a19bb8b7c7120fa67ca2208b3ef40565f11ebb6ab26d0f9f5c2ca1d23d16a4"
+  }
+]

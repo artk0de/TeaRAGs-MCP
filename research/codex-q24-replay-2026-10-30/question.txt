@@ -1,0 +1,4 @@
+Хочется именно GruntWorx, просто сделаем явный словарь
+
+instead => Instead
+gruntworx => GruntWorx. Значит не camelize нужен, а downcase, этого хватит

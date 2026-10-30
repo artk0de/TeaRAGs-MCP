@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18aa9-ea98-77a0-b378-f1a50404d482"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да. Для этих двух имён явный словарь надёжнее, чем `camelize` или `downcase`:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\n`downcase` сам по себе превращает `GruntWorx` в `gruntworx`, но не задаёт нужное отображение из ключа провайдера в отображаемое имя. Если речь только о подписи в интерфейсе, храните словарь отдельно от ключей провайдеров и используйте его там."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":132,"reasoning_output_tokens":0}}

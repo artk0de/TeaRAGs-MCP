@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9c-239e-7a71-a81b-9ddfa4b5b7ef"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, согласен. Для этих двух провайдеров достаточно явного словаря:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nКлюч можно нормализовать через `downcase.to_sym`, затем искать в словаре. `camelize` здесь не нужен: отображаемые имена заданы явно и не выводятся из названий namespace."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":98,"reasoning_output_tokens":0}}

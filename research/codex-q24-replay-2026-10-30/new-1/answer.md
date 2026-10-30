@@ -1,0 +1,3 @@
+Да, для этих двух названий достаточно `downcase`: `Instead` → `instead`, `GruntWorx` → `gruntworx`. Явный словарь `instead => Instead`, `gruntworx => GruntWorx` задаёт отображаемые имена и не требует `camelize`.
+
+Ключи уже совпадают с провайдерами в [FirmSettings::PROVIDERS](app/models/tax_preparation/tax_automations/firm_settings.rb) и формой ключа в [Registry::ADAPTERS](app/lib/tax_preparation/tax_automations/registry.rb).

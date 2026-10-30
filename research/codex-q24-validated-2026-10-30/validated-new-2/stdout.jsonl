@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18aa8-9263-7062-ae87-6a107ff67073"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, для этих двух идентификаторов `provider.to_s.downcase` даёт нужные значения: `Instead` → `instead`, `GruntWorx` → `gruntworx`. Но явный словарь лучше: он ограничивает допустимые имена и не полагается на преобразование регистра.\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nЕсли нужна конвертация в обе стороны, заведите отдельные мапы. `downcase` подходит для этих двух названий, но явный словарь надёжнее при добавлении провайдеров."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":145,"reasoning_output_tokens":0}}

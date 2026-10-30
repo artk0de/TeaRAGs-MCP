@@ -1,0 +1,1925 @@
+commit 66e71abdc438731975e36a928a04ce14755b16bc
+Author:     artk0de <art2rik.desperado@gmail.com>
+AuthorDate: Fri Oct 30 05:20:07 2026 +0300
+Commit:     artk0de <art2rik.desperado@gmail.com>
+CommitDate: Fri Oct 30 05:20:07 2026 +0300
+
+    feat(evals): recover rebench, Pro, probe and localization stages
+
+diff --git a/evals/swe-bench-lite/README.md b/evals/swe-bench-lite/README.md
+index 32bed5fa0..ecd3c8040 100644
+--- a/evals/swe-bench-lite/README.md
++++ b/evals/swe-bench-lite/README.md
+@@ -77,6 +77,107 @@ The single-arm `run --arm <arm>` stage remains for dev tuning (arm 1 only on
+ `dev-django-5`, or `dev-5` for the second run). With it, `collect` for an arm must follow that arm's `run`
+ immediately, before another `run` wipes the working tree.
+ 
++## SWE-rebench (decontaminated run)
++
++Lite is in the model's training data: on django the agent opens the gold file
++with its first tool call, with no search at all, and neither arm needs
++TeaRAGs. The decontaminated run uses `nebius/SWE-rebench-leaderboard`, which
++adds issues every month (through 2026-05 at the time of writing) over ~400
++smaller repositories.
++
++```bash
++uv run swe-lite-ab select --profile rebench   # tasks/rebench-2026.json
++uv run swe-lite-ab prepare --tasks rebench-2026
++# ... same stages as above with --tasks rebench-2026
++```
++
++- A task list is `{"dataset": "rebench", "ids": [...]}`; a bare id list is Lite.
++  Every stage reads the dataset from the list.
++- `runs/rebench.jsonl` is written once from the Hub and holds the rows as
++  swebench 5.x harness instances (`rebench.to_instance`): the image is the
++  task's `docker_image`, and `eval_script` applies the test patch and runs
++  `install_config.test_cmd` under `/opt/conda` env `testbed` (the rebench
++  images keep conda there, not under `/opt/miniconda3`). `evaluate` passes that
++  file as `--dataset_name`, so no rebench harness fork is needed. Checked on
++  `copier-org__copier-2646`: gold patch resolved, a no-op patch unresolved.
++- Interface tasks (non-empty `interface` column, 49 rows) are dropped: their
++  spec names the gold file's path, and without it the tests demand API names
++  the agent cannot know.
++- Profile `rebench`: every task created since 2026-01 whose patch touches at
++  least 2 files and 40 changed lines (`large-bug`, `large-feature`), plus 20
++  seeded `small-bug` tasks as the one-file control. The kind is an issue-text
++  keyword heuristic (`tasks.stratum`); the report has a section per stratum.
++
++## SWE-bench Pro (Python + TypeScript)
++
++Source: `ScaleAI/SWE-bench_Pro`, split `test` (V2, 642 rows). Kept: every
++`repo_language == "python"` row (ansible, openlibrary, qutebrowser — 237) and the
++three TypeScript repos (`protonmail/webclients`, `element-hq/element-web`,
++`tutao/tutanota` — 111; labelled js/ts, but their patches are `.ts`/`.tsx`).
++Go and NodeBB (plain JS) are dropped: the experiment is scoped to Python and
++TypeScript, the two languages it compares arms on. The task kind
++comes from the dataset's `issue_specificity` (any `*_bug` label → bug).
++
++Needs the tooling checkout (`SWE_PRO_OS`, default
++`/Users/Shared/swe-lite-ab/swe-bench-pro-os`): every task's agent input is its
++`v2/tasks/<id>/instruction.md` (PR description + requirements + new
++interfaces), and the snapshot `runs/pro.jsonl` stores that text as the
++`problem_statement`, so `mentions_gold_file` and the agent see the same thing.
++
++```bash
++uv run swe-lite-ab select --profile pro                     # tasks/pro-py-ts.json (all 348)
++uv run swe-lite-ab probe --tasks pro-py-ts --parallel 4     # runs/probe.jsonl (resumable)
++# ... prepare / index / run-paired / collect with --tasks <list>
++uv run swe-lite-ab evaluate --arm arm0 --tasks <list>       # local verifier, see below
++uv run swe-lite-ab report --tasks <list>
++```
++
++**Memorisation probe.** `claude -p` with only the repo name and the
++instruction text — `--tools ""`, an empty `--strict-mcp-config`, a fresh
++`CLAUDE_CONFIG_DIR`, cwd an empty dir under `/Users/Shared/swe-lite-ab/probe` —
++asked to list the files that must change. `hit` = any predicted path equals a
++gold file. When `runs/probe.jsonl` exists, the report fills the `memorised`
++column and adds the **Not memorised and not named** section: the headline
++stratum, where neither recall nor the task text hands the agent the file.
++
++**Grading.** No swebench harness: `pro.grade` runs the V2 verifier contract per
++task — `docker run --rm --platform linux/amd64` of
++`ghcr.io/scaleapi/swe-bench_pro-v2:<id>`, the task's `tests/` mounted read-only
++at `/tests`, the model patch read-only at `/model.patch`, `git apply` in `/app`
++(fallback `/testbed`; an empty patch skips it, a non-applying one is
++unresolved), then the unchanged `bash /tests/test.sh`. Exit 0 = resolved.
++Verifier logs go to `runs/<arm>/eval/<run_id>/<id>.log`; the report lands where
++`evaluate.report_path` puts every other dataset's, so `report` is unchanged.
++
++## Component localization benchmark (retrieval only, no LLM)
++
++Measures tea-rags search on its own: for each task, rank the repository's files
++for the issue text and score where the gold-patch files land.
++
++```bash
++uv run swe-lite-ab prepare  --tasks loc-10
++uv run swe-lite-ab index    --tasks loc-10
++uv run swe-lite-ab localize --tasks loc-10   # → results/localize-loc-10-<date>.md
++```
++
++- **Query**: the ORIGINAL issue text from `OpenHands/SWE-bench_Pro-locagent`
++  (`problem_statement`, snapshot `runs/locagent.jsonl`) — not Pro's
++  `instruction.md`, which lists file paths. Capped at 6000 chars; truncation is
++  noted in the report.
++- **Configurations**: `semantic-relevance`, `hybrid-relevance`,
++  `hybrid-bugHunt`, `hybrid-hotspots` (`tea-rags call`, `language: python`,
++  `filter: {}` so bugHunt/hotspots do not add their production filter — every
++  config searches the same chunks and only the ranking differs), and `bm25`, a
++  lexical baseline over git-tracked `.py` files (whole files plus path tokens,
++  code-aware tokenization). Chunks are paged until 50 distinct files.
++- **Metrics** per task × config: rank of the first gold file, recall@1/5/10,
++  hit@k, MRR — over gold `.py` files (primary) and every gold file
++  (secondary); a gold file outside the top 50 counts as not found. Tasks without
++  a gold `.py` are reported, not scored.
++- **Output**: top-50 rankings in `runs/localize/<id>/<config>.json`, per-task
++  metrics in `runs/localize.jsonl`. `--tasks` also accepts a temporary list
++  `runs/<name>.json` (e.g. the subset whose indexes are ready).
++
+ ## `.contextignore` per repository
+ 
+ `contextignore/<owner>__<repo>` is copied into every task repository of that
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/cli.py b/evals/swe-bench-lite/src/swe_lite_ab/cli.py
+index 0c849cd48..2d163a9f9 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/cli.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/cli.py
+@@ -1,31 +1,46 @@
+ import argparse
+ import datetime as dt
+ import json
++import time
+ from concurrent.futures import ThreadPoolExecutor
+ 
+-from . import agent, collect, config, evaluate, indexing, report, repos, tasks
++from . import agent, collect, config, evaluate, indexing, localize, probe, report, repos, tasks
+ 
+ 
+-def _tasks(name: str) -> list[tasks.Task]:
+-    return tasks.by_ids(tasks.load_lite(), tasks.load_ids(config.TASKS_DIR / f"{name}.json"))
++def _tasks(name: str) -> tuple[str, list[tasks.Task]]:
++    dataset, ids = tasks.load_task_list(config.TASKS_DIR / f"{name}.json")
++    return dataset, tasks.by_ids(tasks.load(dataset), ids)
+ 
+ 
+ def main() -> None:
+     p = argparse.ArgumentParser(prog="swe-lite-ab")
+     sub = p.add_subparsers(dest="stage", required=True)
+     sel = sub.add_parser("select")
+-    sel.add_argument("--profile", choices=["pilot", "django-focus"], default="pilot")
+-    for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report"):
++    sel.add_argument("--profile", choices=["pilot", "django-focus", "rebench", "pro"], default="pilot")
++    for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report", "probe"):
+         s = sub.add_parser(stage)
+         s.add_argument("--tasks", default="pilot-50")
+         if stage in ("run", "collect", "evaluate"):
+             s.add_argument("--arm", choices=sorted(config.ARMS), required=True)
+-        if stage in ("run", "run-paired"):
++        if stage in ("run", "run-paired", "probe"):
+             s.add_argument("--parallel", type=int, default=2)
+         if stage == "run-paired":
+             s.add_argument("--seed", type=int, default=20261003)
++    loc = sub.add_parser("localize")
++    loc.add_argument("--tasks", default="loc-10")
+     a = p.parse_args()
+ 
++    if a.stage == "localize":
++        # Retrieval-only: no LLM, no task objects — ids, the locagent issue texts and the indexes.
++        _, ids = tasks.load_task_list(localize.task_list_path(a.tasks))
++        started = time.monotonic()
++        records = localize.run(ids)
++        out = config.RESULTS_DIR / f"localize-{a.tasks}-{dt.date.today()}.md"
++        out.parent.mkdir(parents=True, exist_ok=True)
++        out.write_text(localize.render(records, a.tasks, time.monotonic() - started))
++        print(out)
++        return
++
+     if a.stage == "select" and a.profile == "django-focus":
+         # Scored: 30 sampled not-named django tasks + every named one (control); dev: 5 other not-named.
+         lite = tasks.load_lite()
+@@ -35,6 +50,15 @@ def main() -> None:
+         tasks.save_ids(dev, config.TASKS_DIR / "dev-django-5.json")
+         tasks.save_ids(sorted(not_named + named, key=lambda t: t.instance_id), config.TASKS_DIR / "django-focus-50.json")
+         return
++    if a.stage == "select" and a.profile == "rebench":
++        # Scored: every large task since 2026-01 (bug + feature) and 20 seeded small bug fixes (control).
++        chosen = tasks.select_rebench(tasks.load("rebench"), since="2026-01", n_small_bug=20, seed=20261006)
++        tasks.save_task_list(chosen, config.TASKS_DIR / "rebench-2026.json", "rebench")
++        return
++    if a.stage == "select" and a.profile == "pro":
++        # Every kept Pro task (Python + TypeScript); the memorisation probe narrows it afterwards.
++        tasks.save_task_list(tasks.load("pro"), config.TASKS_DIR / "pro-py-ts.json", "pro")
++        return
+     if a.stage == "select":
+         lite = tasks.load_lite()
+         dev = tasks.select_stratified(lite, n=5, seed=20261003)
+@@ -42,7 +66,7 @@ def main() -> None:
+         tasks.save_ids(dev, config.TASKS_DIR / "dev-5.json")
+         tasks.save_ids(pilot, config.TASKS_DIR / "pilot-50.json")
+         return
+-    ts = _tasks(a.tasks)
++    dataset, ts = _tasks(a.tasks)
+     if a.stage == "prepare":
+         for t in ts:
+             repos.prepare_task_repo(t, repos.ensure_mirror(t.repo), repos.task_dir(t.instance_id))
+@@ -56,13 +80,16 @@ def main() -> None:
+         # Both arms of a task run sequentially inside one worker, so both see the same parallelism.
+         with ThreadPoolExecutor(a.parallel) as pool:
+             list(pool.map(lambda t: agent.run_pair(t, a.seed), ts))
++    elif a.stage == "probe":
++        print(probe.run(ts, a.parallel))
+     elif a.stage == "collect":
+         collect.write_predictions(a.arm, ts)
+     elif a.stage == "evaluate":
+-        evaluate.run(a.arm, ts, f"{a.arm}-{a.tasks}")
++        evaluate.run(a.arm, ts, f"{a.arm}-{a.tasks}", dataset)
+     elif a.stage == "report":
+         resolved = {arm: evaluate.resolved_ids(evaluate.report_path(arm, f"{arm}-{a.tasks}")) for arm in config.ARMS}
+-        rows = report.build_rows(ts, resolved, config.USAGE_SOURCE)
++        rows = report.build_rows(ts, resolved, config.USAGE_SOURCE,
++                                 probe.load_hits(config.PROBE_FILE) if config.PROBE_FILE.exists() else None)
+         out = config.RESULTS_DIR / f"{a.tasks}-{dt.date.today()}.md"
+         out.parent.mkdir(parents=True, exist_ok=True)
+         out.write_text(report.render(rows, report.load_index_records(config.RUNS / "index.jsonl")))
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/config.py b/evals/swe-bench-lite/src/swe_lite_ab/config.py
+index 971e2aa9c..7db75d4e0 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/config.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/config.py
+@@ -11,6 +11,18 @@ RUNS = EVAL_ROOT / "runs"
+ REPOS_ROOT = Path(os.environ.get("SWE_LITE_AB_REPOS", "/Users/Shared/swe-lite-ab/repos"))
+ TASKS_DIR = EVAL_ROOT / "tasks"
+ LITE_SNAPSHOT = RUNS / "lite.jsonl"
++# SWE-rebench leaderboard as swebench 5.x harness instances (rebench.py); also the harness dataset.
++REBENCH_SNAPSHOT = RUNS / "rebench.jsonl"
++# SWE-bench Pro V2, Python + TypeScript rows (pro.py). The tooling checkout holds every task's
++# instruction.md (the agent input) and verifier (tests/test.sh and friends).
++PRO_SNAPSHOT = RUNS / "pro.jsonl"
++PRO_OS = Path(os.environ.get("SWE_PRO_OS", "/Users/Shared/swe-lite-ab/swe-bench-pro-os"))
++PRO_DATASET = "ScaleAI/SWE-bench_Pro"
++PRO_VERIFIER_TIMEOUT_S = 3000
++# Memorisation probe (probe.py): answers per task, and the empty working directories the model is
++# asked from (outside the home tree, so no CLAUDE.md ancestor leaks into the probe).
++PROBE_FILE = RUNS / "probe.jsonl"
++PROBE_ROOT = Path(os.environ.get("SWE_LITE_AB_PROBE", "/Users/Shared/swe-lite-ab/probe"))
+ # Per-repository .contextignore templates, named <owner>__<repo>. tea-rags reads .contextignore only
+ # from the indexed root, so prepare installs one into every task repository.
+ CONTEXTIGNORE_DIR = EVAL_ROOT / "contextignore"
+@@ -21,6 +33,7 @@ TOKEN_FILE = Path.home() / ".config" / "swe-lite-ab" / "oauth-token"
+ 
+ MODEL = "claude-sonnet-5-5"
+ DATASET = "SWE-bench/SWE-bench_Lite"
++REBENCH_DATASET = "nebius/SWE-rebench-leaderboard"
+ AGENT_TIMEOUT_S = 1800
+ MAX_BUDGET_USD = 5.0
+ 
+@@ -50,3 +63,7 @@ class ArmConfig:
+ 
+ 
+ ARMS = {"arm0": ArmConfig("arm0", False), "arm1": ArmConfig("arm1", True)}
++
++# Component localization benchmark (localize.py): the ORIGINAL Pro issue texts, no LLM.
++LOCAGENT_DATASET = "OpenHands/SWE-bench_Pro-locagent"
++LOCAGENT_SNAPSHOT = RUNS / "locagent.jsonl"
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py b/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
+index d15122767..0943b7b4d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
+@@ -11,34 +11,47 @@ def report_path(arm: str, run_id: str) -> Path:
+     return config.RUNS / "reports" / f"{arm}.{run_id}.json"
+ 
+ 
+-def image_name(instance_id: str) -> str:
+-    return "swebench/sweb.eval.x86_64." + instance_id.replace("__", "_1776_").lower() + ":latest"
++_IMAGE_NAMESPACE = {"lite": "swebench", "rebench": "swerebench"}
+ 
+ 
+-def pull_command(instance_id: str) -> list[str]:
+-    return ["docker", "pull", "-q", "--platform", "linux/amd64", image_name(instance_id)]
++def image_name(instance_id: str, dataset: str = "lite") -> str:
++    return f"{_IMAGE_NAMESPACE[dataset]}/sweb.eval.x86_64." + instance_id.replace("__", "_1776_").lower() + ":latest"
+ 
+ 
+-def ensure_images(ids: list[str]) -> None:
++def pull_command(instance_id: str, dataset: str = "lite") -> list[str]:
++    return ["docker", "pull", "-q", "--platform", "linux/amd64", image_name(instance_id, dataset)]
++
++
++def ensure_images(ids: list[str], dataset: str = "lite") -> None:
+     """swebench 5.0.2 never pulls: a missing eval image fails with ImageNotFound."""
+     for i in ids:
+-        present = subprocess.run(["docker", "image", "inspect", image_name(i)], capture_output=True).returncode == 0
++        image = image_name(i, dataset)
++        present = subprocess.run(["docker", "image", "inspect", image], capture_output=True).returncode == 0
+         if not present:
+-            subprocess.run(pull_command(i), check=True)
++            subprocess.run(pull_command(i, dataset), check=True)
++
+ 
++def harness_dataset(dataset: str) -> str:
++    """Lite grades from the Hub dataset; rebench from the snapshot rebench.load wrote as instances."""
++    return config.DATASET if dataset == "lite" else str(config.REBENCH_SNAPSHOT)
+ 
+-def harness_command(arm: str, predictions: Path, ids: list[str], run_id: str) -> list[str]:
++
++def harness_command(arm: str, predictions: Path, ids: list[str], run_id: str, dataset: str = "lite") -> list[str]:
+     return ["python", "-m", "swebench.harness.run_evaluation",
+-            "--dataset_name", config.DATASET, "--predictions_path", str(predictions),
++            "--dataset_name", harness_dataset(dataset), "--predictions_path", str(predictions),
+             "--instance_ids", *ids, "--max_workers", "4", "--run_id", run_id,
+             "--report_dir", str(report_path(arm, run_id).parent)]
+ 
+ 
+-def run(arm: str, tasks: list[Task], run_id: str) -> Path:
++def run(arm: str, tasks: list[Task], run_id: str, dataset: str = "lite") -> Path:
++    if dataset == "pro":
++        from . import pro
++
++        return pro.grade(arm, tasks, run_id)
+     predictions = config.RUNS / arm / "predictions.jsonl"
+     ids = [t.instance_id for t in tasks]
+-    ensure_images(ids)
+-    subprocess.run(harness_command(arm, predictions, ids, run_id),
++    ensure_images(ids, dataset)
++    subprocess.run(harness_command(arm, predictions, ids, run_id, dataset),
+                    cwd=config.RUNS, check=True)
+     return report_path(arm, run_id)
+ 
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/localize.py b/evals/swe-bench-lite/src/swe_lite_ab/localize.py
+new file mode 100644
+index 000000000..24c388940
+--- /dev/null
++++ b/evals/swe-bench-lite/src/swe_lite_ab/localize.py
+@@ -0,0 +1,313 @@
++"""Component localization benchmark: rank a repository's files for an issue text, no LLM anywhere.
++
++Each task's repository is indexed at its base commit. Every configuration ranks files for the ORIGINAL
++issue text (SWE-bench_Pro-locagent `problem_statement`, which names no paths, unlike Pro's
++instruction.md); the score is where the files of the gold patch land. tea-rags configurations differ
++only in tool (semantic vs hybrid) and rerank preset, so the table separates what semantic search,
++BM25 fusion and git-signal reranking each contribute. `bm25` is the lexical baseline, computed here.
++"""
++import json
++import math
++import re
++import subprocess
++import tempfile
++import time
++from collections import Counter
++from dataclasses import dataclass
++from pathlib import Path
++
++from . import config, indexing, repos
++from .tasks import gold_files
++
++LANGUAGE = "python"
++EXTS = (".py",)
++# Issue texts are a few KB; the cap only guards against a pathological one. Recorded per task.
++MAX_QUERY_CHARS = 6000
++TOP_PERSISTED = 50
++KS = (1, 5, 10)
++
++
++@dataclass(frozen=True)
++class LocalizeConfig:
++    name: str
++    tool: str
++    rerank: str | tuple[tuple[str, float], ...]  # preset name, or custom weights as (signal, weight) pairs
++    production: bool = False  # restrict the searched chunk set with the `production` filter preset
++
++
++TIEBREAK_WEIGHTS = (("similarity", 0.85), ("recency", 0.075), ("churn", 0.075))
++
++TEA_RAGS_CONFIGS = (
++    LocalizeConfig("semantic-relevance", "semantic_search", "relevance", False),
++    LocalizeConfig("hybrid-relevance", "hybrid_search", "relevance", False),
++    LocalizeConfig("hybrid-bugHunt", "hybrid_search", "bugHunt", False),
++    LocalizeConfig("hybrid-hotspots", "hybrid_search", "hotspots", False),
++    LocalizeConfig("semantic-relevance-prod", "semantic_search", "relevance", True),
++    LocalizeConfig("hybrid-relevance-prod", "hybrid_search", "relevance", True),
++    LocalizeConfig("hybrid-tiebreak-prod", "hybrid_search", TIEBREAK_WEIGHTS, True),
++    LocalizeConfig("semantic-tiebreak-prod", "semantic_search", TIEBREAK_WEIGHTS, True),
++)
++CONFIG_NAMES = tuple(c.name for c in TEA_RAGS_CONFIGS) + ("bm25", "bm25-prod")
++
++_NON_PRODUCTION_DIRS = {"tests", "test", "__tests__", "spec", "specs", "docs", "doc"}
++_TEST_FILE = re.compile(r"^test_.*\.py$|_test\.py$")
++
++
++def is_test_or_doc_path(path: str) -> bool:
++    """Same classifier as the SWE-bench Pro verifier: test/doc directories, conftest.py, test_*.py, *_test.py."""
++    *parents, base = path.split("/")
++    return bool(_NON_PRODUCTION_DIRS.intersection(parents)) or base == "conftest.py" or bool(_TEST_FILE.search(base))
++
++
++# --- pure core ---------------------------------------------------------------------------------
++
++_WORD = re.compile(r"[A-Za-z0-9]+")
++_CAMEL = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
++
++
++def tokenize(text: str) -> list[str]:
++    """Code-aware tokens: split on every non-alphanumeric (snake_case, dots, slashes) and on camelCase
++    boundaries, lowercased; tokens shorter than 2 characters are dropped."""
++    return [p.lower() for word in _WORD.findall(text) for p in _CAMEL.findall(word) if len(p) >= 2]
++
++
++def files_from_chunks(chunks: list[dict]) -> list[str]:
++    seen: dict[str, None] = {}
++    for c in chunks:
++        seen.setdefault(c["payload"]["relativePath"], None)
++    return list(seen)
++
++
++def bm25_scores(docs: dict[str, list[str]], query: list[str], k1: float = 1.2, b: float = 0.75) -> dict[str, float]:
++    n = len(docs)
++    if not n:
++        return {}
++    avgdl = sum(len(d) for d in docs.values()) / n or 1.0
++    terms = set(query)
++    df = Counter(t for d in docs.values() for t in terms.intersection(d))
++    idf = {t: math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5)) for t in terms if df[t]}
++    scores = {}
++    for path, tokens in docs.items():
++        tf = Counter(tokens)
++        dl = len(tokens)
++        s = sum(idf[t] * tf[t] * (k1 + 1) / (tf[t] + k1 * (1 - b + b * dl / avgdl)) for t in idf if tf[t])
++        if s > 0:
++            scores[path] = s
++    return scores
++
++
++def tracked_files(repo_dir: Path, exts: tuple[str, ...]) -> list[str]:
++    out = subprocess.run(["git", "ls-files", "-z"], cwd=repo_dir, check=True, capture_output=True, text=True).stdout
++    return [p for p in out.split("\0") if p.endswith(exts)]
++
++
++def bm25_rank(repo_dir: Path, query: str, exts: tuple[str, ...], exclude=None) -> list[str]:
++    """Files ranked by BM25 against the query; a document is the path's tokens plus the file's.
++    `exclude(path) -> bool` drops files from the corpus before scoring."""
++    docs = {}
++    for path in tracked_files(repo_dir, exts):
++        if exclude and exclude(path):
++            continue
++        try:
++            text = (Path(repo_dir) / path).read_text(errors="ignore")
++        except OSError:
++            continue
++        docs[path] = tokenize(path) + tokenize(text)
++    scores = bm25_scores(docs, tokenize(query))
++    return sorted(scores, key=lambda p: (-scores[p], p))
++
++
++def score(ranking: list[str], gold: list[str]) -> dict | None:
++    if not gold:
++        return None
++    gold_set = set(gold)
++    rank = next((i + 1 for i, f in enumerate(ranking) if f in gold_set), None)
++    m: dict = {"rank_of_first_gold": rank}
++    for k in KS:
++        found = len(gold_set.intersection(ranking[:k]))
++        m[f"recall@{k}"] = found / len(gold_set)
++        m[f"hit@{k}"] = int(found > 0)
++    m["mrr"] = 1 / rank if rank else 0.0
++    return m
++
++
++def scored_gold(patch: str) -> dict[str, list[str]]:
++    files = gold_files(patch)
++    return {"primary": [f for f in files if f.endswith(EXTS)], "secondary": files}
++
++
++def truncate_query(text: str, max_chars: int) -> tuple[str, bool]:
++    return (text, False) if len(text) <= max_chars else (text[:max_chars], True)
++
++
++def search_params(cfg: LocalizeConfig, alias: str, query: str, limit: int, offset: int,
++                  repo_dir: Path | None = None) -> dict:
++    # `filter: {}` clears the production filter bugHunt / hotspots would add; `production` configs ask
++    # for the preset explicitly, so the chunk-set restriction is always stated by the config itself.
++    rerank = cfg.rerank if isinstance(cfg.rerank, str) else {"custom": dict(cfg.rerank)}
++    return {"project": alias, "query": query, "limit": limit, "offset": offset, "language": LANGUAGE,
++            "filter": {"presets": "production"} if cfg.production else {},
++            "fields": ["relativePath"], "rerank": rerank,
++            **({"path": str(repo_dir)} if repo_dir is not None else {})}
++
++
++# --- thin I/O ----------------------------------------------------------------------------------
++
++def _env() -> dict:
++    import os
++
++    return {**os.environ, **config.EMBEDDING_ENV}
++
++
++def search_files(cfg: LocalizeConfig, alias: str, query: str, want: int = TOP_PERSISTED, page: int = 300,
++                 max_pages: int = 4, run=subprocess.run, repo_dir: Path | None = None) -> list[str]:
++    """Distinct files in rank order, paging chunks until `want` files or the tool runs dry. Raises
++    RuntimeError with the tool's error text. Runs outside any task repo: a repo-pinned node version
++    would break the CLI's node shim."""
++    chunks: list[dict] = []
++    for i in range(max_pages):
++        proc = run(["tea-rags", "call", cfg.tool, json.dumps(search_params(cfg, alias, query, page, i * page, repo_dir)), "--json"],
++                   env=_env(), capture_output=True, text=True, cwd=tempfile.gettempdir())
++        data = indexing._final_json(proc.stdout or "")
++        if proc.returncode != 0 or not data or data.get("isError"):
++            raise RuntimeError(f"{cfg.tool} exit {proc.returncode}: "
++                               f"{((proc.stderr or '') + (proc.stdout or ''))[-400:].strip()}")
++        results = (data.get("structuredContent") or {}).get("results", [])
++        if isinstance(results, dict):
++            # Current MCP answers fold two or more rows into a column table.
++            column = results["columns"].index("payload.relativePath")
++            results = [{"payload": {"relativePath": row[column]}} for row in results["rows"]]
++        chunks += results
++        if len(files_from_chunks(chunks)) >= want or len(results) < page:
++            break
++    return files_from_chunks(chunks)
++
++
++def _persist(instance_id: str, name: str, files: list[str], extra: dict) -> None:
++    out = config.RUNS / "localize" / instance_id / f"{name}.json"
++    out.parent.mkdir(parents=True, exist_ok=True)
++    out.write_text(json.dumps({"files": files[:TOP_PERSISTED], **extra}, indent=2) + "\n")
++
++
++def localize_task(instance_id: str, problem: str, patch: str, alias: str, repo_dir: Path,
++                  run=subprocess.run) -> dict:
++    query, truncated = truncate_query(problem, MAX_QUERY_CHARS)
++    gold = scored_gold(patch)
++    configs: dict[str, dict] = {}
++    rankers = [(c.name, lambda c=c: search_files(c, alias, query, run=run, repo_dir=repo_dir)) for c in TEA_RAGS_CONFIGS]
++    rankers.append(("bm25", lambda: bm25_rank(repo_dir, query, EXTS)))
++    rankers.append(("bm25-prod", lambda: bm25_rank(repo_dir, query, EXTS, exclude=is_test_or_doc_path)))
++    for name, rank in rankers:
++        started = time.monotonic()
++        try:
++            files, error = rank(), None
++        except (RuntimeError, OSError, subprocess.CalledProcessError) as e:
++            files, error = [], str(e)
++        seconds = round(time.monotonic() - started, 1)
++        _persist(instance_id, name, files, {"error": error, "seconds": seconds})
++        ok = error is None
++        configs[name] = {"error": error, "files": len(files), "seconds": seconds,
++                         "primary": score(files, gold["primary"]) if ok else None,
++                         "secondary": score(files, gold["secondary"]) if ok else None}
++    return {"instance_id": instance_id, "alias": alias, "query_chars": len(problem),
++            "query_truncated": truncated, "gold": gold, "configs": configs}
++
++
++def load_locagent() -> dict[str, dict]:
++    """OpenHands/SWE-bench_Pro-locagent rows by id; snapshot written once, read offline afterwards."""
++    if not config.LOCAGENT_SNAPSHOT.exists():
++        from datasets import load_dataset
++
++        rows = [{k: r[k] for k in ("instance_id", "repo", "base_commit", "problem_statement", "patch")}
++                for r in load_dataset(config.LOCAGENT_DATASET, split="test")]
++        config.LOCAGENT_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
++        config.LOCAGENT_SNAPSHOT.write_text("".join(json.dumps(r) + "\n" for r in rows))
++    rows = [json.loads(line) for line in config.LOCAGENT_SNAPSHOT.read_text().splitlines() if line]
++    return {r["instance_id"]: r for r in rows}
++
++
++def task_list_path(name: str) -> Path:
++    """tasks/<name>.json, else a temporary list under runs/ (e.g. the subset whose indexes are ready)."""
++    path = config.TASKS_DIR / f"{name}.json"
++    return path if path.exists() else config.RUNS / f"{name}.json"
++
++
++def run(ids: list[str]) -> list[dict]:
++    rows = load_locagent()
++    records = []
++    for iid in ids:
++        r = rows[iid]
++        records.append(localize_task(iid, r["problem_statement"], r["patch"], indexing.alias_for(iid),
++                                     repos.task_dir(iid)))
++    out = config.RUNS / "localize.jsonl"
++    out.parent.mkdir(parents=True, exist_ok=True)
++    out.write_text("".join(json.dumps(r) + "\n" for r in records))
++    return records
++
++
++# --- report ------------------------------------------------------------------------------------
++
++_METRICS = (("R@1", "recall@1"), ("R@5", "recall@5"), ("R@10", "recall@10"), ("Hit@5", "hit@5"), ("MRR", "mrr"))
++
++
++def _config_names(records: list[dict]) -> list[str]:
++    names: dict[str, None] = {}
++    for r in records:
++        names.update(dict.fromkeys(r["configs"]))
++    return list(names)
++
++
++def _metric_table(records: list[dict], gold: str) -> list[str]:
++    lines = ["| config | n | " + " | ".join(h for h, _ in _METRICS) + " |",
++             "|---|---:|" + "---:|" * len(_METRICS)]
++    for name in _config_names(records):
++        ms = [r["configs"][name][gold] for r in records if name in r["configs"] and r["configs"][name][gold]]
++        cells = [f"{sum(m[k] for m in ms) / len(ms):.2f}" if ms else "–" for _, k in _METRICS]
++        lines.append(f"| {name} | {len(ms)} | " + " | ".join(cells) + " |")
++    return lines
++
++
++def _rank_cell(c: dict | None) -> str:
++    if c is None:
++        return "–"
++    if c["error"]:
++        return "err"
++    if c["primary"] is None:
++        return "n/a"
++    rank = c["primary"]["rank_of_first_gold"]
++    return "–" if rank is None else str(rank)
++
++
++def render(records: list[dict], tasks_name: str, wall_seconds: float | None = None) -> str:
++    names = _config_names(records)
++    md = [f"# Component localization — {tasks_name}", "",
++          "Files ranked for the original issue text (SWE-bench_Pro-locagent `problem_statement`), no LLM. "
++          f"tea-rags configurations search `language: {LANGUAGE}` chunks, with the preset filter cleared or, "
++          f"for `-prod` configurations, set to `production`; `bm25` ranks git-tracked `{'/'.join(EXTS)}` "
++          f"files and `bm25-prod` the same minus test and doc files. A gold file outside the top "
++          f"{TOP_PERSISTED} counts as not found (rank –).", ""]
++    if wall_seconds is not None:
++        md += [f"Wall time: {wall_seconds:.0f} s for {len(records)} tasks.", ""]
++    md += ["## Primary gold (gold `.py` files)", ""] + _metric_table(records, "primary")
++    md += ["", "## Secondary gold (every gold file)", ""] + _metric_table(records, "secondary")
++    md += ["", "## Rank of the first primary gold file per task", "",
++           "| task | gold .py | " + " | ".join(names) + " |", "|---|---:|" + "---:|" * len(names)]
++    for r in records:
++        md.append(f"| {r['instance_id']} | {len(r['gold']['primary'])} | "
++                  + " | ".join(_rank_cell(r["configs"].get(n)) for n in names) + " |")
++    notes = []
++    truncated = [r["instance_id"] for r in records if r["query_truncated"]]
++    if truncated:
++        notes.append(f"Queries truncated: {', '.join(truncated)} (cap {MAX_QUERY_CHARS} chars)")
++    unscored = [r["instance_id"] for r in records if not r["gold"]["primary"]]
++    if unscored:
++        notes.append(f"Unscored (no gold .py file): {', '.join(unscored)}")
++    for r in records:
++        for name, c in r["configs"].items():
++            if c["error"]:
++                notes.append(f"Errored: {r['instance_id']} {name}: {c['error']}")
++            elif c["files"] == 0:
++                notes.append(f"Empty ranking: {r['instance_id']} {name}")
++    if notes:
++        md += ["", "## Notes", ""] + [f"- {n}" for n in notes]
++    return "\n".join(md) + "\n"
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/pro.py b/evals/swe-bench-lite/src/swe_lite_ab/pro.py
+new file mode 100644
+index 000000000..44eba4fbe
+--- /dev/null
++++ b/evals/swe-bench-lite/src/swe_lite_ab/pro.py
+@@ -0,0 +1,145 @@
++"""SWE-bench Pro V2 (ScaleAI/SWE-bench_Pro, split test), Python + TypeScript rows, graded locally.
++
++The agent input is each task's `instruction.md` from the tooling checkout (PR description +
++requirements + new interfaces), not the dataset's bare problem_statement. Grading follows the V2
++verifier contract: the task's `tests/` dir mounted at /tests, the model patch applied in /app, then
++the unchanged `bash /tests/test.sh`, whose exit code is the verdict.
++"""
++import json
++import shlex
++import subprocess
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++
++from . import config
++from .tasks import Task
++
++# Labelled js/ts in the dataset, but their patches are .ts/.tsx. NodeBB (plain JS) and Go are dropped.
++TS_REPOS = frozenset({"protonmail/webclients", "element-hq/element-web", "tutao/tutanota"})
++IMAGE_REPO = "ghcr.io/scaleapi/swe-bench_pro-v2"
++
++
++def language(row: dict) -> str | None:
++    if row["repo_language"] == "python":
++        return "python"
++    return "ts" if row["repo"] in TS_REPOS else None
++
++
++def kind(row: dict) -> str:
++    return "bug" if any(label.endswith("_bug") for label in json.loads(row["issue_specificity"])) else "feature"
++
++
++def task_dir(instance_id: str) -> Path:
++    return config.PRO_OS / "v2" / "tasks" / instance_id
++
++
++def image_name(instance_id: str) -> str:
++    return f"{IMAGE_REPO}:{instance_id}"
++
++
++def to_record(row: dict, instruction: str) -> dict:
++    return {"instance_id": row["instance_id"], "repo": row["repo"], "base_commit": row["base_commit"],
++            "problem_statement": instruction, "patch": row["patch"], "created_at": "", "kind": kind(row),
++            "image": row["docker_image"], "language": language(row), "hard": bool(row["hard"])}
++
++
++def _task(rec: dict) -> Task:
++    return Task(rec["instance_id"], rec["repo"], rec["base_commit"], rec["problem_statement"], rec["patch"],
++                rec["created_at"], kind=rec["kind"])
++
++
++def load_records() -> list[dict]:
++    """Snapshot written once; later stages read it offline, so task content stays fixed."""
++    if not config.PRO_SNAPSHOT.exists():
++        records = [to_record(r, (task_dir(r["instance_id"]) / "instruction.md").read_text())
++                   for r in _fetch_rows() if language(r)]
++        records.sort(key=lambda r: r["instance_id"])
++        config.PRO_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
++        config.PRO_SNAPSHOT.write_text("".join(json.dumps(r) + "\n" for r in records))
++    return [json.loads(line) for line in config.PRO_SNAPSHOT.read_text().splitlines() if line]
++
++
++def load() -> list[Task]:
++    return [_task(r) for r in load_records()]
++
++
++def _fetch_rows() -> list[dict]:
++    from datasets import load_dataset
++
++    return list(load_dataset(config.PRO_DATASET, split="test"))
++
++
++# An empty patch skips `git apply` and grades the untouched base (unresolved); a patch that does not
++# apply exits 3 before the verifier runs (unresolved too).
++_GRADE_SCRIPT = """set -u
++cd /app 2>/dev/null || cd /testbed || exit 2
++git config --global --add safe.directory '*'
++if [ -s /model.patch ]; then
++  git apply -v /model.patch || { echo '>>>>> MODEL PATCH DID NOT APPLY'; exit 3; }
++fi
++bash /tests/test.sh
++rc=$?
++echo ">>>>> verifier exit $rc; run_script stdout tail:"
++tail -n 200 /logs/verifier/run-script-stdout.txt 2>/dev/null
++exit $rc
++"""
++
++
++def grade_command(instance_id: str, patch_path: Path) -> list[str]:
++    return ["docker", "run", "--rm", "--platform", "linux/amd64",
++            "-v", f"{task_dir(instance_id) / 'tests'}:/tests:ro",
++            "-v", f"{patch_path}:/model.patch:ro",
++            "--entrypoint", "/bin/bash", image_name(instance_id), "-c", _GRADE_SCRIPT]
++
++
++def ensure_image(image: str) -> None:
++    if subprocess.run(["docker", "image", "inspect", image], capture_output=True).returncode != 0:
++        subprocess.run(["docker", "pull", "-q", "--platform", "linux/amd64", image], check=True)
++
++
++def _verify(argv: list[str], log: Path) -> int:
++    with log.open("w") as out:
++        try:
++            return subprocess.run(argv, stdout=out, stderr=subprocess.STDOUT,
++                                  timeout=config.PRO_VERIFIER_TIMEOUT_S).returncode
++        except subprocess.TimeoutExpired:
++            out.write(f"\n>>>>> verifier timed out after {config.PRO_VERIFIER_TIMEOUT_S} s\n")
++            return 124
++
++
++def _predictions(arm: str) -> dict[str, str]:
++    path = config.RUNS / arm / "predictions.jsonl"
++    if not path.exists():
++        return {}
++    preds = (json.loads(line) for line in path.read_text().splitlines() if line.strip())
++    return {p["instance_id"]: p.get("model_patch") or "" for p in preds}
++
++
++def grade(arm: str, tasks: list[Task], run_id: str, workers: int = 1) -> Path:
++    """Grades runs/<arm>/predictions.jsonl task by task (a missing prediction grades as an empty
++    patch), keeps each verifier log under runs/<arm>/eval/<run_id>/, and writes the report where
++    evaluate.report_path expects it."""
++    from .evaluate import report_path
++
++    out_dir = config.RUNS / arm / "eval" / run_id
++    out_dir.mkdir(parents=True, exist_ok=True)
++    preds = _predictions(arm)
++
++    def one(task: Task) -> tuple[str, int]:
++        patch = preds.get(task.instance_id, "")
++        patch_file = out_dir / f"{task.instance_id}.diff"
++        # git apply rejects a final hunk without its trailing newline as a corrupt patch.
++        patch_file.write_text(patch if not patch or patch.endswith("\n") else patch + "\n")
++        ensure_image(image_name(task.instance_id))
++        return task.instance_id, _verify(grade_command(task.instance_id, patch_file.absolute()),
++                                         out_dir / f"{task.instance_id}.log")
++
++    with ThreadPoolExecutor(workers) as pool:
++        codes = dict(pool.map(one, tasks))
++    report = {"total_instances": len(tasks), "submitted_ids": sorted(preds),
++              "resolved_ids": sorted(i for i, c in codes.items() if c == 0),
++              "unresolved_ids": sorted(i for i, c in codes.items() if c != 0), "exit_codes": codes}
++    path = report_path(arm, run_id)
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps(report, indent=2) + "\n")
++    return path
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/probe.py b/evals/swe-bench-lite/src/swe_lite_ab/probe.py
+new file mode 100644
+index 000000000..02c9bbcc4
+--- /dev/null
++++ b/evals/swe-bench-lite/src/swe_lite_ab/probe.py
+@@ -0,0 +1,123 @@
++"""Memorisation probe: can the model name the files to change from the task text alone?
++
++The model gets only the repository name and the task's problem statement - no checkout, no tools,
++no MCP servers, no instructions from the operator's CLAUDE.md. A task whose gold file it names
++anyway is likely memorised (or trivially implied by the text) and is reported apart.
++"""
++import json
++import os
++import re
++import subprocess
++import threading
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++
++from . import config
++from .repos import instruction_leaks
++from .tasks import Task, gold_files, mentions_gold_file
++
++PROBE_PROMPT = """The following task is for the GitHub repository {repo}. You do not have access to the
++repository; answer from what you know about it.
++
++<task>
++{problem_statement}
++</task>
++
++List the repository-relative paths of the source files that must change to implement this task,
++one per line, most likely first. Output only the paths: no prose, no bullets, no code fences.
++"""
++
++_LIST_MARKER = re.compile(r"^(?:[-*+•]\s+|\d+[.)]\s+)")
++_PATH = re.compile(r"^[\w.@~+-]+(?:/[\w.@~+-]+)*\.\w+$|^[\w.@~+-]+(?:/[\w.@~+-]+)+$")
++
++
++def render_prompt(task: Task) -> str:
++    return PROBE_PROMPT.format(repo=task.repo, problem_statement=task.problem_statement)
++
++
++def parse_paths(answer: str) -> list[str]:
++    """Path-shaped lines of the answer, list markers / backticks / ./ and a/ prefixes removed, deduplicated."""
++    out: list[str] = []
++    for line in answer.splitlines():
++        p = _LIST_MARKER.sub("", line.strip()).strip().strip("`").strip()
++        for prefix in ("./", "a/", "b/"):
++            if p.startswith(prefix):
++                p = p[len(prefix):]
++        if _PATH.match(p) and p not in out:
++            out.append(p)
++    return out
++
++
++def hit(predicted: list[str], task: Task) -> bool:
++    return bool(set(predicted) & set(gold_files(task.patch)))
++
++
++def run_dir(instance_id: str) -> Path:
++    return config.RUNS / "probe" / instance_id
++
++
++def build_command(task: Task, rdir: Path) -> tuple[list[str], dict[str, str]]:
++    """Same isolation as agent.build_command, with every tool disabled (`--tools ""`)."""
++    (rdir / "config").mkdir(parents=True, exist_ok=True)
++    mcp_path = rdir / "mcp.json"
++    mcp_path.write_text(json.dumps({"mcpServers": {}}))
++    argv = ["claude", "-p", render_prompt(task),
++            "--model", config.MODEL,
++            "--output-format", "json",
++            "--tools", "",
++            "--no-session-persistence",
++            "--strict-mcp-config", "--mcp-config", str(mcp_path)]
++    env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "ANTHROPIC"))}
++    env["CLAUDE_CONFIG_DIR"] = str(rdir / "config")
++    if config.TOKEN_FILE.exists():
++        env["CLAUDE_CODE_OAUTH_TOKEN"] = config.TOKEN_FILE.read_text().strip()
++    return argv, env
++
++
++def ask(task: Task) -> dict:
++    """The CLI's --output-format json result object."""
++    cwd = config.PROBE_ROOT / task.instance_id
++    cwd.mkdir(parents=True, exist_ok=True)
++    leaks = instruction_leaks(cwd)
++    if leaks or any(cwd.iterdir()):
++        raise RuntimeError(f"probe cwd {cwd} is not an isolated empty dir: {', '.join(map(str, leaks))}")
++    rdir = run_dir(task.instance_id)
++    argv, env = build_command(task, rdir)
++    proc = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
++    if proc.returncode != 0:
++        raise RuntimeError(f"probe {task.instance_id}: claude exited {proc.returncode}: {proc.stderr[-2000:]}")
++    (rdir / "result.json").write_text(proc.stdout)  # raw answer + usage, for auditing the parse
++    return json.loads(proc.stdout)
++
++
++def record(task: Task, result: dict) -> dict:
++    predicted = parse_paths(result.get("result") or "")
++    return {"instance_id": task.instance_id, "predicted": predicted, "hit": hit(predicted, task),
++            "named": mentions_gold_file(task), "cost_usd": result.get("total_cost_usd")}
++
++
++def load_records(path: Path) -> list[dict]:
++    if not path.exists():
++        return []
++    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
++
++
++def load_hits(path: Path) -> dict[str, bool]:
++    return {r["instance_id"]: r["hit"] for r in load_records(path)}
++
++
++def run(tasks: list[Task], parallel: int = 2) -> Path:
++    """Appends one record per task to config.PROBE_FILE; tasks already recorded are skipped (resumable)."""
++    out = config.PROBE_FILE
++    done = set(load_hits(out))
++    lock = threading.Lock()
++    out.parent.mkdir(parents=True, exist_ok=True)
++
++    def one(task: Task) -> None:
++        rec = record(task, ask(task))
++        with lock, out.open("a") as f:
++            f.write(json.dumps(rec) + "\n")
++
++    with ThreadPoolExecutor(parallel) as pool:
++        list(pool.map(one, [t for t in tasks if t.instance_id not in done]))
++    return out
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/rebench.py b/evals/swe-bench-lite/src/swe_lite_ab/rebench.py
+new file mode 100644
+index 000000000..f5c533fd0
+--- /dev/null
++++ b/evals/swe-bench-lite/src/swe_lite_ab/rebench.py
+@@ -0,0 +1,69 @@
++"""SWE-rebench leaderboard rows as swebench 5.x harness instances.
++
++swebench 5.x grades from per-instance `image` / `eval_script` / `log_parser` / `eval_type`; rebench
++ships `docker_image` and an `install_config` with the test command instead. The rebench images keep
++conda under /opt/conda (Lite's under /opt/miniconda3) with the repository at /testbed.
++"""
++import json
++
++from . import config
++from .tasks import Task, gold_files
++
++_HEREDOC = "EOF_114329324912"
++
++
++def eval_script(row: dict) -> str:
++    base, test_files = row["base_commit"], " ".join(gold_files(row["test_patch"]))
++    reset = f"git checkout {base} {test_files}"
++    return "\n".join([
++        "#!/bin/bash",
++        "set -uxo pipefail",
++        "source /opt/conda/bin/activate",
++        "conda activate testbed",
++        "cd /testbed",
++        "git config --global --add safe.directory /testbed",
++        reset,
++        f"git apply -v - <<'{_HEREDOC}'",
++        row["test_patch"].rstrip("\n"),
++        _HEREDOC,
++        ": '>>>>> Start Test Output'",
++        row["install_config"]["test_cmd"],
++        ": '>>>>> End Test Output'",
++        reset,
++    ]) + "\n"
++
++
++def to_instance(row: dict) -> dict | None:
++    """None for interface tasks: their spec names the gold file's path, and without it the tests demand
++    API names the agent cannot know."""
++    if row.get("interface"):
++        return None
++    return {
++        "instance_id": row["instance_id"], "repo": row["repo"], "base_commit": row["base_commit"],
++        "patch": row["patch"], "test_patch": row["test_patch"], "problem_statement": row["problem_statement"],
++        "hints_text": row.get("hints_text", ""), "created_at": str(row["created_at"]), "version": row["version"],
++        "FAIL_TO_PASS": row["FAIL_TO_PASS"], "PASS_TO_PASS": row["PASS_TO_PASS"],
++        "image": row["docker_image"], "log_parser": row["install_config"]["log_parser"],
++        "eval_type": "pass_and_fail", "eval_script": eval_script(row),
++    }
++
++
++def _task(inst: dict) -> Task:
++    return Task(inst["instance_id"], inst["repo"], inst["base_commit"], inst["problem_statement"],
++                inst["patch"], inst["created_at"])
++
++
++def load() -> list[Task]:
++    """The snapshot doubles as the harness dataset (`--dataset_name <snapshot>.jsonl`), so agents and
++    grading read the same fixed task content offline."""
++    if not config.REBENCH_SNAPSHOT.exists():
++        instances = [i for i in map(to_instance, _fetch_rows()) if i is not None]
++        config.REBENCH_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
++        config.REBENCH_SNAPSHOT.write_text("".join(json.dumps(i) + "\n" for i in instances))
++    return [_task(json.loads(line)) for line in config.REBENCH_SNAPSHOT.read_text().splitlines() if line]
++
++
++def _fetch_rows() -> list[dict]:
++    from datasets import load_dataset
++
++    return list(load_dataset(config.REBENCH_DATASET, split="test"))
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/report.py b/evals/swe-bench-lite/src/swe_lite_ab/report.py
+index 300b83465..db698a78d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/report.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/report.py
+@@ -33,6 +33,8 @@ class Row:
+     index_in_run_seconds: float
+     api_seconds: float
+     gold_before_search: bool
++    stratum: str = ""            # tasks.stratum: patch size × issue kind
++    memorised: bool | None = None  # probe.py hit: the model named a gold file from the task text alone; None = not probed
+ 
+ 
+ def _pairs(rows: list[Row]) -> list[tuple[Row, Row]]:
+@@ -148,6 +150,12 @@ def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
+     lines.append("")
+     lines += _section("Gold file named in issue", [p for p in pairs if p[0].mentioned])
+     lines += _section("Gold file not named", [p for p in pairs if not p[0].mentioned])
++    if any(p[0].memorised is not None for p in pairs):
++        # Headline stratum: neither recalled by the model nor handed to it by the task text.
++        lines += _section("Not memorised and not named",
++                          [p for p in pairs if p[0].memorised is False and not p[0].mentioned])
++    for s in sorted({p[0].stratum for p in pairs if p[0].stratum}):
++        lines += _section(f"Stratum {s}", [p for p in pairs if p[0].stratum == s])
+     lines += _repo_strata(pairs)
+     lines += _section("Exploratory: not searched-for in arm 0", [p for p in pairs if not p[0].gold_before_search])
+     return "\n".join(lines) + "\n"
+@@ -162,9 +170,10 @@ def write_csv(rows: list[Row], path: Path) -> Path:
+     return path
+ 
+ 
+-def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -> list[Row]:
++def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str,
++               memorised: dict[str, bool] | None = None) -> list[Row]:
+     from . import config
+-    from .tasks import gold_files, mentions_gold_file
++    from .tasks import gold_files, mentions_gold_file, stratum
+     from .transcript import parse
+ 
+     rows = []
+@@ -183,7 +192,8 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
+                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
+                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
+                             m.gold_touched, m.turns_to_gold, max(0.0, wall_raw - m.index_in_run_seconds),
+-                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search))
++                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search,
++                            stratum(t), (memorised or {}).get(t.instance_id)))
+     return rows
+ 
+ 
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/tasks.py b/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
+index 41d46b955..14fd7009d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
+@@ -18,6 +18,7 @@ class Task:
+     problem_statement: str
+     patch: str
+     created_at: str
++    kind: str = ""          # "bug" | "feature" when the dataset labels it (Pro); "" = issue-text heuristic
+ 
+ 
+ def gold_files(patch: str) -> list[str]:
+@@ -29,6 +30,36 @@ def mentions_gold_file(task: Task) -> bool:
+     return any(path in text or path.rsplit("/", 1)[-1] in text for path in gold_files(task.patch))
+ 
+ 
++def patch_size(patch: str) -> tuple[int, int]:
++    """(files, changed lines) of a unified diff, file headers excluded."""
++    changed = sum(1 for line in patch.splitlines() if line[:1] in "+-" and line[:3] not in ("+++", "---"))
++    return len(gold_files(patch)), changed
++
++
++# A large task touches several files with a real body of change; one-line fixes are the small stratum.
++LARGE_MIN_FILES, LARGE_MIN_LINES = 2, 40
++# Issue-text heuristic for bug reports versus feature requests, read from the head of the issue.
++_BUG_WORDS = re.compile(r"\b(bug|error|traceback|exception|crash(es|ed)?|fails?|failing|failed|broken|incorrect|wrong"
++                        r"|regression|raises?)\b", re.I)
++
++
++def stratum(task: Task) -> str:
++    files, lines = patch_size(task.patch)
++    size = "large" if files >= LARGE_MIN_FILES and lines >= LARGE_MIN_LINES else "small"
++    kind = task.kind or ("bug" if _BUG_WORDS.search(task.problem_statement[:1500]) else "feature")
++    return f"{size}-{kind}"
++
++
++def select_rebench(tasks: list[Task], since: str, n_small_bug: int, seed: int) -> list[Task]:
++    """Every large task created on or after `since` (both kinds), plus a seeded sample of small bug
++    fixes as the one-file control. Id-sorted."""
++    pool = sorted((t for t in tasks if t.created_at[:len(since)] >= since), key=lambda t: t.instance_id)
++    large = [t for t in pool if stratum(t).startswith("large-")]
++    small_bugs = [t for t in pool if stratum(t) == "small-bug"]
++    sample = random.Random(seed).sample(small_bugs, min(n_small_bug, len(small_bugs)))
++    return sorted(large + sample, key=lambda t: t.instance_id)
++
++
+ def select_stratified(tasks: list[Task], n: int, seed: int, exclude: frozenset[str] = frozenset()) -> list[Task]:
+     pool = sorted((t for t in tasks if t.instance_id not in exclude), key=lambda t: t.instance_id)
+     strata: dict[tuple[str, bool], list[Task]] = defaultdict(list)
+@@ -80,7 +111,26 @@ def save_ids(tasks: list[Task], path: Path) -> None:
+ 
+ 
+ def load_ids(path: Path) -> list[str]:
+-    return json.loads(path.read_text())
++    return load_task_list(path)[1]
++
++
++def save_task_list(tasks: list[Task], path: Path, dataset: str) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps({"dataset": dataset, "ids": [t.instance_id for t in tasks]}, indent=2) + "\n")
++
++
++def load_task_list(path: Path) -> tuple[str, list[str]]:
++    """(dataset, ids). A bare id list predates the dataset field and is Lite."""
++    data = json.loads(path.read_text())
++    return ("lite", data) if isinstance(data, list) else (data["dataset"], data["ids"])
++
++
++def load(dataset: str) -> list[Task]:
++    if dataset == "lite":
++        return load_lite()
++    from . import pro, rebench
++
++    return pro.load() if dataset == "pro" else rebench.load()
+ 
+ 
+ def by_ids(tasks: list[Task], ids: list[str]) -> list[Task]:
+diff --git a/evals/swe-bench-lite/tasks/loc-10.json b/evals/swe-bench-lite/tasks/loc-10.json
+new file mode 100644
+index 000000000..bbbc9a72e
+--- /dev/null
++++ b/evals/swe-bench-lite/tasks/loc-10.json
+@@ -0,0 +1,15 @@
++{
++  "dataset": "pro",
++  "ids": [
++    "instance_ansible__ansible-185d41031660a676c43fbb781cd1335902024bfe-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5",
++    "instance_ansible__ansible-f327e65d11bb905ed9f15996024f857a95592629-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5",
++    "instance_ansible__ansible-f8ef34672b961a95ec7282643679492862c688ec-vba6da65a0f3baefda7a058ebbd0a8dcafb8512f5",
++    "instance_internetarchive__openlibrary-53d376b148897466bb86d5accb51912bbbe9a8ed-v08d8e8889ec945ab821fb156c04c7d2e2810debb",
++    "instance_internetarchive__openlibrary-5fb312632097be7e9ac6ab657964af115224d15d-v0f5aece3601a5b4419f7ccec1dbda2071be28ee4",
++    "instance_internetarchive__openlibrary-f3b26c2c0721f8713353fe4b341230332e30008d-v0f5aece3601a5b4419f7ccec1dbda2071be28ee4",
++    "instance_qutebrowser__qutebrowser-2dd8966fdcf11972062c540b7a787e4d0de8d372-v363c8a7e5ccdf6968fc7ab84a2053ac78036691d",
++    "instance_qutebrowser__qutebrowser-7f9713b20f623fc40473b7167a082d6db0f0fd40-va0fd88aac89cde702ec1ba84877234da33adce8a",
++    "instance_qutebrowser__qutebrowser-fea33d607fde83cf505b228238cf365936437a63-v9f8e9d96c85c85a605e382f1510bd08563afc566",
++    "instance_qutebrowser__qutebrowser-ff1c025ad3210506fc76e1f604d8c8c27637d88e-v363c8a7e5ccdf6968fc7ab84a2053ac78036691d"
++  ]
++}
+\ No newline at end of file
+diff --git a/evals/swe-bench-lite/tests/test_collect.py b/evals/swe-bench-lite/tests/test_collect.py
+index d22c89790..cbd7b40a7 100644
+--- a/evals/swe-bench-lite/tests/test_collect.py
++++ b/evals/swe-bench-lite/tests/test_collect.py
+@@ -51,3 +51,26 @@ def test_harness_command_targets_lite(tmp_path):
+     assert cmd[:3] == ["python", "-m", "swebench.harness.run_evaluation"]
+     assert cmd[cmd.index("--dataset_name") + 1] == "SWE-bench/SWE-bench_Lite"
+     assert cmd[cmd.index("--instance_ids") + 1 : cmd.index("--instance_ids") + 3] == ["x-1", "y-2"]
++
++
++def test_rebench_images_live_in_the_swerebench_namespace():
++    assert image_name("copier-org__copier-2646", "rebench") == \
++        "swerebench/sweb.eval.x86_64.copier-org_1776_copier-2646:latest"
++
++
++def test_harness_command_grades_rebench_from_the_local_snapshot(tmp_path):
++    from swe_lite_ab import config
++
++    cmd = harness_command("arm0", tmp_path / "p.jsonl", ["x-1"], "arm0-rb", "rebench")
++    assert cmd[cmd.index("--dataset_name") + 1] == str(config.REBENCH_SNAPSHOT)
++
++
++def test_evaluate_grades_pro_with_the_local_verifier(monkeypatch, tmp_path):
++    from swe_lite_ab import evaluate, pro
++
++    calls = []
++    monkeypatch.setattr(pro, "grade", lambda arm, ts, run_id: calls.append((arm, ts, run_id)) or tmp_path / "r.json")
++    monkeypatch.setattr(evaluate, "ensure_images", lambda *a: (_ for _ in ()).throw(AssertionError("swebench path")))
++
++    assert evaluate.run("arm0", ["t"], "arm0-pro", "pro") == tmp_path / "r.json"
++    assert calls == [("arm0", ["t"], "arm0-pro")]
+diff --git a/evals/swe-bench-lite/tests/test_localize.py b/evals/swe-bench-lite/tests/test_localize.py
+new file mode 100644
+index 000000000..b486a2d7f
+--- /dev/null
++++ b/evals/swe-bench-lite/tests/test_localize.py
+@@ -0,0 +1,309 @@
++import json
++import subprocess
++
++from swe_lite_ab import config
++
++
++def chunk(path):
++    return {"id": path, "score": 0.5, "payload": {"relativePath": path}}
++
++
++def git_repo(tmp_path, files):
++    for name, text in files.items():
++        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
++        (tmp_path / name).write_text(text)
++    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
++    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
++    return tmp_path
++
++
++def test_files_from_chunks_keeps_distinct_paths_in_first_seen_rank_order():
++    from swe_lite_ab.localize import files_from_chunks
++
++    chunks = [chunk("b.py"), chunk("a.py"), chunk("b.py"), chunk("c.py"), chunk("a.py")]
++    assert files_from_chunks(chunks) == ["b.py", "a.py", "c.py"]
++
++
++def test_tokenize_splits_snake_camel_dots_and_slashes_and_drops_short_tokens():
++    from swe_lite_ab.localize import tokenize
++
++    assert tokenize("lib/ansible/module_utils.py parseHTTPResponse a.b") == \
++        ["lib", "ansible", "module", "utils", "py", "parse", "http", "response"]
++
++
++def test_bm25_ranks_the_file_sharing_rare_query_terms_first(tmp_path):
++    from swe_lite_ab.localize import bm25_rank
++
++    repo = git_repo(tmp_path, {
++        "pkg/common.py": "def helper():\n    return value\n" * 5,
++        "pkg/vault.py": "def decrypt_vault(secret):\n    return secret\n",
++        "pkg/other.py": "def helper_value():\n    return value\n",
++        "README.md": "decrypt vault secret decrypt vault secret",
++    })
++    ranking = bm25_rank(repo, "Vault decryption fails: decrypt_vault loses the secret", (".py",))
++    assert ranking[0] == "pkg/vault.py"
++    assert "README.md" not in ranking
++
++
++def test_bm25_counts_path_tokens(tmp_path):
++    from swe_lite_ab.localize import bm25_rank
++
++    repo = git_repo(tmp_path, {"plugins/inventory/yaml.py": "x = 1\n", "plugins/other.py": "y = 2\n"})
++    assert bm25_rank(repo, "the inventory plugin", (".py",))[0] == "plugins/inventory/yaml.py"
++
++
++def test_bm25_skips_untracked_files(tmp_path):
++    from swe_lite_ab.localize import bm25_rank
++
++    repo = git_repo(tmp_path, {"tracked.py": "token\n"})
++    (repo / "untracked.py").write_text("token token\n")
++    assert bm25_rank(repo, "token", (".py",)) == ["tracked.py"]
++
++
++def test_score_reports_first_gold_rank_recall_hit_and_mrr():
++    from swe_lite_ab.localize import score
++
++    ranking = ["x.py", "a.py", "y.py", "z.py", "w.py", "v.py", "b.py"]
++    m = score(ranking, ["a.py", "b.py"])
++    assert m["rank_of_first_gold"] == 2
++    assert m["recall@1"] == 0.0 and m["recall@5"] == 0.5 and m["recall@10"] == 1.0
++    assert m["hit@1"] == 0 and m["hit@5"] == 1 and m["hit@10"] == 1
++    assert m["mrr"] == 0.5
++
++
++def test_score_of_a_ranking_missing_every_gold_has_no_rank_and_zero_mrr():
++    from swe_lite_ab.localize import score
++
++    m = score(["x.py"], ["a.py"])
++    assert m["rank_of_first_gold"] is None and m["mrr"] == 0.0 and m["hit@10"] == 0
++
++
++def test_score_of_an_empty_gold_set_is_none():
++    from swe_lite_ab.localize import score
++
++    assert score(["x.py"], []) is None
++
++
++def test_scored_gold_is_python_files_primary_and_every_file_secondary():
++    from swe_lite_ab.localize import scored_gold
++
++    patch = "diff --git a/lib/a.py b/lib/a.py\n+x\ndiff --git a/docs/b.rst b/docs/b.rst\n+y\n"
++    assert scored_gold(patch) == {"primary": ["lib/a.py"], "secondary": ["lib/a.py", "docs/b.rst"]}
++
++
++def test_truncate_query_caps_long_issue_text_and_reports_it():
++    from swe_lite_ab.localize import truncate_query
++
++    assert truncate_query("short", 10) == ("short", False)
++    assert truncate_query("x" * 20, 10) == ("x" * 10, True)
++
++
++def test_tea_rags_config_set_is_pinned_in_order():
++    from swe_lite_ab.localize import CONFIG_NAMES, TEA_RAGS_CONFIGS
++
++    assert [c.name for c in TEA_RAGS_CONFIGS] == [
++        "semantic-relevance", "hybrid-relevance", "hybrid-bugHunt", "hybrid-hotspots",
++        "semantic-relevance-prod", "hybrid-relevance-prod", "hybrid-tiebreak-prod", "semantic-tiebreak-prod"]
++    assert CONFIG_NAMES == tuple(c.name for c in TEA_RAGS_CONFIGS) + ("bm25", "bm25-prod")
++    assert {c.name: c.production for c in TEA_RAGS_CONFIGS} == {
++        "semantic-relevance": False, "hybrid-relevance": False, "hybrid-bugHunt": False,
++        "hybrid-hotspots": False, "semantic-relevance-prod": True, "hybrid-relevance-prod": True,
++        "hybrid-tiebreak-prod": True, "semantic-tiebreak-prod": True}
++    assert len(set(TEA_RAGS_CONFIGS)) == len(TEA_RAGS_CONFIGS)  # frozen and hashable
++
++
++def test_search_params_send_the_production_preset_filter_only_for_production_configs():
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_params
++
++    for c in TEA_RAGS_CONFIGS:
++        p = search_params(c, "alias", "q", limit=300, offset=0)
++        assert p["filter"] == ({"presets": "production"} if c.production else {})
++        assert p["language"] == "python"
++
++
++def test_search_params_send_a_preset_name_or_custom_weights_as_rerank():
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_params
++
++    by_name = {c.name: search_params(c, "alias", "q", limit=300, offset=0) for c in TEA_RAGS_CONFIGS}
++    assert by_name["hybrid-bugHunt"]["rerank"] == "bugHunt"
++    assert by_name["semantic-relevance-prod"]["rerank"] == "relevance"
++    weights = {"custom": {"similarity": 0.85, "recency": 0.075, "churn": 0.075}}
++    assert by_name["hybrid-tiebreak-prod"]["rerank"] == weights
++    assert by_name["semantic-tiebreak-prod"]["rerank"] == weights
++
++
++def test_is_test_or_doc_path_follows_the_pro_verifier_rule():
++    from swe_lite_ab.localize import is_test_or_doc_path
++
++    for path in ["tests/a.py", "pkg/test/a.py", "pkg/__tests__/a.py", "spec/a.py", "x/specs/a.py",
++                 "docs/a.py", "pkg/doc/a.py", "pkg/conftest.py", "pkg/test_a.py", "pkg/a_test.py", "conftest.py"]:
++        assert is_test_or_doc_path(path), path
++    for path in ["pkg/a.py", "pkg/testing.py", "pkg/contest.py", "latest/a.py", "pkg/test_a.txt", "a.py"]:
++        assert not is_test_or_doc_path(path), path
++
++
++def test_bm25_prod_excludes_test_and_doc_files(monkeypatch, tmp_path):
++    from swe_lite_ab import localize
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    repo = git_repo(tmp_path / "repo", {"lib/vault.py": "decrypt vault\n",
++                                        "tests/test_vault.py": "decrypt vault decrypt vault decrypt vault\n",
++                                        "docs/vault.py": "decrypt vault decrypt vault\n"})
++    run, _ = fake_call([["lib/vault.py"]])
++    rec = localize.localize_task("t1", "decrypt vault", "diff --git a/lib/vault.py b/lib/vault.py\n", "a", repo, run=run)
++    assert rec["configs"]["bm25"]["files"] == 3
++    assert rec["configs"]["bm25-prod"]["files"] == 1
++    saved = json.loads((tmp_path / "localize" / "t1" / "bm25-prod.json").read_text())
++    assert saved["files"] == ["lib/vault.py"]
++
++
++def fake_call(pages):
++    """A `tea-rags call --json` stand-in that serves `pages` (lists of paths) by offset."""
++    calls = []
++
++    def run(cmd, **kwargs):
++        params = json.loads(cmd[3])
++        calls.append(params)
++        page = pages[params["offset"] // params["limit"]] if params["offset"] // params["limit"] < len(pages) else []
++        out = json.dumps({"structuredContent": {"results": [chunk(p) for p in page]}})
++        return subprocess.CompletedProcess(cmd, 0, out, "")
++
++    return run, calls
++
++
++def test_search_files_pages_until_enough_distinct_files(monkeypatch):
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_files
++
++    run, calls = fake_call([["a.py", "a.py"], ["b.py", "c.py"], ["d.py"]])
++    files = search_files(TEA_RAGS_CONFIGS[0], "alias", "q", want=3, page=2, max_pages=5, run=run)
++    assert files == ["a.py", "b.py", "c.py"]
++    assert [c["offset"] for c in calls] == [0, 2]
++
++
++def test_search_files_stops_when_the_tool_runs_out_of_results():
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_files
++
++    run, calls = fake_call([["a.py", "b.py"], ["c.py"]])
++    assert search_files(TEA_RAGS_CONFIGS[0], "alias", "q", want=50, page=2, max_pages=5, run=run) == \
++        ["a.py", "b.py", "c.py"]
++    assert len(calls) == 2
++
++
++def test_search_files_raises_with_the_tool_error_text():
++    import pytest
++
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_files
++
++    def run(cmd, **kwargs):
++        return subprocess.CompletedProcess(cmd, 1, "", "Error: project not found")
++
++    with pytest.raises(RuntimeError, match="project not found"):
++        search_files(TEA_RAGS_CONFIGS[0], "alias", "q", run=run)
++
++
++def test_localize_task_persists_top_rankings_and_scores_each_config(monkeypatch, tmp_path):
++    from swe_lite_ab import localize
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    repo = git_repo(tmp_path / "repo", {"lib/vault.py": "decrypt vault\n", "lib/other.py": "nothing\n"})
++    run, _ = fake_call([["lib/other.py", "lib/vault.py"]])
++    patch = "diff --git a/lib/vault.py b/lib/vault.py\n+x\n"
++    rec = localize.localize_task("t1", "decrypt the vault", patch, "alias", repo, run=run)
++    assert rec["configs"]["hybrid-relevance"]["primary"]["rank_of_first_gold"] == 2
++    assert rec["configs"]["bm25"]["primary"]["rank_of_first_gold"] == 1
++    saved = json.loads((tmp_path / "localize" / "t1" / "bm25.json").read_text())
++    assert saved["files"][0] == "lib/vault.py"
++    assert rec["query_truncated"] is False and rec["gold"]["primary"] == ["lib/vault.py"]
++
++
++def test_localize_task_records_a_failing_config_and_keeps_the_others(monkeypatch, tmp_path):
++    from swe_lite_ab import localize
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    repo = git_repo(tmp_path / "repo", {"lib/vault.py": "decrypt vault\n"})
++
++    def run(cmd, **kwargs):
++        return subprocess.CompletedProcess(cmd, 1, "", "boom")
++
++    rec = localize.localize_task("t1", "decrypt the vault", "diff --git a/lib/vault.py b/lib/vault.py\n", "a", repo, run=run)
++    assert "boom" in rec["configs"]["semantic-relevance"]["error"]
++    assert rec["configs"]["semantic-relevance"]["primary"] is None
++    assert rec["configs"]["bm25"]["primary"]["rank_of_first_gold"] == 1
++
++
++def record(iid, ranks, truncated=False, gold_py=("a.py",), error=None):
++    configs = {}
++    for name, rank in ranks.items():
++        m = None if rank == "-" else {"rank_of_first_gold": rank, "recall@1": float(rank == 1),
++                                      "recall@5": float(rank is not None and rank <= 5),
++                                      "recall@10": float(rank is not None and rank <= 10),
++                                      "hit@1": int(rank == 1), "hit@5": int(rank is not None and rank <= 5),
++                                      "hit@10": int(rank is not None and rank <= 10),
++                                      "mrr": 1 / rank if rank else 0.0}
++        configs[name] = {"error": error if rank == "-" else None, "files": 50,
++                         "primary": m if gold_py else None, "secondary": m}
++    return {"instance_id": iid, "query_truncated": truncated, "query_chars": 10,
++            "gold": {"primary": list(gold_py), "secondary": ["a.py"]}, "configs": configs}
++
++
++def test_render_report_has_mean_metrics_per_config_and_per_task_ranks():
++    from swe_lite_ab.localize import render
++
++    records = [record("t1", {"bm25": 1, "hybrid-relevance": 4}), record("t2", {"bm25": None, "hybrid-relevance": 2})]
++    md = render(records, "loc-2")
++    assert "| bm25 | 2 | 0.50 | 0.50 | 0.50 | 0.50 | 0.50 |" in md
++    assert "| hybrid-relevance | 2 | 0.00 | 1.00 | 1.00 | 1.00 | 0.38 |" in md
++    assert "| t1 | 1 | 1 | 4 |" in md
++    assert "| t2 | 1 | – | 2 |" in md
++
++
++def test_render_report_notes_truncated_queries_unscored_tasks_and_errors():
++    from swe_lite_ab.localize import render
++
++    records = [record("t1", {"bm25": 1, "hybrid-relevance": "-"}, truncated=True, error="alias not found"),
++               record("t2", {"bm25": 1, "hybrid-relevance": 1}, gold_py=())]
++    md = render(records, "loc-2")
++    assert "Queries truncated: t1" in md
++    assert "Unscored (no gold .py file): t2" in md
++    assert "t1 hybrid-relevance: alias not found" in md
++
++
++def test_task_list_path_falls_back_to_a_temporary_list_under_runs(monkeypatch, tmp_path):
++    from swe_lite_ab.localize import task_list_path
++
++    monkeypatch.setattr(config, "TASKS_DIR", tmp_path / "tasks")
++    monkeypatch.setattr(config, "RUNS", tmp_path / "runs")
++    (tmp_path / "tasks").mkdir()
++    (tmp_path / "runs").mkdir()
++    (tmp_path / "runs" / "loc-ready.json").write_text("{}")
++    assert task_list_path("loc-ready") == tmp_path / "runs" / "loc-ready.json"
++    (tmp_path / "tasks" / "loc-ready.json").write_text("{}")
++    assert task_list_path("loc-ready") == tmp_path / "tasks" / "loc-ready.json"
++
++
++def test_search_files_decodes_current_column_tables_and_pages_in_rank_order():
++    from swe_lite_ab.localize import TEA_RAGS_CONFIGS, search_files
++
++    calls = []
++
++    def run(cmd, **kwargs):
++        params = json.loads(cmd[3])
++        calls.append(params)
++        paths = ["a.py", "b.py"] if params["offset"] == 0 else ["c.py"]
++        results = {"columns": ["score", "payload.relativePath"],
++                   "rows": [[1, path] for path in paths]}
++        return subprocess.CompletedProcess(cmd, 0, json.dumps({"structuredContent": {"results": results}}), "")
++
++    assert search_files(TEA_RAGS_CONFIGS[0], "alias", "q", want=3, page=2, run=run) == ["a.py", "b.py", "c.py"]
++    assert [call["offset"] for call in calls] == [0, 2]
++
++
++def test_localize_task_addresses_searches_to_the_requested_tree(monkeypatch, tmp_path):
++    from swe_lite_ab import localize
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    repo = git_repo(tmp_path / "repo", {"lib/a.py": "needle"})
++    run, calls = fake_call([["lib/a.py"]])
++    localize.localize_task("tree", "needle", "diff --git a/lib/a.py b/lib/a.py\n+x\n", "alias", repo, run=run)
++    assert calls
++    assert all(call.get("path") == str(repo) and call["project"] == "alias" for call in calls)
+diff --git a/evals/swe-bench-lite/tests/test_pro.py b/evals/swe-bench-lite/tests/test_pro.py
+new file mode 100644
+index 000000000..3919cceee
+--- /dev/null
++++ b/evals/swe-bench-lite/tests/test_pro.py
+@@ -0,0 +1,126 @@
++import json
++
++from swe_lite_ab.tasks import Task
++
++PATCH = "diff --git a/qutebrowser/utils/version.py b/qutebrowser/utils/version.py\n"
++IID = "instance_qutebrowser__qutebrowser-01d1-v2ef"
++
++
++def row(instance_id=IID, repo="qutebrowser/qutebrowser", language="python", specificity='["edge_case_bug"]', **overrides):
++    r = {
++        "repo": repo, "instance_id": instance_id, "base_commit": "abc123", "patch": PATCH,
++        "test_patch": "diff --git a/tests/test_v.py b/tests/test_v.py\n", "problem_statement": "raw issue text",
++        "requirements": "- must", "interface": "", "repo_language": language, "fail_to_pass": '["t1"]',
++        "pass_to_pass": "[]", "issue_specificity": specificity, "issue_categories": '["back_end_knowledge"]',
++        "docker_image": f"ghcr.io/scaleapi/swe-bench_pro-v2:{instance_id}", "hard": True, "version": "1.0",
++    }
++    r.update(overrides)
++    return r
++
++
++def write_instruction(root, instance_id, text):
++    d = root / "v2" / "tasks" / instance_id
++    (d / "tests").mkdir(parents=True)
++    (d / "instruction.md").write_text(text)
++    return d
++
++
++def test_keep_takes_python_rows_and_the_typescript_repos_only():
++    from swe_lite_ab.pro import language
++
++    assert language(row()) == "python"
++    assert language(row(repo="protonmail/webclients", language="js")) == "ts"
++    assert language(row(repo="element-hq/element-web", language="js")) == "ts"
++    assert language(row(repo="tutao/tutanota", language="ts")) == "ts"
++    assert language(row(repo="NodeBB/NodeBB", language="js")) is None
++    assert language(row(repo="flipt-io/flipt", language="go")) is None
++
++
++def test_kind_is_bug_for_any_bug_label_and_feature_otherwise():
++    from swe_lite_ab.pro import kind
++
++    assert kind(row(specificity='["edge_case_bug"]')) == "bug"
++    assert kind(row(specificity='["refactoring_enh", "minor_bug"]')) == "bug"
++    assert kind(row(specificity='["core_feat", "code_quality_enh"]')) == "feature"
++
++
++def test_to_record_uses_the_instruction_as_the_problem_statement(tmp_path):
++    from swe_lite_ab.pro import to_record
++
++    rec = to_record(row(), "instruction text")
++    assert rec["problem_statement"] == "instruction text"
++    assert rec["image"] == f"ghcr.io/scaleapi/swe-bench_pro-v2:{IID}"
++    assert (rec["language"], rec["kind"], rec["hard"]) == ("python", "bug", True)
++    assert (rec["repo"], rec["base_commit"], rec["patch"]) == ("qutebrowser/qutebrowser", "abc123", PATCH)
++
++
++def test_load_snapshots_kept_rows_once_and_returns_tasks_with_kind(tmp_path, monkeypatch):
++    from swe_lite_ab import config, pro
++
++    monkeypatch.setattr(config, "PRO_SNAPSHOT", tmp_path / "pro.jsonl")
++    monkeypatch.setattr(config, "PRO_OS", tmp_path / "os")
++    write_instruction(tmp_path / "os", IID, "A code repository is available in /app.")
++    calls = []
++    monkeypatch.setattr(pro, "_fetch_rows", lambda: calls.append(1) or [
++        row(), row("instance_NodeBB__NodeBB-1", repo="NodeBB/NodeBB", language="js")])
++
++    first = pro.load()
++    second = pro.load()
++
++    assert first == second == [Task(IID, "qutebrowser/qutebrowser", "abc123", "A code repository is available in /app.",
++                                    PATCH, "", kind="bug")]
++    assert calls == [1]
++    snapshot = [json.loads(line) for line in (tmp_path / "pro.jsonl").read_text().splitlines()]
++    assert [(s["instance_id"], s["language"]) for s in snapshot] == [(IID, "python")]
++
++
++def test_grade_command_mounts_tests_and_patch_read_only_and_runs_the_verifier(tmp_path, monkeypatch):
++    from swe_lite_ab import config
++    from swe_lite_ab.pro import grade_command
++
++    monkeypatch.setattr(config, "PRO_OS", tmp_path / "os")
++    patch = tmp_path / "p.diff"
++    argv = grade_command(IID, patch)
++    assert argv[:5] == ["docker", "run", "--rm", "--platform", "linux/amd64"]
++    tests = tmp_path / "os" / "v2" / "tasks" / IID / "tests"
++    assert f"{tests}:/tests:ro" in argv
++    assert f"{patch}:/model.patch:ro" in argv
++    assert f"ghcr.io/scaleapi/swe-bench_pro-v2:{IID}" in argv
++    script = argv[-1]
++    assert "cd /app 2>/dev/null || cd /testbed" in script
++    assert "git apply" in script and "/model.patch" in script
++    assert "[ -s /model.patch ]" in script, "an empty patch skips git apply and grades the untouched base"
++    assert script.index("git apply") < script.index("bash /tests/test.sh")
++
++
++def test_grade_writes_logs_and_a_report_with_resolved_ids(tmp_path, monkeypatch):
++    from swe_lite_ab import config, evaluate, pro
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    monkeypatch.setattr(config, "PRO_OS", tmp_path / "os")
++    (tmp_path / "armX").mkdir()
++    (tmp_path / "armX" / "predictions.jsonl").write_text(
++        json.dumps({"instance_id": "a", "model_name_or_path": "armX", "model_patch": "diff --git a/x b/x"}) + "\n"
++        + json.dumps({"instance_id": "b", "model_name_or_path": "armX", "model_patch": ""}) + "\n")
++    pulled, ran = [], []
++    monkeypatch.setattr(pro, "ensure_image", lambda image: pulled.append(image))
++
++    def fake_verify(argv, log):
++        patch = next(a for a in argv if a.endswith(":/model.patch:ro")).split(":")[0]
++        ran.append(open(patch).read())
++        log.write_text("verifier output\n")
++        return 0 if "a" in argv[-2] else 1
++
++    monkeypatch.setattr(pro, "_verify", fake_verify)
++    monkeypatch.setattr(pro, "grade_command", lambda iid, patch: ["docker", f"{patch}:/model.patch:ro", iid, "script"])
++    ts = [Task("a", "r", "c", "", "", ""), Task("b", "r", "c", "", "", ""), Task("c", "r", "c", "", "", "")]
++
++    out = pro.grade("armX", ts, "armX-pro")
++
++    assert out == evaluate.report_path("armX", "armX-pro")
++    assert evaluate.resolved_ids(out) == {"a"}
++    assert ran == ["diff --git a/x b/x\n", "", ""], "patches end in a newline; missing predictions grade as empty"
++    assert len(pulled) == 3
++    assert (tmp_path / "armX" / "eval" / "armX-pro" / "a.log").read_text() == "verifier output\n"
++    report = json.loads(out.read_text())
++    assert sorted(report["unresolved_ids"]) == ["b", "c"]
+diff --git a/evals/swe-bench-lite/tests/test_probe.py b/evals/swe-bench-lite/tests/test_probe.py
+new file mode 100644
+index 000000000..13f316b55
+--- /dev/null
++++ b/evals/swe-bench-lite/tests/test_probe.py
+@@ -0,0 +1,82 @@
++import json
++
++from swe_lite_ab.tasks import Task
++
++PATCH = """diff --git a/lib/ansible/cli/doc.py b/lib/ansible/cli/doc.py
++--- a/lib/ansible/cli/doc.py
+++++ b/lib/ansible/cli/doc.py
++@@ -1 +1 @@
++-a
+++b
++"""
++
++
++def task(text="Make ansible-doc list collections", patch=PATCH):
++    return Task("instance_ansible__ansible-1", "ansible/ansible", "sha", text, patch, "", kind="feature")
++
++
++def test_render_prompt_holds_only_the_repo_and_the_task_text_and_asks_for_paths():
++    from swe_lite_ab.probe import render_prompt
++
++    prompt = render_prompt(task())
++    assert "ansible/ansible" in prompt
++    assert "Make ansible-doc list collections" in prompt
++    assert "one per line" in prompt
++    assert "lib/ansible/cli/doc.py" not in prompt
++
++
++def test_parse_paths_strips_bullets_numbering_backticks_and_prefixes():
++    from swe_lite_ab.probe import parse_paths
++
++    answer = "Here are the files:\n- `lib/ansible/cli/doc.py`\n2. ./lib/ansible/x.py\n* a/test/units/y.py\n\nlib/ansible/cli/doc.py\n"
++    assert parse_paths(answer) == ["lib/ansible/cli/doc.py", "lib/ansible/x.py", "test/units/y.py"]
++
++
++def test_hit_is_any_predicted_path_equal_to_a_gold_file():
++    from swe_lite_ab.probe import hit
++
++    assert hit(["lib/ansible/x.py", "lib/ansible/cli/doc.py"], task())
++    assert not hit(["lib/ansible/cli/docs.py", "doc.py"], task())
++
++
++def test_build_command_disables_tools_and_mcp_and_isolates_config(tmp_path, monkeypatch):
++    from swe_lite_ab import config
++    from swe_lite_ab.probe import build_command
++
++    token = tmp_path / "token"
++    token.write_text("tok\n")
++    monkeypatch.setattr(config, "TOKEN_FILE", token)
++    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "operator")
++    argv, env = build_command(task(), tmp_path / "run")
++    assert argv[:2] == ["claude", "-p"]
++    assert argv[argv.index("--tools") + 1] == ""
++    assert argv[argv.index("--model") + 1] == config.MODEL
++    assert "--strict-mcp-config" in argv and "--no-session-persistence" in argv
++    assert json.loads((tmp_path / "run" / "mcp.json").read_text()) == {"mcpServers": {}}
++    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "run" / "config")
++    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
++
++
++def test_record_combines_prediction_hit_named_and_cost():
++    from swe_lite_ab.probe import record
++
++    result = {"result": "lib/ansible/cli/doc.py\n", "total_cost_usd": 0.01}
++    rec = record(task("see doc.py"), result)
++    assert rec == {"instance_id": "instance_ansible__ansible-1", "predicted": ["lib/ansible/cli/doc.py"],
++                   "hit": True, "named": True, "cost_usd": 0.01}
++
++
++def test_run_appends_records_and_skips_tasks_already_probed(tmp_path, monkeypatch):
++    from swe_lite_ab import config, probe
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    monkeypatch.setattr(config, "PROBE_FILE", tmp_path / "probe.jsonl")
++    (tmp_path / "probe.jsonl").write_text(json.dumps({"instance_id": "done", "hit": False}) + "\n")
++    asked = []
++    monkeypatch.setattr(probe, "ask", lambda t: asked.append(t.instance_id) or {"result": "x.py", "total_cost_usd": 0.0})
++    done = Task("done", "o/r", "s", "", PATCH, "")
++
++    probe.run([done, task()], parallel=2)
++
++    assert asked == ["instance_ansible__ansible-1"]
++    assert set(probe.load_hits(tmp_path / "probe.jsonl")) == {"done", "instance_ansible__ansible-1"}
+diff --git a/evals/swe-bench-lite/tests/test_rebench.py b/evals/swe-bench-lite/tests/test_rebench.py
+new file mode 100644
+index 000000000..67d116243
+--- /dev/null
++++ b/evals/swe-bench-lite/tests/test_rebench.py
+@@ -0,0 +1,88 @@
++from swe_lite_ab.tasks import Task
++
++TEST_PATCH = """diff --git a/tests/test_copy.py b/tests/test_copy.py
++--- a/tests/test_copy.py
+++++ b/tests/test_copy.py
++@@ -1 +1,2 @@
++ import copier
+++assert copier
++"""
++
++
++def row(instance_id="copier-org__copier-2646", interface="", **overrides):
++    r = {
++        "instance_id": instance_id, "repo": "copier-org/copier", "base_commit": "abc123",
++        "patch": "diff --git a/copier/main.py b/copier/main.py\n", "test_patch": TEST_PATCH,
++        "problem_statement": "Copier crashes on update", "hints_text": "", "created_at": "2026-04-30 11:21:38",
++        "version": "unknown", "FAIL_TO_PASS": ["tests/test_copy.py::test_a"], "PASS_TO_PASS": ["tests/test_copy.py::test_b"],
++        "docker_image": "swerebench/sweb.eval.x86_64.copier-org_1776_copier-2646:latest", "interface": interface,
++        "install_config": {"test_cmd": "pytest -rA tests/test_copy.py", "log_parser": "parse_log_pytest"},
++    }
++    r.update(overrides)
++    return r
++
++
++def test_eval_script_activates_the_testbed_env_of_the_rebench_image():
++    from swe_lite_ab.rebench import eval_script
++
++    lines = eval_script(row()).splitlines()
++    assert lines[:2] == ["#!/bin/bash", "set -uxo pipefail"]
++    assert "source /opt/conda/bin/activate" in lines
++    assert "conda activate testbed" in lines
++    assert "cd /testbed" in lines
++
++
++def test_eval_script_applies_the_test_patch_and_runs_the_test_command_between_markers():
++    from swe_lite_ab.rebench import eval_script
++
++    script = eval_script(row())
++    start, end = script.index(": '>>>>> Start Test Output'"), script.index(": '>>>>> End Test Output'")
++    assert script.index(TEST_PATCH) < start
++    assert script[start:end].splitlines()[1:] == ["pytest -rA tests/test_copy.py"]
++
++
++def test_eval_script_resets_test_files_to_base_before_and_after_the_run():
++    from swe_lite_ab.rebench import eval_script
++
++    lines = eval_script(row()).splitlines()
++    reset = "git checkout abc123 tests/test_copy.py"
++    assert lines.count(reset) == 2
++    assert lines[-1] == reset
++
++
++def test_to_instance_builds_a_swebench5_instance_from_a_rebench_row():
++    from swe_lite_ab.rebench import eval_script, to_instance
++
++    inst = to_instance(row())
++    assert inst["image"] == "swerebench/sweb.eval.x86_64.copier-org_1776_copier-2646:latest"
++    assert inst["log_parser"] == "parse_log_pytest"
++    assert inst["eval_type"] == "pass_and_fail"
++    assert inst["eval_script"] == eval_script(row())
++    assert inst["FAIL_TO_PASS"] == ["tests/test_copy.py::test_a"]
++    assert {"instance_id", "repo", "base_commit", "patch", "problem_statement", "created_at", "version"} <= inst.keys()
++
++
++def test_to_instance_drops_rows_whose_interface_spec_names_the_gold_file():
++    from swe_lite_ab.rebench import to_instance
++
++    assert to_instance(row(interface="Type: Class\nPath: copier/main.py")) is None
++
++
++def test_load_snapshots_harness_instances_once_and_returns_tasks(tmp_path, monkeypatch):
++    import json
++
++    from swe_lite_ab import config, rebench
++
++    monkeypatch.setattr(config, "REBENCH_SNAPSHOT", tmp_path / "rebench.jsonl")
++    calls = []
++    monkeypatch.setattr(rebench, "_fetch_rows", lambda: calls.append(1) or [row(), row("x__y-1_interface", interface="Path: a.py")])
++
++    first = rebench.load()
++    second = rebench.load()
++
++    assert first == second == [Task("copier-org__copier-2646", "copier-org/copier", "abc123", "Copier crashes on update",
++                                    "diff --git a/copier/main.py b/copier/main.py\n", "2026-04-30 11:21:38")]
++    assert calls == [1]
++    snapshot = [json.loads(line) for line in (tmp_path / "rebench.jsonl").read_text().splitlines()]
++    assert [s["instance_id"] for s in snapshot] == ["copier-org__copier-2646"]
++    assert snapshot[0]["eval_script"] == rebench.eval_script(row())
+diff --git a/evals/swe-bench-lite/tests/test_report.py b/evals/swe-bench-lite/tests/test_report.py
+index 831f6860e..55c16ae4f 100644
+--- a/evals/swe-bench-lite/tests/test_report.py
++++ b/evals/swe-bench-lite/tests/test_report.py
+@@ -158,3 +158,39 @@ def test_exploratory_section_keeps_pairs_arm0_did_not_open_before_search():
+     rows = [row("arm0", i, False, 1000, True, gold_before_search=i == 0) for i in range(4)] + \
+            [row("arm1", i, False, 800, True, gold_before_search=True) for i in range(4)]
+     assert "## Exploratory: not searched-for in arm 0 (n=3)" in render(rows)
++
++
++def test_render_reports_each_size_kind_stratum_present():
++    from dataclasses import replace
++
++    rows = [replace(row(a, i, True, 1000, False), stratum="large-bug") for a in ("arm0", "arm1") for i in range(2)] + \
++           [replace(row(a, 5, False, 1000, False), stratum="small-bug") for a in ("arm0", "arm1")]
++    md = render(rows)
++    assert "## Stratum large-bug (n=2)" in md
++    assert "## Stratum small-bug (n=1)" in md
++    assert "## Stratum large-feature" not in md
++
++
++def test_render_adds_the_not_memorised_not_named_stratum_when_the_probe_ran():
++    rows = [row(arm, i, i < 2, 1000, mentioned=i % 2 == 0) for arm in ("arm0", "arm1") for i in range(4)]
++    assert "Not memorised and not named" not in render(rows)
++    for r in rows:
++        r.memorised = r.instance_id == "t1"
++    md = render(rows)
++    assert "## Not memorised and not named (n=1)" in md
++
++
++def test_build_rows_marks_memorised_from_probe_hits(tmp_path, monkeypatch):
++    from swe_lite_ab import config
++    from swe_lite_ab.report import build_rows
++    from swe_lite_ab.tasks import Task
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    ts = [Task("a", "o/r", "s", "", "", ""), Task("b", "o/r", "s", "", "", "")]
++    for i in ("a", "b"):
++        (tmp_path / "arm0" / i).mkdir(parents=True)
++        (tmp_path / "arm0" / i / "transcript.jsonl").write_text("")
++
++    rows = build_rows(ts, {"arm0": set(), "arm1": set()}, "sum", memorised={"a": True, "b": False})
++    assert [(r.instance_id, r.memorised) for r in rows] == [("a", True), ("b", False)]
++    assert [r.memorised for r in build_rows(ts, {"arm0": set(), "arm1": set()}, "sum")] == [None, None]
+diff --git a/evals/swe-bench-lite/tests/test_tasks.py b/evals/swe-bench-lite/tests/test_tasks.py
+index 8a721f4b2..f13e6b0ca 100644
+--- a/evals/swe-bench-lite/tests/test_tasks.py
++++ b/evals/swe-bench-lite/tests/test_tasks.py
+@@ -99,3 +99,70 @@ def test_load_lite_snapshots_the_dataset_once_and_then_reads_offline(tmp_path, m
+     assert first == second == rows
+     assert calls == [1]
+     assert (tmp_path / "lite.jsonl").exists()
++
++
++BIG_PATCH = "".join(f"diff --git a/pkg/m{i}.py b/pkg/m{i}.py\n--- a/pkg/m{i}.py\n+++ b/pkg/m{i}.py\n@@ -1 +1,20 @@\n"
++                    + "".join(f"+line {j}\n" for j in range(20)) for i in range(2))
++
++
++def test_patch_size_counts_files_and_changed_lines_without_headers():
++    from swe_lite_ab.tasks import patch_size
++
++    assert patch_size(PATCH) == (2, 4)
++    assert patch_size(BIG_PATCH) == (2, 40)
++
++
++def test_stratum_splits_by_patch_size_and_issue_kind():
++    from swe_lite_ab.tasks import stratum
++
++    assert stratum(task(1, text="Crash: TypeError raised on update", patch=BIG_PATCH)) == "large-bug"
++    assert stratum(task(2, text="Add a --dry-run option", patch=BIG_PATCH)) == "large-feature"
++    assert stratum(task(3, text="update fails with a traceback")) == "small-bug"
++    assert stratum(task(4, text="Support YAML anchors")) == "small-feature"
++
++
++def test_select_rebench_keeps_every_large_task_and_samples_small_bugs_since_a_date():
++    from swe_lite_ab.tasks import select_rebench
++
++    def t(i, created, text, patch):
++        return Task(f"o__r-{i}", "o/r", f"sha{i}", text, patch, created)
++
++    pool = [t(1, "2025-12-31 10:00:00", "crash", BIG_PATCH), t(2, "2026-01-02 10:00:00", "crash", BIG_PATCH),
++            t(3, "2026-02-01 10:00:00", "add option", BIG_PATCH)] + \
++           [t(10 + i, "2026-03-01 10:00:00", "it fails", PATCH) for i in range(10)] + \
++           [t(30, "2026-03-01 10:00:00", "add option", PATCH)]
++
++    chosen = select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)
++
++    ids = [x.instance_id for x in chosen]
++    assert ids == sorted(ids)
++    assert {"o__r-2", "o__r-3"} <= set(ids) and "o__r-1" not in ids and "o__r-30" not in ids
++    assert len(ids) == 6
++    assert ids == [x.instance_id for x in select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)]
++
++
++def test_task_list_records_its_dataset_and_legacy_lists_mean_lite(tmp_path):
++    import json
++
++    from swe_lite_ab.tasks import load_task_list, save_task_list
++
++    save_task_list([task(1), task(2)], tmp_path / "r.json", "rebench")
++    assert load_task_list(tmp_path / "r.json") == ("rebench", ["requests-1", "requests-2"])
++    (tmp_path / "l.json").write_text(json.dumps(["a__b-1"]))
++    assert load_task_list(tmp_path / "l.json") == ("lite", ["a__b-1"])
++
++
++def test_stratum_takes_the_kind_from_the_task_when_the_dataset_labels_it():
++    from swe_lite_ab.tasks import stratum
++
++    labelled_feature = Task("p-1", "o/r", "sha", "Crash: TypeError raised", BIG_PATCH, "", kind="feature")
++    labelled_bug = Task("p-2", "o/r", "sha", "Support YAML anchors", PATCH, "", kind="bug")
++    assert stratum(labelled_feature) == "large-feature"
++    assert stratum(labelled_bug) == "small-bug"
++
++
++def test_load_dispatches_pro_to_the_pro_snapshot(monkeypatch):
++    from swe_lite_ab import pro, tasks
++
++    monkeypatch.setattr(pro, "load", lambda: ["pro-task"])
++    assert tasks.load("pro") == ["pro-task"]

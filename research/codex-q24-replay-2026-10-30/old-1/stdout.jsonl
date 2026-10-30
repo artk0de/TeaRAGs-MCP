@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9b-30c6-7c21-afb7-b0b251d0c413"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да. Для этих двух провайдеров достаточно явного словаря:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nТогда API-ключи `instead` и `gruntworx` остаются в lowercase, а отображаемые названия задаются явно. `camelize` здесь не нужен."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":88,"reasoning_output_tokens":0}}

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18aa8-0c21-7292-853a-70dab5e51ffd"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, для двух провайдеров явный словарь избыточен: `provider.to_s.downcase` даст `instead` и `gruntworx`. Но для названия в интерфейсе капитализация нестандартная (`GruntWorx`), поэтому строить её через `camelize` или просто `capitalize` не стоит. Я бы оставил явное соответствие для отображаемых имён; для ключа конфигурации достаточно `downcase`."}}
+{"type":"turn.completed","usage":{"input_tokens":160610,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":102,"reasoning_output_tokens":0}}

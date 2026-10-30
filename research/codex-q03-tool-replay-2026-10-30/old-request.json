@@ -1,0 +1,15 @@
+{
+  "symbols": [
+    "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb",
+    "app/lib/tax_preparation/tax_automations/refusals_helper.rb",
+    "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+    "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+    "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb",
+    "app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb",
+    "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb",
+    "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb",
+    "app/lib/tax_preparation/tax_automations/instead/linked_entity_buffer.rb"
+  ],
+  "project": "taxdome-worktree-navmaster",
+  "path": "/Users/Shared/nav-ab/repo-master"
+}

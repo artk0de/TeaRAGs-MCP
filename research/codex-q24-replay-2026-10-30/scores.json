@@ -1,0 +1,248 @@
+[
+  {
+    "cell": "old-1",
+    "returncode": 0,
+    "wall_seconds": 8.509,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 88,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 273,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  },
+  {
+    "cell": "new-1",
+    "returncode": 0,
+    "wall_seconds": 9.723,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160607,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 250,
+      "reasoning_output_tokens": 113
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 428,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  },
+  {
+    "cell": "new-2",
+    "returncode": 0,
+    "wall_seconds": 8.786,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160607,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 125,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 371,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  },
+  {
+    "cell": "old-2",
+    "returncode": 0,
+    "wall_seconds": 9.142,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 98,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 325,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  },
+  {
+    "cell": "old-3",
+    "returncode": 0,
+    "wall_seconds": 11.131,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 102,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 318,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  },
+  {
+    "cell": "new-3",
+    "returncode": 0,
+    "wall_seconds": 9.676,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-a",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160607,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 91,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 304,
+    "unsupported_absence_claim": false,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "correct_immediate_location": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "mixed",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body"
+  }
+]

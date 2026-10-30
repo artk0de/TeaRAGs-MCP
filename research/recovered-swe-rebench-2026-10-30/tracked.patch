@@ -1,0 +1,592 @@
+diff --git a/evals/swe-bench-lite/README.md b/evals/swe-bench-lite/README.md
+index 32bed5fa0..ecd3c8040 100644
+--- a/evals/swe-bench-lite/README.md
++++ b/evals/swe-bench-lite/README.md
+@@ -77,6 +77,107 @@ The single-arm `run --arm <arm>` stage remains for dev tuning (arm 1 only on
+ `dev-django-5`, or `dev-5` for the second run). With it, `collect` for an arm must follow that arm's `run`
+ immediately, before another `run` wipes the working tree.
+ 
++## SWE-rebench (decontaminated run)
++
++Lite is in the model's training data: on django the agent opens the gold file
++with its first tool call, with no search at all, and neither arm needs
++TeaRAGs. The decontaminated run uses `nebius/SWE-rebench-leaderboard`, which
++adds issues every month (through 2026-05 at the time of writing) over ~400
++smaller repositories.
++
++```bash
++uv run swe-lite-ab select --profile rebench   # tasks/rebench-2026.json
++uv run swe-lite-ab prepare --tasks rebench-2026
++# ... same stages as above with --tasks rebench-2026
++```
++
++- A task list is `{"dataset": "rebench", "ids": [...]}`; a bare id list is Lite.
++  Every stage reads the dataset from the list.
++- `runs/rebench.jsonl` is written once from the Hub and holds the rows as
++  swebench 5.x harness instances (`rebench.to_instance`): the image is the
++  task's `docker_image`, and `eval_script` applies the test patch and runs
++  `install_config.test_cmd` under `/opt/conda` env `testbed` (the rebench
++  images keep conda there, not under `/opt/miniconda3`). `evaluate` passes that
++  file as `--dataset_name`, so no rebench harness fork is needed. Checked on
++  `copier-org__copier-2646`: gold patch resolved, a no-op patch unresolved.
++- Interface tasks (non-empty `interface` column, 49 rows) are dropped: their
++  spec names the gold file's path, and without it the tests demand API names
++  the agent cannot know.
++- Profile `rebench`: every task created since 2026-01 whose patch touches at
++  least 2 files and 40 changed lines (`large-bug`, `large-feature`), plus 20
++  seeded `small-bug` tasks as the one-file control. The kind is an issue-text
++  keyword heuristic (`tasks.stratum`); the report has a section per stratum.
++
++## SWE-bench Pro (Python + TypeScript)
++
++Source: `ScaleAI/SWE-bench_Pro`, split `test` (V2, 642 rows). Kept: every
++`repo_language == "python"` row (ansible, openlibrary, qutebrowser — 237) and the
++three TypeScript repos (`protonmail/webclients`, `element-hq/element-web`,
++`tutao/tutanota` — 111; labelled js/ts, but their patches are `.ts`/`.tsx`).
++Go and NodeBB (plain JS) are dropped: the experiment is scoped to Python and
++TypeScript, the two languages it compares arms on. The task kind
++comes from the dataset's `issue_specificity` (any `*_bug` label → bug).
++
++Needs the tooling checkout (`SWE_PRO_OS`, default
++`/Users/Shared/swe-lite-ab/swe-bench-pro-os`): every task's agent input is its
++`v2/tasks/<id>/instruction.md` (PR description + requirements + new
++interfaces), and the snapshot `runs/pro.jsonl` stores that text as the
++`problem_statement`, so `mentions_gold_file` and the agent see the same thing.
++
++```bash
++uv run swe-lite-ab select --profile pro                     # tasks/pro-py-ts.json (all 348)
++uv run swe-lite-ab probe --tasks pro-py-ts --parallel 4     # runs/probe.jsonl (resumable)
++# ... prepare / index / run-paired / collect with --tasks <list>
++uv run swe-lite-ab evaluate --arm arm0 --tasks <list>       # local verifier, see below
++uv run swe-lite-ab report --tasks <list>
++```
++
++**Memorisation probe.** `claude -p` with only the repo name and the
++instruction text — `--tools ""`, an empty `--strict-mcp-config`, a fresh
++`CLAUDE_CONFIG_DIR`, cwd an empty dir under `/Users/Shared/swe-lite-ab/probe` —
++asked to list the files that must change. `hit` = any predicted path equals a
++gold file. When `runs/probe.jsonl` exists, the report fills the `memorised`
++column and adds the **Not memorised and not named** section: the headline
++stratum, where neither recall nor the task text hands the agent the file.
++
++**Grading.** No swebench harness: `pro.grade` runs the V2 verifier contract per
++task — `docker run --rm --platform linux/amd64` of
++`ghcr.io/scaleapi/swe-bench_pro-v2:<id>`, the task's `tests/` mounted read-only
++at `/tests`, the model patch read-only at `/model.patch`, `git apply` in `/app`
++(fallback `/testbed`; an empty patch skips it, a non-applying one is
++unresolved), then the unchanged `bash /tests/test.sh`. Exit 0 = resolved.
++Verifier logs go to `runs/<arm>/eval/<run_id>/<id>.log`; the report lands where
++`evaluate.report_path` puts every other dataset's, so `report` is unchanged.
++
++## Component localization benchmark (retrieval only, no LLM)
++
++Measures tea-rags search on its own: for each task, rank the repository's files
++for the issue text and score where the gold-patch files land.
++
++```bash
++uv run swe-lite-ab prepare  --tasks loc-10
++uv run swe-lite-ab index    --tasks loc-10
++uv run swe-lite-ab localize --tasks loc-10   # → results/localize-loc-10-<date>.md
++```
++
++- **Query**: the ORIGINAL issue text from `OpenHands/SWE-bench_Pro-locagent`
++  (`problem_statement`, snapshot `runs/locagent.jsonl`) — not Pro's
++  `instruction.md`, which lists file paths. Capped at 6000 chars; truncation is
++  noted in the report.
++- **Configurations**: `semantic-relevance`, `hybrid-relevance`,
++  `hybrid-bugHunt`, `hybrid-hotspots` (`tea-rags call`, `language: python`,
++  `filter: {}` so bugHunt/hotspots do not add their production filter — every
++  config searches the same chunks and only the ranking differs), and `bm25`, a
++  lexical baseline over git-tracked `.py` files (whole files plus path tokens,
++  code-aware tokenization). Chunks are paged until 50 distinct files.
++- **Metrics** per task × config: rank of the first gold file, recall@1/5/10,
++  hit@k, MRR — over gold `.py` files (primary) and every gold file
++  (secondary); a gold file outside the top 50 counts as not found. Tasks without
++  a gold `.py` are reported, not scored.
++- **Output**: top-50 rankings in `runs/localize/<id>/<config>.json`, per-task
++  metrics in `runs/localize.jsonl`. `--tasks` also accepts a temporary list
++  `runs/<name>.json` (e.g. the subset whose indexes are ready).
++
+ ## `.contextignore` per repository
+ 
+ `contextignore/<owner>__<repo>` is copied into every task repository of that
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/cli.py b/evals/swe-bench-lite/src/swe_lite_ab/cli.py
+index 0c849cd48..2d163a9f9 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/cli.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/cli.py
+@@ -1,31 +1,46 @@
+ import argparse
+ import datetime as dt
+ import json
++import time
+ from concurrent.futures import ThreadPoolExecutor
+ 
+-from . import agent, collect, config, evaluate, indexing, report, repos, tasks
++from . import agent, collect, config, evaluate, indexing, localize, probe, report, repos, tasks
+ 
+ 
+-def _tasks(name: str) -> list[tasks.Task]:
+-    return tasks.by_ids(tasks.load_lite(), tasks.load_ids(config.TASKS_DIR / f"{name}.json"))
++def _tasks(name: str) -> tuple[str, list[tasks.Task]]:
++    dataset, ids = tasks.load_task_list(config.TASKS_DIR / f"{name}.json")
++    return dataset, tasks.by_ids(tasks.load(dataset), ids)
+ 
+ 
+ def main() -> None:
+     p = argparse.ArgumentParser(prog="swe-lite-ab")
+     sub = p.add_subparsers(dest="stage", required=True)
+     sel = sub.add_parser("select")
+-    sel.add_argument("--profile", choices=["pilot", "django-focus"], default="pilot")
+-    for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report"):
++    sel.add_argument("--profile", choices=["pilot", "django-focus", "rebench", "pro"], default="pilot")
++    for stage in ("prepare", "index", "run", "run-paired", "collect", "evaluate", "report", "probe"):
+         s = sub.add_parser(stage)
+         s.add_argument("--tasks", default="pilot-50")
+         if stage in ("run", "collect", "evaluate"):
+             s.add_argument("--arm", choices=sorted(config.ARMS), required=True)
+-        if stage in ("run", "run-paired"):
++        if stage in ("run", "run-paired", "probe"):
+             s.add_argument("--parallel", type=int, default=2)
+         if stage == "run-paired":
+             s.add_argument("--seed", type=int, default=20261003)
++    loc = sub.add_parser("localize")
++    loc.add_argument("--tasks", default="loc-10")
+     a = p.parse_args()
+ 
++    if a.stage == "localize":
++        # Retrieval-only: no LLM, no task objects — ids, the locagent issue texts and the indexes.
++        _, ids = tasks.load_task_list(localize.task_list_path(a.tasks))
++        started = time.monotonic()
++        records = localize.run(ids)
++        out = config.RESULTS_DIR / f"localize-{a.tasks}-{dt.date.today()}.md"
++        out.parent.mkdir(parents=True, exist_ok=True)
++        out.write_text(localize.render(records, a.tasks, time.monotonic() - started))
++        print(out)
++        return
++
+     if a.stage == "select" and a.profile == "django-focus":
+         # Scored: 30 sampled not-named django tasks + every named one (control); dev: 5 other not-named.
+         lite = tasks.load_lite()
+@@ -35,6 +50,15 @@ def main() -> None:
+         tasks.save_ids(dev, config.TASKS_DIR / "dev-django-5.json")
+         tasks.save_ids(sorted(not_named + named, key=lambda t: t.instance_id), config.TASKS_DIR / "django-focus-50.json")
+         return
++    if a.stage == "select" and a.profile == "rebench":
++        # Scored: every large task since 2026-01 (bug + feature) and 20 seeded small bug fixes (control).
++        chosen = tasks.select_rebench(tasks.load("rebench"), since="2026-01", n_small_bug=20, seed=20261006)
++        tasks.save_task_list(chosen, config.TASKS_DIR / "rebench-2026.json", "rebench")
++        return
++    if a.stage == "select" and a.profile == "pro":
++        # Every kept Pro task (Python + TypeScript); the memorisation probe narrows it afterwards.
++        tasks.save_task_list(tasks.load("pro"), config.TASKS_DIR / "pro-py-ts.json", "pro")
++        return
+     if a.stage == "select":
+         lite = tasks.load_lite()
+         dev = tasks.select_stratified(lite, n=5, seed=20261003)
+@@ -42,7 +66,7 @@ def main() -> None:
+         tasks.save_ids(dev, config.TASKS_DIR / "dev-5.json")
+         tasks.save_ids(pilot, config.TASKS_DIR / "pilot-50.json")
+         return
+-    ts = _tasks(a.tasks)
++    dataset, ts = _tasks(a.tasks)
+     if a.stage == "prepare":
+         for t in ts:
+             repos.prepare_task_repo(t, repos.ensure_mirror(t.repo), repos.task_dir(t.instance_id))
+@@ -56,13 +80,16 @@ def main() -> None:
+         # Both arms of a task run sequentially inside one worker, so both see the same parallelism.
+         with ThreadPoolExecutor(a.parallel) as pool:
+             list(pool.map(lambda t: agent.run_pair(t, a.seed), ts))
++    elif a.stage == "probe":
++        print(probe.run(ts, a.parallel))
+     elif a.stage == "collect":
+         collect.write_predictions(a.arm, ts)
+     elif a.stage == "evaluate":
+-        evaluate.run(a.arm, ts, f"{a.arm}-{a.tasks}")
++        evaluate.run(a.arm, ts, f"{a.arm}-{a.tasks}", dataset)
+     elif a.stage == "report":
+         resolved = {arm: evaluate.resolved_ids(evaluate.report_path(arm, f"{arm}-{a.tasks}")) for arm in config.ARMS}
+-        rows = report.build_rows(ts, resolved, config.USAGE_SOURCE)
++        rows = report.build_rows(ts, resolved, config.USAGE_SOURCE,
++                                 probe.load_hits(config.PROBE_FILE) if config.PROBE_FILE.exists() else None)
+         out = config.RESULTS_DIR / f"{a.tasks}-{dt.date.today()}.md"
+         out.parent.mkdir(parents=True, exist_ok=True)
+         out.write_text(report.render(rows, report.load_index_records(config.RUNS / "index.jsonl")))
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/config.py b/evals/swe-bench-lite/src/swe_lite_ab/config.py
+index 971e2aa9c..7db75d4e0 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/config.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/config.py
+@@ -11,6 +11,18 @@ RUNS = EVAL_ROOT / "runs"
+ REPOS_ROOT = Path(os.environ.get("SWE_LITE_AB_REPOS", "/Users/Shared/swe-lite-ab/repos"))
+ TASKS_DIR = EVAL_ROOT / "tasks"
+ LITE_SNAPSHOT = RUNS / "lite.jsonl"
++# SWE-rebench leaderboard as swebench 5.x harness instances (rebench.py); also the harness dataset.
++REBENCH_SNAPSHOT = RUNS / "rebench.jsonl"
++# SWE-bench Pro V2, Python + TypeScript rows (pro.py). The tooling checkout holds every task's
++# instruction.md (the agent input) and verifier (tests/test.sh and friends).
++PRO_SNAPSHOT = RUNS / "pro.jsonl"
++PRO_OS = Path(os.environ.get("SWE_PRO_OS", "/Users/Shared/swe-lite-ab/swe-bench-pro-os"))
++PRO_DATASET = "ScaleAI/SWE-bench_Pro"
++PRO_VERIFIER_TIMEOUT_S = 3000
++# Memorisation probe (probe.py): answers per task, and the empty working directories the model is
++# asked from (outside the home tree, so no CLAUDE.md ancestor leaks into the probe).
++PROBE_FILE = RUNS / "probe.jsonl"
++PROBE_ROOT = Path(os.environ.get("SWE_LITE_AB_PROBE", "/Users/Shared/swe-lite-ab/probe"))
+ # Per-repository .contextignore templates, named <owner>__<repo>. tea-rags reads .contextignore only
+ # from the indexed root, so prepare installs one into every task repository.
+ CONTEXTIGNORE_DIR = EVAL_ROOT / "contextignore"
+@@ -21,6 +33,7 @@ TOKEN_FILE = Path.home() / ".config" / "swe-lite-ab" / "oauth-token"
+ 
+ MODEL = "claude-sonnet-5-5"
+ DATASET = "SWE-bench/SWE-bench_Lite"
++REBENCH_DATASET = "nebius/SWE-rebench-leaderboard"
+ AGENT_TIMEOUT_S = 1800
+ MAX_BUDGET_USD = 5.0
+ 
+@@ -50,3 +63,7 @@ class ArmConfig:
+ 
+ 
+ ARMS = {"arm0": ArmConfig("arm0", False), "arm1": ArmConfig("arm1", True)}
++
++# Component localization benchmark (localize.py): the ORIGINAL Pro issue texts, no LLM.
++LOCAGENT_DATASET = "OpenHands/SWE-bench_Pro-locagent"
++LOCAGENT_SNAPSHOT = RUNS / "locagent.jsonl"
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py b/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
+index d15122767..0943b7b4d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/evaluate.py
+@@ -11,34 +11,47 @@ def report_path(arm: str, run_id: str) -> Path:
+     return config.RUNS / "reports" / f"{arm}.{run_id}.json"
+ 
+ 
+-def image_name(instance_id: str) -> str:
+-    return "swebench/sweb.eval.x86_64." + instance_id.replace("__", "_1776_").lower() + ":latest"
++_IMAGE_NAMESPACE = {"lite": "swebench", "rebench": "swerebench"}
+ 
+ 
+-def pull_command(instance_id: str) -> list[str]:
+-    return ["docker", "pull", "-q", "--platform", "linux/amd64", image_name(instance_id)]
++def image_name(instance_id: str, dataset: str = "lite") -> str:
++    return f"{_IMAGE_NAMESPACE[dataset]}/sweb.eval.x86_64." + instance_id.replace("__", "_1776_").lower() + ":latest"
+ 
+ 
+-def ensure_images(ids: list[str]) -> None:
++def pull_command(instance_id: str, dataset: str = "lite") -> list[str]:
++    return ["docker", "pull", "-q", "--platform", "linux/amd64", image_name(instance_id, dataset)]
++
++
++def ensure_images(ids: list[str], dataset: str = "lite") -> None:
+     """swebench 5.0.2 never pulls: a missing eval image fails with ImageNotFound."""
+     for i in ids:
+-        present = subprocess.run(["docker", "image", "inspect", image_name(i)], capture_output=True).returncode == 0
++        image = image_name(i, dataset)
++        present = subprocess.run(["docker", "image", "inspect", image], capture_output=True).returncode == 0
+         if not present:
+-            subprocess.run(pull_command(i), check=True)
++            subprocess.run(pull_command(i, dataset), check=True)
++
+ 
++def harness_dataset(dataset: str) -> str:
++    """Lite grades from the Hub dataset; rebench from the snapshot rebench.load wrote as instances."""
++    return config.DATASET if dataset == "lite" else str(config.REBENCH_SNAPSHOT)
+ 
+-def harness_command(arm: str, predictions: Path, ids: list[str], run_id: str) -> list[str]:
++
++def harness_command(arm: str, predictions: Path, ids: list[str], run_id: str, dataset: str = "lite") -> list[str]:
+     return ["python", "-m", "swebench.harness.run_evaluation",
+-            "--dataset_name", config.DATASET, "--predictions_path", str(predictions),
++            "--dataset_name", harness_dataset(dataset), "--predictions_path", str(predictions),
+             "--instance_ids", *ids, "--max_workers", "4", "--run_id", run_id,
+             "--report_dir", str(report_path(arm, run_id).parent)]
+ 
+ 
+-def run(arm: str, tasks: list[Task], run_id: str) -> Path:
++def run(arm: str, tasks: list[Task], run_id: str, dataset: str = "lite") -> Path:
++    if dataset == "pro":
++        from . import pro
++
++        return pro.grade(arm, tasks, run_id)
+     predictions = config.RUNS / arm / "predictions.jsonl"
+     ids = [t.instance_id for t in tasks]
+-    ensure_images(ids)
+-    subprocess.run(harness_command(arm, predictions, ids, run_id),
++    ensure_images(ids, dataset)
++    subprocess.run(harness_command(arm, predictions, ids, run_id, dataset),
+                    cwd=config.RUNS, check=True)
+     return report_path(arm, run_id)
+ 
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/report.py b/evals/swe-bench-lite/src/swe_lite_ab/report.py
+index 300b83465..db698a78d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/report.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/report.py
+@@ -33,6 +33,8 @@ class Row:
+     index_in_run_seconds: float
+     api_seconds: float
+     gold_before_search: bool
++    stratum: str = ""            # tasks.stratum: patch size × issue kind
++    memorised: bool | None = None  # probe.py hit: the model named a gold file from the task text alone; None = not probed
+ 
+ 
+ def _pairs(rows: list[Row]) -> list[tuple[Row, Row]]:
+@@ -148,6 +150,12 @@ def render(rows: list[Row], index_records: list[dict] | None = None) -> str:
+     lines.append("")
+     lines += _section("Gold file named in issue", [p for p in pairs if p[0].mentioned])
+     lines += _section("Gold file not named", [p for p in pairs if not p[0].mentioned])
++    if any(p[0].memorised is not None for p in pairs):
++        # Headline stratum: neither recalled by the model nor handed to it by the task text.
++        lines += _section("Not memorised and not named",
++                          [p for p in pairs if p[0].memorised is False and not p[0].mentioned])
++    for s in sorted({p[0].stratum for p in pairs if p[0].stratum}):
++        lines += _section(f"Stratum {s}", [p for p in pairs if p[0].stratum == s])
+     lines += _repo_strata(pairs)
+     lines += _section("Exploratory: not searched-for in arm 0", [p for p in pairs if not p[0].gold_before_search])
+     return "\n".join(lines) + "\n"
+@@ -162,9 +170,10 @@ def write_csv(rows: list[Row], path: Path) -> Path:
+     return path
+ 
+ 
+-def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -> list[Row]:
++def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str,
++               memorised: dict[str, bool] | None = None) -> list[Row]:
+     from . import config
+-    from .tasks import gold_files, mentions_gold_file
++    from .tasks import gold_files, mentions_gold_file, stratum
+     from .transcript import parse
+ 
+     rows = []
+@@ -183,7 +192,8 @@ def build_rows(tasks, resolved_by_arm: dict[str, set[str]], usage_source: str) -
+                             m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_usd,
+                             m.turns, sum(m.tool_calls.values()), m.tea_rags_calls, m.search_read_calls,
+                             m.gold_touched, m.turns_to_gold, max(0.0, wall_raw - m.index_in_run_seconds),
+-                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search))
++                            wall_raw, m.index_in_run_seconds, m.duration_api_ms / 1000, m.gold_before_search,
++                            stratum(t), (memorised or {}).get(t.instance_id)))
+     return rows
+ 
+ 
+diff --git a/evals/swe-bench-lite/src/swe_lite_ab/tasks.py b/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
+index 41d46b955..14fd7009d 100644
+--- a/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
++++ b/evals/swe-bench-lite/src/swe_lite_ab/tasks.py
+@@ -18,6 +18,7 @@ class Task:
+     problem_statement: str
+     patch: str
+     created_at: str
++    kind: str = ""          # "bug" | "feature" when the dataset labels it (Pro); "" = issue-text heuristic
+ 
+ 
+ def gold_files(patch: str) -> list[str]:
+@@ -29,6 +30,36 @@ def mentions_gold_file(task: Task) -> bool:
+     return any(path in text or path.rsplit("/", 1)[-1] in text for path in gold_files(task.patch))
+ 
+ 
++def patch_size(patch: str) -> tuple[int, int]:
++    """(files, changed lines) of a unified diff, file headers excluded."""
++    changed = sum(1 for line in patch.splitlines() if line[:1] in "+-" and line[:3] not in ("+++", "---"))
++    return len(gold_files(patch)), changed
++
++
++# A large task touches several files with a real body of change; one-line fixes are the small stratum.
++LARGE_MIN_FILES, LARGE_MIN_LINES = 2, 40
++# Issue-text heuristic for bug reports versus feature requests, read from the head of the issue.
++_BUG_WORDS = re.compile(r"\b(bug|error|traceback|exception|crash(es|ed)?|fails?|failing|failed|broken|incorrect|wrong"
++                        r"|regression|raises?)\b", re.I)
++
++
++def stratum(task: Task) -> str:
++    files, lines = patch_size(task.patch)
++    size = "large" if files >= LARGE_MIN_FILES and lines >= LARGE_MIN_LINES else "small"
++    kind = task.kind or ("bug" if _BUG_WORDS.search(task.problem_statement[:1500]) else "feature")
++    return f"{size}-{kind}"
++
++
++def select_rebench(tasks: list[Task], since: str, n_small_bug: int, seed: int) -> list[Task]:
++    """Every large task created on or after `since` (both kinds), plus a seeded sample of small bug
++    fixes as the one-file control. Id-sorted."""
++    pool = sorted((t for t in tasks if t.created_at[:len(since)] >= since), key=lambda t: t.instance_id)
++    large = [t for t in pool if stratum(t).startswith("large-")]
++    small_bugs = [t for t in pool if stratum(t) == "small-bug"]
++    sample = random.Random(seed).sample(small_bugs, min(n_small_bug, len(small_bugs)))
++    return sorted(large + sample, key=lambda t: t.instance_id)
++
++
+ def select_stratified(tasks: list[Task], n: int, seed: int, exclude: frozenset[str] = frozenset()) -> list[Task]:
+     pool = sorted((t for t in tasks if t.instance_id not in exclude), key=lambda t: t.instance_id)
+     strata: dict[tuple[str, bool], list[Task]] = defaultdict(list)
+@@ -80,7 +111,26 @@ def save_ids(tasks: list[Task], path: Path) -> None:
+ 
+ 
+ def load_ids(path: Path) -> list[str]:
+-    return json.loads(path.read_text())
++    return load_task_list(path)[1]
++
++
++def save_task_list(tasks: list[Task], path: Path, dataset: str) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps({"dataset": dataset, "ids": [t.instance_id for t in tasks]}, indent=2) + "\n")
++
++
++def load_task_list(path: Path) -> tuple[str, list[str]]:
++    """(dataset, ids). A bare id list predates the dataset field and is Lite."""
++    data = json.loads(path.read_text())
++    return ("lite", data) if isinstance(data, list) else (data["dataset"], data["ids"])
++
++
++def load(dataset: str) -> list[Task]:
++    if dataset == "lite":
++        return load_lite()
++    from . import pro, rebench
++
++    return pro.load() if dataset == "pro" else rebench.load()
+ 
+ 
+ def by_ids(tasks: list[Task], ids: list[str]) -> list[Task]:
+diff --git a/evals/swe-bench-lite/tests/test_collect.py b/evals/swe-bench-lite/tests/test_collect.py
+index d22c89790..cbd7b40a7 100644
+--- a/evals/swe-bench-lite/tests/test_collect.py
++++ b/evals/swe-bench-lite/tests/test_collect.py
+@@ -51,3 +51,26 @@ def test_harness_command_targets_lite(tmp_path):
+     assert cmd[:3] == ["python", "-m", "swebench.harness.run_evaluation"]
+     assert cmd[cmd.index("--dataset_name") + 1] == "SWE-bench/SWE-bench_Lite"
+     assert cmd[cmd.index("--instance_ids") + 1 : cmd.index("--instance_ids") + 3] == ["x-1", "y-2"]
++
++
++def test_rebench_images_live_in_the_swerebench_namespace():
++    assert image_name("copier-org__copier-2646", "rebench") == \
++        "swerebench/sweb.eval.x86_64.copier-org_1776_copier-2646:latest"
++
++
++def test_harness_command_grades_rebench_from_the_local_snapshot(tmp_path):
++    from swe_lite_ab import config
++
++    cmd = harness_command("arm0", tmp_path / "p.jsonl", ["x-1"], "arm0-rb", "rebench")
++    assert cmd[cmd.index("--dataset_name") + 1] == str(config.REBENCH_SNAPSHOT)
++
++
++def test_evaluate_grades_pro_with_the_local_verifier(monkeypatch, tmp_path):
++    from swe_lite_ab import evaluate, pro
++
++    calls = []
++    monkeypatch.setattr(pro, "grade", lambda arm, ts, run_id: calls.append((arm, ts, run_id)) or tmp_path / "r.json")
++    monkeypatch.setattr(evaluate, "ensure_images", lambda *a: (_ for _ in ()).throw(AssertionError("swebench path")))
++
++    assert evaluate.run("arm0", ["t"], "arm0-pro", "pro") == tmp_path / "r.json"
++    assert calls == [("arm0", ["t"], "arm0-pro")]
+diff --git a/evals/swe-bench-lite/tests/test_report.py b/evals/swe-bench-lite/tests/test_report.py
+index 831f6860e..55c16ae4f 100644
+--- a/evals/swe-bench-lite/tests/test_report.py
++++ b/evals/swe-bench-lite/tests/test_report.py
+@@ -158,3 +158,39 @@ def test_exploratory_section_keeps_pairs_arm0_did_not_open_before_search():
+     rows = [row("arm0", i, False, 1000, True, gold_before_search=i == 0) for i in range(4)] + \
+            [row("arm1", i, False, 800, True, gold_before_search=True) for i in range(4)]
+     assert "## Exploratory: not searched-for in arm 0 (n=3)" in render(rows)
++
++
++def test_render_reports_each_size_kind_stratum_present():
++    from dataclasses import replace
++
++    rows = [replace(row(a, i, True, 1000, False), stratum="large-bug") for a in ("arm0", "arm1") for i in range(2)] + \
++           [replace(row(a, 5, False, 1000, False), stratum="small-bug") for a in ("arm0", "arm1")]
++    md = render(rows)
++    assert "## Stratum large-bug (n=2)" in md
++    assert "## Stratum small-bug (n=1)" in md
++    assert "## Stratum large-feature" not in md
++
++
++def test_render_adds_the_not_memorised_not_named_stratum_when_the_probe_ran():
++    rows = [row(arm, i, i < 2, 1000, mentioned=i % 2 == 0) for arm in ("arm0", "arm1") for i in range(4)]
++    assert "Not memorised and not named" not in render(rows)
++    for r in rows:
++        r.memorised = r.instance_id == "t1"
++    md = render(rows)
++    assert "## Not memorised and not named (n=1)" in md
++
++
++def test_build_rows_marks_memorised_from_probe_hits(tmp_path, monkeypatch):
++    from swe_lite_ab import config
++    from swe_lite_ab.report import build_rows
++    from swe_lite_ab.tasks import Task
++
++    monkeypatch.setattr(config, "RUNS", tmp_path)
++    ts = [Task("a", "o/r", "s", "", "", ""), Task("b", "o/r", "s", "", "", "")]
++    for i in ("a", "b"):
++        (tmp_path / "arm0" / i).mkdir(parents=True)
++        (tmp_path / "arm0" / i / "transcript.jsonl").write_text("")
++
++    rows = build_rows(ts, {"arm0": set(), "arm1": set()}, "sum", memorised={"a": True, "b": False})
++    assert [(r.instance_id, r.memorised) for r in rows] == [("a", True), ("b", False)]
++    assert [r.memorised for r in build_rows(ts, {"arm0": set(), "arm1": set()}, "sum")] == [None, None]
+diff --git a/evals/swe-bench-lite/tests/test_tasks.py b/evals/swe-bench-lite/tests/test_tasks.py
+index 8a721f4b2..f13e6b0ca 100644
+--- a/evals/swe-bench-lite/tests/test_tasks.py
++++ b/evals/swe-bench-lite/tests/test_tasks.py
+@@ -99,3 +99,70 @@ def test_load_lite_snapshots_the_dataset_once_and_then_reads_offline(tmp_path, m
+     assert first == second == rows
+     assert calls == [1]
+     assert (tmp_path / "lite.jsonl").exists()
++
++
++BIG_PATCH = "".join(f"diff --git a/pkg/m{i}.py b/pkg/m{i}.py\n--- a/pkg/m{i}.py\n+++ b/pkg/m{i}.py\n@@ -1 +1,20 @@\n"
++                    + "".join(f"+line {j}\n" for j in range(20)) for i in range(2))
++
++
++def test_patch_size_counts_files_and_changed_lines_without_headers():
++    from swe_lite_ab.tasks import patch_size
++
++    assert patch_size(PATCH) == (2, 4)
++    assert patch_size(BIG_PATCH) == (2, 40)
++
++
++def test_stratum_splits_by_patch_size_and_issue_kind():
++    from swe_lite_ab.tasks import stratum
++
++    assert stratum(task(1, text="Crash: TypeError raised on update", patch=BIG_PATCH)) == "large-bug"
++    assert stratum(task(2, text="Add a --dry-run option", patch=BIG_PATCH)) == "large-feature"
++    assert stratum(task(3, text="update fails with a traceback")) == "small-bug"
++    assert stratum(task(4, text="Support YAML anchors")) == "small-feature"
++
++
++def test_select_rebench_keeps_every_large_task_and_samples_small_bugs_since_a_date():
++    from swe_lite_ab.tasks import select_rebench
++
++    def t(i, created, text, patch):
++        return Task(f"o__r-{i}", "o/r", f"sha{i}", text, patch, created)
++
++    pool = [t(1, "2025-12-31 10:00:00", "crash", BIG_PATCH), t(2, "2026-01-02 10:00:00", "crash", BIG_PATCH),
++            t(3, "2026-02-01 10:00:00", "add option", BIG_PATCH)] + \
++           [t(10 + i, "2026-03-01 10:00:00", "it fails", PATCH) for i in range(10)] + \
++           [t(30, "2026-03-01 10:00:00", "add option", PATCH)]
++
++    chosen = select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)
++
++    ids = [x.instance_id for x in chosen]
++    assert ids == sorted(ids)
++    assert {"o__r-2", "o__r-3"} <= set(ids) and "o__r-1" not in ids and "o__r-30" not in ids
++    assert len(ids) == 6
++    assert ids == [x.instance_id for x in select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)]
++
++
++def test_task_list_records_its_dataset_and_legacy_lists_mean_lite(tmp_path):
++    import json
++
++    from swe_lite_ab.tasks import load_task_list, save_task_list
++
++    save_task_list([task(1), task(2)], tmp_path / "r.json", "rebench")
++    assert load_task_list(tmp_path / "r.json") == ("rebench", ["requests-1", "requests-2"])
++    (tmp_path / "l.json").write_text(json.dumps(["a__b-1"]))
++    assert load_task_list(tmp_path / "l.json") == ("lite", ["a__b-1"])
++
++
++def test_stratum_takes_the_kind_from_the_task_when_the_dataset_labels_it():
++    from swe_lite_ab.tasks import stratum
++
++    labelled_feature = Task("p-1", "o/r", "sha", "Crash: TypeError raised", BIG_PATCH, "", kind="feature")
++    labelled_bug = Task("p-2", "o/r", "sha", "Support YAML anchors", PATCH, "", kind="bug")
++    assert stratum(labelled_feature) == "large-feature"
++    assert stratum(labelled_bug) == "small-bug"
++
++
++def test_load_dispatches_pro_to_the_pro_snapshot(monkeypatch):
++    from swe_lite_ab import pro, tasks
++
++    monkeypatch.setattr(pro, "load", lambda: ["pro-task"])
++    assert tasks.load("pro") == ["pro-task"]

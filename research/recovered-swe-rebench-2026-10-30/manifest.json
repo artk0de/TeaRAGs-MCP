@@ -1,0 +1,259 @@
+{
+  "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/swe-rebench-restored",
+  "head": "e847eb5dc5238ee3d529cb363405cd1e83f41d4c",
+  "branch": "recover/swe-rebench",
+  "files": [
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/README.md",
+      "exists": true,
+      "bytes": 12450,
+      "sha256": "d29d8ef0061487a44d69e65ebb3cea18dc145a752a977d8400e74b324652993b"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/cli.py",
+      "exists": true,
+      "bytes": 5107,
+      "sha256": "cf900340154f286d8f2833e93141381c51a02f3695b0c9c713eb4fdbc45dd6cc"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/config.py",
+      "exists": true,
+      "bytes": 3085,
+      "sha256": "25dbf6dec782187cfc6aa14b73fbb052c10ea69a02b1766581a360a8c2d203b9"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/evaluate.py",
+      "exists": true,
+      "bytes": 2376,
+      "sha256": "a6360e183c85a5b922ff35a705fc27817a971d7368bb699710f8b830c984bbdf"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/report.py",
+      "exists": true,
+      "bytes": 9651,
+      "sha256": "769f55bf466cd260a7c664ada527a4c890ff9f18cb722a5e355f8fc214dff58f"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/tasks.py",
+      "exists": true,
+      "bytes": 6001,
+      "sha256": "2e8f7d27eeadc93605ec8f4f6b623a9c73f37f2f475aa5d2f866430ba635470c"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/tests/test_collect.py",
+      "exists": true,
+      "bytes": 3628,
+      "sha256": "c1f43a2669eccc4c184b7c43a5894aa4e3f91731a23f1e276eb4eafb27078f00"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/tests/test_report.py",
+      "exists": true,
+      "bytes": 10063,
+      "sha256": "8fccbe57b9b64d8efbc293c2d10d854c1acf45dbe6ae9926641a8b12e348592c"
+    },
+    {
+      "status": " M",
+      "path": "evals/swe-bench-lite/tests/test_tasks.py",
+      "exists": true,
+      "bytes": 6844,
+      "sha256": "dcec71829c9fca59ff1b84978b17a77c3abb4fe468f4a5c90105ccd2abdf9492"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-10-09-private-nav-benchmark-design.md",
+      "exists": true,
+      "bytes": 17469,
+      "sha256": "e1aabb893bfda27c0ba7bb6e57cc81f55586634f36acf4d11e43877f63563ad4"
+    },
+    {
+      "status": "??",
+      "path": "evals/agent-nav-ab/PREREGISTRATION.md",
+      "exists": true,
+      "bytes": 4647,
+      "sha256": "e5b63b28690643d7ca46acfbe6e384700c213a522a6bb9c5cb0cebbc63c65f61"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/bench_projects.py",
+      "exists": true,
+      "bytes": 593,
+      "sha256": "a6b1c3ad63f61bb968b0df03b16415fc0d4290f2c7a6248afdac3846bcf276e3"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/gold_eval.py",
+      "exists": true,
+      "bytes": 995,
+      "sha256": "fad9e9b3035b984adee174bf5a82d5e9bcbc8223ce42951ca08b941d8457e977"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/grep_hard.py",
+      "exists": true,
+      "bytes": 277,
+      "sha256": "8de13a25182328050533995f31a7ffea41d4a63aef544f2d69e2abcccfa748a3"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/loc_pick.py",
+      "exists": true,
+      "bytes": 1018,
+      "sha256": "a71f49a96627499ac6cbbd79eca9cca6b33eb403e8d698d862582b7ed913768a"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/locagent_probe.py",
+      "exists": true,
+      "bytes": 947,
+      "sha256": "df2569af25a2a1a307d2a07d6d3a7e83c0e8dc88d1ef15c29f68eb615c7332d5"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/patch_cmp.py",
+      "exists": true,
+      "bytes": 707,
+      "sha256": "e21dbf9a5aed5c239005cbfb3b94afd3041914e69c47971427182e65a4eb98b2"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/probe_call.py",
+      "exists": true,
+      "bytes": 889,
+      "sha256": "eb582ce43887b602abdca51babbd4882f633e2c2d887e5ab3c466fe1a62f5813"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/probe_sample.py",
+      "exists": true,
+      "bytes": 569,
+      "sha256": "1973fd872ba59c6ea8527aaee0cb21eff12b1e1b0fd68ee6a70a3888aa98069b"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/probe_show.py",
+      "exists": true,
+      "bytes": 711,
+      "sha256": "6974b728db7bf4e0c949983ed5298a184514331c1751fced2814022d8e12c60d"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/purge_projects.py",
+      "exists": true,
+      "bytes": 555,
+      "sha256": "26d53cfbbf5828de794931de3d6f9550efe45e103a3459f6921387345f3afe5f"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/qb_named.py",
+      "exists": true,
+      "bytes": 761,
+      "sha256": "21f9f631bcb4c1ea2de62257f3e228d5405cba7fa6d2ee0bc4aa40ca74c2ec52"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/qb_pick.py",
+      "exists": true,
+      "bytes": 545,
+      "sha256": "6e76076d319d8fa49f238c8f51bcfc0782610d1ebc16b7985bdd6044332b989b"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/smoke_rb.sh",
+      "exists": true,
+      "bytes": 529,
+      "sha256": "07fdc381c3324100cb96e452699a7d92c2e49833f607564178fac643bf225b8e"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/strata_check.py",
+      "exists": true,
+      "bytes": 517,
+      "sha256": "e6030d5e5d009e17a87dbafb86ef992c1785fca4534491476b677a6bdee56207"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/recovered-scratch/tuta_list.py",
+      "exists": true,
+      "bytes": 375,
+      "sha256": "9b3e464401a934c6cb783cbf15ea987d7e48d1fce66dfd247adefd769bac7039"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/results/localize-loc-10-2026-10-06.md",
+      "exists": true,
+      "bytes": 4489,
+      "sha256": "537c4fe9fc139ccb3032351c1fbeb9e40d86cd50aac99e78259b027033d179d5"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/localize.py",
+      "exists": true,
+      "bytes": 14132,
+      "sha256": "a44c2d141d238f4bf260644d2493a73471ae12ef96077e4f7ed97c4f16286d9b"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/pro.py",
+      "exists": true,
+      "bytes": 6135,
+      "sha256": "610fecba8076baa5d8b17b26b03e6accf6a0629104a1b576a60bc3344cdfe6aa"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/probe.py",
+      "exists": true,
+      "bytes": 4819,
+      "sha256": "9af6f312d595034b3134234f0f1e440ea794cb1703e00e4577256ba26557e7be"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/src/swe_lite_ab/rebench.py",
+      "exists": true,
+      "bytes": 2861,
+      "sha256": "1eaf681c7bb9a7cb0f4b937da7fb4664ff19d28c89f042b5a541827b7d52cadd"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/tasks/loc-10.json",
+      "exists": true,
+      "bytes": 1265,
+      "sha256": "7f840222a74de4b28807d1cb58142b3d0e3b8b31487a8aca8b73ccd1e94f1ffa"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/tests/test_localize.py",
+      "exists": true,
+      "bytes": 12640,
+      "sha256": "e25280e98df17a5f07f3845125c8113205beb8a5ec66fcb05b02f4c9b8fa4010"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/tests/test_pro.py",
+      "exists": true,
+      "bytes": 5972,
+      "sha256": "ea575c8dc2b14b89669ed79ae39f2beb3163101f4a9da5f7f652439d12466f1a"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/tests/test_probe.py",
+      "exists": true,
+      "bytes": 3296,
+      "sha256": "a74cb8c6a896e0c036dc55e6a13fcacc6ad5e51f950675b45d82765ea93ecdf0"
+    },
+    {
+      "status": "??",
+      "path": "evals/swe-bench-lite/tests/test_rebench.py",
+      "exists": true,
+      "bytes": 3773,
+      "sha256": "112aba73c9e75562c69c52330fd0bf24a4f272609acb303d2a5ce2d276d87a49"
+    }
+  ]
+}

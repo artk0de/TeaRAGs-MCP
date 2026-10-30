@@ -1,0 +1,11 @@
+{
+  "wall_seconds": 0.056,
+  "runtime": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-q24-20261030-050614/runtime/build/cli/index.js",
+  "original_source_line": 111,
+  "repo": "/Users/Shared/nav-ab/repo-master",
+  "raw_response_chars": 26193,
+  "server_info": {
+    "name": "tea-rags",
+    "version": "1.49.0"
+  }
+}

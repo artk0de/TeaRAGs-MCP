@@ -1,4 +1,10 @@
 scripts/**
+.tmp/**
+# Archived evidence must not compete with current source in code search.
+research/recovered-swe-rebench-2026-10-30/**
+research/codex-q24-replay-2026-10-30/**
+research/codex-q24-validated-2026-10-30/**
+research/codex-q03-tool-replay-2026-10-30/**
 package-lock.json
 public/**
 node_modules/**

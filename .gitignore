@@ -4,6 +4,9 @@
 # Superpowers SDD scratch (briefs, reports, review packages, progress ledger)
 .superpowers/
 
+# Local benchmark runtimes and temporary agent homes
+.tmp/
+
 # Dependencies
 node_modules/
 

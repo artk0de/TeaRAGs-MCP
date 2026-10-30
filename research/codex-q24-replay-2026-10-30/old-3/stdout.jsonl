@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9c-5bea-7b71-90f1-fc0881991655"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да. Для реестра достаточно явного словаря `instead => Instead`, `gruntworx => GruntWorx`; `camelize` для этого не нужен. Нормализуйте входной ключ через `to_s.downcase.to_sym`, затем ищите его в словаре. Так `GruntWorx`, `gruntworx` и `GRUNTWORX` разрешатся одинаково, а отображаемые названия останутся заданными явно."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":102,"reasoning_output_tokens":0}}

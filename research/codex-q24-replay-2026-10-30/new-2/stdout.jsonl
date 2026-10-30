@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9b-cdcc-7e22-a865-dfb8b08c08fd"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, для этих двух провайдеров явный словарь будет понятнее и надёжнее:\n\n```ruby\nPROVIDER_LABELS = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nТогда `:instead` отображается как `Instead`, а `:gruntworx` — как `GruntWorx`; `camelize` не нужен. `downcase` даст обратный результат (`instead`, `gruntworx`), если исходное значение уже `Instead`/`GruntWorx`."}}
+{"type":"turn.completed","usage":{"input_tokens":160607,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":125,"reasoning_output_tokens":0}}

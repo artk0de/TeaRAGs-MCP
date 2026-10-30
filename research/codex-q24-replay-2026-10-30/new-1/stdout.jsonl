@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9b-9998-7873-b18c-73c0d65d27dc"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, для этих двух названий достаточно `downcase`: `Instead` → `instead`, `GruntWorx` → `gruntworx`. Явный словарь `instead => Instead`, `gruntworx => GruntWorx` задаёт отображаемые имена и не требует `camelize`.\n\nКлючи уже совпадают с провайдерами в [FirmSettings::PROVIDERS](app/models/tax_preparation/tax_automations/firm_settings.rb) и формой ключа в [Registry::ADAPTERS](app/lib/tax_preparation/tax_automations/registry.rb)."}}
+{"type":"turn.completed","usage":{"input_tokens":160607,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":250,"reasoning_output_tokens":113}}

@@ -1,0 +1,12 @@
+{
+  "old": {
+    "build_inventory_sha256": "eec62bb3f44c0e40c764f61beae92c4c261df2d6fbeb255069b93c578ac8b9d3",
+    "required_asset_sha256": "0a1b17e91d514c0c9e88520e6091e2d52a6faf8296892cad7355ff0723a42914",
+    "build_file_count": 9568
+  },
+  "new": {
+    "build_inventory_sha256": "f10fc65fe6af232956db0fe5b6256c6b7de5a49ff1cca19542748f815346bc86",
+    "required_asset_sha256": "0a1b17e91d514c0c9e88520e6091e2d52a6faf8296892cad7355ff0723a42914",
+    "build_file_count": 9572
+  }
+}

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18aa8-4f87-7f40-89bb-605822e853c8"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да. Для маппинга `instead → Instead` и `gruntworx → GruntWorx` достаточно явного словаря, например:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\n`downcase` для этих двух имён тоже даёт нужные ключи, но словарь задаёт соответствие явно и не зависит от правил преобразования регистра."}}
+{"type":"turn.completed","usage":{"input_tokens":160609,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":101,"reasoning_output_tokens":0}}

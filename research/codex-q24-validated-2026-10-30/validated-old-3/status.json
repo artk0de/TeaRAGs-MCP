@@ -1,0 +1,19 @@
+{
+  "returncode": 0,
+  "wall_seconds": 8.659,
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--sandbox",
+    "read-only",
+    "--ephemeral",
+    "-m",
+    "gpt-6-luna",
+    "-C",
+    "/Users/Shared/nav-ab/repo-master",
+    "-"
+  ],
+  "model": "gpt-6-luna",
+  "reasoning_effort": "medium"
+}

@@ -8,6 +8,12 @@ coverage/
 .worktrees/
 .claude/worktrees/
 
+# Historical evidence: preserve the recorded bytes and SHA256 manifests.
+research/recovered-swe-rebench-2026-10-30/
+research/codex-q24-replay-2026-10-30/
+research/codex-q24-validated-2026-10-30/
+research/codex-q03-tool-replay-2026-10-30/
+
 # Vendored third-party crates: cargo verifies every file against
 # .cargo-checksum.json, so a reformat breaks `cargo build --offline`.
 native/*/vendor/

@@ -1,0 +1,1 @@
+Да. Явный словарь здесь не нужен: достаточно `provider.to_s.downcase` для значений `Instead` и `GruntWorx`, чтобы получить `instead` и `gruntworx`. Но для **обратного преобразования** в название провайдера `downcase` не подходит — там нужен явный словарь (`instead => Instead`, `gruntworx => GruntWorx`).

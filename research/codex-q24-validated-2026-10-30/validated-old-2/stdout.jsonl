@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18aa9-7f40-76b1-9eaa-a62645339576"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да, для этих двух ключей хватит явного словаря:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nПри ключах `:instead` и `:gruntworx` обычный `downcase` даст строчные имена, поэтому восстанавливать отображаемое написание через `camelize` не получится. Явный словарь сохраняет точное написание брендов."}}
+{"type":"turn.completed","usage":{"input_tokens":160610,"cached_input_tokens":11520,"cache_write_input_tokens":0,"output_tokens":106,"reasoning_output_tokens":0}}

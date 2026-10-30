@@ -1,0 +1,3 @@
+[tea-rags] Attached to Qdrant daemon (pid=2748, port=50531, refs=7)
+Qdrant MCP server running on stdio
+[tea-rags] Released Qdrant ref (remaining=7)

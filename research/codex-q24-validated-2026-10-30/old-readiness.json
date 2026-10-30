@@ -1,0 +1,54 @@
+{
+  "initialize": {
+    "result": {
+      "protocolVersion": "2024-11-05",
+      "capabilities": {
+        "tools": {
+          "listChanged": true
+        },
+        "resources": {
+          "listChanged": true
+        }
+      },
+      "serverInfo": {
+        "name": "tea-rags",
+        "version": "1.49.0"
+      },
+      "instructions": "# tea-rags core\n\n**Each step takes the tool its routing row names.**\n\n**Addressing.** Every tea-rags read call, each next/planned call you write\nincluded (`find_symbol(symbol: X, path=<cwd>)`): `project=<alias>` +\n`path=<this task's cwd>` (tree, re-checks too). Alias: digest `project`,\nSubagentStart line or `workingTree.project`; unknown/\"not registered\" \u2192 `path`\nalone, never ask; only a `collection` \u2192 it alone; after either say\n`next: project=<workingTree.project> + path`. No cwd \u2192 call now, `project`\nalone. `workingTree.tree` \u2260 cwd \u2192 rows unusable; re-call `path=<cwd>`.\n`index_codebase`: `project` ONLY; unregistered cwd \u2192 `path=<cwd>`.\n\nThe default code search tool: `-l` first or a line cap, in the anchor's dir when\nknown, else `<src dir>` (a dir under cwd, never cwd itself), never a search for\nthe dir. No find/Glob to locate code.\n\n**Routing** (first match wins; a loaded skill's steps run first, override rows \u2014\na file path in them \u2192 row 1; tools `mcp__tea-rags__*`):\n\n- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub \u2192\n  default code read tool (path unknown \u2192 default code search tool first); all X\n  in a known `<dir>`, proving absence (\"no X exists\") \u2192 default code search tool\n  over that dir (empty = proof); migration `X` \u2192 `\"X\"` over `db/migrate/`;\n  table/column exists, `create_table` \u2192 that search over `db/schema.rb`, then\n  `db/migrate/` (`:<table>`, `\"<table>\"` before \"absent\"), never\n  `semantic_search`. Other file/dir path, lines N\u2013M, doc TOC, how `<dir>` works\n  / what's in it \u2192 `find_symbol(relativePath:)` outline first, then ONE batch of\n  the needed ids (N\u2013M: ids spanning it); no structure word (architecture,\n  structure, organized, end to end, backbone, walk me through) \u2192 never codegraph\n  / `get_architecture_report`; its imports \u2192 `get_callees(relativePath:)`\n  (`imports[]`; a row's `imports` = a count)\n- code history \u2014 when X appeared/changed, \"\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438 \u0447\u0435\u0440\u0435\u0437 git\" \u2192 never\n  `git log`/`blame`/`-S`/`show`:\n  `semantic_search(query: <X>, rerank: \"bugHunt\")`\n- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)\n  \u2192 ONE `semantic_search(query: \"a ||| b ||| c\")` (\u22645 phrasings fused; real ids\n  among them \u2192 `hybrid_search(metaOnly)`) \u2192 anchor \u2192 depth-2 callees/callers \u2192\n  ONE batch; never text search\n- non-identifier text \u2014 regex syntax, TODO/FIXME, phrase, string to find (debug,\n  or a search tool demanded on an error \u2192 bug-hunt), even \"every \u2026\" \u2192 default\n  code search tool, not tea-rags; phrase/error string \u2192 plan these three lines,\n  never stop at the hit:\n  `default code search tool \"<phrase>\" <dir> (literal, line cap)` \u2192\n  `find_symbol(relativePath: <hit file>)` outline \u2192\n  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code\n  name, even a \"pattern\"/\"glob\" \u2192 usages row. Command output, failing tests,\n  counts \u2192 `<cmd> 2>&1 | grep -E 'FAIL|\u2717'` (`| wc -l`), no skill\n- how X works/what happens when \u2192 `get_callees` (body unseen \u2192 `find_symbol`\n  first); who calls X/impact/where Y is handled \u2192 `get_callers` \u2014 `symbolId:`,\n  `depth: 2`; every call/all callers of X (grep named) \u2192 plan both lines:\n  `get_callers` + the usages row. Then ONE batch: needed tree methods\n- known symbol / identifier definition/body/outline \u2192 `find_symbol(symbol:)`\n  `Class#inst`/`C.st`, never text search\n- where X is used/referenced, every occurrence, who constructs X, files\n  containing X (exact name/constant/string you know; `a|b` only of seen ids),\n  \"grep for X\" \u2192 default code search tool `\"<X>\" <src dir, e.g. app/ or src/>`\n  (literal, `-l`) \u2192 `find_symbol` outline \u2192 batch of only the needed methods,\n  never stop at the hit\n- symbol + intent (\"the X that does Y\"), files named X \u2192\n  `hybrid_search(metaOnly)`\n- code like a chunk in hand \u2192 `find_similar(positiveIds:)`\n- how does X reach Y / A\u2192B \u2192 `find_symbol` ids \u2192 `trace_path`\n- diff review, a diff's names \u2192\n  `review_changes(changes:{base}, sections:[the asked ones])` \u2014 `{}` =\n\nFull rules continue in MCP resource tea-rags://guide/core (no MCP: `tea-rags resource tea-rags://guide/core`)."
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  },
+  "tool_count": 28,
+  "tool_names": [
+    "create_collection",
+    "list_collections",
+    "get_collection_info",
+    "delete_collection",
+    "add_documents",
+    "delete_documents",
+    "semantic_search",
+    "hybrid_search",
+    "rank_chunks",
+    "find_similar",
+    "find_symbol",
+    "index_codebase",
+    "get_index_status",
+    "get_index_metrics",
+    "clear_index",
+    "search_code",
+    "get_callers",
+    "get_callees",
+    "find_cycles",
+    "get_architecture_report",
+    "get_ontology_report",
+    "find_co_changed",
+    "trace_path",
+    "get_naming_lexicon",
+    "review_changes",
+    "list_projects",
+    "register_project",
+    "unregister_project"
+  ],
+  "tools_list_sha256": "d79302de4129b7c1d93103b1adda0a74fa1d7ae1a796340fbaa39ecc98a071da"
+}

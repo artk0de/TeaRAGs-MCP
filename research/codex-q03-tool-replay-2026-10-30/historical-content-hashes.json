@@ -1,0 +1,47 @@
+{
+  "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb": {
+    "content_sha256": "7908c4f1917ee82689071071cb443f71388d99e5b8f9cd647876333a7a553a69",
+    "content_chars": 631,
+    "kind": "file"
+  },
+  "app/lib/tax_preparation/tax_automations/refusals_helper.rb": {
+    "content_sha256": "4a9a0b51662da537ccd6da34723d80f4d282f10efd25c7603e5ef8ac7ffbd2f1",
+    "content_chars": 3968,
+    "kind": "file"
+  },
+  "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb": {
+    "content_sha256": "62623855073107a915a278afb1540481c86bbcf7fa42798aefa25d7d12603d8d",
+    "content_chars": 2223,
+    "kind": "file"
+  },
+  "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb": {
+    "content_sha256": "1c93c5b9a291ec4551d6504e9bf0964432e632d821f636406f70f7a8d78c288e",
+    "content_chars": 2120,
+    "kind": "file"
+  },
+  "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb": {
+    "content_sha256": "345ef2221a076bdd6c7ab19989546819d7c0d9ec51297efa6133f54dca84743d",
+    "content_chars": 3574,
+    "kind": "file"
+  },
+  "app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb": {
+    "content_sha256": "fd0f21db071d1e8f921d13a4a5de2c467c0c279ddf2603dcf51d9c5d7752db05",
+    "content_chars": 2633,
+    "kind": "file"
+  },
+  "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb": {
+    "content_sha256": "a5e59dc4910828d71f1e827977802187478e0bb2466105f70b4f1a4f77e14e0e",
+    "content_chars": 3062,
+    "kind": "file"
+  },
+  "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb": {
+    "content_sha256": "65a42405c3a2543037cc0251d1c9aa048e0ddd92d0354203824d2a13de087954",
+    "content_chars": 2370,
+    "kind": null
+  },
+  "app/lib/tax_preparation/tax_automations/instead/linked_entity_buffer.rb": {
+    "content_sha256": "61f40b6c677f3e733873559f5ac602c798f615c9be9a72b5eb6b0c019e43cc6f",
+    "content_chars": 1069,
+    "kind": "file"
+  }
+}

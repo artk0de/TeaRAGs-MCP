@@ -1,0 +1,242 @@
+[
+  {
+    "cell": "validated-old-1",
+    "returncode": 0,
+    "wall_seconds": 10.419,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160610,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 102,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 347,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "mixed_dictionary_preference_but_valid_direction",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  },
+  {
+    "cell": "validated-new-1",
+    "returncode": 0,
+    "wall_seconds": 8.226,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 101,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 326,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  },
+  {
+    "cell": "validated-new-2",
+    "returncode": 0,
+    "wall_seconds": 12.535,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 145,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 481,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  },
+  {
+    "cell": "validated-old-2",
+    "returncode": 0,
+    "wall_seconds": 10.802,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160610,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 106,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 341,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  },
+  {
+    "cell": "validated-old-3",
+    "returncode": 0,
+    "wall_seconds": 8.659,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160610,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 119,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 434,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  },
+  {
+    "cell": "validated-new-3",
+    "returncode": 0,
+    "wall_seconds": 8.774,
+    "argv": [
+      "codex",
+      "exec",
+      "--json",
+      "--sandbox",
+      "read-only",
+      "--ephemeral",
+      "-m",
+      "gpt-6-luna",
+      "-C",
+      "/Users/Shared/nav-ab/repo-master",
+      "-"
+    ],
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "usage": {
+      "input_tokens": 160609,
+      "cached_input_tokens": 11520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 132,
+      "reasoning_output_tokens": 0
+    },
+    "tool_calls": 0,
+    "shell_calls": 0,
+    "mcp_calls": 0,
+    "errors": [],
+    "answer_chars": 410,
+    "historical_autoload_diagnostic": {
+      "finds_zeitwerk": false,
+      "cites_zeitwerk": false,
+      "scope_note": "not expressly requested by literal Q24"
+    },
+    "direct_intent_grade": "acceptable_narrow_response",
+    "contextual_grounding": "does not connect downcase to delivered BaseClient#vendor body",
+    "unsupported_absence_claim": false
+  }
+]

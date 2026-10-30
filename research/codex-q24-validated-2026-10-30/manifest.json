@@ -1,0 +1,36 @@
+{
+  "method": "transferred-context replay, not native resume",
+  "model": "gpt-6-luna",
+  "reasoning_effort": "medium",
+  "context_chars": 533109,
+  "context_bytes": 578797,
+  "context_sha256": "d4ed717e3f698c2e1248331c0620cfe75e04c209d2af541207a05d2bc875184d",
+  "source_transcript": "/Users/artk0re/Dev/bench-private/taxdome/planning/runs/A-m53-sbx-nohist-bare/transcript.jsonl",
+  "source_stop_line": 419,
+  "questions_reconstructed": "bare question field only; no context_added or gold fields",
+  "repo": "/Users/Shared/nav-ab/repo-master",
+  "repo_commit": "f88b42f3c286815ea43b464960205d56445ee2e6",
+  "order": [
+    "validated-old-1",
+    "validated-new-1",
+    "validated-new-2",
+    "validated-old-2",
+    "validated-old-3",
+    "validated-new-3"
+  ],
+  "old": {
+    "core_sha256": "6669d554218caf0a07aab36f887a305e58a0575b5accf83463f31a9433726d8a",
+    "prompt_sha256": "a7ce69eaa8bc6c0fbee163ab92fdead547813fb2f59765091495996762408c41",
+    "prompt_chars": 543253
+  },
+  "new": {
+    "core_sha256": "173da4412587e93eda2b97f4f09f86476125f06549c9e0fd7c9ff076ce2521f8",
+    "prompt_sha256": "76a0c301e29e2f8be88d99e849b36d12f314640932c623b519f12904cf87cac2",
+    "prompt_chars": 543259
+  },
+  "new_rule_finalized_before_first_new_cell": true,
+  "readiness": "initialize,tools/list,nonempty Registry source smoke and original nine-file Q03 passed before model runs",
+  "runtime_repair": "restored required static .qdrant-required-version asset before any validated cell",
+  "runtime_repair_asset_sha256": "0a1b17e91d514c0c9e88520e6091e2d52a6faf8296892cad7355ff0723a42914",
+  "runtime_build_inventory_sha256": "eec62bb3f44c0e40c764f61beae92c4c261df2d6fbeb255069b93c578ac8b9d3"
+}

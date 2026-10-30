@@ -1,0 +1,28 @@
+{
+  "commit": "66e71abdc438731975e36a928a04ce14755b16bc",
+  "initialArchiveVerified": true,
+  "archiveFailures": [],
+  "commitFiles": [
+    "evals/swe-bench-lite/README.md",
+    "evals/swe-bench-lite/src/swe_lite_ab/cli.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/config.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/evaluate.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/localize.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/pro.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/probe.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/rebench.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/report.py",
+    "evals/swe-bench-lite/src/swe_lite_ab/tasks.py",
+    "evals/swe-bench-lite/tasks/loc-10.json",
+    "evals/swe-bench-lite/tests/test_collect.py",
+    "evals/swe-bench-lite/tests/test_localize.py",
+    "evals/swe-bench-lite/tests/test_pro.py",
+    "evals/swe-bench-lite/tests/test_probe.py",
+    "evals/swe-bench-lite/tests/test_rebench.py",
+    "evals/swe-bench-lite/tests/test_report.py",
+    "evals/swe-bench-lite/tests/test_tasks.py"
+  ],
+  "commitsAheadOfMain": 1,
+  "mainChangesWithinRecoveredEvalSinceBranchBase": [],
+  "baseAncestorOfMain": true
+}

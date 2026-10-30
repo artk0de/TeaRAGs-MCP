@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a18a9c-8b3c-79b2-be72-44a7547b9a5d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Да. Явный словарь здесь не нужен: достаточно `provider.to_s.downcase` для значений `Instead` и `GruntWorx`, чтобы получить `instead` и `gruntworx`. Но для **обратного преобразования** в название провайдера `downcase` не подходит — там нужен явный словарь (`instead => Instead`, `gruntworx => GruntWorx`)."}}
+{"type":"turn.completed","usage":{"input_tokens":160607,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":91,"reasoning_output_tokens":0}}
