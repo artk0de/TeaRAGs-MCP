@@ -60,7 +60,7 @@ never re-run the same call (`tea-rags://guide/pagination`).
 | Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |
 | Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(relativePath: result.relativePath)` — heading TOC; doc `parentSymbolId` = doc path, NOT a hash                               |
 | Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |
-| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → OUTLINE: member ids, NO bodies, tests excluded → drill member                                        |
+| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → header code (consts, DSL) + OUTLINE: method ids, NO method bodies, tests excluded → drill member     |
 | Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |
 | 2+ ids in hand (outline lines, hits)        | Their bodies / sections                 | ONE `find_symbol(symbols: [<id1>, <id2>, ...])` (≤ 20) — rows keyed by `request`, misses in `missing[]`; never one call per id            |
 | A directory path                            | Its files, their top-level symbols      | `find_symbol(relativePath: "<dir>")` — `directory` frame with subdirs; NOT `ls`, NOT a glob listing                                       |
@@ -107,15 +107,15 @@ follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
-| You have…                                                     | Pass                              | You get                                                   |
-| ------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------- |
-| Instance method                                               | `symbol: "Class#method"`          | merged full method body                                   |
-| Static method / top-level fn                                  | `symbol: "Class.method"` / `"fn"` | merged full definition                                    |
-| **Class or module name**                                      | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded            |
-| Existence check only                                          | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                   |
-| Doc section (hash from a result)                              | `symbol: "doc:<hash>"`            | full section content (split parts merged)                 |
-| Test scope id                                                 | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                           |
-| 2+ ids of any kind above, or several file paths (never a dir) | `symbols: ["<id1>", "<path>"]`    | one row per hit keyed by `request`; misses in `missing[]` |
+| You have…                                                     | Pass                              | You get                                                                           |
+| ------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| Instance method                                               | `symbol: "Class#method"`          | merged full method body                                                           |
+| Static method / top-level fn                                  | `symbol: "Class.method"` / `"fn"` | merged full definition                                                            |
+| **Class or module name**                                      | `symbol: "ClassName"`             | header code (consts, DSL) + OUTLINE: method ids, NO method bodies, tests excluded |
+| Existence check only                                          | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)                                           |
+| Doc section (hash from a result)                              | `symbol: "doc:<hash>"`            | full section content (split parts merged)                                         |
+| Test scope id                                                 | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                                                   |
+| 2+ ids of any kind above, or several file paths (never a dir) | `symbols: ["<id1>", "<path>"]`    | one row per hit keyed by `request`; misses in `missing[]`                         |
 
 **Mode B — `relativePath:` (you have a file or directory path) — USE THIS
 MORE.** With no symbol, just a path. Agents under-use it; it is the correct
@@ -224,8 +224,9 @@ non-graph substitute — never read an absent/empty graph tool as positive fact
 - After ANY search → next call is `find_symbol`, never another search, never
   `Read`. The chunk already names the symbol/path you need.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
-- Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
-  bodies → ONE `find_symbol(symbols: [<member ids>])` for all members needed.
+- Class API → `find_symbol(symbol: "ClassName")` = header code + outline (method
+  ids, no method bodies); bodies → ONE `find_symbol(symbols: [<member ids>])`
+  for all members needed.
 - Who-uses-X (an exact name you know, or an `a|b` of exact ids already seen) →
   the default code search tool `"<X>" <dir>` (literal, `-l`), bounded:
   files-with-matches first, or a line cap; `<dir>` = the anchor's dir when
