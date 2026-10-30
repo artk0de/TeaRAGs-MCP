@@ -27,3 +27,4 @@ export { MarkdownLanguage } from "./markdown/index.js";
 export { YamlLanguage } from "./yaml/index.js";
 
 export { chunkRailsMigration } from "./ruby/chunking/migration-chunker.js";
+export { foldRailsTableMigrations } from "./ruby/schema/index.js";
