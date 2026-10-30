@@ -91,6 +91,20 @@ export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: true, syntheticConstructorIfMissing: true };
   }
+  // bd tea-rags-mcp-3otbo — an `interface` is a symbol too. Unnamed, it never
+  // reached `cg_symbols`, so `normalizeInheritanceEdges` — which resolves an
+  // ancestor by `symbolTable.lookup(fqName)` — left `ancestorSymbolId` null on
+  // every `implements` row (526 of 526 on the tea-rags self-index) while
+  // `extends` rows resolved onto their named class. The chunker already emits
+  // the interface chunk under this bare id.
+  //
+  // No constructor and no members: its `method_signature` / `property_signature`
+  // children are not named here, and the capability's `symbolKindRoles` keep the
+  // `interface` kind out of both call roles, so no call resolves onto it.
+  if (node.type === "interface_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
   // bd tea-rags-mcp-lyo4p — a class EXPRESSION, named by what binds it:
   //
   //   vi.mock("./x.js", () => ({ Worker: class { constructor() {} } }));

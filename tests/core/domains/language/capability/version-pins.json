@@ -93,8 +93,8 @@
       "digest": "sha256:46be276d6895c1c3376ac9bd8df06a1da2aaded898613de71fd0844572a80ac8"
     },
     "walker": {
-      "version": 15,
-      "digest": "sha256:cf5894fe2a4f0f256c953894bac970d23a4f2d003b3e9b18fb9af5ea303bcc53"
+      "version": 16,
+      "digest": "sha256:b61373c9edf7e0c75d5a107b87bbc199985626a1a414e7a77302bb93434293ff"
     }
   },
   "yaml": {

@@ -198,7 +198,12 @@ export const capability: LanguageCapability = {
   // chunk instead of being dropped, and a method under the child floor is
   // declared by the body chunk holding it (`memberSymbolIds` `Owner#m` /
   // `Owner.m`); `--force --languages typescript` repopulates.
-  versions: { chunking: 3, walker: 15, codegraphSchema: 2 },
+  // walker 16: bd tea-rags-mcp-3otbo — `tsNameOf` names an `interface`, so it
+  // gets a `cg_symbols` row (kind `interface`) and every `implements` row whose
+  // ancestor is a project interface carries its `ancestorSymbolId` instead of
+  // null (tea-rags self-index: 0 → 502 of 526). Recompute:
+  // `--force-enrichments codegraph --languages typescript`.
+  versions: { chunking: 3, walker: 16, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or
