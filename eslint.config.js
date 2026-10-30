@@ -158,7 +158,7 @@ export default tseslint.config(
 
   // ── Plugin hook scripts: plain Node ESM shipped verbatim, outside every tsconfig ──
   {
-    files: ["plugins/**/scripts/*.mjs", ".claude-plugin/**/scripts/*.mjs"],
+    files: ["plugins/**/scripts/*.mjs", ".claude-plugin/**/scripts/*.mjs", "harness/**/scripts/*.mjs"],
     languageOptions: {
       ...tseslint.configs.disableTypeChecked.languageOptions,
       globals: globals.node,

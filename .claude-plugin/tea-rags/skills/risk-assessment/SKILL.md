@@ -94,18 +94,20 @@ failed metrics / label-map read never stops the run: Phase 0 still resolves
 `pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
-distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool over code. Row without `treeState` = current; `treeState`
-row → `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
-awaited; print `--force not run; reads continue`; then keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool
+over code. Row without `treeState` = current; `treeState` row → `find_symbol`
+re-call. Own checkout with `changedFiles` > 0 → incremental `index_codebase` now
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then keep working); subagent / linked
+worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag never
+licenses leaving tea-rags".
 
 1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
 3. **No built-in Search/Grep for code discovery** — tea-rags tools only.
-4. **Search results contain code when metaOnly=false.** Evaluate them BEFORE any
-   Read or navigation.
+4. **Risk scans return signals only (`metaOnly: true`).** MERGE and EXPAND use
+   metadata, overlay labels and chunk UUIDs. Reuse bodies already in context;
+   fetch missing bodies only for candidates whose code needs review in Phase 4.
 5. **Depth → `find_symbol`, never Read** (`tea-rags://guide/navigation`
    After-Search Navigation): full body `symbol=<symbolId>`, file outline
    `relativePath`, neighbour `navigation.prev/nextSymbolId`. Partial `Read` only
@@ -215,7 +217,7 @@ rank_chunks:
   pathPattern: <from Phase 0>              ← AND-composes with filter preset
   testFile: "exclude"                      ← REQUIRED — see Scan population
   documentation: "exclude"                 ← REQUIRED — see Scan population
-  metaOnly: false                          ← REQUIRED (content needed for EXPAND)
+  metaOnly: true                           ← REQUIRED — signals and UUIDs, no bodies
   limit: 10
 ```
 
@@ -272,7 +274,7 @@ One page usually sufficient.
 ## Phase 1b: STRUCTURAL SCAN
 
 Two more `rank_chunks` calls, SAME message as Phase 1, same `pathPattern`, same
-`testFile`/`documentation` exclusions, `limit: 10`, `metaOnly: false`.
+`testFile`/`documentation` exclusions, `limit: 10`, `metaOnly: true`.
 
 | Preset          | Axis   | Surfaces                                        |
 | --------------- | ------ | ----------------------------------------------- |
@@ -342,6 +344,9 @@ No healthy-demoted candidates → skip negativeIds.
 
 **Batch expansion** — pass ALL Critical chunk UUIDs in one call:
 
+Phase 1's metadata-only results already provide these UUIDs; fetching bodies is
+not a prerequisite for `find_similar(positiveIds:)`.
+
 ```
 find_similar:
   positiveIds: [<all Critical UUIDs>]   ← batch, not per-candidate
@@ -375,7 +380,8 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 **MANDATORY: read [references/enrich.md](./references/enrich.md) before Phase
 4** — Critical + High candidates (5–10 chunks), six steps in order:
 
-1. Code review — content from results; context → `find_symbol`, never Read.
+1. Code review — reuse bodies in context; fetch only missing bodies needed for
+   candidate review in ONE `find_symbol(symbols: [...])` batch, never Read.
 2. Test coverage — **stratified, one `hybrid_search` per domain cluster, NEVER
    one batched call** (batched BM25 fabricates "untested"); exact mirrored-path
    `find_symbol` preferred.

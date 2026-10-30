@@ -8,8 +8,13 @@ Loaded by `SKILL.md` Phase 4. Critical + High candidates only.
 
 For **Critical and High** candidates (typically 5-10 chunks):
 
-**1. Code review** — Content in results (metaOnly=false). Surrounding context →
-`find_symbol` (Rule 5), not Read.
+**1. Code review** — Phase 1/1b scans contain metadata and signals only
+(`metaOnly: true`). For Critical/High candidates whose classification or review
+needs code, reuse bodies already in context (including EXPAND results). Collect
+only the remaining needed symbolIds into ONE
+`find_symbol(symbols: [<needed ids>], metaOnly: false)` batch; no body fetch for
+signal-only judgments or discarded candidates. Surrounding context →
+`find_symbol` (Rule 5), not Read. Never re-fetch an unedited body already held.
 
 **2. Test coverage check — stratified, NEVER one batched call.**
 
@@ -53,12 +58,12 @@ risk not assessed (never claim "no cycles" / "no hubs"). See
 
 - **Blast-radius amplifier (`architecturalHub`).** Run `rank_chunks`
   `rerank="architecturalHub"` scoped to same `pathPattern`, same
-  `testFile`/`documentation` exclusions as Phase 1. Cross-reference resulting
-  `isHub=true` / high-`fanIn` files with Critical/High candidates by
-  `relativePath`. Risk candidate ALSO a hub = **blast-radius hub** — escalate
-  (tag Risk Type, sort to top of its tier): change there ripples across many
-  dependents. Amplifier on already-identified risk, NOT a 5th MERGE preset —
-  clean high-fanIn hub with healthy git signals is backbone, not risk.
+  `testFile`/`documentation` exclusions as Phase 1, `metaOnly: true`.
+  Cross-reference resulting `isHub=true` / high-`fanIn` files with Critical/High
+  candidates by `relativePath`. Risk candidate ALSO a hub = **blast-radius hub**
+  — escalate (tag Risk Type, sort to top of its tier): change there ripples
+  across many dependents. Amplifier on already-identified risk, NOT a 5th MERGE
+  preset — clean high-fanIn hub with healthy git signals is backbone, not risk.
 - **Structural-violation amplifier (`get_architecture_report`).** Run once:
   `get_architecture_report(path: "<your working directory>", pathPattern: "<same scope>", detectors: ["stableDependencies", "mainSequence", "hubLikeDependency"])`
   — only the three groups it reads. Candidate inside a component with an SDP,

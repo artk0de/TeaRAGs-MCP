@@ -29,6 +29,8 @@ instead → guide `tool-choice`.
   symbols
 - **Empty answer read as "absent"** — act on `empty.reason` (guide `pagination`
   "Empty answers") before concluding anything
+- **Config/inventory/absence:** filenames (`-l`) first; previews ≠ absence
+  proof.
 - **Conclusions from one `#partN` chunk** — fetch the whole symbol first
   (`find_symbol(symbol: parentSymbolId)`); parts of one symbol count as ONE hit
 - **Multiple semantic_search for same area** — one call, navigate from results

@@ -8,6 +8,10 @@ inlined in SKILL.md near the top for skim safety; the rest live here.
 - **Exhaustive scope resolution.** One semantic/hybrid call. Don't find_similar
   to expand scope — that's pattern-search's job.
 - **Reading full files.** Chunk coordinates exist. Use them.
+- **Returning bodies in risk scans.** Phase 1/1b `rank_chunks` calls use
+  `metaOnly: true`: MERGE needs signals and EXPAND needs UUIDs, not code. In
+  Phase 4, reuse held bodies and batch only missing bodies needed to review
+  selected candidates with `find_symbol(symbols: [...])`.
 - **Paginating all 3 presets to page 3.** If gradient drops on page 1 — stop.
 - **Reporting 1/N overlap as risk.** Single-preset hits are noise. Minimum 2/N
   for Medium.

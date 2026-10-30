@@ -349,7 +349,7 @@ describe("renderCodexHarness", () => {
     const rendered = await renderCodexHarness(ROOT);
     const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
     expect(core).toContain(`\`shell rg -l --hidden --glob '!.git' "<X>" <src dir, e.g. app/ or src/>\``);
-    expect(core).toMatch(/`<src dir>` \(a dir under cwd, never cwd itself\)/);
+    expect(core).toMatch(/`<src dir>` \(a dir under cwd,\s+never cwd itself\)/);
   });
 
   it("keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last", async () => {

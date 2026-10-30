@@ -15,9 +15,9 @@ alone, never ask; only a `collection` → it alone; after either say
 alone. `workingTree.tree` ≠ cwd → rows unusable; re-call `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Shell rg -l --hidden --glob '!.git': `-l` first or a line cap, in the anchor's dir when
-known, else `<src dir>` (a dir under cwd, never cwd itself), never a search for
-the dir. No find/Glob to locate code.
+Shell rg -l --hidden --glob '!.git': `-l` filenames first for config/inventory/absence;
+`| head` ≠ absence proof. Use anchor dir, else `<src dir>` (a dir under cwd,
+never cwd itself); no dir search or find/Glob.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):

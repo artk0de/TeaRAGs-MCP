@@ -30,6 +30,8 @@ tea-rags MCP tools for meaning, symbols, graph; exact text, config, completeness
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`sed`/`head` or the default code read tool over code. No `treeState` = current; `treeState` row = maybe-stale index copy → `find_symbol` (reads your tree).
 
+**Filename first:** config discovery, exhaustive inventory or absence claims require a complete filename list (default code search tool, files-with-matches / `-l`), never content `| head` that hides files. Bounded content previews are separate; incomplete output is not proof of absence.
+
 **Route** (first match wins):
 | Need | Call |
 |---|---|
