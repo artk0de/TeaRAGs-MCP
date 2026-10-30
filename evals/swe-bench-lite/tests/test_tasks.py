@@ -99,3 +99,70 @@ def test_load_lite_snapshots_the_dataset_once_and_then_reads_offline(tmp_path, m
     assert first == second == rows
     assert calls == [1]
     assert (tmp_path / "lite.jsonl").exists()
+
+
+BIG_PATCH = "".join(f"diff --git a/pkg/m{i}.py b/pkg/m{i}.py\n--- a/pkg/m{i}.py\n+++ b/pkg/m{i}.py\n@@ -1 +1,20 @@\n"
+                    + "".join(f"+line {j}\n" for j in range(20)) for i in range(2))
+
+
+def test_patch_size_counts_files_and_changed_lines_without_headers():
+    from swe_lite_ab.tasks import patch_size
+
+    assert patch_size(PATCH) == (2, 4)
+    assert patch_size(BIG_PATCH) == (2, 40)
+
+
+def test_stratum_splits_by_patch_size_and_issue_kind():
+    from swe_lite_ab.tasks import stratum
+
+    assert stratum(task(1, text="Crash: TypeError raised on update", patch=BIG_PATCH)) == "large-bug"
+    assert stratum(task(2, text="Add a --dry-run option", patch=BIG_PATCH)) == "large-feature"
+    assert stratum(task(3, text="update fails with a traceback")) == "small-bug"
+    assert stratum(task(4, text="Support YAML anchors")) == "small-feature"
+
+
+def test_select_rebench_keeps_every_large_task_and_samples_small_bugs_since_a_date():
+    from swe_lite_ab.tasks import select_rebench
+
+    def t(i, created, text, patch):
+        return Task(f"o__r-{i}", "o/r", f"sha{i}", text, patch, created)
+
+    pool = [t(1, "2025-12-31 10:00:00", "crash", BIG_PATCH), t(2, "2026-01-02 10:00:00", "crash", BIG_PATCH),
+            t(3, "2026-02-01 10:00:00", "add option", BIG_PATCH)] + \
+           [t(10 + i, "2026-03-01 10:00:00", "it fails", PATCH) for i in range(10)] + \
+           [t(30, "2026-03-01 10:00:00", "add option", PATCH)]
+
+    chosen = select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)
+
+    ids = [x.instance_id for x in chosen]
+    assert ids == sorted(ids)
+    assert {"o__r-2", "o__r-3"} <= set(ids) and "o__r-1" not in ids and "o__r-30" not in ids
+    assert len(ids) == 6
+    assert ids == [x.instance_id for x in select_rebench(pool, since="2026-01", n_small_bug=4, seed=5)]
+
+
+def test_task_list_records_its_dataset_and_legacy_lists_mean_lite(tmp_path):
+    import json
+
+    from swe_lite_ab.tasks import load_task_list, save_task_list
+
+    save_task_list([task(1), task(2)], tmp_path / "r.json", "rebench")
+    assert load_task_list(tmp_path / "r.json") == ("rebench", ["requests-1", "requests-2"])
+    (tmp_path / "l.json").write_text(json.dumps(["a__b-1"]))
+    assert load_task_list(tmp_path / "l.json") == ("lite", ["a__b-1"])
+
+
+def test_stratum_takes_the_kind_from_the_task_when_the_dataset_labels_it():
+    from swe_lite_ab.tasks import stratum
+
+    labelled_feature = Task("p-1", "o/r", "sha", "Crash: TypeError raised", BIG_PATCH, "", kind="feature")
+    labelled_bug = Task("p-2", "o/r", "sha", "Support YAML anchors", PATCH, "", kind="bug")
+    assert stratum(labelled_feature) == "large-feature"
+    assert stratum(labelled_bug) == "small-bug"
+
+
+def test_load_dispatches_pro_to_the_pro_snapshot(monkeypatch):
+    from swe_lite_ab import pro, tasks
+
+    monkeypatch.setattr(pro, "load", lambda: ["pro-task"])
+    assert tasks.load("pro") == ["pro-task"]

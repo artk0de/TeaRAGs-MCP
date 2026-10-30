@@ -11,6 +11,18 @@ RUNS = EVAL_ROOT / "runs"
 REPOS_ROOT = Path(os.environ.get("SWE_LITE_AB_REPOS", "/Users/Shared/swe-lite-ab/repos"))
 TASKS_DIR = EVAL_ROOT / "tasks"
 LITE_SNAPSHOT = RUNS / "lite.jsonl"
+# SWE-rebench leaderboard as swebench 5.x harness instances (rebench.py); also the harness dataset.
+REBENCH_SNAPSHOT = RUNS / "rebench.jsonl"
+# SWE-bench Pro V2, Python + TypeScript rows (pro.py). The tooling checkout holds every task's
+# instruction.md (the agent input) and verifier (tests/test.sh and friends).
+PRO_SNAPSHOT = RUNS / "pro.jsonl"
+PRO_OS = Path(os.environ.get("SWE_PRO_OS", "/Users/Shared/swe-lite-ab/swe-bench-pro-os"))
+PRO_DATASET = "ScaleAI/SWE-bench_Pro"
+PRO_VERIFIER_TIMEOUT_S = 3000
+# Memorisation probe (probe.py): answers per task, and the empty working directories the model is
+# asked from (outside the home tree, so no CLAUDE.md ancestor leaks into the probe).
+PROBE_FILE = RUNS / "probe.jsonl"
+PROBE_ROOT = Path(os.environ.get("SWE_LITE_AB_PROBE", "/Users/Shared/swe-lite-ab/probe"))
 # Per-repository .contextignore templates, named <owner>__<repo>. tea-rags reads .contextignore only
 # from the indexed root, so prepare installs one into every task repository.
 CONTEXTIGNORE_DIR = EVAL_ROOT / "contextignore"
@@ -21,6 +33,7 @@ TOKEN_FILE = Path.home() / ".config" / "swe-lite-ab" / "oauth-token"
 
 MODEL = "claude-sonnet-5-5"
 DATASET = "SWE-bench/SWE-bench_Lite"
+REBENCH_DATASET = "nebius/SWE-rebench-leaderboard"
 AGENT_TIMEOUT_S = 1800
 MAX_BUDGET_USD = 5.0
 
@@ -50,3 +63,7 @@ class ArmConfig:
 
 
 ARMS = {"arm0": ArmConfig("arm0", False), "arm1": ArmConfig("arm1", True)}
+
+# Component localization benchmark (localize.py): the ORIGINAL Pro issue texts, no LLM.
+LOCAGENT_DATASET = "OpenHands/SWE-bench_Pro-locagent"
+LOCAGENT_SNAPSHOT = RUNS / "locagent.jsonl"

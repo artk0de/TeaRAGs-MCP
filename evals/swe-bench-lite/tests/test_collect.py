@@ -51,3 +51,26 @@ def test_harness_command_targets_lite(tmp_path):
     assert cmd[:3] == ["python", "-m", "swebench.harness.run_evaluation"]
     assert cmd[cmd.index("--dataset_name") + 1] == "SWE-bench/SWE-bench_Lite"
     assert cmd[cmd.index("--instance_ids") + 1 : cmd.index("--instance_ids") + 3] == ["x-1", "y-2"]
+
+
+def test_rebench_images_live_in_the_swerebench_namespace():
+    assert image_name("copier-org__copier-2646", "rebench") == \
+        "swerebench/sweb.eval.x86_64.copier-org_1776_copier-2646:latest"
+
+
+def test_harness_command_grades_rebench_from_the_local_snapshot(tmp_path):
+    from swe_lite_ab import config
+
+    cmd = harness_command("arm0", tmp_path / "p.jsonl", ["x-1"], "arm0-rb", "rebench")
+    assert cmd[cmd.index("--dataset_name") + 1] == str(config.REBENCH_SNAPSHOT)
+
+
+def test_evaluate_grades_pro_with_the_local_verifier(monkeypatch, tmp_path):
+    from swe_lite_ab import evaluate, pro
+
+    calls = []
+    monkeypatch.setattr(pro, "grade", lambda arm, ts, run_id: calls.append((arm, ts, run_id)) or tmp_path / "r.json")
+    monkeypatch.setattr(evaluate, "ensure_images", lambda *a: (_ for _ in ()).throw(AssertionError("swebench path")))
+
+    assert evaluate.run("arm0", ["t"], "arm0-pro", "pro") == tmp_path / "r.json"
+    assert calls == [("arm0", ["t"], "arm0-pro")]

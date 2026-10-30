@@ -18,6 +18,7 @@ class Task:
     problem_statement: str
     patch: str
     created_at: str
+    kind: str = ""          # "bug" | "feature" when the dataset labels it (Pro); "" = issue-text heuristic
 
 
 def gold_files(patch: str) -> list[str]:
@@ -27,6 +28,36 @@ def gold_files(patch: str) -> list[str]:
 def mentions_gold_file(task: Task) -> bool:
     text = task.problem_statement
     return any(path in text or path.rsplit("/", 1)[-1] in text for path in gold_files(task.patch))
+
+
+def patch_size(patch: str) -> tuple[int, int]:
+    """(files, changed lines) of a unified diff, file headers excluded."""
+    changed = sum(1 for line in patch.splitlines() if line[:1] in "+-" and line[:3] not in ("+++", "---"))
+    return len(gold_files(patch)), changed
+
+
+# A large task touches several files with a real body of change; one-line fixes are the small stratum.
+LARGE_MIN_FILES, LARGE_MIN_LINES = 2, 40
+# Issue-text heuristic for bug reports versus feature requests, read from the head of the issue.
+_BUG_WORDS = re.compile(r"\b(bug|error|traceback|exception|crash(es|ed)?|fails?|failing|failed|broken|incorrect|wrong"
+                        r"|regression|raises?)\b", re.I)
+
+
+def stratum(task: Task) -> str:
+    files, lines = patch_size(task.patch)
+    size = "large" if files >= LARGE_MIN_FILES and lines >= LARGE_MIN_LINES else "small"
+    kind = task.kind or ("bug" if _BUG_WORDS.search(task.problem_statement[:1500]) else "feature")
+    return f"{size}-{kind}"
+
+
+def select_rebench(tasks: list[Task], since: str, n_small_bug: int, seed: int) -> list[Task]:
+    """Every large task created on or after `since` (both kinds), plus a seeded sample of small bug
+    fixes as the one-file control. Id-sorted."""
+    pool = sorted((t for t in tasks if t.created_at[:len(since)] >= since), key=lambda t: t.instance_id)
+    large = [t for t in pool if stratum(t).startswith("large-")]
+    small_bugs = [t for t in pool if stratum(t) == "small-bug"]
+    sample = random.Random(seed).sample(small_bugs, min(n_small_bug, len(small_bugs)))
+    return sorted(large + sample, key=lambda t: t.instance_id)
 
 
 def select_stratified(tasks: list[Task], n: int, seed: int, exclude: frozenset[str] = frozenset()) -> list[Task]:
@@ -80,7 +111,26 @@ def save_ids(tasks: list[Task], path: Path) -> None:
 
 
 def load_ids(path: Path) -> list[str]:
-    return json.loads(path.read_text())
+    return load_task_list(path)[1]
+
+
+def save_task_list(tasks: list[Task], path: Path, dataset: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"dataset": dataset, "ids": [t.instance_id for t in tasks]}, indent=2) + "\n")
+
+
+def load_task_list(path: Path) -> tuple[str, list[str]]:
+    """(dataset, ids). A bare id list predates the dataset field and is Lite."""
+    data = json.loads(path.read_text())
+    return ("lite", data) if isinstance(data, list) else (data["dataset"], data["ids"])
+
+
+def load(dataset: str) -> list[Task]:
+    if dataset == "lite":
+        return load_lite()
+    from . import pro, rebench
+
+    return pro.load() if dataset == "pro" else rebench.load()
 
 
 def by_ids(tasks: list[Task], ids: list[str]) -> list[Task]:

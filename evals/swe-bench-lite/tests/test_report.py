@@ -158,3 +158,39 @@ def test_exploratory_section_keeps_pairs_arm0_did_not_open_before_search():
     rows = [row("arm0", i, False, 1000, True, gold_before_search=i == 0) for i in range(4)] + \
            [row("arm1", i, False, 800, True, gold_before_search=True) for i in range(4)]
     assert "## Exploratory: not searched-for in arm 0 (n=3)" in render(rows)
+
+
+def test_render_reports_each_size_kind_stratum_present():
+    from dataclasses import replace
+
+    rows = [replace(row(a, i, True, 1000, False), stratum="large-bug") for a in ("arm0", "arm1") for i in range(2)] + \
+           [replace(row(a, 5, False, 1000, False), stratum="small-bug") for a in ("arm0", "arm1")]
+    md = render(rows)
+    assert "## Stratum large-bug (n=2)" in md
+    assert "## Stratum small-bug (n=1)" in md
+    assert "## Stratum large-feature" not in md
+
+
+def test_render_adds_the_not_memorised_not_named_stratum_when_the_probe_ran():
+    rows = [row(arm, i, i < 2, 1000, mentioned=i % 2 == 0) for arm in ("arm0", "arm1") for i in range(4)]
+    assert "Not memorised and not named" not in render(rows)
+    for r in rows:
+        r.memorised = r.instance_id == "t1"
+    md = render(rows)
+    assert "## Not memorised and not named (n=1)" in md
+
+
+def test_build_rows_marks_memorised_from_probe_hits(tmp_path, monkeypatch):
+    from swe_lite_ab import config
+    from swe_lite_ab.report import build_rows
+    from swe_lite_ab.tasks import Task
+
+    monkeypatch.setattr(config, "RUNS", tmp_path)
+    ts = [Task("a", "o/r", "s", "", "", ""), Task("b", "o/r", "s", "", "", "")]
+    for i in ("a", "b"):
+        (tmp_path / "arm0" / i).mkdir(parents=True)
+        (tmp_path / "arm0" / i / "transcript.jsonl").write_text("")
+
+    rows = build_rows(ts, {"arm0": set(), "arm1": set()}, "sum", memorised={"a": True, "b": False})
+    assert [(r.instance_id, r.memorised) for r in rows] == [("a", True), ("b", False)]
+    assert [r.memorised for r in build_rows(ts, {"arm0": set(), "arm1": set()}, "sum")] == [None, None]
