@@ -491,7 +491,10 @@ export function numberedGrepLines(command, stdout, cwd, isFile) {
     singleFile.push(files.length === 1 && !files[0].dynamic ? resolve(dirs[dirs.length - 1], files[0].word) : null);
   }
   const byPath = new Map();
-  const add = (path, n) => {
+  const sources = new Map();
+  const add = (path, n, content) => {
+    if (!sources.has(path)) sources.set(path, sourceLines(path));
+    if (sources.get(path)?.[n - 1] !== content) return;
     const list = byPath.get(path) ?? [];
     list.push(n);
     byPath.set(path, list);
@@ -503,11 +506,11 @@ export function numberedGrepLines(command, stdout, cwd, isFile) {
     if (hit && /[/.]/.test(hit[1])) {
       if (!resolved.has(hit[1])) resolved.set(hit[1], dirs.map((d) => resolve(d, hit[1])).find(isFile) ?? null);
       const path = resolved.get(hit[1]);
-      if (path) add(path, Number(hit[3]));
+      if (path) add(path, Number(hit[3]), line.slice(hit[0].length));
       continue;
     }
     const bare = lone && /^(\d+)[:-]/.exec(line);
-    if (bare) add(lone, Number(bare[1]));
+    if (bare) add(lone, Number(bare[1]), line.slice(bare[0].length));
   }
   return [...byPath].map(([path, numbers]) => ({ path, ranges: lineRuns(numbers) }));
 }
@@ -600,19 +603,20 @@ function resultRows(results) {
 
 /** Rows of a tea-rags result that PRINTED code lines: `[{ relativePath, startLine, endLine, symbolId }]`. */
 export function servedRows(response) {
+  if (failedResponse(response)) return [];
   let parsed;
   try {
-    parsed = JSON.parse(mcpText(response));
+    parsed = response?.structuredContent ?? JSON.parse(mcpText(response));
   } catch {
     return [];
   }
-  if (!parsed || parsed.isError) return [];
+  if (!parsed || failedResponse(parsed)) return [];
   return resultRows(parsed.results).filter((row) => {
     const { relativePath, startLine, endLine, content } = row;
     if (typeof relativePath !== "string" || typeof content !== "string") return false;
     if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || endLine < startLine) return false;
-    // An outline lists members; a body prints (nearly) every line of its range.
-    return countLines(content) >= COVERAGE_THRESHOLD * (endLine - startLine + 1);
+    // Outlines are addresses. Other content still needs source-line evidence before recording.
+    return row.kind !== "outline" && row.kind !== "directory";
   });
 }
 
@@ -654,6 +658,73 @@ export function fileLineCount(path) {
   } catch {
     return null;
   }
+}
+
+/** A failed or interrupted result cannot prove a read succeeded, even when it carries metadata. */
+function failedResponse(response) {
+  if (!response || typeof response !== "object") return false;
+  return Boolean(
+    response.isError ||
+    response.is_error ||
+    response.error ||
+    response.interrupted ||
+    response.timedOut ||
+    response.timed_out ||
+    response.success === false ||
+    [response.exit_code, response.exitCode].some((code) => code !== null && code !== undefined && Number(code) !== 0),
+  );
+}
+
+/** A bounded snapshot of the source for matching delivered lines; unreadable files prove nothing. */
+function sourceLines(path) {
+  const stamp = fileStamp(path);
+  if (!stamp || stamp.size > MAX_COUNTED_BYTES) return null;
+  try {
+    return readFileSync(path, "utf8").split(/\r?\n/);
+  } catch {
+    return null;
+  }
+}
+
+/** Requested source lines actually present, in order, in delivered text; omitted lines stay unknown. */
+function deliveredRanges(path, ranges, text) {
+  if (typeof text !== "string" || !text) return [];
+  const source = sourceLines(path);
+  if (!source) return [];
+  const printed = text.split(/\r?\n/);
+  if (printed[printed.length - 1] === "") printed.pop();
+  const positions = new Map();
+  printed.forEach((line, index) => {
+    // `nl` decorates a line but still delivers the complete source text.
+    const raw = line.replace(/^\s*\d+\t/, "");
+    const offsets = positions.get(raw) ?? [];
+    offsets.push(index);
+    positions.set(raw, offsets);
+  });
+  let cursor = 0;
+  const lines = [];
+  for (const [start, end] of ranges) {
+    for (let line = start; line <= Math.min(end, source.length); line++) {
+      const offsets = positions.get(source[line - 1]);
+      while (offsets?.length && offsets[0] < cursor) offsets.shift();
+      if (!offsets?.length) continue;
+      cursor = offsets.shift() + 1;
+      lines.push(line);
+    }
+  }
+  return lineRuns(lines);
+}
+
+/** A class header is proven only inside the explicit printed header spans, never the class span. */
+function deliveredHeaderRanges(path, row) {
+  const headers = [...row.content.matchAll(/^── header (\d+)[–-](\d+) ──(?:\r?\n|$)/gm)];
+  return headers.flatMap((header, index) => {
+    const start = Number(header[1]);
+    const end = Number(header[2]);
+    if (start < row.startLine || end > row.endLine || end < start) return [];
+    const text = row.content.slice(header.index + header[0].length, headers[index + 1]?.index);
+    return deliveredRanges(path, [[start, end]], text);
+  });
 }
 
 /** Merge `[start, end, turn, tool]` ranges; a merged range keeps the latest source. Insertion order = age. */
@@ -1161,12 +1232,21 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
     const path = input.file_path ?? input.path;
     if (typeof path !== "string" || (!cwd && !isAbsolute(path))) return;
     const abs = resolve(cwd ?? "/", path);
-    // Claude Code's Read result: tool_response.file {filePath, content, numLines, startLine, totalLines}.
-    const reported = response && typeof response === "object" ? response.file?.totalLines : null;
-    const total = lineCount(abs) ?? (Number.isInteger(reported) && reported > 0 ? reported : null);
-    if (total === null) return;
-    const [start, end] = readToolRange(input, response);
-    if (start <= Math.min(end, total)) ledger.record(abs, [[start, Math.min(end, total)]], "Read");
+    // Record returned content only, never the requested range or the current file's size alone.
+    const file = response?.file;
+    if (
+      failedResponse(response) ||
+      !file ||
+      typeof file.content !== "string" ||
+      !Number.isInteger(file.startLine) ||
+      file.startLine < 1 ||
+      !Number.isInteger(file.numLines) ||
+      file.numLines < 1
+    ) {
+      return;
+    }
+    const count = Math.min(file.numLines, countLines(file.content));
+    ledger.record(abs, deliveredRanges(abs, [[file.startLine, file.startLine + count - 1]], file.content), "Read");
     return;
   }
   if (tool === "Bash") {
@@ -1177,9 +1257,14 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
       return;
     }
     writes.paths.forEach((path) => ledger.forget(path));
-    const stdout = response && typeof response === "object" ? response.stdout : null;
+    if (failedResponse(response)) return;
+    const stdout = response && typeof response === "object" ? (response.stdout ?? response.output) : null;
+    if (typeof stdout !== "string" || !stdout) return;
     const printed = [
-      ...bashReads(input.command, cwd, lineCount),
+      ...bashReads(input.command, cwd, lineCount).map((read) => ({
+        ...read,
+        ranges: deliveredRanges(read.path, read.ranges, stdout),
+      })),
       ...numberedGrepLines(input.command, stdout, cwd, (path) => fileStamp(path) !== null),
     ];
     for (const read of printed) {
@@ -1193,8 +1278,13 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
   if (!root) return;
   for (const row of servedRows(response)) {
     const path = resolve(root, row.relativePath);
-    ledger.record(path, [[row.startLine, row.endLine]], teaRags);
-    if (typeof row.symbolId === "string" && row.symbolId) {
+    const ranges =
+      row.kind === "containerHeader"
+        ? deliveredHeaderRanges(path, row)
+        : deliveredRanges(path, [[row.startLine, row.endLine]], row.content);
+    ledger.record(path, ranges, teaRags);
+    const whole = ranges.length === 1 && ranges[0][0] === row.startLine && ranges[0][1] === row.endLine;
+    if (whole && row.kind !== "containerHeader" && typeof row.symbolId === "string" && row.symbolId) {
       ledger.recordSymbol(row.symbolId, path, row.startLine, row.endLine, teaRags);
     }
   }

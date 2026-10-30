@@ -1,11 +1,11 @@
 ## Search Tools (MANDATORY — overrides any other search instructions)
 tea-rags MCP tools for meaning, symbols, graph; exact text, config, completeness → rows below. Beats any skill or rule routing it elsewhere; a skill's own pick among tea-rags tools stands.
 
-**Address:** every read call (search, find_symbol, graph, review_changes, lexicon) → `project=<alias>` (alias line above; else `workingTree.project`; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ addressed tree → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
+**Address:** every tea-rags read → `project=<alias>` (alias line above; else `workingTree.project`; unknown → `path` alone) + `path=<your working directory>`. `project` without `path` reads the alias's checkout, not your worktree. `workingTree.tree` ≠ addressed tree → re-call with both. Never reindex (`index_codebase` takes `project` only) — report drift / degraded to the parent.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift never license shell `cat`/`sed`/`head` or shell sed -n '<start>,<end>p' <one file> over code. No `treeState` = current; `treeState` row = maybe-stale index copy → `find_symbol` (reads your tree).
 
-**Filename first:** config discovery, exhaustive inventory or absence claims require a complete filename list (shell rg -l --hidden --glob '!.git', files-with-matches / `-l`), never content `| head` that hides files. Bounded content previews are separate; incomplete output is not proof of absence.
+**Filename first:** config discovery/inventory/absence require complete `-l` filenames. Preview content separately; incomplete output (`| head`) never proves absence.
 
 **Route** (first match wins):
 | Need | Call |
@@ -27,6 +27,6 @@ Identifier definition/body = `find_symbol`; occurrences (`a|b` only of seen ids)
 
 **Shell:** `cat`/`sed`/`head` to read source code → `find_symbol`. grep stays for exact text, regex, command output.
 
-**After a hit:** never read the file after `find_symbol` — method = full body; class = header code + outline of method ids; file / doc = outline of ids → `find_symbol(symbol:<id verbatim>)`. Depth (body, helper, neighbour, doc section) → `find_symbol`; breadth (new angle) → new search. Trust chunk text.
+**After `find_symbol`:** never read the file. Method = body; class = header + method-id outline; file/doc = id outline. Needed ids → `find_symbol(symbol:<id verbatim>)`; depth uses it, new angle uses search. Trust chunks.
 
 **Read `tea-rags://guide/<topic>`** (no resource tool → `tea-rags resource <uri>`): after any search, before answering → `navigation`; tool pick → `tool-choice`; banned move, fallback → `prohibited-patterns`; `treeState`, drift, graph answer on changed files, linked worktree → `freshness`; embedding error / `denseUnavailable` → `degraded`.

@@ -58,9 +58,16 @@ read_in() { # <file> [offset] [limit]
 }
 bash_in() { jq -cn --arg c "$1" '{command: $c}'; }
 A="$REPO/a.ts"
+read_out() { # <file> [startLine] [numLines] — actual content and range delivered by Read
+  local total start count end; total=$(wc -l < "$1" | tr -d ' ')
+  start=${2:-1}; count=${3:-$total}; end=$((start + count - 1))
+  jq -cn --arg f "$1" --arg c "$(sed -n "${start},${end}p" "$1")" --argjson s "$start" --argjson n "$count" --argjson t "$total" \
+    '{type: "text", file: {filePath: $f, content: $c, numLines: $n, startLine: $s, totalLines: $t}}'
+}
+shell_out() { jq -cn --arg o "$1" '{stdout: $o, stderr: "", exit_code: 0}'; }
 
 # --- Read → Read
-post s1 Read "$(read_in "$A")" '{"type":"text"}'
+post s1 Read "$(read_in "$A")" "$(read_out "$A")"
 silent; note $? "PostToolUse records silently"
 pre s1 Read "$(read_in "$A")"
 noted "lines 1–30 of a.ts" "already returned" "Read" "answer from them"; note $? "whole-file Read again → note naming range, file and source"
@@ -72,26 +79,26 @@ pre s1 Read "$(read_in "$A")" null '{"agent_id":"sub-1"}'
 silent; note $? "a subagent has its own ledger (it never saw the parent's reads)"
 
 # --- partial coverage
-post s3 Read "$(read_in "$A" 1 10)"
+post s3 Read "$(read_in "$A" 1 10)" "$(read_out "$A" 1 10)"
 pre s3 Read "$(read_in "$A" 1 30)"
 silent; note $? "10 of 30 lines served → no note (< 80%)"
-post s3 Read "$(read_in "$A" 11 15)"
+post s3 Read "$(read_in "$A" 11 15)" "$(read_out "$A" 11 15)"
 pre s3 Read "$(read_in "$A" 1 30)"
 noted "of a.ts"; note $? "union of two reads covers 25 of 30 lines → note (≥ 80%)"
 
 # --- Bash reads
-post s4 Bash "$(bash_in "sed -n '5,20p' a.ts")" '{"stdout":"x","stderr":""}'
+post s4 Bash "$(bash_in "sed -n '5,20p' a.ts")" "$(shell_out "$(sed -n 5,20p "$A")")"
 pre s4 Read "$(read_in "$A" 5 16)"
 noted "lines 5–20 of a.ts" "Bash"; note $? "sed -n A,Bp recorded → Read of the same lines noted"
 pre s4 Bash "$(bash_in "sed -n 6,18p $A")"
 noted "lines 6–18 of a.ts"; note $? "absolute path, unquoted script → same file"
-post s5 Bash "$(bash_in "cd sub && cat b.rb | grep -v '^\\s*\$'")" '{"stdout":"x"}'
+post s5 Bash "$(bash_in "cd sub && cat b.rb | grep -v '^\\s*\$'")" "$(shell_out "$(cat "$REPO/sub/b.rb")")"
 pre s5 Read "$(read_in "$REPO/sub/b.rb")"
 noted "lines 1–12 of sub/b.rb"; note $? "cd + cat piped through a blank-line filter is a whole-file read"
 post s6 Bash "$(bash_in "cat a.ts | grep line1")" '{"stdout":"x"}'
 pre s6 Read "$(read_in "$A")"
 silent; note $? "cat piped into a pattern grep is a search, not a read"
-post s7 Bash "$(bash_in "head -n 25 a.ts")" '{"stdout":"x"}'
+post s7 Bash "$(bash_in "head -n 25 a.ts")" "$(shell_out "$(head -n 25 "$A")")"
 pre s7 Bash "$(bash_in "cat a.ts")"
 noted "lines 1–25 of a.ts"; note $? "head -n 25 then cat → 25 of 30 covered → note"
 
@@ -127,26 +134,26 @@ pre s11 Read "$(read_in "$A")"
 silent; note $? "an outline (content far shorter than its range) prints no lines → nothing recorded"
 
 # --- invalidation
-post s12 Read "$(read_in "$A")"
+post s12 Read "$(read_in "$A")" "$(read_out "$A")"
 post s12 Edit "$(jq -cn --arg f "$A" '{file_path: $f, old_string: "a", new_string: "b"}')" '{}'
 pre s12 Read "$(read_in "$A")"
 silent; note $? "Edit drops the file's entries"
-post s13 Read "$(read_in "$A")"
+post s13 Read "$(read_in "$A")" "$(read_out "$A")"
 post s13 Bash "$(bash_in "sed -i '' 's/x/y/' a.ts")" '{"stdout":""}'
 pre s13 Read "$(read_in "$A")"
 silent; note $? "Bash sed -i drops the file's entries"
-post s14 Read "$(read_in "$A")"
+post s14 Read "$(read_in "$A")" "$(read_out "$A")"
 post s14 Bash "$(bash_in "printf x >> a.ts")" '{"stdout":""}'
 pre s14 Read "$(read_in "$A")"
 silent; note $? "Bash redirect into the file drops its entries"
-post s15 Read "$(read_in "$REPO/sub/b.rb")"
+post s15 Read "$(read_in "$REPO/sub/b.rb")" "$(read_out "$REPO/sub/b.rb")"
 echo "def extra; end" >> "$REPO/sub/b.rb"
 pre s15 Read "$(read_in "$REPO/sub/b.rb")"
 silent; note $? "a file changed on disk (size / mtime) is never noted"
 
 # --- turns, compaction
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s16","prompt":"p"}'
-post s16 Read "$(read_in "$A" 1 5)"
+post s16 Read "$(read_in "$A" 1 5)" "$(read_out "$A" 1 5)"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s16","prompt":"p"}'
 silent; note $? "UserPromptSubmit answers nothing"
 pre s16 Read "$(read_in "$A" 1 5)"
@@ -156,11 +163,6 @@ pre s16 Read "$(read_in "$A" 1 5)"
 silent; note $? "compaction drops the session ledger (the lines left the context)"
 
 # --- Read results, Claude Code's PostToolUse shape: tool_response.file
-read_out() { # <file> [startLine] [numLines] — the tool_response Claude Code sends for a Read
-  local total; total=$(wc -l < "$1" | tr -d ' ')
-  jq -cn --arg f "$1" --arg c "$(cat "$1")" --argjson s "${2:-1}" --argjson n "${3:-$total}" --argjson t "$total" \
-    '{type: "text", file: {filePath: $f, content: $c, numLines: $n, startLine: $s, totalLines: $t}}'
-}
 post s30 Read "$(read_in "$A")" "$(read_out "$A")"
 post s30 Bash "$(bash_in "grep -n line10 a.ts")" '{"stdout":"10:const line10 = 10;"}'
 pre s30 Read "$(read_in "$A")"
@@ -179,6 +181,76 @@ post s33 Bash "$(bash_in "grep -n line10 a.ts")" '{"stdout":"10:const line10 = 1
 post s33 Read "$(read_in "$A")" "$(read_out "$A")"
 pre s33 Read "$(read_in "$A")"
 noted "lines 1–30 of a.ts already returned (turn 1, Read)"; note $? "a Read covering an earlier grep line relabels it Read"
+
+# --- delivery evidence: a requested file or range is never proof that its lines arrived
+for response in null '{}' '{"isError":true}' '{"error":"Read blocked"}' '{"file":{"startLine":1,"numLines":30}}'; do
+  post "delivery-read-$response" Read "$(read_in "$A")" "$response"
+  pre "delivery-read-$response" Read "$(read_in "$A")"
+  silent; note $? "Read without successful delivered content establishes no coverage: $response"
+done
+READ_PART=$(jq -cn --arg c "$(sed -n 1p "$A")" '{file:{startLine:1,numLines:30,content:$c}}')
+post delivery-part Read "$(read_in "$A")" "$READ_PART"
+pre delivery-part Read "$(read_in "$A" 1 1)"
+noted "line 1 of a.ts"; note $? "partial Read records its delivered line"
+pre delivery-part Read "$(read_in "$A" 2 29)"
+silent; note $? "partial Read never claims the requested but undelivered tail"
+READ_ERROR=$(read_out "$A" | jq '. + {isError:true}')
+post delivery-read-error Read "$(read_in "$A")" "$READ_ERROR"
+pre delivery-read-error Read "$(read_in "$A")"
+silent; note $? "an error response with plausible Read metadata still establishes no coverage"
+for response in null '{"stdout":""}' '{"stdout":"command blocked by policy"}' '{"stdout":"","exit_code":1}'; do
+  post "delivery-shell-$response" Bash "$(bash_in 'cat a.ts')" "$response"
+  pre "delivery-shell-$response" Read "$(read_in "$A")"
+  silent; note $? "shell request without source output establishes no coverage: $response"
+done
+SHELL_ERROR=$(shell_out "$(cat "$A")" | jq '. + {exit_code:1}')
+post delivery-shell-error Bash "$(bash_in 'cat a.ts')" "$SHELL_ERROR"
+pre delivery-shell-error Read "$(read_in "$A")"
+silent; note $? "a failed shell command cannot establish coverage even with plausible stdout"
+post delivery-shell-part Bash "$(bash_in 'cat a.ts')" "$(shell_out "$(sed -n 1p "$A")")"
+pre delivery-shell-part Read "$(read_in "$A" 1 1)"
+noted "line 1 of a.ts"; note $? "partial shell output records its delivered source line"
+pre delivery-shell-part Read "$(read_in "$A" 2 29)"
+silent; note $? "partial shell output never claims the unprinted tail"
+MCP_ERROR=$(jq -cn --argjson c "$FS_OBJ" '{isError:true,content:$c}')
+post delivery-mcp-error mcp__tea-rags__find_symbol '{"symbol":"line3"}' "$MCP_ERROR"
+pre delivery-mcp-error Read "$(read_in "$A" 3 10)"
+silent; note $? "an outer MCP error envelope establishes no coverage"
+SHORT_OUTLINE=$(jq -cn --arg c "$(sed -n 1,3p "$A")" '[{type:"text",text:({results:[{payload:{relativePath:"a.ts",kind:"outline",startLine:1,endLine:3,content:$c}}]}|tojson)}]')
+post delivery-outline mcp__tea-rags__find_symbol '{"relativePath":"a.ts"}' "$SHORT_OUTLINE"
+pre delivery-outline Read "$(read_in "$A" 1 3)"
+silent; note $? "an explicit outline is not a body even when its line count fits the span"
+HEADER=$(jq -cn --arg c "$(sed -n 1,3p "$A")" '[{type:"text",text:({results:[{payload:{relativePath:"a.ts",symbolId:"Class",kind:"containerHeader",startLine:1,endLine:30,content:("Class\n  Class#method\n── header 1–3 ──\n"+$c)}}]}|tojson)}]')
+post delivery-header mcp__tea-rags__find_symbol '{"symbol":"Class"}' "$HEADER"
+pre delivery-header Read "$(read_in "$A" 1 3)"
+noted "lines 1–3 of a.ts"; note $? "containerHeader records only the actual delivered header source"
+pre delivery-header Read "$(read_in "$A" 4 1)"
+silent; note $? "containerHeader outline never establishes coverage for a method body"
+pre delivery-header mcp__tea-rags__find_symbol '{"symbol":"Class"}'
+silent; note $? "containerHeader never marks the complete class symbol as already served"
+BAD_GREP='{"stdout":"1:not the source line"}'
+post delivery-grep Bash "$(bash_in 'grep -n line1 a.ts')" "$BAD_GREP"
+pre delivery-grep Read "$(read_in "$A" 1 1)"
+silent; note $? "numbered grep coordinates without matching source text establish no coverage"
+STRUCTURED=$(jq -cn --arg c "$(sed -n 3,12p "$A")" '{content:[{type:"text",text:"Body shown in full"}],structuredContent:{results:{columns:["payload.relativePath","payload.startLine","payload.endLine","payload.content"],rows:[["a.ts",3,12,$c]]}}}')
+post delivery-structured mcp__tea-rags__find_symbol '{"symbol":"line3"}' "$STRUCTURED"
+pre delivery-structured Read "$(read_in "$A" 3 10)"
+noted "lines 3–12 of a.ts"; note $? "structuredContent proves delivered source beside a non-JSON banner"
+SHORT_HEADER=$(jq -cn --arg c "$(sed -n 1,2p "$A")" '{structuredContent:{results:[{payload:{relativePath:"a.ts",kind:"containerHeader",symbolId:"Short",startLine:1,endLine:3,content:("Short\n  Short#method\n── header 1–2 ──\n"+$c)}}]}}')
+post delivery-short-header mcp__tea-rags__find_symbol '{"symbol":"Short"}' "$SHORT_HEADER"
+pre delivery-short-header Read "$(read_in "$A" 1 2)"
+noted "lines 1–2 of a.ts"; note $? "short containerHeader preserves its actual header data"
+pre delivery-short-header Read "$(read_in "$A" 3 1)"
+silent; note $? "a short containerHeader outline is not a method body even when line counts fit"
+pre delivery-short-header mcp__tea-rags__find_symbol '{"symbol":"Short"}'
+silent; note $? "a short header never establishes complete class coverage"
+printf 'class Service\n  HEAD = 1\n  def call\n    :body\n  end\nend\n' > "$REPO/class.rb"
+REPEATED_END='{"structuredContent":{"results":[{"payload":{"relativePath":"class.rb","kind":"containerHeader","startLine":1,"endLine":6,"content":"Service\n  Service#call\n── header 6–6 ──\nend"}}]}}'
+post delivery-header-end mcp__tea-rags__find_symbol '{"symbol":"Service"}' "$REPEATED_END"
+pre delivery-header-end Read "$(read_in "$REPO/class.rb" 6 1)"
+noted "line 6 of class.rb"; note $? "header span disambiguates a repeated end line"
+pre delivery-header-end Read "$(read_in "$REPO/class.rb" 5 1)"
+silent; note $? "a header end cannot be attributed to a method end with the same source text"
 
 # --- indexed-source nudge: a raw read of an indexed source file → find_symbol(relativePath:)
 mkdir -p "$REPO/config" "$REPO/db/migrate" "$REPO/spec"
@@ -271,8 +343,8 @@ export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePat
 export FAKE_OUT='{"indexed":false}'
 
 # --- bounded state, fail-open
-for i in $(seq 1 20); do post s17 Read "$(read_in "$A" "$i" 1)"; done
-[ "$(du -sk "$STATE" | cut -f1)" -lt 200 ]; note $? "state stays small"
+for i in $(seq 1 20); do post s17 Read "$(read_in "$A" "$i" 1)" "$(read_out "$A" "$i" 1)"; done
+[ "$(du -sk "$STATE/reread-claude-s17" | cut -f1)" -lt 200 ]; note $? "a session's state stays small"
 LEDGER_RANGES=$(cat "$STATE"/reread-claude-s17/* 2>/dev/null | jq -s '[.[] | select(.ranges) | .ranges | length] | max // 0')
 [ "$LEDGER_RANGES" -le 16 ]; note $? "a file keeps at most 16 ranges (adjacent ones merge)"
 run 'not json'
@@ -321,9 +393,9 @@ hquiet() { # <harness> — nothing to say: Codex prints nothing, Cursor a pass-t
 shell_ev() { # <harness> <event: pre|post> <sid> <command>
   case "$1:$2" in
     codex:pre) jq -cn --arg s "$3" --arg c "$4" --arg cwd "$REPO" '{hook_event_name:"PreToolUse",session_id:$s,cwd:$cwd,tool_name:"exec_command",tool_input:{command:["bash","-lc",$c]}}' ;;
-    codex:post) jq -cn --arg s "$3" --arg c "$4" --arg cwd "$REPO" '{hook_event_name:"PostToolUse",session_id:$s,cwd:$cwd,tool_name:"exec_command",tool_input:{command:["bash","-lc",$c]},tool_response:{}}' ;;
+    codex:post) jq -cn --arg s "$3" --arg c "$4" --argjson r "${5:-$EMPTY}" --arg cwd "$REPO" '{hook_event_name:"PostToolUse",session_id:$s,cwd:$cwd,tool_name:"exec_command",tool_input:{command:["bash","-lc",$c]},tool_response:$r}' ;;
     cursor:pre) jq -cn --arg s "$3" --arg c "$4" --arg cwd "$REPO" '{hook_event_name:"preToolUse",conversation_id:$s,workspace_roots:[$cwd],tool_name:"Shell",tool_input:{command:$c,cwd:$cwd},tool_use_id:"t"}' ;;
-    cursor:post) jq -cn --arg s "$3" --arg c "$4" --arg cwd "$REPO" '{hook_event_name:"postToolUse",conversation_id:$s,workspace_roots:[$cwd],tool_name:"Shell",tool_input:{command:$c,cwd:$cwd},tool_output:"{}",tool_use_id:"t"}' ;;
+    cursor:post) jq -cn --arg s "$3" --arg c "$4" --arg r "${5:-$EMPTY}" --arg cwd "$REPO" '{hook_event_name:"postToolUse",conversation_id:$s,workspace_roots:[$cwd],tool_name:"Shell",tool_input:{command:$c,cwd:$cwd},tool_output:$r,tool_use_id:"t"}' ;;
   esac
 }
 prompt_ev() { # <harness> <sid>
@@ -341,11 +413,14 @@ for H in codex cursor; do
   note $? "$H: the prompt event advances the turn, answers in the $H shape"
   hrun "$H" "$(shell_ev "$H" pre h1 "sed -n 1,30p a.ts")"
   hnoted "$H" "$NUDGE" "several files → ONE find_symbol(symbols:[…])"; note $? "$H: shell read of indexed source → find_symbol(relativePath:) nudge, non-blocking"
-  hrun "$H" "$(shell_ev "$H" post h1 "sed -n 1,30p a.ts")"; hquiet "$H"; note $? "$H: the result is recorded silently"
+  hrun "$H" "$(shell_ev "$H" post h1 "sed -n 1,30p a.ts" "$(shell_out "$(cat "$A")")")"; hquiet "$H"; note $? "$H: the result is recorded silently"
   hrun "$H" "$(prompt_ev "$H" h1)"
   hrun "$H" "$(shell_ev "$H" pre h1 "cat a.ts")"
   hnoted "$H" "lines 1–30 of a.ts already returned (turn 1" "answer from them"; note $? "$H: a re-read a turn later → the re-read note"
   ! hcontext "$H" | grep -qF "indexed source"; note $? "$H: … and no nudge beside it"
+  hrun "$H" "$(shell_ev "$H" post h-no-output 'cat a.ts')"
+  hrun "$H" "$(shell_ev "$H" pre h-no-output 'cat a.ts')"
+  ! hcontext "$H" | grep -qF "already returned"; note $? "$H: missing shell output never establishes coverage"
   [ -d "$STATE/reread-$H-h1" ]; note $? "$H: the ledger is keyed reread-$H-<session id>"
   # Reads are never denied: a streak gets one nudge per turn, never a decision.
   denies=0; nudges=0
