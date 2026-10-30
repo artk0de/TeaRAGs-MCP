@@ -1,0 +1,245 @@
+[
+  {
+    "case": "source_registry",
+    "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/registry.rb",
+    "exists_orchestrator": true,
+    "expected": "allowed",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_ALLOWED\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "gold_questions",
+    "path": "/Users/artk0re/Dev/bench-private/taxdome/planning/questions.json",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "trusted_auth",
+    "path": "/Users/artk0re/.codex/auth.json",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "own_auth",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/probe-home/auth.json",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "old_context",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-q24-20261030-050614/context.json",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "old_report",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/research/codex-q24-validated-2026-10-30/report.md",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "sibling_auth",
+    "path": "/Users/Shared/nav-ab/codex-homes/template/auth.json",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "repo_git",
+    "path": "/Users/Shared/nav-ab/repo-master/.git",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "repo_doc",
+    "path": "/Users/Shared/nav-ab/repo-master/README.md",
+    "exists_orchestrator": false,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 2\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "real_git_objects",
+    "path": "/Users/artk0re/Dev/Job/taxdome/.git/HEAD",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "sibling_repo",
+    "path": "/Users/Shared/nav-ab/repo-a/config/application.rb",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "fixture_source",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/security-fixture/source.rb",
+    "exists_orchestrator": true,
+    "expected": "allowed",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_ALLOWED\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "fixture_existing_markdown",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/security-fixture/forbidden.md",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "fixture_existing_docs",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/security-fixture/docs/forbidden.rb",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "fixture_symlink_escape",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/security-fixture/escape.rb",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "fixture_relative_escape",
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/security-fixture/../outside-canary.txt",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "homebrew_user_state",
+    "path": "/opt/homebrew/var",
+    "exists_orchestrator": true,
+    "expected": "denied",
+    "result": {
+      "exitCode": 0,
+      "stdout": "READ_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "sanitized_environment",
+    "result": {
+      "exitCode": 0,
+      "stdout": "ENV_KEYS ['ASDF_NODEJS_VERSION', 'CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS', 'CODEX_SANDBOX', 'CODEX_SANDBOX_NETWORK_DISABLED', 'HOME', 'LANG', 'PATH', 'TMPDIR', '__CF_USER_TEXT_ENCODING']\nPATH_VALUES {'HOME': '/nonexistent', 'PATH': '/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin:/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/usr/bin:/bin:/usr/sbin:/sbin', 'CPATH': None, 'LIBRARY_PATH': None, 'MANPATH': None, 'SDKROOT': None}\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "network_localhost",
+    "result": {
+      "exitCode": 0,
+      "stdout": "CONNECT_DENIED 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "process_environment",
+    "result": {
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import subprocess,os; r=subprocess.run([\"/bin/ps\",\"eww\",\"-p\",str(os.getppid())],capture_output=True,text=True); print(\"PS_RC\",r.returncode,\"BYTES\",len(r.stdout),\"STDERR\",r.stderr[:150])\n                            ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py\", line 669, in run\n    with Popen(*popenargs, **kwargs) as process:\n         ~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py\", line 1213, in __init__\n    self._execute_child(args, executable, preexec_fn, close_fds,\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                        pass_fds, cwd, env,\n                        ^^^^^^^^^^^^^^^^^^^\n    ...<5 lines>...\n                        gid, gids, uid, umask,\n                        ^^^^^^^^^^^^^^^^^^^^^^\n                        start_new_session, process_group)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/subprocess.py\", line 2156, in _execute_child\n    raise child_exception_type(errno_num, err_msg, err_filename)\nPermissionError: [Errno 1] Operation not permitted: '/bin/ps'\n"
+    }
+  },
+  {
+    "case": "inherited_fds",
+    "result": {
+      "exitCode": 0,
+      "stdout": "FD 0 TYPE 8192 FLAGS 0\nFD 1 TYPE 4096 FLAGS 1\nFD 2 TYPE 4096 FLAGS 1\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "nested_sandbox",
+    "result": {
+      "exitCode": 0,
+      "stdout": "NESTED_RC 71 LEAKED False STDERR sandbox-exec: sandbox_apply: Operation not permitted\n\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "process_args_sysctl",
+    "result": {
+      "exitCode": 0,
+      "stdout": "SYSCTL_RC 0 ERRNO 0 BYTES 980\n",
+      "stderr": ""
+    }
+  },
+  {
+    "case": "actual_shell_tools",
+    "result": {
+      "exitCode": 0,
+      "stdout": "SHELL_RC 0 STDOUT       30\napp/lib/tax_preparation/tax_automations/registry.rb\n STDERR \n",
+      "stderr": ""
+    }
+  }
+]

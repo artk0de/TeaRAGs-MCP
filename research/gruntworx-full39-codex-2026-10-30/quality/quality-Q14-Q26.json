@@ -1,0 +1,105 @@
+{
+  "scope": "Q14–Q26, one completed native A/B pair, offline review",
+  "policy": {
+    "pass": "Addresses the literal request with no material identified factual error; optional historical details may be absent.",
+    "partial": "A requested part is materially missing/inaccurate, or the answer truthfully cannot supply the requested unavailable incident facts.",
+    "fail": "The central answer contradicts the request or verified source.",
+    "historical_gold": "Separate coverage diagnostic, not an automatic correctness rubric. context_added and gold_facts were not supplied as question text to the actors.",
+    "tools": "No penalty for using already-held source without new calls. Answer length and speed are not grading criteria.",
+    "uncertainty": "Targeted source checks cover suspected discrepancies, not an independent re-audit of every assertion. Q26's ticket/history evidence was outside the permitted actor corpus."
+  },
+  "source_checks": [
+    {"path": "app/lib/tax_preparation/tax_automations/registry.rb", "method": "find_symbol project=taxdome-worktree-navmaster path=/Users/Shared/nav-ab/repo-master", "findings": "client_for(connection), connections_for(firm_id), and ADAPTERS.transform_values all-provider traversal."},
+    {"path": "app/services/tax_preparation/tax_automations/connections/disconnect_all.rb:31", "method": "same addressed find_symbol batch", "findings": "Fetches Registry.connections_for(firm_id), then iterates every provider's connections and enqueues RevokeAsync."},
+    {"path": "app/workers/tax_preparation/tax_automations/operation_worker.rb", "method": "same addressed find_symbol batch", "findings": "Ten retries plus global kill rules, RateLimitedError.retry_after and invalid-grant exhaustion verification."},
+    {"path": "app/workers/tax_preparation/tax_automations/instead/operation_worker.rb", "method": "same addressed find_symbol batch", "findings": "rate_limit_group returns nil, intentionally mapped into effective default bucket; neither answer's effective-default description is a factual error."},
+    {"path": "lib/middleware/clusters/webhooks.rb:34", "method": "find_symbol WEBHOOKS_MAP, #call, #use_middleware?, #proxy_mode", "findings": "Instead prefix is :no_proxy. Main-cluster middleware proxies only POST paths with a proxy mode; :no_proxy falls through to the local Rails app."},
+    {"path": "config/storage.yml:30", "method": "find_symbol reported unindexed YAML; bounded direct config read", "findings": "firm_site_backups provides distinct FIRM_SITE_BACKUPS credential/bucket variables with S3_* fallback; amazon_tax_software_backups shares credentials."},
+    {"path": "config/settings/features/tax_automations.yml", "method": "find_symbol reported unindexed YAML; bounded direct config read", "findings": "Both flags default enabled:false; firm-scoped; unified API temporary and Instead permanent."}
+  ],
+  "questions": [
+    {
+      "id": "Q14",
+      "literal_request": "Fail or wait after grant rejection, and which failures reconnect resumes?",
+      "A": {"grade": "pass", "evidence_quote": "They fail first ... failure_reason: unauthorized", "reason": "Correctly distinguishes failed records from waiting, limits reconnect resumption to unauthorized, and explains unusable-grant deferral.", "historical_gold": "Substantial; does not specify one ExportAsync per tax preparation.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "Only failures with reason unauthorized are resumed", "reason": "Same required behavior; extra insufficient-scope/401 examples agree with the refusal mapping.", "historical_gold": "Substantial; per-tax-preparation adapter enqueue detail omitted.", "confidence": "high"}
+    },
+    {
+      "id": "Q15",
+      "literal_request": "Existing webhook verification, validation, acknowledgement and delivery deduplication.",
+      "A": {"grade": "pass", "evidence_quote": "no delivery-ID deduplication at the endpoint or enqueue boundary", "reason": "Covers HMAC/timestamp/secrets, 401 versus signed-body 200, validation/asynchronous handling, signed body versus query, and absence of delivery-ID inbox deduplication.", "historical_gold": "Full core coverage.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "state handling, not through a stored event-ID check", "reason": "Covers the requested endpoint lifecycle and distinguishes idempotent state handling from delivery-ID deduplication.", "historical_gold": "Substantial; does not explicitly explain request.request_parameters and query-string precedence.", "confidence": "high"}
+    },
+    {
+      "id": "Q16",
+      "literal_request": "Registry constants/public methods and every app/ traversal over all adapters.",
+      "A": {"grade": "partial", "evidence_quote": "client_for(firm) ... connections_for(firm)", "reason": "Method names/constants and three direct Registry.adapters.each users are present, but the client_for parameter is a connection and connections_for takes firm_id, not Firm. Omits Registry.connections_for's transform_values traversal and DisconnectAll's all-provider traversal.", "historical_gold": "Incomplete app/ inventory. Gold's config/initializers/yabeda.rb is outside the explicit app/ scope and is not a literal-request penalty.", "confidence": "high"},
+      "B": {"grade": "partial", "evidence_quote": "connections_for(firm_id) uses ADAPTERS.transform_values", "reason": "Correct constants/signatures and direct traversals, including the registry itself. Still omits app/services/.../connections/disconnect_all.rb, which traverses the all-provider connections map.", "historical_gold": "Misses DisconnectAll; outside-app Yabeda is not penalized.", "confidence": "medium", "uncertainty": "If the request is narrowly interpreted as direct adapter-namespace iteration only, B would pass; this grade uses the requested exhaustive all-provider behavior inventory."}
+    },
+    {
+      "id": "Q17",
+      "literal_request": "An existing purpose-scoped storage service with separate bucket and credentials to copy.",
+      "A": {"grade": "pass", "evidence_quote": "firm_site_backups ... own credential variables with fallback", "reason": "Initially discusses the shared-credential tax-software bucket, but explicitly identifies firm_site_backups as the distinct-credential pattern; source confirms both descriptions.", "historical_gold": "Partial detail coverage: exact backup ENV names/region and MinIO service name not listed.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "firm_site_backups is the closer template for credentials", "reason": "Directly selects the distinct-credential pattern and correctly warns tax-software backups alone shares credentials.", "historical_gold": "Substantial; some exact bucket/region configuration details omitted.", "confidence": "high"}
+    },
+    {
+      "id": "Q18",
+      "literal_request": "Which flags govern tax automations/Instead and where defined?",
+      "A": {"grade": "pass", "evidence_quote": "Two flags ... tax_automations_unified_api ... tax_automations_instead", "reason": "Names both flags, definition file, provider registry mapping, and accurate default-disabled settings. No new tool call is needed for already-held config.", "historical_gold": "Partial ancillary coverage: firm/temp/permanent/removal dates and absence of the old mock flag not enumerated.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "two firm-scoped feature flags, both defined in ... tax_automations.yml", "reason": "Names the flags/file, gating behavior and provider registry mapping correctly.", "historical_gold": "Substantial; lifecycle/removal-date and no-mock-flag diagnostics omitted.", "confidence": "high"}
+    },
+    {
+      "id": "Q19",
+      "literal_request": "AASM transitions of processing and upload state machines.",
+      "A": {"grade": "pass", "evidence_quote": "upload ... waiting, uploaded, failed → uploading", "reason": "Supplies both complete event/from/to tables, initial states, uploaded_at and failure-reason clearing behavior.", "historical_gold": "Full core transition coverage.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "resend ... processing, processed, error, archived, exceeded ... sent", "reason": "Same complete transition inventory and relevant side effects.", "historical_gold": "Full core transition coverage.", "confidence": "high"}
+    },
+    {
+      "id": "Q20",
+      "literal_request": "Accepted status-update input and exact frontend broadcast frame.",
+      "A": {"grade": "pass", "evidence_quote": "UpdateStatus.call(user, actor, tax_automation_document_id, params)", "reason": "Provides signature, processing-status/reason vocabulary and system actor, validation/transition behavior, after-commit timing and the correct frame fields/type/event.", "historical_gold": "Substantial; exact ServiceResult failure symbols not enumerated.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "It does not accept upload status", "reason": "Correctly distinguishes accepted processing update from the upload workflow and supplies the exact broadcast frame/after-commit behavior.", "historical_gold": "Substantial; constructor user argument and exact failure-result symbols not explicitly listed.", "confidence": "high"}
+    },
+    {
+      "id": "Q21",
+      "literal_request": "HTTP status/error mapping, metrics and refusal-to-failure-reason mapping.",
+      "A": {"grade": "pass", "evidence_quote": "a plain vendor ForbiddenError defaults to api_error", "reason": "Lists all mapped statuses/fallbacks, all four metrics and the important policy-forbidden versus vendor-403 distinction. Correct scope/quota/unauthorized mappings.", "historical_gold": "Substantial; RateLimitedError Retry-After parsing is not explicitly covered.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "RateLimitedError can parse Retry-After as seconds or an HTTP date", "reason": "Covers requested maps/metrics/refusals, fallback behavior and rate-limit parsing, without confusing vendor-403 with a policy refusal.", "historical_gold": "Full core coverage.", "confidence": "high"}
+    },
+    {
+      "id": "Q22",
+      "literal_request": "Shared/Instead operation-worker retries, throttle and slug contract and throttle configuration location.",
+      "A": {"grade": "partial", "evidence_quote": "RETRY_ATTEMPTS = 10 ... retry ladder ... about 4.5 hours", "reason": "Correct retry bound, class responsibilities, slug ownership and throttle/config limits. However the requested retry contract omits kill-on-record/policy/invalid-grant, RateLimitedError.retry_after and invalid-grant exhaustion verification, which materially change how the base retries.", "historical_gold": "Partial retry-policy coverage and no explicit concrete sidekiq_throttle_as opt-in. Effective default throttle bucket is correctly called default even though rate_limit_group returns nil.", "confidence": "medium", "uncertainty": "If 'retries' is taken to request only the numeric retry bound, A would pass; this grade treats the base retry policy as requested behavior."},
+      "B": {"grade": "pass", "evidence_quote": "kills retries for missing records, policy errors, and invalid grants", "reason": "Includes numeric retry limit, special retry/exhaustion rules, adapter throttle arguments/default bucket, concrete slug ownership, opt-in and configuration locations/limits.", "historical_gold": "Substantial/full core contract; not-step_only is not stated explicitly.", "confidence": "high"}
+    },
+    {
+      "id": "Q23",
+      "literal_request": "How existing vendor webhooks reach a cluster and controller.",
+      "A": {"grade": "pass", "evidence_quote": "/webhooks/instead ... :no_proxy", "reason": "Explains main-cluster proxy modes and the Instead no-proxy decision, then gives POST path and exact controller#create. Targeted middleware source confirms the routing policy.", "historical_gold": "Full core coverage.", "confidence": "high"},
+      "B": {"grade": "partial", "evidence_quote": "app host for the relevant TaxDome cluster", "reason": "Correct endpoint/controller and host constraints, but does not identify the cluster-routing middleware or the existing Instead :no_proxy policy. Host selection alone does not explain the requested cluster routing.", "historical_gold": "Controller route covered; WEBHOOKS_MAP/no_proxy omitted.", "confidence": "high", "uncertainty": "The app-host statement alone is not proven false; the defect is missing the decisive routing mechanism, not a categorical claim that every host reference is wrong."}
+    },
+    {
+      "id": "Q24",
+      "literal_request": "Accept explicit instead→Instead / gruntworx→GruntWorx dictionary and downcase instead of camelize.",
+      "A": {"grade": "pass", "evidence_quote": "camelize не нужен; регистр класса задаёт словарь", "reason": "Agrees with the exact user decision and supplies an explicit namespace dictionary with lowercase normalization. No unsupported factual claim identified; relevant registry/client code was held from previous questions.", "historical_gold": "Only explicit mapping/downcase covered; existing BaseClient#vendor underscore and Zeitwerk/global-inflection concerns omitted. These are not explicit requirements of this question and do not turn the answer into a failure.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "Ключ нормализуем через downcase.to_sym, значение берём из словаря", "reason": "Directly implements the two-entry naming dictionary and explains why camelize loses the internal W. No new tool invocation is necessary.", "historical_gold": "Same ancillary omissions: metric tag implementation and loader inflection are not discussed. No Zeitwerk penalty is applied to this literal request.", "confidence": "high"}
+    },
+    {
+      "id": "Q25",
+      "literal_request": "Suggest clearer alternatives to step_available?, avoiding feature-flag ambiguity.",
+      "A": {"grade": "pass", "evidence_quote": "operation_available? ... action_supported?", "reason": "Offers several meaningful alternatives and distinguishes operation, capability and whole-provider availability; explicitly notes enabled/feature-flag ambiguity. Naming brainstorm does not require choosing the exact historical winner.", "historical_gold": "Does not report historical namespace counts or recommend the historical name supports?. These diagnostics are not mandatory outcomes of the user's open naming question.", "confidence": "high"},
+      "B": {"grade": "pass", "evidence_quote": "operation_supported? ... operation_available?", "reason": "Offers alternatives, separates static support from runtime availability and explains feature-flag/capability overlap.", "historical_gold": "Does not reproduce historical counts or exact supports? choice; not an automatic correctness failure.", "confidence": "high"}
+    },
+    {
+      "id": "Q26",
+      "literal_request": "Actual Instead incident/fix cost in TD-99833.",
+      "A": {"grade": "partial", "evidence_quote": "I can’t reliably say what the drift cost or what the fix changed", "reason": "Truthfully abstains after scoped retrieval errors and does not invent the OAuth-scope/base-URL fix. Requested historical incident facts remain unanswered. Specifically, TD-99833 semantic_search returned normalized BENCH_READ_ERROR and get_index_status was rejected by the benchmark proxy (request 162, Unclassified text tool result blocked). This is an operator/transport limitation in the observed run, not evidence of a model reasoning failure or shipped-plugin capability gap.", "historical_gold": "Not covered. Gold itself marks this unanswerable from code and requires git/ticket evidence outside the actor's permitted source corpus.", "confidence": "high", "answerability_limit": true, "operator_transport_limit": true},
+      "B": {"grade": "partial", "evidence_quote": "I can’t verify TD-99833’s exact incident or cost", "reason": "Truthfully states history/Jira limits and distinguishes general mock-drift risk from the unverified incident. It does not supply the requested incident-specific facts, but does not hallucinate them.", "historical_gold": "Not covered; same source-only answerability limit applies, independently of tool type/speed.", "confidence": "high", "answerability_limit": true}
+    }
+  ],
+  "summary": {
+    "A": {"pass": 10, "partial": 3, "fail": 0},
+    "B": {"pass": 10, "partial": 3, "fail": 0},
+    "important": "Q24 is pass/pass on literal intent. Q26 is an honest unresolved historical question in both. Q16 B and Q22 A have explicitly noted interpretation uncertainty; no answer-length or no-tool-use scoring was used."
+  }
+}

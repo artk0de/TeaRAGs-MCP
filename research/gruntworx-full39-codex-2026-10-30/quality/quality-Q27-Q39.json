@@ -1,0 +1,32 @@
+{
+  "scope": "Q27-Q39",
+  "method": "Offline manual review of exact final answers against literal questions; reference facts are secondary, not an automatic correctness score. No reruns. Partial grades are qualitative and do not imply every statement was source-verified.",
+  "rows": [
+    {"id":"Q27","A":"pass","B":"pass","note":"Both correctly distinguish shared lifecycle callers from adapter implementations; A names the concrete adapter hooks more precisely."},
+    {"id":"Q28","A":"pass","B":"partial","note":"Both explain binding and account mismatch. B overgeneralizes that an absent provider account ID leaves the marker empty; bind_account! returns without clearing an existing marker. A explicitly preserves this distinction. Both omit some historical reference details such as UUID column restrictions."},
+    {"id":"Q29","A":"pass","B":"pass","note":"Both identify connection read authorization and enqueueing the export workflow after commit."},
+    {"id":"Q30","A":"pass","B":"pass","note":"Both distinguish firms without uid from contacts/clients with UUID uid; no penalty for omitting an earlier proposed new-column name."},
+    {"id":"Q31","A":"partial","B":"partial","note":"A concentrates on uid/URL naming rather than Instead operation/model conventions; B agrees generically without providing concrete consistent names. A itself acknowledges this mismatch in Q32."},
+    {"id":"Q32","A":"pass","B":"pass","note":"Both answer the literal adapter-entry-point question. The historical reference's exhaustive entry-point list is not required by this short prompt. Wording about a port should not be mistaken for proof of a separate reconcile service."},
+    {"id":"Q33","A":"pass","B":"pass","note":"Both give the worker hierarchy and exhausted-retry failure mapping, and distinguish transfer/webhook workers."},
+    {"id":"Q34","A":"pass","B":"pass","note":"Both identify json-schema/JSON::Validator and named OpenAPI component schemas; B additionally distinguishes the unwired mock router."},
+    {"id":"Q35","A":"partial","B":"fail","note":"B falsely says Crm::Api::Contact.find returns uid; its actual contact_data mapping has no uid. A correctly notes this limitation but pivots to an external HTTP API instead of fully answering the internal CRM API integration question."},
+    {"id":"Q36","A":"partial","B":"pass","note":"Both correctly describe the final unique firm_id index. The initial composite index was removed by the later MakeInsteadConnectionsUniquePerFirm migration, and actor was renamed to creator in a separate later migration. A still calls the polymorphic fields actor_type/actor_id; B correctly says creator. Earlier reviewer criticism based only on the initial migration is superseded."},
+    {"id":"Q37","A":"pass","B":"pass","note":"Both list all nine actual metrics. B's heading says eight while its table contains nine: a minor internal count error. The historical reference also omits entity_matches_total and must not be used to reject the correct nine-item list."},
+    {"id":"Q38","A":"pass","B":"pass","note":"Both address the requested 50 RPM per firm additional rule. B additionally preserves firm-first/app-wide-second ordering. This is a design response, not evidence that code was edited."},
+    {"id":"Q39","A":"partial","B":"partial","note":"A identifies the dedicated zeitwerk.rb overrides, the feature configuration, and the direct send serializer, but omits the two latest-send wrapper serializers. B provides those wrappers but only names general ActiveSupport inflections.rb, omitting the dedicated Zeitwerk initializer. General inflections can affect Rails naming; this is an incomplete repository-specific autoload answer, not proof that inflections.rb has no effect. This explicit Q39 autoload question differs from narrow Q24."}
+  ],
+  "source_checks": [
+    {"path":"app/services/tax_preparation/tax_automations/connections/create.rb:119","symbol":"TaxPreparation::TaxAutomations::Connections::Create#bind_account!","evidence":"return if external_tenant_uuid.blank? || settings.external_tenant_uuid == external_tenant_uuid; an existing marker is not cleared here"},
+    {"path":"app/services/crm/api/contact.rb:87","symbol":"Crm::Api::Contact#find","evidence":"success returns data: contact_data(result.data)"},
+    {"path":"app/services/crm/api/contact.rb:387","symbol":"Crm::Api::Contact.contact_data","evidence":"mapping includes contact_id/name parts/address/custom fields, but no uid"},
+    {"path":"db/migrate/20260728173319_create_tax_preparation_tax_automations_instead_connections.rb:15","evidence":"Initial state only: actor reference and composite index. Do not treat it as final schema."},
+    {"path":"db/migrate/20260731125304_rename_actor_to_creator_on_instead_connections.rb:8","evidence":"Renames actor_type/actor_id to creator_type/creator_id and renames the composite index."},
+    {"path":"db/migrate/20260806132558_make_instead_connections_unique_per_firm.rb:7","evidence":"Adds unique firm_id index; removes composite firm/creator index."},
+    {"path":"config/initializers/zeitwerk.rb:3","evidence":"Rails.autoloaders.each and autoloader.inflector.inflect configure autoload overrides"},
+    {"path":"config/initializers/inflections.rb:15","evidence":"ActiveSupport::Inflector.inflections configures general rules/acronyms"},
+    {"path":"config/initializers/yabeda.rb:33","evidence":"nine tax_automations metric declarations, including entity_matches_total"}
+  ],
+  "totals": {"A":{"pass":9,"partial":4,"fail":0},"B":{"pass":9,"partial":3,"fail":1}},
+  "limits": "This is a qualitative audit of one pair, not a calibrated or blinded accuracy estimate. Missing secondary reference facts were not automatically treated as errors. Report concrete source-verified errors rather than a universal quality winner."
+}

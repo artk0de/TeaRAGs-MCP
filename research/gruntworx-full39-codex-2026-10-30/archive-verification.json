@@ -1,0 +1,27 @@
+{
+  "frozen_file_count": 9834,
+  "frozen_verification_method": "Native preflight and runner checks before each question and after the last question; both complete run status files valid=true. No additional runtime-wide hash scan during archive closure.",
+  "original_used_proxy_sha256": "cb9145916b7bc20cc6a7aff68f86106d64d3f951d0a4cf0a8124d4f04b264192",
+  "raw_verification": "Both compressed actor logs decompressed and compared to original uncompressed SHA256 by archiver; proxy audit gzip likewise compared byte-for-byte.",
+  "actor_sessions": {
+    "A": 39,
+    "B": 39
+  },
+  "model_reruns": 0,
+  "quality_totals": {
+    "A": {
+      "pass": 29,
+      "partial": 10,
+      "fail": 0
+    },
+    "B": {
+      "pass": 25,
+      "partial": 13,
+      "fail": 1
+    }
+  },
+  "proxy_reason_split": {
+    "confirmed_list_dict_exception": 1,
+    "unclassified_text_original_payload_unknown": 4
+  }
+}

@@ -1,0 +1,82 @@
+model = "gpt-6-luna"
+model_reasoning_effort = "medium"
+approval_policy = "never"
+default_permissions = "benchmark"
+allow_login_shell = false
+web_search = "disabled"
+project_doc_max_bytes = 0
+
+[features]
+apps = false
+browser_use = false
+browser_use_external = false
+in_app_browser = false
+computer_use = false
+image_generation = false
+view_image = false
+multi_agent = false
+memories = false
+shell_snapshot = false
+skip_host_skill_discovery = true
+remote_plugin = false
+plugin_sharing = false
+plugin_discovery_prefetch = false
+skill_search = false
+skill_mcp_dependency_install = false
+plugins = false
+hooks = false
+
+[projects."/Users/Shared/nav-ab/repo-master"]
+trust_level = "trusted"
+
+[shell_environment_policy]
+inherit = "none"
+set = { PATH = "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin:/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/usr/bin:/bin:/usr/sbin:/sbin", HOME = "/nonexistent", TMPDIR = "/nonexistent", LANG = "en_US.UTF-8", ASDF_NODEJS_VERSION = "24.15.0" }
+
+[permissions.benchmark.filesystem]
+":root" = "deny"
+":minimal" = "read"
+":slash_tmp" = "deny"
+":tmpdir" = "deny"
+"/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex" = "read"
+"/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin/node" = "read"
+"/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path/rg" = "read"
+"/opt/homebrew/bin/python3" = "read"
+"/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework" = "read"
+"/opt/homebrew/opt/pcre2" = "read"
+"/opt/homebrew/Cellar/pcre2/10.49" = "read"
+
+[permissions.benchmark.filesystem."/Users/Shared/nav-ab/repo-master"]
+"." = "read"
+".git" = "deny"
+".agents" = "deny"
+".codex" = "deny"
+".claude" = "deny"
+".contextignore.local" = "deny"
+"docs" = "deny"
+"specs" = "deny"
+"**/*.md" = "deny"
+"**/*.MD" = "deny"
+
+[permissions.benchmark.network]
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/B/skills/.system/imagegen/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/B/skills/.system/openai-docs/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/B/skills/.system/review-agent/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/B/skills/.system/skill-creator/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/B/skills/.system/skill-installer/SKILL.md"
+enabled = false

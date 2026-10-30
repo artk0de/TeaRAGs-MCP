@@ -1,0 +1,14 @@
+{
+  "A": {
+    "uncompressed_sha256": "55d52cc84eee9d50fe5b75069b5a85f28dd331bdbbcb4e06402bac7ac0d79b33",
+    "uncompressed_bytes": 22337490,
+    "compressed_sha256": "a96331a139f28021d8dc34be8ea275773f8a26c78238eab19ce3d4d577c9fb54",
+    "compressed_bytes": 4020831
+  },
+  "B": {
+    "uncompressed_sha256": "d24bf623cb020b5749b6cd8b7662bc032f6f79c241f8593e617abea53a4b382b",
+    "uncompressed_bytes": 9829277,
+    "compressed_sha256": "d8785bfde0c3888bd233298081a3a55644294460183373e3c453ff6845e3ed1f",
+    "compressed_bytes": 1227653
+  }
+}

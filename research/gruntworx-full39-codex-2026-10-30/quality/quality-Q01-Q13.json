@@ -1,0 +1,335 @@
+{
+  "scope": "Q01-Q13; independent offline literal-intent review; no native benchmark/model reruns",
+  "method": [
+    "Read actual delivered questions and historical gold; context_added is withheld context, not injected into literal intent.",
+    "Read final_answer artifacts for both cells, initially cross-checking raw completed agentMessage phase for Q01.",
+    "Verify suspect consequential claims with find_symbol(project=taxdome-worktree-navmaster,path=/Users/Shared/nav-ab/repo-master); no reindex.",
+    "No penalty for fewer tools or absent citations when held code and the actual answer suffice; gold coverage kept separate."
+  ],
+  "totals": {
+    "A": {
+      "pass": 10,
+      "partial": 3,
+      "fail": 0,
+      "hard_errors": 0
+    },
+    "B": {
+      "pass": 6,
+      "partial": 7,
+      "fail": 0,
+      "hard_errors": 1
+    }
+  },
+  "questions": [
+    {
+      "question_id": "Q01",
+      "A": {
+        "grade": "pass",
+        "reason": "Explains registry/adapter boundary, port families, capability passport and shared/vendor models; enough for architectural overview.",
+        "answer_quote": "Сейчас tax automations устроен как общий слой... и провайдерские адаптеры",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q01.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Registry and passport are useful, but named port inventory and the shared Document/TaxPreparation versus vendor Entity/Document data model are largely omitted.",
+        "answer_quote": "Контракт namespace адаптера — как минимум Connection ... и Client",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q01.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/lib/tax_preparation/tax_automations/registry.rb",
+        "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+        "app/models/tax_preparation/tax_automations/document.rb"
+      ],
+      "historical_gold_diagnostic": "A covers the main architecture without every historical port name or signature; B covers fewer model/port facts. Exact exhaustive gold-list matching was not required.",
+      "uncertainty_or_scope_note": ""
+    },
+    {
+      "question_id": "Q02",
+      "A": {
+        "grade": "partial",
+        "reason": "Correct current mock transport and lack of wiring; distinguishes Faraday injected stubs. Cannot reconstruct historical switch/retirement.",
+        "answer_quote": "There is no switch for that custom transport in the current source.",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q02.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Correct deterministic Faraday/router reference transport and current lack of wiring; explicitly limits historical conclusions.",
+        "answer_quote": "I can’t establish whether an older version used a switch literally named instead_mocks",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q02.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+        "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+        "app/lib/tax_preparation/tax_automations/base_client.rb:230-241"
+      ],
+      "historical_gold_diagnostic": "Neither supplies the historical firm flag/retirement commit/VCR migration. History was inaccessible, so this is incomplete historical coverage, not a false assertion that history never existed.",
+      "uncertainty_or_scope_note": "Historical claims were not independently recovered through git; the requested code boundary disallowed repository history during the run."
+    },
+    {
+      "question_id": "Q03",
+      "A": {
+        "grade": "pass",
+        "reason": "Concrete Instead-specific lessons across all five requested areas, with code/spec references; shared status fold and signed-target handling are source-grounded.",
+        "answer_quote": "Rate limits: разделять throttling, retry и квоты.",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q03.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Useful general advice across the five areas, but leaves the signed-URL cassette behavior to a future check rather than supplying the actual Instead testing lesson.",
+        "answer_quote": "check the upload flow specifically for cassette handling before copying its test setup",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q03.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/instead/webhooks/process_document_event.rb",
+        "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb",
+        "app/lib/tax_preparation/tax_automations/base_client.rb:243-274"
+      ],
+      "historical_gold_diagnostic": "A misses explicit vcr_fixed_time and shared sweep thresholds; B misses several concrete Instead examples. These diagnostic misses are not each separate failures.",
+      "uncertainty_or_scope_note": "Rate-limit/entity-matching detail was not exhaustively re-audited; no verified contradictory material claim found."
+    },
+    {
+      "question_id": "Q04",
+      "A": {
+        "grade": "partial",
+        "reason": "Finds OAuth/account/capability coupling, but overstates isolation of the signed-upload flow and misses that the shared transfer port itself requires a signed target.",
+        "answer_quote": "signed-upload flow live under Instead::...",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q04.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Identifies the principal shared OAuth and presigned-upload assumptions and their incompatibility with other vendors; useful answer to the literal architectural question.",
+        "answer_quote": "The export flow assumes the vendor can issue a pre-signed upload target",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q04.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb#perform",
+        "app/lib/tax_preparation/tax_automations/base_client.rb:243-274",
+        "app/services/tax_preparation/tax_automations/connections/create.rb"
+      ],
+      "historical_gold_diagnostic": "Neither exhaustively inventories frontend closed unions/result-fetch gap; those extra gold facts are diagnostic.",
+      "uncertainty_or_scope_note": "A’s wording is overbroad, not counted as a hard factual error: vendor-specific negotiation does live in the adapter, but the shared signed-target dependency was missed."
+    },
+    {
+      "question_id": "Q05",
+      "A": {
+        "grade": "pass",
+        "reason": "Storage/preview distinction is correct; blacklist exists and does not include xlsm.",
+        "answer_quote": "The client-document model rejects extensions on a blacklist.",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q05.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Same correct distinction; notes other MIME/size checks.",
+        "answer_quote": "The document settings use a blacklist rather than an extension allowlist.",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q05.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "config/settings.yml:documents.extensions_black_list_regexp",
+        "config/settings.yml:documents.previewable_extensions_regexp",
+        "app/models/tax_preparation/document.rb#invalid_format?",
+        "app/models/tax_preparation/document.rb#validate_file_extension",
+        "app/models/tax_preparation/document.rb#previewable?"
+      ],
+      "historical_gold_diagnostic": "Historical gold saying no general extension blacklist is stale/incorrect for this corpus. Actual settings and Document validation contain an extension blacklist.",
+      "uncertainty_or_scope_note": "Storable remains subject to other validations; neither answer promises unconditional upload success."
+    },
+    {
+      "question_id": "Q06",
+      "A": {
+        "grade": "partial",
+        "reason": "Provides a useful qualified integration mapping, but cannot supply confirmed GWX API fields/status values.",
+        "answer_quote": "Точных названий полей GWX API ... нет",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q06.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Honest refusal to invent a full vendor mapping, but provides no partial TD-side table.",
+        "answer_quote": "Полную таблицу соответствий TD ↔ GWX пока нельзя составить",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q06.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/models/tax_preparation/tax_automations/document.rb"
+      ],
+      "historical_gold_diagnostic": "The literal delivered question only says full TD↔GWX mapping. It does not say statuses; historical context_added supplies that interpretation and was not delivered. Missing TD enum gold is not automatic failure.",
+      "uncertainty_or_scope_note": "Neither cell had the vendor documentation needed for a complete GWX mapping. A’s full-table heading is broader than the verified contents."
+    },
+    {
+      "question_id": "Q07",
+      "A": {
+        "grade": "pass",
+        "reason": "Correctly locates tax_automations.<provider>, Instead settings and the separate feature-flag layer.",
+        "answer_quote": "под tax_automations ... блок tax_automations.instead",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q07.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Correctly cites one provider setting but assumes the subject is file formats/preview and does not clarify the wider provider configuration layout.",
+        "answer_quote": "для Instead это tax_automations.instead.accepted_file_formats",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q07.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "config/settings.yml:tax_automations.instead"
+      ],
+      "historical_gold_diagnostic": "A substantially matches provider-config gold; B gives only accepted_file_formats. No requirement to infer hidden fetching-results context.",
+      "uncertainty_or_scope_note": "The literal pronoun включается has an omitted subject; the B partial grade is lower confidence, not a verified factual error."
+    },
+    {
+      "question_id": "Q08",
+      "A": {
+        "grade": "pass",
+        "reason": "Correct binary units, limit and equality behavior.",
+        "answer_quote": "50 MiB ... 52,428,800 bytes",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q08.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Correct binary units and 52,428,800-byte conversion.",
+        "answer_quote": "binary MiB ... 52,428,800 bytes",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q08.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/export/validate_documents.rb#unsupported_file"
+      ],
+      "historical_gold_diagnostic": "Both satisfy the substantive gold fact.",
+      "uncertainty_or_scope_note": ""
+    },
+    {
+      "question_id": "Q09",
+      "A": {
+        "grade": "pass",
+        "reason": "Explains required client_id plus personal-return contact_id and business-return distinction.",
+        "answer_quote": "client account as the root TD identity, with a contact for personal returns",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q09.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Same conditional two-identifier contract; account anchors ownership, contact names a person.",
+        "answer_quote": "For a personal return, it also requires a contact_id",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q09.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/export_async.rb:22-49",
+        "app/services/tax_preparation/tax_automations/export_async.rb#find_or_create_tax_preparation!"
+      ],
+      "historical_gold_diagnostic": "Both state the source contract. The historical GruntWorx contact-only registration recommendation is an additional design inference, not part of the literal question.",
+      "uncertainty_or_scope_note": "Opening account-first wording can mislead if read alone; both answers immediately qualify it. Do not interpret either as denying contact identity for personal returns."
+    },
+    {
+      "question_id": "Q10",
+      "A": {
+        "grade": "pass",
+        "reason": "Correctly distinguishes completed-same-return-type refusal from in-flight refusal that does not filter return type; mentions accepted subset.",
+        "answer_quote": "This check does not filter by return type.",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q10.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Gets the two refusals and archive rule, but incorrectly generalizes different-return-type separation to the in-flight case.",
+        "answer_quote": "a different return type or envelope is evaluated separately",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q10.md",
+        "hard_error_count": 1
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/export/validate_documents.rb#already_sent_document_ids",
+        "app/services/tax_preparation/tax_automations/export/validate_documents.rb#uploading_document_ids",
+        "app/services/tax_preparation/tax_automations/export/validate_documents.rb#tax_automation_documents_for_payload"
+      ],
+      "historical_gold_diagnostic": "A matches and adds the important in-flight cross-return-type detail. B has one verified material boundary error.",
+      "uncertainty_or_scope_note": "Counterexample: a waiting/uploading row for another supported return type in the same provider/client/contact/year still triggers upload_in_progress. A’s failed-attempt retry wording is read as upload failure, consistent with its preceding uploaded/non-archived rule."
+    },
+    {
+      "question_id": "Q11",
+      "A": {
+        "grade": "pass",
+        "reason": "Correct uploaded_at selection, uploaded-only gate, 1h/12h/2d windows, settings overrides and firm gating.",
+        "answer_quote": "по uploaded_at ... 1 час, 12 часов и 2 дня",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q11.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Same correct behavior plus the 30-minute cadence.",
+        "answer_quote": "uploaded send records only ... 1 hour ... 12 hours ... 2-day",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q11.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+        "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb"
+      ],
+      "historical_gold_diagnostic": "A omits cadence; the literal question asks candidate selection/time thresholds, which it answers. B cadence is consistent with worker declaration/comment.",
+      "uncertainty_or_scope_note": "The actual periodic scheduler registration was not independently located; no contradiction of the stated cadence was established."
+    },
+    {
+      "question_id": "Q12",
+      "A": {
+        "grade": "pass",
+        "reason": "Correct envelope consolidation/deduplication and provider delegation; distinguishes TD-created entity destruction from vendor-created entity unlinking.",
+        "answer_quote": "When the source entity was created by TD, its local record is destroyed",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q12.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "partial",
+        "reason": "Correct main merge behavior, but the Instead source-entity cleanup is stated unconditionally as unlinking.",
+        "answer_quote": "their provider documents are reassigned ... source entity is unlinked",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q12.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/tax_preparations/merge_for_contact.rb",
+        "app/services/tax_preparation/tax_automations/instead/merge_for_contact.rb#release_entity!"
+      ],
+      "historical_gold_diagnostic": "Both cover the common gold behavior. B misses the source_taxdome? cleanup branch visible in current adapter code.",
+      "uncertainty_or_scope_note": "B’s cleanup wording is an ancillary conditional omission/overgeneralization, not counted as another hard error; destroy! also removes the association, but it is not the same local-record outcome."
+    },
+    {
+      "question_id": "Q13",
+      "A": {
+        "grade": "pass",
+        "reason": "Correct first binding, same-account no-op, mismatch rollback/best-effort revoke, blank-ID early return.",
+        "answer_quote": "If the vendor returns no account ID ... skips the binding check",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/A/answers/Q13.md",
+        "hard_error_count": 0
+      },
+      "B": {
+        "grade": "pass",
+        "reason": "Correct binding/mismatch behavior and no-ID safeguard bypass.",
+        "answer_quote": "flow skips binding and mismatch checks",
+        "answer_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/runs/B/answers/Q13.md",
+        "hard_error_count": 0
+      },
+      "source_evidence": [
+        "app/services/tax_preparation/tax_automations/connections/create.rb#choose_provider!",
+        "app/services/tax_preparation/tax_automations/connections/create.rb#bind_account!",
+        "app/services/tax_preparation/tax_automations/connections/create.rb#withdraw_stray_grant"
+      ],
+      "historical_gold_diagnostic": "Neither states disconnect/disconnect-all clearing, but the literal asks reconnect/no-ID behavior, not the entire reset lifecycle.",
+      "uncertainty_or_scope_note": ""
+    }
+  ],
+  "limits": [
+    "Qualitative single-reviewer assessment, not an independently calibrated numeric score.",
+    "Not every incidental detail in the long answers was reverified; named uncertainties are explicit.",
+    "No changes to raw metrics, model outputs, runner or benchmark conditions."
+  ]
+}

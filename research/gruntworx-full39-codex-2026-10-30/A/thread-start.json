@@ -1,0 +1,67 @@
+{
+  "thread": {
+    "id": "01a18ae5-3a07-7193-9975-7fd5e2b2eeff",
+    "environments": [
+      {
+        "environmentId": "local",
+        "cwd": "/Users/Shared/nav-ab/repo-master",
+        "runtimeWorkspaceRoots": [
+          "/Users/Shared/nav-ab/repo-master"
+        ]
+      }
+    ],
+    "extra": null,
+    "sessionId": "01a18ae5-3a07-7193-9975-7fd5e2b2eeff",
+    "forkedFromId": null,
+    "parentThreadId": null,
+    "preview": "",
+    "ephemeral": false,
+    "section": null,
+    "sectionEnteredAt": null,
+    "projectId": null,
+    "historyMode": "paginated",
+    "modelProvider": "openai",
+    "model": "gpt-6-luna",
+    "reasoningEffort": "medium",
+    "createdAt": 1793331642,
+    "updatedAt": 1793331642,
+    "recencyAt": 1793331642,
+    "status": {
+      "type": "idle"
+    },
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/sessions/2026/10/30/rollout-2026-10-30T06-40-42-01a18ae5-3a07-7193-9975-7fd5e2b2eeff.jsonl",
+    "cwd": "/Users/Shared/nav-ab/repo-master",
+    "cliVersion": "0.166.0",
+    "originator": "gruntworx-planning-benchmark",
+    "source": "vscode",
+    "canAcceptDirectInput": true,
+    "threadSource": null,
+    "agentNickname": null,
+    "agentRole": null,
+    "gitInfo": null,
+    "name": null,
+    "daybreakEnabled": null,
+    "turns": []
+  },
+  "model": "gpt-6-luna",
+  "modelProvider": "openai",
+  "serviceTier": null,
+  "disabledPluginIds": [],
+  "cwd": "/Users/Shared/nav-ab/repo-master",
+  "runtimeWorkspaceRoots": [
+    "/Users/Shared/nav-ab/repo-master"
+  ],
+  "instructionSources": [],
+  "approvalPolicy": "never",
+  "approvalsReviewer": "user",
+  "sandbox": {
+    "type": "readOnly",
+    "networkAccess": false
+  },
+  "activePermissionProfile": {
+    "id": "benchmark",
+    "extends": null
+  },
+  "reasoningEffort": "medium",
+  "multiAgentMode": "explicitRequestOnly"
+}

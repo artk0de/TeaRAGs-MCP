@@ -1,0 +1,132 @@
+model = "gpt-6-luna"
+model_reasoning_effort = "medium"
+approval_policy = "never"
+default_permissions = "benchmark"
+allow_login_shell = false
+web_search = "disabled"
+project_doc_max_bytes = 0
+
+[features]
+apps = false
+browser_use = false
+browser_use_external = false
+in_app_browser = false
+computer_use = false
+image_generation = false
+view_image = false
+multi_agent = false
+memories = false
+shell_snapshot = false
+skip_host_skill_discovery = true
+remote_plugin = false
+plugin_sharing = false
+plugin_discovery_prefetch = false
+skill_search = false
+skill_mcp_dependency_install = false
+plugins = true
+hooks = true
+
+[projects."/Users/Shared/nav-ab/repo-master"]
+trust_level = "trusted"
+
+[shell_environment_policy]
+inherit = "none"
+set = { PATH = "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin:/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/usr/bin:/bin:/usr/sbin:/sbin", HOME = "/nonexistent", TMPDIR = "/nonexistent", LANG = "en_US.UTF-8", ASDF_NODEJS_VERSION = "24.15.0" }
+
+[permissions.benchmark.filesystem]
+":root" = "deny"
+":minimal" = "read"
+":slash_tmp" = "deny"
+":tmpdir" = "deny"
+"/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex" = "read"
+"/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin/node" = "read"
+"/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path/rg" = "read"
+"/opt/homebrew/bin/python3" = "read"
+"/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework" = "read"
+"/opt/homebrew/opt/pcre2" = "read"
+"/opt/homebrew/Cellar/pcre2/10.49" = "read"
+"/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/plugins/cache/tea-rags" = "read"
+
+[permissions.benchmark.filesystem."/Users/Shared/nav-ab/repo-master"]
+"." = "read"
+".git" = "deny"
+".agents" = "deny"
+".codex" = "deny"
+".claude" = "deny"
+".contextignore.local" = "deny"
+"docs" = "deny"
+"specs" = "deny"
+"**/*.md" = "deny"
+"**/*.MD" = "deny"
+
+[permissions.benchmark.network]
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/skills/.system/imagegen/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/skills/.system/openai-docs/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/skills/.system/review-agent/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/skills/.system/skill-creator/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/homes/A/skills/.system/skill-installer/SKILL.md"
+enabled = false
+
+[marketplaces.tea-rags]
+source_type = "local"
+source = "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex39/final-marketplace"
+
+[plugins."tea-rags@tea-rags"]
+enabled = true
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:a737da831c7c4d3423b656698a12df3e367d4e4422ed38d4c23e0648d430d2ec"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:pre_tool_use:0:1"]
+trusted_hash = "sha256:5ce0d11c3f2ca8e2f0e64d5d4430089051d64e838545765ebb558f34d4e95544"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:pre_tool_use:0:2"]
+trusted_hash = "sha256:d101bd0b4590dbc63b9fb74eb182d8cd28e7b0e51a9a6560caed27e94dac1a50"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:fa9c9b86b8efd864ec207128137aacc31c0140f2c8b09bc9d56d51019e546067"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:post_tool_use:0:1"]
+trusted_hash = "sha256:8f3cb36fb6eb04df566e759f9565822e3009b08ddf3fa6f8ee324711e6b5cdb5"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:post_tool_use:1:0"]
+trusted_hash = "sha256:4bc7a74e19cd962385e0573842ddc7bde647d23a90f1b745913c7f7be68f4864"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:405841b2ed08455a27210d0c93fbb3c0a692229eb156d18fea31b96d2d7fdb1d"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:session_start:1:0"]
+trusted_hash = "sha256:b8c3791e9135aa62429f5201232af16c3ad0eeab527592377f4ed0ada784139d"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:session_start:2:0"]
+trusted_hash = "sha256:9a0d2294eb0ef163a6a77d74de8807ba1a86c949b72dc71f1ff113f560b18d59"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:session_start:3:0"]
+trusted_hash = "sha256:c7cc9e3dde551f150f410ea06d015579b70222aa2ade11b7144ba3f0db54440c"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:user_prompt_submit:0:0"]
+trusted_hash = "sha256:14a70863735ea4d03be5c8128bfddd8dfa50b19a016cfd478d9852c1c8e6b933"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:user_prompt_submit:0:1"]
+trusted_hash = "sha256:11033c81c4eb0c5e4bf03da929b89309ca24b1566f031158e8305d5edd6c4994"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:user_prompt_submit:0:2"]
+trusted_hash = "sha256:0f4ce8d31e76bab40b6488c9e693ad453d30475fcd1e299ec7553b39c0d77eae"
+
+[hooks.state."tea-rags@tea-rags:hooks/hooks.json:subagent_start:0:0"]
+trusted_hash = "sha256:2034da994d1819c0fb68c8c71fd9381edd11d9edff8e8f91cd63af3c8ef0a0b1"

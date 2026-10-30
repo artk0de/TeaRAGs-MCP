@@ -1,0 +1,126 @@
+{
+  "source_commit": "afdbc18d53c3336d5d50c7bba2200863fbe34ca6",
+  "corpus_commit": "f88b42f3c286815ea43b464960205d56445ee2e6",
+  "plugin_version": "0.53.5",
+  "model": "gpt-6-luna",
+  "effort": "medium",
+  "order": [
+    "A",
+    "B"
+  ],
+  "one_full_session_per_condition": true,
+  "cells": {
+    "A": {
+      "completed_questions": 39,
+      "native_completed_questions": 39,
+      "complete_39": true,
+      "thread_id": "01a18ae5-3a07-7193-9975-7fd5e2b2eeff",
+      "full_wall_seconds": 1164.439,
+      "full_wall_scope": "Runner session clock after RPC initialization; excludes app-server startup/initialize and teardown",
+      "sum_question_wall_seconds": 1110.188,
+      "sum_question_wall_seconds_excluding_q01": 1028.363,
+      "usage_total": {
+        "inputTokens": 31142253,
+        "cachedInputTokens": 30543744,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 114803,
+        "reasoningOutputTokens": 78360,
+        "totalTokens": 31257056
+      },
+      "usage_total_excluding_q01": {
+        "inputTokens": 29998079,
+        "cachedInputTokens": 29482112,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 106990,
+        "reasoningOutputTokens": 74119,
+        "totalTokens": 30105069
+      },
+      "tool_counts": {
+        "shell": 96,
+        "tea_metadata": 2,
+        "tea_semantic": 39,
+        "mcp_resource": 25,
+        "tea_source_graph": 120
+      },
+      "tool_completed_unique": 282,
+      "tool_completed_unique_excluding_q01": 251,
+      "diagnostics": {
+        "duplicate_native_completion_events": 0,
+        "ignored_unmapped_events": {},
+        "warnings": [],
+        "invalid_event_json_lines": []
+      }
+    },
+    "B": {
+      "completed_questions": 39,
+      "native_completed_questions": 39,
+      "complete_39": true,
+      "thread_id": "01a18af8-37b1-7f30-a816-39fbbc948859",
+      "full_wall_seconds": 312.069,
+      "full_wall_scope": "Runner session clock after RPC initialization; excludes app-server startup/initialize and teardown",
+      "sum_question_wall_seconds": 262.704,
+      "sum_question_wall_seconds_excluding_q01": 248.752,
+      "usage_total": {
+        "inputTokens": 9904913,
+        "cachedInputTokens": 9717888,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 22615,
+        "reasoningOutputTokens": 4602,
+        "totalTokens": 9927528
+      },
+      "usage_total_excluding_q01": {
+        "inputTokens": 9828914,
+        "cachedInputTokens": 9662976,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 21557,
+        "reasoningOutputTokens": 4411,
+        "totalTokens": 9850471
+      },
+      "tool_counts": {
+        "shell": 64
+      },
+      "tool_completed_unique": 64,
+      "tool_completed_unique_excluding_q01": 60,
+      "diagnostics": {
+        "duplicate_native_completion_events": 0,
+        "ignored_unmapped_events": {},
+        "warnings": [],
+        "invalid_event_json_lines": []
+      }
+    }
+  },
+  "ratios": {
+    "session_wall_A_over_B": 3.7313510794087206,
+    "sum_question_wall_A_over_B": 4.226003410682746,
+    "q02_39_wall_A_over_B": 4.134089374155786,
+    "input_A_over_B": 3.1441218110648728,
+    "output_A_over_B": 5.076409462745965,
+    "reasoning_A_over_B": 17.027379400260756,
+    "tool_items_A_over_B": 4.40625
+  },
+  "quality": {
+    "method": "Post-run non-blind subjective diagnostic review of literal user intent; not calibrated accuracy; historical gold auxiliary only.",
+    "totals": {
+      "A": {
+        "pass": 29,
+        "partial": 10,
+        "fail": 0
+      },
+      "B": {
+        "pass": 25,
+        "partial": 13,
+        "fail": 1
+      }
+    },
+    "files": [
+      "quality/quality-Q01-Q13.json",
+      "quality/quality-Q14-Q26.json",
+      "quality/quality-Q27-Q39.json"
+    ],
+    "Q36_correction": "Final unique firm_id correct for both; actor later renamed creator. Latest review supersedes initial-migration-only criticism."
+  },
+  "clean_unmodified_plugin_causal_comparison": false,
+  "major_limitation": "A isolation proxy rejected 5 responses:1list/dict exception+4unclassified-text rejections. Observed times real; recovery overhead unknown; no actor reruns.",
+  "proxy_blocked_call_duration_ms_sum": 1474,
+  "all_failed_mcp_call_duration_ms_sum": 1478
+}

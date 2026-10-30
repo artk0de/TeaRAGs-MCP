@@ -1,0 +1,3309 @@
+{
+  "schema_version": 1,
+  "contract": {
+    "tool_count": "Unique native completed item ids; failed/declined lifecycle ends retained by status; started/deltas/text mentions never counted",
+    "usage": "Latest cumulative total at each turn minus preceding question total, never sum cumulative updates or add cached/reasoning subsets",
+    "missing_usage": "null means unavailable, never zero",
+    "nested_calls": "Only native completed item evidence; wrapper source strings are not evidence of nested execution",
+    "grading": "Metrics are not correctness grades; assess direct user intent and historical gold separately after final; no penalty for using held context without tools"
+  },
+  "cell": "B",
+  "thread_id": "01a18af8-37b1-7f30-a816-39fbbc948859",
+  "run_state": "completed",
+  "question_turn_unit": "Native app-server question turns, not underlying model responses/assistant iterations",
+  "underlying_model_response_count": null,
+  "completed_questions": 39,
+  "native_completed_questions": 39,
+  "runner_complete_39": true,
+  "complete_39": true,
+  "full_wall_seconds": 312.069,
+  "full_wall_scope": "Runner session clock after RPC initialization; excludes app-server startup/initialize and teardown",
+  "sum_question_wall_seconds": 262.704,
+  "sum_question_wall_seconds_excluding_q01": 248.752,
+  "usage_total": {
+    "inputTokens": 9904913,
+    "cachedInputTokens": 9717888,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 22615,
+    "reasoningOutputTokens": 4602,
+    "totalTokens": 9927528
+  },
+  "usage_total_excluding_q01": {
+    "inputTokens": 9828914,
+    "cachedInputTokens": 9662976,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 21557,
+    "reasoningOutputTokens": 4411,
+    "totalTokens": 9850471
+  },
+  "usage_latest_thread_total": {
+    "inputTokens": 9904913,
+    "cachedInputTokens": 9717888,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 22615,
+    "reasoningOutputTokens": 4602,
+    "totalTokens": 9927528
+  },
+  "usage_marked_completed_questions_total": {
+    "inputTokens": 9904913,
+    "cachedInputTokens": 9717888,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 22615,
+    "reasoningOutputTokens": 4602,
+    "totalTokens": 9927528
+  },
+  "token_subset_semantics": "cachedInputTokens is a subset of inputTokens; reasoningOutputTokens is a subset of outputTokens",
+  "new_input_tokens": 187025,
+  "non_reasoning_output_tokens": 18013,
+  "tool_counts": {
+    "shell": 64
+  },
+  "tool_counts_excluding_q01": {
+    "shell": 60
+  },
+  "tool_completed_unique": 64,
+  "tool_completed_unique_excluding_q01": 60,
+  "tool_counts_complete": true,
+  "per_question": [
+    {
+      "id": "Q01",
+      "sent_at": 2.631,
+      "prompt_sha256": "77be3c9523043e21d51855199b41876d9fb454b8fe1c1fb50df7b0f8603c09d8",
+      "turn_id": "01a18af8-41f9-76b0-b25d-fa4a29c98fe6",
+      "completed_at": 16.583,
+      "wall_seconds": 13.952,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 13943,
+      "usage_delta": {
+        "inputTokens": 75999,
+        "cachedInputTokens": 54912,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1058,
+        "reasoningOutputTokens": 191,
+        "totalTokens": 77057
+      },
+      "usage_cumulative": {
+        "inputTokens": 75999,
+        "cachedInputTokens": 54912,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1058,
+        "reasoningOutputTokens": 191,
+        "totalTokens": 77057
+      },
+      "usage_last_response_only": {
+        "inputTokens": 20330,
+        "cachedInputTokens": 17024,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 421,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 20751
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-a7bde164-3e96-4a98-b94d-c37fb611dfe2",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 10580,
+            "serialized_utf8_bytes": 10580,
+            "text_chars": 10377,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-dbd35fd8-95c8-4628-844d-44364628b5bc",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 2218,
+          "result_size": {
+            "serialized_chars": 3080,
+            "serialized_utf8_bytes": 3080,
+            "text_chars": 3041,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-c475a402-9906-4a04-9238-596109733041",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 10069,
+            "serialized_utf8_bytes": 10075,
+            "text_chars": 9863,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-3eed5c07-e64f-4cb4-a18d-9cd5794b390f",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 14634,
+            "serialized_utf8_bytes": 14680,
+            "text_chars": 14284,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 4
+      },
+      "tool_completed_unique": 4,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416993d248191a8032f4364736b1e",
+          "phase": "commentary",
+          "text": "Изучу структуру SDD кита и текущие материалы по Instead и портам, затем добавлю в спеки проблему TD-102837 и новый mock-first сценарий GruntWorx с учетом накопленного опыта. Сначала проверю доступные файлы проекта; часть каталогов и Markdown в этой среде закрыты политикой чтения, поэтому буду работать с теми источниками, которые доступны."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae416a2d568819188440155a828cfdc",
+          "phase": "final_answer",
+          "text": "Нашел в коде текущую архитектуру, но не смог «зарядить» SDD кит в этой сессии: файловая система доступна только для чтения, а `docs/`, `specs/` и Markdown файлы закрыты политикой. Доступных документов GruntWorx в рабочей области не обнаружил; Jira задачу TD-102837 тоже не удалось прочитать.\n\nЧто уже следует из кода:\n\n- **Регистрация адаптера** — в `TaxPreparation::TaxAutomations::Registry::ADAPTERS`; сейчас зарегистрирован только Instead. Для провайдеров можно задать feature flag в `FEATURE_FLAGS`.\n- **Контракт namespace адаптера** — как минимум `Connection` с моделью соединения и `Client`, включающий `TokenRefreshable`; также namespace предоставляет сервисы, которые вызывают общие порты. Реестр выбирает адаптер по провайдеру фирмы или по классу connection.\n- **Capability passport** — `Connection.capabilities`: декларация возможностей вендора без привязки к конкретной записи соединения. Сейчас паспорт описывает условия для каждого return type — принимаемые форматы и максимальный размер файла — и поддерживаемые налоговые годы. Контракт проверяется при вызове; отсутствующие или некорректные значения должны приводить к ошибке.\n- **Данные и состояние** — общие настройки фирмы хранят выбранного провайдера; соединения принадлежат адаптерам. Реестр различает сохраненное соединение и пригодное для отправки, а также может получить соединения всех провайдеров по `firm_id`. Для отправок важно сохранять провайдера в момент создания: настройка фирмы может измениться.\n\nMock адаптер Instead уже есть в `app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb`. Чтобы подготовить полноценные изменения спеки, нужны доступ на запись и доступный материал GruntWorx вместе с содержанием TD-102837."
+        }
+      ],
+      "final_answer": "Нашел в коде текущую архитектуру, но не смог «зарядить» SDD кит в этой сессии: файловая система доступна только для чтения, а `docs/`, `specs/` и Markdown файлы закрыты политикой. Доступных документов GruntWorx в рабочей области не обнаружил; Jira задачу TD-102837 тоже не удалось прочитать.\n\nЧто уже следует из кода:\n\n- **Регистрация адаптера** — в `TaxPreparation::TaxAutomations::Registry::ADAPTERS`; сейчас зарегистрирован только Instead. Для провайдеров можно задать feature flag в `FEATURE_FLAGS`.\n- **Контракт namespace адаптера** — как минимум `Connection` с моделью соединения и `Client`, включающий `TokenRefreshable`; также namespace предоставляет сервисы, которые вызывают общие порты. Реестр выбирает адаптер по провайдеру фирмы или по классу connection.\n- **Capability passport** — `Connection.capabilities`: декларация возможностей вендора без привязки к конкретной записи соединения. Сейчас паспорт описывает условия для каждого return type — принимаемые форматы и максимальный размер файла — и поддерживаемые налоговые годы. Контракт проверяется при вызове; отсутствующие или некорректные значения должны приводить к ошибке.\n- **Данные и состояние** — общие настройки фирмы хранят выбранного провайдера; соединения принадлежат адаптерам. Реестр различает сохраненное соединение и пригодное для отправки, а также может получить соединения всех провайдеров по `firm_id`. Для отправок важно сохранять провайдера в момент создания: настройка фирмы может измениться.\n\nMock адаптер Instead уже есть в `app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb`. Чтобы подготовить полноценные изменения спеки, нужны доступ на запись и доступный материал GruntWorx вместе с содержанием TD-102837.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q02",
+      "sent_at": 17.845,
+      "prompt_sha256": "3fe7cf37fed84b01fa51f047145c649bf424164771511ed6775ce3be8c061dc3",
+      "turn_id": "01a18af8-7d67-7320-9370-e01f5f5fe9b6",
+      "completed_at": 28.362,
+      "wall_seconds": 10.517,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 10508,
+      "usage_delta": {
+        "inputTokens": 70913,
+        "cachedInputTokens": 64000,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 583,
+        "reasoningOutputTokens": 19,
+        "totalTokens": 71496
+      },
+      "usage_cumulative": {
+        "inputTokens": 146912,
+        "cachedInputTokens": 118912,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1641,
+        "reasoningOutputTokens": 210,
+        "totalTokens": 148553
+      },
+      "usage_last_response_only": {
+        "inputTokens": 26658,
+        "cachedInputTokens": 23296,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 297,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 26955
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-1adecfd3-8e6b-4b9b-bddc-cd5c2fea04fb",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 2146,
+          "result_size": {
+            "serialized_chars": 9552,
+            "serialized_utf8_bytes": 9560,
+            "text_chars": 9293,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-81c0c484-4611-4ec3-bb73-fc5d0ef16f10",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 2177,
+          "result_size": {
+            "serialized_chars": 32449,
+            "serialized_utf8_bytes": 32451,
+            "text_chars": 32128,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416a80cec8191a5cdb24818881335",
+          "phase": "commentary",
+          "text": "Проверю реализации mock-адаптера, роутера, тестовой инфраструктуры и конфигурации, чтобы отделить старый `instead_mocks` от нынешнего mock-адаптера и выяснить, остались ли рабочие переключатели."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae416afb57c8191bb55ed91258730f3",
+          "phase": "final_answer",
+          "text": "In the code I can inspect, **`instead_mocks` was not a live transport switch**. The current `Instead::Mock::Adapter` and `Router` describe themselves as “wired into nothing”: no client selects the adapter and no flag routes requests to it.\n\nThe mock is a deterministic in-process stand-in for the Instead API. A Faraday adapter sends requests to a router that returns vendor-shaped responses for token exchange/revoke, entity listing/creation, and document upload/finalize/read. Handles are derived from the firm and request data, so repeated calls produce stable identifiers without storing mock state. Because it sits at the transport layer, responses still pass through the normal client middleware, including parsing, error mapping, token handling, and metrics.\n\n**How it was switched on:** I found no `instead_mocks` flag or configuration path in the current source. The mock adapter requires a `firm_id` connection option, but I found no client wiring that installs it.\n\n**How specs use it:** The current specs I found stub the real client’s HTTP endpoints with WebMock fixtures. I found no specs referencing `Instead::Mock::Adapter` or `Router`, and no `instead_mocks` references. So the available evidence points to the mock transport being reference code, not the transport the specs currently exercise.\n\nI can’t establish whether an older version used a switch literally named `instead_mocks`: repository history is inaccessible in this session."
+        }
+      ],
+      "final_answer": "In the code I can inspect, **`instead_mocks` was not a live transport switch**. The current `Instead::Mock::Adapter` and `Router` describe themselves as “wired into nothing”: no client selects the adapter and no flag routes requests to it.\n\nThe mock is a deterministic in-process stand-in for the Instead API. A Faraday adapter sends requests to a router that returns vendor-shaped responses for token exchange/revoke, entity listing/creation, and document upload/finalize/read. Handles are derived from the firm and request data, so repeated calls produce stable identifiers without storing mock state. Because it sits at the transport layer, responses still pass through the normal client middleware, including parsing, error mapping, token handling, and metrics.\n\n**How it was switched on:** I found no `instead_mocks` flag or configuration path in the current source. The mock adapter requires a `firm_id` connection option, but I found no client wiring that installs it.\n\n**How specs use it:** The current specs I found stub the real client’s HTTP endpoints with WebMock fixtures. I found no specs referencing `Instead::Mock::Adapter` or `Router`, and no `instead_mocks` references. So the available evidence points to the mock transport being reference code, not the transport the specs currently exercise.\n\nI can’t establish whether an older version used a switch literally named `instead_mocks`: repository history is inaccessible in this session.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q03",
+      "sent_at": 29.558,
+      "prompt_sha256": "836cbd798719a6358c3ba42411041bb7d8e7c843c0ff4d64b818b2d9c55f0802",
+      "turn_id": "01a18af8-ab28-7150-bae5-e008b3ab1a80",
+      "completed_at": 33.492,
+      "wall_seconds": 3.933,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 3923,
+      "usage_delta": {
+        "inputTokens": 26997,
+        "cachedInputTokens": 26496,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 365,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 27362
+      },
+      "usage_cumulative": {
+        "inputTokens": 173909,
+        "cachedInputTokens": 145408,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 2006,
+        "reasoningOutputTokens": 210,
+        "totalTokens": 175915
+      },
+      "usage_last_response_only": {
+        "inputTokens": 26997,
+        "cachedInputTokens": 26496,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 365,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 27362
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416b3e0608191a0fd3857cf69041a",
+          "phase": "final_answer",
+          "text": "Based on the Instead integration patterns visible in the code, a second vendor should inherit these lessons:\n\n- **Rate limits:** Keep vendor-specific throttling in the adapter namespace, so its limits and rate-limit groups don’t leak into shared ports. Map `429` responses into the shared rate-limit error vocabulary, preserving `Retry-After` where available so callers can schedule retries appropriately.\n\n- **Lost webhooks:** Treat webhooks as a prompt to reconcile, not the only source of truth. Reconciliation jobs should query vendor state and apply the same status transitions as webhook handlers. That lets the integration recover when an event is delayed or missed.\n\n- **Failure reasons:** Translate vendor errors into stable, actionable reasons at the adapter boundary. Callers should be able to distinguish cases such as expired authorization, missing scope, quota, rate limits, and transient service failures without parsing vendor response bodies. Preserve vendor-specific reasons only where shared categories cannot express the decision callers need to make.\n\n- **Signed URLs and cassettes:** Keep file bytes off the API client path when the vendor provides signed upload targets. Specs should cover the target negotiation and transfer boundary, but avoid recording usable signed URLs or credentials in VCR cassettes. The visible Instead specs stub API endpoints; check the upload flow specifically for cassette handling before copying its test setup.\n\n- **Entity matching:** Don’t assume a display name is a stable identity. Prefer vendor IDs once linked; make matching rules explicit for initial linking, including normalization, ambiguity, and duplicate entities. Keep any vendor-specific matching behavior inside its adapter or linking service.\n\nOne useful constraint from Instead: test the shared contract and caller decisions, while keeping vendor-specific quirks inside the adapter. This avoids making the second provider fit Instead’s API shape when its data model or workflow differs."
+        }
+      ],
+      "final_answer": "Based on the Instead integration patterns visible in the code, a second vendor should inherit these lessons:\n\n- **Rate limits:** Keep vendor-specific throttling in the adapter namespace, so its limits and rate-limit groups don’t leak into shared ports. Map `429` responses into the shared rate-limit error vocabulary, preserving `Retry-After` where available so callers can schedule retries appropriately.\n\n- **Lost webhooks:** Treat webhooks as a prompt to reconcile, not the only source of truth. Reconciliation jobs should query vendor state and apply the same status transitions as webhook handlers. That lets the integration recover when an event is delayed or missed.\n\n- **Failure reasons:** Translate vendor errors into stable, actionable reasons at the adapter boundary. Callers should be able to distinguish cases such as expired authorization, missing scope, quota, rate limits, and transient service failures without parsing vendor response bodies. Preserve vendor-specific reasons only where shared categories cannot express the decision callers need to make.\n\n- **Signed URLs and cassettes:** Keep file bytes off the API client path when the vendor provides signed upload targets. Specs should cover the target negotiation and transfer boundary, but avoid recording usable signed URLs or credentials in VCR cassettes. The visible Instead specs stub API endpoints; check the upload flow specifically for cassette handling before copying its test setup.\n\n- **Entity matching:** Don’t assume a display name is a stable identity. Prefer vendor IDs once linked; make matching rules explicit for initial linking, including normalization, ambiguity, and duplicate entities. Keep any vendor-specific matching behavior inside its adapter or linking service.\n\nOne useful constraint from Instead: test the shared contract and caller decisions, while keeping vendor-specific quirks inside the adapter. This avoids making the second provider fit Instead’s API shape when its data model or workflow differs.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q04",
+      "sent_at": 34.676,
+      "prompt_sha256": "8f231c84c04fee40755643d774ce3067d67fab1a676740a41f507533571c787f",
+      "turn_id": "01a18af8-bf26-7de2-9a5e-004ddddefa03",
+      "completed_at": 44.772,
+      "wall_seconds": 10.096,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 10085,
+      "usage_delta": {
+        "inputTokens": 128356,
+        "cachedInputTokens": 117376,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1044,
+        "reasoningOutputTokens": 171,
+        "totalTokens": 129400
+      },
+      "usage_cumulative": {
+        "inputTokens": 302265,
+        "cachedInputTokens": 262784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 3050,
+        "reasoningOutputTokens": 381,
+        "totalTokens": 305315
+      },
+      "usage_last_response_only": {
+        "inputTokens": 37400,
+        "cachedInputTokens": 31872,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 649,
+        "reasoningOutputTokens": 117,
+        "totalTokens": 38049
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-335edaa7-57e0-4350-80f5-f52ffef8a491",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 97741,
+            "serialized_utf8_bytes": 97793,
+            "text_chars": 97047,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-3ade39fa-72ff-4142-af20-ea2951987ae0",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 1304,
+            "serialized_utf8_bytes": 1304,
+            "text_chars": 1281,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-2e3a8085-7881-4360-b4f0-6690a7ea56fc",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 26467,
+            "serialized_utf8_bytes": 26515,
+            "text_chars": 25833,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416be371c8191b4b912b690406b85",
+          "phase": "final_answer",
+          "text": "Several contracts are called vendor-neutral, but they carry assumptions from **Instead’s API** or **OAuth 2.0**. A second vendor should be checked against these before its adapter is shaped around them.\n\n**OAuth assumptions**\n\n- `HasOauthConnection` and `TokenRefreshable` assume an authorization-code flow with PKCE S256, access and refresh tokens, preemptive refresh, Bearer auth, scopes, and a revocation endpoint. The authorization URL also defaults to `/oauth2/authorize`, `/oauth2/token`, and `/oauth2/revoke`.\n- The connection model assumes one grant per firm and stores an Instead-specific PKCE verifier and ceremony state. A vendor using API keys, client credentials, SAML, a different OAuth profile, or multiple connections per firm won’t fit this lifecycle unchanged.\n- The shared `InvalidGrantError` assumes that a vendor refusal during refresh means the firm must authorize again. That decision needs checking against the vendor’s actual error semantics.\n\n**Instead API and upload assumptions**\n\n- The export flow assumes the vendor can issue a pre-signed upload target and that TaxDome can transfer file bytes directly to it. The shared transfer path needs revisiting if a vendor requires multipart upload, a client-mediated upload, or bytes sent through its API.\n- Capability terms are expressed as formats, max file size, return type, and supported tax years. Those are useful only if the vendor’s constraints can be represented in those terms.\n- The mock’s routes and response shapes, and the provider-specific connection/entity/document tables, mirror Instead’s API. They’re examples of one adapter, not a generic provider contract.\n\n**Entity and document model assumptions**\n\n- Instead’s entity model uses its own entity-type vocabulary and maps each return type to an entity type. Linking also assumes a taxpayer can be matched by name and return type when there is exactly one unlinked candidate. A vendor with different taxpayer identity, household, or business semantics needs its own matching rules.\n- The shared document state machine has a fixed set of processing states and failure reasons. A new vendor’s statuses need translation into these states; if that loses distinctions callers need, the shared vocabulary should be extended deliberately.\n- The shared send record snapshots the provider and return type, and assumes documents are sent under a tax preparation “envelope.” Confirm that the second vendor’s submission unit and lifecycle map cleanly to that model.\n\nThe practical boundary is: reuse shared contracts where they describe TaxDome’s decisions, but keep vendor identity, matching, auth ceremony, upload protocol, and status translation in the adapter when those details differ."
+        }
+      ],
+      "final_answer": "Several contracts are called vendor-neutral, but they carry assumptions from **Instead’s API** or **OAuth 2.0**. A second vendor should be checked against these before its adapter is shaped around them.\n\n**OAuth assumptions**\n\n- `HasOauthConnection` and `TokenRefreshable` assume an authorization-code flow with PKCE S256, access and refresh tokens, preemptive refresh, Bearer auth, scopes, and a revocation endpoint. The authorization URL also defaults to `/oauth2/authorize`, `/oauth2/token`, and `/oauth2/revoke`.\n- The connection model assumes one grant per firm and stores an Instead-specific PKCE verifier and ceremony state. A vendor using API keys, client credentials, SAML, a different OAuth profile, or multiple connections per firm won’t fit this lifecycle unchanged.\n- The shared `InvalidGrantError` assumes that a vendor refusal during refresh means the firm must authorize again. That decision needs checking against the vendor’s actual error semantics.\n\n**Instead API and upload assumptions**\n\n- The export flow assumes the vendor can issue a pre-signed upload target and that TaxDome can transfer file bytes directly to it. The shared transfer path needs revisiting if a vendor requires multipart upload, a client-mediated upload, or bytes sent through its API.\n- Capability terms are expressed as formats, max file size, return type, and supported tax years. Those are useful only if the vendor’s constraints can be represented in those terms.\n- The mock’s routes and response shapes, and the provider-specific connection/entity/document tables, mirror Instead’s API. They’re examples of one adapter, not a generic provider contract.\n\n**Entity and document model assumptions**\n\n- Instead’s entity model uses its own entity-type vocabulary and maps each return type to an entity type. Linking also assumes a taxpayer can be matched by name and return type when there is exactly one unlinked candidate. A vendor with different taxpayer identity, household, or business semantics needs its own matching rules.\n- The shared document state machine has a fixed set of processing states and failure reasons. A new vendor’s statuses need translation into these states; if that loses distinctions callers need, the shared vocabulary should be extended deliberately.\n- The shared send record snapshots the provider and return type, and assumes documents are sent under a tax preparation “envelope.” Confirm that the second vendor’s submission unit and lifecycle map cleanly to that model.\n\nThe practical boundary is: reuse shared contracts where they describe TaxDome’s decisions, but keep vendor identity, matching, auth ceremony, upload protocol, and status translation in the adapter when those details differ.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q05",
+      "sent_at": 45.962,
+      "prompt_sha256": "11c01ec15ee6ca83965fe146b89fe3f76d49902d6e1b58e602189987aded38bb",
+      "turn_id": "01a18af8-eb3c-7f42-8f8d-5ffe6798cc7e",
+      "completed_at": 54.464,
+      "wall_seconds": 8.502,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8492,
+      "usage_delta": {
+        "inputTokens": 173868,
+        "cachedInputTokens": 163200,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 579,
+        "reasoningOutputTokens": 140,
+        "totalTokens": 174447
+      },
+      "usage_cumulative": {
+        "inputTokens": 476133,
+        "cachedInputTokens": 425984,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 3629,
+        "reasoningOutputTokens": 521,
+        "totalTokens": 479762
+      },
+      "usage_last_response_only": {
+        "inputTokens": 47283,
+        "cachedInputTokens": 44928,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 254,
+        "reasoningOutputTokens": 99,
+        "totalTokens": 47537
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-0f39825e-68e6-4806-9bf2-a6e7138f62f8",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 26223,
+            "serialized_utf8_bytes": 26242,
+            "text_chars": 25922,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-e370e86d-d2ef-4a2e-bd87-3a01ef4cdc31",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 146,
+          "result_size": {
+            "serialized_chars": 5795,
+            "serialized_utf8_bytes": 5795,
+            "text_chars": 5658,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-f0a91d23-44b3-4805-843e-2b167d002675",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1683,
+          "result_size": {
+            "serialized_chars": 14067,
+            "serialized_utf8_bytes": 14067,
+            "text_chars": 13898,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416ca8ed88191829c62aed0f51b95",
+          "phase": "final_answer",
+          "text": "**`.xlsm` appears storable as a client document, but it is not configured as previewable.**\n\nThe document settings use a blacklist rather than an extension allowlist. That blacklist doesn’t include `xlsm`, so the extension alone doesn’t block storage. Uploads still have other checks, including MIME type and file size.\n\nThe previewable extension pattern explicitly lists `xls` and `xlsx`, but not `xlsm`. So TaxDome’s configured preview flow should not generate an inline preview for an `.xlsm` file; users can still access the stored file through the normal document flow.\n\nThe relevant settings are in [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1093)."
+        }
+      ],
+      "final_answer": "**`.xlsm` appears storable as a client document, but it is not configured as previewable.**\n\nThe document settings use a blacklist rather than an extension allowlist. That blacklist doesn’t include `xlsm`, so the extension alone doesn’t block storage. Uploads still have other checks, including MIME type and file size.\n\nThe previewable extension pattern explicitly lists `xls` and `xlsx`, but not `xlsm`. So TaxDome’s configured preview flow should not generate an inline preview for an `.xlsm` file; users can still access the stored file through the normal document flow.\n\nThe relevant settings are in [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1093).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q06",
+      "sent_at": 55.694,
+      "prompt_sha256": "6a8faadda17b10bec78a283d48aeb72d831df8cfd3646b7880989a90f2be51ba",
+      "turn_id": "01a18af9-1140-7fd1-ad4f-8eef8d528fe2",
+      "completed_at": 57.364,
+      "wall_seconds": 1.67,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 1659,
+      "usage_delta": {
+        "inputTokens": 47559,
+        "cachedInputTokens": 47104,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 114,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 47673
+      },
+      "usage_cumulative": {
+        "inputTokens": 523692,
+        "cachedInputTokens": 473088,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 3743,
+        "reasoningOutputTokens": 521,
+        "totalTokens": 527435
+      },
+      "usage_last_response_only": {
+        "inputTokens": 47559,
+        "cachedInputTokens": 47104,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 114,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 47673
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416cde09481919cbba6b8159e8b3e",
+          "phase": "final_answer",
+          "text": "Полную таблицу соответствий TD ↔ GWX пока нельзя составить по доступным материалам: документацию GruntWorx и описание Jira TD-102837 я в этой сессии прочитать не смог, а в репозитории нет найденного GWX-специфичного контракта.\n\nПришлите документацию GruntWorx или вставьте её содержимое сюда — составлю полную таблицу полей, операций, статусов, ошибок, ограничений и точек интеграции."
+        }
+      ],
+      "final_answer": "Полную таблицу соответствий TD ↔ GWX пока нельзя составить по доступным материалам: документацию GruntWorx и описание Jira TD-102837 я в этой сессии прочитать не смог, а в репозитории нет найденного GWX-специфичного контракта.\n\nПришлите документацию GruntWorx или вставьте её содержимое сюда — составлю полную таблицу полей, операций, статусов, ошибок, ограничений и точек интеграции.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q07",
+      "sent_at": 58.54,
+      "prompt_sha256": "613698a11dcd91bfc8dcdcebd6cfbc4512da47085352d936b4fc57761efaf087",
+      "turn_id": "01a18af9-1c5e-7c40-8982-a77247051cdc",
+      "completed_at": 63.567,
+      "wall_seconds": 5.027,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 5015,
+      "usage_delta": {
+        "inputTokens": 98824,
+        "cachedInputTokens": 94848,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 412,
+        "reasoningOutputTokens": 80,
+        "totalTokens": 99236
+      },
+      "usage_cumulative": {
+        "inputTokens": 622516,
+        "cachedInputTokens": 567936,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 4155,
+        "reasoningOutputTokens": 601,
+        "totalTokens": 626671
+      },
+      "usage_last_response_only": {
+        "inputTokens": 51128,
+        "cachedInputTokens": 47488,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 288,
+        "reasoningOutputTokens": 80,
+        "totalTokens": 51416
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-b38675b8-a18b-4c45-aa44-5fd55ffde7b0",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 13243,
+            "serialized_utf8_bytes": 13249,
+            "text_chars": 13061,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416d0d5d0819180efcf37cd544924",
+          "phase": "commentary",
+          "text": "Уточню по `settings.yml`, что именно конфигурируется для провайдера: найду секцию tax automations и сопоставлю её с общими настройками документов."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae416d371208191b73c77842ff4f6b6",
+          "phase": "final_answer",
+          "text": "Уточнил: в `settings.yml` есть конфиг **форматов, принимаемых налоговым провайдером**, но он не определяет, какие файлы можно хранить или показывать в превью.\n\nНапример, для Instead это `tax_automations.instead.accepted_file_formats`. Экспорт сверяет документ с capability passport провайдера. Настройки хранения и превью клиентских документов отдельные: в `documents.previewable_extensions_regexp` перечислены `xls` и `xlsx`, но не `xlsm`.\n\nЗначит, `.xlsm` не запрещён общим blacklist расширений, но и не объявлен previewable. Конфигурация форматов GruntWorx сама по себе не включит для него превью. См. [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1093) и [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1802)."
+        }
+      ],
+      "final_answer": "Уточнил: в `settings.yml` есть конфиг **форматов, принимаемых налоговым провайдером**, но он не определяет, какие файлы можно хранить или показывать в превью.\n\nНапример, для Instead это `tax_automations.instead.accepted_file_formats`. Экспорт сверяет документ с capability passport провайдера. Настройки хранения и превью клиентских документов отдельные: в `documents.previewable_extensions_regexp` перечислены `xls` и `xlsx`, но не `xlsm`.\n\nЗначит, `.xlsm` не запрещён общим blacklist расширений, но и не объявлен previewable. Конфигурация форматов GruntWorx сама по себе не включит для него превью. См. [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1093) и [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1802).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q08",
+      "sent_at": 64.74,
+      "prompt_sha256": "1c498b6fe6bec228df0b8186b1296959c0036d2ac52b89cf8eedf84965fece5a",
+      "turn_id": "01a18af9-3497-7b50-b694-dec02f106f31",
+      "completed_at": 65.996,
+      "wall_seconds": 1.256,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 1247,
+      "usage_delta": {
+        "inputTokens": 51452,
+        "cachedInputTokens": 50944,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 88,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 51540
+      },
+      "usage_cumulative": {
+        "inputTokens": 673968,
+        "cachedInputTokens": 618880,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 4243,
+        "reasoningOutputTokens": 601,
+        "totalTokens": 678211
+      },
+      "usage_last_response_only": {
+        "inputTokens": 51452,
+        "cachedInputTokens": 50944,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 88,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 51540
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416d6c6808191ae14c6f98bd9855d",
+          "phase": "final_answer",
+          "text": "The capability passport compares sizes in **binary MiB**, despite naming the field `max_file_size_mb`. Export validation multiplies the configured limit by `megabytes`, which is `1024 × 1024` bytes. So a vendor limit of **50 MiB** should be configured as `50`; it will be enforced as **52,428,800 bytes**, not 50,000,000 bytes."
+        }
+      ],
+      "final_answer": "The capability passport compares sizes in **binary MiB**, despite naming the field `max_file_size_mb`. Export validation multiplies the configured limit by `megabytes`, which is `1024 × 1024` bytes. So a vendor limit of **50 MiB** should be configured as `50`; it will be enforced as **52,428,800 bytes**, not 50,000,000 bytes.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q09",
+      "sent_at": 67.173,
+      "prompt_sha256": "8e40d5865daf6ffd397f6235576b447121903cade56091e2f3b1684a62e03166",
+      "turn_id": "01a18af9-3e17-7ac2-8b7d-3274340fcde8",
+      "completed_at": 69.868,
+      "wall_seconds": 2.695,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 2685,
+      "usage_delta": {
+        "inputTokens": 106772,
+        "cachedInputTokens": 102784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 213,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 106985
+      },
+      "usage_cumulative": {
+        "inputTokens": 780740,
+        "cachedInputTokens": 721664,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 4456,
+        "reasoningOutputTokens": 601,
+        "totalTokens": 785196
+      },
+      "usage_last_response_only": {
+        "inputTokens": 55191,
+        "cachedInputTokens": 51456,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 113,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 55304
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-d945d98e-ed17-46f3-a8ab-620fdee0e874",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 15003,
+            "serialized_utf8_bytes": 15009,
+            "text_chars": 14740,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416da79bc8191906a8381ee70c45d",
+          "phase": "final_answer",
+          "text": "The shared send entry point identifies the taxpayer by the **TaxDome account (`client_id`)**. It uses that account for authorization, document ownership, and creating or finding the tax preparation record.\n\nFor a personal return, it also requires a **`contact_id`** to identify the person associated with the account. For a business return, the contact may be absent: the send is tied to the account and business details such as EIN. So `client_id` anchors the send; `contact_id` adds the individual taxpayer when needed."
+        }
+      ],
+      "final_answer": "The shared send entry point identifies the taxpayer by the **TaxDome account (`client_id`)**. It uses that account for authorization, document ownership, and creating or finding the tax preparation record.\n\nFor a personal return, it also requires a **`contact_id`** to identify the person associated with the account. For a business return, the contact may be absent: the send is tied to the account and business details such as EIN. So `client_id` anchors the send; `contact_id` adds the individual taxpayer when needed.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q10",
+      "sent_at": 71.049,
+      "prompt_sha256": "22bff5f0a7fc71c5bf54d5b862ef16c83320ee6bf25089fa4f3f1dd17303a50c",
+      "turn_id": "01a18af9-4d3c-7c93-8884-407bfb9e01d6",
+      "completed_at": 74.784,
+      "wall_seconds": 3.735,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 3722,
+      "usage_delta": {
+        "inputTokens": 116055,
+        "cachedInputTokens": 110208,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 297,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 116352
+      },
+      "usage_cumulative": {
+        "inputTokens": 896795,
+        "cachedInputTokens": 831872,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 4753,
+        "reasoningOutputTokens": 601,
+        "totalTokens": 901548
+      },
+      "usage_last_response_only": {
+        "inputTokens": 60709,
+        "cachedInputTokens": 55168,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 162,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 60871
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-4d509b9b-03d8-439f-93ef-83cd5df3290f",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 24232,
+            "serialized_utf8_bytes": 24248,
+            "text_chars": 23813,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416df10688191adb54373577d32f0",
+          "phase": "final_answer",
+          "text": "For a repeated send of the **same document to the same provider, account/contact, tax year, and return type**, the shared entry point rejects it before calling the vendor. It returns the document in `rejected_documents` with reason `already_sent`.\n\nThere are two document-level pre-send refusals:\n\n- **`already_sent`** — upload completed, and the provider has not archived the document. This applies even if processing later failed: the provider still holds the file.\n- **`upload_in_progress`** — its upload is still `waiting` or `uploading`, so another send could race it.\n\nAn archived send is eligible to be sent again. These checks are scoped to the same provider and tax-preparation envelope; a different return type or envelope is evaluated separately."
+        }
+      ],
+      "final_answer": "For a repeated send of the **same document to the same provider, account/contact, tax year, and return type**, the shared entry point rejects it before calling the vendor. It returns the document in `rejected_documents` with reason `already_sent`.\n\nThere are two document-level pre-send refusals:\n\n- **`already_sent`** — upload completed, and the provider has not archived the document. This applies even if processing later failed: the provider still holds the file.\n- **`upload_in_progress`** — its upload is still `waiting` or `uploading`, so another send could race it.\n\nAn archived send is eligible to be sent again. These checks are scoped to the same provider and tax-preparation envelope; a different return type or envelope is evaluated separately.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q11",
+      "sent_at": 75.982,
+      "prompt_sha256": "eaa944405ae4e7323afe639c0d6a4a9de22b9eddb9a9fc6898dd17791d20bd67",
+      "turn_id": "01a18af9-6080-7e20-88b2-c823407687c0",
+      "completed_at": 86.127,
+      "wall_seconds": 10.145,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 10132,
+      "usage_delta": {
+        "inputTokens": 251956,
+        "cachedInputTokens": 246272,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 575,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 252531
+      },
+      "usage_cumulative": {
+        "inputTokens": 1148751,
+        "cachedInputTokens": 1078144,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 5328,
+        "reasoningOutputTokens": 601,
+        "totalTokens": 1154079
+      },
+      "usage_last_response_only": {
+        "inputTokens": 65643,
+        "cachedInputTokens": 62976,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 234,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 65877
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-2a27b796-4ec5-4710-8323-c94892360761",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 4539,
+            "serialized_utf8_bytes": 4541,
+            "text_chars": 4510,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-749ae3cb-d941-47d5-b532-b262bba1ab30",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1676,
+          "result_size": {
+            "serialized_chars": 3354,
+            "serialized_utf8_bytes": 3354,
+            "text_chars": 3303,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-3fa8ba92-ff98-4e69-a3fe-abdcd5a56175",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1766,
+          "result_size": {
+            "serialized_chars": 9889,
+            "serialized_utf8_bytes": 9891,
+            "text_chars": 9657,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416e211b881919547795b5d0b93d4",
+          "phase": "commentary",
+          "text": "Проверю sweep worker и его спеки: откуда он выбирает записи для сверки и какие временные границы применяются."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae416ea00508191870c22403d0b44c3",
+          "phase": "final_answer",
+          "text": "The sweep considers **uploaded** send records only; it does not pick up records still waiting or uploading. It selects:\n\n- `sent` records at least **1 hour** after `uploaded_at`.\n- `processing` records at least **12 hours** after `uploaded_at`.\n\nBoth thresholds have a **2-day give-up window**: records older than that are no longer candidates. These are defaults; each provider can override `sent_after`, `processing_after`, and `give_up_after` in `Settings.tax_automations.<provider>` (seconds).\n\nCandidates are grouped by firm and handed to that provider’s reconciliation service if the firm has a connected grant, an owner, and the provider is available. The sweep runs every 30 minutes. See [reconcile_candidates_query.rb](/Users/Shared/nav-ab/repo-master/app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb:11) and [reconcile_sweep_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb:3)."
+        }
+      ],
+      "final_answer": "The sweep considers **uploaded** send records only; it does not pick up records still waiting or uploading. It selects:\n\n- `sent` records at least **1 hour** after `uploaded_at`.\n- `processing` records at least **12 hours** after `uploaded_at`.\n\nBoth thresholds have a **2-day give-up window**: records older than that are no longer candidates. These are defaults; each provider can override `sent_after`, `processing_after`, and `give_up_after` in `Settings.tax_automations.<provider>` (seconds).\n\nCandidates are grouped by firm and handed to that provider’s reconciliation service if the firm has a connected grant, an owner, and the provider is available. The sweep runs every 30 minutes. See [reconcile_candidates_query.rb](/Users/Shared/nav-ab/repo-master/app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb:11) and [reconcile_sweep_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb:3).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q12",
+      "sent_at": 87.336,
+      "prompt_sha256": "9ead4b76206d550e93ab1b246f9230596063e4ed90f34dbf88eb984c4b9c475c",
+      "turn_id": "01a18af9-8cdb-7560-af34-b531f32cfcdd",
+      "completed_at": 95.457,
+      "wall_seconds": 8.121,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8109,
+      "usage_delta": {
+        "inputTokens": 281263,
+        "cachedInputTokens": 273152,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 668,
+        "reasoningOutputTokens": 146,
+        "totalTokens": 281931
+      },
+      "usage_cumulative": {
+        "inputTokens": 1430014,
+        "cachedInputTokens": 1351296,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 5996,
+        "reasoningOutputTokens": 747,
+        "totalTokens": 1436010
+      },
+      "usage_last_response_only": {
+        "inputTokens": 72892,
+        "cachedInputTokens": 71680,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 212,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 73104
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-dd0cfeb2-5fd5-458b-943f-7e8fb0409bde",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 472,
+          "result_size": {
+            "serialized_chars": 29337,
+            "serialized_utf8_bytes": 29337,
+            "text_chars": 29079,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-67a83d3c-29c0-4124-8967-19f8e5f2fae9",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 4851,
+            "serialized_utf8_bytes": 4855,
+            "text_chars": 4731,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-33ada517-4a58-454a-b76b-f1c6ec519458",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 3318,
+            "serialized_utf8_bytes": 3318,
+            "text_chars": 3244,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416f337888191aea8268f0bfd7bf7",
+          "phase": "final_answer",
+          "text": "When contacts merge, TaxDome reconciles both the **local send records** and the provider’s **taxpayer entities**.\n\n- If the surviving contact already has a tax-preparation envelope for the same account and year, TaxDome moves the source envelope’s send records to it, except where the survivor already has a record for the same document, provider, and return type.\n- Otherwise, TaxDome updates the source envelope to point to the surviving contact.\n- It then asks the selected provider adapter to merge the contacts’ provider records. For Instead, entities move to the surviving contact; if both contacts have an entity of the same type, their provider documents are reassigned to the survivor’s entity and the source entity is unlinked.\n- Any source envelope left over is destroyed through the provider cleanup path before the envelope is deleted.\n\nSo files already sent are not blindly resent. Their send records and vendor-side document links are carried through the merge when possible; duplicate records already represented under the survivor are handled by the cleanup path."
+        }
+      ],
+      "final_answer": "When contacts merge, TaxDome reconciles both the **local send records** and the provider’s **taxpayer entities**.\n\n- If the surviving contact already has a tax-preparation envelope for the same account and year, TaxDome moves the source envelope’s send records to it, except where the survivor already has a record for the same document, provider, and return type.\n- Otherwise, TaxDome updates the source envelope to point to the surviving contact.\n- It then asks the selected provider adapter to merge the contacts’ provider records. For Instead, entities move to the surviving contact; if both contacts have an entity of the same type, their provider documents are reassigned to the survivor’s entity and the source entity is unlinked.\n- Any source envelope left over is destroyed through the provider cleanup path before the envelope is deleted.\n\nSo files already sent are not blindly resent. Their send records and vendor-side document links are carried through the merge when possible; duplicate records already represented under the survivor are handled by the cleanup path.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q13",
+      "sent_at": 96.696,
+      "prompt_sha256": "84a413c7313bced6cded51b3bf5f361cc69530ef00b183381c1ca5492d52592f",
+      "turn_id": "01a18af9-b16a-7110-89f0-2a6468289d66",
+      "completed_at": 100.956,
+      "wall_seconds": 4.26,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 4250,
+      "usage_delta": {
+        "inputTokens": 149010,
+        "cachedInputTokens": 145664,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 325,
+        "reasoningOutputTokens": 13,
+        "totalTokens": 149335
+      },
+      "usage_cumulative": {
+        "inputTokens": 1579024,
+        "cachedInputTokens": 1496960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 6321,
+        "reasoningOutputTokens": 760,
+        "totalTokens": 1585345
+      },
+      "usage_last_response_only": {
+        "inputTokens": 75872,
+        "cachedInputTokens": 72960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 167,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 76039
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-996513b5-1219-480a-b557-728f76187cab",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 10965,
+            "serialized_utf8_bytes": 10977,
+            "text_chars": 10760,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416f906448191b6718f6317f425be",
+          "phase": "final_answer",
+          "text": "The first successful connection binds the firm to the vendor account identifier (`external_tenant_uuid`) returned with the grant. On reconnecting to that same provider, TaxDome compares the new identifier with the stored one. If it differs, the reconnect is refused as `account_mismatch`, and TaxDome makes a best-effort attempt to revoke the stray grant. A provider switch clears the old vendor’s binding before the new account is bound.\n\nIf the vendor reports **no account identifier**, the flow skips binding and mismatch checks: there’s no identifier to compare. That means TaxDome can’t use this safeguard for that provider. The logic is in [connections/create.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/create.rb:90)."
+        }
+      ],
+      "final_answer": "The first successful connection binds the firm to the vendor account identifier (`external_tenant_uuid`) returned with the grant. On reconnecting to that same provider, TaxDome compares the new identifier with the stored one. If it differs, the reconnect is refused as `account_mismatch`, and TaxDome makes a best-effort attempt to revoke the stray grant. A provider switch clears the old vendor’s binding before the new account is bound.\n\nIf the vendor reports **no account identifier**, the flow skips binding and mismatch checks: there’s no identifier to compare. That means TaxDome can’t use this safeguard for that provider. The logic is in [connections/create.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/create.rb:90).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q14",
+      "sent_at": 102.131,
+      "prompt_sha256": "cc0a52b916d294213f8c668701420faf2207d179962a5f5ccbc89b55af09d8fb",
+      "turn_id": "01a18af9-c6a5-7bb2-a6b0-d8c40922625d",
+      "completed_at": 107.454,
+      "wall_seconds": 5.323,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 5313,
+      "usage_delta": {
+        "inputTokens": 155339,
+        "cachedInputTokens": 151552,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 563,
+        "reasoningOutputTokens": 133,
+        "totalTokens": 155902
+      },
+      "usage_cumulative": {
+        "inputTokens": 1734363,
+        "cachedInputTokens": 1648512,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 6884,
+        "reasoningOutputTokens": 893,
+        "totalTokens": 1741247
+      },
+      "usage_last_response_only": {
+        "inputTokens": 79262,
+        "cachedInputTokens": 75904,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 319,
+        "reasoningOutputTokens": 111,
+        "totalTokens": 79581
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-27530089-3c0f-47f2-9a3f-5494bba6fbc1",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 12178,
+            "serialized_utf8_bytes": 12186,
+            "text_chars": 11966,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae416fc6b988191b4fbf429160239b0",
+          "phase": "commentary",
+          "text": "Проверю обработку отозванного grant при отправке и правила `ResumeSends`, чтобы разделить поведение уже сорвавшегося файла и файлов, ожидающих повторной отправки после reconnect."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae416ff578881919271d7a9f9f263cc",
+          "phase": "final_answer",
+          "text": "Files do **not** stay waiting when the vendor rejects the grant mid-send. The affected send records are marked `failed` with reason `unauthorized`. After a successful reconnect, TaxDome finds failed sends for that provider with that reason and submits them again. If the grant is unusable when the resume job runs, they remain failed for a later reconnect.\n\nOnly failures with reason **`unauthorized`** are resumed. That includes a rejected or invalid grant, an HTTP `401`, or insufficient OAuth scope. Other failures—such as `forbidden`, network or API errors, and quota exceeded—are not automatically resumed by reconnect. See [refusals_helper.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/refusals_helper.rb:8) and [resume_sends.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/resume_sends.rb:8)."
+        }
+      ],
+      "final_answer": "Files do **not** stay waiting when the vendor rejects the grant mid-send. The affected send records are marked `failed` with reason `unauthorized`. After a successful reconnect, TaxDome finds failed sends for that provider with that reason and submits them again. If the grant is unusable when the resume job runs, they remain failed for a later reconnect.\n\nOnly failures with reason **`unauthorized`** are resumed. That includes a rejected or invalid grant, an HTTP `401`, or insufficient OAuth scope. Other failures—such as `forbidden`, network or API errors, and quota exceeded—are not automatically resumed by reconnect. See [refusals_helper.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/refusals_helper.rb:8) and [resume_sends.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/resume_sends.rb:8).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q15",
+      "sent_at": 108.641,
+      "prompt_sha256": "b77722deee2a377ae25997ae4dc54178f4bc821679e3f2a2bbe33b9f837cc673",
+      "turn_id": "01a18af9-e014-7ce1-ad94-dd83d6f8a499",
+      "completed_at": 119.793,
+      "wall_seconds": 11.152,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 11142,
+      "usage_delta": {
+        "inputTokens": 421404,
+        "cachedInputTokens": 411392,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1063,
+        "reasoningOutputTokens": 188,
+        "totalTokens": 422467
+      },
+      "usage_cumulative": {
+        "inputTokens": 2155767,
+        "cachedInputTokens": 2059904,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 7947,
+        "reasoningOutputTokens": 1081,
+        "totalTokens": 2163714
+      },
+      "usage_last_response_only": {
+        "inputTokens": 88456,
+        "cachedInputTokens": 86144,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 511,
+        "reasoningOutputTokens": 150,
+        "totalTokens": 88967
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-f17dab9a-3eb4-40bc-9dbe-1acb68cc5af6",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 43970,
+            "serialized_utf8_bytes": 43974,
+            "text_chars": 43713,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-a9093c08-f779-4c70-bebd-ab5bf97541ea",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 1,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 2757,
+            "serialized_utf8_bytes": 2757,
+            "text_chars": 2687,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-c66ee5a7-35f1-4e93-b023-2cab952b8c6b",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 9079,
+            "serialized_utf8_bytes": 9081,
+            "text_chars": 8804,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-eda07fac-a2ef-4737-af48-ed6c6d0e4ce0",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 8111,
+            "serialized_utf8_bytes": 8115,
+            "text_chars": 7921,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 4
+      },
+      "tool_completed_unique": 4,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41703039881918e630ab235f3778b",
+          "phase": "commentary",
+          "text": "Посмотрю полный путь webhook: подпись, входную валидацию, поиск фирмы и асинхронную обработку; отдельно проверю, есть ли идемпотентность по event ID."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4170a89888191ba07a738ba9f26c6",
+          "phase": "final_answer",
+          "text": "The endpoint handles an Instead delivery in this order:\n\n1. **Verify the signature.** It checks `X-Instead-Signature`, the declared `hmac-sha256` algorithm, and a timestamp within **5 minutes** of now. The HMAC-SHA256 is computed over `timestamp.raw_body`. It accepts either the current or previous configured signing secret. A failed check returns **401**.\n\n2. **Validate the body.** It permits only the expected delivery fields, requires a recognized event type and an event ID, and checks entity and resource IDs are UUID-shaped. Invalid signed deliveries are logged and acknowledged with **200 OK**.\n\n3. **Match and enqueue asynchronously.** Document events are matched to a TaxDome firm through the vendor document and entity IDs. Entity events are matched through the vendor firm ID. If there is no match, no owner, or the async operation cannot be started, the endpoint still acknowledges with **200 OK**. That avoids vendor retries for deliveries TaxDome cannot apply.\n\n**It does not keep a processed-event-ID ledger or explicitly deduplicate deliveries by event ID.** Instead, processing is designed to tolerate repeats: entity events use the UUIDv7 event timestamp and ignore updates older than the entity’s last sync; document events apply the reported current status to the matched send record. So duplicate delivery effects are suppressed through state handling, not through a stored event-ID check. [Controller](</Users/Shared/nav-ab/repo-master/app/controllers/tax_preparation/webhooks/tax_automations/instead/events_controller.rb:5>) · [Signature](</Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/webhooks/signature.rb:10>)"
+        }
+      ],
+      "final_answer": "The endpoint handles an Instead delivery in this order:\n\n1. **Verify the signature.** It checks `X-Instead-Signature`, the declared `hmac-sha256` algorithm, and a timestamp within **5 minutes** of now. The HMAC-SHA256 is computed over `timestamp.raw_body`. It accepts either the current or previous configured signing secret. A failed check returns **401**.\n\n2. **Validate the body.** It permits only the expected delivery fields, requires a recognized event type and an event ID, and checks entity and resource IDs are UUID-shaped. Invalid signed deliveries are logged and acknowledged with **200 OK**.\n\n3. **Match and enqueue asynchronously.** Document events are matched to a TaxDome firm through the vendor document and entity IDs. Entity events are matched through the vendor firm ID. If there is no match, no owner, or the async operation cannot be started, the endpoint still acknowledges with **200 OK**. That avoids vendor retries for deliveries TaxDome cannot apply.\n\n**It does not keep a processed-event-ID ledger or explicitly deduplicate deliveries by event ID.** Instead, processing is designed to tolerate repeats: entity events use the UUIDv7 event timestamp and ignore updates older than the entity’s last sync; document events apply the reported current status to the matched send record. So duplicate delivery effects are suppressed through state handling, not through a stored event-ID check. [Controller](</Users/Shared/nav-ab/repo-master/app/controllers/tax_preparation/webhooks/tax_automations/instead/events_controller.rb:5>) · [Signature](</Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/webhooks/signature.rb:10>)",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q16",
+      "sent_at": 120.967,
+      "prompt_sha256": "1d925d3fcd7ffa1eb5cf2be7b8d3f50cca55ff50b08eec4f9f05fb434e980f8d",
+      "turn_id": "01a18afa-1039-77c3-b7e2-6e74f271aa45",
+      "completed_at": 131.596,
+      "wall_seconds": 10.629,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 10619,
+      "usage_delta": {
+        "inputTokens": 271172,
+        "cachedInputTokens": 267520,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 833,
+        "reasoningOutputTokens": 42,
+        "totalTokens": 272005
+      },
+      "usage_cumulative": {
+        "inputTokens": 2426939,
+        "cachedInputTokens": 2327424,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 8780,
+        "reasoningOutputTokens": 1123,
+        "totalTokens": 2435719
+      },
+      "usage_last_response_only": {
+        "inputTokens": 91585,
+        "cachedInputTokens": 90368,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 497,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 92082
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-fe71df4f-ee66-464d-bbf5-bc8c4b072ad6",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1653,
+          "result_size": {
+            "serialized_chars": 5741,
+            "serialized_utf8_bytes": 5747,
+            "text_chars": 5598,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-562889b7-9dd6-46bd-9f81-6473da908859",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1723,
+          "result_size": {
+            "serialized_chars": 3487,
+            "serialized_utf8_bytes": 3489,
+            "text_chars": 3415,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4170f100c8191ac7fa466db4b232d",
+          "phase": "commentary",
+          "text": "Проверю реестр целиком и найду в `app/` все обходы зарегистрированных адаптеров: вызовы `Registry.adapters` и прямые итерации по карте адаптеров."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417160b9481919ac6be69a21528f4",
+          "phase": "final_answer",
+          "text": "### Registry constants\n\nIn `TaxPreparation::TaxAutomations::Registry`:\n\n- `UnknownProviderError`\n- `ADAPTERS` — provider key → adapter namespace; currently `{ instead: TaxPreparation::TaxAutomations::Instead }`\n- `FEATURE_FLAGS` — provider key → availability feature flag; currently `{ instead: :tax_automations_instead }`\n\n### Public methods\n\nThe module exposes these methods via `module_function`:\n\n- `adapter_for_provider(provider)` — resolve a provider key or raise `UnknownProviderError`\n- `client_for(connection)` — build the client for a connection’s adapter\n- `adapter_for(firm)` — resolve the firm’s selected provider’s adapter\n- `provider_of(adapter)` — get the provider key registered for a namespace\n- `adapters` — return all registered adapter namespaces\n- `provider_for(firm)` — read the firm’s selected provider, or `nil`\n- `connection_for(firm)` — return its selected provider’s connection, in any state\n- `connections_for(firm_id)` — return connections for all adapters, keyed by provider\n- `usable_connection_for(firm)` — return a usable connection, or `nil`\n- `capabilities_for(firm)` — get the selected adapter’s capability passport\n- `provider_available?(provider, firm)` — check feature availability\n- `sending_available?(firm)` — check availability for the firm’s selected provider\n\n### Places that iterate over all adapters\n\nIn `app/`, the explicit `Registry.adapters.each` loops are:\n\n- [firms/destroy_cleanup.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb:57) — run `DestroyForFirm` during firm cleanup\n- [reconcile_sweep_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb:22) — gather and reconcile stale sends\n- [keep_alive_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/connections/keep_alive_worker.rb:19) — renew expiring connected grants\n\nThere’s also an all-adapter traversal inside the registry itself: `connections_for(firm_id)` uses `ADAPTERS.transform_values` to collect each adapter’s connections."
+        }
+      ],
+      "final_answer": "### Registry constants\n\nIn `TaxPreparation::TaxAutomations::Registry`:\n\n- `UnknownProviderError`\n- `ADAPTERS` — provider key → adapter namespace; currently `{ instead: TaxPreparation::TaxAutomations::Instead }`\n- `FEATURE_FLAGS` — provider key → availability feature flag; currently `{ instead: :tax_automations_instead }`\n\n### Public methods\n\nThe module exposes these methods via `module_function`:\n\n- `adapter_for_provider(provider)` — resolve a provider key or raise `UnknownProviderError`\n- `client_for(connection)` — build the client for a connection’s adapter\n- `adapter_for(firm)` — resolve the firm’s selected provider’s adapter\n- `provider_of(adapter)` — get the provider key registered for a namespace\n- `adapters` — return all registered adapter namespaces\n- `provider_for(firm)` — read the firm’s selected provider, or `nil`\n- `connection_for(firm)` — return its selected provider’s connection, in any state\n- `connections_for(firm_id)` — return connections for all adapters, keyed by provider\n- `usable_connection_for(firm)` — return a usable connection, or `nil`\n- `capabilities_for(firm)` — get the selected adapter’s capability passport\n- `provider_available?(provider, firm)` — check feature availability\n- `sending_available?(firm)` — check availability for the firm’s selected provider\n\n### Places that iterate over all adapters\n\nIn `app/`, the explicit `Registry.adapters.each` loops are:\n\n- [firms/destroy_cleanup.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb:57) — run `DestroyForFirm` during firm cleanup\n- [reconcile_sweep_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb:22) — gather and reconcile stale sends\n- [keep_alive_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/connections/keep_alive_worker.rb:19) — renew expiring connected grants\n\nThere’s also an all-adapter traversal inside the registry itself: `connections_for(firm_id)` uses `ADAPTERS.transform_values` to collect each adapter’s connections.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q17",
+      "sent_at": 132.775,
+      "prompt_sha256": "f52be8cdd1f8802d196517fd1c9336859a365d5d662f0f231dcb99e82b7f1c2a",
+      "turn_id": "01a18afa-3e5a-7952-8bb0-46d098d66088",
+      "completed_at": 136.739,
+      "wall_seconds": 3.964,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 3952,
+      "usage_delta": {
+        "inputTokens": 186258,
+        "cachedInputTokens": 183296,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 393,
+        "reasoningOutputTokens": 81,
+        "totalTokens": 186651
+      },
+      "usage_cumulative": {
+        "inputTokens": 2613197,
+        "cachedInputTokens": 2510720,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 9173,
+        "reasoningOutputTokens": 1204,
+        "totalTokens": 2622370
+      },
+      "usage_last_response_only": {
+        "inputTokens": 94141,
+        "cachedInputTokens": 91904,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 269,
+        "reasoningOutputTokens": 81,
+        "totalTokens": 94410
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-2e6b9ed8-c468-44ee-a0f3-a5922e4e2006",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6510,
+            "serialized_utf8_bytes": 6510,
+            "text_chars": 6373,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4171ae5a88191bf3c7db3391577e0",
+          "phase": "commentary",
+          "text": "Проверю `config/storage.yml` на сервисы с отдельными bucket и credentials, затем прослежу, используется ли такой сервис для целевого хранения, а не только объявлен."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4171ce46481919ba9fff2eebd2f4c",
+          "phase": "final_answer",
+          "text": "Yes. `config/storage.yml` has two relevant patterns:\n\n- **`amazon_tax_software_backups`** uses its own bucket (`S3_TAX_SOFTWARE_BACKUPS_BUCKET`) while inheriting shared S3 credentials from `amazon_defaults`.\n- **`firm_site_backups`** has purpose-specific credential settings (`FIRM_SITE_BACKUPS_S3_ACCESS_KEY_ID` and `...SECRET_ACCESS_KEY`) and a bucket setting. Those credentials and bucket fall back to the shared S3 values if unset.\n\nFor a dedicated vendor-facing bucket with separate credentials, `firm_site_backups` is the closer template for credentials; combine it with the tax-software-backups pattern of a dedicated bucket and development MinIO service. The tax-software-backups service alone does **not** use separate credentials. [config/storage.yml](/Users/Shared/nav-ab/repo-master/config/storage.yml:26)"
+        }
+      ],
+      "final_answer": "Yes. `config/storage.yml` has two relevant patterns:\n\n- **`amazon_tax_software_backups`** uses its own bucket (`S3_TAX_SOFTWARE_BACKUPS_BUCKET`) while inheriting shared S3 credentials from `amazon_defaults`.\n- **`firm_site_backups`** has purpose-specific credential settings (`FIRM_SITE_BACKUPS_S3_ACCESS_KEY_ID` and `...SECRET_ACCESS_KEY`) and a bucket setting. Those credentials and bucket fall back to the shared S3 values if unset.\n\nFor a dedicated vendor-facing bucket with separate credentials, `firm_site_backups` is the closer template for credentials; combine it with the tax-software-backups pattern of a dedicated bucket and development MinIO service. The tax-software-backups service alone does **not** use separate credentials. [config/storage.yml](/Users/Shared/nav-ab/repo-master/config/storage.yml:26)",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q18",
+      "sent_at": 137.965,
+      "prompt_sha256": "dfea653977019c22b9622db1f083212ea2cb3b3dfa1953b9bd43ed5a235f02cf",
+      "turn_id": "01a18afa-529f-7ba0-bb59-bab9154ca02c",
+      "completed_at": 142.865,
+      "wall_seconds": 4.9,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 4890,
+      "usage_delta": {
+        "inputTokens": 191080,
+        "cachedInputTokens": 188160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 237,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 191317
+      },
+      "usage_cumulative": {
+        "inputTokens": 2804277,
+        "cachedInputTokens": 2698880,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 9410,
+        "reasoningOutputTokens": 1204,
+        "totalTokens": 2813687
+      },
+      "usage_last_response_only": {
+        "inputTokens": 96646,
+        "cachedInputTokens": 94208,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 156,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 96802
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-90347d09-4604-4141-b8ff-82c61bacac53",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1699,
+          "result_size": {
+            "serialized_chars": 8554,
+            "serialized_utf8_bytes": 8554,
+            "text_chars": 8488,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417233a20819191b1fa370555bcd8",
+          "phase": "final_answer",
+          "text": "There are two firm-scoped feature flags, both defined in [config/settings/features/tax_automations.yml](/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml:1):\n\n- **`tax_automations_unified_api`** — gates the unified tax-automations API. When off, its endpoints return 404 and firms continue using the Juno endpoints.\n- **`tax_automations_instead`** — gates offering Instead: when off, firms can’t start an Instead connection or send documents through it, but an existing connection can still be disconnected.\n\nThe provider flag is also mapped in the registry’s `FEATURE_FLAGS` constant: `instead` → `tax_automations_instead`."
+        }
+      ],
+      "final_answer": "There are two firm-scoped feature flags, both defined in [config/settings/features/tax_automations.yml](/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml:1):\n\n- **`tax_automations_unified_api`** — gates the unified tax-automations API. When off, its endpoints return 404 and firms continue using the Juno endpoints.\n- **`tax_automations_instead`** — gates offering Instead: when off, firms can’t start an Instead connection or send documents through it, but an existing connection can still be disconnected.\n\nThe provider flag is also mapped in the registry’s `FEATURE_FLAGS` constant: `instead` → `tax_automations_instead`.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q19",
+      "sent_at": 144.054,
+      "prompt_sha256": "062812f16fb36853e676be43af489a0a95a7fbd14a7f6f1aafac366a129cfbc8",
+      "turn_id": "01a18afa-6a69-7812-babe-b10c79c768bc",
+      "completed_at": 147.792,
+      "wall_seconds": 3.738,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 3729,
+      "usage_delta": {
+        "inputTokens": 195256,
+        "cachedInputTokens": 193152,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 388,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 195644
+      },
+      "usage_cumulative": {
+        "inputTokens": 2999533,
+        "cachedInputTokens": 2892032,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 9798,
+        "reasoningOutputTokens": 1204,
+        "totalTokens": 3009331
+      },
+      "usage_last_response_only": {
+        "inputTokens": 98431,
+        "cachedInputTokens": 96640,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 334,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 98765
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-3efee314-25da-42d8-afc2-3a4cc30989d2",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6235,
+            "serialized_utf8_bytes": 6249,
+            "text_chars": 6092,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4172725c481918d7eb2ec2f8b3fb4",
+          "phase": "final_answer",
+          "text": "The send record has two independent AASM state machines, both starting in their first listed state.\n\n### Processing status\n\nStarts at `sent`.\n\n| Event | From | To |\n|---|---|---|\n| `start_processing` | `sent`, `error` | `processing` |\n| `complete_processing` | `sent`, `processing` | `processed` |\n| `fail_processing` | `sent`, `processing` | `error` |\n| `exceed_limit` | `sent`, `processing` | `exceeded` |\n| `archive` | `sent`, `processing`, `processed`, `error`, `exceeded` | `archived` |\n| `resend` | `processing`, `processed`, `error`, `archived`, `exceeded` | `sent` |\n\n### Upload status\n\nStarts at `waiting`.\n\n| Event | From | To |\n|---|---|---|\n| `upload` | `waiting`, `uploaded`, `failed` | `uploading` |\n| `finish` | `uploading` | `uploaded` |\n| `fail` | `waiting`, `uploading` | `failed` |\n| `reset` | `uploading`, `uploaded`, `failed` | `waiting` |\n\nFailure reasons are cleared after transitions unless the resulting processing state is `error`/`exceeded` or the resulting upload state is `failed`. `finish` also sets `uploaded_at`. Source: [document.rb](/Users/Shared/nav-ab/repo-master/app/models/tax_preparation/tax_automations/document.rb:85)."
+        }
+      ],
+      "final_answer": "The send record has two independent AASM state machines, both starting in their first listed state.\n\n### Processing status\n\nStarts at `sent`.\n\n| Event | From | To |\n|---|---|---|\n| `start_processing` | `sent`, `error` | `processing` |\n| `complete_processing` | `sent`, `processing` | `processed` |\n| `fail_processing` | `sent`, `processing` | `error` |\n| `exceed_limit` | `sent`, `processing` | `exceeded` |\n| `archive` | `sent`, `processing`, `processed`, `error`, `exceeded` | `archived` |\n| `resend` | `processing`, `processed`, `error`, `archived`, `exceeded` | `sent` |\n\n### Upload status\n\nStarts at `waiting`.\n\n| Event | From | To |\n|---|---|---|\n| `upload` | `waiting`, `uploaded`, `failed` | `uploading` |\n| `finish` | `uploading` | `uploaded` |\n| `fail` | `waiting`, `uploading` | `failed` |\n| `reset` | `uploading`, `uploaded`, `failed` | `waiting` |\n\nFailure reasons are cleared after transitions unless the resulting processing state is `error`/`exceeded` or the resulting upload state is `failed`. `finish` also sets `uploaded_at`. Source: [document.rb](/Users/Shared/nav-ab/repo-master/app/models/tax_preparation/tax_automations/document.rb:85).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q20",
+      "sent_at": 148.966,
+      "prompt_sha256": "571667f6fc831fd96fc525e983fc6c7bb4acfca5ea023a819a8691df0e9a1091",
+      "turn_id": "01a18afa-7d99-7330-8a8d-43b4f834dbad",
+      "completed_at": 154.249,
+      "wall_seconds": 5.283,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 5273,
+      "usage_delta": {
+        "inputTokens": 200447,
+        "cachedInputTokens": 196864,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 555,
+        "reasoningOutputTokens": 50,
+        "totalTokens": 201002
+      },
+      "usage_cumulative": {
+        "inputTokens": 3199980,
+        "cachedInputTokens": 3088896,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 10353,
+        "reasoningOutputTokens": 1254,
+        "totalTokens": 3210333
+      },
+      "usage_last_response_only": {
+        "inputTokens": 101655,
+        "cachedInputTokens": 98560,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 363,
+        "reasoningOutputTokens": 50,
+        "totalTokens": 102018
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-75a9f88e-b3da-4735-bd39-bafd85c109ea",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 11436,
+            "serialized_utf8_bytes": 11442,
+            "text_chars": 11292,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4172b30bc81918df09274e96de240",
+          "phase": "commentary",
+          "text": "Сверю контракт `Documents::UpdateStatus` и сериализацию broadcast frame, включая поля и условия авторизации, чтобы перечислить точный payload."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4172da88c8191baf172f47f2d7781",
+          "phase": "final_answer",
+          "text": "The shared status-update service accepts the send record ID and:\n\n- `processing_status` — required; a shared status (`sent`, `processing`, `processed`, `error`, `archived`, or `exceeded`). The adapter must translate the vendor’s status into this vocabulary.\n- `failure_reason` — optional; a shared reason, used only when `processing_status` is `error`.\n\nThe call must use a `System` actor authorized to update status. The service rejects unknown statuses or reasons, missing records, and transitions the state machine won’t allow. It does **not** accept upload status; that is updated by the upload workflow.\n\nAfter commit, the broadcast sends this frame to the firm’s tax-automation documents channel:\n\n```json\n{\n  \"resource\": {\n    \"id\": 123,\n    \"document_id\": 456,\n    \"processing_status\": \"processed\",\n    \"upload_status\": \"uploaded\",\n    \"failure_reason\": null\n  },\n  \"type\": \"tax_automation_document\",\n  \"event\": \"status_changed\"\n}\n```\n\nThe IDs and enum values are sent as-is; there’s no localized message in the frame. Source: [update_status.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/update_status.rb:7) and [broadcast_status.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/broadcast_status.rb:27)."
+        }
+      ],
+      "final_answer": "The shared status-update service accepts the send record ID and:\n\n- `processing_status` — required; a shared status (`sent`, `processing`, `processed`, `error`, `archived`, or `exceeded`). The adapter must translate the vendor’s status into this vocabulary.\n- `failure_reason` — optional; a shared reason, used only when `processing_status` is `error`.\n\nThe call must use a `System` actor authorized to update status. The service rejects unknown statuses or reasons, missing records, and transitions the state machine won’t allow. It does **not** accept upload status; that is updated by the upload workflow.\n\nAfter commit, the broadcast sends this frame to the firm’s tax-automation documents channel:\n\n```json\n{\n  \"resource\": {\n    \"id\": 123,\n    \"document_id\": 456,\n    \"processing_status\": \"processed\",\n    \"upload_status\": \"uploaded\",\n    \"failure_reason\": null\n  },\n  \"type\": \"tax_automation_document\",\n  \"event\": \"status_changed\"\n}\n```\n\nThe IDs and enum values are sent as-is; there’s no localized message in the frame. Source: [update_status.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/update_status.rb:7) and [broadcast_status.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/broadcast_status.rb:27).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q21",
+      "sent_at": 155.423,
+      "prompt_sha256": "ebd0de08109ac8db9f168a2d422bcdc20aa7d661d40dd9e3dd4089b744b9ea62",
+      "turn_id": "01a18afa-96d1-79d2-bfc6-1cc33bfffcfe",
+      "completed_at": 164.726,
+      "wall_seconds": 9.303,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 9293,
+      "usage_delta": {
+        "inputTokens": 316011,
+        "cachedInputTokens": 309248,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1153,
+        "reasoningOutputTokens": 187,
+        "totalTokens": 317164
+      },
+      "usage_cumulative": {
+        "inputTokens": 3515991,
+        "cachedInputTokens": 3398144,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 11506,
+        "reasoningOutputTokens": 1441,
+        "totalTokens": 3527497
+      },
+      "usage_last_response_only": {
+        "inputTokens": 107912,
+        "cachedInputTokens": 105856,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 769,
+        "reasoningOutputTokens": 168,
+        "totalTokens": 108681
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-d7c5c8cc-1291-4c70-b895-a8f518a09d36",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 15848,
+            "serialized_utf8_bytes": 15880,
+            "text_chars": 15525,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-ac07e744-f3bc-48be-8341-7a1cd149fcac",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6920,
+            "serialized_utf8_bytes": 6928,
+            "text_chars": 6775,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41731b27881919d95b0477cbdca2b",
+          "phase": "commentary",
+          "text": "Проверю базовый клиент, его middleware и `RefusalsHelper`, чтобы собрать HTTP mapping, телеметрию и соответствие terminal refusals → failure reason."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4173683d88191a93236e1cab00765",
+          "phase": "final_answer",
+          "text": "### HTTP status → client error\n\nThe shared `BaseClient` middleware raises a typed error for every HTTP response with status `400+`:\n\n| Status | Error |\n|---|---|\n| 400 | `BadRequestError` |\n| 401 | `UnauthorizedError` |\n| 403 | `ForbiddenError` |\n| 404 | `NotFoundError` |\n| 422 | `UnprocessableEntityError` |\n| 423 | `LockedError` |\n| 429 | `RateLimitedError` |\n| 500 | `ServerError` |\n| 503 | `ServiceUnavailableError` |\n| Other 5xx | `ServerError` |\n| Other 4xx | `RequestError` |\n\nA vendor adapter may classify a response body as a more specific shared or vendor-specific error—for example, quota exceeded or insufficient scope. The client also extracts a vendor message where possible and retains the response body, status, and headers on the error. `RateLimitedError` can parse `Retry-After` as seconds or an HTTP date.\n\n### Metrics\n\nThe shared client emits:\n\n- **`requests_duration`** — request time, tagged by vendor and operation (`api_request`, `upload_transfer`, and token operations such as `token_refresh`).\n- **`failed_requests_total`** — failures tagged by vendor, operation, and reason, including HTTP status, network error class, lock timeout, and invalid grant.\n- **`rate_limit_remaining`** and **`rate_limit_reset_seconds`** — when a response carries the vendor’s rate-limit headers, tagged by vendor and API group.\n\n### Terminal refusals → send failure reason\n\nThe refusal helper marks affected send records failed. Its explicit mappings are:\n\n| Refusal | Failure reason |\n|---|---|\n| Quota exceeded | `exceeded` |\n| Insufficient scope | `unauthorized` |\n| Invalid/rejected grant | `unauthorized` |\n| HTTP 401 | `unauthorized` |\n| Policy refusal | `forbidden` |\n\nOther terminal vendor refusals—such as `403` without the insufficient-scope classification, `404`, `400`, `422`, `423`, or unusable upload targets—fall back to **`api_error`**. A policy refusal or invalid grant is also re-raised after marking the files failed; an invalid grant triggers grant verification. Transient network and server failures follow the retry path instead of this terminal refusal mapping. Sources: [base_client.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/base_client.rb:45), [refusals_helper.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/refusals_helper.rb:8), and [yabeda.rb](/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb:47)."
+        }
+      ],
+      "final_answer": "### HTTP status → client error\n\nThe shared `BaseClient` middleware raises a typed error for every HTTP response with status `400+`:\n\n| Status | Error |\n|---|---|\n| 400 | `BadRequestError` |\n| 401 | `UnauthorizedError` |\n| 403 | `ForbiddenError` |\n| 404 | `NotFoundError` |\n| 422 | `UnprocessableEntityError` |\n| 423 | `LockedError` |\n| 429 | `RateLimitedError` |\n| 500 | `ServerError` |\n| 503 | `ServiceUnavailableError` |\n| Other 5xx | `ServerError` |\n| Other 4xx | `RequestError` |\n\nA vendor adapter may classify a response body as a more specific shared or vendor-specific error—for example, quota exceeded or insufficient scope. The client also extracts a vendor message where possible and retains the response body, status, and headers on the error. `RateLimitedError` can parse `Retry-After` as seconds or an HTTP date.\n\n### Metrics\n\nThe shared client emits:\n\n- **`requests_duration`** — request time, tagged by vendor and operation (`api_request`, `upload_transfer`, and token operations such as `token_refresh`).\n- **`failed_requests_total`** — failures tagged by vendor, operation, and reason, including HTTP status, network error class, lock timeout, and invalid grant.\n- **`rate_limit_remaining`** and **`rate_limit_reset_seconds`** — when a response carries the vendor’s rate-limit headers, tagged by vendor and API group.\n\n### Terminal refusals → send failure reason\n\nThe refusal helper marks affected send records failed. Its explicit mappings are:\n\n| Refusal | Failure reason |\n|---|---|\n| Quota exceeded | `exceeded` |\n| Insufficient scope | `unauthorized` |\n| Invalid/rejected grant | `unauthorized` |\n| HTTP 401 | `unauthorized` |\n| Policy refusal | `forbidden` |\n\nOther terminal vendor refusals—such as `403` without the insufficient-scope classification, `404`, `400`, `422`, `423`, or unusable upload targets—fall back to **`api_error`**. A policy refusal or invalid grant is also re-raised after marking the files failed; an invalid grant triggers grant verification. Transient network and server failures follow the retry path instead of this terminal refusal mapping. Sources: [base_client.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/base_client.rb:45), [refusals_helper.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/refusals_helper.rb:8), and [yabeda.rb](/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb:47).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q22",
+      "sent_at": 165.929,
+      "prompt_sha256": "269ec8c3109a67e7146ecf214077ed63a54895b1226bf9d8838f5bde610812d3",
+      "turn_id": "01a18afa-bfdd-7e12-b6d4-52fab58bc131",
+      "completed_at": 175.334,
+      "wall_seconds": 9.405,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 9393,
+      "usage_delta": {
+        "inputTokens": 444466,
+        "cachedInputTokens": 438272,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 961,
+        "reasoningOutputTokens": 126,
+        "totalTokens": 445427
+      },
+      "usage_cumulative": {
+        "inputTokens": 3960457,
+        "cachedInputTokens": 3836416,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 12467,
+        "reasoningOutputTokens": 1567,
+        "totalTokens": 3972924
+      },
+      "usage_last_response_only": {
+        "inputTokens": 113368,
+        "cachedInputTokens": 111872,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 498,
+        "reasoningOutputTokens": 126,
+        "totalTokens": 113866
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-eafab004-e796-4495-912d-3343ab7bb4c5",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 5288,
+            "serialized_utf8_bytes": 5288,
+            "text_chars": 5251,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-052c5552-faed-4245-b185-5248ff103c28",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6420,
+            "serialized_utf8_bytes": 6434,
+            "text_chars": 6295,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-828c9cc8-ed2d-4a48-b53c-d693dfd91559",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 4318,
+            "serialized_utf8_bytes": 4328,
+            "text_chars": 4218,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4173c28448191909894d2a46c5a68",
+          "phase": "commentary",
+          "text": "Сверю оба worker base-класса и конфигурацию sidekiq throttle, включая значения retries, slug и throttle key."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4173f73c08191a3e0d035f8a15622",
+          "phase": "commentary",
+          "text": "Нашел общий retry policy и отдельный Instead throttle. Еще сниму оставшуюся часть throttle declaration, чтобы привести лимиты приложения вместе с vendor group config."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4174249108191b1621043009fcbb5",
+          "phase": "final_answer",
+          "text": "- **Shared `ApplicationWorker`** sets the default queue to `tax_preparation_tax_automations_default`. It does not set retries, throttle, or a slug.\n- **Shared `OperationWorker`** sets the same default queue and `retry: 10`. It kills retries for missing records, policy errors, and invalid grants; `RateLimitedError` retries after the vendor’s `Retry-After` value. On invalid-grant retry exhaustion, it starts grant verification. It does **not** declare a slug or throttle group; adapter operation classes provide those.\n- **Instead `OperationWorker`** defines the adapter-specific throttle arguments: rate-limit group plus connection ID, with `default` as the fallback group. It also provides the hook for subclasses to declare their rate-limit group. It does not define a slug; each concrete Instead operation worker declares its own.\n\nThe throttle registry is in [config/initializers/sidekiq.rb](/Users/Shared/nav-ab/repo-master/config/initializers/sidekiq.rb:106). The per-connection group limits and app-wide requests-per-minute limit are in [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1817), with production overrides in [config/settings/production.yml](/Users/Shared/nav-ab/repo-master/config/settings/production.yml:187). The registry applies both a **per-connection, per-group** limit and an **app-wide** limit. Production sets the app-wide limit to 3,000 requests/minute and `docs` to 60/minute; development defaults are 500 app-wide and 5 `docs` requests/minute. The throttle only applies to workers that opt in with `sidekiq_throttle_as :tax_automations_instead`."
+        }
+      ],
+      "final_answer": "- **Shared `ApplicationWorker`** sets the default queue to `tax_preparation_tax_automations_default`. It does not set retries, throttle, or a slug.\n- **Shared `OperationWorker`** sets the same default queue and `retry: 10`. It kills retries for missing records, policy errors, and invalid grants; `RateLimitedError` retries after the vendor’s `Retry-After` value. On invalid-grant retry exhaustion, it starts grant verification. It does **not** declare a slug or throttle group; adapter operation classes provide those.\n- **Instead `OperationWorker`** defines the adapter-specific throttle arguments: rate-limit group plus connection ID, with `default` as the fallback group. It also provides the hook for subclasses to declare their rate-limit group. It does not define a slug; each concrete Instead operation worker declares its own.\n\nThe throttle registry is in [config/initializers/sidekiq.rb](/Users/Shared/nav-ab/repo-master/config/initializers/sidekiq.rb:106). The per-connection group limits and app-wide requests-per-minute limit are in [config/settings.yml](/Users/Shared/nav-ab/repo-master/config/settings.yml:1817), with production overrides in [config/settings/production.yml](/Users/Shared/nav-ab/repo-master/config/settings/production.yml:187). The registry applies both a **per-connection, per-group** limit and an **app-wide** limit. Production sets the app-wide limit to 3,000 requests/minute and `docs` to 60/minute; development defaults are 500 app-wide and 5 `docs` requests/minute. The throttle only applies to workers that opt in with `sidekiq_throttle_as :tax_automations_instead`.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q23",
+      "sent_at": 176.567,
+      "prompt_sha256": "5b1e0583497612e62ad34bdd081ed852a45d8aab317a6eab0f8d9aae9109c316",
+      "turn_id": "01a18afa-e96a-7ab2-9c15-d451c22c4526",
+      "completed_at": 188.14,
+      "wall_seconds": 11.572,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 11564,
+      "usage_delta": {
+        "inputTokens": 695644,
+        "cachedInputTokens": 689024,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 835,
+        "reasoningOutputTokens": 108,
+        "totalTokens": 696479
+      },
+      "usage_cumulative": {
+        "inputTokens": 4656101,
+        "cachedInputTokens": 4525440,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 13302,
+        "reasoningOutputTokens": 1675,
+        "totalTokens": 4669403
+      },
+      "usage_last_response_only": {
+        "inputTokens": 118757,
+        "cachedInputTokens": 117632,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 216,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 118973
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-43ecf071-65be-4b96-bfdd-625074bc50de",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 1,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": null,
+            "serialized_utf8_bytes": null,
+            "text_chars": null,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-7f4421cb-d549-4270-8763-a07e13061c09",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 1326,
+            "serialized_utf8_bytes": 1326,
+            "text_chars": 1309,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-304ebed1-45b4-48e7-b20b-7c51da5a1aaf",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 8232,
+            "serialized_utf8_bytes": 8234,
+            "text_chars": 8020,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-aa4df9b6-644b-4a34-8d65-ead48befe848",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1699,
+          "result_size": {
+            "serialized_chars": 4648,
+            "serialized_utf8_bytes": 4648,
+            "text_chars": 4604,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-a0c3d2e9-7598-4278-984b-1d59226d039d",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 3270,
+            "serialized_utf8_bytes": 3270,
+            "text_chars": 3161,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 5
+      },
+      "tool_completed_unique": 5,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41746b77c81918a6f45ede047bfdf",
+          "phase": "commentary",
+          "text": "Проверю route declaration, controller endpoint и конфигурацию кластерных host/domain, чтобы описать полный маршрут от vendor URL до контроллера."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4175033948191bf3f87d1efe07f2f",
+          "phase": "final_answer",
+          "text": "The provider’s webhook URL is configured to call **`POST /webhooks/instead/events`**. The route is under `RouteConstraints::AppDomainConstraint` and defaults to `HostHelper.app_subdomain`, so the vendor must send deliveries to the **app host for the relevant TaxDome cluster**. The constraint also accepts configured app-private hosts and Kubernetes hosts.\n\nThe route maps to `TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController#create` via the route’s `tax_preparation` module scope. It is a provider-specific endpoint, rather than a shared vendor webhook route. Sources: [tax_preparation.rb](/Users/Shared/nav-ab/repo-master/config/routes/tax_preparation.rb:724), [app_domain_constraint.rb](/Users/Shared/nav-ab/repo-master/lib/route_constraints/app_domain_constraint.rb:4), and [events_controller.rb](/Users/Shared/nav-ab/repo-master/app/controllers/tax_preparation/webhooks/tax_automations/instead/events_controller.rb:5)."
+        }
+      ],
+      "final_answer": "The provider’s webhook URL is configured to call **`POST /webhooks/instead/events`**. The route is under `RouteConstraints::AppDomainConstraint` and defaults to `HostHelper.app_subdomain`, so the vendor must send deliveries to the **app host for the relevant TaxDome cluster**. The constraint also accepts configured app-private hosts and Kubernetes hosts.\n\nThe route maps to `TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController#create` via the route’s `tax_preparation` module scope. It is a provider-specific endpoint, rather than a shared vendor webhook route. Sources: [tax_preparation.rb](/Users/Shared/nav-ab/repo-master/config/routes/tax_preparation.rb:724), [app_domain_constraint.rb](/Users/Shared/nav-ab/repo-master/lib/route_constraints/app_domain_constraint.rb:4), and [events_controller.rb](/Users/Shared/nav-ab/repo-master/app/controllers/tax_preparation/webhooks/tax_automations/instead/events_controller.rb:5).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q24",
+      "sent_at": 189.408,
+      "prompt_sha256": "5be59f3c6f31c3f47bda88c803c0e8cd03a43c2951271607ae63a9e095aff3ae",
+      "turn_id": "01a18afb-1b93-7c10-9ec0-35e75c34abe9",
+      "completed_at": 190.916,
+      "wall_seconds": 1.507,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 1498,
+      "usage_delta": {
+        "inputTokens": 119025,
+        "cachedInputTokens": 118528,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 104,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 119129
+      },
+      "usage_cumulative": {
+        "inputTokens": 4775126,
+        "cachedInputTokens": 4643968,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 13406,
+        "reasoningOutputTokens": 1675,
+        "totalTokens": 4788532
+      },
+      "usage_last_response_only": {
+        "inputTokens": 119025,
+        "cachedInputTokens": 118528,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 104,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 119129
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417538c748191bbd10bf8bacc7552",
+          "phase": "final_answer",
+          "text": "Да, для этих двух провайдеров достаточно явного словаря:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nКлюч нормализуем через `downcase.to_sym`, значение берём из словаря. `camelize` здесь не нужен: он превратит `gruntworx` в `Gruntworx`, а продукт пишется `GruntWorx`."
+        }
+      ],
+      "final_answer": "Да, для этих двух провайдеров достаточно явного словаря:\n\n```ruby\nPROVIDER_NAMES = {\n  instead: 'Instead',\n  gruntworx: 'GruntWorx'\n}.freeze\n```\n\nКлюч нормализуем через `downcase.to_sym`, значение берём из словаря. `camelize` здесь не нужен: он превратит `gruntworx` в `Gruntworx`, а продукт пишется `GruntWorx`.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q25",
+      "sent_at": 192.194,
+      "prompt_sha256": "a11aaded47539958f731ca2b672d74ef1d881945aafa6aa7d2fe9f7ff3a15d2d",
+      "turn_id": "01a18afb-2675-7130-9935-fc080acb1091",
+      "completed_at": 194.739,
+      "wall_seconds": 2.545,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 2534,
+      "usage_delta": {
+        "inputTokens": 119177,
+        "cachedInputTokens": 118784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 215,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 119392
+      },
+      "usage_cumulative": {
+        "inputTokens": 4894303,
+        "cachedInputTokens": 4762752,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 13621,
+        "reasoningOutputTokens": 1675,
+        "totalTokens": 4907924
+      },
+      "usage_last_response_only": {
+        "inputTokens": 119177,
+        "cachedInputTokens": 118784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 215,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 119392
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41756663c8191a5c90f29762eca65",
+          "phase": "final_answer",
+          "text": "Да, `step` слишком общее, а `feature` рядом с feature flags будет неоднозначным. Я бы выбрал **`operation_available?`**, если метод отвечает, можно ли выполнить именованное действие провайдера.\n\nВарианты по смыслу:\n\n- `operation_available?` — подходит для конкретного действия или операции; мой выбор.\n- `capability_available?` — хорошо, если проверяется возможность из capability passport, но может смешаться с `capabilities_for`.\n- `action_supported?` — понятно, если речь о поддержке вендором; звучит как статическая возможность, а не runtime-доступность.\n- `provider_operation_available?` — явнее вне контекста tax automations, но длиннее.\n- `operation_enabled?` — компактно, но `enabled` похоже на feature flag.\n\nЕсли метод сверяет операцию с passport, лучше `operation_supported?`. Если учитывает подключение, флаг или иные runtime-условия — `operation_available?`."
+        }
+      ],
+      "final_answer": "Да, `step` слишком общее, а `feature` рядом с feature flags будет неоднозначным. Я бы выбрал **`operation_available?`**, если метод отвечает, можно ли выполнить именованное действие провайдера.\n\nВарианты по смыслу:\n\n- `operation_available?` — подходит для конкретного действия или операции; мой выбор.\n- `capability_available?` — хорошо, если проверяется возможность из capability passport, но может смешаться с `capabilities_for`.\n- `action_supported?` — понятно, если речь о поддержке вендором; звучит как статическая возможность, а не runtime-доступность.\n- `provider_operation_available?` — явнее вне контекста tax automations, но длиннее.\n- `operation_enabled?` — компактно, но `enabled` похоже на feature flag.\n\nЕсли метод сверяет операцию с passport, лучше `operation_supported?`. Если учитывает подключение, флаг или иные runtime-условия — `operation_available?`.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q26",
+      "sent_at": 195.963,
+      "prompt_sha256": "caf95e1fdfe61906f48555d46b7cf64bea0b2257a300cdc33639cb46a8e9cc6e",
+      "turn_id": "01a18afb-352d-75d1-a41e-53b2f3175af4",
+      "completed_at": 208.816,
+      "wall_seconds": 12.853,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 12845,
+      "usage_delta": {
+        "inputTokens": 367325,
+        "cachedInputTokens": 360960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 761,
+        "reasoningOutputTokens": 449,
+        "totalTokens": 368086
+      },
+      "usage_cumulative": {
+        "inputTokens": 5261628,
+        "cachedInputTokens": 5123712,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 14382,
+        "reasoningOutputTokens": 2124,
+        "totalTokens": 5276010
+      },
+      "usage_last_response_only": {
+        "inputTokens": 125107,
+        "cachedInputTokens": 122624,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 394,
+        "reasoningOutputTokens": 266,
+        "totalTokens": 125501
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-bd64a14a-067d-4676-92c5-e8afba5a668e",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 2121,
+          "result_size": {
+            "serialized_chars": 111702,
+            "serialized_utf8_bytes": 112175,
+            "text_chars": 110880,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-cbbc8a12-a149-4aae-9b99-303d059d3694",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 2312,
+          "result_size": {
+            "serialized_chars": 1272006,
+            "serialized_utf8_bytes": 1272026,
+            "text_chars": 1048586,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4176528808191a71b7b20d36da828",
+          "phase": "final_answer",
+          "text": "I can’t verify TD-99833’s exact incident or cost from the files available here. The app source has no reference to that ticket, and I can’t access the repository history or Jira.\n\nThe code does document the risk the mock is designed to prevent: if a mock diverges from the vendor contract, specs can pass while the real integration fails at the HTTP boundary. The current mock comments specifically call out realistic token rotation, stable vendor IDs, vendor-shaped errors, and signed upload targets. But I can’t say which mismatch TD-99833 fixed or quantify its impact without that ticket’s details."
+        }
+      ],
+      "final_answer": "I can’t verify TD-99833’s exact incident or cost from the files available here. The app source has no reference to that ticket, and I can’t access the repository history or Jira.\n\nThe code does document the risk the mock is designed to prevent: if a mock diverges from the vendor contract, specs can pass while the real integration fails at the HTTP boundary. The current mock comments specifically call out realistic token rotation, stable vendor IDs, vendor-shaped errors, and signed upload targets. But I can’t say which mismatch TD-99833 fixed or quantify its impact without that ticket’s details.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q27",
+      "sent_at": 210.061,
+      "prompt_sha256": "eb2a5f0e7c912d7e7df51acf70cedcd5c81c9966101ebb47db5f1cae9edd0b2a",
+      "turn_id": "01a18afb-6c40-77c1-9593-a992dc6f6605",
+      "completed_at": 216.779,
+      "wall_seconds": 6.718,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 6708,
+      "usage_delta": {
+        "inputTokens": 252905,
+        "cachedInputTokens": 250368,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 699,
+        "reasoningOutputTokens": 282,
+        "totalTokens": 253604
+      },
+      "usage_cumulative": {
+        "inputTokens": 5514533,
+        "cachedInputTokens": 5374080,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 15081,
+        "reasoningOutputTokens": 2406,
+        "totalTokens": 5529614
+      },
+      "usage_last_response_only": {
+        "inputTokens": 127330,
+        "cachedInputTokens": 125440,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 473,
+        "reasoningOutputTokens": 212,
+        "totalTokens": 127803
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-454f8d7d-d192-45a2-bdf8-1cae5b32e62d",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6370,
+            "serialized_utf8_bytes": 6378,
+            "text_chars": 6209,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4176c29408191a5d15e8040e75449",
+          "phase": "final_answer",
+          "text": "Я включил их как **уже существующие общие механизмы**, на которые GruntWorx должен подключиться, а не как функции, которые нужно заново реализовать. В контексте «что унаследовать от Instead» следовало точнее разделить общий каркас и provider-specific операции.\n\n**`Connections::DisconnectAll` — общий сервис.** Он получает соединения всех провайдеров через `Registry.connections_for`, переводит их в disconnected и ставит отзыв grant в очередь. Но сами записи и операции отзыва предоставляет каждый адаптер.\n\nТо же разделение действует для остальных пунктов:\n\n- `Documents::ResumeSends(Async)` — общий отбор и постановка на повторную отправку; отправку выполняет адаптер.\n- `Firms::DestroyCleanup` — общий cleanup фирмы, обходящий зарегистрированные адаптеры для удаления их данных.\n- `TaxPreparations::BatchDestroy` — общий cleanup envelope, вызывающий у нужных адаптеров `DestroyForTaxPreparations`.\n\nИтого: это существующие shared lifecycle hooks, которые новый провайдер должен поддержать через свой namespace. Если я обозначил их как отдельную работу для GruntWorx, это было неверно."
+        }
+      ],
+      "final_answer": "Я включил их как **уже существующие общие механизмы**, на которые GruntWorx должен подключиться, а не как функции, которые нужно заново реализовать. В контексте «что унаследовать от Instead» следовало точнее разделить общий каркас и provider-specific операции.\n\n**`Connections::DisconnectAll` — общий сервис.** Он получает соединения всех провайдеров через `Registry.connections_for`, переводит их в disconnected и ставит отзыв grant в очередь. Но сами записи и операции отзыва предоставляет каждый адаптер.\n\nТо же разделение действует для остальных пунктов:\n\n- `Documents::ResumeSends(Async)` — общий отбор и постановка на повторную отправку; отправку выполняет адаптер.\n- `Firms::DestroyCleanup` — общий cleanup фирмы, обходящий зарегистрированные адаптеры для удаления их данных.\n- `TaxPreparations::BatchDestroy` — общий cleanup envelope, вызывающий у нужных адаптеров `DestroyForTaxPreparations`.\n\nИтого: это существующие shared lifecycle hooks, которые новый провайдер должен поддержать через свой namespace. Если я обозначил их как отдельную работу для GruntWorx, это было неверно.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q28",
+      "sent_at": 217.986,
+      "prompt_sha256": "2bc01807eda74787ce6fb63432116af742d75eb366889763ea186c243516f9fa",
+      "turn_id": "01a18afb-8b36-76e0-9e95-2ba78283a723",
+      "completed_at": 221.163,
+      "wall_seconds": 3.177,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 3166,
+      "usage_delta": {
+        "inputTokens": 127816,
+        "cachedInputTokens": 127104,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 319,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128135
+      },
+      "usage_cumulative": {
+        "inputTokens": 5642349,
+        "cachedInputTokens": 5501184,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 15400,
+        "reasoningOutputTokens": 2406,
+        "totalTokens": 5657749
+      },
+      "usage_last_response_only": {
+        "inputTokens": 127816,
+        "cachedInputTokens": 127104,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 319,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128135
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4177049c081918e429d6d46bc610f",
+          "phase": "final_answer",
+          "text": "Маркер привязки — это `external_tenant_uuid` в `FirmSettings`. Он фиксирует, **к какому аккаунту у выбранного провайдера подключена фирма TaxDome**.\n\nКак он работает:\n\n1. При первом подключении провайдер возвращает идентификатор своего аккаунта (`external_tenant_uuid`). TaxDome сохраняет его в настройках фирмы.\n2. При повторном подключении к тому же провайдеру полученный ID сравнивается с сохранённым. Совпадает — подключение продолжается. Отличается — TaxDome отказывает с `account_mismatch`, а новый grant пытается отозвать.\n3. При переключении провайдера старый маркер очищается: идентификаторы аккаунтов разных вендоров нельзя сравнивать. Новый провайдер привязывает фирму к своему аккаунту при подключении.\n4. При полном `DisconnectAll` маркер тоже очищается, чтобы фирма могла позже подключиться к другому аккаунту.\n5. Если провайдер не возвращает account ID, маркер остаётся пустым. Подключение проходит, но повторно проверить, что администратор выбрал тот же аккаунт, TaxDome не может.\n\nДля Instead маркер берётся из поля `firm_uuid` в ответе OAuth token exchange. Если вендор возвращает такой стабильный tenant ID, GruntWorx может использовать общий механизм; иначе контракт потребует другой способ привязки или явное поведение без неё."
+        }
+      ],
+      "final_answer": "Маркер привязки — это `external_tenant_uuid` в `FirmSettings`. Он фиксирует, **к какому аккаунту у выбранного провайдера подключена фирма TaxDome**.\n\nКак он работает:\n\n1. При первом подключении провайдер возвращает идентификатор своего аккаунта (`external_tenant_uuid`). TaxDome сохраняет его в настройках фирмы.\n2. При повторном подключении к тому же провайдеру полученный ID сравнивается с сохранённым. Совпадает — подключение продолжается. Отличается — TaxDome отказывает с `account_mismatch`, а новый grant пытается отозвать.\n3. При переключении провайдера старый маркер очищается: идентификаторы аккаунтов разных вендоров нельзя сравнивать. Новый провайдер привязывает фирму к своему аккаунту при подключении.\n4. При полном `DisconnectAll` маркер тоже очищается, чтобы фирма могла позже подключиться к другому аккаунту.\n5. Если провайдер не возвращает account ID, маркер остаётся пустым. Подключение проходит, но повторно проверить, что администратор выбрал тот же аккаунт, TaxDome не может.\n\nДля Instead маркер берётся из поля `firm_uuid` в ответе OAuth token exchange. Если вендор возвращает такой стабильный tenant ID, GruntWorx может использовать общий механизм; иначе контракт потребует другой способ привязки или явное поведение без неё.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q29",
+      "sent_at": 222.331,
+      "prompt_sha256": "04c2ffe72e984dba821365bf9ae0445f671271bf1a689c9afbe5407dc3ff450b",
+      "turn_id": "01a18afb-9c2e-7ae0-bc1a-d480d4424e0f",
+      "completed_at": 226.791,
+      "wall_seconds": 4.46,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 4449,
+      "usage_delta": {
+        "inputTokens": 258147,
+        "cachedInputTokens": 255616,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 415,
+        "reasoningOutputTokens": 50,
+        "totalTokens": 258562
+      },
+      "usage_cumulative": {
+        "inputTokens": 5900496,
+        "cachedInputTokens": 5756800,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 15815,
+        "reasoningOutputTokens": 2456,
+        "totalTokens": 5916311
+      },
+      "usage_last_response_only": {
+        "inputTokens": 129989,
+        "cachedInputTokens": 128000,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 266,
+        "reasoningOutputTokens": 50,
+        "totalTokens": 130255
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-c8f13be9-c7fc-4259-b368-8b1ed2435c57",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 7258,
+            "serialized_utf8_bytes": 7264,
+            "text_chars": 7105,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41774741c8191aa67a20656cabb8d",
+          "phase": "commentary",
+          "text": "Проверю `Instead::ExportAsync` и worker workflow, чтобы точно описать authorization gate и передачу в async operation."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417768d008191bd6d4aa224360571",
+          "phase": "final_answer",
+          "text": "`Instead::ExportAsync` resolves the firm’s usable connection, then authorizes the actor to **read that connection** via `ConnectionPolicy`. If authorized, it takes the IDs of the send records the shared port created and starts `Instead::Documents::ExportAsyncWorkflow` with the connection ID, tax-preparation ID, and send-record IDs. The operation is queued after the shared send transaction commits, so a rollback queues nothing. Records remain `waiting` until the workflow runs.\n\nThe workflow finds or links an existing Instead entity, or creates one if needed, then starts a separate upload chain for each file. That keeps a refusal on one file from holding up the others. [export_async.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb:31) · [export_async_workflow.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/export_async_workflow.rb:28)"
+        }
+      ],
+      "final_answer": "`Instead::ExportAsync` resolves the firm’s usable connection, then authorizes the actor to **read that connection** via `ConnectionPolicy`. If authorized, it takes the IDs of the send records the shared port created and starts `Instead::Documents::ExportAsyncWorkflow` with the connection ID, tax-preparation ID, and send-record IDs. The operation is queued after the shared send transaction commits, so a rollback queues nothing. Records remain `waiting` until the workflow runs.\n\nThe workflow finds or links an existing Instead entity, or creates one if needed, then starts a separate upload chain for each file. That keeps a refusal on one file from holding up the others. [export_async.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb:31) · [export_async_workflow.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/export_async_workflow.rb:28)",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q30",
+      "sent_at": 227.953,
+      "prompt_sha256": "e3d5966c05b7e020d8a8f98711e837e0a51fe0e97ff339bbaf4cd54ddd2106b7",
+      "turn_id": "01a18afb-b224-7753-87b3-74dd6262c3ad",
+      "completed_at": 235.942,
+      "wall_seconds": 7.989,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 7979,
+      "usage_delta": {
+        "inputTokens": 529379,
+        "cachedInputTokens": 523648,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 725,
+        "reasoningOutputTokens": 141,
+        "totalTokens": 530104
+      },
+      "usage_cumulative": {
+        "inputTokens": 6429875,
+        "cachedInputTokens": 6280448,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 16540,
+        "reasoningOutputTokens": 2597,
+        "totalTokens": 6446415
+      },
+      "usage_last_response_only": {
+        "inputTokens": 135007,
+        "cachedInputTokens": 133376,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 343,
+        "reasoningOutputTokens": 108,
+        "totalTokens": 135350
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-0eeb9994-3952-4b38-b745-520c7db7dbbc",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 2,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 220,
+            "serialized_utf8_bytes": 220,
+            "text_chars": 215,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-2fc05798-b8b9-48bb-b8b6-e970e53857c7",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 11050,
+            "serialized_utf8_bytes": 11050,
+            "text_chars": 10952,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-858df606-b76d-4607-b65f-6bb93a437bb7",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 1,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 5165,
+            "serialized_utf8_bytes": 5165,
+            "text_chars": 4797,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4177f8a008191adc2cfe779f58aaf",
+          "phase": "final_answer",
+          "text": "- **Contacts:** yes. `contacts.uid` is a UUID. It was added as nullable, with a UUID default added in a later migration.\n- **Accounts:** yes. The account model is stored in the `clients` table, which has a `uid` UUID column with the same migrations.\n- **Firms:** I found no `uuid` or `uid` column on `firms`.\n\nSo TaxDome has stable UUID identifiers for both contacts and accounts, but not firms. `FirmSettings.external_tenant_uuid` is the **vendor’s** account identifier, not a TaxDome firm ID. If GruntWorx needs a stable TaxDome firm identifier in its URLs, the current schema doesn’t provide one on `firms`. Sources: [migration adding the UUID columns](/Users/Shared/nav-ab/repo-master/db/migrate/20260511100000_add_uid_to_contacts_and_clients.rb:1) and [migration setting their UUID defaults](/Users/Shared/nav-ab/repo-master/db/migrate/20260511105000_set_default_uid_for_contacts_and_clients.rb:1)."
+        }
+      ],
+      "final_answer": "- **Contacts:** yes. `contacts.uid` is a UUID. It was added as nullable, with a UUID default added in a later migration.\n- **Accounts:** yes. The account model is stored in the `clients` table, which has a `uid` UUID column with the same migrations.\n- **Firms:** I found no `uuid` or `uid` column on `firms`.\n\nSo TaxDome has stable UUID identifiers for both contacts and accounts, but not firms. `FirmSettings.external_tenant_uuid` is the **vendor’s** account identifier, not a TaxDome firm ID. If GruntWorx needs a stable TaxDome firm identifier in its URLs, the current schema doesn’t provide one on `firms`. Sources: [migration adding the UUID columns](/Users/Shared/nav-ab/repo-master/db/migrate/20260511100000_add_uid_to_contacts_and_clients.rb:1) and [migration setting their UUID defaults](/Users/Shared/nav-ab/repo-master/db/migrate/20260511105000_set_default_uid_for_contacts_and_clients.rb:1).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q31",
+      "sent_at": 237.109,
+      "prompt_sha256": "5ba33a398955d9e2dcfcf3d2cd79794060416f5102a3674d68dfbebd053ded6c",
+      "turn_id": "01a18afb-d5e8-7543-a264-3b3fb4cb42e8",
+      "completed_at": 242.431,
+      "wall_seconds": 5.323,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 5312,
+      "usage_delta": {
+        "inputTokens": 135375,
+        "cachedInputTokens": 134784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 537,
+        "reasoningOutputTokens": 381,
+        "totalTokens": 135912
+      },
+      "usage_cumulative": {
+        "inputTokens": 6565250,
+        "cachedInputTokens": 6415232,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 17077,
+        "reasoningOutputTokens": 2978,
+        "totalTokens": 6582327
+      },
+      "usage_last_response_only": {
+        "inputTokens": 135375,
+        "cachedInputTokens": 134784,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 537,
+        "reasoningOutputTokens": 381,
+        "totalTokens": 135912
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417864dfc8191a612db90b16ac5b7",
+          "phase": "final_answer",
+          "text": "Да, согласен: в проектировании GruntWorx нужно придерживаться принятого в Instead нейминга и структуры адаптера, а не вводить для второго провайдера отдельный стиль.\n\nВ частности, предлагаю те же шаблоны для namespace, моделей, таблиц и полей с внешними идентификаторами. При этом важно не спутать **ID TaxDome**, который GruntWorx будет получать в URL, с **ID аккаунта GruntWorx**, который хранится как `external_tenant_uuid`. У firm нет собственного UUID поля, поэтому для TD-side firm ID сначала нужно определить источник; называть его по аналогии с Instead не создаст такого идентификатора в схеме."
+        }
+      ],
+      "final_answer": "Да, согласен: в проектировании GruntWorx нужно придерживаться принятого в Instead нейминга и структуры адаптера, а не вводить для второго провайдера отдельный стиль.\n\nВ частности, предлагаю те же шаблоны для namespace, моделей, таблиц и полей с внешними идентификаторами. При этом важно не спутать **ID TaxDome**, который GruntWorx будет получать в URL, с **ID аккаунта GruntWorx**, который хранится как `external_tenant_uuid`. У firm нет собственного UUID поля, поэтому для TD-side firm ID сначала нужно определить источник; называть его по аналогии с Instead не создаст такого идентификатора в схеме.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q32",
+      "sent_at": 243.583,
+      "prompt_sha256": "0fb5b1b2666befe27f12f8b637afc91a4461ca0478aa8b4f74b1d00a8d84a2cf",
+      "turn_id": "01a18afb-ef32-7f91-8c08-0b4647b35e2a",
+      "completed_at": 245.29,
+      "wall_seconds": 1.707,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 1698,
+      "usage_delta": {
+        "inputTokens": 135939,
+        "cachedInputTokens": 135168,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 102,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 136041
+      },
+      "usage_cumulative": {
+        "inputTokens": 6701189,
+        "cachedInputTokens": 6550400,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 17179,
+        "reasoningOutputTokens": 2978,
+        "totalTokens": 6718368
+      },
+      "usage_last_response_only": {
+        "inputTokens": 135939,
+        "cachedInputTokens": 135168,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 102,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 136041
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41789bfd4819199963b4c2d44eab5",
+          "phase": "final_answer",
+          "text": "Да. `GruntWorx::Documents::ReconcileStatusesAsync` — реализация адаптером порта сверки статусов. Общий механизм вызывает её для кандидатов, а адаптер уже знает, как запросить состояние у GruntWorx и передать результат в общий `Documents::UpdateStatus`.\n\nТо есть сам порт и sweep — общие; `ReconcileStatusesAsync` внутри `GruntWorx` — provider-specific реализация порта."
+        }
+      ],
+      "final_answer": "Да. `GruntWorx::Documents::ReconcileStatusesAsync` — реализация адаптером порта сверки статусов. Общий механизм вызывает её для кандидатов, а адаптер уже знает, как запросить состояние у GruntWorx и передать результат в общий `Documents::UpdateStatus`.\n\nТо есть сам порт и sweep — общие; `ReconcileStatusesAsync` внутри `GruntWorx` — provider-specific реализация порта.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q33",
+      "sent_at": 246.465,
+      "prompt_sha256": "05ddcf24d70d57da1b8e3ae8dc27f208b7aecb18b6ad32205593c7ae3a3261e7",
+      "turn_id": "01a18afb-fa74-7d12-ab51-7a73b2bc2e19",
+      "completed_at": 256.072,
+      "wall_seconds": 9.607,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 9596,
+      "usage_delta": {
+        "inputTokens": 551461,
+        "cachedInputTokens": 546688,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 1099,
+        "reasoningOutputTokens": 163,
+        "totalTokens": 552560
+      },
+      "usage_cumulative": {
+        "inputTokens": 7252650,
+        "cachedInputTokens": 7097088,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 18278,
+        "reasoningOutputTokens": 3141,
+        "totalTokens": 7270928
+      },
+      "usage_last_response_only": {
+        "inputTokens": 139965,
+        "cachedInputTokens": 138752,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 464,
+        "reasoningOutputTokens": 104,
+        "totalTokens": 140429
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-b5f64d1a-77d2-4d38-a12f-ce93ca0b7f00",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 1,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 107,
+            "serialized_utf8_bytes": 107,
+            "text_chars": 104,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-84f62dc9-7365-4fd4-804e-33333afb1d93",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 9740,
+            "serialized_utf8_bytes": 9746,
+            "text_chars": 9520,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-605e2a36-6f68-4e5f-8dd5-a5f043ed4bac",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 3753,
+            "serialized_utf8_bytes": 3753,
+            "text_chars": 3716,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae4178cfa0c819189a96b7fc4ebc35b",
+          "phase": "commentary",
+          "text": "Проверю наследование у конкретных worker-классов и обработчики исчерпания retry, особенно различие API send steps, byte transfer и webhook event worker."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4179349a881919e6345a66205bfbd",
+          "phase": "final_answer",
+          "text": "The hierarchy is:\n\n```text\nTaxPreparation::TaxAutomations::OperationWorker\n└── Instead::OperationWorker\n    ├── Instead::ExportOperationWorker\n    │   ├── send-step workers (create entity, start upload, finalize upload)\n    │   └── TransferBytesWorker\n    └── Webhooks::ProcessEventWorker\n```\n\n- **Send-step workers** use `Instead::ExportOperationWorker`, which is `step_only!` and inherits the shared operation retry policy.\n- **`TransferBytesWorker` also uses `ExportOperationWorker`**, even though it transfers bytes to a signed URL and doesn’t use the Instead API throttle.\n- **`Webhooks::ProcessEventWorker` extends `Instead::OperationWorker` directly**. It doesn’t use the export-step failure handler because it isn’t a send step.\n\nWhen a send step exhausts retries, `ExportOperationWorker` marks its named files `failed`: terminal refusals get their mapped failure reason; other exhausted errors become `network_error`. Canceled or missing operations are skipped. The webhook worker has no send files to fail; its retries follow the shared operation policy. Sources: [export_operation_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb:5), [transfer_bytes_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb:5), [process_event_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/webhooks/process_event_worker.rb:7)."
+        }
+      ],
+      "final_answer": "The hierarchy is:\n\n```text\nTaxPreparation::TaxAutomations::OperationWorker\n└── Instead::OperationWorker\n    ├── Instead::ExportOperationWorker\n    │   ├── send-step workers (create entity, start upload, finalize upload)\n    │   └── TransferBytesWorker\n    └── Webhooks::ProcessEventWorker\n```\n\n- **Send-step workers** use `Instead::ExportOperationWorker`, which is `step_only!` and inherits the shared operation retry policy.\n- **`TransferBytesWorker` also uses `ExportOperationWorker`**, even though it transfers bytes to a signed URL and doesn’t use the Instead API throttle.\n- **`Webhooks::ProcessEventWorker` extends `Instead::OperationWorker` directly**. It doesn’t use the export-step failure handler because it isn’t a send step.\n\nWhen a send step exhausts retries, `ExportOperationWorker` marks its named files `failed`: terminal refusals get their mapped failure reason; other exhausted errors become `network_error`. Canceled or missing operations are skipped. The webhook worker has no send files to fail; its retries follow the shared operation policy. Sources: [export_operation_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb:5), [transfer_bytes_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb:5), [process_event_worker.rb](/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/webhooks/process_event_worker.rb:7).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q34",
+      "sent_at": 257.231,
+      "prompt_sha256": "638d8e50ee31d0e24cf2638312074e2dac6d78332a2ed5ec22a625d7f126a516",
+      "turn_id": "01a18afc-2482-7b01-9a92-2bbb2fafed67",
+      "completed_at": 266.036,
+      "wall_seconds": 8.805,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8794,
+      "usage_delta": {
+        "inputTokens": 579146,
+        "cachedInputTokens": 571008,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 720,
+        "reasoningOutputTokens": 261,
+        "totalTokens": 579866
+      },
+      "usage_cumulative": {
+        "inputTokens": 7831796,
+        "cachedInputTokens": 7668096,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 18998,
+        "reasoningOutputTokens": 3402,
+        "totalTokens": 7850794
+      },
+      "usage_last_response_only": {
+        "inputTokens": 147293,
+        "cachedInputTokens": 146432,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 322,
+        "reasoningOutputTokens": 151,
+        "totalTokens": 147615
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-f056ebdd-8b1d-4916-8332-b7bfd1f6905c",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 31110,
+            "serialized_utf8_bytes": 31114,
+            "text_chars": 30425,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-908efe96-beac-4d79-a9e9-3af57580b2d8",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6578,
+            "serialized_utf8_bytes": 6584,
+            "text_chars": 6410,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-fd14cbd7-7224-4f39-9593-fd1967b6a627",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 319,
+          "result_size": {
+            "serialized_chars": 2049,
+            "serialized_utf8_bytes": 2049,
+            "text_chars": 2031,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae41797a4808191853d83e60d076b63",
+          "phase": "commentary",
+          "text": "Поищу OpenAPI schema/fixtures и spec helpers, которые валидируют ответы Instead, затем проверю зависимость в Gemfile и lockfile."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae4179e23f08191ac3fd139f214b03b",
+          "phase": "final_answer",
+          "text": "The existing vendor specs use the **`json-schema` gem**, through `JSON::Validator`, to validate payloads against named component schemas in the Instead OpenAPI contract. A shared helper loads the YAML contract and adds a `$ref` to the selected component so its internal references resolve.\n\nThe client specs validate both fixture payloads—`Entity`, `File`, `SignedUpload`, and `TokenResponse`—and some parsed responses from mocked client calls, including entities, files, and signed upload targets.\n\n**The in-process `Instead::Mock::Router` answers are not currently validated this way.** I found no specs that call the router or use `conforms_to_contract?` on its output. So the contract checks help prevent fixture/response drift, but they do not currently catch drift in that mock transport."
+        }
+      ],
+      "final_answer": "The existing vendor specs use the **`json-schema` gem**, through `JSON::Validator`, to validate payloads against named component schemas in the Instead OpenAPI contract. A shared helper loads the YAML contract and adds a `$ref` to the selected component so its internal references resolve.\n\nThe client specs validate both fixture payloads—`Entity`, `File`, `SignedUpload`, and `TokenResponse`—and some parsed responses from mocked client calls, including entities, files, and signed upload targets.\n\n**The in-process `Instead::Mock::Router` answers are not currently validated this way.** I found no specs that call the router or use `conforms_to_contract?` on its output. So the contract checks help prevent fixture/response drift, but they do not currently catch drift in that mock transport.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q35",
+      "sent_at": 267.214,
+      "prompt_sha256": "611d43cb58cc12f5965b3032c3636a7d8b0a642428c982201befcc01e6ef87e2",
+      "turn_id": "01a18afc-4b81-74e2-919d-01daac462d5b",
+      "completed_at": 276.366,
+      "wall_seconds": 9.152,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 9143,
+      "usage_delta": {
+        "inputTokens": 608996,
+        "cachedInputTokens": 600192,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 804,
+        "reasoningOutputTokens": 263,
+        "totalTokens": 609800
+      },
+      "usage_cumulative": {
+        "inputTokens": 8440792,
+        "cachedInputTokens": 8268288,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 19802,
+        "reasoningOutputTokens": 3665,
+        "totalTokens": 8460594
+      },
+      "usage_last_response_only": {
+        "inputTokens": 155391,
+        "cachedInputTokens": 153728,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 265,
+        "reasoningOutputTokens": 127,
+        "totalTokens": 155656
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-a4b0ee61-e5a8-45f9-842d-d4a655684b31",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 4,
+          "result_size": {
+            "serialized_chars": 23019,
+            "serialized_utf8_bytes": 23019,
+            "text_chars": 22865,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-61e90113-d992-48a8-9b06-9a598d81ff01",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "failed",
+          "exit_code": 2,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 6546,
+            "serialized_utf8_bytes": 6552,
+            "text_chars": 6388,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-c0fb9aaf-f672-4820-9afb-a0d41c2db03b",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 5756,
+            "serialized_utf8_bytes": 5767,
+            "text_chars": 5647,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 3
+      },
+      "tool_completed_unique": 3,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417a1a46881918dab5d7223d4d86d",
+          "phase": "commentary",
+          "text": "Найду внутренние вызовы CRM Public API, которыми tax automations получает контактные данные, и уточню, возвращает ли соответствующий контракт first/last name и UUID."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417a8b3248191a00a0f2b01f1426d",
+          "phase": "final_answer",
+          "text": "Use **`Crm::Api::Contact.find(firm:, user:, actor:, contact_id:)`** with the numeric Contact ID from the tax-preparation record. Its returned contact data includes `first_name`, `last_name`, and `uid`—the stable UUID.\n\n`Crm::Api::Contact.list_by_account(...)` is used to check which contacts belong to an account, but its result only includes `contact_id`, `phone`, and `name`; it does **not** return the UUID or separate first and last names. Tax automations already use `Contact.find` for the selected taxpayer in Instead’s entity creation and matching flows."
+        }
+      ],
+      "final_answer": "Use **`Crm::Api::Contact.find(firm:, user:, actor:, contact_id:)`** with the numeric Contact ID from the tax-preparation record. Its returned contact data includes `first_name`, `last_name`, and `uid`—the stable UUID.\n\n`Crm::Api::Contact.list_by_account(...)` is used to check which contacts belong to an account, but its result only includes `contact_id`, `phone`, and `name`; it does **not** return the UUID or separate first and last names. Tax automations already use `Contact.find` for the selected taxpayer in Instead’s entity creation and matching flows.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q36",
+      "sent_at": 277.592,
+      "prompt_sha256": "563853f4904b074c30c1587b3715bf84caf3d9f307969f627e659996a242f629",
+      "turn_id": "01a18afc-740b-7670-a9e6-5b01778a29fc",
+      "completed_at": 285.859,
+      "wall_seconds": 8.266,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8256,
+      "usage_delta": {
+        "inputTokens": 475132,
+        "cachedInputTokens": 469376,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 851,
+        "reasoningOutputTokens": 194,
+        "totalTokens": 475983
+      },
+      "usage_cumulative": {
+        "inputTokens": 8915924,
+        "cachedInputTokens": 8737664,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 20653,
+        "reasoningOutputTokens": 3859,
+        "totalTokens": 8936577
+      },
+      "usage_last_response_only": {
+        "inputTokens": 160718,
+        "cachedInputTokens": 158592,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 485,
+        "reasoningOutputTokens": 146,
+        "totalTokens": 161203
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-8c731225-10f4-4310-8557-d3760841825d",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 11229,
+            "serialized_utf8_bytes": 11229,
+            "text_chars": 11171,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-f671d183-330f-4489-8542-3c578ebd0df3",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 7138,
+            "serialized_utf8_bytes": 7140,
+            "text_chars": 6959,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417abcbb481919317d70dbe1c40d0",
+          "phase": "commentary",
+          "text": "Проверю миграции создания и последующих изменений трёх таблиц Instead, чтобы перечислить индексы и FK без пропусков."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417b0f61c81918dbca2370c293975",
+          "phase": "final_answer",
+          "text": "For the two **Instead adapter tables**:\n\n| Table | Indexes | Foreign keys |\n|---|---|---|\n| `tax_preparation_tax_automations_instead_connections` | Unique `firm_id`; partial `refresh_expires_at` index where `status = 1` (connected). | None. `firm_id` is a soft reference because firms are in another cluster; `creator` is polymorphic. |\n| `tax_preparation_tax_automations_instead_documents` | Index on `instead_entity_id`; unique `tax_automation_document_id`; unique `firm_id, external_uuid` where the UUID is present; and unique `external_uuid` where present. | `tax_automation_document_id` → shared tax-automation documents, **ON DELETE CASCADE**; `instead_entity_id` → Instead entities. No FK on `firm_id`. |\n\nThe standalone unique `external_uuid` index supports webhook lookup by vendor file UUID without knowing the firm first. The earlier composite unique index also enforces uniqueness within a firm. References: [connections migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260728173319_create_tax_preparation_tax_automations_instead_connections.rb:7), [documents migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260731110423_create_tax_preparation_tax_automations_instead_documents.rb:7), and [external UUID index migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260915170006_add_external_uuid_index_to_tax_preparation_tax_automations_instead_documents.rb:6)."
+        }
+      ],
+      "final_answer": "For the two **Instead adapter tables**:\n\n| Table | Indexes | Foreign keys |\n|---|---|---|\n| `tax_preparation_tax_automations_instead_connections` | Unique `firm_id`; partial `refresh_expires_at` index where `status = 1` (connected). | None. `firm_id` is a soft reference because firms are in another cluster; `creator` is polymorphic. |\n| `tax_preparation_tax_automations_instead_documents` | Index on `instead_entity_id`; unique `tax_automation_document_id`; unique `firm_id, external_uuid` where the UUID is present; and unique `external_uuid` where present. | `tax_automation_document_id` → shared tax-automation documents, **ON DELETE CASCADE**; `instead_entity_id` → Instead entities. No FK on `firm_id`. |\n\nThe standalone unique `external_uuid` index supports webhook lookup by vendor file UUID without knowing the firm first. The earlier composite unique index also enforces uniqueness within a firm. References: [connections migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260728173319_create_tax_preparation_tax_automations_instead_connections.rb:7), [documents migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260731110423_create_tax_preparation_tax_automations_instead_documents.rb:7), and [external UUID index migration](/Users/Shared/nav-ab/repo-master/db/migrate/20260915170006_add_external_uuid_index_to_tax_preparation_tax_automations_instead_documents.rb:6).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q37",
+      "sent_at": 287.03,
+      "prompt_sha256": "b1be7edaabb624ffda1ec04749e827e4407f567cb614587e16c59b3137f1d5ad",
+      "turn_id": "01a18afc-98e9-7433-83a2-e1e5db401bf7",
+      "completed_at": 295.684,
+      "wall_seconds": 8.655,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8644,
+      "usage_delta": {
+        "inputTokens": 489748,
+        "cachedInputTokens": 485248,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 695,
+        "reasoningOutputTokens": 79,
+        "totalTokens": 490443
+      },
+      "usage_cumulative": {
+        "inputTokens": 9405672,
+        "cachedInputTokens": 9222912,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 21348,
+        "reasoningOutputTokens": 3938,
+        "totalTokens": 9427020
+      },
+      "usage_last_response_only": {
+        "inputTokens": 164701,
+        "cachedInputTokens": 163712,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 459,
+        "reasoningOutputTokens": 63,
+        "totalTokens": 165160
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-960e4804-bbf2-4aee-a5a5-8aca09a9a1bf",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 1696,
+          "result_size": {
+            "serialized_chars": 10377,
+            "serialized_utf8_bytes": 10393,
+            "text_chars": 10230,
+            "structured_chars": null
+          }
+        },
+        {
+          "id": "exec-6f526744-6188-478e-b191-527208707fd7",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 3401,
+            "serialized_utf8_bytes": 3407,
+            "text_chars": 3349,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 2
+      },
+      "tool_completed_unique": 2,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417b53d188191b08169c5092a5e4b",
+          "phase": "commentary",
+          "text": "Соберу определения метрик tax automations из Yabeda и отдельно отмечу, какие сервисы/worker их обновляют и с какими тегами."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417baae148191b464b211ec8457ac",
+          "phase": "final_answer",
+          "text": "The application defines **eight tax-automation metrics** in `config/initializers/yabeda.rb`:\n\n| Metric | Type | Tags | What it measures |\n|---|---|---|---|\n| `requests_duration` | Histogram | `vendor`, `operation` | Time for vendor API calls, token operations, and signed-target byte transfers. |\n| `failed_requests_total` | Counter | `vendor`, `operation`, `reason` | Failed vendor requests, categorized by HTTP status, network error, lock timeout, invalid grant, or no principal. |\n| `rate_limit_remaining` | Gauge | `vendor`, `group` | Requests remaining in a vendor’s rate-limit window, when reported in response headers. |\n| `rate_limit_reset_seconds` | Gauge | `vendor`, `group` | Seconds until that window resets. |\n| `installation_changes_total` | Counter | `vendor`, `change` | Connections installed or uninstalled. |\n| `reconciled_documents_total` | Counter | `vendor`, `processing_status` | Sends whose status reconciliation changed based on a vendor read. |\n| `entity_matches_total` | Counter | `vendor`, `outcome` | Results of matching a taxpayer to a vendor entity. |\n| `installations` | Gauge | `vendor` | Current vendor connections that have not ended. |\n| `stale_sends` | Gauge | `vendor` | Uploaded sends past their reconciliation window that are still awaiting vendor status. |\n\nThe last two are populated by a periodic Sidekiq collector and cached for 60 seconds. The registry runs that collector for each registered adapter. See [yabeda.rb](/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb:47) and [metrics.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/metrics.rb:1)."
+        }
+      ],
+      "final_answer": "The application defines **eight tax-automation metrics** in `config/initializers/yabeda.rb`:\n\n| Metric | Type | Tags | What it measures |\n|---|---|---|---|\n| `requests_duration` | Histogram | `vendor`, `operation` | Time for vendor API calls, token operations, and signed-target byte transfers. |\n| `failed_requests_total` | Counter | `vendor`, `operation`, `reason` | Failed vendor requests, categorized by HTTP status, network error, lock timeout, invalid grant, or no principal. |\n| `rate_limit_remaining` | Gauge | `vendor`, `group` | Requests remaining in a vendor’s rate-limit window, when reported in response headers. |\n| `rate_limit_reset_seconds` | Gauge | `vendor`, `group` | Seconds until that window resets. |\n| `installation_changes_total` | Counter | `vendor`, `change` | Connections installed or uninstalled. |\n| `reconciled_documents_total` | Counter | `vendor`, `processing_status` | Sends whose status reconciliation changed based on a vendor read. |\n| `entity_matches_total` | Counter | `vendor`, `outcome` | Results of matching a taxpayer to a vendor entity. |\n| `installations` | Gauge | `vendor` | Current vendor connections that have not ended. |\n| `stale_sends` | Gauge | `vendor` | Uploaded sends past their reconciliation window that are still awaiting vendor status. |\n\nThe last two are populated by a periodic Sidekiq collector and cached for 60 seconds. The registry runs that collector for each registered adapter. See [yabeda.rb](/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb:47) and [metrics.rb](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/metrics.rb:1).",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q38",
+      "sent_at": 296.918,
+      "prompt_sha256": "6a6cc362a874cd35f3ada05749a389b005725ace803d37010203a7ff790f76bc",
+      "turn_id": "01a18afc-bf8a-7ba1-aad6-d0e582bdb7e8",
+      "completed_at": 301.668,
+      "wall_seconds": 4.749,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 4739,
+      "usage_delta": {
+        "inputTokens": 165216,
+        "cachedInputTokens": 164480,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 458,
+        "reasoningOutputTokens": 329,
+        "totalTokens": 165674
+      },
+      "usage_cumulative": {
+        "inputTokens": 9570888,
+        "cachedInputTokens": 9387392,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 21806,
+        "reasoningOutputTokens": 4267,
+        "totalTokens": 9592694
+      },
+      "usage_last_response_only": {
+        "inputTokens": 165216,
+        "cachedInputTokens": 164480,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 458,
+        "reasoningOutputTokens": 329,
+        "totalTokens": 165674
+      },
+      "completed_tool_calls": [],
+      "tool_counts": {},
+      "tool_completed_unique": 0,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417c1ea248191804719e9065697cd",
+          "phase": "final_answer",
+          "text": "Да, это хороший отдельный лимит для GruntWorx. Добавил бы синтетическую группу вроде `firm`, с бюджетом **50 запросов в минуту на `firm_id`**. Её ключ должен включать ID фирмы, чтобы троттлинг одной фирмы не расходовал бюджет другой.\n\nЭто правило будет дополнительным к общему app-wide лимиту. Фирменный порог стоит проверять первым: если он сработал, попытка не должна расходовать общий бюджет приложения. Для операций без firm-scoped API-вызовов этот bucket использовать не нужно."
+        }
+      ],
+      "final_answer": "Да, это хороший отдельный лимит для GruntWorx. Добавил бы синтетическую группу вроде `firm`, с бюджетом **50 запросов в минуту на `firm_id`**. Её ключ должен включать ID фирмы, чтобы троттлинг одной фирмы не расходовал бюджет другой.\n\nЭто правило будет дополнительным к общему app-wide лимиту. Фирменный порог стоит проверять первым: если он сработал, попытка не должна расходовать общий бюджет приложения. Для операций без firm-scoped API-вызовов этот bucket использовать не нужно.",
+      "final_answer_phase_unknown": false
+    },
+    {
+      "id": "Q39",
+      "sent_at": 302.867,
+      "prompt_sha256": "17500cfcacd9b35b5d9bdbe553fcbd6790e312667d23f1448d1b5cb09cbf9b37",
+      "turn_id": "01a18afc-d6c7-7333-bdb3-9d5663553d38",
+      "completed_at": 310.88,
+      "wall_seconds": 8.013,
+      "status": "completed",
+      "native_turn_status": "completed",
+      "native_turn_duration_ms": 8003,
+      "usage_delta": {
+        "inputTokens": 334025,
+        "cachedInputTokens": 330496,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 809,
+        "reasoningOutputTokens": 335,
+        "totalTokens": 334834
+      },
+      "usage_cumulative": {
+        "inputTokens": 9904913,
+        "cachedInputTokens": 9717888,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 22615,
+        "reasoningOutputTokens": 4602,
+        "totalTokens": 9927528
+      },
+      "usage_last_response_only": {
+        "inputTokens": 168313,
+        "cachedInputTokens": 165504,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 567,
+        "reasoningOutputTokens": 277,
+        "totalTokens": 168880
+      },
+      "completed_tool_calls": [
+        {
+          "id": "exec-7804cf0f-e7fe-421f-9ca7-ee6d15c140aa",
+          "type": "commandExecution",
+          "category": "shell",
+          "tool": null,
+          "server": null,
+          "status": "completed",
+          "exit_code": 0,
+          "source": "unifiedExecStartup",
+          "duration_ms": 0,
+          "result_size": {
+            "serialized_chars": 9966,
+            "serialized_utf8_bytes": 9966,
+            "text_chars": 9768,
+            "structured_chars": null
+          }
+        }
+      ],
+      "tool_counts": {
+        "shell": 1
+      },
+      "tool_completed_unique": 1,
+      "tool_counts_complete": true,
+      "unattributed_function_outputs": [],
+      "nested_code_mode_counts_complete": null,
+      "agent_messages": [
+        {
+          "id": "msg_05abb5c7cd088670016ae417c5e3088191b8007292286c22d6",
+          "phase": "commentary",
+          "text": "Проверю inflection initializer, точное определение флага и сериализаторы документов/чеклистов, которые включают статусы tax-automation send record."
+        },
+        {
+          "id": "msg_05abb5c7cd088670016ae417ca74e08191bc2a144cf7d4c6d2",
+          "phase": "final_answer",
+          "text": "- **Autoload inflections:** Rails rules are in [config/initializers/inflections.rb](/Users/Shared/nav-ab/repo-master/config/initializers/inflections.rb). It currently declares the `GWD` acronym, but no `GruntWorx` inflection. Since you’ve chosen an explicit provider-name dictionary rather than `camelize`, provider display names should use that dictionary rather than inflection.\n\n- **Instead feature flag:** `tax_automations_instead` is defined in [config/settings/features/tax_automations.yml](/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml:11). The registry maps the `instead` provider to this flag.\n\n- **Send status serializers:**\n  - `TaxPreparation::Base::TaxAutomations::DocumentSerializer` exposes a send record directly, including `status` (the processing status), `upload_status`, `failure_reason`, and `failure_message`. The API serializer for the tax-automation documents index uses it.\n  - `TaxPreparation::Base::DocumentSerializer` and `TaxPreparation::Base::DocumentChecklist::ItemSerializer` expose the latest send’s status through optional included fields: `tax_automation_status`, `tax_automation_upload_status`, `tax_automation_failure_reason`, and `tax_automation_failure_message`. These fields require `read_status` authorization."
+        }
+      ],
+      "final_answer": "- **Autoload inflections:** Rails rules are in [config/initializers/inflections.rb](/Users/Shared/nav-ab/repo-master/config/initializers/inflections.rb). It currently declares the `GWD` acronym, but no `GruntWorx` inflection. Since you’ve chosen an explicit provider-name dictionary rather than `camelize`, provider display names should use that dictionary rather than inflection.\n\n- **Instead feature flag:** `tax_automations_instead` is defined in [config/settings/features/tax_automations.yml](/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml:11). The registry maps the `instead` provider to this flag.\n\n- **Send status serializers:**\n  - `TaxPreparation::Base::TaxAutomations::DocumentSerializer` exposes a send record directly, including `status` (the processing status), `upload_status`, `failure_reason`, and `failure_message`. The API serializer for the tax-automation documents index uses it.\n  - `TaxPreparation::Base::DocumentSerializer` and `TaxPreparation::Base::DocumentChecklist::ItemSerializer` expose the latest send’s status through optional included fields: `tax_automation_status`, `tax_automation_upload_status`, `tax_automation_failure_reason`, and `tax_automation_failure_message`. These fields require `read_status` authorization.",
+      "final_answer_phase_unknown": false
+    }
+  ],
+  "diagnostics": {
+    "duplicate_native_completion_events": 0,
+    "ignored_unmapped_events": {},
+    "warnings": [],
+    "invalid_event_json_lines": []
+  },
+  "collector_sha256": "7fcb4323f64d1167bad13ccdaf75d90680d75f438593337fd4072e6ce924ae52",
+  "source_sha256": {
+    "events.jsonl": "d24bf623cb020b5749b6cd8b7662bc032f6f79c241f8593e617abea53a4b382b",
+    "marks.json": "5de8e86a2b969f711a7b93738deae2627c27884f6d346d5634b2d1dba0b1debb",
+    "status.json": "430664c42463048f3f6c46176a421f95456d3c7dbc545757478fae4fffa8ae5b"
+  }
+}

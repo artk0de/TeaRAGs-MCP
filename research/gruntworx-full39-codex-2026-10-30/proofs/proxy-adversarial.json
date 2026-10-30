@@ -1,0 +1,110 @@
+[
+  {
+    "case": "cross_project",
+    "passed": true
+  },
+  {
+    "case": "raw_collection",
+    "passed": true
+  },
+  {
+    "case": "mutator",
+    "passed": true
+  },
+  {
+    "case": "collection_info_removed",
+    "passed": true
+  },
+  {
+    "case": "nested_path",
+    "passed": true
+  },
+  {
+    "case": "nested_docs",
+    "passed": true
+  },
+  {
+    "case": "encoded_docs",
+    "passed": true
+  },
+  {
+    "case": "document_id",
+    "passed": true
+  },
+  {
+    "case": "resource_other_project",
+    "passed": true
+  },
+  {
+    "case": "resource_arbitrary_query",
+    "passed": true
+  },
+  {
+    "case": "resource_safe_digest",
+    "passed": true
+  },
+  {
+    "case": "resource_safe_guide",
+    "passed": true
+  },
+  {
+    "case": "relative_symlink",
+    "passed": true
+  },
+  {
+    "case": "missing_body_locator",
+    "passed": true
+  },
+  {
+    "case": "doc_table_removed",
+    "passed": true
+  },
+  {
+    "case": "no_path_body_table_removed",
+    "passed": true
+  },
+  {
+    "case": "graph_locator_preserved",
+    "passed": true
+  },
+  {
+    "case": "error_sanitized",
+    "passed": true
+  },
+  {
+    "case": "embedded_resource_removed",
+    "passed": true
+  },
+  {
+    "case": "scalar_text_blocked",
+    "passed": true
+  },
+  {
+    "case": "wire_response_id_1",
+    "passed": true
+  },
+  {
+    "case": "wire_response_id_2",
+    "passed": true
+  },
+  {
+    "case": "wire_response_id_3",
+    "passed": true
+  },
+  {
+    "case": "wire_no_canary",
+    "passed": true
+  },
+  {
+    "case": "wire_read_tool_only",
+    "passed": true
+  },
+  {
+    "case": "wire_valid_body_preserved",
+    "passed": true
+  },
+  {
+    "case": "wire_stderr_isolated",
+    "passed": true
+  }
+]
