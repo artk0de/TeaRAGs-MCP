@@ -1,0 +1,807 @@
+{
+  "scope": "Fresh A/B Q27–Q39 answers only",
+  "methodology": {
+    "literal_question_controls": true,
+    "current_code_controls_over_gold": true,
+    "context_added_delivered": false,
+    "no_tool_penalty": true,
+    "no_unasked_historical_rubric": true,
+    "no_future_gwx_contract_assumptions": true,
+    "source_project": "taxdome-worktree-navmaster",
+    "source_path": "/Users/Shared/nav-ab/repo-master",
+    "answer_root": "research/gruntworx-full39-codex61-2026-10-30",
+    "checks": "Static source/config/migration review only. No benchmark/model run, reindex, production edit or commit. Later migrations considered for schema questions. CRM Public API means internal Crm::Api contract, not external REST API.",
+    "score_mapping": {
+      "pass": 1,
+      "partial": 0.5,
+      "fail": 0
+    }
+  },
+  "totals": {
+    "A": {
+      "questions": 13,
+      "pass": 13,
+      "partial": 0,
+      "fail": 0,
+      "score": 13.0,
+      "maximum_score": 13
+    },
+    "B": {
+      "questions": 13,
+      "pass": 12,
+      "partial": 1,
+      "fail": 0,
+      "score": 12.5,
+      "maximum_score": 13
+    }
+  },
+  "results": [
+    {
+      "question_id": "Q27",
+      "arm": "A",
+      "question": "- Documents::ResumeSends(Async);\n  - Firms::DestroyCleanup;\n  - Connections::DisconnectAll / Registry.connections_for;\n  - TaxPreparations::BatchDestroy (DestroyForTaxPreparations);\n\nЭто базовые механзимы, почему ты их вписал? (Connections::DisconnectAll - базовый или нет?)",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly distinguishes existing shared lifecycle services from adapter entry points and identifies DisconnectAll as shared, with its OAuth-shaped assumptions.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+          "detail": "perform, lines 28–47: Registry.connections_for, disconnect, RevokeAsync, marker reset"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+          "detail": "resend!, lines 58–63: adapter::ExportAsync"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb",
+          "detail": "destroy_provider_records!, lines 53–61: every adapter::DestroyForFirm"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+          "detail": "drop_provider_records!, lines 48–59: adapter::DestroyForTaxPreparations"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q27",
+      "arm": "B",
+      "question": "- Documents::ResumeSends(Async);\n  - Firms::DestroyCleanup;\n  - Connections::DisconnectAll / Registry.connections_for;\n  - TaxPreparations::BatchDestroy (DestroyForTaxPreparations);\n\nЭто базовые механзимы, почему ты их вписал? (Connections::DisconnectAll - базовый или нет?)",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly distinguishes existing shared lifecycle services from adapter entry points and identifies DisconnectAll as shared, with its OAuth-shaped assumptions.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+          "detail": "perform, lines 28–47: Registry.connections_for, disconnect, RevokeAsync, marker reset"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+          "detail": "resend!, lines 58–63: adapter::ExportAsync"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb",
+          "detail": "destroy_provider_records!, lines 53–61: every adapter::DestroyForFirm"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+          "detail": "drop_provider_records!, lines 48–59: adapter::DestroyForTaxPreparations"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q28",
+      "arm": "A",
+      "question": "Подробнее про маркер привязки",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly explains the persistent firm/account binding, transient connection attribute, first/same/different/missing-account cases, rollback and best-effort grant revocation, and explicit-disconnect/provider-switch reset.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/create.rb",
+          "detail": "bind_account!, lines 119–128; choose_provider!, lines 105–117; perform, lines 42–73; withdraw_stray_grant, lines 130–136"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/client.rb",
+          "detail": "grant_identity, lines 195–199: firm_uuid is external_tenant_uuid"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb",
+          "detail": "virtual string attribute external_tenant_uuid, lines 41–43"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731110427_add_external_uuids_to_tax_automations.rb",
+          "detail": "persistent external_tenant_uuid has PostgreSQL uuid type"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20261019194834_add_external_tenant_uuid_index_to_tax_preparation_tax_automations_firm_settings.rb",
+          "detail": "nonunique partial external_tenant_uuid index"
+        }
+      ],
+      "uncertainty": [
+        "The account-A/account-B values are conceptual examples, not valid UUID literals. A omits the UUID storage-type limitation; this was not treated as a core behavioral error for the literal open-ended marker question."
+      ]
+    },
+    {
+      "question_id": "Q28",
+      "arm": "B",
+      "question": "Подробнее про маркер привязки",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly explains the persistent firm/account binding, transient connection attribute, first/same/different/missing-account cases, rollback and best-effort grant revocation, and explicit-disconnect/provider-switch reset.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/connections/create.rb",
+          "detail": "bind_account!, lines 119–128; choose_provider!, lines 105–117; perform, lines 42–73; withdraw_stray_grant, lines 130–136"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/client.rb",
+          "detail": "grant_identity, lines 195–199: firm_uuid is external_tenant_uuid"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb",
+          "detail": "virtual string attribute external_tenant_uuid, lines 41–43"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731110427_add_external_uuids_to_tax_automations.rb",
+          "detail": "persistent external_tenant_uuid has PostgreSQL uuid type"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20261019194834_add_external_tenant_uuid_index_to_tax_preparation_tax_automations_firm_settings.rb",
+          "detail": "nonunique partial external_tenant_uuid index"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q29",
+      "arm": "A",
+      "question": "How does Instead's adapter-side send service authorize the call and start the asynchronous send?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct authorization action (:read), usable-connection lookup, workflow arguments and perform_async_operation call, with after-commit scheduling and async result.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb",
+          "detail": "perform, lines 28–38, contains the full requested behavior"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/policies/tax_preparation/tax_automations/connection_policy.rb",
+          "detail": "can_read?, lines 6–20, confirms A’s additional permission details"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q29",
+      "arm": "B",
+      "question": "How does Instead's adapter-side send service authorize the call and start the asynchronous send?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct authorization action (:read), usable-connection lookup, workflow arguments and perform_async_operation call, with after-commit scheduling and async result.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb",
+          "detail": "perform, lines 28–38, contains the full requested behavior"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/policies/tax_preparation/tax_automations/connection_policy.rb",
+          "detail": "can_read?, lines 6–20, confirms A’s additional permission details"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q30",
+      "arm": "A",
+      "question": "GruntWorx needs a stable TaxDome-side firm identifier and contact identifier in its URLs. Do the firms, contacts and accounts tables have a uuid column?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct current schema answer: firms have no equivalent UUID column found; contacts.uid and clients.uid are PostgreSQL UUIDs. Correctly separates TD identity from the vendor-account marker.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20241228010533_init_schema.rb",
+          "detail": "firms definition begins at line 1567"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511100000_add_uid_to_contacts_and_clients.rb",
+          "detail": "adds uid as uuid to contacts and clients"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511105000_set_default_uid_for_contacts_and_clients.rb",
+          "detail": "gen_random_uuid defaults"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511120000_add_check_constraint_on_uid_for_contacts_and_clients.rb",
+          "detail": "uid IS NOT NULL constraints"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511120001_validate_check_constraint_and_add_index_on_uid_for_contacts_and_clients.rb",
+          "detail": "validates constraints and adds unique indexes"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/data/20260511110000_backfill_uid_on_contacts.rb",
+          "detail": "backfill file found in complete db/ filename search"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/data/20260511110001_backfill_uid_on_clients.rb",
+          "detail": "backfill file found in complete db/ filename search"
+        }
+      ],
+      "uncertainty": [
+        "Firm UUID absence is a checked-in-code finding, not an assertion about an inspected live database. Initial table plus later UID/UUID migration filename searches were considered."
+      ]
+    },
+    {
+      "question_id": "Q30",
+      "arm": "B",
+      "question": "GruntWorx needs a stable TaxDome-side firm identifier and contact identifier in its URLs. Do the firms, contacts and accounts tables have a uuid column?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct current schema answer: firms have no equivalent UUID column found; contacts.uid and clients.uid are PostgreSQL UUIDs. Correctly separates TD identity from the vendor-account marker.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20241228010533_init_schema.rb",
+          "detail": "firms definition begins at line 1567"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511100000_add_uid_to_contacts_and_clients.rb",
+          "detail": "adds uid as uuid to contacts and clients"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511105000_set_default_uid_for_contacts_and_clients.rb",
+          "detail": "gen_random_uuid defaults"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511120000_add_check_constraint_on_uid_for_contacts_and_clients.rb",
+          "detail": "uid IS NOT NULL constraints"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260511120001_validate_check_constraint_and_add_index_on_uid_for_contacts_and_clients.rb",
+          "detail": "validates constraints and adds unique indexes"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/data/20260511110000_backfill_uid_on_contacts.rb",
+          "detail": "backfill file found in complete db/ filename search"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/data/20260511110001_backfill_uid_on_clients.rb",
+          "detail": "backfill file found in complete db/ filename search"
+        }
+      ],
+      "uncertainty": [
+        "Firm UUID absence is a checked-in-code finding, not an assertion about an inspected live database. Initial table plus later UID/UUID migration filename searches were considered."
+      ]
+    },
+    {
+      "question_id": "Q31",
+      "arm": "A",
+      "question": "Нейминги не похожи на нейминги instead, должна быть консистентность",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Provides consistent Instead-to-GruntWorx namespaces/service roles and preserves the meaning of external IDs. GWX names are presented as proposed conventions, not facts about an unseen future vendor contract.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb",
+          "detail": "Instead::ExportAsync exists"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/operation_worker.rb",
+          "detail": "Instead::OperationWorker exists"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+          "detail": "Instead::Mock::Adapter exists, currently disconnected"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+          "detail": "Instead::Mock::Router exists, currently disconnected"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/models/tax_preparation/tax_automations/instead/entity.rb",
+          "detail": "Entity is the vendor taxpayer model; no answer claims the proposed API Client is this model"
+        }
+      ],
+      "uncertainty": [
+        "The literal follow-up contains no preceding proposed naming list. No hidden context_added or historical gold requirements were imposed; consistency is judged from the response itself and existing role names."
+      ]
+    },
+    {
+      "question_id": "Q31",
+      "arm": "B",
+      "question": "Нейминги не похожи на нейминги instead, должна быть консистентность",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Provides consistent Instead-to-GruntWorx namespaces/service roles and preserves the meaning of external IDs. GWX names are presented as proposed conventions, not facts about an unseen future vendor contract.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/export_async.rb",
+          "detail": "Instead::ExportAsync exists"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/operation_worker.rb",
+          "detail": "Instead::OperationWorker exists"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+          "detail": "Instead::Mock::Adapter exists, currently disconnected"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+          "detail": "Instead::Mock::Router exists, currently disconnected"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/models/tax_preparation/tax_automations/instead/entity.rb",
+          "detail": "Entity is the vendor taxpayer model; no answer claims the proposed API Client is this model"
+        }
+      ],
+      "uncertainty": [
+        "The literal follow-up contains no preceding proposed naming list. No hidden context_added or historical gold requirements were imposed; consistency is judged from the response itself and existing role names."
+      ]
+    },
+    {
+      "question_id": "Q32",
+      "arm": "A",
+      "question": "GruntWorx::Documents::ReconcileStatusesAsync - а это же реализация порта?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly treats adapter::Documents::ReconcileStatusesAsync as the adapter implementation of an existing shared contract rather than a new shared mechanism.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "detail": "reconcile, lines 34–42: resolves connection and invokes adapter service as Owner with connection and IDs"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q32",
+      "arm": "B",
+      "question": "GruntWorx::Documents::ReconcileStatusesAsync - а это же реализация порта?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly treats adapter::Documents::ReconcileStatusesAsync as the adapter implementation of an existing shared contract rather than a new shared mechanism.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "detail": "reconcile, lines 34–42: resolves connection and invokes adapter service as Owner with connection and IDs"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q33",
+      "arm": "A",
+      "question": "How is Instead's worker hierarchy built: which base do send-step workers, the byte-transfer worker and the webhook worker use, and what happens to files when a step exhausts its retries?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct hierarchy for send steps, byte transfer and webhook processing; correct unthrottled transfer/webhook queues and retry-exhaustion file failure mapping.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/operation_worker.rb",
+          "detail": "RETRY_ATTEMPTS=10; sidekiq_retries_exhausted, lines 27–35 chains parent first"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb",
+          "detail": "step_only!, inherited base, full exhaustion callback lines 3–25"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/clients/create_entity_worker.rb",
+          "detail": "ExportOperationWorker inheritance, entities throttle group, all send IDs"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+          "detail": "ExportOperationWorker, high unthrottled queue"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/webhooks/process_event_worker.rb",
+          "detail": "Instead::OperationWorker, high unthrottled queue"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/fail_upload.rb",
+          "detail": "perform lines 26–40 broadcasts after commit; fail_send! lines 42–49 guards transitions"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q33",
+      "arm": "B",
+      "question": "How is Instead's worker hierarchy built: which base do send-step workers, the byte-transfer worker and the webhook worker use, and what happens to files when a step exhausts its retries?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct hierarchy for send steps, byte transfer and webhook processing; correct unthrottled transfer/webhook queues and retry-exhaustion file failure mapping.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/operation_worker.rb",
+          "detail": "RETRY_ATTEMPTS=10; sidekiq_retries_exhausted, lines 27–35 chains parent first"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb",
+          "detail": "step_only!, inherited base, full exhaustion callback lines 3–25"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/clients/create_entity_worker.rb",
+          "detail": "ExportOperationWorker inheritance, entities throttle group, all send IDs"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+          "detail": "ExportOperationWorker, high unthrottled queue"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/instead/webhooks/process_event_worker.rb",
+          "detail": "Instead::OperationWorker, high unthrottled queue"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/documents/fail_upload.rb",
+          "detail": "perform lines 26–40 broadcasts after commit; fail_send! lines 42–49 guards transitions"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q34",
+      "arm": "A",
+      "question": "How do the existing vendor specs validate fixtures and mock answers against the vendor's OpenAPI contract, and with which gem?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct gem (json-schema 6.2.0), JSON::Validator component-root validation and fixture mappings. Correctly limits the claim to explicit payload examples rather than automatic validation of every mock HTTP exchange.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/spec/support/tax_automations_helpers.rb",
+          "detail": "instead_contract lines 85–87; conforms_to_contract?(schema_name,payload) lines 89–93"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "detail": "fixture conformance examples near lines 696–713: Entity, File, SignedUpload and TokenResponse"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/Gemfile.lock",
+          "detail": "json-schema (6.2.0), line 652"
+        }
+      ],
+      "uncertainty": [
+        "Gold claims a contract-path argument, but the current helper demonstrably has only schema_name and payload. Current code controls this grade."
+      ]
+    },
+    {
+      "question_id": "Q34",
+      "arm": "B",
+      "question": "How do the existing vendor specs validate fixtures and mock answers against the vendor's OpenAPI contract, and with which gem?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct gem (json-schema 6.2.0), JSON::Validator component-root validation and fixture mappings. Correctly limits the claim to explicit payload examples rather than automatic validation of every mock HTTP exchange.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/spec/support/tax_automations_helpers.rb",
+          "detail": "instead_contract lines 85–87; conforms_to_contract?(schema_name,payload) lines 89–93"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "detail": "fixture conformance examples near lines 696–713: Entity, File, SignedUpload and TokenResponse"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/Gemfile.lock",
+          "detail": "json-schema (6.2.0), line 652"
+        }
+      ],
+      "uncertainty": [
+        "Gold claims a contract-path argument, but the current helper demonstrably has only schema_name and payload. Current code controls this grade."
+      ]
+    },
+    {
+      "question_id": "Q35",
+      "arm": "A",
+      "question": "Through which CRM Public API calls can tax automations get a taxpayer contact's first and last name and its uuid?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct internal CRM Public API calls: Contact.find and list_by_ids expose first/last names; list_by_account returns combined name. contacts.uid is not exposed by these mappings/contracts, so API extension is required.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/crm/api/contact.rb",
+          "detail": "find lines 87–111; list_by_ids lines 141–168; list_by_account lines 170–184; contact_data lines 387–406"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/crm/api/contracts/contact/find/result.rb",
+          "detail": "Data contract has name fields but no uid/uuid"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb",
+          "detail": "fetch_contact!, lines 106–114 calls internal Crm::Api::Contact.find"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q35",
+      "arm": "B",
+      "question": "Through which CRM Public API calls can tax automations get a taxpayer contact's first and last name and its uuid?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct internal CRM Public API calls: Contact.find and list_by_ids expose first/last names; list_by_account returns combined name. contacts.uid is not exposed by these mappings/contracts, so API extension is required.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/crm/api/contact.rb",
+          "detail": "find lines 87–111; list_by_ids lines 141–168; list_by_account lines 170–184; contact_data lines 387–406"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/crm/api/contracts/contact/find/result.rb",
+          "detail": "Data contract has name fields but no uid/uuid"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb",
+          "detail": "fetch_contact!, lines 106–114 calls internal Crm::Api::Contact.find"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q36",
+      "arm": "A",
+      "question": "Which indexes and foreign keys do the Instead adapter tables carry (connections, documents)?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct current indexes and FKs, including later migrations: unique firm-only connection index replaces creator-composite uniqueness; refresh-expiry partial index; both firm/external and global document UUID unique partial indexes; document/entity FKs and cascading shared-send FK.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260728173319_create_tax_preparation_tax_automations_instead_connections.rb",
+          "detail": "creation: soft firm ref and original actor composite index"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731125304_rename_actor_to_creator_on_instead_connections.rb",
+          "detail": "actor-to-creator columns and composite index rename"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260806132558_make_instead_connections_unique_per_firm.rb",
+          "detail": "adds unique firm index and removes creator composite"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260922130328_add_refresh_expires_at_index_to_tax_preparation_tax_automations_instead_connections.rb",
+          "detail": "refresh_expires_at WHERE status = 1"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731110423_create_tax_preparation_tax_automations_instead_documents.rb",
+          "detail": "document creation indexes and FKs"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260915170006_add_external_uuid_index_to_tax_preparation_tax_automations_instead_documents.rb",
+          "detail": "later global unique partial external_uuid index"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q36",
+      "arm": "B",
+      "question": "Which indexes and foreign keys do the Instead adapter tables carry (connections, documents)?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct current indexes and FKs, including later migrations: unique firm-only connection index replaces creator-composite uniqueness; refresh-expiry partial index; both firm/external and global document UUID unique partial indexes; document/entity FKs and cascading shared-send FK.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260728173319_create_tax_preparation_tax_automations_instead_connections.rb",
+          "detail": "creation: soft firm ref and original actor composite index"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731125304_rename_actor_to_creator_on_instead_connections.rb",
+          "detail": "actor-to-creator columns and composite index rename"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260806132558_make_instead_connections_unique_per_firm.rb",
+          "detail": "adds unique firm index and removes creator composite"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260922130328_add_refresh_expires_at_index_to_tax_preparation_tax_automations_instead_connections.rb",
+          "detail": "refresh_expires_at WHERE status = 1"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260731110423_create_tax_preparation_tax_automations_instead_documents.rb",
+          "detail": "document creation indexes and FKs"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/db/migrate/20260915170006_add_external_uuid_index_to_tax_preparation_tax_automations_instead_documents.rb",
+          "detail": "later global unique partial external_uuid index"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q37",
+      "arm": "A",
+      "question": "Which application metrics exist for tax automations?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly enumerates all nine current application metrics and tags, including entity_matches_total absent from the older gold list; gauge collection and stale-sent semantics are supported by current code.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb",
+          "detail": "tax_automations group begins at line 33; nine metric declarations and Sidekiq-only Registry adapter collector"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/metrics.rb",
+          "detail": "count_installations lines 36–42; cached_count lines 44–54 uses replica and 60s cache"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "detail": "count_stale_sends lines 10–18 checks sent candidates and reconcilable connections"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+          "detail": "list_sent_tax_automation_documents lines 22–27: uploaded/sent and age threshold"
+        }
+      ],
+      "uncertainty": [
+        "Gold enumerates eight metrics; current code defines nine including entity_matches_total. No penalty for matching current code."
+      ]
+    },
+    {
+      "question_id": "Q37",
+      "arm": "B",
+      "question": "Which application metrics exist for tax automations?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correctly enumerates all nine current application metrics and tags, including entity_matches_total absent from the older gold list; gauge collection and stale-sent semantics are supported by current code.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/yabeda.rb",
+          "detail": "tax_automations group begins at line 33; nine metric declarations and Sidekiq-only Registry adapter collector"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/metrics.rb",
+          "detail": "count_installations lines 36–42; cached_count lines 44–54 uses replica and 60s cache"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "detail": "count_stale_sends lines 10–18 checks sent candidates and reconcilable connections"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+          "detail": "list_sent_tax_automation_documents lines 22–27: uploaded/sent and age threshold"
+        }
+      ],
+      "uncertainty": [
+        "Gold enumerates eight metrics; current code defines nine including entity_matches_total. No penalty for matching current code."
+      ]
+    },
+    {
+      "question_id": "Q38",
+      "arm": "A",
+      "question": "Я бы вот еще сделал. У инстеда есть лимит группы, нам нужна фиктивная, чтобы фирмы не съедали лимиты друг друга. Скажем 50RPM на одну фирму - доп правило троттлинга",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Satisfies the requested proposed 50 RPM per-firm throttle in addition to an app budget, with firm-keyed accounting and local-before-global ordering. Does not invent a concrete GWX provider-wide limit.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/sidekiq.rb",
+          "detail": "Instead threshold array near lines 100–136: local/group limit first, app second; comment explains short-circuit accounting"
+        }
+      ],
+      "uncertainty": [
+        "This is a design acknowledgement, not implementation verification. A per-firm RPM cap bounds consumption but does not guarantee scheduling fairness; both answers give an appropriate fairness caveat."
+      ]
+    },
+    {
+      "question_id": "Q38",
+      "arm": "B",
+      "question": "Я бы вот еще сделал. У инстеда есть лимит группы, нам нужна фиктивная, чтобы фирмы не съедали лимиты друг друга. Скажем 50RPM на одну фирму - доп правило троттлинга",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Satisfies the requested proposed 50 RPM per-firm throttle in addition to an app budget, with firm-keyed accounting and local-before-global ordering. Does not invent a concrete GWX provider-wide limit.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/sidekiq.rb",
+          "detail": "Instead threshold array near lines 100–136: local/group limit first, app second; comment explains short-circuit accounting"
+        }
+      ],
+      "uncertainty": [
+        "This is a design acknowledgement, not implementation verification. A per-firm RPM cap bounds consumption but does not guarantee scheduling fairness; both answers give an appropriate fairness caveat."
+      ]
+    },
+    {
+      "question_id": "Q39",
+      "arm": "A",
+      "question": "Where are autoload inflections configured, where is the Instead feature flag defined in config, and which serializers expose the send record's status fields to the frontend?",
+      "grade": "pass",
+      "score": 1.0,
+      "reason": "Correct inflection/feature-flag locations and send-record base/index serializers. A also identifies both prefixed frontend document/checklist serializers, so the requested serializer coverage is sufficient.",
+      "hard_errors": [],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/zeitwerk.rb",
+          "detail": "Rails.autoloaders inflector mappings begin at line 3"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml",
+          "detail": "tax_automations_instead: enabled false, firm kind, temp false, TD-100346"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/tax_automations/document_serializer.rb",
+          "detail": "status maps processing_status; upload_status, failure_reason/message, provider and sent_at"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/api/v1/firm/tax_automations/documents/index_serializer.rb",
+          "detail": "wraps base send serializer under tax_automation_documents"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/document_serializer.rb",
+          "detail": "tax_automation_status lines 311–313; failure_reason lines 323–325, plus related prefixed fields"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/document_checklist/item_serializer.rb",
+          "detail": "StrictDocumentSerializer exposes prefixed status/upload/failure/provider fields with read_status policy"
+        }
+      ],
+      "uncertainty": []
+    },
+    {
+      "question_id": "Q39",
+      "arm": "B",
+      "question": "Where are autoload inflections configured, where is the Instead feature flag defined in config, and which serializers expose the send record's status fields to the frontend?",
+      "grade": "partial",
+      "score": 0.5,
+      "reason": "Correct inflection/feature-flag locations and send-record base/index serializers. However B omits both Base::DocumentSerializer and DocumentChecklist::ItemSerializer::StrictDocumentSerializer, which directly expose the frontend tax_automation_status/upload_status/failure fields. A prefill serializer and WebSocket note do not replace those requested serializers.",
+      "hard_errors": [
+        {
+          "type": "material_omission",
+          "claim": "Serializer inventory omits the main document serializer and checklist nested serializer.",
+          "evidence": [
+            "app/serializers/tax_preparation/base/document_serializer.rb:311",
+            "app/serializers/tax_preparation/base/document_checklist/item_serializer.rb:14"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/initializers/zeitwerk.rb",
+          "detail": "Rails.autoloaders inflector mappings begin at line 3"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/config/settings/features/tax_automations.yml",
+          "detail": "tax_automations_instead: enabled false, firm kind, temp false, TD-100346"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/tax_automations/document_serializer.rb",
+          "detail": "status maps processing_status; upload_status, failure_reason/message, provider and sent_at"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/api/v1/firm/tax_automations/documents/index_serializer.rb",
+          "detail": "wraps base send serializer under tax_automation_documents"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/document_serializer.rb",
+          "detail": "tax_automation_status lines 311–313; failure_reason lines 323–325, plus related prefixed fields"
+        },
+        {
+          "path": "/Users/Shared/nav-ab/repo-master/app/serializers/tax_preparation/base/document_checklist/item_serializer.rb",
+          "detail": "StrictDocumentSerializer exposes prefixed status/upload/failure/provider fields with read_status policy"
+        }
+      ],
+      "uncertainty": []
+    }
+  ]
+}

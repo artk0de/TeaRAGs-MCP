@@ -1,0 +1,87 @@
+{
+  "name": "taxdome-worktree-navmaster",
+  "collectionName": "code_b6533d3e",
+  "indexedAt": "2026-10-29T03:28:35.969Z",
+  "teaRagsVersion": "1.49.0",
+  "chunksCount": 159262,
+  "git": {
+    "indexedBranch": "main",
+    "indexedCommit": "f88b42f3c286815ea43b464960205d56445ee2e6",
+    "indexedDirty": false,
+    "indexedDirtyPaths": []
+  },
+  "languageVersions": {
+    "typescript": {
+      "walker": 15,
+      "codegraphSchema": 2,
+      "chunking": 3,
+      "grammar": "0.23.2"
+    },
+    "ruby": {
+      "walker": 11,
+      "codegraphSchema": 2,
+      "chunking": 3,
+      "grammar": "0.23.1"
+    },
+    "bash": {
+      "walker": 2,
+      "codegraphSchema": 2,
+      "chunking": 2,
+      "grammar": "0.25.1"
+    },
+    "javascript": {
+      "walker": 5,
+      "codegraphSchema": 2,
+      "chunking": 3,
+      "grammar": "0.25.0"
+    },
+    "python": {
+      "walker": 12,
+      "codegraphSchema": 2,
+      "chunking": 1,
+      "grammar": "0.25.0"
+    },
+    "go": {
+      "walker": 6,
+      "codegraphSchema": 2,
+      "chunking": 1,
+      "grammar": "0.25.0"
+    },
+    "java": {
+      "walker": 4,
+      "codegraphSchema": 2,
+      "chunking": 1,
+      "grammar": "0.23.5"
+    },
+    "rust": {
+      "walker": 11,
+      "codegraphSchema": 2,
+      "chunking": 4,
+      "grammar": "0.24.0"
+    },
+    "markdown": {
+      "walker": 1,
+      "codegraphSchema": 1,
+      "chunking": 1
+    },
+    "*": {
+      "walker": 8,
+      "codegraphSchema": 2,
+      "chunking": 6
+    },
+    "swift": {
+      "walker": 9,
+      "codegraphSchema": 2,
+      "chunking": 4,
+      "grammar": "0.7.3-prebuild.1"
+    },
+    "yaml": {
+      "walker": 1,
+      "codegraphSchema": 1,
+      "chunking": 1
+    }
+  },
+  "trajectoryVersions": {
+    "git": 4
+  }
+}

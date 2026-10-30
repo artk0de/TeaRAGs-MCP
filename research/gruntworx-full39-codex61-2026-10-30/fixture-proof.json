@@ -1,0 +1,176 @@
+{
+  "checks": [
+    {
+      "tool": "list_projects",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "a3c7a422b54545a2793c52f1eb1c71a3df55299d7c4a7113e5861d069ff11c56"
+    },
+    {
+      "tool": "get_index_status",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "237a1bddba4db69da0171840f0c1586e9e9d6468617de1c7f7fca2d3bb683696"
+    },
+    {
+      "tool": "find_symbol",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "61d49b3e364b8de43c5786bcd1f961723b4c78ff5543495a4c745ecd1c19b35b"
+    },
+    {
+      "tool": "get_callees",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "48d747cc64050cde8729b74a5ef9a784b4df9f2529dd0e36c419654b599235de"
+    },
+    {
+      "tool": "get_callers",
+      "passed": true,
+      "table_rows_before": [
+        2
+      ],
+      "table_rows_after": [
+        2
+      ],
+      "raw_sha256": "7bd4ea7d35b417c6a004e19323d47cddce3bc4dd9dbdafe543cf215224027277"
+    },
+    {
+      "tool": "get_index_metrics",
+      "passed": true,
+      "table_rows_before": [
+        10,
+        10
+      ],
+      "table_rows_after": [
+        10,
+        10
+      ],
+      "raw_sha256": "36ddd91e8c3eb48247b5118aadf9b437d682efa640434c2a072a64f34a65face"
+    },
+    {
+      "tool": "get_ontology_report",
+      "passed": true,
+      "table_rows_before": [
+        4,
+        2
+      ],
+      "table_rows_after": [
+        4,
+        2
+      ],
+      "raw_sha256": "30ab59cff1a342aa46312b04bb353b4116a2b94560f9b9c834e92e1cd5ccb881"
+    },
+    {
+      "tool": "find_cycles",
+      "passed": true,
+      "table_rows_before": [
+        1
+      ],
+      "table_rows_after": [
+        1
+      ],
+      "raw_sha256": "07b4dea0e3966251bf0f0178ba9aef2c21937b6a44962df0bcdbd36bab0020da"
+    },
+    {
+      "tool": "rank_chunks",
+      "passed": true,
+      "table_rows_before": [
+        2
+      ],
+      "table_rows_after": [
+        2
+      ],
+      "raw_sha256": "2db9a70faac01295fd6ac4286ec9a33f1cd8106e71f5d196758645eca3de307f"
+    },
+    {
+      "tool": "find_co_changed",
+      "passed": true,
+      "table_rows_before": [
+        2
+      ],
+      "table_rows_after": [
+        2
+      ],
+      "raw_sha256": "3dee018b7374a84925a76658493bc743bad3af32338b3fdcd18138c323288915"
+    },
+    {
+      "tool": "trace_path",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "69987ba547dbfc5f4088646d2da840677be07abc976b297d52e191a1be872da5"
+    },
+    {
+      "tool": "get_architecture_report",
+      "passed": true,
+      "table_rows_before": [
+        2,
+        3,
+        2,
+        2,
+        2
+      ],
+      "table_rows_after": [
+        2,
+        3,
+        2,
+        2,
+        2
+      ],
+      "raw_sha256": "cb0f99b9391b960ba0188d9a3af70ff962a6d7afdffcf808c61645b4c6c3edfc"
+    },
+    {
+      "tool": "semantic_search",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "223fe1b3af8d6396ee79b5da47b372715d591fcc0f9d783b763c7fc6a473dcfb"
+    },
+    {
+      "tool": "hybrid_search",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "e0718a1144e88a4404ea893471f37c7d883729279f28eebc8768c7f03ff19077"
+    },
+    {
+      "tool": "search_code",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "396babc3a93fcb1539928d7a7148245e8d506638521315be9352fba88747040c"
+    },
+    {
+      "tool": "find_similar",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "5a9e8a573dfb9e61a72c887da6c43528b320a59f3a6c7182660b44d0c6c5c80f"
+    },
+    {
+      "resource": "tea-rags://guide/navigation",
+      "byte_identical_text": true
+    },
+    {
+      "resource": "tea-rags://project/taxdome-worktree-navmaster/digest",
+      "byte_identical_text": true
+    },
+    {
+      "tool": "get_naming_lexicon",
+      "passed": true,
+      "table_rows_before": [],
+      "table_rows_after": [],
+      "raw_sha256": "c54a34924fc3cdbcfc4dcc9a3751ced076cc6945b87bf87e8a19f0ed5a5a00af"
+    },
+    {
+      "negative_plaintext_all_17": true,
+      "project_list_dict_table_shapes": true
+    }
+  ],
+  "all_passed": true
+}

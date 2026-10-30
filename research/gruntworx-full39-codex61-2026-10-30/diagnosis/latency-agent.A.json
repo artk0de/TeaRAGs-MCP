@@ -1,0 +1,2567 @@
+[
+  {
+    "q": "Q01",
+    "native_wall": 123.414,
+    "tool_count": 21,
+    "tool_counts": {
+      "commandExecution": 5,
+      "semantic_search": 3,
+      "find_symbol": 11,
+      "get_callees": 1,
+      "hybrid_search": 1
+    },
+    "tool_sum": 6.704999999999999,
+    "tool_union": 6.705,
+    "tool_durations": {
+      "commandExecution": 3.444,
+      "semantic_search": 1.353,
+      "find_symbol": 1.785,
+      "get_callees": 0.049,
+      "hybrid_search": 0.074
+    },
+    "hook_count": 59,
+    "hook_counts": {
+      "sessionStart": 4,
+      "userPromptSubmit": 3,
+      "preToolUse": 15,
+      "postToolUse": 37
+    },
+    "hook_reported_sum": 5.995000000000001,
+    "hook_reported_by_event": {
+      "sessionStart": 1.844,
+      "userPromptSubmit": 0.5670000000000001,
+      "preToolUse": 1.4269999999999998,
+      "postToolUse": 2.157000000000001
+    },
+    "hook_observed_sum": 10.451,
+    "hook_union": 3.63,
+    "execution_union": 10.335,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 45.747,
+    "agent_stream_exclusive": 45.747,
+    "residual_after_exec": 113.07900000000001,
+    "residual_after_exec_and_agent_stream": 67.33200000000001,
+    "outer_executor_count": 11,
+    "outer_executor_sum": 10.026,
+    "outer_executor_union": 10.026,
+    "outer_executor_hook_union": 11.488,
+    "outer_executor_hook_extra": 1.4619999999999997,
+    "outer_stream_exclusive": 45.747,
+    "outer_residual": 66.179,
+    "pending_calls": 0,
+    "raw_responses": 12,
+    "output_tokens": 3866,
+    "reasoning_tokens": 302,
+    "input_tokens": 424669,
+    "cached_input_tokens": 363520,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 9.601,
+        "end_offset": 9.601
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 12.415,
+        "end_offset": 12.415
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 15.316,
+        "end_offset": 16.51
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 24.63,
+        "end_offset": 24.731
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 24.8,
+        "end_offset": 24.828
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 30.34,
+        "end_offset": 31.636
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 31.71,
+        "end_offset": 31.759
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 31.826,
+        "end_offset": 31.884
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 36.642,
+        "end_offset": 36.758
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 36.839,
+        "end_offset": 36.87
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 37.196,
+        "end_offset": 38.969
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 44.76,
+        "end_offset": 44.76
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 44.801,
+        "end_offset": 44.853
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 44.929,
+        "end_offset": 44.95
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 51.709,
+        "end_offset": 51.777
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 56.706,
+        "end_offset": 56.749
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 57.086,
+        "end_offset": 58.757
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 65.961,
+        "end_offset": 65.992
+      },
+      {
+        "tool": "hybrid_search",
+        "start_offset": 66.073,
+        "end_offset": 66.147
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 66.221,
+        "end_offset": 66.262
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 78.398,
+        "end_offset": 78.456
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q02",
+    "native_wall": 87.731,
+    "tool_count": 18,
+    "tool_counts": {
+      "hybrid_search": 1,
+      "find_symbol": 5,
+      "commandExecution": 10,
+      "semantic_search": 1,
+      "get_callees": 1
+    },
+    "tool_sum": 5.557,
+    "tool_union": 5.557,
+    "tool_durations": {
+      "hybrid_search": 0.066,
+      "find_symbol": 0.3400000000000001,
+      "commandExecution": 4.642,
+      "semantic_search": 0.089,
+      "get_callees": 0.42
+    },
+    "hook_count": 63,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 33,
+      "postToolUse": 27
+    },
+    "hook_reported_sum": 4.297,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.329,
+      "preToolUse": 2.5759999999999996,
+      "postToolUse": 1.392
+    },
+    "hook_observed_sum": 6.213000000000002,
+    "hook_union": 2.56,
+    "execution_union": 8.117,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 22.842,
+    "agent_stream_exclusive": 22.842,
+    "residual_after_exec": 79.61399999999999,
+    "residual_after_exec_and_agent_stream": 56.77199999999999,
+    "outer_executor_count": 7,
+    "outer_executor_sum": 9.119,
+    "outer_executor_union": 9.119,
+    "outer_executor_hook_union": 9.234,
+    "outer_executor_hook_extra": 0.11500000000000021,
+    "outer_stream_exclusive": 22.842,
+    "outer_residual": 55.655,
+    "pending_calls": 0,
+    "raw_responses": 8,
+    "output_tokens": 2477,
+    "reasoning_tokens": 307,
+    "input_tokens": 600506,
+    "cached_input_tokens": 578176,
+    "tool_details": [
+      {
+        "tool": "hybrid_search",
+        "start_offset": 6.382,
+        "end_offset": 6.448
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 10.313,
+        "end_offset": 10.35
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 10.691,
+        "end_offset": 12.852
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 12.894,
+        "end_offset": 13.114
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 23.259,
+        "end_offset": 23.348
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 23.432,
+        "end_offset": 23.459
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 23.756,
+        "end_offset": 23.756
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 32.255,
+        "end_offset": 32.569
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 32.621,
+        "end_offset": 32.647
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 41.345,
+        "end_offset": 41.345
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 41.56,
+        "end_offset": 41.56
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 41.776,
+        "end_offset": 41.776
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 51.621,
+        "end_offset": 51.621
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 51.836,
+        "end_offset": 51.836
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 51.876,
+        "end_offset": 52.296
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 52.635,
+        "end_offset": 54.765
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 64.296,
+        "end_offset": 64.326
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 64.679,
+        "end_offset": 64.716
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q03",
+    "native_wall": 84.762,
+    "tool_count": 19,
+    "tool_counts": {
+      "semantic_search": 2,
+      "find_symbol": 8,
+      "commandExecution": 9
+    },
+    "tool_sum": 0.528,
+    "tool_union": 0.528,
+    "tool_durations": {
+      "semantic_search": 0.21,
+      "find_symbol": 0.316,
+      "commandExecution": 0.002
+    },
+    "hook_count": 59,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 29,
+      "preToolUse": 27
+    },
+    "hook_reported_sum": 3.806,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.323,
+      "postToolUse": 1.5299999999999998,
+      "preToolUse": 1.953
+    },
+    "hook_observed_sum": 5.4529999999999985,
+    "hook_union": 2.293,
+    "execution_union": 2.821,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 34.428,
+    "agent_stream_exclusive": 34.428000000000004,
+    "residual_after_exec": 81.941,
+    "residual_after_exec_and_agent_stream": 47.513,
+    "outer_executor_count": 7,
+    "outer_executor_sum": 3.284,
+    "outer_executor_union": 3.284,
+    "outer_executor_hook_union": 3.396,
+    "outer_executor_hook_extra": 0.1120000000000001,
+    "outer_stream_exclusive": 34.428,
+    "outer_residual": 46.938,
+    "pending_calls": 0,
+    "raw_responses": 8,
+    "output_tokens": 2583,
+    "reasoning_tokens": 144,
+    "input_tokens": 784142,
+    "cached_input_tokens": 762112,
+    "tool_details": [
+      {
+        "tool": "semantic_search",
+        "start_offset": 6.709,
+        "end_offset": 6.866
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 6.954,
+        "end_offset": 6.97
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 7.04,
+        "end_offset": 7.066
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 13.459,
+        "end_offset": 13.508
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 13.594,
+        "end_offset": 13.647
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.881,
+        "end_offset": 13.881
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 18.576,
+        "end_offset": 18.623
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 18.703,
+        "end_offset": 18.731
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 18.983,
+        "end_offset": 18.983
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 25.277,
+        "end_offset": 25.33
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 25.574,
+        "end_offset": 25.574
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 33.684,
+        "end_offset": 33.758
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 34.025,
+        "end_offset": 34.025
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 39.797,
+        "end_offset": 39.798
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 39.981,
+        "end_offset": 39.981
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 40.031,
+        "end_offset": 40.054
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 47.293,
+        "end_offset": 47.293
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 47.506,
+        "end_offset": 47.506
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 47.718,
+        "end_offset": 47.719
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q04",
+    "native_wall": 91.597,
+    "tool_count": 6,
+    "tool_counts": {
+      "commandExecution": 3,
+      "find_symbol": 2,
+      "get_architecture_report": 1
+    },
+    "tool_sum": 12.866,
+    "tool_union": 12.866,
+    "tool_durations": {
+      "commandExecution": 0.001,
+      "find_symbol": 0.315,
+      "get_architecture_report": 12.55
+    },
+    "hook_count": 21,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 9,
+      "postToolUse": 9
+    },
+    "hook_reported_sum": 1.8059999999999998,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.334,
+      "preToolUse": 0.949,
+      "postToolUse": 0.5229999999999999
+    },
+    "hook_observed_sum": 2.3059999999999996,
+    "hook_union": 0.933,
+    "execution_union": 13.799,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 42.516,
+    "agent_stream_exclusive": 42.516,
+    "residual_after_exec": 77.798,
+    "residual_after_exec_and_agent_stream": 35.282000000000004,
+    "outer_executor_count": 3,
+    "outer_executor_sum": 13.876,
+    "outer_executor_union": 13.876,
+    "outer_executor_hook_union": 13.99,
+    "outer_executor_hook_extra": 0.11400000000000077,
+    "outer_stream_exclusive": 42.516,
+    "outer_residual": 35.091,
+    "pending_calls": 0,
+    "raw_responses": 4,
+    "output_tokens": 2013,
+    "reasoning_tokens": 276,
+    "input_tokens": 464505,
+    "cached_input_tokens": 451200,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 5.871,
+        "end_offset": 5.871
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 15.95,
+        "end_offset": 15.951
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 15.994,
+        "end_offset": 16.286
+      },
+      {
+        "tool": "get_architecture_report",
+        "start_offset": 25.994,
+        "end_offset": 38.544
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 38.645,
+        "end_offset": 38.668
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 38.922,
+        "end_offset": 38.922
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q05",
+    "native_wall": 36.099,
+    "tool_count": 10,
+    "tool_counts": {
+      "semantic_search": 1,
+      "find_symbol": 4,
+      "commandExecution": 5
+    },
+    "tool_sum": 0.685,
+    "tool_union": 0.685,
+    "tool_durations": {
+      "semantic_search": 0.122,
+      "find_symbol": 0.48500000000000004,
+      "commandExecution": 0.078
+    },
+    "hook_count": 33,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 15,
+      "preToolUse": 15
+    },
+    "hook_reported_sum": 2.2460000000000004,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.319,
+      "postToolUse": 0.797,
+      "preToolUse": 1.1300000000000001
+    },
+    "hook_observed_sum": 3.1179999999999986,
+    "hook_union": 1.292,
+    "execution_union": 1.977,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.113,
+    "agent_stream_exclusive": 7.1129999999999995,
+    "residual_after_exec": 34.122,
+    "residual_after_exec_and_agent_stream": 27.009,
+    "outer_executor_count": 4,
+    "outer_executor_sum": 2.3970000000000002,
+    "outer_executor_union": 2.397,
+    "outer_executor_hook_union": 2.508,
+    "outer_executor_hook_extra": 0.11100000000000021,
+    "outer_stream_exclusive": 7.113,
+    "outer_residual": 26.477999999999994,
+    "pending_calls": 0,
+    "raw_responses": 5,
+    "output_tokens": 1038,
+    "reasoning_tokens": 115,
+    "input_tokens": 650789,
+    "cached_input_tokens": 641280,
+    "tool_details": [
+      {
+        "tool": "semantic_search",
+        "start_offset": 5.027,
+        "end_offset": 5.149
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 5.228,
+        "end_offset": 5.612
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 10.438,
+        "end_offset": 10.438
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 10.629,
+        "end_offset": 10.629
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 10.669,
+        "end_offset": 10.699
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 18.176,
+        "end_offset": 18.176
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 18.216,
+        "end_offset": 18.247
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 18.57,
+        "end_offset": 18.648
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 27.442,
+        "end_offset": 27.482
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.741,
+        "end_offset": 27.741
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q06",
+    "native_wall": 60.486,
+    "tool_count": 1,
+    "tool_counts": {
+      "semantic_search": 1
+    },
+    "tool_sum": 0.179,
+    "tool_union": 0.179,
+    "tool_durations": {
+      "semantic_search": 0.179
+    },
+    "hook_count": 5,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.45,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.321,
+      "postToolUse": 0.129
+    },
+    "hook_observed_sum": 0.49800000000000005,
+    "hook_union": 0.193,
+    "execution_union": 0.372,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 44.618,
+    "agent_stream_exclusive": 44.618,
+    "residual_after_exec": 60.114,
+    "residual_after_exec_and_agent_stream": 15.495999999999995,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.273,
+    "outer_executor_union": 0.273,
+    "outer_executor_hook_union": 0.385,
+    "outer_executor_hook_extra": 0.11199999999999999,
+    "outer_stream_exclusive": 44.618,
+    "outer_residual": 15.482999999999997,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 2094,
+    "reasoning_tokens": 231,
+    "input_tokens": 268276,
+    "cached_input_tokens": 267392,
+    "tool_details": [
+      {
+        "tool": "semantic_search",
+        "start_offset": 7.752,
+        "end_offset": 7.931
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q07",
+    "native_wall": 18.489,
+    "tool_count": 2,
+    "tool_counts": {
+      "commandExecution": 2
+    },
+    "tool_sum": 0.0,
+    "tool_union": 0.0,
+    "tool_durations": {
+      "commandExecution": 0.0
+    },
+    "hook_count": 11,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 6,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.719,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.199,
+      "preToolUse": 0.444,
+      "postToolUse": 0.076
+    },
+    "hook_observed_sum": 1.013,
+    "hook_union": 0.389,
+    "execution_union": 0.389,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 4.207,
+    "agent_stream_exclusive": 4.207,
+    "residual_after_exec": 18.1,
+    "residual_after_exec_and_agent_stream": 13.893,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.499,
+    "outer_executor_union": 0.499,
+    "outer_executor_hook_union": 0.579,
+    "outer_executor_hook_extra": 0.07999999999999996,
+    "outer_stream_exclusive": 4.207,
+    "outer_residual": 13.703,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 407,
+    "reasoning_tokens": 157,
+    "input_tokens": 273727,
+    "cached_input_tokens": 272640,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.152,
+        "end_offset": 8.152
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.351,
+        "end_offset": 8.351
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q08",
+    "native_wall": 7.63,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.34299999999999997,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.34299999999999997
+    },
+    "hook_observed_sum": 0.357,
+    "hook_union": 0.119,
+    "execution_union": 0.119,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 2.941,
+    "agent_stream_exclusive": 2.941,
+    "residual_after_exec": 7.511,
+    "residual_after_exec_and_agent_stream": 4.57,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.119,
+    "outer_executor_hook_extra": 0.119,
+    "outer_stream_exclusive": 2.941,
+    "outer_residual": 4.57,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 170,
+    "reasoning_tokens": 42,
+    "input_tokens": 137642,
+    "cached_input_tokens": 137344,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q09",
+    "native_wall": 14.111,
+    "tool_count": 1,
+    "tool_counts": {
+      "find_symbol": 1
+    },
+    "tool_sum": 0.326,
+    "tool_union": 0.326,
+    "tool_durations": {
+      "find_symbol": 0.326
+    },
+    "hook_count": 5,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.46599999999999997,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.33899999999999997,
+      "postToolUse": 0.127
+    },
+    "hook_observed_sum": 0.545,
+    "hook_union": 0.209,
+    "execution_union": 0.535,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 5.174,
+    "agent_stream_exclusive": 5.1739999999999995,
+    "residual_after_exec": 13.576,
+    "residual_after_exec_and_agent_stream": 8.402000000000001,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.419,
+    "outer_executor_union": 0.419,
+    "outer_executor_hook_union": 0.546,
+    "outer_executor_hook_extra": 0.12700000000000006,
+    "outer_stream_exclusive": 5.1739999999999995,
+    "outer_residual": 8.391000000000002,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 403,
+    "reasoning_tokens": 35,
+    "input_tokens": 278841,
+    "cached_input_tokens": 275584,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 6.391,
+        "end_offset": 6.717
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q10",
+    "native_wall": 15.276,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.337,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.337
+    },
+    "hook_observed_sum": 0.342,
+    "hook_union": 0.114,
+    "execution_union": 0.114,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 8.211,
+    "agent_stream_exclusive": 8.210999999999999,
+    "residual_after_exec": 15.161999999999999,
+    "residual_after_exec_and_agent_stream": 6.9510000000000005,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.114,
+    "outer_executor_hook_extra": 0.114,
+    "outer_stream_exclusive": 8.210999999999999,
+    "outer_residual": 6.9510000000000005,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 399,
+    "reasoning_tokens": 68,
+    "input_tokens": 141237,
+    "cached_input_tokens": 140928,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q11",
+    "native_wall": 13.772,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.30400000000000005,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.30400000000000005
+    },
+    "hook_observed_sum": 0.507,
+    "hook_union": 0.169,
+    "execution_union": 0.169,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.103,
+    "agent_stream_exclusive": 7.103000000000001,
+    "residual_after_exec": 13.603,
+    "residual_after_exec_and_agent_stream": 6.499999999999999,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.169,
+    "outer_executor_hook_extra": 0.169,
+    "outer_stream_exclusive": 7.103000000000001,
+    "outer_residual": 6.499999999999999,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 406,
+    "reasoning_tokens": 75,
+    "input_tokens": 141771,
+    "cached_input_tokens": 141440,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q12",
+    "native_wall": 17.493,
+    "tool_count": 1,
+    "tool_counts": {
+      "find_symbol": 1
+    },
+    "tool_sum": 0.219,
+    "tool_union": 0.219,
+    "tool_durations": {
+      "find_symbol": 0.219
+    },
+    "hook_count": 5,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.445,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.317,
+      "postToolUse": 0.128
+    },
+    "hook_observed_sum": 0.48700000000000004,
+    "hook_union": 0.189,
+    "execution_union": 0.408,
+    "tool_hook_overlap": 5.551115123125783e-17,
+    "agent_stream_union": 9.968,
+    "agent_stream_exclusive": 9.968,
+    "residual_after_exec": 17.084999999999997,
+    "residual_after_exec_and_agent_stream": 7.116999999999997,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.326,
+    "outer_executor_union": 0.326,
+    "outer_executor_hook_union": 0.435,
+    "outer_executor_hook_extra": 0.10899999999999999,
+    "outer_stream_exclusive": 9.968,
+    "outer_residual": 7.09,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 499,
+    "reasoning_tokens": 26,
+    "input_tokens": 286409,
+    "cached_input_tokens": 284288,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 5.144,
+        "end_offset": 5.363
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q13",
+    "native_wall": 12.26,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.322,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.322
+    },
+    "hook_observed_sum": 0.34500000000000003,
+    "hook_union": 0.115,
+    "execution_union": 0.115,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 6.952,
+    "agent_stream_exclusive": 6.952,
+    "residual_after_exec": 12.145,
+    "residual_after_exec_and_agent_stream": 5.193,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.115,
+    "outer_executor_hook_extra": 0.115,
+    "outer_stream_exclusive": 6.952,
+    "outer_residual": 5.193,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 313,
+    "reasoning_tokens": 37,
+    "input_tokens": 144598,
+    "cached_input_tokens": 144256,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q14",
+    "native_wall": 15.136,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.327,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.327
+    },
+    "hook_observed_sum": 0.339,
+    "hook_union": 0.113,
+    "execution_union": 0.113,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.082,
+    "agent_stream_exclusive": 7.082,
+    "residual_after_exec": 15.023,
+    "residual_after_exec_and_agent_stream": 7.941,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.113,
+    "outer_executor_hook_extra": 0.113,
+    "outer_stream_exclusive": 7.082,
+    "outer_residual": 7.941,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 431,
+    "reasoning_tokens": 89,
+    "input_tokens": 145058,
+    "cached_input_tokens": 144768,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q15",
+    "native_wall": 40.214,
+    "tool_count": 5,
+    "tool_counts": {
+      "find_symbol": 3,
+      "get_callees": 1,
+      "commandExecution": 1
+    },
+    "tool_sum": 1.1779999999999997,
+    "tool_union": 1.178,
+    "tool_durations": {
+      "find_symbol": 0.38,
+      "get_callees": 0.797,
+      "commandExecution": 0.001
+    },
+    "hook_count": 15,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 9,
+      "preToolUse": 3
+    },
+    "hook_reported_sum": 1.2140000000000002,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.28900000000000003,
+      "postToolUse": 0.6230000000000001,
+      "preToolUse": 0.302
+    },
+    "hook_observed_sum": 1.6069999999999998,
+    "hook_union": 0.679,
+    "execution_union": 1.857,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 15.155,
+    "agent_stream_exclusive": 15.155000000000001,
+    "residual_after_exec": 38.357,
+    "residual_after_exec_and_agent_stream": 23.201999999999998,
+    "outer_executor_count": 4,
+    "outer_executor_sum": 1.914,
+    "outer_executor_union": 1.914,
+    "outer_executor_hook_union": 2.015,
+    "outer_executor_hook_extra": 0.1010000000000002,
+    "outer_stream_exclusive": 15.155000000000001,
+    "outer_residual": 23.043999999999997,
+    "pending_calls": 0,
+    "raw_responses": 5,
+    "output_tokens": 1170,
+    "reasoning_tokens": 96,
+    "input_tokens": 758318,
+    "cached_input_tokens": 745472,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 5.69,
+        "end_offset": 5.978
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 10.542,
+        "end_offset": 10.599
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 10.683,
+        "end_offset": 11.48
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 16.076,
+        "end_offset": 16.111
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 23.923,
+        "end_offset": 23.924
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q16",
+    "native_wall": 40.969,
+    "tool_count": 3,
+    "tool_counts": {
+      "commandExecution": 2,
+      "find_symbol": 1
+    },
+    "tool_sum": 3.4,
+    "tool_union": 3.4,
+    "tool_durations": {
+      "commandExecution": 3.314,
+      "find_symbol": 0.086
+    },
+    "hook_count": 13,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 6,
+      "postToolUse": 4
+    },
+    "hook_reported_sum": 1.058,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.326,
+      "preToolUse": 0.532,
+      "postToolUse": 0.2
+    },
+    "hook_observed_sum": 1.362,
+    "hook_union": 0.538,
+    "execution_union": 3.938,
+    "tool_hook_overlap": -4.440892098500626e-16,
+    "agent_stream_union": 14.052,
+    "agent_stream_exclusive": 14.051999999999998,
+    "residual_after_exec": 37.031,
+    "residual_after_exec_and_agent_stream": 22.979,
+    "outer_executor_count": 2,
+    "outer_executor_sum": 4.163,
+    "outer_executor_union": 4.163,
+    "outer_executor_hook_union": 4.275,
+    "outer_executor_hook_extra": 0.1120000000000001,
+    "outer_stream_exclusive": 14.052000000000001,
+    "outer_residual": 22.642000000000003,
+    "pending_calls": 0,
+    "raw_responses": 3,
+    "output_tokens": 1186,
+    "reasoning_tokens": 222,
+    "input_tokens": 482266,
+    "cached_input_tokens": 478080,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 4.879,
+        "end_offset": 6.559
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.93,
+        "end_offset": 15.564
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 15.621,
+        "end_offset": 15.707
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q17",
+    "native_wall": 12.395,
+    "tool_count": 1,
+    "tool_counts": {
+      "commandExecution": 1
+    },
+    "tool_sum": 0.0,
+    "tool_union": 0.0,
+    "tool_durations": {
+      "commandExecution": 0.0
+    },
+    "hook_count": 7,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 3,
+      "postToolUse": 1
+    },
+    "hook_reported_sum": 0.673,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.341,
+      "preToolUse": 0.297,
+      "postToolUse": 0.035
+    },
+    "hook_observed_sum": 0.8790000000000001,
+    "hook_union": 0.317,
+    "execution_union": 0.317,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 5.483,
+    "agent_stream_exclusive": 5.483,
+    "residual_after_exec": 12.078,
+    "residual_after_exec_and_agent_stream": 6.595,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.257,
+    "outer_executor_union": 0.257,
+    "outer_executor_hook_union": 0.375,
+    "outer_executor_hook_extra": 0.118,
+    "outer_stream_exclusive": 5.483,
+    "outer_residual": 6.537,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 278,
+    "reasoning_tokens": 0,
+    "input_tokens": 327984,
+    "cached_input_tokens": 326784,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 4.604,
+        "end_offset": 4.604
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q18",
+    "native_wall": 11.881,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.29600000000000004,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.29600000000000004
+    },
+    "hook_observed_sum": 0.30000000000000004,
+    "hook_union": 0.1,
+    "execution_union": 0.1,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 5.383,
+    "agent_stream_exclusive": 5.383,
+    "residual_after_exec": 11.781,
+    "residual_after_exec_and_agent_stream": 6.398000000000001,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.1,
+    "outer_executor_hook_extra": 0.1,
+    "outer_stream_exclusive": 5.383,
+    "outer_residual": 6.398000000000001,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 306,
+    "reasoning_tokens": 56,
+    "input_tokens": 164706,
+    "cached_input_tokens": 164352,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q19",
+    "native_wall": 13.298,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.321,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.321
+    },
+    "hook_observed_sum": 0.333,
+    "hook_union": 0.111,
+    "execution_union": 0.111,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 6.385,
+    "agent_stream_exclusive": 6.385000000000001,
+    "residual_after_exec": 13.187,
+    "residual_after_exec_and_agent_stream": 6.801999999999999,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.111,
+    "outer_executor_hook_extra": 0.111,
+    "outer_stream_exclusive": 6.385000000000001,
+    "outer_residual": 6.801999999999999,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 546,
+    "reasoning_tokens": 79,
+    "input_tokens": 165144,
+    "cached_input_tokens": 164864,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q20",
+    "native_wall": 20.137,
+    "tool_count": 1,
+    "tool_counts": {
+      "find_symbol": 1
+    },
+    "tool_sum": 0.197,
+    "tool_union": 0.197,
+    "tool_durations": {
+      "find_symbol": 0.197
+    },
+    "hook_count": 5,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.42000000000000004,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.29200000000000004,
+      "postToolUse": 0.128
+    },
+    "hook_observed_sum": 0.4610000000000001,
+    "hook_union": 0.181,
+    "execution_union": 0.378,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 9.331,
+    "agent_stream_exclusive": 9.331,
+    "residual_after_exec": 19.759,
+    "residual_after_exec_and_agent_stream": 10.428,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.294,
+    "outer_executor_union": 0.294,
+    "outer_executor_hook_union": 0.393,
+    "outer_executor_hook_extra": 0.09900000000000003,
+    "outer_stream_exclusive": 9.331,
+    "outer_residual": 10.413,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 580,
+    "reasoning_tokens": 53,
+    "input_tokens": 333153,
+    "cached_input_tokens": 331264,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 4.439,
+        "end_offset": 4.636
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q21",
+    "native_wall": 39.931,
+    "tool_count": 5,
+    "tool_counts": {
+      "find_symbol": 2,
+      "commandExecution": 2,
+      "get_callees": 1
+    },
+    "tool_sum": 0.122,
+    "tool_union": 0.122,
+    "tool_durations": {
+      "find_symbol": 0.088,
+      "commandExecution": 0.0,
+      "get_callees": 0.034
+    },
+    "hook_count": 17,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 8,
+      "preToolUse": 6
+    },
+    "hook_reported_sum": 1.236,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.28500000000000003,
+      "postToolUse": 0.46099999999999997,
+      "preToolUse": 0.49000000000000005
+    },
+    "hook_observed_sum": 1.6589999999999998,
+    "hook_union": 0.683,
+    "execution_union": 0.805,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 19.05,
+    "agent_stream_exclusive": 19.05,
+    "residual_after_exec": 39.126,
+    "residual_after_exec_and_agent_stream": 20.075999999999997,
+    "outer_executor_count": 3,
+    "outer_executor_sum": 0.849,
+    "outer_executor_union": 0.849,
+    "outer_executor_hook_union": 0.948,
+    "outer_executor_hook_extra": 0.09899999999999998,
+    "outer_stream_exclusive": 19.05,
+    "outer_residual": 19.932999999999996,
+    "pending_calls": 0,
+    "raw_responses": 4,
+    "output_tokens": 1281,
+    "reasoning_tokens": 24,
+    "input_tokens": 681729,
+    "cached_input_tokens": 676736,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 7.669,
+        "end_offset": 7.719
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 14.385,
+        "end_offset": 14.423
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 14.661,
+        "end_offset": 14.661
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 18.876,
+        "end_offset": 18.876
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 18.916,
+        "end_offset": 18.95
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q22",
+    "native_wall": 21.081,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.326,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.326
+    },
+    "hook_observed_sum": 0.336,
+    "hook_union": 0.112,
+    "execution_union": 0.112,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 13.159,
+    "agent_stream_exclusive": 13.159,
+    "residual_after_exec": 20.969,
+    "residual_after_exec_and_agent_stream": 7.8100000000000005,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.112,
+    "outer_executor_hook_extra": 0.112,
+    "outer_stream_exclusive": 13.159,
+    "outer_residual": 7.8100000000000005,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 713,
+    "reasoning_tokens": 71,
+    "input_tokens": 173592,
+    "cached_input_tokens": 173312,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q23",
+    "native_wall": 40.983,
+    "tool_count": 10,
+    "tool_counts": {
+      "commandExecution": 6,
+      "semantic_search": 1,
+      "find_symbol": 2,
+      "get_callees": 1
+    },
+    "tool_sum": 0.882,
+    "tool_union": 0.882,
+    "tool_durations": {
+      "commandExecution": 0.39,
+      "semantic_search": 0.13,
+      "find_symbol": 0.222,
+      "get_callees": 0.14
+    },
+    "hook_count": 35,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 18,
+      "postToolUse": 14
+    },
+    "hook_reported_sum": 2.4659999999999997,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.314,
+      "preToolUse": 1.4669999999999999,
+      "postToolUse": 0.6849999999999999
+    },
+    "hook_observed_sum": 3.4699999999999998,
+    "hook_union": 1.403,
+    "execution_union": 2.285,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 9.331,
+    "agent_stream_exclusive": 9.331,
+    "residual_after_exec": 38.69799999999999,
+    "residual_after_exec_and_agent_stream": 29.366999999999994,
+    "outer_executor_count": 4,
+    "outer_executor_sum": 2.746,
+    "outer_executor_union": 2.746,
+    "outer_executor_hook_union": 2.855,
+    "outer_executor_hook_extra": 0.10899999999999999,
+    "outer_stream_exclusive": 9.331,
+    "outer_residual": 28.797,
+    "pending_calls": 0,
+    "raw_responses": 5,
+    "output_tokens": 1053,
+    "reasoning_tokens": 115,
+    "input_tokens": 891771,
+    "cached_input_tokens": 883328,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 6.102,
+        "end_offset": 6.102
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 6.144,
+        "end_offset": 6.274
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 10.561,
+        "end_offset": 10.561
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 10.745,
+        "end_offset": 10.746
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 10.787,
+        "end_offset": 10.972
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 18.318,
+        "end_offset": 18.318
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 18.357,
+        "end_offset": 18.394
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.366,
+        "end_offset": 27.366
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.654,
+        "end_offset": 28.043
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 28.084,
+        "end_offset": 28.224
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q24",
+    "native_wall": 14.69,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.333,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.333
+    },
+    "hook_observed_sum": 0.34600000000000003,
+    "hook_union": 0.116,
+    "execution_union": 0.116,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 3.392,
+    "agent_stream_exclusive": 3.392,
+    "residual_after_exec": 14.574,
+    "residual_after_exec_and_agent_stream": 11.182,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.116,
+    "outer_executor_hook_extra": 0.116,
+    "outer_stream_exclusive": 3.392,
+    "outer_residual": 11.182,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 301,
+    "reasoning_tokens": 149,
+    "input_tokens": 183047,
+    "cached_input_tokens": 182656,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q25",
+    "native_wall": 15.332,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.333,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.333
+    },
+    "hook_observed_sum": 0.34500000000000003,
+    "hook_union": 0.115,
+    "execution_union": 0.115,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 6.235,
+    "agent_stream_exclusive": 6.234999999999999,
+    "residual_after_exec": 15.217,
+    "residual_after_exec_and_agent_stream": 8.982000000000001,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.115,
+    "outer_executor_hook_extra": 0.115,
+    "outer_stream_exclusive": 6.234999999999999,
+    "outer_residual": 8.982000000000001,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 356,
+    "reasoning_tokens": 126,
+    "input_tokens": 183505,
+    "cached_input_tokens": 183168,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q26",
+    "native_wall": 60.762,
+    "tool_count": 5,
+    "tool_counts": {
+      "semantic_search": 2,
+      "commandExecution": 2,
+      "find_symbol": 1
+    },
+    "tool_sum": 0.33999999999999997,
+    "tool_union": 0.34,
+    "tool_durations": {
+      "semantic_search": 0.124,
+      "commandExecution": 0.0,
+      "find_symbol": 0.216
+    },
+    "hook_count": 17,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 8,
+      "preToolUse": 6
+    },
+    "hook_reported_sum": 1.222,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.29100000000000004,
+      "postToolUse": 0.49400000000000005,
+      "preToolUse": 0.43699999999999994
+    },
+    "hook_observed_sum": 1.6980000000000002,
+    "hook_union": 0.702,
+    "execution_union": 1.042,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 16.857,
+    "agent_stream_exclusive": 16.857,
+    "residual_after_exec": 59.72,
+    "residual_after_exec_and_agent_stream": 42.863,
+    "outer_executor_count": 3,
+    "outer_executor_sum": 1.079,
+    "outer_executor_union": 1.079,
+    "outer_executor_hook_union": 1.182,
+    "outer_executor_hook_extra": 0.10299999999999998,
+    "outer_stream_exclusive": 16.857000000000003,
+    "outer_residual": 42.723,
+    "pending_calls": 0,
+    "raw_responses": 4,
+    "output_tokens": 1374,
+    "reasoning_tokens": 417,
+    "input_tokens": 748557,
+    "cached_input_tokens": 740736,
+    "tool_details": [
+      {
+        "tool": "semantic_search",
+        "start_offset": 9.1,
+        "end_offset": 9.174
+      },
+      {
+        "tool": "semantic_search",
+        "start_offset": 19.689,
+        "end_offset": 19.739
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 20.011,
+        "end_offset": 20.011
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 20.223,
+        "end_offset": 20.223
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 29.664,
+        "end_offset": 29.88
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q27",
+    "native_wall": 14.994,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.355,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.355
+    },
+    "hook_observed_sum": 0.369,
+    "hook_union": 0.123,
+    "execution_union": 0.123,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 8.421,
+    "agent_stream_exclusive": 8.421000000000001,
+    "residual_after_exec": 14.871,
+    "residual_after_exec_and_agent_stream": 6.449999999999999,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.123,
+    "outer_executor_hook_extra": 0.123,
+    "outer_stream_exclusive": 8.421000000000001,
+    "outer_residual": 6.449999999999999,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 287,
+    "reasoning_tokens": 0,
+    "input_tokens": 192496,
+    "cached_input_tokens": 192128,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q28",
+    "native_wall": 28.128,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.322,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.322
+    },
+    "hook_observed_sum": 0.333,
+    "hook_union": 0.111,
+    "execution_union": 0.111,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 18.258,
+    "agent_stream_exclusive": 18.258,
+    "residual_after_exec": 28.017,
+    "residual_after_exec_and_agent_stream": 9.759,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.111,
+    "outer_executor_hook_extra": 0.111,
+    "outer_stream_exclusive": 18.258,
+    "outer_residual": 9.759,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 699,
+    "reasoning_tokens": 137,
+    "input_tokens": 192905,
+    "cached_input_tokens": 192640,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q29",
+    "native_wall": 22.685,
+    "tool_count": 3,
+    "tool_counts": {
+      "find_symbol": 2,
+      "get_callees": 1
+    },
+    "tool_sum": 0.775,
+    "tool_union": 0.775,
+    "tool_durations": {
+      "find_symbol": 0.229,
+      "get_callees": 0.546
+    },
+    "hook_count": 9,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 6
+    },
+    "hook_reported_sum": 0.674,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.28700000000000003,
+      "postToolUse": 0.387
+    },
+    "hook_observed_sum": 0.7909999999999999,
+    "hook_union": 0.345,
+    "execution_union": 1.12,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.559,
+    "agent_stream_exclusive": 7.559,
+    "residual_after_exec": 21.564999999999998,
+    "residual_after_exec_and_agent_stream": 14.005999999999997,
+    "outer_executor_count": 2,
+    "outer_executor_sum": 1.1320000000000001,
+    "outer_executor_union": 1.132,
+    "outer_executor_hook_union": 1.233,
+    "outer_executor_hook_extra": 0.1010000000000002,
+    "outer_stream_exclusive": 7.558999999999999,
+    "outer_residual": 13.892999999999999,
+    "pending_calls": 0,
+    "raw_responses": 3,
+    "output_tokens": 571,
+    "reasoning_tokens": 49,
+    "input_tokens": 584869,
+    "cached_input_tokens": 582400,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 7.43,
+        "end_offset": 7.63
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 7.711,
+        "end_offset": 8.257
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 12.446,
+        "end_offset": 12.475
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q30",
+    "native_wall": 47.259,
+    "tool_count": 12,
+    "tool_counts": {
+      "commandExecution": 11,
+      "find_symbol": 1
+    },
+    "tool_sum": 0.1,
+    "tool_union": 0.1,
+    "tool_durations": {
+      "commandExecution": 0.0,
+      "find_symbol": 0.1
+    },
+    "hook_count": 49,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 33,
+      "postToolUse": 13
+    },
+    "hook_reported_sum": 3.299,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.326,
+      "preToolUse": 2.428,
+      "postToolUse": 0.5449999999999999
+    },
+    "hook_observed_sum": 4.962000000000001,
+    "hook_union": 1.954,
+    "execution_union": 2.054,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 8.83,
+    "agent_stream_exclusive": 8.83,
+    "residual_after_exec": 45.205,
+    "residual_after_exec_and_agent_stream": 36.375,
+    "outer_executor_count": 4,
+    "outer_executor_sum": 2.636,
+    "outer_executor_union": 2.636,
+    "outer_executor_hook_union": 2.751,
+    "outer_executor_hook_extra": 0.11499999999999977,
+    "outer_stream_exclusive": 8.83,
+    "outer_residual": 35.678000000000004,
+    "pending_calls": 0,
+    "raw_responses": 5,
+    "output_tokens": 1296,
+    "reasoning_tokens": 277,
+    "input_tokens": 995019,
+    "cached_input_tokens": 987776,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 6.383,
+        "end_offset": 6.383
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 6.428,
+        "end_offset": 6.528
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.607,
+        "end_offset": 13.607
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.804,
+        "end_offset": 13.804
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 19.588,
+        "end_offset": 19.588
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 19.805,
+        "end_offset": 19.805
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 20.024,
+        "end_offset": 20.024
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 20.218,
+        "end_offset": 20.218
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.573,
+        "end_offset": 27.573
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.784,
+        "end_offset": 27.784
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 27.992,
+        "end_offset": 27.992
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 28.187,
+        "end_offset": 28.187
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q31",
+    "native_wall": 17.964,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.324,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.324
+    },
+    "hook_observed_sum": 0.339,
+    "hook_union": 0.113,
+    "execution_union": 0.113,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.36,
+    "agent_stream_exclusive": 7.359999999999999,
+    "residual_after_exec": 17.851,
+    "residual_after_exec_and_agent_stream": 10.491,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.113,
+    "outer_executor_hook_extra": 0.113,
+    "outer_stream_exclusive": 7.359999999999999,
+    "outer_residual": 10.491,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 513,
+    "reasoning_tokens": 152,
+    "input_tokens": 203857,
+    "cached_input_tokens": 203520,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q32",
+    "native_wall": 8.206,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.333,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.333
+    },
+    "hook_observed_sum": 0.34500000000000003,
+    "hook_union": 0.115,
+    "execution_union": 0.115,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 5.416,
+    "agent_stream_exclusive": 5.4159999999999995,
+    "residual_after_exec": 8.091,
+    "residual_after_exec_and_agent_stream": 2.675,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.115,
+    "outer_executor_hook_extra": 0.115,
+    "outer_stream_exclusive": 5.4159999999999995,
+    "outer_residual": 2.675,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 204,
+    "reasoning_tokens": 0,
+    "input_tokens": 204506,
+    "cached_input_tokens": 204160,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q33",
+    "native_wall": 20.063,
+    "tool_count": 1,
+    "tool_counts": {
+      "find_symbol": 1
+    },
+    "tool_sum": 0.272,
+    "tool_union": 0.272,
+    "tool_durations": {
+      "find_symbol": 0.272
+    },
+    "hook_count": 5,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 2
+    },
+    "hook_reported_sum": 0.441,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.32,
+      "postToolUse": 0.121
+    },
+    "hook_observed_sum": 0.48900000000000005,
+    "hook_union": 0.189,
+    "execution_union": 0.461,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 11.79,
+    "agent_stream_exclusive": 11.79,
+    "residual_after_exec": 19.602,
+    "residual_after_exec_and_agent_stream": 7.812000000000001,
+    "outer_executor_count": 1,
+    "outer_executor_sum": 0.36,
+    "outer_executor_union": 0.36,
+    "outer_executor_hook_union": 0.471,
+    "outer_executor_hook_extra": 0.11099999999999999,
+    "outer_stream_exclusive": 11.79,
+    "outer_residual": 7.802,
+    "pending_calls": 0,
+    "raw_responses": 2,
+    "output_tokens": 674,
+    "reasoning_tokens": 0,
+    "input_tokens": 411877,
+    "cached_input_tokens": 409344,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 5.756,
+        "end_offset": 6.028
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q34",
+    "native_wall": 26.099,
+    "tool_count": 5,
+    "tool_counts": {
+      "commandExecution": 5
+    },
+    "tool_sum": 0.0,
+    "tool_union": 0.0,
+    "tool_durations": {
+      "commandExecution": 0.0
+    },
+    "hook_count": 23,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 15,
+      "postToolUse": 5
+    },
+    "hook_reported_sum": 1.58,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.331,
+      "preToolUse": 1.064,
+      "postToolUse": 0.185
+    },
+    "hook_observed_sum": 2.226000000000001,
+    "hook_union": 0.868,
+    "execution_union": 0.868,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.668,
+    "agent_stream_exclusive": 7.667999999999999,
+    "residual_after_exec": 25.231,
+    "residual_after_exec_and_agent_stream": 17.563000000000002,
+    "outer_executor_count": 2,
+    "outer_executor_sum": 1.208,
+    "outer_executor_union": 1.208,
+    "outer_executor_hook_union": 1.324,
+    "outer_executor_hook_extra": 0.1160000000000001,
+    "outer_stream_exclusive": 7.668000000000001,
+    "outer_residual": 17.107,
+    "pending_calls": 0,
+    "raw_responses": 3,
+    "output_tokens": 733,
+    "reasoning_tokens": 109,
+    "input_tokens": 624622,
+    "cached_input_tokens": 622848,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.734,
+        "end_offset": 8.734
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 9.028,
+        "end_offset": 9.028
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 12.646,
+        "end_offset": 12.646
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 12.836,
+        "end_offset": 12.836
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.02,
+        "end_offset": 13.02
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q35",
+    "native_wall": 30.061,
+    "tool_count": 4,
+    "tool_counts": {
+      "find_symbol": 2,
+      "commandExecution": 1,
+      "get_callees": 1
+    },
+    "tool_sum": 0.737,
+    "tool_union": 0.737,
+    "tool_durations": {
+      "find_symbol": 0.135,
+      "commandExecution": 0.0,
+      "get_callees": 0.602
+    },
+    "hook_count": 13,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "postToolUse": 7,
+      "preToolUse": 3
+    },
+    "hook_reported_sum": 0.922,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.327,
+      "postToolUse": 0.412,
+      "preToolUse": 0.18300000000000002
+    },
+    "hook_observed_sum": 1.1759999999999997,
+    "hook_union": 0.497,
+    "execution_union": 1.234,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 8.056,
+    "agent_stream_exclusive": 8.056,
+    "residual_after_exec": 28.826999999999998,
+    "residual_after_exec_and_agent_stream": 20.771,
+    "outer_executor_count": 2,
+    "outer_executor_sum": 1.309,
+    "outer_executor_union": 1.309,
+    "outer_executor_hook_union": 1.425,
+    "outer_executor_hook_extra": 0.1160000000000001,
+    "outer_stream_exclusive": 8.056,
+    "outer_residual": 20.58,
+    "pending_calls": 0,
+    "raw_responses": 3,
+    "output_tokens": 813,
+    "reasoning_tokens": 127,
+    "input_tokens": 633239,
+    "cached_input_tokens": 629888,
+    "tool_details": [
+      {
+        "tool": "find_symbol",
+        "start_offset": 4.719,
+        "end_offset": 4.794
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 13.232,
+        "end_offset": 13.292
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 13.537,
+        "end_offset": 13.537
+      },
+      {
+        "tool": "get_callees",
+        "start_offset": 13.577,
+        "end_offset": 14.179
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q36",
+    "native_wall": 30.817,
+    "tool_count": 9,
+    "tool_counts": {
+      "commandExecution": 9
+    },
+    "tool_sum": 0.001,
+    "tool_union": 0.001,
+    "tool_durations": {
+      "commandExecution": 0.001
+    },
+    "hook_count": 39,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 27,
+      "postToolUse": 9
+    },
+    "hook_reported_sum": 2.6390000000000002,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.331,
+      "preToolUse": 1.9890000000000003,
+      "postToolUse": 0.31900000000000006
+    },
+    "hook_observed_sum": 4.186999999999999,
+    "hook_union": 1.611,
+    "execution_union": 1.612,
+    "tool_hook_overlap": -2.220446049250313e-16,
+    "agent_stream_union": 11.364,
+    "agent_stream_exclusive": 11.364,
+    "residual_after_exec": 29.205,
+    "residual_after_exec_and_agent_stream": 17.840999999999998,
+    "outer_executor_count": 2,
+    "outer_executor_sum": 1.971,
+    "outer_executor_union": 1.971,
+    "outer_executor_hook_union": 2.086,
+    "outer_executor_hook_extra": 0.11499999999999977,
+    "outer_stream_exclusive": 11.363999999999999,
+    "outer_residual": 17.367000000000004,
+    "pending_calls": 0,
+    "raw_responses": 3,
+    "output_tokens": 1130,
+    "reasoning_tokens": 0,
+    "input_tokens": 643639,
+    "cached_input_tokens": 640640,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.043,
+        "end_offset": 8.043
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.274,
+        "end_offset": 8.274
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.482,
+        "end_offset": 8.482
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 16.16,
+        "end_offset": 16.16
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 16.367,
+        "end_offset": 16.367
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 16.576,
+        "end_offset": 16.576
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 16.785,
+        "end_offset": 16.785
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 16.99,
+        "end_offset": 16.99
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 17.195,
+        "end_offset": 17.196
+      }
+    ],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q37",
+    "native_wall": 15.898,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.332,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.332
+    },
+    "hook_observed_sum": 0.342,
+    "hook_union": 0.114,
+    "execution_union": 0.114,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 8.98,
+    "agent_stream_exclusive": 8.979999999999999,
+    "residual_after_exec": 15.783999999999999,
+    "residual_after_exec_and_agent_stream": 6.804,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.114,
+    "outer_executor_hook_extra": 0.114,
+    "outer_stream_exclusive": 8.979999999999999,
+    "outer_residual": 6.804,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 630,
+    "reasoning_tokens": 105,
+    "input_tokens": 216751,
+    "cached_input_tokens": 216448,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q38",
+    "native_wall": 17.132,
+    "tool_count": 0,
+    "tool_counts": {},
+    "tool_sum": 0,
+    "tool_union": 0.0,
+    "tool_durations": {},
+    "hook_count": 3,
+    "hook_counts": {
+      "userPromptSubmit": 3
+    },
+    "hook_reported_sum": 0.332,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.332
+    },
+    "hook_observed_sum": 0.342,
+    "hook_union": 0.114,
+    "execution_union": 0.114,
+    "tool_hook_overlap": 0.0,
+    "agent_stream_union": 7.976,
+    "agent_stream_exclusive": 7.976,
+    "residual_after_exec": 17.018,
+    "residual_after_exec_and_agent_stream": 9.042000000000002,
+    "outer_executor_count": 0,
+    "outer_executor_sum": 0,
+    "outer_executor_union": 0.0,
+    "outer_executor_hook_union": 0.114,
+    "outer_executor_hook_extra": 0.114,
+    "outer_stream_exclusive": 7.976,
+    "outer_residual": 9.042000000000002,
+    "pending_calls": 0,
+    "raw_responses": 1,
+    "output_tokens": 381,
+    "reasoning_tokens": 109,
+    "input_tokens": 217546,
+    "cached_input_tokens": 217216,
+    "tool_details": [],
+    "pending_hooks": 0
+  },
+  {
+    "q": "Q39",
+    "native_wall": 37.469,
+    "tool_count": 7,
+    "tool_counts": {
+      "commandExecution": 4,
+      "find_symbol": 3
+    },
+    "tool_sum": 0.45399999999999996,
+    "tool_union": 0.454,
+    "tool_durations": {
+      "commandExecution": 0.0,
+      "find_symbol": 0.45399999999999996
+    },
+    "hook_count": 25,
+    "hook_counts": {
+      "userPromptSubmit": 3,
+      "preToolUse": 12,
+      "postToolUse": 10
+    },
+    "hook_reported_sum": 1.7530000000000001,
+    "hook_reported_by_event": {
+      "userPromptSubmit": 0.328,
+      "preToolUse": 0.89,
+      "postToolUse": 0.535
+    },
+    "hook_observed_sum": 2.51,
+    "hook_union": 1.019,
+    "execution_union": 1.473,
+    "tool_hook_overlap": -2.220446049250313e-16,
+    "agent_stream_union": 10.099,
+    "agent_stream_exclusive": 10.098999999999998,
+    "residual_after_exec": 35.996,
+    "residual_after_exec_and_agent_stream": 25.897000000000006,
+    "outer_executor_count": 4,
+    "outer_executor_sum": 1.766,
+    "outer_executor_union": 1.766,
+    "outer_executor_hook_union": 1.879,
+    "outer_executor_hook_extra": 0.11299999999999999,
+    "outer_stream_exclusive": 10.099,
+    "outer_residual": 25.491000000000003,
+    "pending_calls": 0,
+    "raw_responses": 5,
+    "output_tokens": 1157,
+    "reasoning_tokens": 67,
+    "input_tokens": 1105659,
+    "cached_input_tokens": 1099264,
+    "tool_details": [
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.557,
+        "end_offset": 8.557
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 8.774,
+        "end_offset": 8.774
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 14.47,
+        "end_offset": 14.47
+      },
+      {
+        "tool": "commandExecution",
+        "start_offset": 14.689,
+        "end_offset": 14.689
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 14.731,
+        "end_offset": 15.086
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 21.588,
+        "end_offset": 21.653
+      },
+      {
+        "tool": "find_symbol",
+        "start_offset": 25.059,
+        "end_offset": 25.093
+      }
+    ],
+    "pending_hooks": 0
+  }
+]

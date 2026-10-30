@@ -1,0 +1,158 @@
+[
+  {
+    "id": "Q01",
+    "question": "How is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?"
+  },
+  {
+    "id": "Q02",
+    "question": "Instead was first built on a mock transport (the user calls it instead_mocks). What exactly was that mock, how was it switched on, how did specs use it, and is it still wired anywhere?"
+  },
+  {
+    "id": "Q03",
+    "question": "What lessons from the Instead integration should a second vendor inherit (rate limits, reconciliation of lost webhooks, failure-reason vocabulary, signed-URL cassettes, entity matching)?"
+  },
+  {
+    "id": "Q04",
+    "question": "Which parts of the vendor-neutral tax-automation port contracts are actually shaped by the first vendor (Instead) or by OAuth, and would not fit a different vendor?"
+  },
+  {
+    "id": "Q05",
+    "question": "GruntWorx returns result files as PDF, XLS and XLSM. Does TaxDome restrict which file extensions a stored client document may have, and would an .xlsm file be stored and previewable?"
+  },
+  {
+    "id": "Q06",
+    "question": "Выведи полную таблицу маппинга TD <=> GWX"
+  },
+  {
+    "id": "Q07",
+    "question": "включается в конфиге провайдера - в settings.yml, уточни"
+  },
+  {
+    "id": "Q08",
+    "question": "The vendor states its upload limit as 50 MiB. Does TaxDome's capability passport compare file size in binary MiB or decimal MB?"
+  },
+  {
+    "id": "Q09",
+    "question": "When a member sends documents to a tax-automation provider, does the shared send entry point identify the taxpayer by the TaxDome account (client) or by the contact?"
+  },
+  {
+    "id": "Q10",
+    "question": "If the same document is sent to the provider a second time, does the send even reach the vendor? Which pre-send refusals exist for documents already sent or still in flight?"
+  },
+  {
+    "id": "Q11",
+    "question": "How does the reconciliation sweep for lost webhooks pick candidate send records, and with which time thresholds?"
+  },
+  {
+    "id": "Q12",
+    "question": "What happens to files already sent to a tax-automation provider when CRM merges two contacts?"
+  },
+  {
+    "id": "Q13",
+    "question": "How does the connection flow protect a firm against reconnecting to a different vendor account, and what happens when the vendor reports no account identifier?"
+  },
+  {
+    "id": "Q14",
+    "question": "When a vendor rejects the firm's grant mid-send and the admin later reconnects, do the affected files wait and resume, or fail? Which failures are resumed?"
+  },
+  {
+    "id": "Q15",
+    "question": "How does the existing Instead webhook endpoint verify, validate and acknowledge deliveries, and does it deduplicate events?"
+  },
+  {
+    "id": "Q16",
+    "question": "List the tax-automation provider registry's constants and public methods, and every place in app/ that iterates over all adapters."
+  },
+  {
+    "id": "Q17",
+    "question": "Is there an existing purpose-scoped storage service (separate bucket and credentials) in config/storage.yml that a dedicated vendor-facing bucket could copy?"
+  },
+  {
+    "id": "Q18",
+    "question": "Which feature flags govern tax automations and the Instead provider, and where are they defined?"
+  },
+  {
+    "id": "Q19",
+    "question": "What are the AASM transitions of the send record's processing and upload state machines?"
+  },
+  {
+    "id": "Q20",
+    "question": "What does the shared status-update service accept, and what frame does the status broadcast send to the frontend?"
+  },
+  {
+    "id": "Q21",
+    "question": "How does the shared vendor HTTP client map HTTP statuses to errors, which metrics does it emit, and how are refusals turned into failure reasons?"
+  },
+  {
+    "id": "Q22",
+    "question": "What do the shared and the Instead operation-worker base classes define (retries, throttle, slug), and where is the Instead throttle configured?"
+  },
+  {
+    "id": "Q23",
+    "question": "How are vendor webhooks routed to a cluster and to a controller for the existing provider?"
+  },
+  {
+    "id": "Q24",
+    "question": "Хочется именно GruntWorx, просто сделаем явный словарь\n\ninstead => Instead\ngruntworx => GruntWorx. Значит не camelize нужен, а downcase, этого хватит"
+  },
+  {
+    "id": "Q25",
+    "question": "step_available? - мне все-таки не нравится слово \"step\", оно слишком широкое. Давай это будет ... operation/feature(тогда с фф будет путаница)/ какие варианты есть?"
+  },
+  {
+    "id": "Q26",
+    "question": "What did it cost the Instead integration when its mock transport had drifted from the real vendor contract (the fix in TD-99833)?"
+  },
+  {
+    "id": "Q27",
+    "question": "- Documents::ResumeSends(Async);\n  - Firms::DestroyCleanup;\n  - Connections::DisconnectAll / Registry.connections_for;\n  - TaxPreparations::BatchDestroy (DestroyForTaxPreparations);\n\nЭто базовые механзимы, почему ты их вписал? (Connections::DisconnectAll - базовый или нет?)"
+  },
+  {
+    "id": "Q28",
+    "question": "Подробнее про маркер привязки"
+  },
+  {
+    "id": "Q29",
+    "question": "How does Instead's adapter-side send service authorize the call and start the asynchronous send?"
+  },
+  {
+    "id": "Q30",
+    "question": "GruntWorx needs a stable TaxDome-side firm identifier and contact identifier in its URLs. Do the firms, contacts and accounts tables have a uuid column?"
+  },
+  {
+    "id": "Q31",
+    "question": "Нейминги не похожи на нейминги instead, должна быть консистентность"
+  },
+  {
+    "id": "Q32",
+    "question": "GruntWorx::Documents::ReconcileStatusesAsync - а это же реализация порта?"
+  },
+  {
+    "id": "Q33",
+    "question": "How is Instead's worker hierarchy built: which base do send-step workers, the byte-transfer worker and the webhook worker use, and what happens to files when a step exhausts its retries?"
+  },
+  {
+    "id": "Q34",
+    "question": "How do the existing vendor specs validate fixtures and mock answers against the vendor's OpenAPI contract, and with which gem?"
+  },
+  {
+    "id": "Q35",
+    "question": "Through which CRM Public API calls can tax automations get a taxpayer contact's first and last name and its uuid?"
+  },
+  {
+    "id": "Q36",
+    "question": "Which indexes and foreign keys do the Instead adapter tables carry (connections, documents)?"
+  },
+  {
+    "id": "Q37",
+    "question": "Which application metrics exist for tax automations?"
+  },
+  {
+    "id": "Q38",
+    "question": "Я бы вот еще сделал. У инстеда есть лимит группы, нам нужна фиктивная, чтобы фирмы не съедали лимиты друг друга. Скажем 50RPM на одну фирму - доп правило троттлинга"
+  },
+  {
+    "id": "Q39",
+    "question": "Where are autoload inflections configured, where is the Instead feature flag defined in config, and which serializers expose the send record's status fields to the frontend?"
+  }
+]

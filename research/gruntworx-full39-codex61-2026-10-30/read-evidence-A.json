@@ -1,0 +1,98 @@
+{
+  "skill_reference_commands_by_file": {
+    "explore/SKILL.md": 1,
+    "explore/references/architecture-pattern.md": 1,
+    "architecture-diagnostics/SKILL.md": 1,
+    "architecture-diagnostics/references/phase-1-report.md": 1,
+    "architecture-diagnostics/references/phase-4-exclusions.md": 1
+  },
+  "ALL_TOOLS_discovery_calls": [
+    {
+      "question": "Q01",
+      "call_id": "call_05afed239b074da2b24b16cc8d580aa8",
+      "maps_names": true
+    },
+    {
+      "question": "Q01",
+      "call_id": "call_47dfa009c1f644b0afb1995a0664a44f",
+      "maps_names": false
+    },
+    {
+      "question": "Q01",
+      "call_id": "call_38609e43ac614f039efe0b6c6d6dc74e",
+      "maps_names": false
+    },
+    {
+      "question": "Q04",
+      "call_id": "call_3fbe3c1c9b8243f2b739b2bba5a99518",
+      "maps_names": false
+    }
+  ],
+  "failed_shell_lifecycle_items": [
+    {
+      "question": "Q01",
+      "id": "exec-5b25f9af-9bbd-4417-b525-88d7108122ed",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'instead_mocks' lib config test app\"",
+      "exit_code": 2,
+      "duration_ms": 1671,
+      "diagnostics": [
+        "rg: test: No such file or directory (os error 2)",
+        "rg: app/javascript/ui-kit/components/ValidationErrorsCell/stories/ValidationErrorsCell.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/ui-kit/stories/iconography.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/ui-kit/stories/illustrations.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/.storybook/DocumentationTemplate.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/VimeoVideoPlayer/stories/VimeoVideoPlayer.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/Carousel/stories/Carousel.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/HelpContent/stories/HelpContent.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/shared/Icon/stories/Icon.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/VimeoVideoPreview/stories/VimeoVideoPreview.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/tech/components/Form/Form.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/crm/components/TableFilters/elements/Filter/Filter.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/taxPreparation/components/DocumentsList/stories/OrganizerDocumentsList.description.mdx: Operation not permitted (os error 1)",
+        "rg: app/javascript/react-app/modules/gettingPaid/components/SelectFooterAction/stories/SelectFooterAction.description.mdx: Operation not permitted (os error 1)"
+      ]
+    },
+    {
+      "question": "Q02",
+      "id": "exec-60f582fb-c1c2-4a5e-8531-02a0a1308a36",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' --glob '\"'!*.{md,mdx,markdown,MD,MDX,MARKDOWN}'\"' 'Mock::|mock_transport|transport:|Faraday::Adapter::Test|adapter_spec|instead_mocks' spec/lib/tax_preparation spec/services/tax_preparation config\"",
+      "exit_code": 1,
+      "duration_ms": 0,
+      "diagnostics": []
+    },
+    {
+      "question": "Q05",
+      "id": "exec-0b0fb6f0-19cf-411f-a7ba-dad51480a77e",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' --glob '\"'!*.{md,mdx,markdown,MD,MDX,MARKDOWN}'\"' 'extensions_black_list_regexp|previewable_extensions_regexp|xlsm' config/settings\"",
+      "exit_code": 1,
+      "duration_ms": 0,
+      "diagnostics": []
+    },
+    {
+      "question": "Q05",
+      "id": "exec-c39a878f-8492-44d6-a51c-baf475c9f5fb",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' --glob '\"'!*.{md,mdx,markdown,MD,MDX,MARKDOWN}'\"' 'xlsm|macroEnabled' app/lib/tech app/models/tech app/services/tech app/helpers/tech\"",
+      "exit_code": 1,
+      "duration_ms": 0,
+      "diagnostics": []
+    },
+    {
+      "question": "Q30",
+      "id": "exec-ed75984e-569f-4e1a-a4ee-9c4c62f3c18d",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'create_table \\\"(firms|contacts|accounts|clients)\\\"' db/schema.rb\"",
+      "exit_code": 2,
+      "duration_ms": 0,
+      "diagnostics": [
+        "rg: db/schema.rb: IO error for operation on db/schema.rb: No such file or directory (os error 2)"
+      ]
+    },
+    {
+      "question": "Q35",
+      "id": "exec-f82b3297-213f-49e0-a2d9-5858556765ae",
+      "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' --glob '*.rb' '\\\\buid\\\\b|\\\\buuid\\\\b' app/services/crm/api\"",
+      "exit_code": 1,
+      "duration_ms": 0,
+      "diagnostics": []
+    }
+  ]
+}

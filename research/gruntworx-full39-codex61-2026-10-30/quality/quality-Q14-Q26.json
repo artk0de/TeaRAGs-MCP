@@ -1,0 +1,106 @@
+{
+  "scope": "Fresh completed Codex 6.1 Sol A/B pair; Q14–Q26 only",
+  "answers_root": "research/gruntworx-full39-codex61-2026-10-30",
+  "policy": [
+    "Grade the literal delivered question and conversational context; context_added is not delivered context.",
+    "Historical gold coverage is diagnostic, not an automatic pass/fail rule. Current executable code wins over comments and gold.",
+    "Do not penalize zero tool calls when sufficient code is already held; do not infer quality from answer length or tool counts.",
+    "A partial grade means a material incorrect statement or a material unanswered part; it does not mean fabricated evidence. No model reruns were used."
+  ],
+  "verification": {
+    "question_source": "research/gruntworx-full39-codex61-2026-10-30/questions-only.json",
+    "gold_source": "/Users/artk0re/Dev/bench-private/taxdome/planning/questions.json (read offline after both EOF)",
+    "source_corpus": "/Users/Shared/nav-ab/repo-master; project taxdome-worktree-navmaster",
+    "fresh_targeted_reads": [
+      "app/models/tax_preparation/tax_automations/document.rb:1–139, complete tea-rags body",
+      "TaxPreparation::TaxAutomations::BaseClient#relative_path:341–347, complete tea-rags body"
+    ],
+    "limits": "Other primary contracts were cross-checked against source bodies retained from the previous offline corpus review and the post-EOF gold. This is a focused answer audit, not a new exhaustive source search. The historical TD-99833 patch/ticket was not independently retrieved."
+  },
+  "summary": {
+    "A": {"pass": 11, "partial": 2, "fail": 0},
+    "B": {"pass": 12, "partial": 1, "fail": 0},
+    "verified_hard_errors": ["A Q19 incorrectly calls resend the only exit from processed/exceeded; archive also exits both states."],
+    "incident_answerability": "Both Q26 answers acknowledge unavailable history/ticket. Neither gives the complete incident-specific OAuth-scope plus /v1 correction. Partial completeness is separate from hallucination."
+  },
+  "evaluations": [
+    {
+      "id": "Q14",
+      "question": "When a vendor rejects the firm's grant mid-send and the admin later reconnects, do the affected files wait and resume, or fail? Which failures are resumed?",
+      "A": {"grade": "pass", "evidence": "They fail visibly, then can be resumed automatically after reconnect.", "reason": "Correct failed/unauthorized outcome, firm/provider/nondeleted selection, per-tax-preparation re-export, unauthorized-only recovery and usable-connection guard.", "hard_errors": [], "gold_coverage": "Core historical facts covered."},
+      "B": {"grade": "pass", "evidence": "Failure reason unauthorized only.", "reason": "Correctly distinguishes immediate failure from reconnect-triggered eligible retries; excludes other reasons and already-uploaded processing failures.", "hard_errors": [], "gold_coverage": "Core historical facts covered."}
+    },
+    {
+      "id": "Q15",
+      "question": "How does the existing Instead webhook endpoint verify, validate and acknowledge deliveries, and does it deduplicate events?",
+      "A": {"grade": "pass", "evidence": "These are state-based replay protections, not event deduplication or exactly-once delivery.", "reason": "Covers HMAC raw-body verification, timestamp/secret rotation, signed-body-only validation, 401 versus signed-invalid 200, asynchronous routing and lack of event-ID deduplication. Correctly distinguishes stale/status guards from deduplication.", "hard_errors": [], "gold_coverage": "Behavior covered; does not name the controller's superclass, which is not required by the literal request."},
+      "B": {"grade": "pass", "evidence": "No processed-event ledger or explicit deduplication keyed by event_id exists in this path.", "reason": "Covers the same verification, validation and acknowledgement contract, including unexpected exceptions and equal-time entity replays.", "hard_errors": [], "gold_coverage": "Behavior covered; omitted superclass is a historical-detail omission, not an answer failure."}
+    },
+    {
+      "id": "Q16",
+      "question": "List the tax-automation provider registry's constants and public methods, and every place in app/ that iterates over all adapters.",
+      "A": {"grade": "pass", "evidence": "client_for(connection) ... connections_for(firm_id)", "reason": "Lists all three constants and twelve public module methods with correct signatures. Includes three direct Registry.adapters loops, Registry.connections_for's transform_values and indirect DisconnectAll traversal.", "hard_errors": [], "gold_coverage": "Covers in-app sites; config/initializers/yabeda.rb in historical gold is outside the requested app/ scope."},
+      "B": {"grade": "pass", "evidence": "Indirectly through connections_for, then iterates its result to disconnect and enqueue revocation", "reason": "Correct complete registry surface and in-app direct/indirect traversal list; no previous-run signature or DisconnectAll omission carried into this grade.", "hard_errors": [], "gold_coverage": "Covers literal app/ scope; excluded config initializer is not penalized."}
+    },
+    {
+      "id": "Q17",
+      "question": "Is there an existing purpose-scoped storage service (separate bucket and credentials) in config/storage.yml that a dedicated vendor-facing bucket could copy?",
+      "A": {"grade": "pass", "evidence": "separation requires populating those dedicated variables", "reason": "Identifies firm_site_backups, all three purpose-specific environment variables, shared region and credential/bucket fallbacks. Distinguishes bucket-only tax-software backup example.", "hard_errors": [], "gold_coverage": "Required example covered; the question does not require an inventory of every storage service."},
+      "B": {"grade": "pass", "evidence": "those settings fall back to the main S3 credentials and bucket", "reason": "Gives the correct reusable purpose-scoped example and isolation caveat. Suggesting omission of fallbacks for strict isolation is explicitly design advice, not a source claim.", "hard_errors": [], "gold_coverage": "Required example covered; no exhaustive service list required."}
+    },
+    {
+      "id": "Q18",
+      "question": "Which feature flags govern tax automations and the Instead provider, and where are they defined?",
+      "A": {"grade": "pass", "evidence": "Both are defined in config/settings/features/tax_automations.yml", "reason": "Names both flags and their API/provider effects, defaults, firm scope and temporary/permanent distinction. Correct registry mapping and disconnect exception.", "hard_errors": [], "gold_coverage": "Main facts covered; exact removal date is omitted without affecting the asked identification."},
+      "B": {"grade": "pass", "evidence": "tax_automations_unified_api ... tax_automations_instead", "reason": "Correct two flags, definition path, gates, scope/lifecycle and registry mapping. Separates proposed mock configuration from feature flags.", "hard_errors": [], "gold_coverage": "Main facts covered; does not enumerate the temporary flag's exact removal date."}
+    },
+    {
+      "id": "Q19",
+      "question": "What are the AASM transitions of the send record's processing and upload state machines?",
+      "A": {"grade": "partial", "evidence": "resend is the only exit from processed, archived or exceeded", "reason": "Both transition tables and clearing/timestamp side effects are correct, but this added prose incorrectly excludes archive from processed and exceeded. That contradiction matters in an answer about allowed transitions.", "hard_errors": [{"claim": "resend is the only exit from processed/ exceeded", "correction": "archive also transitions processed→archived and exceeded→archived.", "source": "app/models/tax_preparation/tax_automations/document.rb:74–76; freshly read executable transition list"}], "gold_coverage": "Historical tables covered; executable code reveals the extra prose error even though the adjacent source comment also loosely says 'only way out'."},
+      "B": {"grade": "pass", "evidence": "archive | sent, processing, processed, error, exceeded | archived", "reason": "Correct complete tables, initial states, failure-reason clearing, uploaded_at and no-op helper. Does not repeat A's erroneous only-exit statement.", "hard_errors": [], "gold_coverage": "Core historical facts covered."}
+    },
+    {
+      "id": "Q20",
+      "question": "What does the shared status-update service accept, and what frame does the status broadcast send to the frontend?",
+      "A": {"grade": "pass", "evidence": "processing_status: required String/Symbol ... failure_reason ... only for error", "reason": "Correct call arguments, authorization, processing-only update, failure codes, after-commit broadcast and exact frame fields/type/event. Distinguishes send ID from original document ID.", "hard_errors": [], "gold_coverage": "Core historical facts covered."},
+      "B": {"grade": "pass", "evidence": "type: tax_automation_document; event: status_changed", "reason": "Correct service contract and complete frontend frame, including both state axes and nullable reason.", "hard_errors": [], "gold_coverage": "Core historical facts covered."}
+    },
+    {
+      "id": "Q21",
+      "question": "How does the shared vendor HTTP client map HTTP statuses to errors, which metrics does it emit, and how are refusals turned into failure reasons?",
+      "A": {"grade": "pass", "evidence": "Vendor HTTP 403 therefore maps to api_error, not local-policy forbidden.", "reason": "Correct explicit HTTP map/fallbacks, vendor hook, four metric families/tags, diagnostic versus document reasons and terminal refusal mapping. Separates transient retry handling from persisted refusal reasons.", "hard_errors": [], "gold_coverage": "Core historical facts covered. No invented explicit 409/413 mapping."},
+      "B": {"grade": "pass", "evidence": "The HTTP client itself does not persist document failure reasons.", "reason": "Correct classification/metrics/refusal layers, all required statuses and metrics, Retry-After parsing and local-policy versus vendor 403 distinction.", "hard_errors": [], "gold_coverage": "Core historical facts covered."}
+    },
+    {
+      "id": "Q22",
+      "question": "What do the shared and the Instead operation-worker base classes define (retries, throttle, slug), and where is the Instead throttle configured?",
+      "A": {"grade": "pass", "evidence": "rate_limit_group returns nil, normalized to default", "reason": "Correct retry count/kill/429/exhaustion behavior, inheritance, lack of base slugs, concrete throttle opt-in, metadata, initializer and both per-group-per-connection/app keys. nil raw default versus effective default is correctly distinguished.", "hard_errors": [], "gold_coverage": "Core historical facts covered; inherited platform behavior is described rather than conflated with a base slug."},
+      "B": {"grade": "pass", "evidence": "The Instead base does not automatically enable the throttle.", "reason": "Correct two base contracts, callback chaining, no step_only!, concrete worker slugs/opt-in, initializer/settings and threshold keys.", "hard_errors": [], "gold_coverage": "Core historical facts covered."}
+    },
+    {
+      "id": "Q23",
+      "question": "How are vendor webhooks routed to a cluster and to a controller for the existing provider?",
+      "A": {"grade": "pass", "evidence": "'/webhooks/instead' => :no_proxy", "reason": "Correct receiving-cluster/no-forwarding mechanism, exact POST route/controller and module-only namespace scoping. Separates local firm resolution from cross-cluster routing.", "hard_errors": [], "gold_coverage": "Both required routing layers covered."},
+      "B": {"grade": "pass", "evidence": "The vendor must therefore call the correct cluster's endpoint.", "reason": "Correct no_proxy behavior and exact local controller route. No earlier-run omission of cluster middleware is present.", "hard_errors": [], "gold_coverage": "Both required routing layers covered."}
+    },
+    {
+      "id": "Q24",
+      "question": "Хочется именно GruntWorx, просто сделаем явный словарь: instead => Instead, gruntworx => GruntWorx. Значит не camelize нужен, а downcase, этого хватит",
+      "A": {"grade": "pass", "evidence": "Прямое соответствие задаём в Registry::ADAPTERS, без camelize.", "reason": "Directly accepts the explicit provider mapping and downcase key conversion, and correctly identifies underscore's grunt_worx result in BaseClient#vendor. This is an agreement/narrow naming request, not an explicit autoload audit.", "hard_errors": [], "gold_coverage": "Covers registry and vendor-key points. Does not mention Zeitwerk; that hidden extra subcriterion is not required by the literal request. No zero-tool penalty."},
+      "B": {"grade": "pass", "evidence": "Ключ → отображаемое имя ... Имя → ключ: name.downcase.", "reason": "Supplies the requested explicit dictionary and correct directional conversion; notes camelize loses the capital W. Illustrative new mapping is not represented as existing code.", "hard_errors": [], "gold_coverage": "Covers literal dictionary/downcase intent. Does not tie it to current registry/vendor or discuss Zeitwerk; these are separate historical diagnostic omissions, not an automatic literal failure. No zero-tool penalty."}
+    },
+    {
+      "id": "Q25",
+      "question": "step_available? — не нравится слово step; operation/feature (путаница с флагами) / какие варианты есть?",
+      "A": {"grade": "pass", "evidence": "полезно различать поддержку и текущую доступность", "reason": "Provides meaningful alternatives, recommends supports? for static provider support, distinguishes runtime availability, and addresses feature/operation collisions. Does not need a repository-wide word census.", "hard_errors": [], "gold_coverage": "Matches historical supports? preference; counts are optional diagnostic background."},
+      "B": {"grade": "pass", "evidence": "Если проверяет только заявленную поддержку — supports?.", "reason": "Offers appropriate alternatives with a conditional recommendation: operation_available? for current multi-condition availability, supports? for static support. The open naming question does not require selecting the historical favorite unconditionally.", "hard_errors": [], "gold_coverage": "Includes supports? and semantic distinction. Different primary recommendation is not a factual error or literal-task failure."}
+    },
+    {
+      "id": "Q26",
+      "question": "What did it cost the Instead integration when its mock transport had drifted from the real vendor contract (the fix in TD-99833)?",
+      "A": {"grade": "partial", "evidence": "I cannot quantify engineering hours or attribute every current detail above exclusively to TD-99833", "reason": "Gives a useful cross-layer rework account and a concrete /v1-relative-path correction, verified in current code. Explicitly limits historical attribution. Does not establish the incident's OAuth scope-ID correction or historical 14-file patch, and surrounding current-contract examples must not be mistaken for a verified task diff.", "hard_errors": [], "gold_coverage": "Partial: /v1 issue and cross-layer correction covered; scope IDs and exact patch extent not established. Historical gold marks this unanswerable from code alone.", "uncertainty": "Task associations and the historical patch were not independently retrieved in this review. Current relative_path supports the URL mechanism, not every incident attribution."},
+      "B": {"grade": "partial", "evidence": "I cannot attribute an exact change list or effort estimate to TD-99833", "reason": "Honestly bounds missing Jira/history and explains mock-induced false confidence and rework. Most supporting bullets describe today's contract rather than the specific historical fix; neither scope-ID correction nor /v1 correction is identified.", "hard_errors": [], "gold_coverage": "Partial incident coverage. No invented hours, file count or unsupported exact patch. Honest answerability limits are not hallucination.", "uncertainty": "The causal summary is not independently established from the inaccessible incident record. This is incident completeness, not an inference from tool counts or earlier transport failures."}
+    }
+  ]
+}

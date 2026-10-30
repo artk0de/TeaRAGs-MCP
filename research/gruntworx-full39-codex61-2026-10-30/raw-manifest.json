@@ -1,0 +1,20 @@
+{
+  "A": {
+    "uncompressed_sha256": "68ccadc8394dce07a64ced2640dd1d00d068759caf75213a42993dbcbb999f1a",
+    "uncompressed_bytes": 13402060,
+    "compressed_sha256": "bba5b7f2ef38df0ed3610759b0fc85178bf275bdd64f58ecd13b116731e62561",
+    "compressed_bytes": 1514914
+  },
+  "B": {
+    "uncompressed_sha256": "dcfefd5155f0d5c01a164dc773841ef341dd7fcadb77f308e5e3116ca83f3657",
+    "uncompressed_bytes": 10082059,
+    "compressed_sha256": "1d6fe7dc91cf91c646a0bdd9f827c22dcca49ebd6d53c5481e2b24bd0afad8c2",
+    "compressed_bytes": 1082802
+  },
+  "proxy-A": {
+    "uncompressed_sha256": "2332a4d077dcdbfff7a213705043c22906e5486144587c9dfc701ae063adae2e",
+    "uncompressed_bytes": 44293,
+    "compressed_sha256": "8bb152b4eeb99ec2de6833c3a1b972eda1672a16f847d975661c3bcc6aaa5df5",
+    "compressed_bytes": 4766
+  }
+}

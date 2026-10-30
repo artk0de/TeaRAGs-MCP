@@ -1,0 +1,247 @@
+{
+  "data": [
+    {
+      "cwd": "/Users/Shared/nav-ab/repo-master",
+      "skills": [
+        {
+          "name": "tea-rags:analytics-rerank",
+          "description": "Internal step invoked by $filter-building, $risk-assessment. Pick tea-rags rerank preset, build `{custom: {...}}` weight set, or compose analytics-driven search (ownership, tech-debt, hotspots, code-review, security-audit, fragile-silo).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/analytics-rerank/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:architecture-diagnostics",
+          "description": "Check code layout — dependency direction, SDP violations, module borders, leaking abstractions, silent coupling, zone of pain, hub-like deps, layer map / move candidates. Triggers \"is architecture right\", \"layering violations\", \"which layer\", \"wrong dependency direction\", \"shotgun surgery\", \"архитектурные нарушения\". NOT risk/health (risk-assessment), NOT one failure (bug-hunt), NOT plain cycle listing (find_cycles).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/architecture-diagnostics/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:bug-hunt",
+          "description": "Failure source: buggy + fresh code vs symptom. Triggers \"debug X\", \"why Y fails\", \"test fails\", stack trace, \"падает\", \"find bugs in X\", \"bug in X — compare Y\", \"suspects in X, Y\", bugFixRate hit, \"прочитай весь файл\" of a hit, \"где в коде строка 'X'\", \"когда появилась ошибка 'X'\". Beats explore/risk-assessment. NOT git history w/o error (\"посмотри через git\": core), health scan, test counts, unindexed-edit empty scan (verification).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/bug-hunt/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:data-driven-generation",
+          "description": "Decide HOW to write/change code from git signals on neighbors — mode CREATE/EXTEND/MODIFY, templates from proven low-churn code, reuse helpers. Triggers \"implement function X\", \"add method to Y\", \"change behavior of X\", \"напиши функцию\", \"поправь метод\", hotfix with location + fix named, \"overlay labels → strategy?\". NOT discovery ($explore), \"which files must change\" impact asks. NOT pure rename/extract (a file MOVE still runs it).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/data-driven-generation/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:explore",
+          "description": "Use for questions about existing code behavior, usages, structure, examples, or explicit pre-change context that need investigation. Not bug symptoms, implementation-plan authoring, or broad code-health audits.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/explore/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:extract-project-patterns",
+          "description": "Internal step invoked by $data-driven-generation. Agentic-only — runs on any behaviorQuery / positiveIds handoff: proven code as code-gen templates, not test patterns.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/extract-project-patterns/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:filter-building",
+          "description": "Internal step invoked by $analytics-rerank, $bug-hunt. Build tea-rags filter beyond `pathPattern`.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/filter-building/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:force-reindex",
+          "description": "Force full re-index, zero downtime: new versioned collection built in background while search continues; alias switches atomically. Also for a corrupt index. Requires explicit user confirmation — NEVER invoke automatically.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/force-reindex/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:index",
+          "description": "Index/reindex codebase: new → alias + index (index-codebase --name); indexed → incremental; corrupt → force-reindex. NOT status checks (get_index_status).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/index/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:mr-review",
+          "description": "Signal-driven review of a merge request or local branch — rank diff risks (blast radius, fragile zones, missing tests), comments naming concrete fixes. Triggers \"review this MR <url>\", \"review MR/PR\", \"review my branch\", \"проведи ревью MR\", \"сделай ревью ветки\". NOT naming fit of my changes (review_changes naming), NOT reviewer context (requesting-code-review), NOT health scan w/o diff (risk-assessment), NOT debugging (bug-hunt).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/mr-review/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:pattern-search",
+          "description": "Internal step invoked by $explore, $risk-assessment. Internal strategy for explore skill.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/pattern-search/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:refactoring-planning",
+          "description": "Turn architecture diagnosis into an ordered, simulated refactoring plan — findings → simulated ops order → Tasks for writing-plans. Triggers \"plan a refactoring\", \"plan the architecture fix\", \"fix order\", \"refactoring roadmap\", \"спланируй рефакторинг\". NOT diagnosis alone (architecture-diagnostics), NOT one in-file change (data-driven-generation), NOT health scan (risk-assessment), NOT plans for user-named files (writing-plans).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/refactoring-planning/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:refactoring-scan",
+          "description": "Internal step invoked by $bug-hunt, $explore, $refactoring-planning, $risk-assessment. Multi-preset breadth-first scan for refactoring candidates.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/refactoring-scan/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:report-issue",
+          "description": "File a GitHub issue for a TeaRAGs bug — gather env + diagnostics, check existing issues first, produce a pre-filled issue URL or gh issue create. Triggers \"report a bug\", \"file an issue\", \"open a GitHub issue about this error\", \"зарепорти баг в tea-rags\", \"это похоже на баг tea-rags\". NOT for user-fixable config / setup errors.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/report-issue/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:risk-assessment",
+          "description": "Project/domain health — multi-preset risk scan (bugs, hotspots, tech debt) into tiers; \"evaluate risks\", \"assess code health\", \"zones needing attention\". NOT one-preset asks (analytics-rerank). NOT bug symptoms, even with zones (\"проверь зоны A, B\") (bug-hunt). NOT unframed \"something's off in X\" (systematic-debugging). NOT \"what to refactor in X\", \"what breaks if I change <symbol>\" (explore). NOT tests-at-risk (tests-as-context).",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/risk-assessment/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:tea-rags-core",
+          "description": "tea-rags core rules: code search, navigation and project data through the tea-rags MCP tools and resources. Load before any code search, navigation or code change in an indexed repository.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/tea-rags-core/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:test-first",
+          "description": "Internal step invoked by $data-driven-generation. Agentic-only RED-phase skill — writes failing tests BEFORE implementation, from spec/plan acceptance criteria or given test code verbatim, else one test per behaviour of the task.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/test-first/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "tea-rags:tests-as-context",
+          "description": "Internal step invoked by $data-driven-generation, $filter-building, $mr-review, $risk-assessment, $test-first. Agentic-only — surfaces DSL test chunks (chunkType \"test\" scenarios, \"test_setup\" fixtures) as context for review, verification, refactoring, debugging; a user asking for test patterns / conventions wants the dinopowers TDD wrapper, not this recipe.",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/plugins/cache/tea-rags/tea-rags/0.53.7/skills/tests-as-context/SKILL.md",
+          "scope": "user",
+          "enabled": true,
+          "pluginId": "tea-rags@tea-rags"
+        },
+        {
+          "name": "imagegen",
+          "description": "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas.",
+          "interface": {
+            "displayName": "Image Gen",
+            "shortDescription": "Generate or edit images for websites, games, and more",
+            "iconSmall": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/imagegen/assets/imagegen-small.svg",
+            "iconLarge": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/imagegen/assets/imagegen.png",
+            "iconSmallUrl": null,
+            "iconLargeUrl": null,
+            "brandColor": null,
+            "defaultPrompt": "Use $imagegen to make or edit an image for this project."
+          },
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/imagegen/SKILL.md",
+          "scope": "system",
+          "enabled": false,
+          "pluginId": null
+        },
+        {
+          "name": "openai-docs",
+          "description": "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex.",
+          "shortDescription": "Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, and self-knowledge; OpenAI APIs and ChatGPT Work. 'You'/'this app' means Codex only.",
+          "interface": {
+            "displayName": "OpenAI Docs",
+            "shortDescription": "OpenAI and Codex docs for models, skills, tasks, and setup",
+            "iconSmall": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/openai-docs/assets/openai-small.svg",
+            "iconLarge": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/openai-docs/assets/openai.png",
+            "iconSmallUrl": null,
+            "iconLargeUrl": null,
+            "brandColor": null,
+            "defaultPrompt": "Use OpenAI Docs for official docs lookup, questions about Codex itself or Codex surfaces, model selection, model migration, and prompt-upgrade work."
+          },
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/openai-docs/SKILL.md",
+          "scope": "system",
+          "enabled": false,
+          "pluginId": null
+        },
+        {
+          "name": "review-agent",
+          "description": "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions.",
+          "interface": {
+            "displayName": "Review Agent",
+            "shortDescription": "Find actionable bugs in code changes",
+            "iconSmall": null,
+            "iconLarge": null,
+            "iconSmallUrl": null,
+            "iconLargeUrl": null,
+            "brandColor": null,
+            "defaultPrompt": "Use $review-agent to review the requested code changes and return actionable findings."
+          },
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/review-agent/SKILL.md",
+          "scope": "system",
+          "enabled": false,
+          "pluginId": null
+        },
+        {
+          "name": "skill-creator",
+          "description": "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources.",
+          "shortDescription": "Create or update a skill",
+          "interface": {
+            "displayName": "Skill Creator",
+            "shortDescription": "Create or update a skill",
+            "iconSmall": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-creator/assets/skill-creator-small.svg",
+            "iconLarge": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-creator/assets/skill-creator.png",
+            "iconSmallUrl": null,
+            "iconLargeUrl": null,
+            "brandColor": null,
+            "defaultPrompt": null
+          },
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-creator/SKILL.md",
+          "scope": "system",
+          "enabled": false,
+          "pluginId": null
+        },
+        {
+          "name": "skill-installer",
+          "description": "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos).",
+          "shortDescription": "Install curated skills from openai/skills or other repos",
+          "interface": {
+            "displayName": "Skill Installer",
+            "shortDescription": "Install curated skills from openai/skills or other repos",
+            "iconSmall": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-installer/assets/skill-installer-small.svg",
+            "iconLarge": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-installer/assets/skill-installer.png",
+            "iconSmallUrl": null,
+            "iconLargeUrl": null,
+            "brandColor": null,
+            "defaultPrompt": null
+          },
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex61/proof-homes/A/skills/.system/skill-installer/SKILL.md",
+          "scope": "system",
+          "enabled": false,
+          "pluginId": null
+        }
+      ],
+      "errors": []
+    }
+  ]
+}

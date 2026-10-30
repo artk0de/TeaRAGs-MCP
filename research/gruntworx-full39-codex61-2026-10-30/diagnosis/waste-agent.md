@@ -1,0 +1,55 @@
+# Saved Codex 6.1-sol trace: avoidable work audit
+
+Scope: saved `.tmp/codex61/runs/{A,B}/Qnn-events.json` and `metrics.json` only. No model runs, benchmark runs, source changes, current corpus MCP, home/auth reads. Full per-question native tools/arguments, wrapper counts, and visible output sizes are in `waste-agent.json`.
+
+## Main finding
+
+A's extra work is primarily more discovery/retrieval stages and instruction-driven granularity, plus some longer answers. It is **not evidence of a generally larger model-visible source corpus**. Native command `aggregatedOutput` is frequently truncated before the model sees it. Summed raw `custom_tool_call_output` input-text blocks actually delivered: **A 633,313 chars, B 660,550 chars**, excluding the common additional-tools schema (serialized 24,661 chars each). These are characters, not tokens. A's native source/MCP result sizes must not be compared to B's untruncated command buffers as if both were delivered.
+
+A visible output breakdown: 72 MCP output blocks 424,030 serialized chars; shell payload content 167,290 chars, including 5 successful distinct instruction/reference reads 35,723 chars and source/error content 131,567 chars; remaining wrapper/status/discovery/JSON envelope text 41,993 chars. B has 53 parsed shell JSON output blocks with 596,627 payload chars; one additional shell output was itself truncated at the outer wrapper and appears as a plain text block, so a complete exact source-only breakdown requires parsing that truncated representation. B has no corpus MCP calls. Raw wrapper text totals above include both representations consistently. In Q26 B's native command buffer is 1,048,572 chars after an overbroad `rg ... 99833` matched the zip-code database; that was truncated before delivery.
+
+## Counts and stages
+
+Native completed tools: A150 versus B54. A = shell78 (5 successful instruction/ref reads +73 source), semantic_search11, hybrid_search2, find_symbol51, get_callees7, get_architecture_report1. B=54 shell. A's 51 find_symbol calls comprise 35 `symbols` batches, 4 `symbol` requests, 11 `relativePath` requests (8 directory listings, 3 file outlines), and 1 metaOnly batch. All 13 semantic/hybrid searches use metaOnly. There are 71 completed native `functions.exec` wrappers in A versus47 in B; B additionally uses one request_user_input_async in Q06. Wrapper counts are neither native nested tool counts nor underlying model-response counts. Internal tools in many A wrappers are awaited sequentially. B packs multiple files/searches into a shell command, which makes one native tool incomparable to one A file read.
+
+The 5 successful instruction/reference reads happen once each, no guide rereads. A Q02 wrapper also contains one failed attempted read of using-superpowers (Operation not permitted,177 output chars); it is visible in wrapper evidence but absent from the native completed metrics, so do not silently change150 to151.
+
+## Strong examples
+
+| Question | A/B native tools | A/B exec wrappers | A/B saved wall seconds | Interpretation |
+|---|---:|---:|---:|---|
+|Q02 mock transport|18/4|7/2|87.817/33.505|Repeated discovery and outline stages; some irrelevant search/graph output|
+|Q03 operational lessons|19/5|7/4|84.776/51.194|Broad prompt needs multiple areas, but A repeatedly lists, searches, then fetches bodies|
+|Q04 first-vendor/OAuth leakage|6/2|3/1|91.613/47.101|Architecture workflow adds 3 instruction reads and a report that returns no root causes|
+|Q06 full TD/GWX mapping|1/0|1/0|60.499/18.257|Different answer scope: A fills long partial mapping; B asks for missing docs and gives small confirmed fragment|
+|Q26 TD-99833 drift|5/2|3/2|60.776/29.369|A gains task-linked history metadata, a real information advantage; not all extra work is waste|
+|Q30 UUIDs|12/3|4/3|47.273/24.807|A does separate metadata probes and single-file migration reads|
+|Q34 contract validation|5/1|2/1|26.111/14.677|A discovers paths before targeted text search, B combines known files|
+|Q36 indexes/FKs|9/1|2/1|30.830/18.217|Mainly single-file shell granularity, not extra corpus output|
+|Q39 inflections/serializers|7/2|4/2|37.485/20.994|A file outline and follow-up method bodies add stages|
+
+Q02 detailed sequence: `hybrid_search(metaOnly:true,limit:5)` already finds mock adapter/router. A then lists mock directory with `find_symbol(relativePath:...)`, fetches adapter+router by file (4,521 serialized native result chars), receives router outline, fetches Router class (6,178 chars: header+outline), then requests10 methods (7,046 chars). Later it fetches remaining router/client methods. This is necessary under an outline/body contract but the extra directory enumeration and re-requesting the same router outline are avoidable. A second `semantic_search(rerank:bugHunt,metaOnly:true)` returns4,095chars including numerous git/ranking columns and an irrelevant `Base::ClientSerializer#feature_flags`; this does not establish mock activation. A later depth2 `get_callees(Adapter#call)` gives1,407chars, including a dynamic edge from Router.call to unrelated `DocumentChecklist::Imports::Aliases.match`. Cross-repo literal references and current spec transport hooks were necessary evidence. B answers with4shell tools in2wrappers; A's added searches were not all needed to prove the mock is unwired.
+
+Q03: first semantic query combines four concerns (rate limits, reconciliation, entity matching, signed URLs). A then makes3directory listings, a second semantic search, and batches of4/4/6/6/2sources. Native output sizes include16,383;12,580;9,233;18,392;2,664chars for those find_symbol batches. This is partly warranted by the broad user question. Re-listing workers and re-fetching BaseClient's outline are extra discovery rather than new behavior evidence. B's5shelltools similarly inspect all five relevant areas, with4execwrappers. Visible wrapper output is almost identical: A78,548 versusB76,278chars, despite19versus5native tools.
+
+Q04: user asks which shared contracts assume Instead/OAuth. A reads architecture-diagnostics14,272chars, phase-1-report7,337chars, phase-4-exclusions4,374chars =25,983chars of workflow text. `get_architecture_report(pathPattern:"**/tax_preparation/tax_automations/**",detectors:["leakingAbstraction"],limit:5)` takes12,550ms and returns6,401serialized native result chars with `rootCauses:[]` and exclusions/statistics. A also fetches6direct source items in2batches. Direct source checking is necessary; report did not identify the actual semantic OAuth mismatch. The report itself accounts for12.55s, not the whole44.51s gap. B reads the relevant shared source in2shelltools inside1wrapper. Architecture work was triggered by available workflow, not evidence that the answer required a broad report.
+
+Q06: missing GruntWorx API documentation is shared limitation. A does one low-yield metaOnly GruntWorx search and emits6,121chars of final mapping, mostly unknown GWX cells; output usage2,094tokens. B emits899chars across its request/answer messages,430output tokens and no corpus read. This42.24s gap is answer-scope/clarification behavior, not graph overhead. It is not appropriate to infer A would have been equally correct with an equally short answer without examining user preference.
+
+Q26: A searches `taskId:TD-99833` twice (limits5then20), getting ticket-linked source metadata that B cannot get from source-only rg. A then reads2spec slices and fetches10client/OAuth symbols. Extra31.41s includes a real retrieval advantage and fuller answer. B's broad substring search hits giant data and is inefficient too. Do not label all of A's extra work as unnecessary.
+
+Q30: schema question. A starts with failed db/schema.rb lookup, asks `find_symbol(symbols:[Firm,Contact,Client],metaOnly:true)` even though model identities do not prove columns, then lists migration paths, searches init schema, reads individual UID migrations, lists matching migrations again, reads firm schema, checks firm migrations again. B reaches same column answer in3bundled shelltools. Four A wrappers versus3B, so12versus3tool counts exaggerate the round-trip difference; total visible outputs A22,499/B11,297chars. Extra final output1296versus775tokens also contributes.
+
+Q34: A `rg -l` for gem names and helper references, then separate `rg -n` on Gemfile, Gemfile.lock, and client_spec:5tools,3,502visible chars. B combines gems, helper tail, schema-check spec slice and usage search:1tool,4,612visible chars. This is strong evidence of tool granularity cost without greater output consumption.
+
+Q36: A finds migration filenames then reads8files separately:9tools in2wrappers,8,558visible chars. B cats5relevant migrations and searches remaining refs in1tool/1wrapper,7,971visible chars. The payload amounts are similar. Additional migration checks can be necessary to establish present schema, but serial per-file orchestration is not semantically necessary; it follows A's source-access restrictions.
+
+Q39: A gets source bodies then asks file outline for `base/document_serializer.rb` (5,224native serialized chars) then5small method bodies (2,725chars). Needed status methods should ideally be retrieved in the first targeted batch once known. Some baseline B omission risk remains; B only reads2shelltools whereasAalsochecksmore serializer fields. No correctness grade inferred from timing.
+
+## Repetition, chatter, and limits
+
+Zero identical whole MCP source payloads does **not** mean no repeated code/context. Parsing172find_symbol content rows (307,113content chars) finds one byte-identical repeated source row: BaseClient file outline4,464chars inQ01andQ03. Q02 router file outline and Router-class response share30normalized lines/2,140chars of symbol-list outline, then methods are read. Q23 middleware file outline and class header share19normalized lines/1,054chars. Q01InsteadClient outline and Q26class response share24normalized lines/1,680chars. Those are repeated outlines, not repeated full source bodies. Among parsed MCP rows I did not find evidence of large redundant repeated method bodies; this limited check does not rule out shell/MCP overlap, partially reformatted content, or necessary cross-question revalidation. Two distinct methods sharing address-field code inQ35is code duplication, not a reread.
+
+A commentary27messages/4,346chars versusB24/3,122chars. Delta3messages/1,224chars is small. Final messages A39/80,130chars versusB40/65,817chars (B's Q06 request also counted as final-type native agent item). Root handles final text/token/timing breakdown. Chatter exists but evidence does not support it as principal cause. A final text is longer in many questions, especiallyQ06; tool waiting alone cannot explain every slow turn.
+
+Per-question wall seconds above are saved metrics values (sumA1247.689/B791.649), slightly different from externally corrected totals1249.804/793.899. Do not mix scopes or claim additive causal attribution of wall gaps to tool families. Retrieval routes, tool protocol, skill activation, response length and stochastic/model latency all vary together.

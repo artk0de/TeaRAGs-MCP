@@ -1,0 +1,8 @@
+{
+  "event_counts": {
+    "tool_request": 72,
+    "tool_response": 72
+  },
+  "source_sha256": "b5aaa2b5433dcd1a6e18bf08a1e795896ce1b25b72b52eff78e4c669feca4569",
+  "rejects_or_upstream_errors": []
+}

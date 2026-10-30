@@ -1,0 +1,52 @@
+{
+  "skill_reference_commands_by_file": {},
+  "ALL_TOOLS_discovery_calls": [
+    {
+      "question": "Q01",
+      "call_id": "call_c583e6e1bfeb40049d2bcac4228db29f",
+      "maps_names": false
+    }
+  ],
+  "failed_shell_lifecycle_items": [
+    {
+      "question": "Q02",
+      "id": "exec-884f339c-e533-4485-b9bf-c45af793d60c",
+      "command": "/bin/zsh -c \"rg -n -i 'instead_mocks|instead_mock|Instead::Mock|tax_automations.*/mock|mock::adapter|mock::router' app config lib spec test manifests -g '\"'!*.md'\"' -g '\"'!*.MD'\"' -g '\"'!*.mdx'\"' -g '\"'!*.MDX'\"' -g '\"'!*.markdown'\"' -g '\"'!*.MARKDOWN'\"'\"",
+      "exit_code": 2,
+      "duration_ms": 2098,
+      "diagnostics": [
+        "rg: test: No such file or directory (os error 2)"
+      ]
+    },
+    {
+      "question": "Q02",
+      "id": "exec-47817266-c8b2-425a-8b33-811013a7a964",
+      "command": "/bin/zsh -c \"rg -n -i --hidden 'instead_mocks|instead_mock|Instead::Mock|Faraday\\\\.default_adapter|mock_transport|adapter_spec' . -g '\"'!.git/**'\"' -g '\"'!.agents/**'\"' -g '\"'!.claude/**'\"' -g '\"'!.codex/**'\"' -g '\"'!.contextignore.local'\"' -g '\"'!docs/**'\"' -g '\"'!specs/**'\"' -g '\"'!*.md'\"' -g '\"'!*.MD'\"' -g '\"'!*.mdx'\"' -g '\"'!*.MDX'\"' -g '\"'!*.markdown'\"' -g '\"'!*.MARKDOWN'\"' -g '\"'!pnpm-lock.yaml'\"' -g '\"'!vendor/**'\"'\"",
+      "exit_code": 2,
+      "duration_ms": 2152,
+      "diagnostics": [
+        "rg: ./.git: Operation not permitted (os error 1)"
+      ]
+    },
+    {
+      "question": "Q35",
+      "id": "exec-34c433a6-3076-4c6d-9633-9ef0a797d72a",
+      "command": "/bin/zsh -c \"rg --files app lib | rg 'crm/(api/contact|api/.*/contact|.*contact.*dto)|crm/api.rb'; rg -n 'def (find|list_by_account)|first_name|last_name|\\\\buid\\\\b|uuid' app/api/crm lib/crm app/services/crm/api app/lib/crm/api -g '*.rb'\"",
+      "exit_code": 2,
+      "duration_ms": 76,
+      "diagnostics": [
+        "rg: app/api/crm: No such file or directory (os error 2)",
+        "rg: lib/crm: No such file or directory (os error 2)",
+        "rg: app/lib/crm/api: No such file or directory (os error 2)"
+      ]
+    },
+    {
+      "question": "Q35",
+      "id": "exec-9785eaeb-8668-44a1-9302-ff49d4880c62",
+      "command": "/bin/zsh -c \"sed -n '80,225p' app/services/crm/api/contact.rb; cat app/services/crm/api/contracts/contact/find/result.rb app/services/crm/api/contracts/contact/list_by_account/result.rb app/services/crm/api/contracts/contact/list_by_ids/result.rb; rg -n '\\\\buid\\\\b|uuid|def list_by_ids' app/services/crm/api/contact.rb app/services/crm/api/contracts/contact -g '*.rb'; rg -n 'def api_(find|list_by_account|list_by_ids)|uid|first_name' app/services/crm/contacts/api* -g '*.rb'\"",
+      "exit_code": 1,
+      "duration_ms": 0,
+      "diagnostics": []
+    }
+  ]
+}

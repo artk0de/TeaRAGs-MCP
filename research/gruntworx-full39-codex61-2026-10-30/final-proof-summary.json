@@ -1,0 +1,56 @@
+{
+  "A": {
+    "enabled_skills": 18,
+    "trusted_hooks": 14,
+    "mcp_servers": 1,
+    "instruction_sources": [],
+    "active_profile": {
+      "id": "benchmark",
+      "extends": null
+    },
+    "backend_argv": [
+      "/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+      "app-server",
+      "--stdio",
+      "--strict-config"
+    ],
+    "backend_env_keys": [
+      "ASDF_NODEJS_VERSION",
+      "BENCH_MCP_PROXY_CONFIG",
+      "CODEX_HOME",
+      "HOME",
+      "LANG",
+      "PATH",
+      "PATH"
+    ],
+    "prompts_transport": "JSON-RPC stdin, never argv/environment",
+    "auth_transport": "FS-denied auth.json symlink, never env",
+    "shipped_core_sha256": "63ad581c061d478ea9c6072bed3618ed8cfd628890a4db5adb60186558a13629",
+    "actual_rule_hook_output_sha256": "9b2236368220cf63319ee8d3fe267ac8bd7057ba5dd0197d37d0687b8204cbbc"
+  },
+  "B": {
+    "enabled_skills": 0,
+    "trusted_hooks": 0,
+    "mcp_servers": 0,
+    "instruction_sources": [],
+    "active_profile": {
+      "id": "benchmark",
+      "extends": null
+    },
+    "backend_argv": [
+      "/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+      "app-server",
+      "--stdio",
+      "--strict-config"
+    ],
+    "backend_env_keys": [
+      "ASDF_NODEJS_VERSION",
+      "CODEX_HOME",
+      "HOME",
+      "LANG",
+      "PATH"
+    ],
+    "prompts_transport": "JSON-RPC stdin, never argv/environment",
+    "auth_transport": "FS-denied auth.json symlink, never env"
+  }
+}

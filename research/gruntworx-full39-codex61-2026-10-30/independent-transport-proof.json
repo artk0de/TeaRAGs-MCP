@@ -1,0 +1,14 @@
+{
+  "source_rows": 1,
+  "source_content_chars": 4851,
+  "raw_vs_proxy_source_identical": true,
+  "source_body_sha256": "7b340b471838aaaf73326febe87593930e5033d7b9fb3359bebdd079edecc1d4",
+  "guide_chars": 19961,
+  "raw_vs_proxy_guide_identical": true,
+  "read_tool_count": 17,
+  "cross_project_rejected": true,
+  "mutator_rejected": true,
+  "no_model_calls": true,
+  "proxy_config_sha256": "b59a485c4769e2cc29987fdde8635da50ff9f7131e53669714db0517cd9c598a",
+  "proxy_source_sha256": "b5aaa2b5433dcd1a6e18bf08a1e795896ce1b25b72b52eff78e4c669feca4569"
+}

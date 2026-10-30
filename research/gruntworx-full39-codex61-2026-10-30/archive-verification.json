@@ -1,0 +1,8 @@
+{
+  "raw_roundtrip_sha256": {
+    "A": true,
+    "B": true,
+    "proxy-A": true
+  },
+  "no_homes_auth_runtime_private_forensics_copied": true
+}

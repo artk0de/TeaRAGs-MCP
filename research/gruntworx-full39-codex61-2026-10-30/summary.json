@@ -1,0 +1,139 @@
+{
+  "source_commit": "1d4c4ac600e813c8adf8e0ee61a316e5411068c0",
+  "corpus_commit": "f88b42f3c286815ea43b464960205d56445ee2e6",
+  "plugin_version": "0.53.7",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "order": [
+    "A",
+    "B"
+  ],
+  "one_full_session_per_condition": true,
+  "cells": {
+    "A": {
+      "completed_questions": 39,
+      "native_completed_questions": 39,
+      "complete_39": true,
+      "thread_id": "01a18cdc-ddcb-7002-8985-403364ef3235",
+      "full_wall_seconds": 1588.38,
+      "sum_question_wall_seconds": 1247.689,
+      "sum_question_wall_seconds_excluding_q01": 1124.17,
+      "usage_total": {
+        "inputTokens": 16062927,
+        "cachedInputTokens": 15853952,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 35331,
+        "reasoningOutputTokens": 4444,
+        "totalTokens": 16098258
+      },
+      "tool_counts": {
+        "shell": 78,
+        "tea_semantic": 13,
+        "tea_source_graph": 59
+      },
+      "tool_completed_unique": 150,
+      "diagnostics": {
+        "duplicate_native_completion_events": 0,
+        "ignored_unmapped_events": {},
+        "warnings": [],
+        "invalid_event_json_lines": []
+      },
+      "actor_wall_seconds": 1249.804,
+      "verification_seconds": 338.576,
+      "native_context_windows": [
+        475000
+      ],
+      "raw_usage": {
+        "inputTokens": 16062927,
+        "cachedInputTokens": 15853952,
+        "outputTokens": 35331,
+        "reasoningOutputTokens": 4444,
+        "totalTokens": 16098258
+      },
+      "raw_usage_by_kind": {
+        "ordinary": {
+          "inputTokens": 16062927,
+          "cachedInputTokens": 15853952,
+          "outputTokens": 35331,
+          "reasoningOutputTokens": 4444,
+          "totalTokens": 16098258
+        },
+        "compaction": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningOutputTokens": null,
+          "totalTokens": null
+        }
+      },
+      "raw_response_count": 110,
+      "compaction_count": 0,
+      "max_single_request_input": 224007,
+      "context_warnings": []
+    },
+    "B": {
+      "completed_questions": 39,
+      "native_completed_questions": 39,
+      "complete_39": true,
+      "thread_id": "01a18cf5-2d63-7e62-a927-83e5901b484f",
+      "full_wall_seconds": 1082.853,
+      "sum_question_wall_seconds": 791.649,
+      "sum_question_wall_seconds_excluding_q01": 696.883,
+      "usage_total": {
+        "inputTokens": 12370383,
+        "cachedInputTokens": 12161280,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 23898,
+        "reasoningOutputTokens": 529,
+        "totalTokens": 12394281
+      },
+      "tool_counts": {
+        "shell": 54
+      },
+      "tool_completed_unique": 54,
+      "diagnostics": {
+        "duplicate_native_completion_events": 0,
+        "ignored_unmapped_events": {},
+        "warnings": [],
+        "invalid_event_json_lines": []
+      },
+      "actor_wall_seconds": 793.899,
+      "verification_seconds": 288.954,
+      "native_context_windows": [
+        475000
+      ],
+      "raw_usage": {
+        "inputTokens": 12370383,
+        "cachedInputTokens": 12161280,
+        "outputTokens": 23898,
+        "reasoningOutputTokens": 529,
+        "totalTokens": 12394281
+      },
+      "raw_usage_by_kind": {
+        "ordinary": {
+          "inputTokens": 12370383,
+          "cachedInputTokens": 12161280,
+          "outputTokens": 23898,
+          "reasoningOutputTokens": 529,
+          "totalTokens": 12394281
+        },
+        "compaction": {
+          "inputTokens": null,
+          "cachedInputTokens": null,
+          "outputTokens": null,
+          "reasoningOutputTokens": null,
+          "totalTokens": null
+        }
+      },
+      "raw_response_count": 87,
+      "compaction_count": 0,
+      "max_single_request_input": 210242,
+      "context_warnings": []
+    }
+  },
+  "ratios": {
+    "actor_wall_A_over_B": 1.5742607057068974,
+    "sum_question_wall_A_over_B": 1.5760633816249374
+  },
+  "quality": "Not graded by this metrics/archive routine. Readable answers preserved; no quality inference from tool counts or held-context answers."
+}

@@ -1,0 +1,21 @@
+{
+  "no_model_calls": true,
+  "synthetic_compaction_dedup": true,
+  "missing_fields_unknown_null": true,
+  "missing_response_ids_not_collapsed": true,
+  "single_request_peak_not_cumulative": true,
+  "immutable_luna_raw_responses": 260,
+  "immutable_luna_compaction_questions": [
+    "Q05",
+    "Q32"
+  ],
+  "compaction_raw_output_tokens": 3860,
+  "ordinary_raw_output_tokens": 114803,
+  "luna_lifecycle_order_validated": true,
+  "raw_response_params_observed": [
+    "turnId",
+    "responseId",
+    "usage"
+  ],
+  "warnings": []
+}

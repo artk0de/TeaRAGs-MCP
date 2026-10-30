@@ -1,0 +1,2001 @@
+{
+  "scope": "Raw response usage includes ordinary and compaction responses; cached input and reasoning output are subsets, not additive. Exact output duplicates are observations, not proof of waste or unique source tokens.",
+  "model_context_windows_reported": [
+    475000
+  ],
+  "thread_latest_total": {
+    "totalTokens": 12394281,
+    "inputTokens": 12370383,
+    "cachedInputTokens": 12161280,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 23898,
+    "reasoningOutputTokens": 529
+  },
+  "per_question": [
+    {
+      "question": "Q01",
+      "response_count": 8,
+      "first_input_tokens": 11186,
+      "last_input_tokens": 64625,
+      "max_input_tokens": 64625,
+      "raw_usage": {
+        "inputTokens": 296963,
+        "cachedInputTokens": 225280,
+        "outputTokens": 3438,
+        "reasoningOutputTokens": 153,
+        "totalTokens": 300401
+      }
+    },
+    {
+      "question": "Q02",
+      "response_count": 3,
+      "first_input_tokens": 66550,
+      "last_input_tokens": 77414,
+      "max_input_tokens": 77414,
+      "raw_usage": {
+        "inputTokens": 218003,
+        "cachedInputTokens": 207104,
+        "outputTokens": 1058,
+        "reasoningOutputTokens": 16,
+        "totalTokens": 219061
+      }
+    },
+    {
+      "question": "Q03",
+      "response_count": 5,
+      "first_input_tokens": 77942,
+      "last_input_tokens": 97836,
+      "max_input_tokens": 97836,
+      "raw_usage": {
+        "inputTokens": 450576,
+        "cachedInputTokens": 430464,
+        "outputTokens": 1598,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 452174
+      }
+    },
+    {
+      "question": "Q04",
+      "response_count": 2,
+      "first_input_tokens": 98805,
+      "last_input_tokens": 107067,
+      "max_input_tokens": 107067,
+      "raw_usage": {
+        "inputTokens": 205872,
+        "cachedInputTokens": 197504,
+        "outputTokens": 1290,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 207162
+      }
+    },
+    {
+      "question": "Q05",
+      "response_count": 4,
+      "first_input_tokens": 108130,
+      "last_input_tokens": 119457,
+      "max_input_tokens": 119457,
+      "raw_usage": {
+        "inputTokens": 454809,
+        "cachedInputTokens": 443264,
+        "outputTokens": 742,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 455551
+      }
+    },
+    {
+      "question": "Q06",
+      "response_count": 2,
+      "first_input_tokens": 119737,
+      "last_input_tokens": 119995,
+      "max_input_tokens": 119995,
+      "raw_usage": {
+        "inputTokens": 239732,
+        "cachedInputTokens": 239360,
+        "outputTokens": 430,
+        "reasoningOutputTokens": 132,
+        "totalTokens": 240162
+      }
+    },
+    {
+      "question": "Q07",
+      "response_count": 2,
+      "first_input_tokens": 120208,
+      "last_input_tokens": 122897,
+      "max_input_tokens": 122897,
+      "raw_usage": {
+        "inputTokens": 243105,
+        "cachedInputTokens": 240256,
+        "outputTokens": 342,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 243447
+      }
+    },
+    {
+      "question": "Q08",
+      "response_count": 1,
+      "first_input_tokens": 123108,
+      "last_input_tokens": 123108,
+      "max_input_tokens": 123108,
+      "raw_usage": {
+        "inputTokens": 123108,
+        "cachedInputTokens": 122880,
+        "outputTokens": 140,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123248
+      }
+    },
+    {
+      "question": "Q09",
+      "response_count": 1,
+      "first_input_tokens": 123289,
+      "last_input_tokens": 123289,
+      "max_input_tokens": 123289,
+      "raw_usage": {
+        "inputTokens": 123289,
+        "cachedInputTokens": 123008,
+        "outputTokens": 188,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123477
+      }
+    },
+    {
+      "question": "Q10",
+      "response_count": 1,
+      "first_input_tokens": 123519,
+      "last_input_tokens": 123519,
+      "max_input_tokens": 123519,
+      "raw_usage": {
+        "inputTokens": 123519,
+        "cachedInputTokens": 123264,
+        "outputTokens": 244,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123763
+      }
+    },
+    {
+      "question": "Q11",
+      "response_count": 1,
+      "first_input_tokens": 123789,
+      "last_input_tokens": 123789,
+      "max_input_tokens": 123789,
+      "raw_usage": {
+        "inputTokens": 123789,
+        "cachedInputTokens": 123648,
+        "outputTokens": 300,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 124089
+      }
+    },
+    {
+      "question": "Q12",
+      "response_count": 2,
+      "first_input_tokens": 124113,
+      "last_input_tokens": 127838,
+      "max_input_tokens": 127838,
+      "raw_usage": {
+        "inputTokens": 251951,
+        "cachedInputTokens": 247936,
+        "outputTokens": 442,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 252393
+      }
+    },
+    {
+      "question": "Q13",
+      "response_count": 1,
+      "first_input_tokens": 128171,
+      "last_input_tokens": 128171,
+      "max_input_tokens": 128171,
+      "raw_usage": {
+        "inputTokens": 128171,
+        "cachedInputTokens": 128000,
+        "outputTokens": 232,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128403
+      }
+    },
+    {
+      "question": "Q14",
+      "response_count": 1,
+      "first_input_tokens": 128441,
+      "last_input_tokens": 128441,
+      "max_input_tokens": 128441,
+      "raw_usage": {
+        "inputTokens": 128441,
+        "cachedInputTokens": 128256,
+        "outputTokens": 218,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128659
+      }
+    },
+    {
+      "question": "Q15",
+      "response_count": 3,
+      "first_input_tokens": 128686,
+      "last_input_tokens": 136983,
+      "max_input_tokens": 136983,
+      "raw_usage": {
+        "inputTokens": 399346,
+        "cachedInputTokens": 390784,
+        "outputTokens": 780,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 400126
+      }
+    },
+    {
+      "question": "Q16",
+      "response_count": 3,
+      "first_input_tokens": 137495,
+      "last_input_tokens": 142518,
+      "max_input_tokens": 142518,
+      "raw_usage": {
+        "inputTokens": 420073,
+        "cachedInputTokens": 414848,
+        "outputTokens": 912,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 420985
+      }
+    },
+    {
+      "question": "Q17",
+      "response_count": 2,
+      "first_input_tokens": 143192,
+      "last_input_tokens": 144171,
+      "max_input_tokens": 144171,
+      "raw_usage": {
+        "inputTokens": 287363,
+        "cachedInputTokens": 286080,
+        "outputTokens": 208,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 287571
+      }
+    },
+    {
+      "question": "Q18",
+      "response_count": 1,
+      "first_input_tokens": 144340,
+      "last_input_tokens": 144340,
+      "max_input_tokens": 144340,
+      "raw_usage": {
+        "inputTokens": 144340,
+        "cachedInputTokens": 144128,
+        "outputTokens": 227,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 144567
+      }
+    },
+    {
+      "question": "Q19",
+      "response_count": 1,
+      "first_input_tokens": 144590,
+      "last_input_tokens": 144590,
+      "max_input_tokens": 144590,
+      "raw_usage": {
+        "inputTokens": 144590,
+        "cachedInputTokens": 144384,
+        "outputTokens": 453,
+        "reasoningOutputTokens": 34,
+        "totalTokens": 145043
+      }
+    },
+    {
+      "question": "Q20",
+      "response_count": 2,
+      "first_input_tokens": 145070,
+      "last_input_tokens": 147363,
+      "max_input_tokens": 147363,
+      "raw_usage": {
+        "inputTokens": 292433,
+        "cachedInputTokens": 289920,
+        "outputTokens": 513,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 292946
+      }
+    },
+    {
+      "question": "Q21",
+      "response_count": 2,
+      "first_input_tokens": 147766,
+      "last_input_tokens": 153215,
+      "max_input_tokens": 153215,
+      "raw_usage": {
+        "inputTokens": 300981,
+        "cachedInputTokens": 295296,
+        "outputTokens": 963,
+        "reasoningOutputTokens": 44,
+        "totalTokens": 301944
+      }
+    },
+    {
+      "question": "Q22",
+      "response_count": 2,
+      "first_input_tokens": 154061,
+      "last_input_tokens": 158484,
+      "max_input_tokens": 158484,
+      "raw_usage": {
+        "inputTokens": 312545,
+        "cachedInputTokens": 307968,
+        "outputTokens": 796,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 313341
+      }
+    },
+    {
+      "question": "Q23",
+      "response_count": 7,
+      "first_input_tokens": 159125,
+      "last_input_tokens": 174120,
+      "max_input_tokens": 174120,
+      "raw_usage": {
+        "inputTokens": 1184461,
+        "cachedInputTokens": 1168896,
+        "outputTokens": 901,
+        "reasoningOutputTokens": 22,
+        "totalTokens": 1185362
+      }
+    },
+    {
+      "question": "Q24",
+      "response_count": 1,
+      "first_input_tokens": 174450,
+      "last_input_tokens": 174450,
+      "max_input_tokens": 174450,
+      "raw_usage": {
+        "inputTokens": 174450,
+        "cachedInputTokens": 174208,
+        "outputTokens": 178,
+        "reasoningOutputTokens": 69,
+        "totalTokens": 174628
+      }
+    },
+    {
+      "question": "Q25",
+      "response_count": 1,
+      "first_input_tokens": 174676,
+      "last_input_tokens": 174676,
+      "max_input_tokens": 174676,
+      "raw_usage": {
+        "inputTokens": 174676,
+        "cachedInputTokens": 174464,
+        "outputTokens": 169,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 174845
+      }
+    },
+    {
+      "question": "Q26",
+      "response_count": 3,
+      "first_input_tokens": 174879,
+      "last_input_tokens": 182295,
+      "max_input_tokens": 182295,
+      "raw_usage": {
+        "inputTokens": 537660,
+        "cachedInputTokens": 530048,
+        "outputTokens": 697,
+        "reasoningOutputTokens": 11,
+        "totalTokens": 538357
+      }
+    },
+    {
+      "question": "Q27",
+      "response_count": 1,
+      "first_input_tokens": 182676,
+      "last_input_tokens": 182676,
+      "max_input_tokens": 182676,
+      "raw_usage": {
+        "inputTokens": 182676,
+        "cachedInputTokens": 182400,
+        "outputTokens": 283,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 182959
+      }
+    },
+    {
+      "question": "Q28",
+      "response_count": 2,
+      "first_input_tokens": 182972,
+      "last_input_tokens": 184707,
+      "max_input_tokens": 184707,
+      "raw_usage": {
+        "inputTokens": 367679,
+        "cachedInputTokens": 365824,
+        "outputTokens": 752,
+        "reasoningOutputTokens": 32,
+        "totalTokens": 368431
+      }
+    },
+    {
+      "question": "Q29",
+      "response_count": 1,
+      "first_input_tokens": 185282,
+      "last_input_tokens": 185282,
+      "max_input_tokens": 185282,
+      "raw_usage": {
+        "inputTokens": 185282,
+        "cachedInputTokens": 185088,
+        "outputTokens": 235,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 185517
+      }
+    },
+    {
+      "question": "Q30",
+      "response_count": 4,
+      "first_input_tokens": 185557,
+      "last_input_tokens": 189284,
+      "max_input_tokens": 189284,
+      "raw_usage": {
+        "inputTokens": 750812,
+        "cachedInputTokens": 746880,
+        "outputTokens": 775,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 751587
+      }
+    },
+    {
+      "question": "Q31",
+      "response_count": 1,
+      "first_input_tokens": 189566,
+      "last_input_tokens": 189566,
+      "max_input_tokens": 189566,
+      "raw_usage": {
+        "inputTokens": 189566,
+        "cachedInputTokens": 189312,
+        "outputTokens": 313,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 189879
+      }
+    },
+    {
+      "question": "Q32",
+      "response_count": 1,
+      "first_input_tokens": 189906,
+      "last_input_tokens": 189906,
+      "max_input_tokens": 189906,
+      "raw_usage": {
+        "inputTokens": 189906,
+        "cachedInputTokens": 189696,
+        "outputTokens": 151,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 190057
+      }
+    },
+    {
+      "question": "Q33",
+      "response_count": 2,
+      "first_input_tokens": 190101,
+      "last_input_tokens": 193478,
+      "max_input_tokens": 193478,
+      "raw_usage": {
+        "inputTokens": 383579,
+        "cachedInputTokens": 379904,
+        "outputTokens": 646,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 384225
+      }
+    },
+    {
+      "question": "Q34",
+      "response_count": 2,
+      "first_input_tokens": 193944,
+      "last_input_tokens": 195443,
+      "max_input_tokens": 195443,
+      "raw_usage": {
+        "inputTokens": 389387,
+        "cachedInputTokens": 387712,
+        "outputTokens": 451,
+        "reasoningOutputTokens": 16,
+        "totalTokens": 389838
+      }
+    },
+    {
+      "question": "Q35",
+      "response_count": 3,
+      "first_input_tokens": 195773,
+      "last_input_tokens": 201337,
+      "max_input_tokens": 201337,
+      "raw_usage": {
+        "inputTokens": 595308,
+        "cachedInputTokens": 589440,
+        "outputTokens": 521,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 595829
+      }
+    },
+    {
+      "question": "Q36",
+      "response_count": 2,
+      "first_input_tokens": 201606,
+      "last_input_tokens": 203861,
+      "max_input_tokens": 203861,
+      "raw_usage": {
+        "inputTokens": 405467,
+        "cachedInputTokens": 402944,
+        "outputTokens": 765,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 406232
+      }
+    },
+    {
+      "question": "Q37",
+      "response_count": 2,
+      "first_input_tokens": 204450,
+      "last_input_tokens": 206985,
+      "max_input_tokens": 206985,
+      "raw_usage": {
+        "inputTokens": 411435,
+        "cachedInputTokens": 408704,
+        "outputTokens": 616,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 412051
+      }
+    },
+    {
+      "question": "Q38",
+      "response_count": 1,
+      "first_input_tokens": 207534,
+      "last_input_tokens": 207534,
+      "max_input_tokens": 207534,
+      "raw_usage": {
+        "inputTokens": 207534,
+        "cachedInputTokens": 207360,
+        "outputTokens": 202,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 207736
+      }
+    },
+    {
+      "question": "Q39",
+      "response_count": 3,
+      "first_input_tokens": 207774,
+      "last_input_tokens": 210242,
+      "max_input_tokens": 210242,
+      "raw_usage": {
+        "inputTokens": 627506,
+        "cachedInputTokens": 624768,
+        "outputTokens": 729,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 628235
+      }
+    }
+  ],
+  "responses": [
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae498e7ffd4819185a67c6c347d02f0",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 11186,
+        "cachedInputTokens": 3840,
+        "outputTokens": 211,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 11397
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae498edfca08191b7727ccb02638c94",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 13779,
+        "cachedInputTokens": 0,
+        "outputTokens": 95,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 13874
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae498f1c7b4819186af2b22ab65d675",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 20564,
+        "cachedInputTokens": 13696,
+        "outputTokens": 179,
+        "reasoningOutputTokens": 13,
+        "totalTokens": 20743
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae498f581108191854277baa4efad37",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 31843,
+        "cachedInputTokens": 20608,
+        "outputTokens": 170,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 32013
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae498fa184081918ba429b524b910fe",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 43313,
+        "cachedInputTokens": 31872,
+        "outputTokens": 394,
+        "reasoningOutputTokens": 16,
+        "totalTokens": 43707
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae49906024081919cbf2328f55c9f5c",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 51087,
+        "cachedInputTokens": 43520,
+        "outputTokens": 331,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 51418
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae4990c87c0819184763eea557cdd09",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 60566,
+        "cachedInputTokens": 51200,
+        "outputTokens": 181,
+        "reasoningOutputTokens": 29,
+        "totalTokens": 60747
+      }
+    },
+    {
+      "question": "Q01",
+      "response_id": "resp_00c29686a6305f46016ae49911788881918603c33ed88f4eb0",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 64625,
+        "cachedInputTokens": 60544,
+        "outputTokens": 1877,
+        "reasoningOutputTokens": 95,
+        "totalTokens": 66502
+      }
+    },
+    {
+      "question": "Q02",
+      "response_id": "resp_00c29686a6305f46016ae4994f388c8191bcc771b969287a8d",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 66550,
+        "cachedInputTokens": 66304,
+        "outputTokens": 218,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 66768
+      }
+    },
+    {
+      "question": "Q02",
+      "response_id": "resp_00c29686a6305f46016ae4995862bc819194eecaecbf01bf69",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 74039,
+        "cachedInputTokens": 66560,
+        "outputTokens": 354,
+        "reasoningOutputTokens": 16,
+        "totalTokens": 74393
+      }
+    },
+    {
+      "question": "Q02",
+      "response_id": "resp_00c29686a6305f46016ae499621fd08191bd2f2913941bb4bf",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 77414,
+        "cachedInputTokens": 74240,
+        "outputTokens": 486,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 77900
+      }
+    },
+    {
+      "question": "Q03",
+      "response_id": "resp_00c29686a6305f46016ae4997731688191bb2e791605d15ae2",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 77942,
+        "cachedInputTokens": 77696,
+        "outputTokens": 274,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 78216
+      }
+    },
+    {
+      "question": "Q03",
+      "response_id": "resp_00c29686a6305f46016ae4997f97a08191b32f2c55dc7303d2",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 87805,
+        "cachedInputTokens": 78080,
+        "outputTokens": 106,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 87911
+      }
+    },
+    {
+      "question": "Q03",
+      "response_id": "resp_00c29686a6305f46016ae49982a4888191aa77c24a053a155e",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 92261,
+        "cachedInputTokens": 87680,
+        "outputTokens": 181,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 92442
+      }
+    },
+    {
+      "question": "Q03",
+      "response_id": "resp_00c29686a6305f46016ae49987bdf8819197f3b0652718bd5a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 94732,
+        "cachedInputTokens": 92288,
+        "outputTokens": 107,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 94839
+      }
+    },
+    {
+      "question": "Q03",
+      "response_id": "resp_00c29686a6305f46016ae4998c3ff48191b9e48c6ca56bf9ce",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 97836,
+        "cachedInputTokens": 94720,
+        "outputTokens": 930,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 98766
+      }
+    },
+    {
+      "question": "Q04",
+      "response_id": "resp_00c29686a6305f46016ae499b3d2b08191807bb660aa9a7149",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 98805,
+        "cachedInputTokens": 98560,
+        "outputTokens": 277,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 99082
+      }
+    },
+    {
+      "question": "Q04",
+      "response_id": "resp_00c29686a6305f46016ae499bba0a08191a7e7fddce944e030",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 107067,
+        "cachedInputTokens": 98944,
+        "outputTokens": 1013,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 108080
+      }
+    },
+    {
+      "question": "Q05",
+      "response_id": "resp_00c29686a6305f46016ae499ebf2f481918ba16d6cf2d3164e",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 108130,
+        "cachedInputTokens": 107904,
+        "outputTokens": 166,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 108296
+      }
+    },
+    {
+      "question": "Q05",
+      "response_id": "resp_00c29686a6305f46016ae499f6220481919a1f9dd8b92420fc",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 110289,
+        "cachedInputTokens": 108160,
+        "outputTokens": 133,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 110422
+      }
+    },
+    {
+      "question": "Q05",
+      "response_id": "resp_00c29686a6305f46016ae499fe31c48191b055d755d2a497fa",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 116933,
+        "cachedInputTokens": 110208,
+        "outputTokens": 185,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 117118
+      }
+    },
+    {
+      "question": "Q05",
+      "response_id": "resp_00c29686a6305f46016ae49a04742481918fc8fd536ca24ba1",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 119457,
+        "cachedInputTokens": 116992,
+        "outputTokens": 258,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 119715
+      }
+    },
+    {
+      "question": "Q06",
+      "response_id": "resp_00c29686a6305f46016ae49a15bbe88191988d118bb6b358c1",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 119737,
+        "cachedInputTokens": 119552,
+        "outputTokens": 240,
+        "reasoningOutputTokens": 115,
+        "totalTokens": 119977
+      }
+    },
+    {
+      "question": "Q06",
+      "response_id": "resp_00c29686a6305f46016ae49a1ff92c8191b30f3fb574ba0356",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 119995,
+        "cachedInputTokens": 119808,
+        "outputTokens": 190,
+        "reasoningOutputTokens": 17,
+        "totalTokens": 120185
+      }
+    },
+    {
+      "question": "Q07",
+      "response_id": "resp_00c29686a6305f46016ae49a3104f481919acc3bc67609017a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 120208,
+        "cachedInputTokens": 120064,
+        "outputTokens": 167,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 120375
+      }
+    },
+    {
+      "question": "Q07",
+      "response_id": "resp_00c29686a6305f46016ae49a3694bc8191bd839f137d896709",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 122897,
+        "cachedInputTokens": 120192,
+        "outputTokens": 175,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123072
+      }
+    },
+    {
+      "question": "Q08",
+      "response_id": "resp_00c29686a6305f46016ae49a42b1848191acd515a5d037ab5b",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 123108,
+        "cachedInputTokens": 122880,
+        "outputTokens": 140,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123248
+      }
+    },
+    {
+      "question": "Q09",
+      "response_id": "resp_00c29686a6305f46016ae49a4e9a8c8191943c06b42361b8dd",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 123289,
+        "cachedInputTokens": 123008,
+        "outputTokens": 188,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123477
+      }
+    },
+    {
+      "question": "Q10",
+      "response_id": "resp_00c29686a6305f46016ae49a60301c81918d58b10c86484fc0",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 123519,
+        "cachedInputTokens": 123264,
+        "outputTokens": 244,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 123763
+      }
+    },
+    {
+      "question": "Q11",
+      "response_id": "resp_00c29686a6305f46016ae49a72e59c8191bd55b7cd3b900019",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 123789,
+        "cachedInputTokens": 123648,
+        "outputTokens": 300,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 124089
+      }
+    },
+    {
+      "question": "Q12",
+      "response_id": "resp_00c29686a6305f46016ae49a80a2a08191a0458645bc70f438",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 124113,
+        "cachedInputTokens": 123904,
+        "outputTokens": 143,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 124256
+      }
+    },
+    {
+      "question": "Q12",
+      "response_id": "resp_00c29686a6305f46016ae49a85a8d88191b88ab8a476e1cf04",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 127838,
+        "cachedInputTokens": 124032,
+        "outputTokens": 299,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128137
+      }
+    },
+    {
+      "question": "Q13",
+      "response_id": "resp_00c29686a6305f46016ae49a96d0fc8191ba973adb022d69cf",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 128171,
+        "cachedInputTokens": 128000,
+        "outputTokens": 232,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128403
+      }
+    },
+    {
+      "question": "Q14",
+      "response_id": "resp_00c29686a6305f46016ae49aa46db08191b7a132e5fd117504",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 128441,
+        "cachedInputTokens": 128256,
+        "outputTokens": 218,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128659
+      }
+    },
+    {
+      "question": "Q15",
+      "response_id": "resp_00c29686a6305f46016ae49ab39a6c8191b8d05f0d577ecb57",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 128686,
+        "cachedInputTokens": 128512,
+        "outputTokens": 175,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 128861
+      }
+    },
+    {
+      "question": "Q15",
+      "response_id": "resp_00c29686a6305f46016ae49ab82bc481919dbc3254866c5820",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 133677,
+        "cachedInputTokens": 128640,
+        "outputTokens": 125,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 133802
+      }
+    },
+    {
+      "question": "Q15",
+      "response_id": "resp_00c29686a6305f46016ae49abca0148191991a0389fcf177a4",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 136983,
+        "cachedInputTokens": 133632,
+        "outputTokens": 480,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 137463
+      }
+    },
+    {
+      "question": "Q16",
+      "response_id": "resp_00c29686a6305f46016ae49ace37008191966353eb3fbf414a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 137495,
+        "cachedInputTokens": 137344,
+        "outputTokens": 131,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 137626
+      }
+    },
+    {
+      "question": "Q16",
+      "response_id": "resp_00c29686a6305f46016ae49ad3c7688191a19aca81aedc474d",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 140060,
+        "cachedInputTokens": 137472,
+        "outputTokens": 142,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 140202
+      }
+    },
+    {
+      "question": "Q16",
+      "response_id": "resp_00c29686a6305f46016ae49ad8dfb88191995a9739375e80bc",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 142518,
+        "cachedInputTokens": 140032,
+        "outputTokens": 639,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 143157
+      }
+    },
+    {
+      "question": "Q17",
+      "response_id": "resp_00c29686a6305f46016ae49aeeb6b481918ddcdb051b8d636e",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 143192,
+        "cachedInputTokens": 142976,
+        "outputTokens": 63,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 143255
+      }
+    },
+    {
+      "question": "Q17",
+      "response_id": "resp_00c29686a6305f46016ae49af1e3748191ad52ad3c0b27324c",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 144171,
+        "cachedInputTokens": 143104,
+        "outputTokens": 145,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 144316
+      }
+    },
+    {
+      "question": "Q18",
+      "response_id": "resp_00c29686a6305f46016ae49afc4d508191b47b1b3ff8d991d1",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 144340,
+        "cachedInputTokens": 144128,
+        "outputTokens": 227,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 144567
+      }
+    },
+    {
+      "question": "Q19",
+      "response_id": "resp_00c29686a6305f46016ae49b09c5e48191b7b1baf0727ba173",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 144590,
+        "cachedInputTokens": 144384,
+        "outputTokens": 453,
+        "reasoningOutputTokens": 34,
+        "totalTokens": 145043
+      }
+    },
+    {
+      "question": "Q20",
+      "response_id": "resp_00c29686a6305f46016ae49b1890f48191aaa8236ad2269680",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 145070,
+        "cachedInputTokens": 144896,
+        "outputTokens": 145,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 145215
+      }
+    },
+    {
+      "question": "Q20",
+      "response_id": "resp_00c29686a6305f46016ae49b1cf728819198cd6fcd548c4361",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 147363,
+        "cachedInputTokens": 145024,
+        "outputTokens": 368,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 147731
+      }
+    },
+    {
+      "question": "Q21",
+      "response_id": "resp_00c29686a6305f46016ae49b2d56488191a57df52b42de55f2",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 147766,
+        "cachedInputTokens": 147584,
+        "outputTokens": 151,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 147917
+      }
+    },
+    {
+      "question": "Q21",
+      "response_id": "resp_00c29686a6305f46016ae49b349bbc819184df9d8a8f530580",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 153215,
+        "cachedInputTokens": 147712,
+        "outputTokens": 812,
+        "reasoningOutputTokens": 44,
+        "totalTokens": 154027
+      }
+    },
+    {
+      "question": "Q22",
+      "response_id": "resp_00c29686a6305f46016ae49b5043148191b351a6b14bad0be3",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 154061,
+        "cachedInputTokens": 153856,
+        "outputTokens": 179,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 154240
+      }
+    },
+    {
+      "question": "Q22",
+      "response_id": "resp_00c29686a6305f46016ae49b552aec8191b40040eacd1741f7",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 158484,
+        "cachedInputTokens": 154112,
+        "outputTokens": 617,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 159101
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b6a12e08191a9a212e9b69dfcf2",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 159125,
+        "cachedInputTokens": 158976,
+        "outputTokens": 152,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 159277
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b7118c08191884d41f2c06d6bb8",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 164189,
+        "cachedInputTokens": 159104,
+        "outputTokens": 134,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 164323
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b7606408191a53fa7f4c0efd2e4",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 168252,
+        "cachedInputTokens": 164096,
+        "outputTokens": 119,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 168371
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b7bcf5c81919441813c62600aa3",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 171832,
+        "cachedInputTokens": 168192,
+        "outputTokens": 85,
+        "reasoningOutputTokens": 9,
+        "totalTokens": 171917
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b81cf8c819198e5dc5b679a3b8a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 173273,
+        "cachedInputTokens": 171776,
+        "outputTokens": 62,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 173335
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b855394819182b1e708084d9512",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 173670,
+        "cachedInputTokens": 173184,
+        "outputTokens": 71,
+        "reasoningOutputTokens": 13,
+        "totalTokens": 173741
+      }
+    },
+    {
+      "question": "Q23",
+      "response_id": "resp_00c29686a6305f46016ae49b8a91848191af120016ad0afb45",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 174120,
+        "cachedInputTokens": 173568,
+        "outputTokens": 278,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 174398
+      }
+    },
+    {
+      "question": "Q24",
+      "response_id": "resp_00c29686a6305f46016ae49b9bcc7081919f2138fce1ad6151",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 174450,
+        "cachedInputTokens": 174208,
+        "outputTokens": 178,
+        "reasoningOutputTokens": 69,
+        "totalTokens": 174628
+      }
+    },
+    {
+      "question": "Q25",
+      "response_id": "resp_00c29686a6305f46016ae49baa85e8819192e50a62a36dc477",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 174676,
+        "cachedInputTokens": 174464,
+        "outputTokens": 169,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 174845
+      }
+    },
+    {
+      "question": "Q26",
+      "response_id": "resp_00c29686a6305f46016ae49bb6cba0819196b3db4ca49b9ad7",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 174879,
+        "cachedInputTokens": 174720,
+        "outputTokens": 203,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 175082
+      }
+    },
+    {
+      "question": "Q26",
+      "response_id": "resp_00c29686a6305f46016ae49bc13260819180617ad3cc86af11",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 180486,
+        "cachedInputTokens": 174848,
+        "outputTokens": 187,
+        "reasoningOutputTokens": 11,
+        "totalTokens": 180673
+      }
+    },
+    {
+      "question": "Q26",
+      "response_id": "resp_00c29686a6305f46016ae49bc88db48191a4e032df268e473a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 182295,
+        "cachedInputTokens": 180480,
+        "outputTokens": 307,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 182602
+      }
+    },
+    {
+      "question": "Q27",
+      "response_id": "resp_00c29686a6305f46016ae49bdb7d2c81919842cae09ac3e5fe",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 182676,
+        "cachedInputTokens": 182400,
+        "outputTokens": 283,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 182959
+      }
+    },
+    {
+      "question": "Q28",
+      "response_id": "resp_00c29686a6305f46016ae49becdee48191bfdd2abf82b8a94d",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 182972,
+        "cachedInputTokens": 182784,
+        "outputTokens": 200,
+        "reasoningOutputTokens": 32,
+        "totalTokens": 183172
+      }
+    },
+    {
+      "question": "Q28",
+      "response_id": "resp_00c29686a6305f46016ae49bf5e3f48191885698a5232faaa7",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 184707,
+        "cachedInputTokens": 183040,
+        "outputTokens": 552,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 185259
+      }
+    },
+    {
+      "question": "Q29",
+      "response_id": "resp_00c29686a6305f46016ae49c0b6a3481918f5dfa4751de5e67",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 185282,
+        "cachedInputTokens": 185088,
+        "outputTokens": 235,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 185517
+      }
+    },
+    {
+      "question": "Q30",
+      "response_id": "resp_00c29686a6305f46016ae49c19ee408191b51d84218a35690d",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 185557,
+        "cachedInputTokens": 185344,
+        "outputTokens": 198,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 185755
+      }
+    },
+    {
+      "question": "Q30",
+      "response_id": "resp_00c29686a6305f46016ae49c2149f081919806cd51d191da3d",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 187496,
+        "cachedInputTokens": 185600,
+        "outputTokens": 180,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 187676
+      }
+    },
+    {
+      "question": "Q30",
+      "response_id": "resp_00c29686a6305f46016ae49c26869c8191b4ef72e96b473952",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 188475,
+        "cachedInputTokens": 187520,
+        "outputTokens": 140,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 188615
+      }
+    },
+    {
+      "question": "Q30",
+      "response_id": "resp_00c29686a6305f46016ae49c2ad7488191ad4d08706b124cff",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 189284,
+        "cachedInputTokens": 188416,
+        "outputTokens": 257,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 189541
+      }
+    },
+    {
+      "question": "Q31",
+      "response_id": "resp_00c29686a6305f46016ae49c3d74448191ade6b7e018889cc9",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 189566,
+        "cachedInputTokens": 189312,
+        "outputTokens": 313,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 189879
+      }
+    },
+    {
+      "question": "Q32",
+      "response_id": "resp_00c29686a6305f46016ae49c514b5c8191993bc98a82506dd4",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 189906,
+        "cachedInputTokens": 189696,
+        "outputTokens": 151,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 190057
+      }
+    },
+    {
+      "question": "Q33",
+      "response_id": "resp_00c29686a6305f46016ae49c6266748191a9006c8ed90beab6",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 190101,
+        "cachedInputTokens": 189824,
+        "outputTokens": 210,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 190311
+      }
+    },
+    {
+      "question": "Q33",
+      "response_id": "resp_00c29686a6305f46016ae49c6827f08191ba18c28cfa2def59",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 193478,
+        "cachedInputTokens": 190080,
+        "outputTokens": 436,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 193914
+      }
+    },
+    {
+      "question": "Q34",
+      "response_id": "resp_00c29686a6305f46016ae49c7b40e0819199625f3e1692cf69",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 193944,
+        "cachedInputTokens": 193792,
+        "outputTokens": 150,
+        "reasoningOutputTokens": 16,
+        "totalTokens": 194094
+      }
+    },
+    {
+      "question": "Q34",
+      "response_id": "resp_00c29686a6305f46016ae49c8125208191b4d068e3b1a37713",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 195443,
+        "cachedInputTokens": 193920,
+        "outputTokens": 301,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 195744
+      }
+    },
+    {
+      "question": "Q35",
+      "response_id": "resp_00c29686a6305f46016ae49c93abf4819180f9c5c430e36fdd",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 195773,
+        "cachedInputTokens": 195584,
+        "outputTokens": 125,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 195898
+      }
+    },
+    {
+      "question": "Q35",
+      "response_id": "resp_00c29686a6305f46016ae49c9b11c08191924e7a439b8bdc0a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 198198,
+        "cachedInputTokens": 195712,
+        "outputTokens": 149,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 198347
+      }
+    },
+    {
+      "question": "Q35",
+      "response_id": "resp_00c29686a6305f46016ae49c9f04b881919cc58967c6015cfc",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 201337,
+        "cachedInputTokens": 198144,
+        "outputTokens": 247,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 201584
+      }
+    },
+    {
+      "question": "Q36",
+      "response_id": "resp_00c29686a6305f46016ae49cb0a8008191aef47c4b61800d55",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 201606,
+        "cachedInputTokens": 201344,
+        "outputTokens": 191,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 201797
+      }
+    },
+    {
+      "question": "Q36",
+      "response_id": "resp_00c29686a6305f46016ae49cb6dae881918b1027eb398694d0",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 203861,
+        "cachedInputTokens": 201600,
+        "outputTokens": 574,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 204435
+      }
+    },
+    {
+      "question": "Q37",
+      "response_id": "resp_00c29686a6305f46016ae49ccc884081918968e07b0c8532d3",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 204450,
+        "cachedInputTokens": 204288,
+        "outputTokens": 123,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 204573
+      }
+    },
+    {
+      "question": "Q37",
+      "response_id": "resp_00c29686a6305f46016ae49cd63f508191b4add63d04cb79fc",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 206985,
+        "cachedInputTokens": 204416,
+        "outputTokens": 493,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 207478
+      }
+    },
+    {
+      "question": "Q38",
+      "response_id": "resp_00c29686a6305f46016ae49cea2f8881918c10947a5aa7167a",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 207534,
+        "cachedInputTokens": 207360,
+        "outputTokens": 202,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 207736
+      }
+    },
+    {
+      "question": "Q39",
+      "response_id": "resp_00c29686a6305f46016ae49cfd37d4819191d00acb5f78d29f",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 207774,
+        "cachedInputTokens": 207616,
+        "outputTokens": 177,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 207951
+      }
+    },
+    {
+      "question": "Q39",
+      "response_id": "resp_00c29686a6305f46016ae49d03e4fc8191a0a25707c510e6a0",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 209490,
+        "cachedInputTokens": 207744,
+        "outputTokens": 95,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 209585
+      }
+    },
+    {
+      "question": "Q39",
+      "response_id": "resp_00c29686a6305f46016ae49d08874c81918e00871a0e76bb36",
+      "kind": "ordinary",
+      "usage": {
+        "inputTokens": 210242,
+        "cachedInputTokens": 209408,
+        "outputTokens": 457,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 210699
+      }
+    }
+  ],
+  "compactions": [],
+  "raw_usage_by_kind": {
+    "ordinary": {
+      "inputTokens": 12370383,
+      "cachedInputTokens": 12161280,
+      "outputTokens": 23898,
+      "reasoningOutputTokens": 529,
+      "totalTokens": 12394281
+    },
+    "compaction": {
+      "inputTokens": null,
+      "cachedInputTokens": null,
+      "outputTokens": null,
+      "reasoningOutputTokens": null,
+      "totalTokens": null
+    }
+  },
+  "raw_usage_all_responses": {
+    "inputTokens": 12370383,
+    "cachedInputTokens": 12161280,
+    "outputTokens": 23898,
+    "reasoningOutputTokens": 529,
+    "totalTokens": 12394281
+  },
+  "usage_field_coverage": {
+    "inputTokens": 87,
+    "cachedInputTokens": 87,
+    "outputTokens": 87,
+    "reasoningOutputTokens": 87,
+    "totalTokens": 87
+  },
+  "duplicate_read_results": [],
+  "read_observations": [
+    {
+      "question": "Q01",
+      "item_id": "exec-052441fd-c485-40e2-bce7-774fdf7a97bb",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1d1bac7cb4aa1090f701c70a4dbd7fee78baa4fa1824bf88dac66a6a3ad625b0",
+      "result_chars": 6228
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-9c247d80-ebe9-46d3-80e7-9f05d602c0d8",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "f98fd11f61a8a78491ebbb7efaf28f382948238cdced1d80ff1ec352744dae0c",
+      "result_chars": 26598
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-ec9049b5-028b-4800-a65d-1c5012dcce5a",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "eb348c5d036980fe134d52e13d12a813a4478de1de2a1ac49cecbe9386cdbb9f",
+      "result_chars": 26689
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-753fef85-4455-4927-a5a0-41262c315295",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "62b35c85192cbb039bf32e34bded0372bbbedd1fe49c846f00ffa239dd33cacd",
+      "result_chars": 718
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-9b6e29e0-462d-499e-8684-538140fffa10",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "7aa1c6ec4c09aa45d33086d71d7f4550d2e9eb2252b1d11c32243fb1e71d9ca6",
+      "result_chars": 26427
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-a736bb78-a5da-4306-a4af-d418e46c9abf",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "0f82aabcfeb787c4f9669d096012ae4ca386cba3e31f1e6e8fdf1ed9a6d0ceb8",
+      "result_chars": 8487
+    },
+    {
+      "question": "Q01",
+      "item_id": "exec-7c96e4df-6c00-4962-8dd1-b36132a4a4f1",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "d1770458ea11e6912f0637faf333c11a50edc51a6178a14216183855966abb9f",
+      "result_chars": 15324
+    },
+    {
+      "question": "Q02",
+      "item_id": "exec-884f339c-e533-4485-b9bf-c45af793d60c",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "162060cb1a6c170350b8997709ce584df0dfe5cd3db58ab813141bdbb39dd20b",
+      "result_chars": 646
+    },
+    {
+      "question": "Q02",
+      "item_id": "exec-3bc8f2d8-3b20-475f-8ccc-0322cb1dd8ea",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "a21721352f4dc2551db16be9ff15144a83095b438f8b74c41bcb18f705ff6971",
+      "result_chars": 25559
+    },
+    {
+      "question": "Q02",
+      "item_id": "exec-47817266-c8b2-425a-8b33-811013a7a964",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "a8d15ec3c53ca528a64a65233aecfda3b54db61fa5822c101f7002a319072ac7",
+      "result_chars": 1113
+    },
+    {
+      "question": "Q02",
+      "item_id": "exec-454615ef-8d6b-42be-9ebb-dc60c3abe380",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "d2392e8038e59a96115d57cf87e90c632e8ebbbbe006f5fe056572008fb783b0",
+      "result_chars": 9319
+    },
+    {
+      "question": "Q03",
+      "item_id": "exec-0b3760f0-203f-4757-a6d2-308675364013",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "8112cd36a30d2ce4f5d42cec04efa57ce6b50f78293c952bca40bd5bb3df5530",
+      "result_chars": 13956
+    },
+    {
+      "question": "Q03",
+      "item_id": "exec-e468ee72-5925-4dff-86b2-ef90de27d5d5",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "2e62b8e8f98e666f589459e5ad59e86d2f6ceac39ab9cf62ad6b9c28262b3ffa",
+      "result_chars": 68780
+    },
+    {
+      "question": "Q03",
+      "item_id": "exec-f7c29d0e-65f6-4f56-af81-3c5ed8091dd7",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "945cbed571d4bf54c36f031cf78aab1afbedeb57fb1db8f4fc8d1503a4a6ab52",
+      "result_chars": 16782
+    },
+    {
+      "question": "Q03",
+      "item_id": "exec-0cd67381-1373-400c-b8ec-30062230eda8",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "8ea1d04bdc725df658a0ec0d2e33396f2f327c6b56f6d4ef23f2d30547bdd4e2",
+      "result_chars": 8085
+    },
+    {
+      "question": "Q03",
+      "item_id": "exec-1c38dd75-de85-428e-bfda-f757d40a1483",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "357dcbb2919539aacf4846b31b357e8c5fab9f76c4cc6ec2c56615bf46677eea",
+      "result_chars": 11289
+    },
+    {
+      "question": "Q04",
+      "item_id": "exec-746d4ff7-71bf-4c19-b7bb-6661af5242cf",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "c9a69c191e89561dab2a770e0b16df1fb9326d2bb06709b6105779073adb5112",
+      "result_chars": 14846
+    },
+    {
+      "question": "Q04",
+      "item_id": "exec-129b6daa-095c-41ec-a4c4-6d915549c164",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "98bf175aabea8f3a608de329fd33292154af5ec39bf8bf3be6e2a34acc47bbfe",
+      "result_chars": 16554
+    },
+    {
+      "question": "Q05",
+      "item_id": "exec-77e44b1d-6117-4385-8f23-a67c9f133414",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "8c66380b297dc7340ea2c415d2f6458762a072ee5b9568a5af57fa693985274e",
+      "result_chars": 1653
+    },
+    {
+      "question": "Q05",
+      "item_id": "exec-cbb83cdf-e7a8-4345-9839-df417c99f385",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "7b5fcabb10a6770dfcd59ed5c45424952038feea6a1469f77f8162b69d8e8572",
+      "result_chars": 7239
+    },
+    {
+      "question": "Q05",
+      "item_id": "exec-acbf7665-74af-42bc-b368-c257f9cae742",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "7a39391676b69b1d2e41a6420e0d9c8983fa265007e1e4885b59acbceead9712",
+      "result_chars": 39486
+    },
+    {
+      "question": "Q05",
+      "item_id": "exec-aed26540-28b1-4551-bd51-f6564c844470",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "de4fd557873457a2b980df35c07bbf19c8fd8827418b77d421aff041d901ccc4",
+      "result_chars": 7474
+    },
+    {
+      "question": "Q07",
+      "item_id": "exec-c84768ef-4d82-4fc7-87c9-506c03b4ed48",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "57e330ef7ba054f22ee8361c019b4e67799156e06dc2836d7356b11b560efe9a",
+      "result_chars": 8771
+    },
+    {
+      "question": "Q12",
+      "item_id": "exec-10db6e06-4cbc-4f8e-a61e-ad5f2684cbb2",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1650b749e41a306707291b52354ef62b7ad9f9f145cd7155146a934cedc08467",
+      "result_chars": 12615
+    },
+    {
+      "question": "Q15",
+      "item_id": "exec-c6c02cbc-f062-4689-8f5d-a3cdaac15982",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "6fac5245339756890843b39e35938335413ef2a4efbd3aa35ca5c7f582b24eb7",
+      "result_chars": 16404
+    },
+    {
+      "question": "Q15",
+      "item_id": "exec-87584bca-4e77-473e-98fc-fd268d300783",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "62cfca2bdfc9583ec3669c621dc43bb795101d8236b317528b878c4caade557f",
+      "result_chars": 11491
+    },
+    {
+      "question": "Q16",
+      "item_id": "exec-0e329252-3bbb-4422-ad8f-91f6ca504b55",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "0688ed8f23c93e4158c00715c06c22b4e9d5d644bf73b1d0c0d52d136b176e94",
+      "result_chars": 7926
+    },
+    {
+      "question": "Q16",
+      "item_id": "exec-f51f33a3-f878-46fe-b89d-d46c449e2cdb",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "fa2c4c79d1e93318ee66f5d365e53f01fa52a652303d72c090c3c422ce1d4f86",
+      "result_chars": 8921
+    },
+    {
+      "question": "Q20",
+      "item_id": "exec-acf3fb7d-663d-4c64-8a3c-4c9c828d5434",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1619d24e15541562980efcfdfadbd9b277bb950fe6d5f8c61b91474a4580bf7a",
+      "result_chars": 7964
+    },
+    {
+      "question": "Q21",
+      "item_id": "exec-bcfc115a-b722-4c19-899d-67d094530f17",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "ca746701673a874f193c414afe04f05a7fe2e777ec8023e3ab4f7c50f1ba662f",
+      "result_chars": 20656
+    },
+    {
+      "question": "Q22",
+      "item_id": "exec-ca780afc-a1a7-49c2-8d71-ead89453f1bd",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "5583496263bbca1bc394f70215856228e28f8b7b439f80dee686c04111f03b38",
+      "result_chars": 14923
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-59f3e0fa-3d5f-4a80-80c8-6ffe79a0c5ba",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "b0914365cc392e1d8a2cce421d62517a28a577f06489228f3b3cf6a1085f1994",
+      "result_chars": 34970
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-03bd69fc-7f7b-47b3-8f4e-f2f1b63312e7",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "4bf9c1647051faca9684a21ba8f6734460ddaa544666f43bcd891dc0548fd3b9",
+      "result_chars": 18791
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-ab6594c9-378b-47e8-9bcf-d3e0e96e1029",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "276f4c2dfcd7008341ebcdc11f1e0f8efa6edcd6cf01890536b6b7b623a84036",
+      "result_chars": 12057
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-9dc8e674-5cf7-4ff1-a4e9-c9ebfa2be5e1",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1146fb5294b23fbd4aae993ff9d84c8dcda6dddf8493a854a9d878eb29cf3e0b",
+      "result_chars": 4591
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-2c6fbe46-9923-441f-8755-71c2f6b57683",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "fda076de44f664f47f56901ebd52977a8de7c087d3f107f98fcb1698f439d3aa",
+      "result_chars": 1136
+    },
+    {
+      "question": "Q23",
+      "item_id": "exec-185b84ac-ff1d-4089-89fb-518f8bd44fb5",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "d7569e00be8306e607566bdec040f718c3f1eb7e506777525ca545bc4f31b096",
+      "result_chars": 1031
+    },
+    {
+      "question": "Q26",
+      "item_id": "exec-0ceabe91-c221-4d44-a0be-429ffb050752",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "52f945db05b72d0789d0880b0ef03dbb1d48ea2bc4c26abe30364e4b69556337",
+      "result_chars": 1048572
+    },
+    {
+      "question": "Q26",
+      "item_id": "exec-c213197d-aa7c-420e-bd2c-49404b02c631",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "81390721f8529459a4274d294fcf26ff631e23b29b3d78321cfc288fa4262932",
+      "result_chars": 6076
+    },
+    {
+      "question": "Q28",
+      "item_id": "exec-422996b3-8a82-4bfe-8832-7b5d77cfb16e",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "087f6df9822cd76f07ff54d6dc1f698b284526566e764069782823f6788ef90f",
+      "result_chars": 5202
+    },
+    {
+      "question": "Q30",
+      "item_id": "exec-de12d039-3159-4fc5-8fcc-e920903905de",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "23b124f32039e8bb3bcf215b105be95f8b5555e2a0a13029c7054ea3fee89303",
+      "result_chars": 5859
+    },
+    {
+      "question": "Q30",
+      "item_id": "exec-425f0dc2-0aea-4dea-a8d6-0322f02efbb7",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "bfc286559cb96c8893983786cf3dbbfa416e19cb31cc1eaade37aeab68c09678",
+      "result_chars": 2522
+    },
+    {
+      "question": "Q30",
+      "item_id": "exec-dc95fed3-983c-4222-ab57-b4d1a5ad9129",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "4340c9e135abf50dd8a61d39100eeceaa84e88a24931a9adca4f9620235bb8e8",
+      "result_chars": 2169
+    },
+    {
+      "question": "Q33",
+      "item_id": "exec-7f8ae3c3-9a96-4c75-9900-cb81e1e74e1f",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "d606c3031d45391847b3bf6e4cbcefc8e6324d498d756a4aba7ffac73610bef1",
+      "result_chars": 12560
+    },
+    {
+      "question": "Q34",
+      "item_id": "exec-79e4a863-8ba6-41b1-9cc2-97fa95bb134b",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1f444f422f85bff8665acc4ff1e171745a22fc440dc3923cbc5c362c3de81086",
+      "result_chars": 4351
+    },
+    {
+      "question": "Q35",
+      "item_id": "exec-34c433a6-3076-4c6d-9633-9ef0a797d72a",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "659b79c251e8e977ad58b896b3fe68af4910398c881337416b2a911e9f243c43",
+      "result_chars": 9444
+    },
+    {
+      "question": "Q35",
+      "item_id": "exec-9785eaeb-8668-44a1-9302-ff49d4880c62",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "dc1c60a486920e520133107cd5c28bf7b8837e45f48288d398f6629e987dd26c",
+      "result_chars": 12337
+    },
+    {
+      "question": "Q36",
+      "item_id": "exec-78b1442c-c2ab-4c25-8c13-149b5055a3c2",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "6dc3d563a17e08b836ed03b5342f35cc287c9332164a8ba89506d1baa95b442e",
+      "result_chars": 7677
+    },
+    {
+      "question": "Q37",
+      "item_id": "exec-c3ab6596-22a5-4407-9dc6-1907de60b240",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "939ed45976c923457b9f57cc02d548a842e7eec69e41cd2fb3e9f210d766ede3",
+      "result_chars": 9098
+    },
+    {
+      "question": "Q39",
+      "item_id": "exec-6920e932-e249-472d-9079-3bc2c53bb71a",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "18030a39f76c22d41a0f797b76a75c535ddcc07943e4a19dda2a4df1adcb25af",
+      "result_chars": 5488
+    },
+    {
+      "question": "Q39",
+      "item_id": "exec-a7dc643c-936e-4f76-8b5e-5bf3d13e5a31",
+      "group": "source_or_inventory_shell_observation",
+      "result_sha256": "1a3986b5b79cf4bea6d786a9b0c5aa4c762afae8ea44e3c9ad6da15622fdc314",
+      "result_chars": 2077
+    }
+  ],
+  "warnings": [],
+  "reasoning_content_inspected": false
+}
