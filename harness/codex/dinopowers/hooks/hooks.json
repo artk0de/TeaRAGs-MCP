@@ -1,4 +1,5 @@
 {
+  "description": "Dinopowers workflow routing for sessions and subagents",
   "hooks": {
     "SessionStart": [
       {
@@ -6,7 +7,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/main-session-routing.sh",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "Dinopowers: load workflow routing"
           }
         ]
       }
@@ -17,7 +19,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/wrapper-routing.sh",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "Dinopowers: load subagent workflow routing"
           }
         ]
       }

@@ -247,6 +247,24 @@ describe("extractInjectionBlock", () => {
 });
 
 describe("renderCodexHarness", () => {
+  it("describes every Codex hook source and handler for the hook UI", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    for (const pkg of ["tea-rags", "dinopowers"]) {
+      const config = JSON.parse(rendered.get(`${pkg}/hooks/hooks.json`) ?? "") as {
+        description?: string;
+        hooks: Record<string, { hooks: { statusMessage?: string }[] }[]>;
+      };
+      expect(config.description?.trim(), pkg).toBeTruthy();
+      for (const [event, groups] of Object.entries(config.hooks)) {
+        for (const group of groups) {
+          for (const handler of group.hooks) {
+            expect(handler.statusMessage?.trim(), `${pkg}/${event}`).toBeTruthy();
+          }
+        }
+      }
+    }
+  });
+
   it("renders byte-identically twice", async () => {
     expect(await renderCodexHarness(ROOT)).toEqual(await renderCodexHarness(ROOT));
     expect(await renderCodexMarketplace(ROOT)).toBe(await renderCodexMarketplace(ROOT));
@@ -615,7 +633,7 @@ describe("renderCodexHarness", () => {
     const rendered = await renderCodexHarness(ROOT);
     const { hooks } = JSON.parse(rendered.get("tea-rags/hooks/hooks.json") ?? "");
 
-    expect(hooks.PreToolUse).toEqual([
+    expect(hooks.PreToolUse).toMatchObject([
       {
         matcher: "^(Bash|shell|exec_command)$",
         hooks: [

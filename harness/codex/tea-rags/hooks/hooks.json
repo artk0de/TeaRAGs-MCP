@@ -1,4 +1,5 @@
 {
+  "description": "TeaRAGs context, code navigation and read tracking",
   "hooks": {
     "SessionStart": [
       {
@@ -6,7 +7,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/session-start.sh",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: load core rules"
           }
         ]
       },
@@ -15,7 +17,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/session-codex-rules.sh",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: load Codex context policy"
           }
         ]
       },
@@ -24,7 +27,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/session-digest.sh",
-            "timeout": 60
+            "timeout": 60,
+            "statusMessage": "TeaRAGs: load project digest"
           }
         ]
       },
@@ -33,7 +37,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: initialize read ledger"
           }
         ]
       }
@@ -44,7 +49,8 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/subagent-block.sh",
-            "timeout": 30
+            "timeout": 30,
+            "statusMessage": "TeaRAGs: load subagent context"
           }
         ]
       }
@@ -55,17 +61,20 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: route this request"
           },
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: reset search tracking"
           },
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: advance read ledger"
           }
         ]
       }
@@ -77,17 +86,20 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/one-file-read.sh",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: check document read size"
           },
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: check search scope"
           },
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: check reused code"
           }
         ]
       }
@@ -99,12 +111,14 @@
           {
             "type": "command",
             "command": "${PLUGIN_ROOT}/scripts/search-drift.sh --harness codex",
-            "timeout": 5
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: record search results"
           },
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: remember delivered MCP code"
           }
         ]
       },
@@ -114,7 +128,8 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness codex",
-            "timeout": 10
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: remember delivered shell code"
           }
         ]
       }

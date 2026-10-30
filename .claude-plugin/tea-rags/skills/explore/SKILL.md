@@ -27,14 +27,14 @@ needed now, not containing classes/trees; headers/shared declarations need their
 own evidence gap. Every read closes a missing fact in this question, never
 prefetches for a future one.
 
-| Need                                                                | Route                                                                                                                                      |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                         |
-| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                   |
+| Need                                                                | Route                                                                                                                                                     |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                                        |
+| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                                  |
 | Exact-name occurrences or complete inventory/absence in known paths | Grep tool, filenames (`-l`) first; fetch enclosing bodies only for requested behavior/context. Ranked search is not proof of completeness. |
-| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.        |
-| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.  |
-| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:"only", metaOnly:true`; a missing hit is not proof of no tests.                  |
+| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.                       |
+| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.                 |
+| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:"only", metaOnly:true`; a missing hit is not proof of no tests.                                 |
 
 A factual question about an existing integration is not automatically template
 mining or preparation to implement it. Neither future implementation context nor

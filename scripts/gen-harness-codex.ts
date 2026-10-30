@@ -699,7 +699,21 @@ function renderCodexDinopowers(root: string, teaRagsSkills: ReadonlySet<string>)
     const script = hook.text.replace(/\.txt$/, ".sh");
     files.set(`${DINOPOWERS_NAME}/scripts/${hook.text}`, `${context}\n`);
     files.set(`${DINOPOWERS_NAME}/scripts/${script}`, routingScript(event, hook.text));
-    hooks[event] = [{ hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/${script}`, timeout: 10 }] }];
+    hooks[event] = [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `${PLUGIN_ROOT_VAR}/scripts/${script}`,
+            timeout: 10,
+            statusMessage:
+              event === "SessionStart"
+                ? "Dinopowers: load workflow routing"
+                : "Dinopowers: load subagent workflow routing",
+          },
+        ],
+      },
+    ];
   }
   files.set(
     `${DINOPOWERS_NAME}/.codex-plugin/plugin.json`,
@@ -711,7 +725,10 @@ function renderCodexDinopowers(root: string, teaRagsSkills: ReadonlySet<string>)
       hooks: "./hooks/hooks.json",
     }),
   );
-  files.set(`${DINOPOWERS_NAME}/hooks/hooks.json`, json({ hooks }));
+  files.set(
+    `${DINOPOWERS_NAME}/hooks/hooks.json`,
+    json({ description: "Dinopowers workflow routing for sessions and subagents", hooks }),
+  );
   return { version: manifest.version, files, skills };
 }
 
@@ -806,22 +823,83 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   files.set(
     `${PLUGIN_NAME}/hooks/hooks.json`,
     json({
+      description: "TeaRAGs context, code navigation and read tracking",
       hooks: {
         SessionStart: [
-          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-start.sh`, timeout: 10 }] },
-          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-codex-rules.sh`, timeout: 10 }] },
-          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/session-digest.sh`, timeout: 60 }] },
-          { hooks: [{ type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 }] },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/session-start.sh`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: load core rules",
+              },
+            ],
+          },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/session-codex-rules.sh`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: load Codex context policy",
+              },
+            ],
+          },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/session-digest.sh`,
+                timeout: 60,
+                statusMessage: "TeaRAGs: load project digest",
+              },
+            ],
+          },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${LEDGER_COMMAND} --harness codex`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: initialize read ledger",
+              },
+            ],
+          },
         ],
         SubagentStart: [
-          { hooks: [{ type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`, timeout: 30 }] },
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/subagent-block.sh`,
+                timeout: 30,
+                statusMessage: "TeaRAGs: load subagent context",
+              },
+            ],
+          },
         ],
         UserPromptSubmit: [
           {
             hooks: [
-              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/turn-routing.sh --harness codex`, timeout: 5 },
-              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
-              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 5 },
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/turn-routing.sh --harness codex`,
+                timeout: 5,
+                statusMessage: "TeaRAGs: route this request",
+              },
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`,
+                timeout: 5,
+                statusMessage: "TeaRAGs: reset search tracking",
+              },
+              {
+                type: "command",
+                command: `${LEDGER_COMMAND} --harness codex`,
+                timeout: 5,
+                statusMessage: "TeaRAGs: advance read ledger",
+              },
             ],
           },
         ],
@@ -829,9 +907,24 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
           {
             matcher: SHELL_TOOL_MATCHER,
             hooks: [
-              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/one-file-read.sh`, timeout: 10 },
-              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 10 },
-              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 },
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/one-file-read.sh`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: check document read size",
+              },
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: check search scope",
+              },
+              {
+                type: "command",
+                command: `${LEDGER_COMMAND} --harness codex`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: check reused code",
+              },
             ],
           },
         ],
@@ -839,13 +932,30 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
           {
             matcher: TEA_RAGS_MCP_TOOL_MATCHER,
             hooks: [
-              { type: "command", command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`, timeout: 5 },
-              { type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 },
+              {
+                type: "command",
+                command: `${PLUGIN_ROOT_VAR}/scripts/search-drift.sh --harness codex`,
+                timeout: 5,
+                statusMessage: "TeaRAGs: record search results",
+              },
+              {
+                type: "command",
+                command: `${LEDGER_COMMAND} --harness codex`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: remember delivered MCP code",
+              },
             ],
           },
           {
             matcher: SHELL_TOOL_MATCHER,
-            hooks: [{ type: "command", command: `${LEDGER_COMMAND} --harness codex`, timeout: 10 }],
+            hooks: [
+              {
+                type: "command",
+                command: `${LEDGER_COMMAND} --harness codex`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: remember delivered shell code",
+              },
+            ],
           },
         ],
       },
