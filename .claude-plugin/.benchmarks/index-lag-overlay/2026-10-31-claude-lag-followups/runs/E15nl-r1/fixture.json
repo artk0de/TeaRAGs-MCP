@@ -1,0 +1,32 @@
+{
+ "cwd": "/tmp/lag-followups-claude/E15nl-r1-20261031-020358/workspace",
+ "alias": "acme",
+ "files": {
+  "src/adapters/embeddings/ollama.ts": "export class OllamaEmbeddingAdapter {\n  constructor(private readonly url: string, private readonly maxAttempts = 4) {}\n\n  async embed(texts: string[]): Promise<number[][]> {\n    return this.embedWithRetry(texts, 1);\n  }\n\n  private async embedWithRetry(texts: string[], attempt: number): Promise<number[][]> {\n    try {\n      return await this.post(texts);\n    } catch (error) {\n      if (attempt >= this.maxAttempts || !this.isRetryable(error)) {\n        throw error;\n      }\n      await new Promise((resolve) => setTimeout(resolve, this.backoffDelay(attempt)));\n      return this.embedWithRetry(texts, attempt + 1);\n    }\n  }\n\n  private isRetryable(error: unknown): boolean {\n    const status = (error as { status?: number }).status;\n    return status === undefined || status === 429 || status >= 500;\n  }\n\n  private backoffDelay(attempt: number): number {\n    const base = 250 * 2 ** (attempt - 1);\n    return Math.min(base, 4000) + Math.floor(Math.random() * 100);\n  }\n\n  private async post(texts: string[]): Promise<number[][]> {\n    const response = await fetch(this.url + \"/api/embed\", { method: \"POST\", body: JSON.stringify({ input: texts }) });\n    if (!response.ok) {\n      throw Object.assign(new Error(\"embed failed\"), { status: response.status });\n    }\n    return ((await response.json()) as { embeddings: number[][] }).embeddings;\n  }\n}\n",
+  "src/core/util/u0.ts": "export function u0(): number {\n  return 1 + 0;\n}\n",
+  "src/core/util/u1.ts": "export function u1(): number {\n  return 1 + 1;\n}\n",
+  "src/core/util/u2.ts": "export function u2(): number {\n  return 1 + 2;\n}\n",
+  "src/core/util/v0.ts": "export const v0 = 0;\n",
+  "src/core/util/v1.ts": "export const v1 = 1;\n",
+  "src/core/util/v2.ts": "export const v2 = 2;\n",
+  "src/core/util/v3.ts": "export const v3 = 3;\n",
+  "src/core/util/v4.ts": "export const v4 = 4;\n",
+  "src/core/util/v5.ts": "export const v5 = 5;\n",
+  "src/core/util/v6.ts": "export const v6 = 6;\n",
+  "src/core/util/v7.ts": "export const v7 = 7;\n",
+  "src/core/util/v8.ts": "export const v8 = 8;\n"
+ },
+ "raw_tool_responses": {
+  "index_codebase": {
+   "status": "completed",
+   "mode": "incremental",
+   "filesIndexed": 12,
+   "workingTree": {
+    "project": "acme",
+    "tree": "/tmp/lag-followups-claude/E15nl-r1-20261031-020358/workspace",
+    "changedFiles": 0,
+    "floors": []
+   }
+  }
+ }
+}

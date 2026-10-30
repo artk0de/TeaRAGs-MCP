@@ -1,0 +1,12 @@
+{
+  "eval_cases": [
+    {
+      "id": "E16",
+      "context": "main, own checkout, graph",
+      "prompt": "get_callers returned 3 callers with changedFiles 7, floors [] (no codegraph floor, no timeout); a changed file (refund_builder.rb) is not among them; user wants the complete caller list before a rename",
+      "expected": "do not present the 3 callers as complete; find_symbol on the changed file(s) and/or the default code search tool (Claude: Grep) for the literal `total` callers, or incremental index_codebase then re-check; no bare get_callers retry",
+      "fail": "3 callers presented as complete, or the same get_callers re-run with no index_codebase / search in between",
+      "audit_finding": "R2 (Codex codex-rules.txt 'Lag follow-ups')"
+    }
+  ]
+}

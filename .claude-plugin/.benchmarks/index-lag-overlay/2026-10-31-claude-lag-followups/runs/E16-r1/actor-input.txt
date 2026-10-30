@@ -1,0 +1,1 @@
+who calls Invoice#total? I need the complete list before I rename it.

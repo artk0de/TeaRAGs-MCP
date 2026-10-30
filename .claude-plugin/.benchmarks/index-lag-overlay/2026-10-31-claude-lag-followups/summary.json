@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-31",
+  "subject": "Claude Code headless (claude -p --model opus = claude-opus-5-5), fresh session per run",
+  "plugin": ".claude-plugin/tea-rags 0.53.10 at 0d2b2a145 (current package, no rule added)",
+  "method": "actor run: --plugin-dir package (SessionStart injects rules/core.md), fixture MCP (repro/fixture_mcp.py, 4mffb server + index_codebase/get_index_status + '@indexed' state), tea-rags prime shimmed, workspace = real git repo with uncommitted edits as the changed files",
+  "gate": [
+    {"case": "E14", "run": "r1", "verdict": "PASS",
+     "tools": ["Grep oauth_redirect (parallel)", "get_callers depth 2", "index_codebase(project)", "find_symbol(symbols:[intercept_login_request?, SessionsController#create])"],
+     "note": "both callers reported; stale/timeout named; no graph retry; no Read/cat"},
+    {"case": "E15", "run": "r1", "verdict": "PASS",
+     "tools": ["index_codebase(project)", "find_symbol(relativePath: ollama.ts)", "find_symbol(symbols:[5 methods])"],
+     "note": "R1 satisfied (request served after index). Route used find_symbol(relativePath) instead of semantic_search because Claude Code's gitStatus context leaked the changed adapter path; see E15nl"},
+    {"case": "E16", "run": "r1", "verdict": "PASS",
+     "tools": ["Grep total in app/ (parallel)", "get_callers depth 2 -> 3 callers", "index_codebase(project)", "find_symbol(relativePath: refund_builder.rb)", "Grep total", "get_callers (after index) -> 4"],
+     "note": "4 callers incl. RefundBuilder#build; explains first graph answer missed the changed file"}
+  ],
+  "discriminators": [
+    {"case": "E14b", "run": "r1", "verdict": "PASS", "tools": ["get_callers", "index_codebase", "find_symbol(intercept_login_request?)", "Grep oauth_redirect?", "find_symbol(relativePath: sessions_controller.rb)"]},
+    {"case": "E14b", "run": "r2", "verdict": "PASS", "tools": ["get_callers", "index_codebase", "find_symbol(intercept_login_request?)", "Grep oauth_redirect?", "find_symbol(relativePath: sessions_controller.rb)"]},
+    {"case": "E15nl", "run": "r1", "verdict": "PASS", "tools": ["index_codebase", "semantic_search(3 fused phrasings, metaOnly)", "find_symbol(symbols:[4 methods])"]},
+    {"case": "E15nl", "run": "r2", "verdict": "PASS", "tools": ["index_codebase", "semantic_search(3 fused phrasings, metaOnly)", "find_symbol(symbols:[4])", "find_symbol(backoffDelay)"]},
+    {"case": "E16b", "run": "r1", "verdict": "PASS", "tools": ["get_callers -> 3", "Grep \\.total\\b app/", "Grep :total|\"total\"..."], "note": "4 callers; no index_codebase on own checkout (freshness-rule deviation, not an R2 failure)"},
+    {"case": "E16b", "run": "r2", "verdict": "PASS", "tools": ["Grep total app/ (parallel)", "get_callers -> 3", "index_codebase", "Bash grep -rnE total (all dirs)"]}
+  ],
+  "result": {"gate": "3/3 PASS", "discriminators": "6/6 PASS", "bare_graph_retries": 0, "answers_presenting_partial_graph_as_complete": 0},
+  "verdict": {"port_R1": false, "port_R2": false}
+}

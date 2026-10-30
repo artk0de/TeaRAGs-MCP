@@ -1,0 +1,3 @@
+# tea-rags digest — acme
+project `acme` · path /tmp/lag-followups-claude/E14b-r1-20261031-020358/workspace — pass `project: "acme"` + `path` on tea-rags calls
+codegraph: on

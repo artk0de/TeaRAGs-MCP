@@ -1,0 +1,6 @@
+# tea-rags digest — acme
+project `acme` · path /tmp/lag-followups-claude/E15-r1-20261031-020140/workspace — pass `project: "acme"` + `path` on tea-rags calls
+codegraph: on
+⚠ Index is stale (last updated 3d ago)
+## Drift: none
+Working tree: changedFiles 12 (uncommitted / unindexed edits since the last index run)
