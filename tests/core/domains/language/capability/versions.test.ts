@@ -505,6 +505,9 @@ describe("seeded support versions", () => {
       // typescript 15: bd tea-rags-mcp-zy6hx — the field-access facet pass
       // publishes `fieldAccesses`, so an index built by walker 14 holds no
       // `cg_symbols_edges_field` rows for TypeScript.
+      // typescript 16: bd tea-rags-mcp-3otbo — `tsNameOf` names an `interface`,
+      // so a walker-15 index holds no interface `cg_symbols` rows and every
+      // `implements` row of a project interface lacks its `ancestorSymbolId`.
       // ruby 9: bd tea-rags-mcp-zy6hx — the same pass for Ruby; a walker-8
       // index holds no Ruby field rows.
       // ruby 10: bd tea-rags-mcp-2m83f.34 — attachment readers return the
@@ -544,7 +547,7 @@ describe("seeded support versions", () => {
       // ruby 11: bd tea-rags-mcp-q1g6s.10 — `method(:x)` edges to `#x`, framework verbs on self
       // skip unrelated namesakes, `perform_async_<x>` wrappers dispatch to the worker's run.
       const WALKER_BUMPED = new Map([
-        ["typescript", 15],
+        ["typescript", 16],
         ["javascript", 5],
         ["python", 12],
         ["ruby", 11],

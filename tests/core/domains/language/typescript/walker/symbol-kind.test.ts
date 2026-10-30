@@ -5,9 +5,10 @@
  * then the COMPOSED `walker.walk`, so the join against real chunk ids is what is
  * asserted.
  *
- * Interfaces, enums, type aliases and plain-valued constants are not symbols
- * today (`tsNameOf` names none of them), so no chunk exists to tag; the mapping
- * still answers for them, pinned by the `symbolKindOf` unit cases.
+ * Enums, type aliases and plain-valued constants are not symbols today
+ * (`tsNameOf` names none of them), so no chunk exists to tag; the mapping still
+ * answers for them, pinned by the `symbolKindOf` unit cases. Interfaces are
+ * named since bd tea-rags-mcp-3otbo.
  */
 import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
@@ -92,9 +93,9 @@ describe("TypeScript walker — symbol kind", () => {
     expect(symbolKinds(src)).toMatchObject({ PanelBase: "function", Panel: "function" });
   });
 
-  it("emits no chunk for an interface, enum, type alias or plain constant — none is a symbol yet", () => {
+  it("tags an interface `interface`; an enum, type alias or plain constant is no symbol yet (bd tea-rags-mcp-3otbo)", () => {
     const src = ["interface I {}", "enum E { A }", "type T = { a: number };", "export const MAX = 3;", ""].join("\n");
-    expect(symbolKinds(src)).toEqual({});
+    expect(symbolKinds(src)).toEqual({ I: "interface" });
   });
 });
 
