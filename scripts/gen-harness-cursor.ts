@@ -43,6 +43,34 @@ export const CURSOR_MARKETPLACE_PATH = ".cursor-plugin/marketplace.json";
 // owner decision 2026-10-28 (budgets are artificial), 9600
 export const CORE_RULE_MAX_CHARS = 9_600;
 
+/** Cap on the always-on tool-execution rule, frontmatter included. */
+export const TOOLS_RULE_MAX_CHARS = 2_000;
+
+/**
+ * Cursor dialect of the Codex-only "Tool execution and waiting" block. Codex keeps it out
+ * of the core (separate SessionStart hook); Cursor ships it as its own always-on rule so
+ * the core stays inside {@link CORE_RULE_MAX_CHARS}.
+ */
+export const CURSOR_TOOL_EXECUTION_RULE = `# Tool execution and waiting
+
+Dispatch already-needed independent tool calls together in one turn; await
+prerequisites before dependent calls. Parallelism never justifies extra context
+reads or competing edits.
+
+Keep each result (or error) labelled by its input path/id, cover every requested
+item and inspect every outcome.
+
+A returned result is ready. A running background terminal command or subagent:
+wait for its completion or output, reuse it, never restart the work. For user
+input, ask the question, then yield until the reply. Continue independent work
+when useful.
+
+Never use \`sleep\`, timer delays or busy polling to await tools, agents or users.
+`;
+const TOOLS_RULE = "tea-rags-tools";
+const TOOLS_DESCRIPTION =
+  "tea-rags tool execution: batch independent calls, label results by input, wait for running commands and agents without polling.";
+
 const CORE_RULE = "tea-rags-core";
 const CORE_DESCRIPTION =
   "tea-rags core rules: code search, navigation and project data through the tea-rags MCP tools and resources.";
@@ -280,7 +308,7 @@ function renderCursorDinopowers(root: string, teaRagsSkills: ReadonlySet<string>
 
 function readme(version: string, skills: string[], hasCore: boolean): string {
   const core = hasCore
-    ? "- `tea-rags/rules/tea-rags-core.mdc` — `rules/core.md` as an `alwaysApply: true` rule, with the terminal fallback for resource reads."
+    ? "- `tea-rags/rules/tea-rags-core.mdc` — `rules/core.md` as an `alwaysApply: true` rule, with the terminal fallback for resource reads.\n- `tea-rags/rules/tea-rags-tools.mdc` — tool execution and waiting as a separate `alwaysApply: true` rule (Codex ships the same behaviour as `codex-rules.txt`)."
     : "- `rules/core.md` does not exist yet: no `tea-rags/rules/tea-rags-core.mdc` is emitted. It appears on the first `npm run gen:harness-cursor` after it lands.";
   return `# tea-rags for Cursor
 
@@ -535,6 +563,10 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
   }
 
   if (hasCore) {
+    files.set(
+      `${PLUGIN_NAME}/rules/${TOOLS_RULE}.mdc`,
+      `---\ndescription: ${JSON.stringify(TOOLS_DESCRIPTION)}\nalwaysApply: true\n---\n\n${CURSOR_TOOL_EXECUTION_RULE}`,
+    );
     const core = parseFrontmatter(readFileSync(corePath, "utf8")).body;
     const body = withResourceFallback(`${toHarnessText(core, CURSOR_DIALECT, skillNames).trim()}\n`);
     files.set(

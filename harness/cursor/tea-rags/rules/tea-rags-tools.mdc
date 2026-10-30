@@ -1,0 +1,20 @@
+---
+description: "tea-rags tool execution: batch independent calls, label results by input, wait for running commands and agents without polling."
+alwaysApply: true
+---
+
+# Tool execution and waiting
+
+Dispatch already-needed independent tool calls together in one turn; await
+prerequisites before dependent calls. Parallelism never justifies extra context
+reads or competing edits.
+
+Keep each result (or error) labelled by its input path/id, cover every requested
+item and inspect every outcome.
+
+A returned result is ready. A running background terminal command or subagent:
+wait for its completion or output, reuse it, never restart the work. For user
+input, ask the question, then yield until the reply. Continue independent work
+when useful.
+
+Never use `sleep`, timer delays or busy polling to await tools, agents or users.

@@ -22,6 +22,7 @@ import {
   renderCursorHarness,
   renderCursorMarketplace,
   toCursorSkill,
+  TOOLS_RULE_MAX_CHARS,
   writeCursorHarness,
 } from "../../scripts/gen-harness-cursor.js";
 import { PLUGIN_SRC, PLUGINS_DIR } from "../../scripts/harness/package.js";
@@ -377,6 +378,55 @@ describe("renderCursorHarness — core rule", () => {
 
     expect(rule.length).toBeGreaterThan(8_500);
     expect(rule.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
+  });
+});
+
+describe("renderCursorHarness — tool execution rule", () => {
+  const RULE_PATH = "tea-rags/rules/tea-rags-tools.mdc";
+  let rendered: Map<string, string>;
+  beforeAll(async () => {
+    rendered = await renderCursorHarness(ROOT);
+  });
+
+  it("emits a separate alwaysApply rule within its own cap", () => {
+    const rule = rendered.get(RULE_PATH) ?? "";
+    const { fields, body } = parseFrontmatter(rule);
+
+    expect(rule).not.toBe("");
+    expect(fields.alwaysApply).toBe("true");
+    expect(fields.description).not.toBe("");
+    expect(body.trim().length).toBeGreaterThan(0);
+    expect(rule.length).toBeLessThanOrEqual(TOOLS_RULE_MAX_CHARS);
+  });
+
+  it("states the execution and waiting behaviour", () => {
+    const { body } = parseFrontmatter(rendered.get(RULE_PATH) ?? "");
+
+    expect(body).toContain("independent");
+    expect(body).toContain("together");
+    expect(body).toMatch(/labelled by (its )?input path\/id/);
+    expect(body).toMatch(/never[^.]*`?sleep`?/i);
+    expect(body).toContain("polling");
+  });
+
+  it("carries no Codex-only mechanics", () => {
+    const rule = rendered.get(RULE_PATH) ?? "";
+
+    expect(rule).not.toBe("");
+    for (const term of [/code mode/i, /\bexec\b/, /Promise\.all/, /write_stdin/, /\bcell\b/, /ALL_TOOLS/]) {
+      expect(rule, String(term)).not.toMatch(term);
+    }
+  });
+
+  it("leaves the core rule inside its cap and free of the tools block", () => {
+    const core = rendered.get("tea-rags/rules/tea-rags-core.mdc") ?? "";
+
+    expect(core.length).toBeLessThanOrEqual(CORE_RULE_MAX_CHARS);
+    expect(core).not.toContain("Tool execution and waiting");
+  });
+
+  it("lists the rule in the generated README", () => {
+    expect(rendered.get("README.md")).toContain("`tea-rags/rules/tea-rags-tools.mdc`");
   });
 });
 
