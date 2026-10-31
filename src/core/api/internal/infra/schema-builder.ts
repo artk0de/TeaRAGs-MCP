@@ -123,9 +123,7 @@ export class SchemaBuilder implements SchemaBuilderPort {
     // Inline hint only; the default-resolution rules (auto-skip, notice) live
     // in tea-rags://guide/overview (bd tea-rags-mcp-ewg2s).
     const names = this.reranker.filterPresetNames();
-    let description =
-      'Raw Qdrant filter (must/should/must_not) or { presets: "a,b" }. ' +
-      "Omitted → preset default filter; {} clears. tea-rags://guide/overview.";
+    let description = 'Qdrant filter (must/should/must_not) or {presets:"a,b"}; {} clears the default filter.';
     if (names.length > 0) {
       description += ` Presets: ${names.join(", ")}.`;
     }

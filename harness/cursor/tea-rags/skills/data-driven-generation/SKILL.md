@@ -3,14 +3,13 @@ name: data-driven-generation
 description:
   'Decide HOW to write or change code by inspecting git signals on neighbors —
   classifies task mode (CREATE / EXTEND / MODIFY), pulls strategy and templates
-  from proven low-churn implementations, reuses existing shared helpers instead
-  of reinventing what the project already solved. Triggers on "implement
-  function X", "add method to class Y", "write a helper for Z", "modify function
-  X", "change behavior of Y", "напиши функцию", "добавь метод", "поправь метод",
-  "измени поведение", "overlay labels → strategy?", a hotfix with location + fix
-  named (cause known → not bug-hunt). NOT for discovery — use /explore. NOT for
-  pure rename/extract; a file MOVE still runs Step 6 restructure SIM + Step 7
-  gate. Overlay → strategy question: Step 1 answers it, no code needed.'
+  from proven low-churn implementations, reuses existing shared helpers.
+  Triggers on "implement function X", "add method to class Y", "write a helper
+  for Z", "modify function X", "change behavior of Y", "напиши функцию", "добавь
+  метод", "поправь метод", "измени поведение", "overlay labels → strategy?", a
+  hotfix with location + fix named (cause known → not bug-hunt). NOT for
+  discovery — use /explore. NOT for pure rename/extract; a file MOVE still
+  routes here.'
 ---
 
 # Data-Driven Generation

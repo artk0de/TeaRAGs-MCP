@@ -2,10 +2,10 @@
 name: tests-as-context
 description:
   'Internal step invoked by $data-driven-generation, $filter-building,
-  $mr-review, $risk-assessment, $test-first. Agentic-only — surfaces DSL test
-  chunks (chunkType "test" scenarios, "test_setup" fixtures) as context for
-  review, verification, refactoring, debugging; a user asking for test patterns
-  / conventions wants the dinopowers TDD wrapper, not this recipe.'
+  $mr-review, $risk-assessment, $test-first. Agentic-only — DSL test chunks
+  ("test" scenarios, "test_setup" fixtures) as context for review, verification,
+  refactoring, debugging; a user asking for test patterns / conventions wants
+  the dinopowers TDD wrapper, not this recipe.'
 ---
 
 # tests-as-context

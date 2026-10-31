@@ -2,20 +2,13 @@
 name: tests-as-context
 user-invocable: false
 description: >-
-  Agentic-only — surfaces DSL test chunks (chunkType "test" scenarios,
-  "test_setup" fixtures) as context for review, verification, refactoring,
-  debugging; a user asking for test patterns / conventions wants the dinopowers
-  TDD wrapper, not this recipe. NOT user-invocable: user names this skill or
-  asks which tests cover X → say agent-only, run explore's ONE
-  hybrid_search(testFile:"only", query=<module/symbol names>). Five recipes:
-  tests-at-risk (scenarios under threat for edited source), fixture-lookup
-  (reuse existing setup before drafting new), regression-archaeology (when was
-  the test for X added), test-flakiness (unstable test zones and infra),
-  spec-extraction (living docs from test TOC). Cross-language safe — recipes
-  emit runner-agnostic output. Skipped automatically when DSL test chunks absent
-  from index. Invoked from dinopowers wrappers (test-driven-development,
-  requesting-code-review, verification-before-completion, receiving-code-review)
-  and direct use-cases.md callouts; never in the slash command list.
+  Agentic-only — DSL test chunks ("test" scenarios, "test_setup" fixtures) as
+  context for review, verification, refactoring, debugging; a user asking for
+  test patterns / conventions wants the dinopowers TDD wrapper, not this recipe.
+  NOT user-invocable: a user naming this skill or asking which tests cover X →
+  say agent-only, run explore's ONE hybrid_search(testFile:"only",
+  query=<module/symbol names>). Recipes: tests-at-risk, fixture-lookup,
+  regression-archaeology, test-flakiness, spec-extraction.
 ---
 
 # tests-as-context

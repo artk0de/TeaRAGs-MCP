@@ -21,8 +21,6 @@
 import { z } from "zod";
 
 import {
-  DEFAULT_META_ONLY_FIELDS,
-  DEFAULT_SEARCH_FIELDS,
   FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
   MAX_QUERY_VARIANTS,
@@ -212,36 +210,33 @@ function collectionPathFields() {
  */
 function typedFilterCatalog() {
   return {
-    language: z.string().optional().describe("Filter by programming language"),
+    language: z.string().optional().describe("Language."),
     fileExtension: z
       .union([z.string(), z.array(z.string())])
       .optional()
-      .describe("File extension(s): '.ts' or ['.ts', '.py']."),
-    chunkType: z.string().optional().describe("function | class | interface | block"),
-    documentation: z
-      .enum(["only", "exclude", "include"])
-      .optional()
-      .describe("Omitted → preset default may drop docs."),
-    testFile: z.enum(["only", "exclude", "include"]).optional().describe("Omitted → preset default may drop tests."),
-    author: z.string().optional().describe("Blame owner (git blame HEAD), exact name."),
-    recentAuthor: z.string().optional().describe("Top FILE committer in git log window (not blame); name or email."),
-    contributor: z.string().optional().describe("Any FILE committer in git log window; exact name."),
-    modifiedAfter: z.string().optional().describe("File last commit on/after ISO date."),
-    modifiedBefore: z.string().optional().describe("File last commit on/before ISO date."),
-    minAgeDays: coerceNumber().optional().describe("Last commit ≥ N days ago; chunk level drops no-commit chunks."),
-    maxAgeDays: coerceNumber().optional().describe("Last commit ≤ N days ago (0 = today)."),
-    minCommitCount: coerceNumber().optional().describe("Min commits (churn)."),
-    taskId: z.string().optional().describe("Commit-message task ID, e.g. TD-1234, #567."),
-    symbolId: z.string().optional().describe("Partial symbolId match: 'Class' → all its methods."),
+      .describe("'.ts' or ['.ts','.py']."),
+    chunkType: z.string().optional().describe("function|class|interface|block"),
+    documentation: z.enum(["only", "exclude", "include"]).optional().describe("Preset default may drop docs."),
+    testFile: z.enum(["only", "exclude", "include"]).optional().describe("Preset default may drop tests."),
+    author: z.string().optional().describe("Blame owner, exact name."),
+    recentAuthor: z.string().optional().describe("Top recent committer, name/email."),
+    contributor: z.string().optional().describe("Any recent committer, exact name."),
+    modifiedAfter: z.string().optional().describe("ISO date."),
+    modifiedBefore: z.string().optional().describe("ISO date."),
+    minAgeDays: coerceNumber().optional().describe("Last commit ≥ N days ago."),
+    maxAgeDays: coerceNumber().optional().describe("Last commit ≤ N days ago."),
+    minCommitCount: coerceNumber().optional().describe("Min commits."),
+    taskId: z.string().optional().describe("Commit task ID."),
+    symbolId: z.string().optional().describe("Partial symbolId."),
     // Codegraph trajectory — names map to nested Qdrant paths in codegraphFilters.toCondition().
-    minFanIn: coerceNumber().optional().describe("File: importers; chunk level: call sites."),
-    minFanOut: coerceNumber().optional().describe("File: imports; chunk level: outgoing calls."),
-    minPageRank: coerceNumber().optional().describe("Chunk PageRank, 0-1."),
-    minInstability: coerceNumber().optional().describe("fanOut/(fanIn+fanOut), 0-1. File-level."),
-    minTransitiveImpact: coerceNumber().optional().describe("Transitive importer files. File-level."),
-    minConnectionCount: coerceNumber().optional().describe("fanIn+fanOut. File-level."),
-    isHub: coerceBoolean().optional().describe("fanIn above p95. File-level."),
-    isLeaf: coerceBoolean().optional().describe("fanOut 0, fanIn > 0. File-level."),
+    minFanIn: coerceNumber().optional().describe("Min fan-in."),
+    minFanOut: coerceNumber().optional().describe("Min fan-out."),
+    minPageRank: coerceNumber().optional().describe("0-1."),
+    minInstability: coerceNumber().optional().describe("File-level, 0-1."),
+    minTransitiveImpact: coerceNumber().optional().describe("File-level."),
+    minConnectionCount: coerceNumber().optional().describe("File-level."),
+    isHub: coerceBoolean().optional().describe("File-level."),
+    isLeaf: coerceBoolean().optional().describe("File-level."),
   };
 }
 
@@ -261,16 +256,15 @@ function typedFilterFields(applied: ReadonlySet<string>): TypedFilterCatalog {
   return Object.fromEntries(Object.entries(catalog).filter(([param]) => applied.has(param))) as TypedFilterCatalog;
 }
 
-const PATH_PATTERN_HINT = "Glob on file path (picomatch), e.g. '**/workflow/**', 'src/**/*.ts'.";
+const PATH_PATTERN_HINT = "Picomatch glob, e.g. 'src/**/*.ts'.";
 
 /**
  * The custom arm is an open map (bd tea-rags-mcp-0y5oj) — the hint names where
  * its keys come from; an unknown key is rejected server-side.
  */
-const RERANK_HINT =
-  "Preset, or {custom: {<signal>: number}}; signals: tea-rags://guide/signals, presets: tea-rags://guide/presets.";
+const RERANK_HINT = "Preset or {custom:{<signal>:weight}}; tea-rags://guide/signals.";
 
-const OFFSET_HINT = "Skip first N results (pagination). Default: 0.";
+const OFFSET_HINT = "Pagination offset.";
 
 /**
  * Shared fields for query, limit, filter, pathPattern used in semantic/hybrid search.
@@ -279,10 +273,8 @@ function searchCommonFields(filterSchema: z.ZodTypeAny) {
   return {
     query: z
       .union([z.string(), z.array(z.string()).min(1).max(MAX_QUERY_VARIANTS)])
-      .describe(
-        `Query text, or up to ${MAX_QUERY_VARIANTS} variants (array or 'a ${QUERY_VARIANT_SEPARATOR} b') fused in one call.`,
-      ),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
+      .describe(`Text or ≤${MAX_QUERY_VARIANTS} variants (array / 'a ${QUERY_VARIANT_SEPARATOR} b'), fused.`),
+    limit: coerceNumber().optional().describe("Default 10."),
     filter: filterSchema.optional(),
     pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),
   };
@@ -295,12 +287,7 @@ function searchCommonFields(filterSchema: z.ZodTypeAny) {
  */
 function levelField() {
   return {
-    level: z
-      .enum(["chunk", "file"])
-      .optional()
-      .describe(
-        "'file' ranks whole files (file payload, no content); also scopes level-aware filters. Default: preset's.",
-      ),
+    level: z.enum(["chunk", "file"]).optional().describe("'file' ranks files; scopes level-aware filters."),
   };
 }
 
@@ -309,32 +296,27 @@ function levelField() {
  * via fields, labels only in rankingOverlay) is stated once in
  * tea-rags://guide/overview (`META_ONLY_CONTRACT` in the resources registry).
  */
-const META_ONLY_HINT = "Drop content; payload = locator (path, symbolId, lines, signature); signals via fields.";
+const META_ONLY_HINT = "Locator rows, no content.";
 
 /**
- * A search tool's `fields` default, interpolated from the constants the
- * projection applies (bd tea-rags-mcp-q1g6s.16) — never hand-typed.
+ * find_symbol keeps its own lean per-mode default. A search tool's `fields`
+ * default is stated in tea-rags://guide/overview, interpolated there from the
+ * constants the projection applies (bd tea-rags-mcp-q1g6s.16) — the alwaysLoad
+ * hint stays one clause (bd tea-rags-mcp-d0z7b.5).
  */
-const SEARCH_FIELDS_OMITTED_HINT = `Omitted → [${DEFAULT_SEARCH_FIELDS.join(",")}]; metaOnly → [${DEFAULT_META_ONLY_FIELDS.join(",")}]. `;
-
-/** find_symbol keeps its own lean per-mode default. */
-const LOOKUP_FIELDS_OMITTED_HINT = "Omitted → lean default per mode. ";
+const LOOKUP_FIELDS_OMITTED_HINT = "; omitted → lean per mode";
 
 /**
  * Shared payload allow-list. Every tool that returns payload-bearing results
  * accepts it, so an agent never has to remember which one does
  * (bd tea-rags-mcp-l2lix).
  */
-function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
+function fieldsField(omittedHint = "") {
   return {
     fields: z
       .array(z.string())
       .optional()
-      .describe(
-        `Payload dot-paths to return (relativePath always kept); unmatched → fieldsWarning. ${
-          omittedHint
-        }Paths: tea-rags://guide/signals.`,
-      ),
+      .describe(`Payload dot-paths (relativePath kept)${omittedHint}; tea-rags://guide/signals.`),
     ...includeImportsField(),
   };
 }
@@ -346,7 +328,7 @@ function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
  */
 function includeImportsField() {
   return {
-    includeImports: coerceBoolean().optional().describe("true → full import lists (default: count)."),
+    includeImports: coerceBoolean().optional().describe("true → full import lists."),
   };
 }
 
@@ -357,7 +339,7 @@ function paginationFields(metaOnlyDefault?: boolean) {
     metaOnly: coerceBoolean()
       .optional()
       .default(metaOnlyDefault ?? false)
-      .describe(`${META_ONLY_HINT} Default: ${metaOnlyDefault ? "true" : "false"}.`),
+      .describe(META_ONLY_HINT),
   };
 }
 
@@ -365,10 +347,7 @@ function paginationFields(metaOnlyDefault?: boolean) {
 function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeAny, applied: ReadonlySet<string>) {
   return {
     ...collectionPathFields(),
-    scope: z
-      .enum(["code", "migrations"])
-      .optional()
-      .describe("migrations = Rails schema history (not current state), relevance-ranked. Default code."),
+    scope: z.enum(["code", "migrations"]).optional().describe("migrations = Rails schema history."),
     ...searchCommonFields(filterSchema),
     ...typedFilterFields(applied),
     ...levelField(),
@@ -450,41 +429,30 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilderPort) {
   };
 
   const FindSymbolSchema = {
-    symbol: z
-      .string()
-      .optional()
-      .describe(
-        "Symbol or symbolId: Class#method (instance), Class.method (static), fn. Partial ok. Excludes relativePath.",
-      ),
+    symbol: z.string().optional().describe("Class#method, Class.method, fn; partial ok. Excludes relativePath."),
     symbols: z
       .array(z.string())
       .min(1)
       .max(20)
       .optional()
       .describe(
-        `1-20 symbol ids, file paths; ≤${FULL_TEXT_MAX_LINES} lines or ≤${FULL_TEXT_MAX_CHARS} chars → full text in budget, else outline. Excludes symbol, relativePath.`,
+        `1-20 symbol ids / file paths; ≤${FULL_TEXT_MAX_LINES} lines or ≤${FULL_TEXT_MAX_CHARS} chars → full text, else outline. Excludes symbol, relativePath.`,
       ),
     relativePath: z
       .string()
       .optional()
       .describe(
-        "File → full text if small, else outline; doc → heading TOC. Directory → files, top-level symbols, subdirs. Excludes symbol.",
+        `File ≤${FULL_TEXT_MAX_LINES} lines or ≤${FULL_TEXT_MAX_CHARS} chars → full text, else outline; dir → listing. Excludes symbol.`,
       ),
     ...collectionPathFields(),
-    language: z
-      .string()
-      .optional()
-      .describe("Filter by programming language (for disambiguation in polyglot codebases)"),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe("Glob scoping symbol-mode lookup, e.g. '**/services/**'. Ignored with relativePath."),
+    language: z.string().optional().describe("Language."),
+    pathPattern: z.string().optional().describe("Glob; ignored with relativePath."),
     metaOnly: coerceBoolean().optional().describe(`Existence check. ${META_ONLY_HINT}`),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe("Preset or {custom: {<signal>: number}} (tea-rags://guide/signals) — attaches rankingOverlay."),
+      .describe("Preset or {custom: {<signal>: weight}} (tea-rags://guide/signals) → rankingOverlay."),
     ...fieldsField(LOOKUP_FIELDS_OMITTED_HINT),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
+    limit: coerceNumber().optional().describe("Default 50."),
     offset: coerceNumber().optional().describe(OFFSET_HINT),
   };
 
