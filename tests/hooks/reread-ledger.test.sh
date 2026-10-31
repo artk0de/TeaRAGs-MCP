@@ -261,6 +261,12 @@ pre delivery-header-end Read "$(read_in "$REPO/class.rb" 6 1)"
 noted "line 6 of class.rb"; note $? "header span disambiguates a repeated end line"
 pre delivery-header-end Read "$(read_in "$REPO/class.rb" 5 1)"
 silent; note $? "a header end cannot be attributed to a method end with the same source text"
+REFERENCED='{"structuredContent":{"results":[{"payload":{"relativePath":"class.rb","symbolId":"Service#call","startLine":3,"endLine":5,"content":"  def call\n    :body\n  end","referencedDefinitions":[{"symbolId":"Service::HEAD","startLine":2,"endLine":2,"text":"  HEAD = 1"},{"symbolId":"Service::MISSING","startLine":1,"endLine":1}]}}]}}'
+post delivery-referenced mcp__tea-rags__find_symbol '{"symbol":"Service#call"}' "$REFERENCED"
+pre delivery-referenced Read "$(read_in "$REPO/class.rb" 2 1)"
+noted "line 2 of class.rb"; note $? "a method row's referencedDefinitions text records its definition lines as served"
+pre delivery-referenced Read "$(read_in "$REPO/class.rb" 1 1)"
+silent; note $? "a referenced definition named without text records nothing"
 
 # --- indexed-source nudge: a raw read of an indexed source file → find_symbol(relativePath:)
 mkdir -p "$REPO/config" "$REPO/db/migrate" "$REPO/spec"
@@ -271,7 +277,7 @@ export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePat
 NUDGE='big.ts is indexed source — find_symbol(relativePath: "big.ts") returns it'
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
 pre s40 Read "$(read_in "$BIG")"
-noted "$NUDGE" "full text ≤150 lines, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
+noted "$NUDGE" "full text ≤150 lines or ≤9000 chars, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
 pre s40 Read "$(read_in "$BIG" 3 4)"
 silent; note $? "the nudge fires once per file per turn"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'

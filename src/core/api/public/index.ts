@@ -63,6 +63,7 @@ export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve
 export {
   BATCH_FULL_TEXT_CHAR_BUDGET,
   CONTAINER_HEADER_CHAR_BUDGET,
+  FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
 } from "../../contracts/types/symbol-batch.js";
 export { MAX_QUERY_VARIANTS, QUERY_VARIANT_SEPARATOR } from "../../contracts/types/query-variants.js";

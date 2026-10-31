@@ -5,8 +5,13 @@ import type { WorkingTreeMarker } from "../../../../src/core/api/public/dto/work
 import { BODY_SHOWN_BANNER, SEARCH_ANCHOR_BANNER } from "../../../../src/core/api/tools/answer-banner.js";
 import { toColumns, type ColumnTable } from "../../../../src/core/api/tools/columns.js";
 import { compactWorkingTreeMarker } from "../../../../src/core/api/tools/format.js";
-import { SearchResultItemSchema, SearchResultOutputSchema } from "../../../../src/core/api/tools/output-schemas.js";
+import {
+  FindSymbolResultItemSchema,
+  SearchResultItemSchema,
+  SearchResultOutputSchema,
+} from "../../../../src/core/api/tools/output-schemas.js";
 import { CodeChunkGrouper } from "../../../../src/core/domains/explore/chunk-grouping/code.js";
+import { collectReferencedDefinitions } from "../../../../src/core/domains/explore/referenced-definitions.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 import { resolveSymbols } from "../../../../src/core/domains/explore/symbol-resolve.js";
@@ -170,6 +175,40 @@ describe("SearchResultOutputSchema", () => {
 
     expect(schema.parse({ results: [record] }).results).toEqual([record]);
     expect(schema.parse({ results: [] }).results).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-d0z7b.4: a method row's referencedDefinitions is a declared optional payload key.
+  it("declares find_symbol's referencedDefinitions and accepts the rows the collector builds", () => {
+    const findSymbolItems = z.array(FindSymbolResultItemSchema);
+    expect(Object.keys(FindSymbolResultItemSchema.shape.payload.unwrap().shape)).toContain("referencedDefinitions");
+    // Declared on find_symbol alone: the other search tools never emit it.
+    expect(Object.keys(SearchResultItemSchema.shape.payload.unwrap().shape)).not.toContain("referencedDefinitions");
+
+    const definitions = collectReferencedDefinitions({
+      body: "def previewable?\n  ext.match?(Doc::PREVIEWABLE)\nend",
+      ownerSymbolId: "Doc",
+      headerChunks: [
+        {
+          id: "h",
+          payload: {
+            symbolId: "Doc",
+            parentSymbolId: "Doc",
+            chunkType: "block",
+            startLine: 2,
+            endLine: 2,
+            memberSymbolIds: ["Doc::PREVIEWABLE"],
+          },
+        },
+      ],
+      treeText: "class Doc\n  PREVIEWABLE = /pdf/\nend",
+    });
+    const [row] = overTheWire([{ payload: { symbolId: "Doc#previewable?", referencedDefinitions: definitions } }]);
+    expect(findSymbolItems.parse([row])).toEqual([row]);
+    expect(() =>
+      findSymbolItems.parse([
+        { payload: { referencedDefinitions: [{ symbolId: "Doc::X", startLine: "2", endLine: 2 }] } },
+      ]),
+    ).toThrow();
   });
 
   it("accepts find_symbol's synthetic results (mergedChunkIds, chunkCount) unchanged", () => {

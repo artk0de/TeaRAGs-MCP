@@ -1399,7 +1399,7 @@ function indexedSourceHit(ledger, paths, cwd, lookup) {
  * verdict is looked up once per session (indexedSourceHit).
  */
 function indexedSourceNudge(file) {
-  return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
+  return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines or ≤9000 chars, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
 }
 
 /**
@@ -1553,6 +1553,11 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
         ? deliveredHeaderRanges(path, row)
         : deliveredRanges(path, [[row.startLine, row.endLine]], row.content);
     ledger.record(path, ranges, teaRags);
+    // A method row's inlined constant definitions (d0z7b.4) printed their lines too.
+    for (const def of Array.isArray(row.referencedDefinitions) ? row.referencedDefinitions : []) {
+      if (typeof def?.text !== "string" || !Number.isInteger(def.startLine) || !Number.isInteger(def.endLine)) continue;
+      ledger.record(path, deliveredRanges(path, [[def.startLine, def.endLine]], def.text), teaRags);
+    }
     const whole = ranges.length === 1 && ranges[0][0] === row.startLine && ranges[0][1] === row.endLine;
     if (whole && row.kind !== "containerHeader" && typeof row.symbolId === "string" && row.symbolId) {
       ledger.recordSymbol(row.symbolId, path, row.startLine, row.endLine, teaRags);
