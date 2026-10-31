@@ -23,8 +23,15 @@ for i in $(seq 1 12); do echo "def b$i; end"; done > "$REPO/sub/b.rb"
 
 # Fake `tea-rags`: `project indexed …` prints $FAKE_OUT (default: not indexed) and
 # exits like the real one (0 indexed, 1 not); every call is logged to calls.log.
+# `call find_symbol <json> …` prints $FAKE_OUTLINE (the batched outline answer) and
+# logs its JSON argument to outline.log.
 cat > "$FAKEBIN/tea-rags" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1 $2" = "call find_symbol" ]; then
+  echo "$3" >> "$(dirname "$0")/outline.log"
+  printf '%s\n' "${FAKE_OUTLINE:-{\"results\":[]\}}"
+  exit 0
+fi
 [ "$1 $2" = "project indexed" ] || exit 3
 echo "$*" >> "$(dirname "$0")/calls.log"
 printf '%s\n' "${FAKE_OUT:-{\"indexed\":false\}}"
@@ -461,6 +468,85 @@ hrun codex "$(shell_ev codex pre h7 "sed -n 3,12p a.ts")"
 hnoted codex "lines 3–12 of a.ts" "find_symbol"; note $? "codex: a code-mode tea-rags body is recorded → raw sed of its lines noted"
 export FAKE_OUT='{"indexed":false}'
 
+# --- Outline ids (bd tea-rags-mcp-9f0yn.4/.5): a partial read of indexed source names the outline
+# ids whose ` L<start>-<end>` covers it; a grep hit names its enclosing ids. Outline contract:
+# a member line ends in ` L<a>-<b>` after an optional ` (visibility)`; declaration-only ids carry
+# no range; a container's header prints `header A–B`. ONE `tea-rags call find_symbol` per event
+# (≤ 3 paths), cached per session; no ranges in the outline → today's generic nudge (fail open).
+for i in $(seq 1 110); do echo "svc_line_$i = $i"; done > "$REPO/svc.rb"
+for i in $(seq 1 60); do echo "two_line_$i = $i"; done > "$REPO/two.rb"
+for i in $(seq 1 60); do echo "spec_line_$i = $i"; done > "$REPO/spec/svc_spec.rb"
+SVC_OUTLINE=$'svc.rb\n  Svc L1-100\n  header 1–9\n  Svc::LIMIT\n  Svc#alpha L10-30\n  Svc#beta (private) L32-60\n  Svc#gamma L62-98'
+TWO_OUTLINE=$'two.rb\n  Two L1-60\n  Two#run L5-40'
+outline_answer() { # <svc content> [two content] → the batched find_symbol JSON
+  jq -cn --arg s "$1" --arg t "${2:-}" '{results: ([{payload: {request: "svc.rb", relativePath: "svc.rb", content: $s}}]
+    + (if $t == "" then [] else [{payload: {request: "two.rb", relativePath: "two.rb", content: $t}}] end))}'
+}
+export FAKE_OUTLINE; FAKE_OUTLINE=$(outline_answer "$SVC_OUTLINE" "$TWO_OUTLINE")
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"svc.rb"}'
+SVC_NUDGE='svc.rb is indexed source — find_symbol(relativePath: "svc.rb") returns it'
+rm -f "$FAKEBIN/outline.log"
+run '{"hook_event_name":"UserPromptSubmit","session_id":"o1","prompt":"p"}'
+pre o1 Read "$(read_in "$REPO/svc.rb" 35 10)"
+noted 'svc.rb lines 35–44' 'find_symbol(symbols:["Svc#beta"])' 'never Read offset/limit'; note $? "Read offset/limit inside one method → its id as a literal find_symbol(symbols:[…]), never a decision"
+! context | grep -qF "$SVC_NUDGE"; note $? "… instead of the generic nudge"
+! context | grep -qF '(private)'; note $? "… the visibility suffix is not part of the id"
+run '{"hook_event_name":"UserPromptSubmit","session_id":"o1","prompt":"p"}'
+pre o1 Bash "$(bash_in "sed -n 20,40p svc.rb")"
+noted 'find_symbol(symbols:["Svc#alpha","Svc#beta"])'; note $? "sed -n spanning two methods → both covering leaf ids, never the container"
+[ "$(wc -l < "$FAKEBIN/outline.log" | tr -d ' ')" = 1 ]; note $? "the outline is fetched once per session (cached)"
+pre o2 Bash "$(bash_in "head -n 5 svc.rb")"
+noted 'find_symbol(symbol:"Svc")' 'header'; note $? "a header-only range → find_symbol(symbol:\"<Class>\")"
+pre o3 Bash "$(bash_in "tail -n 5 svc.rb")"
+noted "$SVC_NUDGE"; note $? "lines no outline entry covers → the generic nudge, no ids"
+! context | grep -qF 'find_symbol(symbols:["'; note $? "… and never an id for them"
+rm -f "$FAKEBIN/outline.log"
+pre o4 Read "$(read_in "$REPO/svc.rb")"
+noted "$SVC_NUDGE"; note $? "a read of ≥ 80% of the file → the generic nudge"
+[ ! -s "$FAKEBIN/outline.log" ]; note $? "… without an outline call"
+FAKE_OUTLINE=$(outline_answer $'svc.rb\n  Svc\n  Svc#alpha\n  Svc#beta (private)\n  Svc#gamma')
+pre o5 Read "$(read_in "$REPO/svc.rb" 35 10)"
+noted "$SVC_NUDGE"; note $? "an outline without line ranges → the generic nudge (fail open)"
+FAKE_OUTLINE='not json'
+pre o6 Read "$(read_in "$REPO/svc.rb" 35 10)"
+noted "$SVC_NUDGE"; note $? "an unparsable outline answer → the generic nudge (fail open)"
+FAKE_OUTLINE=$(outline_answer "$SVC_OUTLINE" "$TWO_OUTLINE")
+grep_out() { jq -cn --arg c "$1" '{mode: "content", numFiles: 1, filenames: [], content: $c, numLines: 2}'; }
+post_context() { [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.hookEventName // empty')" = PostToolUse ] || return 1
+  local s; for s in "$@"; do context | grep -qF -- "$s" || return 1; done; }
+rm -f "$FAKEBIN/outline.log"
+post p1 Grep '{"pattern":"line_4","path":".","output_mode":"content","-n":true}' \
+  "$(grep_out "$(printf 'svc.rb:40:svc_line_40 = 40\nsvc.rb:70:svc_line_70 = 70\ntwo.rb:12:two_line_12 = 12')")"
+post_context 'find_symbol(symbols:["Svc#beta","Svc#gamma","Two#run"])' 'svc.rb' 'two.rb'; note $? "PostToolUse Grep content hits → the enclosing ids as one literal find_symbol(symbols:[…]), hookEventName PostToolUse"
+[ "$(wc -l < "$FAKEBIN/outline.log" | tr -d ' ')" = 1 ] && grep -qF '"svc.rb"' "$FAKEBIN/outline.log" && grep -qF '"two.rb"' "$FAKEBIN/outline.log"
+note $? "… from ONE batched outline call for both files"
+post p2 Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_15 = 15')"
+post_context 'find_symbol(symbols:["Svc#alpha"])'; note $? "PostToolUse Bash grep -n on one file → the enclosing id"
+post p3 Bash "$(bash_in "grep -rn spec_line_7 spec")" "$(shell_out 'spec/svc_spec.rb:7:spec_line_7 = 7')"
+silent; note $? "hits in a test / zone file → no note"
+post p4 Grep '{"pattern":"svc_line_4","path":".","output_mode":"files_with_matches"}' '{"mode":"files_with_matches","filenames":["svc.rb"],"numFiles":1}'
+silent; note $? "Grep files_with_matches → no note"
+post p5 Bash "$(bash_in "grep -n svc_line_105 svc.rb")" "$(shell_out '105:svc_line_105 = 105')"
+silent; note $? "a hit on a line no outline entry covers → no note"
+post p6 Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_99999 = 1')"
+silent; note $? "a hit line that is not the file's content → no note"
+post p7 Bash "$(bash_in "grep svc_line_15 svc.rb")" "$(shell_out 'svc_line_15 = 15')"
+silent; note $? "grep without -n (no line numbers) → no note"
+# Codex: PostToolUse context is not proven for that harness (README / harness facts name the
+# PreToolUse wire only) → gated off; the PreToolUse range nudge ships there. Cursor: postToolUse
+# additional_context is documented (harness facts §B, turn-routing.sh) → the hit note ships.
+hrun codex "$(shell_ev codex pre o7 "sed -n 35,44p svc.rb")"
+hnoted codex 'find_symbol(symbols:["Svc#beta"])'; note $? "codex: shell range read → covering ids as a PreToolUse note"
+hrun codex "$(shell_ev codex post o7 "grep -n svc_line_15 svc.rb" "$(shell_out '15:svc_line_15 = 15')")"
+hquiet codex; note $? "codex: grep hits → no PostToolUse note (channel unproven)"
+hrun cursor "$(shell_ev cursor pre o8 "sed -n 35,44p svc.rb")"
+hnoted cursor 'find_symbol(symbols:["Svc#beta"])'; note $? "cursor: shell range read → covering ids as additional_context"
+hrun cursor "$(shell_ev cursor post o8 "grep -n svc_line_15 svc.rb" "$(shell_out '15:svc_line_15 = 15')")"
+[ "$CODE" = 0 ] && hcontext cursor | grep -qF 'find_symbol(symbols:["Svc#alpha"])' && [ -z "$(printf '%s' "$OUT" | jq -r '.permission // empty')" ]
+note $? "cursor: postToolUse grep hits → the enclosing ids as additional_context"
+export FAKE_OUT='{"indexed":false}'
+unset FAKE_OUTLINE
+
 # Wiring: Codex and Cursor run the ledger on the events above.
 CJ="$ROOT/harness/codex/tea-rags/hooks/hooks.json"
 UJ="$ROOT/harness/cursor/tea-rags/hooks/hooks.json"
@@ -478,6 +564,13 @@ jq -e '.hooks.postToolUse[] | select(.command | test("reread-ledger.mjs\"? --har
   && jq -e '.hooks.afterMCPExecution[] | select(.command | test("reread-ledger.mjs\"? --harness cursor"))' "$UJ" >/dev/null \
   && jq -e '.hooks.beforeSubmitPrompt[] | select(.command | test("reread-ledger.mjs\"? --harness cursor"))' "$UJ" >/dev/null
 note $? "cursor: postToolUse + afterMCPExecution + beforeSubmitPrompt wire the ledger"
+# Claude Code: PostToolUse(Grep) reaches the ledger (the grep-hit note); the outline call needs
+# the 8 s budget on both tool events.
+PJ="$ROOT/plugins/tea-rags/.claude-plugin/plugin.json"
+jq -e '.hooks.PostToolUse[] | select(.matcher as $m | ("Grep" | test($m)) and ("Bash" | test($m))) | .hooks[] | select(.command | test("reread-ledger.mjs"))' "$PJ" >/dev/null
+note $? "claude: PostToolUse(Grep|Bash) wires the ledger"
+[ "$(jq '[.hooks.PreToolUse[], .hooks.PostToolUse[] | .hooks[] | select(.command | test("reread-ledger.mjs")) | .timeout] | unique' -c "$PJ")" = '[8]' ]
+note $? "claude: the ledger's Pre/PostToolUse timeout is 8 s"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" = 0 ]

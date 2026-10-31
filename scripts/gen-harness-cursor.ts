@@ -339,8 +339,10 @@ Try an edit locally with \`npm run gen:plugins\`; the release regenerates this p
   denied), reset by \`afterMCPExecution\` from server \`tea-rags\`; \`preToolUse\` (\`Shell|Read\`) +
   \`postToolUse\` + \`afterMCPExecution\` + \`beforeSubmitPrompt\` → \`node scripts/reread-ledger.mjs\` — read steering:
   a raw read of indexed source gets one \`find_symbol(relativePath:)\` nudge per file per turn, a re-read of lines
-  already returned (shell reads, tea-rags bodies) one note, both as \`additional_context\` on \`{"permission":"allow"}\`;
-  a Read result is not recorded (no line range in its hook input); \`beforeSubmitPrompt\` +
+  already returned (shell reads, tea-rags bodies) one note, both as \`additional_context\` on \`{"permission":"allow"}\`
+  (a slice under 80% of the file names the outline ids whose \`L<a>-<b>\` covers it as a literal
+  \`find_symbol(symbols:[…])\`); a numbered shell grep's hits in indexed source get their enclosing ids as
+  \`additional_context\` on \`postToolUse\`; a Read result is not recorded (no line range in its hook input); \`beforeSubmitPrompt\` +
   \`postToolUse\` → \`scripts/turn-routing.sh\` — the prompt arms the turn (\`{"continue":true}\`), its first tool result
   carries \`scripts/turn-routing.txt\` as \`additional_context\` (beforeSubmitPrompt has no context channel; a turn with no
   tool call gets no re-inject).

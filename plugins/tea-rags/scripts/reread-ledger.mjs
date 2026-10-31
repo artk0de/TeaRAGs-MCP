@@ -23,7 +23,15 @@
 //                nudge line naming find_symbol(relativePath:), once per file per
 //                turn, never beside the re-read note or a search-drift SEARCH
 //                deny (reads are never denied, bd tea-rags-mcp-nxg76: on every
-//                harness this nudge is the only read steering).
+//                harness this nudge is the only read steering). A slice of < 80% of
+//                the file names instead the outline ids whose ` L<a>-<b>` covers it
+//                as a literal find_symbol(symbols:[…]) — find_symbol(symbol:"<Class>")
+//                for a container header only — from ONE `tea-rags call find_symbol
+//                {symbols:[path], metaOnly}` cached per session; an outline without
+//                ranges for those lines keeps the generic nudge.
+//   PostToolUse  Grep content / numbered shell grep hits in indexed, non-zone files
+//                (≤ 3, one outline call) → one note naming their enclosing ids as a
+//                literal find_symbol(symbols:[…]). Claude Code and Cursor only.
 //   UserPromptSubmit → next turn (the note names the turn).
 //   SessionStart compact | clear → drop the session ledger (the lines left the
 //                context); startup → prune ledgers idle for 7 days.
@@ -35,11 +43,13 @@
 //   codex  — PreToolUse / PostToolUse(shell: Bash|shell|exec_command, argv or
 //            string command, workdir; tea-rags MCP under either spelling),
 //            UserPromptSubmit, SessionStart; hookSpecificOutput.additionalContext
-//            (PreToolUseHookSpecificOutputWire, codex-cli 0.162.1). No Read tool;
+//            (PreToolUseHookSpecificOutputWire, codex-cli 0.162.1); no grep-hit
+//            note (a PostToolUse context channel is not established). No Read tool;
 //            apply_patch edits invalidate through the mtime + size stamp.
 //   cursor — preToolUse(Shell|Read) notes as {"permission":"allow",
 //            "additional_context"}; postToolUse(Shell) and afterMCPExecution
-//            (tea-rags server) record; beforeSubmitPrompt → next turn +
+//            (tea-rags server) record, the grep-hit note rides postToolUse
+//            as {"additional_context"}; beforeSubmitPrompt → next turn +
 //            {"continue":true}; ledgers idle 7 days are pruned there (no
 //            sessionStart keyed like the tool events). A Read result is not
 //            recorded: its hook input carries no line range. Every Cursor exit
@@ -69,6 +79,10 @@ const READ_DEFAULT_LIMIT = 2000;
 const MAX_COUNTED_BYTES = 8 * 1024 * 1024;
 const IDLE_LEDGER_MS = 7 * 24 * 3600 * 1000;
 const INDEXED_LOOKUP_TIMEOUT_MS = 1500;
+// The outline call shares the hook's 8 s budget with the index lookup.
+const OUTLINE_LOOKUP_TIMEOUT_MS = 5000;
+const MAX_OUTLINE_FILES = 3;
+const MAX_NAMED_IDS = 8;
 // search-drift.sh thresholds: a streak of 3 concept searches, one deny per 120 s. Reads never count.
 const DRIFT_SEARCH_STREAK = 3;
 const DRIFT_COOLDOWN_SEC = 120;
@@ -490,6 +504,15 @@ export function numberedGrepLines(command, stdout, cwd, isFile) {
     const files = operands.slice(patternGiven ? 0 : 1);
     singleFile.push(files.length === 1 && !files[0].dynamic ? resolve(dirs[dirs.length - 1], files[0].word) : null);
   }
+  return printedNumberedLines(stdout, dirs, singleFile.length === 1 ? singleFile[0] : null, isFile);
+}
+
+/**
+ * `<path>:<n>:` / `<path>-<n>-` lines of a numbered search's output (path resolved against `dirs`,
+ * the first that names a file wins), and bare `<n>:` / `<n>-` lines of `lone` — the one file searched,
+ * when known. A line counts only when it is that line of the file now.
+ */
+function printedNumberedLines(stdout, dirs, lone, isFile) {
   const byPath = new Map();
   const sources = new Map();
   const add = (path, n, content) => {
@@ -500,7 +523,6 @@ export function numberedGrepLines(command, stdout, cwd, isFile) {
     byPath.set(path, list);
   };
   const resolved = new Map();
-  const lone = singleFile.length === 1 ? singleFile[0] : null;
   for (const line of stdout.split("\n").slice(0, MAX_NUMBERED_LINES)) {
     const hit = /^([^\s:]+?)([:-])(\d+)\2/.exec(line);
     if (hit && /[/.]/.test(hit[1])) {
@@ -849,6 +871,25 @@ export class RereadLedger {
     writeJson(join(this.dir, `n-${hash(path)}`), { path, ...state });
   }
 
+  /** Cached outline entries of a file (stamp unchanged since they were fetched), else null. */
+  outline(path) {
+    const entry = readJson(join(this.dir, `o-${hash(path)}`));
+    if (!entry || entry.path !== path || !Array.isArray(entry.entries)) return null;
+    const stamp = fileStamp(path);
+    return stamp && stamp.mtimeMs === entry.mtimeMs && stamp.size === entry.size ? entry.entries : null;
+  }
+
+  recordOutline(path, entries) {
+    const stamp = fileStamp(path);
+    if (!stamp) return;
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeJson(join(this.dir, `o-${hash(path)}`), { path, ...stamp, entries });
+    } catch {
+      // the cache is best-effort: the next event fetches again
+    }
+  }
+
   forget(path) {
     rmSync(this.fileEntryPath(path), { force: true });
   }
@@ -1013,23 +1054,31 @@ export function harnessAnswer(harness, event, lines) {
         ? { permission: "allow", additional_context: context.slice(0, CURSOR_CONTEXT_MAX_CHARS) }
         : { permission: "allow" };
     }
+    if (event === "posttooluse" && context) return { additional_context: context.slice(0, CURSOR_CONTEXT_MAX_CHARS) };
     return event === "userpromptsubmit" || event === "beforesubmitprompt" ? { continue: true } : {};
   }
-  return context ? { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: context } } : null;
+  const hookEventName = event === "posttooluse" ? "PostToolUse" : "PreToolUse";
+  return context ? { hookSpecificOutput: { hookEventName, additionalContext: context } } : null;
 }
 
 /** One hook event → the JSON to print, or null. */
 export function handleHookEvent(
   raw,
-  { stateDir, harness = "claude", lineCount = fileLineCount, indexedLookup = cliIndexedLookup },
+  {
+    stateDir,
+    harness = "claude",
+    lineCount = fileLineCount,
+    indexedLookup = cliIndexedLookup,
+    outlineLookup = cliOutlines,
+  },
 ) {
   const rawEvent = String(raw?.hook_event_name ?? "").toLowerCase();
-  const lines = ledgerLines(harnessEvent(raw, harness), { stateDir, harness, lineCount, indexedLookup });
+  const lines = ledgerLines(harnessEvent(raw, harness), { stateDir, harness, lineCount, indexedLookup, outlineLookup });
   return harnessAnswer(harness, rawEvent, lines);
 }
 
 /** The ledger's lines for one Claude-shaped event (records and turn moves answer none). */
-function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup }) {
+function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup, outlineLookup }) {
   const event = String(input?.hook_event_name ?? "");
   const sid = String(input?.session_id ?? "").replace(/[^A-Za-z0-9_.-]/g, "_");
   if (!event || !sid) return [];
@@ -1053,7 +1102,11 @@ function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup }) {
   }
   if (event === "posttooluse") {
     recordPost(ledger, tool, toolInput, input.tool_response, cwd, lineCount);
-    return [];
+    // Codex: a PostToolUse additionalContext is not established for that harness (harness/codex/README.md
+    // names the PreToolUse wire only), so the hit note ships to Claude Code and Cursor.
+    if (harness === "codex" || !cwd || (tool !== "Grep" && tool !== "Bash")) return [];
+    const note = grepHitNote(ledger, tool, toolInput, input.tool_response, cwd, outlineLookup);
+    return note ? [note] : [];
   }
   if (event !== "pretooluse") return [];
 
@@ -1084,8 +1137,13 @@ function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup }) {
   const searchDenied = tool === "Bash" && driftSearchDenyMayFire(stateDir, harness, sid, toolInput.command, cwd);
   if ((tool === "Read" || tool === "Bash") && !searchDenied) {
     const fresh = files.map((f) => f.path).filter((path) => !held.has(path));
-    const nudge = indexedSourceNudge(ledger, fresh, cwd, indexedLookup);
-    if (nudge) lines.push(nudge);
+    const hit = indexedSourceHit(ledger, fresh, cwd, indexedLookup);
+    if (hit) {
+      const ranges = files.find((f) => f.path === hit.path)?.ranges ?? [];
+      lines.push(
+        rangeNudge(ledger, hit, ranges, cwd, lineCount, outlineLookup) ?? indexedSourceNudge(hit.relativePath),
+      );
+    }
   }
   return lines;
 }
@@ -1149,49 +1207,136 @@ function standardZonePattern() {
 }
 
 /**
- * The index answer for raw-read targets, through `tea-rags project indexed` (the membership
- * test search-drift.sh runs): `{ status: "indexed", relativePath }` for the first indexed
- * path, `{ status: "absent" }` when none is, `{ status: "unknown" }` when the CLI is missing,
- * slow or unparsable. `TEA_RAGS_BIN` set → that binary only, as in search-drift.sh.
+ * Stdout of `tea-rags <args>`, or null when no binary runs. A non-zero exit still answers with
+ * what it printed (`project indexed` exits 1 for "not indexed"). `TEA_RAGS_BIN` set → that
+ * binary only, as in search-drift.sh.
  */
-export function cliIndexedLookup(paths) {
-  const args = ["project", "indexed", ...paths.flatMap((path) => ["--path", path]), "--json"];
+function teaRagsOutput(args, timeoutMs) {
   const home = process.env.HOME ?? "";
   const bins = process.env.TEA_RAGS_BIN
     ? [process.env.TEA_RAGS_BIN]
     : ["tea-rags", `${home}/.npm-global/bin/tea-rags`, "/opt/homebrew/bin/tea-rags", "/usr/local/bin/tea-rags"];
   for (const bin of bins) {
-    let out;
     try {
-      out = execFileSync(bin, args, {
-        encoding: "utf8",
-        timeout: INDEXED_LOOKUP_TIMEOUT_MS,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
+      return execFileSync(bin, args, { encoding: "utf8", timeout: timeoutMs, stdio: ["ignore", "pipe", "ignore"] });
     } catch (error) {
       if (error?.code === "ENOENT" || error?.code === "EACCES") continue;
-      out = typeof error?.stdout === "string" ? error.stdout : "";
-    }
-    try {
-      const answer = JSON.parse(out);
-      if (answer?.indexed === true && typeof answer.relativePath === "string") {
-        return { status: "indexed", relativePath: answer.relativePath };
-      }
-      return answer?.indexed === false ? { status: "absent" } : { status: "unknown" };
-    } catch {
-      return { status: "unknown" };
+      return typeof error?.stdout === "string" ? error.stdout : "";
     }
   }
-  return { status: "unknown" };
+  return null;
 }
 
 /**
- * One line sending a raw read of an INDEXED SOURCE file to find_symbol(relativePath:), or
- * null. Never for a zone path (config / DSL / routes / migrations / specs / data — core
- * routes those to the read tool), a file outside the index, or a file already nudged this
- * turn; a file's index verdict is looked up once per session.
+ * The index answer for raw-read targets, through `tea-rags project indexed` (the membership
+ * test search-drift.sh runs): `{ status: "indexed", relativePath }` for the first indexed
+ * path, `{ status: "absent" }` when none is, `{ status: "unknown" }` when the CLI is missing,
+ * slow or unparsable.
  */
-function indexedSourceNudge(ledger, paths, cwd, lookup) {
+export function cliIndexedLookup(paths) {
+  const args = ["project", "indexed", ...paths.flatMap((path) => ["--path", path]), "--json"];
+  const out = teaRagsOutput(args, INDEXED_LOOKUP_TIMEOUT_MS);
+  if (out === null) return { status: "unknown" };
+  try {
+    const answer = JSON.parse(out);
+    if (answer?.indexed === true && typeof answer.relativePath === "string") {
+      return { status: "indexed", relativePath: answer.relativePath };
+    }
+    return answer?.indexed === false ? { status: "absent" } : { status: "unknown" };
+  } catch {
+    return { status: "unknown" };
+  }
+}
+
+/**
+ * The outlines of up to MAX_OUTLINE_FILES indexed files in ONE
+ * `tea-rags call find_symbol {path, symbols: [<relativePath>…], metaOnly: true}` (metaOnly →
+ * an outline even for a small file): Map relativePath → outline text, a file the index does
+ * not hold mapped to "". Null when the CLI is missing, slow or unparsable.
+ */
+export function cliOutlines(relativePaths, cwd) {
+  const request = JSON.stringify({ path: cwd, symbols: relativePaths, metaOnly: true });
+  const out = teaRagsOutput(["call", "find_symbol", request, "--format", "json"], OUTLINE_LOOKUP_TIMEOUT_MS);
+  let rows;
+  try {
+    rows = JSON.parse(out ?? "").results;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(rows)) return null;
+  const outlines = new Map(relativePaths.map((rel) => [rel, ""]));
+  for (const row of rows) {
+    const rel = row?.payload?.request ?? row?.payload?.relativePath;
+    if (outlines.has(rel) && typeof row.payload.content === "string") outlines.set(rel, row.payload.content);
+  }
+  return outlines;
+}
+
+/**
+ * Line-ranged entries of a file outline: a member line ends in ` L<start>-<end>` after an
+ * optional ` (visibility)` → `{ id, start, end }`; a `header A–B` line → `{ id: <the ranged
+ * entry enclosing it>, start, end, header: true }`. Declaration-only ids carry no range and
+ * yield no entry, so an outline without ranges yields none.
+ */
+function outlineEntries(text) {
+  const entries = [];
+  for (const line of String(text).split("\n")) {
+    const header = /^\s+header (\d+)[–-](\d+)(?::.*)?$/.exec(line);
+    if (header) {
+      const [start, end] = [Number(header[1]), Number(header[2])];
+      const owner = entries.findLast((e) => !e.header && e.start <= start && e.end >= end);
+      if (owner) entries.push({ id: owner.id, start, end, header: true });
+      continue;
+    }
+    const member = /^\s+(\S.*?)(?: \([a-z_ ]+\))? L(\d+)-(\d+)$/.exec(line);
+    if (member) entries.push({ id: member[1], start: Number(member[2]), end: Number(member[3]) });
+  }
+  return entries;
+}
+
+/**
+ * The outline ids covering lines `[a, b]`: `ids` = the innermost members overlapping them;
+ * `owners` = containers whose own (header) code the lines touch — a header entry, or a
+ * container no member of which overlaps. Lines no entry covers name nothing.
+ */
+function coveringOutlineIds(entries, a, b) {
+  const members = entries.filter((e) => !e.header);
+  const inside = (o, m) => o !== m && o.start >= m.start && o.end <= m.end && (o.start > m.start || o.end < m.end);
+  const isContainer = (m) => members.some((o) => inside(o, m));
+  const overlapping = members.filter((m) => m.start <= b && m.end >= a);
+  const leaves = overlapping.filter((m) => !overlapping.some((o) => inside(o, m)));
+  const headers = entries.filter((e) => e.header && e.start <= b && e.end >= a).map((e) => e.id);
+  return {
+    ids: [...new Set(leaves.filter((m) => !isContainer(m)).map((m) => m.id))],
+    owners: [...new Set([...headers, ...leaves.filter(isContainer).map((m) => m.id)])],
+  };
+}
+
+/** Outline entries of indexed files `[{ path, relativePath }]`: per-session cache, ONE CLI call for the rest. */
+function outlinesOf(ledger, files, cwd, lookup) {
+  const outlines = new Map();
+  const missing = [];
+  for (const file of files) {
+    const cached = ledger.outline(file.path);
+    if (cached) outlines.set(file.path, cached);
+    else missing.push(file);
+  }
+  if (!missing.length) return outlines;
+  const answer = lookup(
+    missing.map((f) => f.relativePath),
+    cwd,
+  );
+  if (!answer) return outlines;
+  for (const file of missing) {
+    const entries = outlineEntries(answer.get(file.relativePath) ?? "");
+    ledger.recordOutline(file.path, entries);
+    outlines.set(file.path, entries);
+  }
+  return outlines;
+}
+
+/** The indexed source file a raw read targets, `{ path, relativePath }`, or null — see indexedSourceNudge. */
+function indexedSourceHit(ledger, paths, cwd, lookup) {
   const zone = paths.length ? standardZonePattern() : null;
   if (!zone) return null;
   const turn = ledger.safeTurn();
@@ -1217,9 +1362,102 @@ function indexedSourceNudge(ledger, paths, cwd, lookup) {
   }
   if (!hit) return null;
   ledger.recordNudge(hit.path, { relativePath: hit.relativePath, turn });
-  if (zone.test(hit.relativePath)) return null;
-  const file = hit.relativePath;
+  return zone.test(hit.relativePath) ? null : { path: hit.path, relativePath: hit.relativePath };
+}
+
+/**
+ * One line sending a raw read of an INDEXED SOURCE file to find_symbol(relativePath:). Never
+ * for a zone path (config / DSL / routes / migrations / specs / data — core routes those to
+ * the read tool), a file outside the index, or a file already nudged this turn; a file's index
+ * verdict is looked up once per session (indexedSourceHit).
+ */
+function indexedSourceNudge(file) {
   return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
+}
+
+/**
+ * The read of `hit` covering < 80% of the file, named by the outline ids whose ` L<a>-<b>`
+ * covers it: `find_symbol(symbols:[…])`, or `find_symbol(symbol:"<Class>")` for a range inside
+ * a container's header only. Null — the generic nudge stands — when the outline has no range
+ * for those lines, names more than MAX_NAMED_IDS ids, or cannot be fetched.
+ */
+function rangeNudge(ledger, hit, ranges, cwd, lineCount, outlineLookup) {
+  const total = lineCount(hit.path);
+  if (!total || !ranges.length) return null;
+  const a = Math.min(...ranges.map((r) => r[0]));
+  const b = Math.max(...ranges.map((r) => r[1]));
+  if (b - a + 1 >= total * COVERAGE_THRESHOLD) return null;
+  const entries = outlinesOf(ledger, [hit], cwd, outlineLookup).get(hit.path) ?? [];
+  const { ids, owners } = coveringOutlineIds(entries, a, b);
+  const span = a === b ? `line ${a}` : `lines ${a}–${b}`;
+  if (!ids.length && owners.length === 1) {
+    return `tea-rags: ${hit.relativePath} ${span} are the class-level header of ${owners[0]} — find_symbol(symbol:${JSON.stringify(owners[0])}) returns its header code + member ids; never Read offset/limit or a raw slice`;
+  }
+  const named = [...owners, ...ids];
+  if (!named.length || named.length > MAX_NAMED_IDS) return null;
+  return `tea-rags: ${hit.relativePath} ${span} sit in ${named.join(", ")} — find_symbol(symbols:${JSON.stringify(named)}) returns them whole; never Read offset/limit or a raw slice`;
+}
+
+/** Whether a shell command runs a line-numbered grep / rg (`-n`, `--line-number`). */
+function numberedSearch(command) {
+  return shellPipelines(command).some((pipeline) =>
+    pipeline.some((stage) => {
+      const words = commandWords(stage);
+      const name = words.length ? baseName(words[0].word) : "";
+      if (name !== "grep" && name !== "egrep" && name !== "rg") return false;
+      return words.slice(1).some((w) => /^-[A-Za-z]*n[A-Za-z]*$/.test(w.word) || w.word === "--line-number");
+    }),
+  );
+}
+
+/**
+ * PostToolUse: the hits of a Grep content search / a numbered shell grep in indexed source
+ * (never a zone or test path) → ONE line naming their enclosing outline ids as a literal
+ * `find_symbol(symbols:[…])`, the top MAX_OUTLINE_FILES files by hit count in one outline call.
+ * Null when no hit sits inside a ranged outline entry, or every named id is already held.
+ */
+function grepHitNote(ledger, tool, input, response, cwd, outlineLookup) {
+  const isFile = (path) => fileStamp(path) !== null;
+  let printed;
+  if (tool === "Grep") {
+    if (input.output_mode !== "content" || input["-n"] === false) return null;
+    const text = typeof response?.content === "string" ? response.content : "";
+    const base = typeof input.path === "string" ? resolve(cwd, input.path) : cwd;
+    printed = text ? printedNumberedLines(text, [base, cwd], isFile(base) ? base : null, isFile) : [];
+  } else {
+    if (typeof input.command !== "string" || !numberedSearch(input.command) || failedResponse(response)) return null;
+    const stdout = response && typeof response === "object" ? (response.stdout ?? response.output) : null;
+    printed = typeof stdout === "string" ? numberedGrepLines(input.command, stdout, cwd, isFile) : [];
+  }
+  const zone = printed.length ? standardZonePattern() : null;
+  if (!zone) return null;
+  const files = printed
+    .map((p) => ({ ...p, relativePath: relative(cwd, p.path) }))
+    .filter((p) => !p.relativePath.startsWith("..") && !isAbsolute(p.relativePath) && !zone.test(p.relativePath))
+    .map((p) => ({ ...p, hits: p.ranges.reduce((n, [s, e]) => n + e - s + 1, 0) }))
+    .sort((x, y) => y.hits - x.hits)
+    .slice(0, MAX_OUTLINE_FILES);
+  if (!files.length) return null;
+  const outlines = outlinesOf(ledger, files, cwd, outlineLookup);
+  const parts = [];
+  const named = [];
+  for (const file of files) {
+    const entries = outlines.get(file.path) ?? [];
+    const ids = [];
+    for (const [s, e] of file.ranges) {
+      for (let n = s; n <= Math.min(e, s + MAX_NUMBERED_LINES); n++) {
+        const { ids: leaves, owners } = coveringOutlineIds(entries, n, n);
+        ids.push(...owners, ...leaves);
+      }
+    }
+    const fresh = [...new Set(ids)].filter((id) => !named.includes(id) && !ledger.symbol(id));
+    const kept = fresh.slice(0, MAX_NAMED_IDS - named.length);
+    if (!kept.length) continue;
+    named.push(...kept);
+    parts.push(`${file.relativePath}: ${kept.join(", ")}`);
+  }
+  if (!named.length) return null;
+  return `tea-rags: the hits sit in ${parts.join("; ")} — find_symbol(symbols:${JSON.stringify(named)}) returns those bodies whole; never a Read slice`;
 }
 
 function recordPost(ledger, tool, input, response, cwd, lineCount) {
