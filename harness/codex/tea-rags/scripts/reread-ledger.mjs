@@ -83,6 +83,9 @@ const INDEXED_LOOKUP_TIMEOUT_MS = 1500;
 const OUTLINE_LOOKUP_TIMEOUT_MS = 5000;
 const MAX_OUTLINE_FILES = 3;
 const MAX_NAMED_IDS = 8;
+// find_symbol returns a file of at most this many lines as full text (mirrors FULL_TEXT_MAX_LINES in
+// src/core/contracts/types/symbol-batch.ts): a whole-file nudge for such a file gains nothing.
+const FULL_TEXT_MAX_LINES = 150;
 // search-drift.sh thresholds: a streak of 3 concept searches, one deny per 120 s. Reads never count.
 const DRIFT_SEARCH_STREAK = 3;
 const DRIFT_COOLDOWN_SEC = 120;
@@ -871,6 +874,17 @@ export class RereadLedger {
     writeJson(join(this.dir, `n-${hash(path)}`), { path, ...state });
   }
 
+  /** Grep-hit note state of a file: `{ path }` once its hits were noted this session, else null. */
+  grepNoteEntry(path) {
+    const entry = readJson(join(this.dir, `g-${hash(path)}`));
+    return entry && entry.path === path ? entry : null;
+  }
+
+  recordGrepNote(path) {
+    mkdirSync(this.dir, { recursive: true });
+    writeJson(join(this.dir, `g-${hash(path)}`), { path });
+  }
+
   /** Cached outline entries of a file (stamp unchanged since they were fetched), else null. */
   outline(path) {
     const entry = readJson(join(this.dir, `o-${hash(path)}`));
@@ -1140,13 +1154,19 @@ function ledgerLines(input, { stateDir, harness, lineCount, indexedLookup, outli
   if (notes.length) lines.push(`tea-rags: ${[...new Set(notes)].slice(0, MAX_NOTES).join("; ")} — answer from them.`);
   const searchDenied = tool === "Bash" && driftSearchDenyMayFire(stateDir, harness, sid, toolInput.command, cwd);
   if ((tool === "Read" || tool === "Bash") && !searchDenied) {
-    const fresh = files.map((f) => f.path).filter((path) => !held.has(path));
+    // A whole read of a file find_symbol returns as full text can earn no line: skip its index lookup.
+    const fresh = files
+      .filter(
+        ({ path, ranges }) => !held.has(path) && !(fullTextFile(path, lineCount) && spansFile(ranges, lineCount(path))),
+      )
+      .map((f) => f.path);
     const hit = indexedSourceHit(ledger, fresh, cwd, indexedLookup);
     if (hit) {
       const ranges = files.find((f) => f.path === hit.path)?.ranges ?? [];
-      lines.push(
-        rangeNudge(ledger, hit, ranges, cwd, lineCount, outlineLookup) ?? indexedSourceNudge(hit.relativePath),
-      );
+      const nudge =
+        rangeNudge(ledger, hit, ranges, cwd, lineCount, outlineLookup) ??
+        (fullTextFile(hit.path, lineCount) ? null : indexedSourceNudge(hit.relativePath));
+      if (nudge) lines.push(nudge);
     }
   }
   return lines;
@@ -1316,11 +1336,14 @@ function coveringOutlineIds(entries, a, b) {
   };
 }
 
-/** Outline entries of indexed files `[{ path, relativePath }]`: per-session cache, ONE CLI call for the rest. */
+/**
+ * Outline entries of indexed files `[{ path, relativePath }]` (the first MAX_OUTLINE_FILES):
+ * per-session cache, ONE CLI call for the rest.
+ */
 function outlinesOf(ledger, files, cwd, lookup) {
   const outlines = new Map();
   const missing = [];
-  for (const file of files) {
+  for (const file of files.slice(0, MAX_OUTLINE_FILES)) {
     const cached = ledger.outline(file.path);
     if (cached) outlines.set(file.path, cached);
     else missing.push(file);
@@ -1382,24 +1405,37 @@ function indexedSourceNudge(file) {
 /**
  * The read of `hit` covering < 80% of the file, named by the outline ids whose ` L<a>-<b>`
  * covers it: `find_symbol(symbols:[…])`, or `find_symbol(symbol:"<Class>")` for a range inside
- * a container's header only. Null — the generic nudge stands — when the outline has no range
+ * a container's header only. Null — the generic nudge stands for a file above
+ * FULL_TEXT_MAX_LINES, nothing for a smaller one — when the outline has no range
  * for those lines, names more than MAX_NAMED_IDS ids, or cannot be fetched.
  */
 function rangeNudge(ledger, hit, ranges, cwd, lineCount, outlineLookup) {
   const total = lineCount(hit.path);
-  if (!total || !ranges.length) return null;
+  if (!total || !ranges.length || spansFile(ranges, total)) return null;
   const a = Math.min(...ranges.map((r) => r[0]));
   const b = Math.max(...ranges.map((r) => r[1]));
-  if (b - a + 1 >= total * COVERAGE_THRESHOLD) return null;
   const entries = outlinesOf(ledger, [hit], cwd, outlineLookup).get(hit.path) ?? [];
   const { ids, owners } = coveringOutlineIds(entries, a, b);
   const span = a === b ? `line ${a}` : `lines ${a}–${b}`;
   if (!ids.length && owners.length === 1) {
-    return `tea-rags: ${hit.relativePath} ${span} are the class-level header of ${owners[0]} — find_symbol(symbol:${JSON.stringify(owners[0])}) returns its header code + member ids; never Read offset/limit or a raw slice`;
+    return `tea-rags: ${hit.relativePath} ${span} = class header → find_symbol(symbol:${JSON.stringify(owners[0])}) returns it + member ids; no Read slice`;
   }
   const named = [...owners, ...ids];
   if (!named.length || named.length > MAX_NAMED_IDS) return null;
-  return `tea-rags: ${hit.relativePath} ${span} sit in ${named.join(", ")} — find_symbol(symbols:${JSON.stringify(named)}) returns them whole; never Read offset/limit or a raw slice`;
+  return `tea-rags: ${hit.relativePath} ${span} → find_symbol(symbols:${JSON.stringify(named)}) returns them whole; no Read slice`;
+}
+
+/** Whether the span from the first to the last requested line covers ≥ 80% of a `total`-line file. */
+function spansFile(ranges, total) {
+  if (!total || !ranges.length) return false;
+  const a = Math.min(...ranges.map((r) => r[0]));
+  const b = Math.max(...ranges.map((r) => r[1]));
+  return b - a + 1 >= total * COVERAGE_THRESHOLD;
+}
+
+/** Whether find_symbol(relativePath:) returns `path` as full text (≤ FULL_TEXT_MAX_LINES lines). */
+function fullTextFile(path, lineCount) {
+  return (lineCount(path) ?? 0) <= FULL_TEXT_MAX_LINES;
 }
 
 /** Whether a shell command runs a line-numbered grep / rg (`-n`, `--line-number`). */
@@ -1417,8 +1453,8 @@ function numberedSearch(command) {
 /**
  * PostToolUse: the hits of a Grep content search / a numbered shell grep in indexed source
  * (never a zone or test path) → ONE line naming their enclosing outline ids as a literal
- * `find_symbol(symbols:[…])`, the top MAX_OUTLINE_FILES files by hit count in one outline call.
- * Null when no hit sits inside a ranged outline entry, or every named id is already held.
+ * `find_symbol(symbols:[…])`. Only when the hits sit in exactly one such file, and once per file
+ * per session. Null when no hit sits inside a ranged outline entry, or every named id is already held.
  */
 function grepHitNote(ledger, tool, input, response, cwd, outlineLookup) {
   const isFile = (path) => fileStamp(path) !== null;
@@ -1437,31 +1473,23 @@ function grepHitNote(ledger, tool, input, response, cwd, outlineLookup) {
   if (!zone) return null;
   const files = printed
     .map((p) => ({ ...p, relativePath: relative(cwd, p.path) }))
-    .filter((p) => !p.relativePath.startsWith("..") && !isAbsolute(p.relativePath) && !zone.test(p.relativePath))
-    .map((p) => ({ ...p, hits: p.ranges.reduce((n, [s, e]) => n + e - s + 1, 0) }))
-    .sort((x, y) => y.hits - x.hits)
-    .slice(0, MAX_OUTLINE_FILES);
-  if (!files.length) return null;
-  const outlines = outlinesOf(ledger, files, cwd, outlineLookup);
-  const parts = [];
-  const named = [];
-  for (const file of files) {
-    const entries = outlines.get(file.path) ?? [];
-    const ids = [];
-    for (const [s, e] of file.ranges) {
-      for (let n = s; n <= Math.min(e, s + MAX_NUMBERED_LINES); n++) {
-        const { ids: leaves, owners } = coveringOutlineIds(entries, n, n);
-        ids.push(...owners, ...leaves);
-      }
+    .filter((p) => !p.relativePath.startsWith("..") && !isAbsolute(p.relativePath) && !zone.test(p.relativePath));
+  // Drill intent only: exactly one hit file, noted once per session. A multi-file sweep gets no
+  // note and spawns no outline call.
+  if (files.length !== 1 || ledger.grepNoteEntry(files[0].path)) return null;
+  const [file] = files;
+  const entries = outlinesOf(ledger, files, cwd, outlineLookup).get(file.path) ?? [];
+  const ids = [];
+  for (const [s, e] of file.ranges) {
+    for (let n = s; n <= Math.min(e, s + MAX_NUMBERED_LINES); n++) {
+      const { ids: leaves, owners } = coveringOutlineIds(entries, n, n);
+      ids.push(...owners, ...leaves);
     }
-    const fresh = [...new Set(ids)].filter((id) => !named.includes(id) && !ledger.symbol(id));
-    const kept = fresh.slice(0, MAX_NAMED_IDS - named.length);
-    if (!kept.length) continue;
-    named.push(...kept);
-    parts.push(`${file.relativePath}: ${kept.join(", ")}`);
   }
+  const named = [...new Set(ids)].filter((id) => !ledger.symbol(id)).slice(0, MAX_NAMED_IDS);
   if (!named.length) return null;
-  return `tea-rags: the hits sit in ${parts.join("; ")} — find_symbol(symbols:${JSON.stringify(named)}) returns those bodies whole; never a Read slice`;
+  ledger.recordGrepNote(file.path);
+  return `tea-rags: hits in ${file.relativePath} → find_symbol(symbols:${JSON.stringify(named)}) returns those bodies whole; no Read slice`;
 }
 
 function recordPost(ledger, tool, input, response, cwd, lineCount) {

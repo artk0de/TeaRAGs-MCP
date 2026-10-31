@@ -21,3 +21,17 @@ tea-rags routing (this turn):
 - exact text, all X in a dir, absence → Grep tool
 - ids or files needed at once: ONE find_symbol(symbols:[…])
 ```
+
+## The compact block (Claude)
+
+Claude Code (`turn-routing.sh --harness claude`, which reads this file directly)
+injects this block instead of the one above; Codex and Cursor keep theirs. It
+names the same five routes in ≤ 160 characters. Its gate is the next 39-question
+Claude A/B: if the late-thread tea-rags share drops, revert to the block above.
+
+```
+tea-rags each turn:
+- code: find_symbol, many → ONE symbols:[…]
+- concepts: semantic_search; flow: get_callees/get_callers
+- text, config, absence: Grep/Read
+```
