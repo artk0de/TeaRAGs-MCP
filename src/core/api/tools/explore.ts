@@ -213,7 +213,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       `relativePath mode: small code file (≤${FULL_TEXT_MAX_LINES} lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; ` +
       "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
       "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
-      `symbols mode: 1-20 symbol ids / file paths (file → as relativePath, full text until the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char budget, then outline; dir → missing), ` +
+      `symbols mode: 1-20 symbol ids / file paths (file → as relativePath, full text until the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char budget, then outline; dir → missing; table:/migration: ids too, table → row payload.tableState), ` +
       "rows keyed by `request`, misses in `missing` (unknown path → `suggestions`), a chunk another row carries → `sameChunkAs`, lean payload unless fields/rerank. " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +

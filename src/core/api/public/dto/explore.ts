@@ -330,6 +330,11 @@ export interface ExploreResponse {
    * chunk id it came from, drillable as `find_symbol(symbol: "migration:…")`.
    * A partial index carries its `where` predicate as written; a foreign key
    * carries `onDelete` / `onUpdate` when the migration declares them.
+   * A `symbols` batch never sets this slot: each `table:<name>` entry answers
+   * a row (`id` / `payload.symbolId` / `payload.request` = the address) whose
+   * `payload.tableState` holds the same state (`payload.table` = the table name,
+   * as on a migration chunk row), and an unanswered one lands in
+   * `missing` with the single-mode message (bd tea-rags-mcp-7dcty.2).
    */
   table?: RailsTableState;
 }
