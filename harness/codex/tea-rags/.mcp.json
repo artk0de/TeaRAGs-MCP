@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tea-rags": {
+      "command": "tea-rags",
+      "args": ["server"],
+      "default_tools_approval_mode": "approve"
+    }
+  }
+}
