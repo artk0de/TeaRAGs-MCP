@@ -15,6 +15,8 @@ public/**
 node_modules/**
 coverage/**
 build/**
+# Side builds (`build-v1/`, `build-proto/`) left by experiments — output, not source.
+build-*/**
 docs/**
 .claude/**
 .claude-plugin/**/*.sh
