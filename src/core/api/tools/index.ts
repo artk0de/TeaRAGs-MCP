@@ -15,6 +15,7 @@ import { registerDocumentTools } from "./document.js";
 import { registerSearchTools } from "./explore.js";
 import { registerProjectTools } from "./list-projects.js";
 import { registerLocateTool } from "./locate/index.js";
+import type { AmbientWorkingTree } from "./middleware/ambient-working-tree.js";
 import { createRegisterTool, type HealthProbes } from "./middleware/error-handler.js";
 import { registerRegisterProjectTool } from "./register-project.js";
 import { registerReviewChangesTool } from "./review-changes.js";
@@ -28,6 +29,8 @@ export interface ToolDependencies {
   autoUpdate?: McpAutoUpdateTrigger;
   /** Register the hidden experimental `locate` tool; absent/false = not registered. */
   experimentalLocate?: boolean;
+  /** Server cwd addressing for unaddressed read tools (bd d0z7b.8); absent (HTTP) = explicit addressing only. */
+  ambientWorkingTree?: AmbientWorkingTree;
 }
 
 /**
@@ -35,7 +38,7 @@ export interface ToolDependencies {
  * When healthProbes provided, all tools get health-aware error handling.
  */
 export function registerAllTools(server: McpServer, deps: ToolDependencies): void {
-  const register = createRegisterTool(deps.healthProbes);
+  const register = createRegisterTool(deps.healthProbes, deps.ambientWorkingTree);
   registerCollectionTools(server, { app: deps.app, register });
   registerDocumentTools(server, { app: deps.app, register });
   registerSearchTools(server, {

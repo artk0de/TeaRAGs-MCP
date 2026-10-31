@@ -86,6 +86,8 @@ export async function runMcpServer(options: McpServerRunOptions = {}): Promise<v
     const server = createConfiguredServer(ctx, promptsConfig, {
       instructionsMode: config.serverInstructions,
       experimentalLocate: config.experimentalLocateEnable,
+      // The client spawned this stdio server in its project dir (bd d0z7b.8).
+      ambientCwd: process.cwd(),
     });
     // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
     // resources and then exits; the listeners above only release.

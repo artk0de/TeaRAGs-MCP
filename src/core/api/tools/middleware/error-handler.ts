@@ -16,6 +16,7 @@ import { TeaRagsError, UnknownError } from "../../public/index.js";
 import { withAnswerBanner } from "../answer-banner.js";
 import type { McpToolResult } from "../format.js";
 import { enforceResponseBudget, type ResponseRowsPolicy } from "../response-budget.js";
+import { withAmbientWorkingTree, type AmbientWorkingTree } from "./ambient-working-tree.js";
 
 type McpExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -190,8 +191,10 @@ export type RegisterToolFn = ReturnType<typeof createRegisterTool>;
 /**
  * Creates a registerToolSafe variant with health probes pre-bound.
  * All tools registered with the returned function get health-aware error handling.
+ * An `ambientWorkingTree` (stdio / in-process servers only) addresses read
+ * tools called without `project` / `path` / `collection` by the server cwd.
  */
-export function createRegisterTool(healthProbes?: HealthProbes) {
+export function createRegisterTool(healthProbes?: HealthProbes, ambientWorkingTree?: AmbientWorkingTree) {
   return <
     OutputArgs extends ZodRawShapeCompat | AnySchema,
     InputArgs extends undefined | ZodRawShapeCompat | AnySchema = undefined,
@@ -201,7 +204,8 @@ export function createRegisterTool(healthProbes?: HealthProbes) {
     config: SafeToolConfig<InputArgs, OutputArgs>,
     handler: ToolCallback<InputArgs>,
   ): void => {
-    const guarded = withResponseBudget(name, config, handler as McpHandler);
+    const addressed = withAmbientWorkingTree(config, handler as McpHandler, ambientWorkingTree);
+    const guarded = withResponseBudget(name, config, addressed);
     const wrapped = errorHandlerMiddleware(withAnswerBanner(name, guarded.handler), healthProbes);
     server.registerTool(name, guarded.sdkConfig, wrapped as unknown as ToolCallback<InputArgs>);
   };

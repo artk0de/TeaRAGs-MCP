@@ -45,14 +45,25 @@ export abstract class InputValidationError extends TeaRagsError {
 
 /**
  * Thrown when neither 'collection' nor 'path' is provided in a request.
+ * `ambientCwd` = the server cwd a read tool tried as its implicit target and no
+ * registered project claimed (bd tea-rags-mcp-d0z7b.8) — named so the caller
+ * knows which `path` to pass.
  */
 export class CollectionNotProvidedError extends InputValidationError {
-  constructor() {
-    super({
-      code: "INPUT_COLLECTION_NOT_PROVIDED",
-      message: "Either 'collection' or 'path' parameter is required.",
-      hint: "Provide a 'collection' name or a 'path' to the codebase.",
-    });
+  constructor(ambientCwd?: string) {
+    super(
+      ambientCwd === undefined
+        ? {
+            code: "INPUT_COLLECTION_NOT_PROVIDED",
+            message: "Either 'collection' or 'path' parameter is required.",
+            hint: "Provide a 'collection' name or a 'path' to the codebase.",
+          }
+        : {
+            code: "INPUT_COLLECTION_NOT_PROVIDED",
+            message: `No 'project', 'path' or 'collection' given, and the server cwd '${ambientCwd}' is not inside a registered project.`,
+            hint: "Pass path=<your working directory> (or project=<alias>, collection=<name>).",
+          },
+    );
   }
 }
 
