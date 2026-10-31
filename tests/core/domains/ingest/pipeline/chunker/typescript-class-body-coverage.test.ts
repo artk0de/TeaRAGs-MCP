@@ -78,8 +78,7 @@ describe("TreeSitterChunker — TypeScript class body rows and short methods (bd
     `  };\n`;
 
   it("covers a lone sub-floor field row between two methods", async () => {
-    const code =
-      `export class Gateway {\n${routes}\n${requestMethods(0, 3)}\n  private n = 1;\n\n` + `${requestMethods(3, 3)}}\n`;
+    const code = `export class Gateway {\n${routes}\n${requestMethods(0, 3)}\n  private n = 1;\n\n${requestMethods(3, 3)}}\n`;
     const chunks = await chunker.chunk(code, "src/gateway.ts", "typescript");
 
     expect(uncoveredBodyLines(code, chunks, 1, lineOf(code, "}"))).toEqual([]);

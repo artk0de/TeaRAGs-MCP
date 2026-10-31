@@ -250,6 +250,9 @@ export function pythonDerivedBindingFold(
     }
     case "assignedValue":
       return typeRefReceiverForm(typeOfValue(expression, reader));
+    case "patternProjection":
+      // A Rust walker kind; no Python binding carries it.
+      return undefined;
   }
 }
 
