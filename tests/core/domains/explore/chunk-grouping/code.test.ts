@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CodeChunkGrouper } from "../../../../../src/core/domains/explore/chunk-grouping/code.js";
+import { CodeChunkGrouper, outlineAddressOf } from "../../../../../src/core/domains/explore/chunk-grouping/code.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 
 describe("CodeChunkGrouper", () => {
@@ -73,7 +73,7 @@ describe("CodeChunkGrouper", () => {
 
       // Synthetic outline content (members visible in outline, no separate members array)
       const content = result.payload?.content as string;
-      expect(content).toBe("Reranker\n  Reranker#rerank\n  Reranker#score\n  Reranker.create");
+      expect(content).toBe("Reranker\n  Reranker#rerank L10-20\n  Reranker#score L25-35\n  Reranker.create L40-45");
 
       // Git stripped to file-level only
       expect(result.payload?.git).toEqual({ file: { commitCount: 10, ageDays: 30 } });
@@ -247,11 +247,11 @@ describe("CodeChunkGrouper", () => {
       const content = result.payload?.content as string;
       const lines = content.split("\n");
       expect(lines[0]).toBe("src/reranker.ts");
-      expect(lines[1]).toBe("  DEFAULTS");
-      expect(lines[2]).toBe("  Reranker");
-      expect(lines[3]).toBe("    Reranker#rerank");
-      expect(lines[4]).toBe("    Reranker#score");
-      expect(lines[5]).toBe("  createReranker");
+      expect(lines[1]).toBe("  DEFAULTS L1-3");
+      expect(lines[2]).toBe("  Reranker L5-50");
+      expect(lines[3]).toBe("    Reranker#rerank L10-20");
+      expect(lines[4]).toBe("    Reranker#score L25-35");
+      expect(lines[5]).toBe("  createReranker L55-60");
 
       expect(result.payload?.relativePath).toBe("src/reranker.ts");
       expect(result.payload?.language).toBe("typescript");
@@ -338,7 +338,7 @@ describe("CodeChunkGrouper", () => {
 
       const result = CodeChunkGrouper.groupFile(chunks);
 
-      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank\n  createReranker");
+      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank L10-20\n  createReranker L55-60");
     });
 
     it("handles file with only top-level symbols (no nesting)", () => {
@@ -374,7 +374,7 @@ describe("CodeChunkGrouper", () => {
       const result = CodeChunkGrouper.groupFile(chunks);
 
       const content = result.payload?.content as string;
-      expect(content).toBe("src/utils.ts\n  helperA\n  helperB");
+      expect(content).toBe("src/utils.ts\n  helperA L1-5\n  helperB L10-15");
       expect(result.payload?.chunkCount).toBe(2);
     });
   });
@@ -415,11 +415,11 @@ describe("CodeChunkGrouper", () => {
       expect(result.payload?.content).toBe(
         [
           PATH,
-          `  ${OWNER}`,
+          `  ${OWNER} L2-30`,
           `    ${OWNER}::ADAPTERS`,
           `    ${OWNER}::FEATURE_FLAGS`,
           `    ${OWNER}#adapters`,
-          `  ${OWNER}#call`,
+          `  ${OWNER}#call L16-30`,
         ].join("\n"),
       );
     });
@@ -440,12 +440,12 @@ describe("CodeChunkGrouper", () => {
       expect(result.payload?.content).toBe(
         [
           PATH,
-          `  ${OWNER}`,
+          `  ${OWNER} L2-36`,
           `    ${OWNER}::ADAPTERS`,
           `    ${OWNER}::FEATURE_FLAGS`,
           `    ${OWNER}#adapters`,
           `    ${OWNER}::LIMIT`,
-          `  ${OWNER}#call`,
+          `  ${OWNER}#call L16-30`,
         ].join("\n"),
       );
     });
@@ -457,7 +457,7 @@ describe("CodeChunkGrouper", () => {
 
       const lines = (result.payload?.content as string).split("\n");
       expect(lines).toContain(`    ${OWNER}#adapters`);
-      expect(lines).toContain(`  ${OWNER}#call (private)`);
+      expect(lines).toContain(`  ${OWNER}#call (private) L16-30`);
     });
   });
 
@@ -573,7 +573,7 @@ describe("CodeChunkGrouper", () => {
       const result = CodeChunkGrouper.groupFile([setupOnly, legacy]);
 
       expect(result.payload?.content).toBe(
-        [specPath, "  User.context 'shared fixtures'", "  User.describe User"].join("\n"),
+        [specPath, "  User.context 'shared fixtures' L3-5", "  User.describe User L20-22"].join("\n"),
       );
     });
 
@@ -607,7 +607,7 @@ describe("CodeChunkGrouper", () => {
 
       const result = CodeChunkGrouper.groupFile(chunks);
 
-      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank\n  Reranker#score");
+      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank L5-9\n  Reranker#score L12-20");
     });
   });
 
@@ -632,7 +632,7 @@ describe("CodeChunkGrouper", () => {
         row("f", 30, { name: "helper", symbolId: "helper" }),
       ]);
 
-      expect(result.payload?.content).toBe("src/sm.ts\n  IndexSchema\n  helper");
+      expect(result.payload?.content).toBe("src/sm.ts\n  IndexSchema L1-6\n  helper L30-35");
     });
 
     it("collapses the #partN windows of one oversized method into one member line", () => {
@@ -644,7 +644,7 @@ describe("CodeChunkGrouper", () => {
         row("p-3", 70, { name: "initializeSchema", symbolId: `${method}#part3`, parentSymbolId: method }),
       ]);
 
-      expect(result.payload?.content).toBe(`src/sm.ts\n  SchemaManager\n  ${method}`);
+      expect(result.payload?.content).toBe(`src/sm.ts\n  SchemaManager L1-75\n  ${method} L10-75`);
     });
 
     it("collapses #partN windows of a class member in a class outline", () => {
@@ -655,7 +655,83 @@ describe("CodeChunkGrouper", () => {
         row("p-2", 40, { name: "finalize", symbolId: `${method}#part2`, parentSymbolId: method }),
       ]);
 
-      expect(result.payload?.content).toBe(`WorkingTreeMarker\n  WorkingTreeMarker#read\n  ${method}`);
+      expect(result.payload?.content).toBe(`WorkingTreeMarker\n  WorkingTreeMarker#read L1-6\n  ${method} L10-45`);
+    });
+  });
+
+  describe("member line ranges (read economy, tea-rags-mcp-9f0yn.1)", () => {
+    const OWNER = "Billing::Invoice";
+    const PATH = "app/models/billing/invoice.rb";
+    const row = (id: string, startLine: number, endLine: number, payload: Record<string, unknown>): ScrollChunk => ({
+      id,
+      payload: { chunkType: "function", relativePath: PATH, language: "ruby", startLine, endLine, ...payload },
+    });
+    const owner = row("c", 1, 120, { name: OWNER, symbolId: OWNER, chunkType: "class" });
+
+    it("ends a member line in L<start>-<end> after the visibility suffix", () => {
+      const result = CodeChunkGrouper.group(
+        owner,
+        [row("m", 31, 93, { name: "total", symbolId: `${OWNER}#total`, parentSymbolId: OWNER })],
+        (_path, id) => (id === `${OWNER}#total` ? "private" : undefined),
+      );
+
+      expect(result.payload?.content).toBe(`${OWNER}\n  ${OWNER}#total (private) L31-93`);
+    });
+
+    it("merges same-id windows to the min start and max end", () => {
+      const result = CodeChunkGrouper.group(owner, [
+        row("w-2", 61, 90, { name: "total", symbolId: `${OWNER}#total`, parentSymbolId: OWNER }),
+        row("w-1", 31, 60, { name: "total", symbolId: `${OWNER}#total`, parentSymbolId: OWNER }),
+      ]);
+
+      expect(result.payload?.content).toBe(`${OWNER}\n  ${OWNER}#total L31-90`);
+    });
+
+    it("gives declaration-only ids of a class-level window no range", () => {
+      const header = row("h", 2, 12, {
+        chunkType: "block",
+        name: OWNER,
+        symbolId: OWNER,
+        parentSymbolId: OWNER,
+        memberSymbolIds: [`${OWNER}::STATES`, `${OWNER}#draft?`],
+      });
+      const result = CodeChunkGrouper.group(
+        owner,
+        [row("m", 14, 20, { name: "total", symbolId: `${OWNER}#total`, parentSymbolId: OWNER })],
+        undefined,
+        [header],
+      );
+
+      expect(result.payload?.content).toBe(
+        [OWNER, `  ${OWNER}::STATES`, `  ${OWNER}#draft?`, `  ${OWNER}#total L14-20`].join("\n"),
+      );
+    });
+
+    it("spans a file outline's container line over its members", () => {
+      const result = CodeChunkGrouper.groupFile([
+        row("c", 1, 10, { name: OWNER, symbolId: OWNER, chunkType: "class" }),
+        row("m1", 12, 40, { name: "total", symbolId: `${OWNER}#total`, parentSymbolId: OWNER }),
+        row("m2", 42, 118, { name: "issue!", symbolId: `${OWNER}#issue!`, parentSymbolId: OWNER }),
+      ]);
+
+      expect(result.payload?.content).toBe(
+        [PATH, `  ${OWNER} L1-118`, `    ${OWNER}#total L12-40`, `    ${OWNER}#issue! L42-118`].join("\n"),
+      );
+    });
+  });
+
+  describe("outlineAddressOf (a pasted outline line → its address)", () => {
+    it.each([
+      ["  X#m (private) L31-93", "X#m"],
+      ["X#m L31-93", "X#m"],
+      ["X#m L31–93", "X#m"],
+      ["X#m (protected)", "X#m"],
+      ["X.include KindOfService L4-4", "X.include KindOfService"],
+      ["X.include KindOfService", "X.include KindOfService"],
+      ["describe 'totals (net)'", "describe 'totals (net)'"],
+      ["Foo#bar", "Foo#bar"],
+    ])("%j → %j", (line, address) => {
+      expect(outlineAddressOf(line)).toBe(address);
     });
   });
 });

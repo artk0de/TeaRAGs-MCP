@@ -50,6 +50,7 @@ import {
   IndexMetricsQuery,
   MIGRATION_ID_PREFIX,
   MigrationCorpusQuery,
+  outlineAddressOf,
   QUERY_VARIANT_SEPARATOR,
   RAILS_TABLE_ID_PREFIX,
   SimilarSearchStrategy,
@@ -424,7 +425,14 @@ export class ExploreOps {
     });
   }
 
-  async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
+  async findSymbol(pastedRequest: FindSymbolRequest): Promise<ExploreResponse> {
+    // An outline line pasted verbatim keeps its ` (visibility)` / ` L12-40`
+    // suffix: the address is the id in front of it (bd tea-rags-mcp-9f0yn.1).
+    const request: FindSymbolRequest = {
+      ...pastedRequest,
+      ...(pastedRequest.symbol !== undefined ? { symbol: outlineAddressOf(pastedRequest.symbol) } : {}),
+      ...(pastedRequest.symbols ? { symbols: pastedRequest.symbols.map((symbol) => outlineAddressOf(symbol)) } : {}),
+    };
     // Lookup by symbol: no query vector, so the guard checks the model name only.
     const { collectionName, workingTreeView, historyAnchorSec } = await this.resolveAndGuard(
       request.collection,

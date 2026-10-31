@@ -277,7 +277,7 @@ ${body("empty")}
       const [outline] = resolveSymbols(await payloads(), scopeId);
 
       expect(outline.payload?.content).toBe(
-        [scopeId, `  ${bigId}`, `  ${scopeId}.it 'starts empty before anything is added'`].join("\n"),
+        [scopeId, `  ${bigId} L4-35`, `  ${scopeId}.it 'starts empty before anything is added' L37-40`].join("\n"),
       );
     });
   });

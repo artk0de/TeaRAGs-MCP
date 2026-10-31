@@ -323,6 +323,17 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
         expect(batch.results[0].payload?.content).toBe(single.results[0].payload?.content);
       });
 
+      // bd tea-rags-mcp-9f0yn.1: the reread hook reads covering ids from this metaOnly outline.
+      it("keeps member line ranges in a ≤150-line path entry's outline under metaOnly", async () => {
+        const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } })).findSymbol({
+          collection: "code_x",
+          symbols: ["src/lib/h.ts"],
+          metaOnly: true,
+        });
+
+        expect(response.results[0].payload?.content).toBe("src/lib/h.ts\n  helper L1-3");
+      });
+
       it("keeps a symbol entry lean under metaOnly while a path entry beside it keeps its outline", async () => {
         const response = await facade(fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(80) } })).findSymbol({
           collection: "code_x",
@@ -364,6 +375,24 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
 
         expect(response.batchNotice).toBeUndefined();
       });
+    });
+
+    // bd tea-rags-mcp-9f0yn.1: an outline line pasted verbatim still addresses its symbol.
+    it("drops a pasted visibility / line-range suffix from every batch entry", async () => {
+      const pasted = await facade().findSymbol({
+        collection: "code_x",
+        symbols: ["Foo#bar (private) L1-3", "helper L1–3"],
+      });
+      const clean = await facade().findSymbol({ collection: "code_x", symbols: ["Foo#bar", "helper"] });
+
+      expect(pasted.missing).toEqual([]);
+      expect(pasted.results.map((r) => r.payload)).toEqual(clean.results.map((r) => r.payload));
+    });
+
+    it("drops a pasted suffix from a single symbol", async () => {
+      const response = await facade().findSymbol({ collection: "code_x", symbol: "Foo#bar (public) L1-3" });
+
+      expect(response.results.map((r) => r.payload?.symbolId)).toEqual(["Foo#bar"]);
     });
 
     it("keeps FQN entries with ::, # or . as symbols", async () => {

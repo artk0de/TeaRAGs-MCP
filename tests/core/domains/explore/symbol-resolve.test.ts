@@ -938,7 +938,7 @@ describe("resolveSymbols", () => {
       expect(results[0].payload?.symbolId).toBe("StatsCache");
       expect(results[0].payload?.relativePath).toBe("src/core/infra/stats-cache.ts");
       expect(results[0].payload?.content).toBe(
-        "StatsCache\n  StatsCache#constructor\n  StatsCache#load\n  StatsCache#save",
+        "StatsCache\n  StatsCache#constructor L49-50\n  StatsCache#load L51-90\n  StatsCache#save L92-114",
       );
     });
 
@@ -972,8 +972,8 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(2);
       const byPath = new Map(results.map((r) => [r.payload?.relativePath, r.payload?.content]));
-      expect(byPath.get("src/foo.ts")).toBe("Foo\n  Foo#alpha");
-      expect(byPath.get("src/foo-extra.ts")).toBe("Foo\n  Foo#beta");
+      expect(byPath.get("src/foo.ts")).toBe("Foo\n  Foo#alpha L1-5");
+      expect(byPath.get("src/foo-extra.ts")).toBe("Foo\n  Foo#beta L1-5");
     });
 
     it("matches members by the class chunk's symbolId as well as its name", () => {
@@ -1025,7 +1025,7 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].payload?.content).toBe(
-        "Bar\n  header 1–30\n  Foo::Bar#save\n  Foo::Bar#load\n\n── header 1–30 ──\nclass Bar\nend",
+        "Bar\n  header 1–30\n  Foo::Bar#save L5-10\n  Foo::Bar#load L12-20\n\n── header 1–30 ──\nclass Bar\nend",
       );
     });
 
@@ -1076,7 +1076,7 @@ describe("resolveSymbols", () => {
           "Platform::Async::Operation::Worker",
           "  header 34–35",
           "  header 126–126",
-          "  Platform::Async::Operation::Worker#perform",
+          "  Platform::Async::Operation::Worker#perform L86-116",
           "",
           "── header 34–35 ──",
           "# class body 34",
@@ -1134,7 +1134,7 @@ describe("resolveSymbols", () => {
           "User",
           "  header 4–9",
           "  header 126–130",
-          "  User#perform",
+          "  User#perform L86-116",
           "",
           "── header 4–9 ──",
           "# class body 4",
@@ -1256,8 +1256,8 @@ describe("resolveSymbols", () => {
         [
           workerFqn,
           "  header 34–35",
-          `  ${workerFqn}.record_class`,
-          `  ${workerFqn}#perform`,
+          `  ${workerFqn}.record_class L54-57`,
+          `  ${workerFqn}#perform L86-116`,
           "",
           "── header 34–35 ──",
           "class Worker\n  include Sidekiq::Job",
@@ -1331,7 +1331,7 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].payload?.content).toBe(
-        "Bar\n  header 1–30\n  Foo::Bar#save\n\n── header 1–30 ──\nclass Bar\nend",
+        "Bar\n  header 1–30\n  Foo::Bar#save L5-10\n\n── header 1–30 ──\nclass Bar\nend",
       );
     });
 
@@ -1374,7 +1374,7 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, "StatsCache");
 
       expect(results).toHaveLength(1);
-      expect(results[0].payload?.content).toBe("StatsCache\n  StatsCache#load\n  StatsCache#save");
+      expect(results[0].payload?.content).toBe("StatsCache\n  StatsCache#load L51-61\n  StatsCache#save L92-102");
     });
 
     it("merges test chunks by symbolId when the scroll holds no source class or member for the query", () => {
@@ -1460,7 +1460,7 @@ describe("resolveSymbols", () => {
       expect(results).toHaveLength(1);
       expect(results[0].payload?.symbolId).toBe(scopeId);
       expect(results[0].payload?.content).toBe(
-        [scopeId, `  ${scopeId}.it 'can manage accounts'`, `  ${scopeId}.it 'can invite'`].join("\n"),
+        [scopeId, `  ${scopeId}.it 'can manage accounts' L10-12`, `  ${scopeId}.it 'can invite' L15-17`].join("\n"),
       );
     });
 
@@ -1471,7 +1471,7 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols([group, exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 20)], scopeId);
 
       expect(results[0].payload?.content).toBe(
-        [scopeId, `  ${scopeId}.it`, `  ${scopeId}.it~2`, `  ${scopeId}.it 'can invite'`].join("\n"),
+        [scopeId, `  ${scopeId}.it L10-12`, `  ${scopeId}.it~2`, `  ${scopeId}.it 'can invite' L20-22`].join("\n"),
       );
     });
 
@@ -1494,7 +1494,7 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols([setup, exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 10)], scopeId);
 
       expect(results.map((r) => r.payload?.content)).toEqual([
-        [scopeId, `  ${scopeId}.it 'can invite'`].join("\n"),
+        [scopeId, `  ${scopeId}.it 'can invite' L10-12`].join("\n"),
         "before { user.update!(admin: true) }",
       ]);
     });
@@ -1510,7 +1510,9 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, scopeId);
 
       expect(results).toHaveLength(1);
-      expect(results[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`, `  ${huge}`].join("\n"));
+      expect(results[0].payload?.content).toBe(
+        [scopeId, `  ${scopeId}.it 'can invite' L10-12`, `  ${huge} L20-42`].join("\n"),
+      );
     });
 
     it("answers an example id with that example's chunk, its #partN windows merged rather than outlined", () => {

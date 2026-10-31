@@ -212,7 +212,9 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines → full text, else outline; doc → TOC; directory → files + subdirs. ` +
       `symbols: 1-20 ids / paths in one call (full text until ${BATCH_FULL_TEXT_CHAR_BUDGET} chars, then outline); misses → missing. ` +
       "Outline lines are addresses: drill via find_symbol(symbol: '<id>'), never Read the file. " +
-      "Drop a trailing visibility suffix, e.g. ' (private)', before drilling. " +
+      "Member lines end in visibility (if known), then line range, e.g. 'Class#helper (private) L40-58'; " +
+      "a file outline's container spans its members; a pasted suffix is tolerated. " +
+      "Lines N–M / a grep -n hit → the ids whose ranges cover them, one find_symbol(symbols:[…]); never Read offset/limit. " +
       "Partial names match: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
       "rerank preset attaches churn/ownership/bugFixRate labels.\n\n" +
       "Param docs: tea-rags://schema/overview",

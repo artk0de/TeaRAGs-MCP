@@ -268,7 +268,7 @@ describe("FileOutlineStrategy", () => {
 
     const result = await strategy.execute({ collectionName: "c", limit: 1, metaOnly: true });
 
-    expect(result[0].payload?.content).toBe("src/x.ts\n  fn");
+    expect(result[0].payload?.content).toBe("src/x.ts\n  fn L1-5");
   });
 
   it("invokes reranker when rerank option is set", async () => {
