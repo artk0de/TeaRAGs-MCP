@@ -23,7 +23,6 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { CORE_RESOURCE_URI, splitCoreForInstructions } from "../src/mcp/resources/instructions.js";
 import { PLUGINS_DIR, walk } from "./harness/package.js";
 import { nameCodeTools, stripFrontmatterKey, type CodeToolNames } from "./harness/transform.js";
 
@@ -81,42 +80,7 @@ export function renderClaudePackage(root: string, name: string): Map<string, Pac
       mode: stat.mode & 0o111 ? 0o755 : 0o644,
     });
   }
-  const core = join(src, CORE_PATH);
-  if (existsSync(core)) {
-    const tail = renderCoreTail(readFileSync(core, "utf8"));
-    if (tail !== undefined) files.set(CORE_TAIL_PATH, { content: Buffer.from(tail), mode: 0o644 });
-  }
   return files;
-}
-
-/** The always-on core in a package, and the part of it the SessionStart hook injects. */
-export const CORE_PATH = "rules/core.md";
-export const CORE_TAIL_PATH = "rules/core-tail.md";
-
-/**
- * What Claude Code's SessionStart hook injects (bd tea-rags-mcp-9f0yn.9): the core
- * after the head the MCP server already sends as `instructions`, under a note that
- * names that head, the Claude names of its code tool roles (the defining line and
- * its note live in the head) and the fallback when no server instructions arrived.
- * `undefined` when the whole core fits the instructions (no tail to inject).
- */
-export function renderCoreTail(core: string): string | undefined {
-  const split = splitCoreForInstructions(core);
-  if (split === undefined) return undefined;
-  const { codeSearchTool, codeSearchToolNote, codeReadTool } = CLAUDE_CODE_TOOLS;
-  const note = [
-    "# tea-rags core (continued)",
-    "",
-    // Generated output: .prettierignore lists it next to rules/core.md (packaging stays idempotent).
-    "The first part of this core arrives as the tea-rags MCP server instructions;",
-    `this continues it where they stop. Their code search tool is the ${codeSearchTool}`,
-    `(${codeSearchToolNote});`,
-    `their code read tool is the ${codeReadTool}. No tea-rags server instructions in`,
-    `context → read \`${CORE_RESOURCE_URI}\` (no MCP:`,
-    `\`tea-rags resource ${CORE_RESOURCE_URI}\`) first.`,
-    "",
-  ].join("\n");
-  return `${note}\n${nameCodeTools(split.tail, CLAUDE_CODE_TOOLS)}`;
 }
 
 /** Replace every `.claude-plugin/<name>/` with a fresh copy of its source; returns the file count. */

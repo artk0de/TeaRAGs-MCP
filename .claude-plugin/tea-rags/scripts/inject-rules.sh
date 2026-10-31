@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 # SessionStart hook (re-fires on compaction; PreCompact stdout never reaches the model):
-# put the always-on tea-rags core into the agent's context. Everything else lives in
-# `rules/guides/*.md`, served on demand as `tea-rags://guide/<topic>` resources.
-#
-# The MCP server already sends the core's head as its `instructions`, so the
-# generated Claude package carries `rules/core-tail.md` (the rest of the core under a
-# note, scripts/gen-harness-claude.ts renderCoreTail) and this hook injects that
-# instead of `rules/core.md`: the head reaches the model once (bd tea-rags-mcp-9f0yn.9).
-# A source checkout without the generated tail falls back to the whole core.
+# put the always-on tea-rags core (`rules/core.md`, ≤ 3,700 chars) into the agent's
+# context. Everything else lives in `rules/guides/*.md`, served on demand as
+# `tea-rags://guide/<topic>` resources.
 #
 # A hook's stdout stops being delivered well before large sizes — past roughly
 # 16KB the harness writes it to a file and hands the model a 2KB preview — so the
@@ -24,7 +19,6 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 RULES_DIR="$PLUGIN_ROOT/rules"
 
 RULE_FILES="core.md"
-[ -f "$RULES_DIR/core-tail.md" ] && RULE_FILES="core-tail.md"
 
 MAX_BYTES=11000
 PART=0

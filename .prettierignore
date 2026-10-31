@@ -53,5 +53,4 @@ src/core/domains/language/swift/vocabulary/sdk-vocabulary.generated.json
 .claude-plugin/tea-rags/rules/guides/navigation.md
 .claude-plugin/tea-rags/rules/guides/research-questions.md
 .claude-plugin/tea-rags/rules/core.md
-.claude-plugin/tea-rags/rules/core-tail.md
 .claude-plugin/tea-rags/skills/explore/SKILL.md

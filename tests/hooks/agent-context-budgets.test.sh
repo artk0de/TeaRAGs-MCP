@@ -54,13 +54,6 @@ INJECT="$ROOT/plugins/tea-rags/scripts/inject-rules.sh"
 CORE="$ROOT/plugins/tea-rags/rules/core.md"
 [ -f "$CORE" ] && [ "$(node -e 'console.log(require("fs").readFileSync(process.argv[1],"utf8").length)' "$CORE")" -le 9400 ]
 note $? "rules/core.md ≤ 9400 chars (instructions head ≤ 4096; Cursor documents no size cap, rules < 500 lines)"
-# The generated Claude package injects only the core after the server-instructions head
-# (rules/core-tail.md, bd tea-rags-mcp-9f0yn.9): the head reaches the model once.
-PKG_INJECT="$ROOT/.claude-plugin/tea-rags/scripts/inject-rules.sh"
-PKG_OUT="$(bash "$PKG_INJECT" --part 1 --parts 1)"
-! printf '%s' "$PKG_OUT" | grep -q '\*\*Addressing\.\*\*'; note $? "Claude package SessionStart omits the instructions head"
-printf '%s' "$PKG_OUT" | grep -q '\*\*Invariants\.\*\*'; note $? "Claude package SessionStart carries the core tail"
-[ "$(printf '%s' "$PKG_OUT" | wc -c)" -le 6500 ]; note $? "Claude package SessionStart ≤ 6500 bytes"
 
 # Description = value of the top-level `description:` key: inline text, or an
 # indented block (plain, `>` / `|` folded) running to the next top-level key.

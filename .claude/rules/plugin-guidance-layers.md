@@ -45,20 +45,12 @@ After any rules edit: `npm run gen:agent-context`, `npm run gen:harness-codex`,
 `core.md` ≤ 9,400 chars (owner decision 2026-10-28, 9400), injected as
 `--part 1 --parts 1` (`tests/hooks/agent-context-budgets.test.sh`). Server
 `instructions` get a ≤ 4,096 head (first 512 self-contained: addressing first) +
-a `tea-rags://guide/core` pointer — never a pointer alone: Claude subagents get
-the server instructions but not SessionStart output. The head is cut ONCE, by
-`splitCoreForInstructions`; the Claude package's SessionStart injects only the
-rest — `rules/core-tail.md`, rendered by `renderCoreTail` (a note naming the
-head, the Claude code tool names and the no-server fallback, then the tail), so
-the head reaches the model once (bd tea-rags-mcp-9f0yn.9). `inject-rules.sh`
-injects `core-tail.md` when the package carries it, else the whole `core.md`:
-Codex, Cursor and a source checkout keep the full core. Cursor's
-`tea-rags-core.mdc` carries the full core (≤ 9,600 incl. wrapper; owner decision
-2026-10-28, 9600); Codex carries core and the digest in separate SessionStart
-hooks: core ≤ `CODEX_CORE_HOOK_BUDGET` (9,650), digest ≤
-`CODEX_HOOK_CONTEXT_BUDGET` (9,500). Grow a guide, not the core. Hook stdout
-past ~16KB reaches the model as a 2KB preview; the splitter in `inject-rules.sh`
-stays as a guard.
+a `tea-rags://guide/core` pointer; Cursor's `tea-rags-core.mdc` carries the full
+core (≤ 9,600 incl. wrapper; owner decision 2026-10-28, 9600); Codex carries
+core and the digest in separate SessionStart hooks: core ≤
+`CODEX_CORE_HOOK_BUDGET` (9,650), digest ≤ `CODEX_HOOK_CONTEXT_BUDGET` (9,500).
+Grow a guide, not the core. Hook stdout past ~16KB reaches the model as a 2KB
+preview; the splitter in `inject-rules.sh` stays as a guard.
 
 ## Precedence — why placement matters (don't duplicate across layers)
 

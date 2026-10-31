@@ -138,43 +138,6 @@ describe("serverInstructions", () => {
     expect(core.slice(head.length).startsWith("\n")).toBe(true);
   });
 
-  it("cuts a list-only window before a list item, never inside one (bd tea-rags-mcp-9f0yn.9)", async () => {
-    const { serverInstructions, splitCoreForInstructions } = await import("../../src/mcp/resources/instructions.js");
-    const items = Array.from({ length: 120 }, (_, i) => `- row ${i}: pass project= and\n  path= on every read call`);
-    const core = `# Core\n\n**Routing**\n\n${items.join("\n")}\n`;
-
-    const split = splitCoreForInstructions(core);
-
-    expect(split).toBeDefined();
-    expect(split?.tail.startsWith("- row ")).toBe(true);
-    expect(core.startsWith(split?.head ?? "-")).toBe(true);
-    expect(core.endsWith(split?.tail ?? "-")).toBe(true);
-    expect((split?.head.length ?? 0) + (split?.tail.length ?? 0) + 1).toBe(core.length);
-    expect(serverInstructions(core)?.startsWith(`${split?.head}\n\n`)).toBe(true);
-  });
-
-  it("does not split a core that fits the cap", async () => {
-    const { splitCoreForInstructions } = await import("../../src/mcp/resources/instructions.js");
-
-    expect(splitCoreForInstructions("x".repeat(INSTRUCTIONS_CAP))).toBeUndefined();
-  });
-
-  it("keeps today's core instructions byte-identical to the pre-split cut (bd tea-rags-mcp-9f0yn.9)", async () => {
-    const { AGENT_CONTEXT_CORE } = await import("../../src/mcp/resources/generated/agent-context.js");
-    const { serverInstructions, splitCoreForInstructions } = await import("../../src/mcp/resources/instructions.js");
-    const pointer = `Full rules continue in MCP resource ${POINTER_URI} (no MCP: \`tea-rags resource ${POINTER_URI}\`).`;
-    // The cut serverInstructions made before the split existed: blank line in the window's
-    // second half, else the last line boundary.
-    const window = AGENT_CONTEXT_CORE.slice(0, INSTRUCTIONS_CAP - 2 - pointer.length + 1);
-    const blankLine = window.lastIndexOf("\n\n");
-    const cut = blankLine > window.length / 2 ? blankLine : window.lastIndexOf("\n");
-    const legacyHead = AGENT_CONTEXT_CORE.slice(0, Math.max(cut, 0)).trimEnd();
-
-    expect(AGENT_CONTEXT_CORE.length).toBeGreaterThan(INSTRUCTIONS_CAP);
-    expect(serverInstructions(AGENT_CONTEXT_CORE)).toBe(`${legacyHead}\n\n${pointer}`);
-    expect(splitCoreForInstructions(AGENT_CONTEXT_CORE)?.head).toBe(legacyHead);
-  });
-
   it("sends a ≤ cap head of an oversized core as server instructions", async () => {
     const core = longCore();
     vi.doMock("../../src/mcp/resources/generated/agent-context.js", () => ({

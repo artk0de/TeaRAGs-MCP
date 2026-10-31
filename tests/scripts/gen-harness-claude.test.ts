@@ -18,15 +18,11 @@ import {
   CLAUDE_CODE_TOOLS,
   CLAUDE_PACKAGES_DIR,
   claudePluginNames,
-  CORE_PATH,
-  CORE_TAIL_PATH,
   renderClaudePackage,
-  renderCoreTail,
   writeClaudePackages,
 } from "../../scripts/gen-harness-claude.js";
 import { PLUGINS_DIR, walk } from "../../scripts/harness/package.js";
 import { nameCodeTools, stripFrontmatterKey } from "../../scripts/harness/transform.js";
-import { splitCoreForInstructions } from "../../src/mcp/resources/instructions.js";
 
 const ROOT = resolve(__dirname, "../..");
 
@@ -42,11 +38,13 @@ describe.each(["tea-rags", "dinopowers", "tea-rags-setup"])("renderClaudePackage
   it("copies the source verbatim (SKILL.md minus codex-description, Markdown with the code tools named), executable bits included", () => {
     const rendered = renderClaudePackage(ROOT, name);
     const src = join(ROOT, PLUGINS_DIR, name);
-    const derived = existsSync(join(src, CORE_PATH)) ? [CORE_TAIL_PATH] : [];
 
-    expect([...rendered.keys()].sort()).toEqual([...walk(src).map((file) => relative(src, file)), ...derived].sort());
+    expect([...rendered.keys()].sort()).toEqual(
+      walk(src)
+        .map((file) => relative(src, file))
+        .sort(),
+    );
     for (const [path, file] of rendered) {
-      if (derived.includes(path)) continue;
       const source = readFileSync(join(src, path));
       const text = source.toString("utf8");
       const expected = path.endsWith("SKILL.md")
@@ -250,38 +248,5 @@ describe("root marketplace manifests", () => {
       expect(path, plugin.name).toMatch(/^\.\//);
       expect(existsSync(join(ROOT, path, pluginManifest)), `${plugin.name} → ${path}`).toBe(true);
     }
-  });
-});
-
-describe("renderCoreTail (bd tea-rags-mcp-9f0yn.9: the head reaches the model once)", () => {
-  const core = readFileSync(join(ROOT, PLUGINS_DIR, "tea-rags", CORE_PATH), "utf8");
-
-  it("is what the tea-rags package ships as rules/core-tail.md", () => {
-    const shipped = renderClaudePackage(ROOT, "tea-rags").get(CORE_TAIL_PATH)?.content.toString("utf8");
-    expect(shipped).toBe(renderCoreTail(core));
-  });
-
-  it("carries the core after the server-instructions head, in the Claude dialect, and none of the head", () => {
-    const split = splitCoreForInstructions(core);
-    const tail = renderCoreTail(core) ?? "";
-
-    expect(split).toBeDefined();
-    expect(tail.endsWith(nameCodeTools(split?.tail ?? "-", CLAUDE_CODE_TOOLS))).toBe(true);
-    expect(tail).not.toContain("**Addressing.**");
-    expect(tail).toContain("**Invariants.**");
-  });
-
-  it("opens with a note naming where the head is, the Claude code tools and the no-server fallback", () => {
-    const tail = renderCoreTail(core) ?? "";
-    const note = tail.slice(0, tail.indexOf("first.")).replace(/\s+/g, " ");
-
-    expect(note).toContain("MCP server instructions");
-    expect(note).toContain("Grep tool (absent → Bash `grep`");
-    expect(note).toContain("Read tool");
-    expect(note).toContain("tea-rags resource tea-rags://guide/core");
-  });
-
-  it("is undefined when the whole core fits the server instructions", () => {
-    expect(renderCoreTail("# tiny core\n")).toBeUndefined();
   });
 });
