@@ -91,14 +91,17 @@ export function renderContainerHeader(draft: ContainerHeaderDraft, allowance = I
   let spent = 0;
   let open = true;
   let unaddressed = false;
+  let classLine: string | undefined;
   for (const chunk of draft.chunks) {
     const line = `  header ${chunk.range}${chunk.composition ? `: ${chunk.composition}` : ""}`;
-    const withinClass = chunk.text.length > 0 && spent + chunk.text.length <= CONTAINER_HEADER_CHAR_BUDGET;
-    const withinAnswer = spent + chunk.text.length <= allowance;
+    const text = withoutRepeatedClassLine(chunk.text, classLine);
+    const withinClass = text.length > 0 && spent + text.length <= CONTAINER_HEADER_CHAR_BUDGET;
+    const withinAnswer = spent + text.length <= allowance;
     open = open && withinClass && withinAnswer;
     if (open) {
-      spent += chunk.text.length;
-      inlined.push(`── header ${chunk.range} ──\n${chunk.text}`);
+      spent += text.length;
+      classLine ??= firstLineOf(chunk.text);
+      inlined.push(`── header ${chunk.range} ──\n${text}`);
       inlinedChunkIds.push(chunk.id);
       listing.push(line);
       continue;
@@ -141,6 +144,21 @@ export function spendContainerHeaderAllowance<R extends Pick<SearchResult, "payl
     ...(rendered.inlinedChunkIds.length > 0 ? { kind: CONTAINER_HEADER_KIND } : {}),
   };
   return { result: { ...result, payload }, spent: rendered.spent };
+}
+
+function firstLineOf(text: string): string {
+  return text.split("\n", 1)[0];
+}
+
+/**
+ * A header chunk's text without the class-header line the first inlined chunk
+ * already showed: every class-body chunk repeats its container's declaration
+ * line, so a container answer inlining several of them prints it once (bd
+ * tea-rags-mcp-9f0yn.3).
+ */
+function withoutRepeatedClassLine(text: string, classLine: string | undefined): string {
+  if (classLine === undefined || !text.startsWith(`${classLine}\n`)) return text;
+  return text.slice(classLine.length + 1);
 }
 
 function noticeOf(reasons: ReadonlySet<NotInlinedReason>, unaddressed: boolean): string {

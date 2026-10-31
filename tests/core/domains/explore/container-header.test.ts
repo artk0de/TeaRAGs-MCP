@@ -95,7 +95,7 @@ describe("container header + outline (find_symbol on a class id)", () => {
     expect(content).toContain(`  ${OWNER}#call`);
     expect(content).not.toContain(":call_body");
     expect(content).toContain(`── header 7–15 ──\n${HEAD_TEXT}`);
-    expect(content).toContain("── header 30–32 ──\nclass Webhooks < Base\n  private\n  attr_reader :app");
+    expect(content).toContain("── header 30–32 ──\n  private\n  attr_reader :app");
     expect(content.indexOf(`  ${OWNER}#call`)).toBeLessThan(content.indexOf("── header 7–15 ──"));
     expect(row.payload?.kind).toBe("containerHeader");
     expect(row.payload?.mergedChunkIds).toEqual(["h1", "h2"]);
