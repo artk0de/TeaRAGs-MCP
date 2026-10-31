@@ -205,25 +205,16 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     title: "Find Symbol",
     alwaysLoad: true,
     description:
-      "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
-      "symbol mode: function/method → merged full body; class/module → member OUTLINE " +
-      `(method ids, no method bodies, tests excluded) + header chunks (consts, DSL, fields) listed by lines, inlined whole up to ${CONTAINER_HEADER_CHAR_BUDGET} chars per class, ${BATCH_FULL_TEXT_CHAR_BUDGET} per answer shared with file text, which takes priority (kind:'containerHeader'; rest: 'not inlined', their member ids answer them); ` +
-      "doc:<hash> → full section content. " +
-      "table:<name> → Rails table current state folded from migrations (`table`); migration:<id> → that operation. " +
-      `relativePath mode: small code file (≤${FULL_TEXT_MAX_LINES} lines, or outline ≥ file) → full text, kind:'file', lines 1..endLine; ` +
-      "else file-level outline (code symbols); doc → TOC with doc:<hash> ids; metaOnly → outline; " +
-      "directory path → files + top-level symbols + subdirs (`directory`); unknown path → `empty.suggestions`. " +
-      `symbols mode: 1-20 symbol ids / file paths (file → as relativePath, full text until the batch's ${BATCH_FULL_TEXT_CHAR_BUDGET}-char budget, then outline; dir → missing; table:/migration: ids too, table → row payload.tableState), ` +
-      "rows keyed by `request`, misses in `missing` (unknown path → `suggestions`), a chunk another row carries → `sameChunkAs`, lean payload unless fields/rerank. " +
-      "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
-      "never Read the file or grep a saved dump. " +
-      "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +
-      "no suffix = unknown) — drop the suffix before drilling. " +
-      "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
-      "symbolId convention: Class#method (instance), Class.method (static). " +
-      'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
-      "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +
-      "definition — no second semantic_search needed.\n\n" +
+      "Direct lookup by name or path, no embedding. " +
+      "symbol: method → full body; class/module → member OUTLINE (method ids, no bodies) + header chunks " +
+      `(consts, DSL; ≤${CONTAINER_HEADER_CHAR_BUDGET} chars/class inlined, else 'not inlined'); ` +
+      "doc:<hash> → section; table:<name> → Rails table state folded from migrations; migration:<id> → that operation. " +
+      `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines → full text, else outline; doc → TOC; directory → files + subdirs. ` +
+      `symbols: 1-20 ids / paths in one call (full text until ${BATCH_FULL_TEXT_CHAR_BUDGET} chars, then outline); misses → missing. ` +
+      "Outline lines are addresses: drill via find_symbol(symbol: '<id>'), never Read the file. " +
+      "Drop a trailing visibility suffix, e.g. ' (private)', before drilling. " +
+      "Partial names match: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
+      "rerank preset attaches churn/ownership/bugFixRate labels.\n\n" +
       "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSymbolSchema",
     responseRows: FIND_SYMBOL_ROWS,
