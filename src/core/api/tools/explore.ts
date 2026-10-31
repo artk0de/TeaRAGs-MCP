@@ -20,6 +20,7 @@ import {
 } from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
 import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
+import { batchAddressOf, withoutRedundantLocators } from "./find-symbol-rows.js";
 import {
   appendAutoUpdateHint,
   compactWorkingTreeMarkerForCall,
@@ -57,6 +58,8 @@ interface SearchToolDef {
    * find_similar(positiveIds) accepts too.
    */
   searchTool?: true;
+  /** The tool's own row shaping before tabulation; a search tool's id/score drop takes precedence. */
+  shapeRows?: (results: readonly SearchResult[]) => object[];
 }
 
 /** `fields` absent, empty or all-blank — the default projection answers, as in `projectSearchResultPayloads`. */
@@ -86,10 +89,21 @@ const FIND_SYMBOL_ROWS: ResponseRowsPolicy = {
   rows: ["results"],
   continuation: (args, cut) => {
     if (!Array.isArray(args.symbols)) return offsetContinuation()(args, cut);
-    // Rows are tabulated from `payload.request` (q1g6s.15: a bare `request` lookup never matched).
-    const requestColumn = cut.columns?.indexOf("payload.request") ?? -1;
-    if (requestColumn < 0) return undefined;
-    const symbols = [...new Set(cut.omittedRows.map((row) => (row as unknown[])[requestColumn]))];
+    // Rows are tabulated from `payload.request` (q1g6s.15: a bare `request` lookup never matched);
+    // a row whose request was redundant is addressed by its symbolId, else its path (d0z7b.2).
+    const cellOf = (row: unknown, column: string): unknown => {
+      const i = cut.columns?.indexOf(column) ?? -1;
+      return i < 0 ? undefined : ((row as unknown[])[i] ?? undefined);
+    };
+    const addresses = cut.omittedRows.map((row) =>
+      batchAddressOf(
+        cellOf(row, "payload.request"),
+        cellOf(row, "payload.symbolId"),
+        cellOf(row, "payload.relativePath"),
+      ),
+    );
+    if (addresses.some((address) => address === undefined)) return undefined;
+    const symbols = [...new Set(addresses)];
     const { offset: _offset, ...rest } = args;
     return { ...rest, symbols };
   },
@@ -110,14 +124,14 @@ const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 function formatStructuredResult(
   response: ExploreResponse,
   compaction: SearchResultCompaction,
-  omitIdAndScore: boolean,
+  shapeRows: ((results: readonly SearchResult[]) => object[]) | undefined,
   address: WorkingTreeCallAddress,
 ): McpToolResult {
   const rows = compactSearchResults(response.results, compaction);
   const workingTree = response.workingTree && compactWorkingTreeMarkerForCall(response.workingTree, address);
   return {
     structuredContent: {
-      results: tabulateRecords(omitIdAndScore ? withoutIdAndScore(rows) : rows),
+      results: tabulateRecords(shapeRows ? shapeRows(rows) : rows),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
@@ -220,6 +234,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Params: tea-rags://guide/overview",
     schemaKey: "FindSymbolSchema",
     responseRows: FIND_SYMBOL_ROWS,
+    shapeRows: withoutRedundantLocators,
     invoke: async (app, request) => app.findSymbol(request),
   },
 ];
@@ -253,7 +268,7 @@ export function registerSearchTools(
         const result = formatStructuredResult(
           await tool.invoke(app, sanitized),
           { includeImports: includeImports === true },
-          tool.searchTool === true && fieldsAbsent(search.fields),
+          tool.searchTool === true && fieldsAbsent(search.fields) ? withoutIdAndScore : tool.shapeRows,
           search,
         );
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;

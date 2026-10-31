@@ -38,8 +38,14 @@ const SearchResultPayloadSchema = z
 
 /** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
 export const SearchResultItemSchema = z.object({
-  id: z.union([z.string(), z.number()]).optional().describe("Chunk ID (search tools: only with fields)"),
-  score: z.number().optional().describe("Relevance score (search tools: only with fields)"),
+  id: z
+    .union([z.string(), z.number()])
+    .optional()
+    .describe("Chunk ID (search tools: only with fields; find_symbol: only without symbolId)"),
+  score: z
+    .number()
+    .optional()
+    .describe("Relevance score (search tools: only with fields; find_symbol: omitted when 1)"),
   payload: SearchResultPayloadSchema.optional(),
   rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
   treeState: z
