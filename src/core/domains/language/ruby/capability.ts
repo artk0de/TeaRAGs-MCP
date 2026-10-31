@@ -184,7 +184,11 @@ export const capability: LanguageCapability = {
   // Same chunking 3, bd tea-rags-mcp-5ivtb: a class-level DSL statement is declared by
   // its body chunk (`Owner#chapters`, `Owner.recent`, `Owner.validates :title`), and a
   // multi-line statement's continuation rows stay in its own body chunk.
-  versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
+  // chunking 4: bd tea-rags-mcp-9f0yn.3 — container rows are grouped per run between
+  // two extracted children, so no header chunk spans a method, and a visibility-only
+  // group (`private`, `module_function`) folds into a neighbour whatever the class
+  // header length. A chunking-3 index holds header chunks spanning methods (`--force`).
+  versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

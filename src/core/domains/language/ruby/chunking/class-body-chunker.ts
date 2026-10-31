@@ -119,6 +119,12 @@ const STATEMENT_KEYWORDS = new Set([
 ]);
 
 /**
+ * Bare visibility keywords: a body group made only of these carries no
+ * declaration of its own, so it is noise under any class header length.
+ */
+const VISIBILITY_KEYWORDS = new Set(["private", "protected", "public", "module_function"]);
+
+/**
  * Concern-level DSL methods whose `do...end` blocks should be transparent.
  * Content inside these blocks is classified normally as flat body.
  */
@@ -539,7 +545,9 @@ export function extractBodyChunks(
   const fits = (group: BodyGroup): boolean => groupText(group).length <= budget;
   // The leading comment runs through the same grouper, so a comment block over
   // the budget is split at row boundaries here, never line-cut by the post-pass.
-  const plainGroups = bodyGrouper.groupLines(bodyLines, budget);
+  // Each run of container rows between two extracted children is grouped on
+  // its own, so no header chunk spans a method (bd tea-rags-mcp-9f0yn.3).
+  const plainGroups = splitAtChildBoundaries(bodyLines).flatMap((run) => bodyGrouper.groupLines(run, budget));
   const commentGroups = bodyGrouper.groupLines(containerLeadingCommentLines(containerNode, code), budget);
   // The floor measures the group's rows joined and trimmed, not the chunk text:
   // the first row's indentation, kept for display, must not lift a lone
@@ -552,7 +560,7 @@ export function extractBodyChunks(
     return classHeader ? classHeader.length + 1 + text.length : text.length;
   };
   const subFloorFold = {
-    isSubFloor: (group: BodyGroup) => floorLength(group) < 50 && !declaresMember(group),
+    isSubFloor: (group: BodyGroup) => (floorLength(group) < 50 || isVisibilityOnly(group)) && !declaresMember(group),
     fits,
     merge: mergeBodyGroups,
     startOf: (group: BodyGroup) => group.lines[0].sourceLine,
@@ -874,6 +882,28 @@ export const rubyBodyChunkingHook: ChunkingHook = {
 };
 
 // ── Utility ────────────────────────────────────────────────────────
+
+/**
+ * Split container rows into the runs an extracted child (method, nested
+ * container, a method's leading comment) separates: a source-line gap between
+ * two consecutive rows is a child boundary — blank rows stay in the body lines,
+ * so only a removed child leaves one.
+ */
+function splitAtChildBoundaries(lines: BodyLine[]): BodyLine[][] {
+  const runs: BodyLine[][] = [];
+  for (const line of lines) {
+    const run = runs.at(-1);
+    if (run && line.sourceLine === run[run.length - 1].sourceLine + 1) run.push(line);
+    else runs.push([line]);
+  }
+  return runs;
+}
+
+/** Whether every non-blank row of `group` is a bare visibility keyword. */
+function isVisibilityOnly(group: BodyGroup): boolean {
+  const rows = group.lines.map((l) => l.text.trim()).filter((text) => text.length > 0);
+  return rows.length > 0 && rows.every((text) => VISIBILITY_KEYWORDS.has(text));
+}
 
 /**
  * Compute non-contiguous line ranges from BodyLine source lines.
