@@ -35,6 +35,7 @@ import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filte
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { RegistryLookup } from "../../../contracts/types/registry.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
+import type { SymbolBatchMiss } from "../../../contracts/types/symbol-batch.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
@@ -431,7 +432,7 @@ export class ExploreOps {
       request.project,
       { nameOnly: true },
     );
-    if (request.symbol?.startsWith(RAILS_TABLE_ID_PREFIX) || request.symbol?.startsWith(MIGRATION_ID_PREFIX)) {
+    if (request.symbol !== undefined && isMigrationCorpusAddress(request.symbol)) {
       return this.findMigrationSymbol(request, request.symbol, migrationCollectionName(collectionName));
     }
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
@@ -485,8 +486,74 @@ export class ExploreOps {
    * on the SAME context — one working-tree view, so one marker carries the
    * floors all of them claimed. Rows carry the lean payload unless `fields` or
    * `rerank` asks for more; the request (and a separator swap) rides each row.
+   * `table:` / `migration:` addresses are answered from the migration corpus
+   * exactly as single mode answers them ({@link findMigrationBatch}) and merged
+   * back in request order (bd tea-rags-mcp-7dcty.2).
    */
   private async findSymbolBatch(
+    request: FindSymbolRequest,
+    symbols: readonly string[],
+    ctx: ExploreContext,
+    pendingView: Promise<WorkingTreeView | undefined> | undefined,
+  ): Promise<ExploreResponse> {
+    const migrationAddresses = symbols.filter(isMigrationCorpusAddress);
+    if (migrationAddresses.length === 0) return this.findCodeSymbolBatch(request, symbols, ctx, pendingView);
+    const codeSymbols = symbols.filter((symbol) => !isMigrationCorpusAddress(symbol));
+    const [code, migration] = await Promise.all([
+      this.findCodeSymbolBatch(request, codeSymbols, ctx, pendingView),
+      this.findMigrationBatch(request, migrationAddresses, migrationCollectionName(ctx.collectionName)),
+    ]);
+    return {
+      ...code,
+      results: inRequestOrder(symbols, [...code.results, ...migration.results], (row) => row.payload?.request),
+      missing: inRequestOrder(symbols, [...(code.missing ?? []), ...migration.missing], (miss) => miss.request),
+    };
+  }
+
+  /**
+   * The migration-corpus half of a `symbols` batch: each address through
+   * {@link findMigrationSymbol}, its single-mode answer reshaped into batch
+   * rows. A `migration:<id>` row is the operation chunk (locator + content,
+   * locator only under metaOnly). A `table:<name>` row carries the folded
+   * state under `payload.tableState` (`payload.table` = the table name, the
+   * string a migration chunk row carries there) — the `RailsTableState` single mode puts
+   * on `ExploreResponse.table`, keyed by `request` with `id` / `symbolId` =
+   * the address — because a batch has one `table` slot for N tables. A single
+   * mode `empty` becomes a `missing` entry with its message; the reason code
+   * (`notBuilt` / `noTableOperations` / `unknownSymbol`) is read from the
+   * message, as a batch path miss reads `noSymbols` / `ignoredPath`.
+   */
+  private async findMigrationBatch(
+    request: FindSymbolRequest,
+    addresses: readonly string[],
+    migrationCollection: string,
+  ): Promise<{ results: ExploreResponse["results"]; missing: SymbolBatchMiss[] }> {
+    const answers = await Promise.all(
+      addresses.map(async (address) => ({
+        address,
+        answer: await this.findMigrationSymbol(request, address, migrationCollection),
+      })),
+    );
+    return {
+      results: answers.flatMap(({ address, answer }) => [
+        ...answer.results.map((row) => ({ ...row, payload: { request: address, ...row.payload } })),
+        ...(answer.table
+          ? [
+              {
+                id: address,
+                score: 1,
+                payload: { request: address, symbolId: address, table: answer.table.table, tableState: answer.table },
+              },
+            ]
+          : []),
+      ]),
+      missing: answers.flatMap(({ address, answer }) =>
+        answer.empty ? [{ request: address, message: answer.empty.message }] : [],
+      ),
+    };
+  }
+
+  private async findCodeSymbolBatch(
     request: FindSymbolRequest,
     symbols: readonly string[],
     ctx: ExploreContext,
@@ -1460,3 +1527,21 @@ function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
  * outline (q1g6s.4); symbol rows carry none, so it never shows on them.
  */
 const BATCH_LEAN_FIELDS = ["symbolId", "relativePath", "kind", "startLine", "endLine", "content"];
+
+/** A `table:<name>` / `migration:<id>` address — answered from the migration corpus, not the code index (bd tea-rags-mcp-nplgm). */
+function isMigrationCorpusAddress(symbol: string): boolean {
+  return symbol.startsWith(RAILS_TABLE_ID_PREFIX) || symbol.startsWith(MIGRATION_ID_PREFIX);
+}
+
+/** `items` stably ordered by the first position of their request in `symbols`; an unknown request sorts last. */
+function inRequestOrder<T>(symbols: readonly string[], items: readonly T[], requestOf: (item: T) => unknown): T[] {
+  const rank = new Map<unknown, number>();
+  symbols.forEach((symbol, i) => {
+    if (!rank.has(symbol)) rank.set(symbol, i);
+  });
+  const rankOf = (item: T): number => rank.get(requestOf(item)) ?? symbols.length;
+  return items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => rankOf(a.item) - rankOf(b.item) || a.i - b.i)
+    .map(({ item }) => item);
+}
