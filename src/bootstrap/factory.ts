@@ -1484,6 +1484,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     workingTreeGraphCache,
     workingTreeOverlay,
     readWorkingTreeFileChunks,
+    workingTreeFileFilter,
     stopWorkingTreeChunkSweep,
     stopWorkingTreeGitSignalSweep,
     stopWorkingTreeBasePointSweep,
@@ -1588,6 +1589,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     projectIngestFactory,
     workingTreeOverlay,
     readWorkingTreeFileChunks,
+    workingTreeFileFilter,
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
@@ -1695,6 +1697,8 @@ interface WorkingTreeSection {
    * tea-rags-mcp-89k7k.34).
    */
   readWorkingTreeFileChunks: NonNullable<ReviewChangesOpsDeps["readTreeChunks"]>;
+  /** The ingest admission rule the overlay measures a tree with — the review admits untracked paths by it too. */
+  workingTreeFileFilter: NonNullable<ReviewChangesOpsDeps["createFileFilter"]>;
   stopWorkingTreeChunkSweep: ReturnType<typeof scheduleWorkingTreeChunkSweep>;
   stopWorkingTreeGitSignalSweep: ReturnType<typeof scheduleWorkingTreeGitSignalSweep>;
   stopWorkingTreeBasePointSweep: ReturnType<typeof scheduleWorkingTreeBasePointSweep>;
@@ -1908,6 +1912,7 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
     workingTreeChangeClock,
     workingTreeGraphCache,
     workingTreeOverlay,
+    workingTreeFileFilter,
     readWorkingTreeFileChunks: async (tree, relPaths) => {
       const read = await workingTreeChunkLayer.chunk(
         tree.root,
@@ -2261,6 +2266,7 @@ function createExploreSection(deps: {
   projectIngestFactory: ProjectIngestFactory;
   workingTreeOverlay: WorkingTreeOverlay;
   readWorkingTreeFileChunks: WorkingTreeSection["readWorkingTreeFileChunks"];
+  workingTreeFileFilter: WorkingTreeSection["workingTreeFileFilter"];
   historyAnchor: IndexHistoryAnchorResolver;
   indexExists: (collectionName: string) => Promise<boolean>;
   readTreeDeclaredTestDependencies: (root: string) => ReadonlySet<string>;
@@ -2279,6 +2285,7 @@ function createExploreSection(deps: {
     projectIngestFactory,
     workingTreeOverlay,
     readWorkingTreeFileChunks,
+    workingTreeFileFilter,
     historyAnchor,
     indexExists,
     readTreeDeclaredTestDependencies,
@@ -2369,6 +2376,9 @@ function createExploreSection(deps: {
           // the reviewed tree — the overlay's own chunk layer (bd
           // tea-rags-mcp-89k7k.34).
           readTreeChunks: readWorkingTreeFileChunks,
+          // A `files`-less review admits untracked paths by the ingest rule the
+          // overlay measures the tree with (bd tea-rags-mcp-9f0yn.10).
+          createFileFilter: workingTreeFileFilter,
           indexExists,
           // The architecture section's asset-import rescue reads the SAME
           // payload specifiers the whole-repo report's second silent-coupling

@@ -25,6 +25,28 @@ import {
 import { collectionPathFields } from "./codegraph.js";
 import { formatMcpResponse, type McpToolResult, type WorkingTreeCallAddress } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
+import type { ResponseRowsPolicy } from "./response-budget.js";
+
+/**
+ * The review's row collections the response budget trims (bd tea-rags-mcp-9f0yn.10):
+ * a review over thousands of files went out at 8.5M chars. Counts
+ * (`changedFiles`, `checked`, `introducedCount`) stay whole; a review has no
+ * paging, so a cut names the knobs that narrow it.
+ */
+const REVIEW_CHANGES_ROWS: ResponseRowsPolicy = {
+  rows: [
+    "review.notJudged",
+    "review.sections.naming.findings",
+    "review.sections.naming.notes",
+    "review.sections.naming.notJudgedNames",
+    "review.sections.incompleteChange.partners",
+    "review.sections.incompleteChange.coveredPartners",
+    "review.sections.cohesion.reports",
+    "review.sections.architecture.findings",
+    "review.sections.norms.addedEdgeVerdicts",
+  ],
+  narrowing: ["files", "sections"],
+};
 
 /**
  * Call contract only; how to read each section (gates, caps, change block,
@@ -75,6 +97,7 @@ export function registerReviewChangesTool(server: McpServer, deps: { app: App; r
       description: REVIEW_CHANGES_DESCRIPTION,
       inputSchema: ReviewChangesInputSchema,
       annotations: { readOnlyHint: true, idempotentHint: true },
+      responseRows: REVIEW_CHANGES_ROWS,
     },
     async (request: unknown): Promise<McpToolResult> =>
       formatMcpResponse(
