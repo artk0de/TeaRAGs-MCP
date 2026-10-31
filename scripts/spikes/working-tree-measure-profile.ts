@@ -18,12 +18,12 @@
 import { ChildProcess } from "node:child_process";
 import { performance } from "node:perf_hooks";
 
-import { createConfiguredServer, createWorkingTreeFileFilter } from "../../build/bootstrap/factory.js";
-import { connectInProcessClient } from "../../build/bootstrap/transport/in-memory.js";
-import { prepareMcpServerRuntime } from "../../build/bootstrap/transport/server-runtime.js";
-import { readStatusPorcelain } from "../../build/core/adapters/vcs/git/git-cli/working-tree.js";
-import { findGitToplevel, readRepoGitState } from "../../build/core/adapters/vcs/git/repo-git-state.js";
-import { createWorkingTreeDeltaReader } from "../../build/core/domains/explore/working-tree/delta.js";
+import { createConfiguredServer, createWorkingTreeFileFilter } from "../../src/bootstrap/factory.js";
+import { connectInProcessClient } from "../../src/bootstrap/transport/in-memory.js";
+import { prepareMcpServerRuntime } from "../../src/bootstrap/transport/server-runtime.js";
+import { readStatusPorcelain } from "../../src/core/adapters/vcs/git/git-cli/working-tree.js";
+import { findGitToplevel, readRepoGitState } from "../../src/core/adapters/vcs/git/repo-git-state.js";
+import { createWorkingTreeDeltaReader } from "../../src/core/domains/explore/working-tree/delta.js";
 
 // Spawn trace: every child process started while a find_symbol call runs is
 // recorded with its wall time (spawn → exit), so the call's subprocess cost is
@@ -77,7 +77,7 @@ function quantile(values: number[], q: number): number {
 const { ctx, promptsConfig } = await prepareMcpServerRuntime({ watchWorkingTrees: true });
 const server = createConfiguredServer(ctx, promptsConfig, { autoUpdate: false });
 const session = await connectInProcessClient(server);
-const config = (await import("../../build/bootstrap/config/app-config.js")).parseAppConfig();
+const config = (await import("../../src/bootstrap/config/app-config.js")).parseAppConfig();
 const fileFilter = createWorkingTreeFileFilter(config.ingestCode);
 const reader = createWorkingTreeDeltaReader();
 const indexedCommit = readRepoGitState(treeRoot)?.commit ?? null;

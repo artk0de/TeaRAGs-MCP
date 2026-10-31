@@ -15,7 +15,7 @@ import { performance } from "node:perf_hooks";
 import {
   createWorkingTreeDeltaReader,
   WorkingTreeChangeClock,
-} from "../../build/core/domains/explore/working-tree/index.js";
+} from "../../src/core/domains/explore/working-tree/index.js";
 
 const [source, clone, tracked] = process.argv.slice(2);
 if (!source || !clone || !tracked) {
