@@ -20,6 +20,9 @@ trap 'rm -rf "$STATE" "$REPO" "$FAKEBIN"' EXIT
 mkdir -p "$REPO/sub"
 for i in $(seq 1 30); do echo "const line$i = $i;"; done > "$REPO/a.ts"
 for i in $(seq 1 12); do echo "def b$i; end"; done > "$REPO/sub/b.rb"
+# big.ts: above find_symbol's full-text threshold (150 lines), so a raw read of it still earns
+# the whole-file nudge; a.ts (30 lines) is returned whole by find_symbol and is never nudged.
+for i in $(seq 1 200); do echo "const big$i = $i;"; done > "$REPO/big.ts"
 
 # Fake `tea-rags`: `project indexed …` prints $FAKE_OUT (default: not indexed) and
 # exits like the real one (0 indexed, 1 not); every call is logged to calls.log.
@@ -263,19 +266,20 @@ silent; note $? "a header end cannot be attributed to a method end with the same
 mkdir -p "$REPO/config" "$REPO/db/migrate" "$REPO/spec"
 echo "x: 1" > "$REPO/config/app.yml"; echo "Rails.application.configure do; end" > "$REPO/config/app.rb"
 echo "class CreateOrders; end" > "$REPO/db/migrate/001_create_orders.rb"; echo "describe A do; end" > "$REPO/spec/a_spec.rb"
-export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
-NUDGE='a.ts is indexed source — find_symbol(relativePath: "a.ts") returns it'
+BIG="$REPO/big.ts"
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"big.ts"}'
+NUDGE='big.ts is indexed source — find_symbol(relativePath: "big.ts") returns it'
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
-pre s40 Read "$(read_in "$A")"
+pre s40 Read "$(read_in "$BIG")"
 noted "$NUDGE" "full text ≤150 lines, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
-pre s40 Read "$(read_in "$A" 3 4)"
+pre s40 Read "$(read_in "$BIG" 3 4)"
 silent; note $? "the nudge fires once per file per turn"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
-pre s40 Bash "$(bash_in "sed -n 3,9p a.ts")"
+pre s40 Bash "$(bash_in "sed -n 3,9p big.ts")"
 noted "$NUDGE"; note $? "next turn, a Bash sed of the same file → nudged again"
-pre s41 Bash "$(bash_in "cat a.ts | head -20")"
+pre s41 Bash "$(bash_in "cat big.ts | head -20")"
 noted "$NUDGE"; note $? "Bash cat of an indexed source file → nudge"
-pre s42 Bash "$(bash_in "grep -n line3 a.ts")"
+pre s42 Bash "$(bash_in "grep -n big3 big.ts")"
 silent; note $? "a grep is a search, not a read → no nudge"
 pre s43 Read "$(read_in "$REPO/config/app.rb")"
 silent; note $? "config/ (zone the core routes to the read tool) → no nudge"
@@ -286,23 +290,33 @@ silent; note $? "a spec → no nudge"
 pre s43 Read "$(read_in "$REPO/config/app.yml")"
 silent; note $? "a data file → no nudge"
 export FAKE_OUT='{"indexed":false}'
-pre s44 Read "$(read_in "$A")"
+pre s44 Read "$(read_in "$BIG")"
 silent; note $? "a file outside the index → no nudge"
-export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
-OUT=$(printf '%s' "$(event PreToolUse s45 Read "$(read_in "$A")")" | TEA_RAGS_BIN="$FAKEBIN/none" TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null); CODE=$?
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"big.ts"}'
+OUT=$(printf '%s' "$(event PreToolUse s45 Read "$(read_in "$BIG")")" | TEA_RAGS_BIN="$FAKEBIN/none" TEA_RAGS_HOOK_STATE_DIR="$STATE" node "$HOOK" 2>/dev/null); CODE=$?
 [ "$CODE" = 0 ] && ! printf '%s' "$OUT" | grep -qF 'indexed source'; note $? "TEA_RAGS_BIN names no binary → no nudge, fail open"
-post s46 Read "$(read_in "$A")" "$(read_out "$A")"
-pre s46 Read "$(read_in "$A")"
+post s46 Read "$(read_in "$BIG")" "$(read_out "$BIG")"
+pre s46 Read "$(read_in "$BIG")"
 noted "already returned"; note $? "lines already held → the re-read note"
 ! context | grep -qF "indexed source"; note $? "… and no nudge beside it"
 rm -f "$FAKEBIN/calls.log"
-pre s47 Read "$(read_in "$A")"; pre s47 Read "$(read_in "$A")"
+pre s47 Read "$(read_in "$BIG")"; pre s47 Read "$(read_in "$BIG")"
 [ "$(wc -l < "$FAKEBIN/calls.log" | tr -d ' ')" = 1 ]; note $? "the index lookup runs once per file per turn (cached)"
+# A file find_symbol returns whole (≤150 lines) gains nothing from the whole-file nudge, and a
+# whole read of it needs no index lookup at all.
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
+rm -f "$FAKEBIN/calls.log"
+pre s48 Read "$(read_in "$A")"
+silent; note $? "whole Read of a 30-line indexed file → no nudge"
+[ ! -s "$FAKEBIN/calls.log" ]; note $? "… and no \`tea-rags project indexed\` spawn"
+pre s48 Bash "$(bash_in "cat a.ts")"
+silent && [ ! -s "$FAKEBIN/calls.log" ]; note $? "whole cat of a 30-line indexed file → no nudge, no spawn"
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"big.ts"}'
 # Reads are never denied (owner decision, bd tea-rags-mcp-nxg76): search-drift stays silent on a
 # read streak, and the ledger's nudge fires on read 3 and every later turn.
 DRIFT="$ROOT/plugins/tea-rags/scripts/search-drift.sh"
 both_hooks() { # <sid> <order: drift-first|ledger-first> [json] → DENY (0/1), NUDGED (0/1), DRIFT_OUT
-  local json; json=${3:-$(event PreToolUse "$1" Read "$(read_in "$A")")}
+  local json; json=${3:-$(event PreToolUse "$1" Read "$(read_in "$BIG")")}
   local d l
   if [ "$2" = drift-first ]; then
     d=$(printf '%s' "$json" | TEA_RAGS_BIN="$FAKEBIN/tea-rags" TEA_RAGS_HOOK_NOW=5000 TEA_RAGS_HOOK_STATE_DIR="$STATE" bash "$DRIFT" --harness claude 2>/dev/null)
@@ -334,7 +348,7 @@ for order in drift-first ledger-first; do
   overlap=0 denies=0 nudges=0
   for i in 1 2 3 4 5 6; do
     run "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"dn-$order\",\"prompt\":\"p\"}"
-    both_hooks "dn-$order" "$order" "$(event PreToolUse "dn-$order" Bash "$(bash_in "nl a.ts && rg -n 'retry|backoff' src")")"
+    both_hooks "dn-$order" "$order" "$(event PreToolUse "dn-$order" Bash "$(bash_in "nl big.ts && rg -n 'retry|backoff' src")")"
     [ "$DENY" = 1 ] && [ "$NUDGED" = 1 ] && overlap=$((overlap + 1))
     denies=$((denies + DENY)); nudges=$((nudges + NUDGED))
   done
@@ -342,7 +356,7 @@ for order in drift-first ledger-first; do
   note $? "$order: search-drift search deny and the nudge never on the same call (denies=$denies nudges=$nudges overlap=$overlap)"
 done
 # A zone word in the checkout path never exempts a source read from the nudge.
-ZREPO="$(mktemp -d)/test/repo"; mkdir -p "$ZREPO/src"; cp "$A" "$ZREPO/src/a.ts"
+ZREPO="$(mktemp -d)/test/repo"; mkdir -p "$ZREPO/src"; cp "$BIG" "$ZREPO/src/a.ts"
 export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"src/a.ts"}'
 run "$(jq -cn --arg f "$ZREPO/src/a.ts" --arg c "$ZREPO" '{hook_event_name:"PreToolUse",session_id:"zw",cwd:$c,tool_name:"Read",tool_input:{file_path:$f}}')"
 noted 'src/a.ts is indexed source'; note $? "a zone word in the cwd (…/test/repo) does not exempt a source read from the nudge"
@@ -414,11 +428,11 @@ prompt_ev() { # <harness> <sid>
 for H in codex cursor; do
   [ -f "$(harness_hook "$H")" ] || { note 1 "$H: ledger ships at $(harness_hook "$H")"; continue; }
   cmp -s "$HOOK" "$(harness_hook "$H")"; note $? "$H: ships the plugin's reread-ledger.mjs byte-identical"
-  export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"a.ts"}'
+  export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"big.ts"}'
   hrun "$H" "$(prompt_ev "$H" h1)"
   case "$H" in cursor) [ "$(printf '%s' "$OUT" | jq -r '.continue // empty')" = true ] ;; *) [ -z "$OUT" ] ;; esac
   note $? "$H: the prompt event advances the turn, answers in the $H shape"
-  hrun "$H" "$(shell_ev "$H" pre h1 "sed -n 1,30p a.ts")"
+  hrun "$H" "$(shell_ev "$H" pre h1 "sed -n 1,30p big.ts")"
   hnoted "$H" "$NUDGE" "several files → ONE find_symbol(symbols:[…])"; note $? "$H: shell read of indexed source → find_symbol(relativePath:) nudge, non-blocking"
   hrun "$H" "$(shell_ev "$H" post h1 "sed -n 1,30p a.ts" "$(shell_out "$(cat "$A")")")"; hquiet "$H"; note $? "$H: the result is recorded silently"
   hrun "$H" "$(prompt_ev "$H" h1)"
@@ -433,7 +447,7 @@ for H in codex cursor; do
   denies=0; nudges=0
   for i in 1 2 3 4; do
     hrun "$H" "$(prompt_ev "$H" h2)"
-    hrun "$H" "$(shell_ev "$H" pre h2 "head -n 5 sub/b.rb && sed -n 2,4p a.ts")"
+    hrun "$H" "$(shell_ev "$H" pre h2 "head -n 5 sub/b.rb && sed -n 2,4p big.ts")"
     printf '%s' "$OUT" | grep -qE '"(permissionDecision|permission)": *"deny"' && denies=$((denies + 1))
     hcontext "$H" | grep -qF "$NUDGE" && nudges=$((nudges + 1))
   done
@@ -444,15 +458,15 @@ for H in codex cursor; do
   note $? "$H: unparsable input fails open"
 done
 # Codex: tool_input.workdir resolves the command's relative paths.
-hrun codex "$(jq -cn --arg cwd "$(dirname "$REPO")" --arg w "$(basename "$REPO")" '{hook_event_name:"PreToolUse",session_id:"h4",cwd:$cwd,tool_name:"shell",tool_input:{command:"cat a.ts",workdir:$w}}')"
+hrun codex "$(jq -cn --arg cwd "$(dirname "$REPO")" --arg w "$(basename "$REPO")" '{hook_event_name:"PreToolUse",session_id:"h4",cwd:$cwd,tool_name:"shell",tool_input:{command:"cat big.ts",workdir:$w}}')"
 hnoted codex "$NUDGE"; note $? "codex: workdir relative to cwd locates the read file"
 # Cursor: a Read is noted at preToolUse (Read {file_path}); its result is not recorded — the hook
 # input carries no line range, so a partial read would be recorded as the whole file.
-hrun cursor "$(jq -cn --arg f "$A" --arg cwd "$REPO" '{hook_event_name:"preToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_use_id:"t"}')"
+hrun cursor "$(jq -cn --arg f "$BIG" --arg cwd "$REPO" '{hook_event_name:"preToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_use_id:"t"}')"
 hnoted cursor "$NUDGE"; note $? "cursor: Read of indexed source → nudge as additional_context"
-hrun cursor "$(jq -cn --arg f "$A" --arg cwd "$REPO" '{hook_event_name:"postToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_output:"{}",tool_use_id:"t"}')"
+hrun cursor "$(jq -cn --arg f "$BIG" --arg cwd "$REPO" '{hook_event_name:"postToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_output:"{}",tool_use_id:"t"}')"
 hrun cursor "$(prompt_ev cursor h5)"
-hrun cursor "$(jq -cn --arg f "$A" --arg cwd "$REPO" '{hook_event_name:"preToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_use_id:"t"}')"
+hrun cursor "$(jq -cn --arg f "$BIG" --arg cwd "$REPO" '{hook_event_name:"preToolUse",conversation_id:"h5",workspace_roots:[$cwd],tool_name:"Read",tool_input:{file_path:$f},tool_use_id:"t"}')"
 ! hcontext cursor | grep -qF "already returned"; note $? "cursor: a Read result is never recorded (no range in the hook input)"
 # Cursor: afterMCPExecution {tool_name, mcp_server_name, tool_input: <JSON string>, result_json: <JSON
 # string of the MCP CallToolResult {content: [{type, text}]}>} — the bundle stringifies the call result.
@@ -473,7 +487,7 @@ export FAKE_OUT='{"indexed":false}'
 # a member line ends in ` L<a>-<b>` after an optional ` (visibility)`; declaration-only ids carry
 # no range; a container's header prints `header A–B`. ONE `tea-rags call find_symbol` per event
 # (≤ 3 paths), cached per session; no ranges in the outline → today's generic nudge (fail open).
-for i in $(seq 1 110); do echo "svc_line_$i = $i"; done > "$REPO/svc.rb"
+for i in $(seq 1 200); do echo "svc_line_$i = $i"; done > "$REPO/svc.rb"
 for i in $(seq 1 60); do echo "two_line_$i = $i"; done > "$REPO/two.rb"
 for i in $(seq 1 60); do echo "spec_line_$i = $i"; done > "$REPO/spec/svc_spec.rb"
 SVC_OUTLINE=$'svc.rb\n  Svc L1-100\n  header 1–9\n  Svc::LIMIT\n  Svc#alpha L10-30\n  Svc#beta (private) L32-60\n  Svc#gamma L62-98'
@@ -488,7 +502,9 @@ SVC_NUDGE='svc.rb is indexed source — find_symbol(relativePath: "svc.rb") retu
 rm -f "$FAKEBIN/outline.log"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"o1","prompt":"p"}'
 pre o1 Read "$(read_in "$REPO/svc.rb" 35 10)"
-noted 'svc.rb lines 35–44' 'find_symbol(symbols:["Svc#beta"])' 'never Read offset/limit'; note $? "Read offset/limit inside one method → its id as a literal find_symbol(symbols:[…]), never a decision"
+noted 'svc.rb lines 35–44 → find_symbol(symbols:["Svc#beta"]) returns them whole; no Read slice'; note $? "Read offset/limit inside one method → its id as a literal find_symbol(symbols:[…]), never a decision"
+[ "$(context | grep -oF 'Svc#beta' | wc -l | tr -d ' ')" = 1 ]; note $? "… the id is named once, inside the call"
+! context | grep -qF 'never Read offset/limit'; note $? "… no 'never Read offset/limit' phrasing"
 ! context | grep -qF "$SVC_NUDGE"; note $? "… instead of the generic nudge"
 ! context | grep -qF '(private)'; note $? "… the visibility suffix is not part of the id"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"o1","prompt":"p"}'
@@ -496,7 +512,7 @@ pre o1 Bash "$(bash_in "sed -n 20,40p svc.rb")"
 noted 'find_symbol(symbols:["Svc#alpha","Svc#beta"])'; note $? "sed -n spanning two methods → both covering leaf ids, never the container"
 [ "$(wc -l < "$FAKEBIN/outline.log" | tr -d ' ')" = 1 ]; note $? "the outline is fetched once per session (cached)"
 pre o2 Bash "$(bash_in "head -n 5 svc.rb")"
-noted 'find_symbol(symbol:"Svc")' 'header'; note $? "a header-only range → find_symbol(symbol:\"<Class>\")"
+noted 'svc.rb lines 1–5 = class header → find_symbol(symbol:"Svc") returns it + member ids; no Read slice'; note $? "a header-only range → find_symbol(symbol:\"<Class>\")"
 pre o3 Bash "$(bash_in "tail -n 5 svc.rb")"
 noted "$SVC_NUDGE"; note $? "lines no outline entry covers → the generic nudge, no ids"
 ! context | grep -qF 'find_symbol(symbols:["'; note $? "… and never an id for them"
@@ -510,18 +526,37 @@ noted "$SVC_NUDGE"; note $? "an outline without line ranges → the generic nudg
 FAKE_OUTLINE='not json'
 pre o6 Read "$(read_in "$REPO/svc.rb" 35 10)"
 noted "$SVC_NUDGE"; note $? "an unparsable outline answer → the generic nudge (fail open)"
+export FAKE_OUTLINE=$(outline_answer "$SVC_OUTLINE" "$TWO_OUTLINE")
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"two.rb"}'
+pre o9 Bash "$(bash_in "sed -n 10,20p two.rb")"
+noted 'two.rb lines 10–20 → find_symbol(symbols:["Two#run"])'; note $? "a range read of a ≤150-line file still names its covering id"
+export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePath":"svc.rb"}'
 FAKE_OUTLINE=$(outline_answer "$SVC_OUTLINE" "$TWO_OUTLINE")
 grep_out() { jq -cn --arg c "$1" '{mode: "content", numFiles: 1, filenames: [], content: $c, numLines: 2}'; }
 post_context() { [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.hookEventName // empty')" = PostToolUse ] || return 1
   local s; for s in "$@"; do context | grep -qF -- "$s" || return 1; done; }
 rm -f "$FAKEBIN/outline.log"
+# A multi-file sweep is not a drill: hits in two indexed files → no note, and no outline spawn.
 post p1 Grep '{"pattern":"line_4","path":".","output_mode":"content","-n":true}' \
   "$(grep_out "$(printf 'svc.rb:40:svc_line_40 = 40\nsvc.rb:70:svc_line_70 = 70\ntwo.rb:12:two_line_12 = 12')")"
-post_context 'find_symbol(symbols:["Svc#beta","Svc#gamma","Two#run"])' 'svc.rb' 'two.rb'; note $? "PostToolUse Grep content hits → the enclosing ids as one literal find_symbol(symbols:[…]), hookEventName PostToolUse"
-[ "$(wc -l < "$FAKEBIN/outline.log" | tr -d ' ')" = 1 ] && grep -qF '"svc.rb"' "$FAKEBIN/outline.log" && grep -qF '"two.rb"' "$FAKEBIN/outline.log"
-note $? "… from ONE batched outline call for both files"
+silent; note $? "PostToolUse Grep hits in two indexed files → no note (a sweep, not a drill)"
+[ ! -s "$FAKEBIN/outline.log" ]; note $? "… and no outline call"
+post p1g Grep '{"pattern":"svc_line_4","path":".","output_mode":"content","-n":true}' \
+  "$(grep_out "$(printf 'svc.rb:40:svc_line_40 = 40\nsvc.rb:70:svc_line_70 = 70')")"
+post_context 'tea-rags: hits in svc.rb → find_symbol(symbols:["Svc#beta","Svc#gamma"]) returns those bodies whole; no Read slice'
+note $? "PostToolUse Grep content hits in one file → the enclosing ids as one literal find_symbol(symbols:[…]), hookEventName PostToolUse"
 post p2 Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_15 = 15')"
-post_context 'find_symbol(symbols:["Svc#alpha"])'; note $? "PostToolUse Bash grep -n on one file → the enclosing id"
+post_context 'find_symbol(symbols:["Svc#alpha"])' 'no Read slice'; note $? "PostToolUse Bash grep -n on one file → the enclosing id"
+[ "$(context | grep -oF 'Svc#alpha' | wc -l | tr -d ' ')" = 1 ]; note $? "… the id is named once, inside the call"
+post p2 Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_15 = 15')"
+silent; note $? "the same file's hits again in the session → no second note"
+post p2b Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_15 = 15')"
+post_context 'find_symbol(symbols:["Svc#alpha"])'; note $? "a new session → noted again"
+run '{"hook_event_name":"SessionStart","session_id":"p2","source":"compact"}'
+post p2 Bash "$(bash_in "grep -n svc_line_15 svc.rb")" "$(shell_out '15:svc_line_15 = 15')"
+post_context 'find_symbol(symbols:["Svc#alpha"])'; note $? "after a compact SessionStart → noted again"
+post p2c Bash "$(bash_in "grep -rn _line_15 svc.rb spec")" "$(shell_out "$(printf 'svc.rb:15:svc_line_15 = 15\nspec/svc_spec.rb:15:spec_line_15 = 15')")"
+post_context 'find_symbol(symbols:["Svc#alpha"])'; note $? "a recursive grep hitting one source + one test file → noted (the test file is not counted)"
 post p3 Bash "$(bash_in "grep -rn spec_line_7 spec")" "$(shell_out 'spec/svc_spec.rb:7:spec_line_7 = 7')"
 silent; note $? "hits in a test / zone file → no note"
 post p4 Grep '{"pattern":"svc_line_4","path":".","output_mode":"files_with_matches"}' '{"mode":"files_with_matches","filenames":["svc.rb"],"numFiles":1}'
