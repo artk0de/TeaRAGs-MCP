@@ -513,6 +513,21 @@ describe("SearchResultOutputSchema — find_symbol table:<name> (nplgm)", () => 
     expect(schema.parse(overTheWire({ results: EMPTY_TABLE, table })).table).toEqual(table);
   });
 
+  it("strictly accepts a partial index predicate and foreign key actions (7dcty.3)", () => {
+    const table = foldRailsTableMigrations("orders", [
+      operation(
+        "1",
+        "create_table",
+        "create_table :orders do |t|\n  t.references :user, foreign_key: { on_delete: :cascade, on_update: :restrict }\nend",
+      ),
+      operation("2", "add_index", "add_index :orders, :user_id, where: 'status = 1', name: 'idx_p'"),
+    ]);
+
+    expect(table.indexes.find((index) => index.name === "idx_p")?.where).toBe("status = 1");
+    expect(table.foreignKeys[0]).toMatchObject({ onDelete: "cascade", onUpdate: "restrict" });
+    expect(schema.parse(overTheWire({ results: EMPTY_TABLE, table })).table).toEqual(table);
+  });
+
   it("strictly accepts a dropped table", () => {
     const table = foldRailsTableMigrations("orders", [
       operation("1", "create_table", "create_table :orders do |t|\nend"),

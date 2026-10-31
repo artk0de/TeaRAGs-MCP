@@ -226,6 +226,19 @@ function isTruthy(literal: RubyLiteral | undefined): boolean {
   return !(literal.kind === "raw" && literal.text === "nil");
 }
 
+/** A partial index's `where:` predicate as written: the string's text, or the raw expression when it is not a plain string. */
+function wherePredicateOf(literal: RubyLiteral | undefined): string | undefined {
+  if (literal?.kind === "name" || literal?.kind === "raw") return literal.text;
+  return undefined;
+}
+
+/** `on_delete:` / `on_update:` of a foreign key, each only when declared as a literal action. */
+function foreignKeyActionsOf(options: Map<string, RubyLiteral>): Pick<RailsTableForeignKey, "onDelete" | "onUpdate"> {
+  const onDelete = nameOf(options.get("on_delete"));
+  const onUpdate = nameOf(options.get("on_update"));
+  return { ...(onDelete ? { onDelete } : {}), ...(onUpdate ? { onUpdate } : {}) };
+}
+
 /** Rails' default inflection for the regular English plurals a table name uses. */
 function pluralize(word: string): string {
   if (/(s|x|z|ch|sh)$/.test(word)) return `${word}es`;
@@ -562,11 +575,13 @@ class RailsTableFold {
     }
     const name = nameOf(options.get("name"));
     if (name && this.indexes.some((index) => index.name === name)) return;
+    const where = wherePredicateOf(options.get("where"));
     this.indexes.push({
       ...(name ? { name } : {}),
       columns,
       unique: isTruthy(options.get("unique")),
       origin: this.operation.symbolId,
+      ...(where ? { where } : {}),
     });
   }
 
@@ -610,8 +625,13 @@ class RailsTableFold {
     }
     const foreignKey = options.get("foreign_key");
     if (!polymorphic && foreignKey !== undefined && isTruthy(foreignKey)) {
-      const toTable = foreignKey.kind === "hash" ? nameOf(foreignKey.entries.get("to_table")) : undefined;
-      this.foreignKeys.push({ toTable: toTable ?? pluralize(name), column, origin: this.operation.symbolId });
+      const constraint = foreignKey.kind === "hash" ? foreignKey.entries : new Map<string, RubyLiteral>();
+      this.foreignKeys.push({
+        toTable: nameOf(constraint.get("to_table")) ?? pluralize(name),
+        column,
+        origin: this.operation.symbolId,
+        ...foreignKeyActionsOf(constraint),
+      });
     }
   }
 
@@ -629,7 +649,7 @@ class RailsTableFold {
       return;
     }
     const column = nameOf(options.get("column")) ?? `${singularize(toTable)}_id`;
-    this.foreignKeys.push({ toTable, column, origin: this.operation.symbolId });
+    this.foreignKeys.push({ toTable, column, origin: this.operation.symbolId, ...foreignKeyActionsOf(options) });
   }
 
   private removeForeignKey(

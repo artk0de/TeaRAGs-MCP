@@ -92,6 +92,7 @@ describe("foldRailsTableMigrations — production fixture", () => {
         name: "idx_oauth_connections_on_refresh_expires_at",
         columns: ["refresh_expires_at"],
         unique: false,
+        where: "status = 1",
         origin: "migration:db/migrate/20260922130328_add_refresh_expires_at_index_to_oauth_connections.rb:add_index:1",
       },
     ]);
@@ -120,7 +121,12 @@ describe("foldRailsTableMigrations — production fixture", () => {
       ["updated_at", "datetime"],
     ]);
     expect(state.foreignKeys).toEqual([
-      { toTable: "tax_automations_documents", column: "tax_automation_document_id", origin: create },
+      {
+        toTable: "tax_automations_documents",
+        column: "tax_automation_document_id",
+        origin: create,
+        onDelete: "cascade",
+      },
       { toTable: "oauth_entities", column: "instead_entity_id", origin: create },
     ]);
     expect(state.indexes).toEqual([
@@ -135,12 +141,14 @@ describe("foldRailsTableMigrations — production fixture", () => {
         name: "idx_oauth_documents_on_firm_external",
         columns: ["firm_id", "external_uuid"],
         unique: true,
+        where: "external_uuid IS NOT NULL",
         origin: create,
       },
       {
         name: "idx_oauth_documents_on_external_uuid",
         columns: ["external_uuid"],
         unique: true,
+        where: "external_uuid IS NOT NULL",
         origin: "migration:db/migrate/20260915170006_add_external_uuid_index_to_oauth_documents.rb:add_index:1",
       },
     ]);
@@ -347,6 +355,42 @@ describe("foldRailsTableMigrations — operation stream semantics", () => {
     );
     expect(removed.columns).toEqual([]);
     expect(removed.indexes).toEqual([]);
+  });
+
+  it("keeps a partial index's where predicate and a foreign key's on_delete / on_update actions (7dcty.3)", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        [
+          "create_table",
+          `create_table :items do |t|
+  t.references :box, foreign_key: { to_table: :crates, on_delete: :cascade, on_update: :restrict }
+  t.references :shelf, foreign_key: true
+  t.integer :status
+  t.index :status, where: 'status IS NOT NULL', name: 'by_status'
+end`,
+        ],
+        ["add_index", `add_index :items, :box_id, where: "status = 1", name: 'by_box'`],
+        ["add_foreign_key", "add_foreign_key :items, :users, on_delete: :nullify"],
+        ["add_reference", "add_reference :items, :batch, foreign_key: { on_delete: :restrict }"],
+      ),
+    );
+    expect(state.unfolded).toEqual([]);
+    expect(state.indexes.map((index) => [index.name ?? index.columns.join(","), index.where])).toEqual([
+      ["box_id", undefined],
+      ["shelf_id", undefined],
+      ["by_status", "status IS NOT NULL"],
+      ["by_box", "status = 1"],
+      ["batch_id", undefined],
+    ]);
+    expect(state.indexes.filter((index) => !index.where).every((index) => !("where" in index))).toBe(true);
+    expect(state.foreignKeys.map((key) => [key.column, key.onDelete, key.onUpdate])).toEqual([
+      ["box_id", "cascade", "restrict"],
+      ["shelf_id", undefined, undefined],
+      ["user_id", "nullify", undefined],
+      ["batch_id", "restrict", undefined],
+    ]);
+    expect(state.foreignKeys.filter((key) => !key.onDelete).every((key) => !("onDelete" in key))).toBe(true);
   });
 
   it("adds foreign keys with inferred columns and removes them by table or by column", () => {
