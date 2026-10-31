@@ -5,11 +5,12 @@
  * across a method — a member declared between two methods resolves to the rows
  * around it, not to a span covering half the class.
  *
- *   1. No header chunk's span covers a method row (sub-floor guests aside — a
- *      folded `private` joins its neighbour wherever it sits).
+ *   1. No header chunk's span covers a method row — every fold stays inside
+ *      its run, sub-floor guests and the leading comment included.
  *   2. A member id between two methods answers exactly its own run.
- *   3. A visibility-only group is sub-floor whatever the class header length:
- *      a lone `private` is never a chunk of its own.
+ *   3. A visibility-only group joins the next group of its run (`private`
+ *      governs what follows it); alone in its run it keeps its own chunk
+ *      rather than joining a group across a method.
  *   4–6. Method chunks, the member id union and row coverage do not move.
  */
 import { beforeEach, describe, expect, it } from "vitest";
@@ -55,6 +56,34 @@ const GUARDED = [
   "    entry.update!(synced_at: Time.current, attempts: entry.attempts + 1)", // 11
   "  end", // 12
   "end", // 13
+  "",
+].join("\n");
+
+const TRAILING = [
+  `class ${OWNER} < ApplicationService`, // 1
+  "  RETRY_LIMIT = 3", // 2
+  "  BATCH_WINDOW = 15.minutes", // 3
+  "", // 4
+  "  def call(account)", // 5
+  "    account.entries.each { |entry| reconcile(entry) }", // 6
+  "  end", // 7
+  "", // 8
+  "  private", // 9
+  "", // 10
+  "  attr_reader :connection, :transport", // 11
+  "end", // 12
+  "",
+].join("\n");
+
+const COMMENT_LED = [
+  "# Synchronizes ledger entries with the remote billing provider.", // 1
+  `class ${OWNER} < ApplicationService`, // 2
+  "  def call(account)", // 3
+  "    account.entries.each { |entry| reconcile(entry) }", // 4
+  "  end", // 5
+  "", // 6
+  "  RETRY_LIMIT = 3", // 7
+  "end", // 8
   "",
 ].join("\n");
 
@@ -105,19 +134,37 @@ describe("Ruby container header runs (bd tea-rags-mcp-9f0yn.3)", () => {
     expect([owning[0].startLine, owning[0].endLine]).toEqual([9, 9]);
   });
 
-  it("never makes a lone `private` a chunk of its own, even under a long class header", async () => {
-    expect(`class ${OWNER} < ApplicationService\nprivate`.length).toBeGreaterThanOrEqual(50);
+  it("keeps a `private` alone in its run as its own chunk, never joined across a method", async () => {
     const chunks = await chunker.chunk(GUARDED, PATH, "ruby");
-    const bodies = headerChunks(chunks).map((c) =>
-      c.content
-        .split("\n")
-        .slice(1)
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0),
-    );
+    const owning = chunks.filter((c) => claimedRows(c).includes(8));
 
-    expect(bodies).not.toContainEqual(["private"]);
-    expect(chunks.filter((c) => claimedRows(c).includes(8))).toHaveLength(1);
+    expect(owning).toHaveLength(1);
+    expect([owning[0].startLine, owning[0].endLine]).toEqual([8, 8]);
+    for (const header of headerChunks(chunks)) {
+      const covered = [4, 5, 6, 10, 11, 12].filter((row) => row >= header.startLine && row <= header.endLine);
+      expect(covered, `header ${header.startLine}–${header.endLine}`).toEqual([]);
+    }
+  });
+
+  it("joins a `private` to the next group of its run, not to a group across a method", async () => {
+    const chunks = await chunker.chunk(TRAILING, PATH, "ruby");
+
+    for (const header of headerChunks(chunks)) {
+      const covered = [5, 6, 7].filter((row) => row >= header.startLine && row <= header.endLine);
+      expect(covered, `header ${header.startLine}–${header.endLine}`).toEqual([]);
+    }
+    const owning = chunks.filter((c) => claimedRows(c).includes(9));
+    expect(owning).toHaveLength(1);
+    expect(claimedRows(owning[0])).toContain(11);
+  });
+
+  it("keeps the leading comment off a header run that a method precedes", async () => {
+    const chunks = await chunker.chunk(COMMENT_LED, PATH, "ruby");
+
+    for (const header of headerChunks(chunks)) {
+      const covered = [3, 4, 5].filter((row) => row >= header.startLine && row <= header.endLine);
+      expect(covered, `header ${header.startLine}–${header.endLine}`).toEqual([]);
+    }
   });
 
   it("leaves the method chunks byte-identical", async () => {
@@ -147,7 +194,7 @@ describe("Ruby container header runs (bd tea-rags-mcp-9f0yn.3)", () => {
   });
 
   it("claims every non-blank row exactly once", async () => {
-    for (const code of [SYNCHRONIZER, GUARDED]) {
+    for (const code of [SYNCHRONIZER, GUARDED, TRAILING]) {
       const chunks = await chunker.chunk(code, PATH, "ruby");
       const owners = new Map<number, number>();
       for (const chunk of chunks) for (const row of claimedRows(chunk)) owners.set(row, (owners.get(row) ?? 0) + 1);
