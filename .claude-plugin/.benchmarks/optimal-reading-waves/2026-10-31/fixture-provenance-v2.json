@@ -1,0 +1,336 @@
+{
+  "version": 2,
+  "date": "2026-10-31",
+  "purpose": "Repair backend source coverage advertised by retained outlines after invalid control-v2. No production plugin edits, actor runs or index mutation.",
+  "previous_cases_sha256": "2b2a068d978724b351a9c129b91a8b3327783833962e8d1c754eca03343d9801",
+  "previous_cases_preserved_at": ".tmp/optimal-wave-evals/control-v2/cases-source.json",
+  "previous_fixture_provenance": "fixture-provenance.json",
+  "cases_sha256": "4a492f7046f5388db674111d813721adec4623bcc3eab6bfe7f52a9e0324e960",
+  "raw_control_untouched": true,
+  "control_v2_assessment": {
+    "invalid_total_step_measurement": [
+      "W02-independent-body-and-refs",
+      "W21-known-method-batch",
+      "W35-body-and-absence",
+      "P-single-exact-suggestion",
+      "C-ambiguous-suggestions"
+    ],
+    "reason": "Missing advertised source and backend Ruby scope/result-contract fidelity. Preserve raw failed attempt; no silent retry."
+  },
+  "scope_changes": [
+    {
+      "case": "W02-independent-body-and-refs",
+      "added_symbols": [
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router::UUID_NAMESPACE",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#entity",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#file",
+        "TaxPreparation::TaxAutomations::BaseClient#http_connection",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+        "TaxPreparation::TaxAutomations::BaseClient#upload_connection"
+      ],
+      "body_count": 11,
+      "body_chars_total": 10842
+    },
+    {
+      "case": "W21-known-method-batch",
+      "added_symbols": [
+        "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS",
+        "TaxPreparation::TaxAutomations::BaseClient#request",
+        "TaxPreparation::TaxAutomations::BaseClient#perform",
+        "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#token_response"
+      ],
+      "body_count": 17,
+      "body_chars_total": 18528
+    },
+    {
+      "case": "W35-body-and-absence",
+      "added_symbols": [
+        "Crm::Api::Contact#find_by_account_user",
+        "Crm::Api::Contact#list_by_phone_number",
+        "Crm::Api::Contact#list_by_sms_thread"
+      ],
+      "body_count": 7,
+      "body_chars_total": 6626
+    }
+  ],
+  "exact_added_body_provenance": {
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token": {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 180,
+      "endLine": 184,
+      "body_sha256": "f2fa33169188d4d72414ccb6404f426f8d2e5b2baa50bf3413af0d91632714ef"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES": {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 3,
+      "endLine": 192,
+      "body_sha256": "d56c776749b718a628d92ca1135ef81d0addc4a64a351754248a696ba0bc2dd9"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::Instead::Mock::Router::UUID_NAMESPACE": {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router::UUID_NAMESPACE",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 3,
+      "endLine": 192,
+      "body_sha256": "d56c776749b718a628d92ca1135ef81d0addc4a64a351754248a696ba0bc2dd9"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::Instead::Mock::Router#entity": {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#entity",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 149,
+      "endLine": 160,
+      "body_sha256": "ad03852e8462139fb48a0eeb643cee09d409a9eb1b7a8189b534ed9009ebd2d8"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::Instead::Mock::Router#file": {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#file",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 383,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 162,
+      "endLine": 164,
+      "body_sha256": "98afde8160f0d254bf626ddaa58cd2c66fe157d2552fbf95c93789b5b251ccb8"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::BaseClient#http_connection": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#http_connection",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 144,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 349,
+      "endLine": 360,
+      "body_sha256": "acde0998adcbf1b7219d175d0af7eacd624a17a60acd1fdda463d2ff6120be85"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::BaseClient#token_connection": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 144,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 362,
+      "endLine": 377,
+      "body_sha256": "1f6f3fc9144516a8ecdf328d859cfb7968a97fc56305a1ac37db37b3460e51b3"
+    },
+    "W02-independent-body-and-refs::TaxPreparation::TaxAutomations::BaseClient#upload_connection": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#upload_connection",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 144,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 379,
+      "endLine": 395,
+      "body_sha256": "ecc4586e90bc2d36b954af2d171ce5050a80dc67d596a2f9728455b818250c82"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q21-events.json",
+      "sha256": "ed376a4f88fd0f1469c136e7bf7ea794bcf74d202760b1e82f85a76595662d43",
+      "event_index": 66,
+      "output_index": 1,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 14,
+      "endLine": 131,
+      "body_sha256": "3c0ed095c0ec2c57b88a4ccbf651cc83ce1745e03cd7e7085f8578a94ef46cbb"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::BaseClient#request": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#request",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q04-events.json",
+      "sha256": "99ee0be7309ad85efc6a676039672c074485992e1ea0cbc7b38f189d3d658cf7",
+      "event_index": 71,
+      "output_index": 1,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 280,
+      "endLine": 331,
+      "body_sha256": "646c93c56be67626a18b05e1e0bf11bf18b77545803fa0c6753e2a9ef9d0076d"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::BaseClient#perform": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#perform",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 333,
+      "endLine": 339,
+      "body_sha256": "4ee160cabafb8657482d7b11f3a648786ee5126059c517a8564bd1110d2ce738"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::BaseClient#apply_error_handling": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 397,
+      "endLine": 406,
+      "body_sha256": "b9e56bf9ca74e931f1ade4eabb0584aed758de796cc2fe7dd736b638a3a1bb66"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::BaseClient#token_connection": {
+      "symbolId": "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 144,
+      "output_index": 2,
+      "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "startLine": 362,
+      "endLine": 377,
+      "body_sha256": "1f6f3fc9144516a8ecdf328d859cfb7968a97fc56305a1ac37db37b3460e51b3"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!": {
+      "symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q04-events.json",
+      "sha256": "99ee0be7309ad85efc6a676039672c074485992e1ea0cbc7b38f189d3d658cf7",
+      "event_index": 71,
+      "output_index": 1,
+      "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+      "startLine": 107,
+      "endLine": 124,
+      "body_sha256": "b89c530108145159168d2eb44637e5bc85ff61440e7865e07cc6cecf8cdfde60"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::TokenRefreshable#refresh!": {
+      "symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+      "startLine": 200,
+      "endLine": 254,
+      "body_sha256": "d13894304c67201af595a75333db2a2b03d3e29ff473e221ff7b8a1e1cdc45c6"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!": {
+      "symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+      "kind": "saved_actual_actor_tool_delivery",
+      "path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q04-events.json",
+      "sha256": "99ee0be7309ad85efc6a676039672c074485992e1ea0cbc7b38f189d3d658cf7",
+      "event_index": 71,
+      "output_index": 1,
+      "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+      "startLine": 287,
+      "endLine": 292,
+      "body_sha256": "d9313ce544e238dacf1106889a323382733b06c2e335420c899eddb39b84fce9"
+    },
+    "W21-known-method-batch::TaxPreparation::TaxAutomations::TokenRefreshable#token_response": {
+      "symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#token_response",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+      "startLine": 294,
+      "endLine": 306,
+      "body_sha256": "9ac212957beb15e66edd7cb90107af6fd843c54e2c9ad0041dc2821ac6a43d3d"
+    },
+    "W35-body-and-absence::Crm::Api::Contact#find_by_account_user": {
+      "symbolId": "Crm::Api::Contact#find_by_account_user",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/services/crm/api/contact.rb",
+      "startLine": 113,
+      "endLine": 139,
+      "body_sha256": "9edb490d8d8b5b8f6039c8d858d1837ab8a3260593be369080c665e734fc9146"
+    },
+    "W35-body-and-absence::Crm::Api::Contact#list_by_phone_number": {
+      "symbolId": "Crm::Api::Contact#list_by_phone_number",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/services/crm/api/contact.rb",
+      "startLine": 186,
+      "endLine": 200,
+      "body_sha256": "fb656a52755785b1950ce8a9a1de4b0826a47763ecabaa65db84c5cf98e8b65a"
+    },
+    "W35-body-and-absence::Crm::Api::Contact#list_by_sms_thread": {
+      "symbolId": "Crm::Api::Contact#list_by_sms_thread",
+      "kind": "authorized_read_only_corpus_find_symbol",
+      "path": ".tmp/optimal-wave-evals/fixture-repair-v2/corpus-find-symbol.json",
+      "sha256": "e3b47f3d00744a19e5767b0dbb0970bb037b977bac0aae630d0cc41b6eda2af9",
+      "workingTree": {
+        "tree": "/Users/Shared/nav-ab/repo-master",
+        "project": "taxdome-worktree-navmaster"
+      },
+      "model_turns": 0,
+      "relativePath": "app/services/crm/api/contact.rb",
+      "startLine": 256,
+      "endLine": 273,
+      "body_sha256": "7a88297dd4897969ae9f710fc95669cd1f8d66f01a61e9ec9ab4f79fbbdb5748"
+    }
+  },
+  "actor_input_changes": false,
+  "fixture_limitations": [
+    "W35 on-disk source remains a compact synthetic assembly of exact delivered/fetched methods, not original full Contact file; uid/uuid absence is fixture-scoped.",
+    "Added bodies may change correct answer coverage: find_by_account_user also exposes separate name parts via contact_data.",
+    "Core runner normalization/Ruby owner/class-header repairs are separate harness changes; this file records source fixture repair only.",
+    "No expected answers or grading fields were added to actor inputs."
+  ]
+}

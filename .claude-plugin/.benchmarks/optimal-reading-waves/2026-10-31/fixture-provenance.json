@@ -1,0 +1,64 @@
+{
+  "created": "2026-10-31",
+  "purpose": "Raw actor questions and tool fixtures only; grading and verdicts stored separately.",
+  "source_root": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_steps_AB_2026-10-31",
+  "source_fingerprints": {
+    ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+    ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q01-events.json": "0089481b85e13105d6e59f0aecb545982ba8e0c034f734def1cedd517593c209",
+    ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q21-events.json": "ed376a4f88fd0f1469c136e7bf7ea794bcf74d202760b1e82f85a76595662d43",
+    ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q35-events.json": "e4976b6901bd475277aa68c8be0b8904498ace0cedc5b6ddb6e7e18f3744f650",
+    ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q33-events.json": "272b48e9882056f99b056c27485d664d5791e0aef0ad1429694c8742062a5d13"
+  },
+  "sources_read": "Only question text, rawResponseItem tool-call outputs, and saved transcript-audit findings. No assistant final answers, gold, corpus or index queries.",
+  "synthetic_limitations": "Synthetic controls and compact source assemblies test tool orchestration, not repository-wide factual accuracy. Raw actual bodies retain their relativePath and symbol/range when delivered.",
+  "model_runs": 0,
+  "cases": [
+    {
+      "id": "W02-independent-body-and-refs",
+      "origin": "actual retained pre-wave rows from Q02 event144 and adapter_spec event88; exact later body responses event175; exact spec excerpt event383; actual Q01 event377 BaseClient outline retained before independent wave",
+      "transformations": "Selected relevant raw rows; actor prompt narrows original Q02 to the dispatch/transport/spec questions. Spec fixture contains only saved lines1–145; mock wiring absence across whole application is not tested."
+    },
+    {
+      "id": "W21-known-method-batch",
+      "origin": "Actual Q01 BaseClient event377 and TokenRefreshable event407 outlines; exact Q21 event66/event91 bodies",
+      "transformations": "Only relevant retained raw file rows selected. Body fragments preserve source ranges and path. Broader rate-limit metric declarations outside these methods are outside this scoped question."
+    },
+    {
+      "id": "W35-body-and-absence",
+      "origin": "Actual Q35 event50 find/list_by_account bodies; event68 contact_data and outline; event83 four list bodies",
+      "transformations": "Fixture source is SYNTHETIC compact assembly of exact delivered bodies, not the original complete Contact module. uid/uuid absence refers to this fixture source only. No whole-repository/real-module absence claim is supplied as a retained fact."
+    },
+    {
+      "id": "C-dependent-new-locators",
+      "origin": "synthetic source-shaped Ruby directory/file/method fixture",
+      "transformations": "No method or class locator retained initially. Discovery responses carry class/module owner in payload.symbols and outline member ID; method source is available after discovery."
+    },
+    {
+      "id": "C-partial-not-body",
+      "origin": "synthetic source-shaped Ruby header/body fixture",
+      "transformations": "Header reports full class range but contains no implementation; timeout values exist only in source body, not raw retained metadata."
+    },
+    {
+      "id": "P-single-exact-suggestion",
+      "origin": "Actual Q33 event55 unknown-path row and later exact TransferBytesWorker file body",
+      "transformations": "Unrelated already-complete rows from same outer response omitted. All four suggestions retained; one matches requested basename. Source worker file is exact delivered content."
+    },
+    {
+      "id": "C-ambiguous-suggestions",
+      "origin": "synthetic nearby control for Q33 suggestion ambiguity",
+      "transformations": "Both suggestions share exact requested basename; complete directory response includes both owner classes. Source values exist in files only."
+    },
+    {
+      "id": "C-batch-limit",
+      "origin": "synthetic 21-known-short-method control",
+      "transformations": "Retained metadata preserves all21 symbol IDs and paths but omits values; small source bodies permit all results to fit. Per-call maximum20 must be enforced by runner/tool schema, not disclosed as a suggested plan in prompt."
+    }
+  ],
+  "validation": {
+    "json_parse": true,
+    "case_count": 8,
+    "unique_ids": true,
+    "no_expected_or_grading_fields_in_cases": true,
+    "models_run": 0
+  }
+}

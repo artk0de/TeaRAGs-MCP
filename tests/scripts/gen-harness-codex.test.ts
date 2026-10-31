@@ -247,6 +247,29 @@ describe("extractInjectionBlock", () => {
 });
 
 describe("renderCodexHarness", () => {
+  it("delivers the missing-evidence wave policy through the actual per-turn hook", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const pluginRoot = mkdtempSync(join(tmpdir(), "codex-routing-"));
+    try {
+      mkdirSync(join(pluginRoot, "scripts"));
+      for (const name of ["turn-routing.sh", "turn-routing.txt"]) {
+        writeFileSync(join(pluginRoot, "scripts", name), rendered.get(`tea-rags/scripts/${name}`) ?? "");
+      }
+      const output = JSON.parse(execFileSync("bash", [join(pluginRoot, "scripts/turn-routing.sh"), "--harness", "codex"], {
+        input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }), encoding: "utf8",
+      }));
+      const context = output.hookSpecificOutput.additionalContext;
+      expect(output.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+      expect(context).toContain("missing flow/impact fact");
+      expect(context).not.toContain("how it works / impact →");
+      expect(context).toContain("independent scoped reference/absence searches");
+      expect(context).toContain("20 targets per symbols call");
+      expect(context).toContain("ambiguous suggestions");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("describes every Codex hook source and handler for the hook UI", async () => {
     const rendered = await renderCodexHarness(ROOT);
     for (const pkg of ["tea-rags", "dinopowers"]) {

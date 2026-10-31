@@ -1,0 +1,1411 @@
+{
+  "schema_version": 1,
+  "evals": [
+    {
+      "id": "W02-independent-body-and-refs",
+      "prompt": "How does Instead’s mock route a request and generate its handles, how is the client transport selected, and how do the specs inject a test transport?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "2332152e-813a-3a42-1784-14ff96754f6c",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+                    "language": "ruby",
+                    "symbols": [
+                      "TaxPreparation::TaxAutomations::Instead::Mock::Adapter"
+                    ]
+                  }
+                },
+                {
+                  "id": "d1a5e3f1-6a9b-f3b2-d6d5-369cf7dc6478",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+                    "language": "ruby",
+                    "symbols": [
+                      "TaxPreparation::TaxAutomations::Instead::Mock::Router"
+                    ]
+                  }
+                }
+              ],
+              "count": 2
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "2332152e-813a-3a42-1784-14ff96754f6c",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/adapter.rb",
+                    "kind": "file",
+                    "startLine": 1,
+                    "endLine": 36,
+                    "content": "# frozen_string_literal: true\n\n# Reference implementation of a vendor mock transport, wired into nothing:\n# no client selects it and no flag reaches it.\n#\n# Puts {TaxPreparation::TaxAutomations::Instead::Mock::Router} where the socket\n# would be.\n#\n# It sits at the bottom of the stack rather than in place of the client, so a\n# request answered here still passes through the status-to-error mapping, the\n# JSON parsing, the token ceremony and the metrics that a live request passes\n# through. A stand-in above the middleware would demonstrate none of them.\n#\n# @api private\nclass TaxPreparation::TaxAutomations::Instead::Mock::Adapter < Faraday::Adapter\n  # @param env [Faraday::Env] the outgoing request\n  # @return [Faraday::Response]\n  def call(env)\n    super\n\n    status, headers, body = TaxPreparation::TaxAutomations::Instead::Mock::Router.call(env, firm_id: firm_id)\n    save_response(env, status, body, headers)\n\n    @app.call(env)\n  end\n\n  private\n\n  # Handed in when the connection is built, because the adapter has no access to\n  # the connection row and the handles it mints are the firm's.\n  #\n  # @return [Integer]\n  def firm_id\n    @connection_options.fetch(:firm_id)\n  end\nend\n",
+                    "symbolId": null
+                  }
+                },
+                {
+                  "id": "d1a5e3f1-6a9b-f3b2-d6d5-369cf7dc6478",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null,
+                    "content": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb\n  TaxPreparation::TaxAutomations::Instead::Mock::Router\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::JSON_HEADERS\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::UUID_NAMESPACE\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::UPLOAD_URL\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::UPLOAD_POLICY\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::UPLOAD_SIGNATURE\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::UPLOAD_TTL_SEC\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::ACCESS_TOKEN_TTL_SEC\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::GRANTED_SCOPE\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::SEED_ENTITY_TYPES\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::ENTITY_HEADER\n    TaxPreparation::TaxAutomations::Instead::Mock::Router::ENTITY_SCOPED\n    TaxPreparation::TaxAutomations::Instead::Mock::Router#revoke\n    TaxPreparation::TaxAutomations::Instead::Mock::Router#timestamp\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#call (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#token (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#list_entities (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#create_entity (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#start_doc_upload (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#finalize_doc_upload (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#get_doc (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#not_found (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#missing_entity (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#refusal (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#entity (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#file (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#signed_upload (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#handle (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token (public)\n  TaxPreparation::TaxAutomations::Instead::Mock::Router#parsed_body (public)",
+                    "symbolId": null
+                  }
+                }
+              ],
+              "count": 2
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "1bf34181-05dc-1b87-ef97-6bdcd6618b72",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null,
+                    "content": "app/lib/tax_preparation/tax_automations/base_client.rb\n  TaxPreparation::TaxAutomations::BaseClient\n    TaxPreparation::TaxAutomations::BaseClient.include TaxPreparation::TaxAutomations::TokenRefreshable\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRIES_COUNT\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRY_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::OPEN_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::UPLOAD_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::TOKEN_REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::I18N_ERRORS_SCOPE\n    TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::Error\n    TaxPreparation::TaxAutomations::BaseClient::NetworkError\n    TaxPreparation::TaxAutomations::BaseClient::ConnectionBusyError\n    TaxPreparation::TaxAutomations::BaseClient::TargetExpiredError\n    TaxPreparation::TaxAutomations::BaseClient::TargetIncompleteError\n    TaxPreparation::TaxAutomations::BaseClient::BadRequestError\n    TaxPreparation::TaxAutomations::BaseClient::UnauthorizedError\n    TaxPreparation::TaxAutomations::BaseClient::ForbiddenError\n    TaxPreparation::TaxAutomations::BaseClient::NotFoundError\n    TaxPreparation::TaxAutomations::BaseClient::LockedError\n    TaxPreparation::TaxAutomations::BaseClient::ServerError\n    TaxPreparation::TaxAutomations::BaseClient::ServiceUnavailableError\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP\n    TaxPreparation::TaxAutomations::BaseClient::QuotaExceededError\n    TaxPreparation::TaxAutomations::BaseClient#vendor_connection\n    TaxPreparation::TaxAutomations::BaseClient#transport\n    TaxPreparation::TaxAutomations::BaseClient#vendor_error_class\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#initialize\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#expired?\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#complete?\n  TaxPreparation::TaxAutomations::BaseClient::RequestError\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#body\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#code\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#headers\n  TaxPreparation::TaxAutomations::BaseClient::RequestError#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError\n  TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after (public)\n  TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete (public)\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for (private)\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete (public)\n  TaxPreparation::TaxAutomations::BaseClient#initialize\n  TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target (public)\n  TaxPreparation::TaxAutomations::BaseClient#request (private)\n  TaxPreparation::TaxAutomations::BaseClient#perform (private)\n  TaxPreparation::TaxAutomations::BaseClient#relative_path (private)\n  TaxPreparation::TaxAutomations::BaseClient#http_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#token_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#upload_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#apply_error_handling (private)\n  TaxPreparation::TaxAutomations::BaseClient#adapter_spec (private)\n  TaxPreparation::TaxAutomations::BaseClient#measured (private)\n  TaxPreparation::TaxAutomations::BaseClient#track_failure (private)\n  TaxPreparation::TaxAutomations::BaseClient#vendor (private)\n  TaxPreparation::TaxAutomations::BaseClient#rate_limit_group_of (private)\n  TaxPreparation::TaxAutomations::BaseClient#base_url (private)\n  TaxPreparation::TaxAutomations::BaseClient#auth_headers (private)\n  TaxPreparation::TaxAutomations::BaseClient#vendor_error_message (private)",
+                    "symbolId": null
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "d66efd11-aba0-898a-ab2e-c407d050d038",
+                  "score": 1,
+                  "payload": {
+                    "request": "TaxPreparation::TaxAutomations::BaseClient#initialize",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "kind": null,
+                    "startLine": 230,
+                    "endLine": 241,
+                    "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # @param vendor_connection [TaxPreparation::TaxAutomations::HasOauthConnection]\n  #   vendor connection row — the concern carries both halves the client needs: the\n  #   token readers {TaxPreparation::TaxAutomations::TokenRefreshable} drives and the\n  #   state machine that records the grant's lifecycle. Named in full because the\n  #   renewal runs beside `ActiveRecord::Base.connection`, which is a different\n  #   thing entirely.\n  # @param transport [Faraday::Adapter::Test::Stubs, nil] injected in specs; the\n  #   default adapter is used in every other environment.\ndef initialize(vendor_connection, transport: nil)\n    @vendor_connection = vendor_connection\n    @transport = transport\n  end",
+                    "symbolId": "TaxPreparation::TaxAutomations::BaseClient#initialize"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "87502ed7-a280-749c-4c01-5fca401a5d6d",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "symbolId": "TaxPreparation::TaxAutomations::BaseClient#adapter_spec",
+                    "startLine": 408,
+                    "endLine": 416,
+                    "chunkType": "function",
+                    "language": "ruby",
+                    "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Which transport answers: the stub a spec injected, otherwise the process\n  # default.\n  #\n  # @return [Array] arguments for `Faraday::RackBuilder#adapter`\ndef adapter_spec\n    return [:test, transport] if transport\n\n    [Faraday.default_adapter]\n  end",
+                    "navigation": {
+                      "prevSymbolId": "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling",
+                      "nextSymbolId": "TaxPreparation::TaxAutomations::BaseClient#measured"
+                    }
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "spec/unit/tax_preparation/lib/tax_automations/base_client_spec.rb": "# frozen_string_literal: true\n\nrequire 'spec_helper'\n\nRSpec.describe TaxPreparation::TaxAutomations::BaseClient, :unit do\n  include TaxAutomationsHelpers\n\n  # A real subclass rather than a double: the base class IS a template method, so\n  # the only honest way to exercise it is to fill its hooks. `ping` stands in for\n  # any vendor call — every one of them goes through `request`.\n  let(:client_class) do\n    Class.new(described_class) do\n      def self.name\n        'TaxPreparation::TaxAutomations::Testing::Client'\n      end\n\n      def ping\n        request(:get, '/ping')\n      end\n\n      # A vendor whose answer is worth more than its parsed body maps it where\n      # the request is made. The block sees the whole response.\n      def ping_status\n        request(:get, '/ping') { |response| [response.status, response.body['Status']] }\n      end\n\n      private\n\n      def base_url\n        'https://vendor.test'\n      end\n\n      def auth_headers(access_token)\n        {'Authorization' => \"Bearer #{access_token}\"}\n      end\n\n      def refresh_tokens!\n        {access_token: 'refreshed-access', refresh_token: 'refreshed-refresh', expires_in: 1.hour.to_i, refresh_expires_in: 30.days.to_i}\n      end\n\n      def vendor_error_message(body)\n        return unless body.is_a?(Hash)\n\n        body['Error']\n      end\n\n      def vendor_error_class(body)\n        return unless body.is_a?(Hash)\n\n        {'NO_SCOPE' => TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError}[body['Reason']]\n      end\n    end\n  end\n\n  let(:firm) { create(:firm) }\n  # The `:connected` trait leaves both tokens live, and the ceremony reads their\n  # expiries on every request — an unexpired grant is the baseline here, not the\n  # exception.\n  let(:connection) { create(:instead_connection, :connected, firm:) }\n  let(:client) { client_class.new(connection, transport: transport) }\n  let(:transport) { Faraday::Adapter::Test::Stubs.new }\n\n  context 'without vendor hooks' do\n    let(:bare_class) do\n      Class.new(described_class) do\n        def self.name\n          'Bare'\n        end\n      end\n    end\n    let(:bare) { bare_class.new(connection, transport: transport) }\n\n    it 'raises NotImplementedError for #base_url until a vendor supplies it' do\n      expect { bare.send(:base_url) }.to raise_error(NotImplementedError, /base_url/)\n    end\n\n    it 'raises NotImplementedError for #auth_headers until a vendor supplies it' do\n      expect { bare.send(:auth_headers, 'token') }.to raise_error(NotImplementedError, /auth_headers/)\n    end\n\n    it 'raises NotImplementedError for #vendor_error_message until a vendor supplies it' do\n      expect { bare.send(:vendor_error_message, {'Error' => 'vendor said no'}) }.to raise_error(NotImplementedError, /vendor_error_message/)\n    end\n\n    # Optional, like the transport hook: a vendor that names no decisions in its\n    # bodies still gets the status map.\n    it 'names no error class of its own until a vendor supplies one' do\n      expect(bare.send(:vendor_error_class, {'Error' => 'vendor said no'})).to be_nil\n    end\n\n    # The grant's own lifecycle is not a set of hooks: RFC 6749 fixes the grant\n    # types, the field names and the challenge method, so the exchange is written\n    # once and a vendor owes only the addresses. Every part of it therefore fails\n    # the same way — naming the declaration, not the method that needed it.\n    it 'tells a vendor that declared no OAuth2 endpoints, asked for a consent url' do\n      expect { bare_class.authorization_url(redirect_uri: 'https://app.example/callback', state: 'state', code_challenge: 'challenge') }.to raise_error(NotImplementedError, /\\.oauth2_settings/)\n    end\n\n    it 'tells a vendor that declared no OAuth2 endpoints, asked to exchange a code' do\n      expect { bare.exchange_code!(code: 'ac', redirect_uri: 'https://app.example/callback', code_verifier: 'verifier') }.to raise_error(NotImplementedError, /\\.oauth2_settings/)\n    end\n\n    it 'tells a vendor that declared no OAuth2 endpoints, asked to withdraw a grant' do\n      expect { bare.revoke_tokens! }.to raise_error(NotImplementedError, /\\.oauth2_settings/)\n    end\n\n    it 'tells a vendor that declared no OAuth2 endpoints, asked to renew a grant' do\n      expect { bare.send(:refresh_tokens!) }.to raise_error(NotImplementedError, /\\.oauth2_settings/)\n    end\n  end\n\n  context 'with a successful request' do\n    before { stub_vendor_ping(status: 200, body: {'Status' => 'ok'}.to_json) }\n\n    it 'returns the parsed response body' do\n      expect(client.ping).to eq('Status' => 'ok')\n    end\n\n    it 'sends the access token supplied by the vendor hook' do\n      transport.get('/ping') do |env|\n        expect(env.request_headers['Authorization']).to eq(\"Bearer #{connection.access_token}\")\n\n        [200, {'Content-Type' => 'application/json'}, '{}']\n      end\n\n      client.ping\n    end\n\n    it 'measures Yabeda histogram tax_automations.requests_duration' do\n      expect { client.ping }.to measure_yabeda_histogram(Yabeda.tax_automations.requests_duration).\n        with_tags(vendor: 'testing', operation: 'api_request').with(be_between(0, 0.1))\n    end\n  end\n\n  describe 'HTTP failures' do\n    {\n      # 401 is absent on purpose: it feeds the retry ladder rather than reaching\n      # the caller as itself. Its behaviour is covered under the token ceremony.\n      400 => described_class::BadRequestError,\n      403 => described_class::ForbiddenError,\n      404 => described_class::NotFoundError,\n      422 => described_class::UnprocessableEntityError,\n      423 => described_class::LockedError,\n      429 => described_class::RateLimitedError,\n      500 => described_class::ServerError,\n"
+        },
+        "find_symbol_bodies": {
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#call": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n  # @param env [Faraday::Env] the outgoing request\n  # @param firm_id [Integer] whose handles this response belongs to\n  # @return [Array(Integer, Hash, String)] status, headers, serialized body\ndef call(env, firm_id:)\n    route = ROUTES.find { |verb, pattern, _| verb == env.method && pattern.match?(env.url.path) }\n\n    return not_found if route.nil?\n\n    _, pattern, handler = route\n    return missing_entity if ENTITY_SCOPED.include?(handler) && env.request_headers[ENTITY_HEADER].blank?\n\n    body = public_send(handler, env, firm_id: firm_id, match: pattern.match(env.url.path))\n\n    [200, JSON_HEADERS, body.to_json]\n  end",
+            "startLine": 65,
+            "endLine": 79
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#handle": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n  # @return [String] an RFC 4122 v5 uuid, which is what the contract declares\ndef handle(kind, *parts)\n    Digest::UUID.uuid_v5(UUID_NAMESPACE, \"instead:#{kind}:#{parts.join(':')}\")\n  end",
+            "startLine": 175,
+            "endLine": 178
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Order matters: response middleware runs innermost-first, so `:json` has to\n  # be registered after the error middleware for the latter to see a parsed body,\n  # and the budget is read inside it so a refusal is recorded before it raises.\ndef apply_error_handling(builder)\n    builder.use RaiseCustomErrors, extract_message: method(:vendor_error_message), classify: method(:vendor_error_class)\n    builder.use RecordRateLimit, vendor:, api_root_path: URI(base_url).path, rate_limit_group_of: method(:rate_limit_group_of)\n    builder.response :json, content_type: /\\bjson$/\n\n    builder.adapter(*adapter_spec)\n  end",
+            "startLine": 397,
+            "endLine": 406
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n  # Shaped like the vendor's — `ia_at_<hex>` — so a token that leaks into a log\n  # is recognizable as one.\ndef opaque_token(prefix, *parts)\n    \"#{prefix}_#{Digest::SHA256.hexdigest(\"instead:#{parts.join(':')}\")[0, 32]}\"\n  end",
+            "startLine": 180,
+            "endLine": 184
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n# Reference implementation of a vendor mock transport, wired into nothing:\n# no client selects it and no flag reaches it.\n#\n# The Instead API answered from the request alone.\n#\n# Every response is a function of what the caller sent. Identifiers are hashed\n# from the firm and the input, so the same call yields the same handle and a\n# repeated upload is idempotent the way the contract says it is. Nothing is\n# stored and nothing advances over time: the vendor exposes no per-document\n# state to advance, and a progression with no live counterpart would prove a\n# fold that breaks the day the transport is switched.\n#\n# Where a field cannot be derived from the request it is left out. Every\n# property of `File` is optional, so silence is available, and it beats putting\n# a fabricated path where a caller reads a real one.\n#\n# @api private\n  JSON_HEADERS = {'Content-Type' => 'application/json'}.freeze\n\n  # Fixed so a handle survives a restart — the ports store these and read them\n  # back on a later request.\n  UUID_NAMESPACE = Digest::UUID::OID_NAMESPACE\n\n  # The opaque halves of a pre-signed S3 POST. The vendor computes them from its\n  # own credentials; nothing on our side reads them, and the byte transfer never\n  # leaves this process here.\n  UPLOAD_URL = 'https://fs.instead.mock.amazonaws.com/'\n  UPLOAD_POLICY = 'bW9jay11cGxvYWQtcG9saWN5'\n  UPLOAD_SIGNATURE = '0f3a1c9d2b7e4f6a8c5d1e3b7a9f2c4d6e8b0a1c3d5f7e9b1a3c5d7f9e1b3a5c'\n  UPLOAD_TTL_SEC = 900\n\n  ACCESS_TOKEN_TTL_SEC = 3600\n  GRANTED_SCOPE = 'entities.list entities.create entities.docs.create entities.docs.read webhooks.entities.docs.upserted webhooks.entities.docs.indexed webhooks.entities.docs.archived'\n\n  # What a listing answers with. Creating an entity does not add to it: a\n  # listing that grew would need somewhere to remember, and the ports read the\n  # handle off the create response rather than by searching for it. Values are\n  # from the contract's `EntityType` enum.\n  SEED_ENTITY_TYPES = %w[S_CORP INDIVIDUAL].freeze\n\n  # Verb, path, handler. A request matching nothing here comes back as the\n  # vendor's own 404, so a caller reaching for an endpoint the mock does not\n  # serve finds out through the client's error tree rather than through a nil.\n  ROUTES = [\n    [:post, %r{\\A/v1/oauth2/token\\z}, :token],\n    [:post, %r{\\A/v1/oauth2/revoke\\z}, :revoke],\n    [:get, %r{\\A/v1/entities\\z}, :list_entities],\n    [:post, %r{\\A/v1/entities\\z}, :create_entity],\n    [:post, %r{\\A/v1/docs/uploads\\z}, :start_doc_upload],\n    [:put, %r{\\A/v1/docs/(?<uuid>[^/]+)\\z}, :finalize_doc_upload],\n    [:get, %r{\\A/v1/docs/(?<uuid>[^/]+)\\z}, :get_doc]\n  ].freeze\n\n  ENTITY_HEADER = 'X-Instead-Entity-UUID'\n\n  # Document calls act on one entity's files and are refused without the header\n  # naming it, as the vendor refuses them.\n  ENTITY_SCOPED = %i[start_doc_upload finalize_doc_upload get_doc].freeze\n\n  module_function\n\n  # The contract answers 200 whether or not the token was still live and returns\n  # no document, so there is nothing to derive and nothing to report.\n  def revoke(_env, **)\n    {}\n  end\n\n  def timestamp\n    Time.current.utc.iso8601\n  end",
+            "startLine": 3,
+            "endLine": 192
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router::UUID_NAMESPACE": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n# Reference implementation of a vendor mock transport, wired into nothing:\n# no client selects it and no flag reaches it.\n#\n# The Instead API answered from the request alone.\n#\n# Every response is a function of what the caller sent. Identifiers are hashed\n# from the firm and the input, so the same call yields the same handle and a\n# repeated upload is idempotent the way the contract says it is. Nothing is\n# stored and nothing advances over time: the vendor exposes no per-document\n# state to advance, and a progression with no live counterpart would prove a\n# fold that breaks the day the transport is switched.\n#\n# Where a field cannot be derived from the request it is left out. Every\n# property of `File` is optional, so silence is available, and it beats putting\n# a fabricated path where a caller reads a real one.\n#\n# @api private\n  JSON_HEADERS = {'Content-Type' => 'application/json'}.freeze\n\n  # Fixed so a handle survives a restart — the ports store these and read them\n  # back on a later request.\n  UUID_NAMESPACE = Digest::UUID::OID_NAMESPACE\n\n  # The opaque halves of a pre-signed S3 POST. The vendor computes them from its\n  # own credentials; nothing on our side reads them, and the byte transfer never\n  # leaves this process here.\n  UPLOAD_URL = 'https://fs.instead.mock.amazonaws.com/'\n  UPLOAD_POLICY = 'bW9jay11cGxvYWQtcG9saWN5'\n  UPLOAD_SIGNATURE = '0f3a1c9d2b7e4f6a8c5d1e3b7a9f2c4d6e8b0a1c3d5f7e9b1a3c5d7f9e1b3a5c'\n  UPLOAD_TTL_SEC = 900\n\n  ACCESS_TOKEN_TTL_SEC = 3600\n  GRANTED_SCOPE = 'entities.list entities.create entities.docs.create entities.docs.read webhooks.entities.docs.upserted webhooks.entities.docs.indexed webhooks.entities.docs.archived'\n\n  # What a listing answers with. Creating an entity does not add to it: a\n  # listing that grew would need somewhere to remember, and the ports read the\n  # handle off the create response rather than by searching for it. Values are\n  # from the contract's `EntityType` enum.\n  SEED_ENTITY_TYPES = %w[S_CORP INDIVIDUAL].freeze\n\n  # Verb, path, handler. A request matching nothing here comes back as the\n  # vendor's own 404, so a caller reaching for an endpoint the mock does not\n  # serve finds out through the client's error tree rather than through a nil.\n  ROUTES = [\n    [:post, %r{\\A/v1/oauth2/token\\z}, :token],\n    [:post, %r{\\A/v1/oauth2/revoke\\z}, :revoke],\n    [:get, %r{\\A/v1/entities\\z}, :list_entities],\n    [:post, %r{\\A/v1/entities\\z}, :create_entity],\n    [:post, %r{\\A/v1/docs/uploads\\z}, :start_doc_upload],\n    [:put, %r{\\A/v1/docs/(?<uuid>[^/]+)\\z}, :finalize_doc_upload],\n    [:get, %r{\\A/v1/docs/(?<uuid>[^/]+)\\z}, :get_doc]\n  ].freeze\n\n  ENTITY_HEADER = 'X-Instead-Entity-UUID'\n\n  # Document calls act on one entity's files and are refused without the header\n  # naming it, as the vendor refuses them.\n  ENTITY_SCOPED = %i[start_doc_upload finalize_doc_upload get_doc].freeze\n\n  module_function\n\n  # The contract answers 200 whether or not the token was still live and returns\n  # no document, so there is nothing to derive and nothing to report.\n  def revoke(_env, **)\n    {}\n  end\n\n  def timestamp\n    Time.current.utc.iso8601\n  end",
+            "startLine": 3,
+            "endLine": 192
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#entity": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\ndef entity(firm_id, attributes)\n    {\n      # The type is part of the handle: the vendor keeps an entity per return, so\n      # one taxpayer filing two kinds of return holds two of them.\n      UUID: handle('entity', firm_id, attributes['EntityType'], attributes['Name']),\n      Name: attributes['Name'],\n      EntityType: attributes['EntityType'],\n      FirstName: attributes['FirstName'],\n      LastName: attributes['LastName'],\n      CreatedAt: timestamp\n    }.compact\n  end",
+            "startLine": 149,
+            "endLine": 160
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#file": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\ndef file(uuid, path)\n    {UUID: uuid, Path: path, Name: path && ::File.basename(path), CreatedAt: timestamp}.compact\n  end",
+            "startLine": 162,
+            "endLine": 164
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#http_connection": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\ndef http_connection(access_token)\n    Faraday.new(url: base_url) do |builder|\n      builder.request :json\n      builder.headers.update(auth_headers(access_token))\n      builder.headers['Accept'] = 'application/json'\n\n      builder.options.timeout = REQUEST_TIMEOUT_SEC\n      builder.options.open_timeout = OPEN_TIMEOUT_SEC\n\n      apply_error_handling(builder)\n    end\n  end",
+            "startLine": 349,
+            "endLine": 360
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#token_connection": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # The OAuth2 token endpoint is unauthenticated and form-encoded, so it cannot\n  # reuse the JSON connection above — but it shares the error middleware, which\n  # is what turns a rejected grant into an {InvalidGrantError}. Its own timeout\n  # applies here: this is the call made under the connection row lock.\n  #\n  # @return [Faraday::Connection] for a vendor's `refresh_tokens!` to post to\ndef token_connection\n    Faraday.new(url: base_url) do |builder|\n      builder.request :url_encoded\n\n      builder.options.timeout = TOKEN_REQUEST_TIMEOUT_SEC\n      builder.options.open_timeout = OPEN_TIMEOUT_SEC\n\n      apply_error_handling(builder)\n    end\n  end",
+            "startLine": 362,
+            "endLine": 377
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#upload_connection": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # A pre-signed target is a URL of its own — a bucket, not the vendor — so this\n  # connection is built with no root to resolve against and carries no\n  # authorization headers. It shares the error middleware all the same: a\n  # refusal from the bucket has to reach a caller as the same typed error a\n  # refusal from the vendor does.\n  #\n  # @return [Faraday::Connection] for {#upload_to_signed_target} to post to\ndef upload_connection\n    Faraday.new do |builder|\n      builder.request :multipart\n\n      builder.options.timeout = UPLOAD_TIMEOUT_SEC\n      builder.options.open_timeout = OPEN_TIMEOUT_SEC\n\n      apply_error_handling(builder)\n    end\n  end",
+            "startLine": 379,
+            "endLine": 395
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#token": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n  # Both halves rotate, and they rotate off whatever was presented — the refresh\n  # token on a renewal, the authorization code on the first exchange. The next\n  # renewal carries a different refresh token and therefore derives a different\n  # pair; one that returned the token it just replaced would leave the\n  # forced-refresh path unable to tell it succeeded.\ndef token(env, firm_id:, **)\n    form = Rack::Utils.parse_nested_query(env.body.to_s)\n    presented = form['refresh_token'] || form['code']\n\n    {\n      access_token: opaque_token('ia_at', firm_id, presented),\n      token_type: 'Bearer',\n      expires_in: ACCESS_TOKEN_TTL_SEC,\n      refresh_token: opaque_token('ia_rt', firm_id, presented),\n      scope: GRANTED_SCOPE,\n      firm_uuid: handle('firm', firm_id)\n    }\n  end",
+            "startLine": 81,
+            "endLine": 98
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#create_entity": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\ndef create_entity(env, firm_id:, **)\n    {Entity: entity(firm_id, parsed_body(env))}\n  end",
+            "startLine": 114,
+            "endLine": 116
+          },
+          "TaxPreparation::TaxAutomations::Instead::Mock::Router#start_doc_upload": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+            "content": "module TaxPreparation::TaxAutomations::Instead::Mock::Router\n  # The vendor holds files per entity, so the handle is minted from the entity the\n  # call names as well as the path within it.\ndef start_doc_upload(env, firm_id:, **)\n    attributes = parsed_body(env)\n    uuid = handle('file', firm_id, env.request_headers[ENTITY_HEADER], attributes['Path'])\n\n    {FileUUID: uuid, Upload: signed_upload(uuid, attributes['Path'])}\n  end",
+            "startLine": 118,
+            "endLine": 125
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "W21-known-method-batch",
+      "prompt": "How does the shared vendor HTTP client classify HTTP failures, record request duration and failure reasons, and measure OAuth token calls and revocation?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "1bf34181-05dc-1b87-ef97-6bdcd6618b72",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null,
+                    "content": "app/lib/tax_preparation/tax_automations/base_client.rb\n  TaxPreparation::TaxAutomations::BaseClient\n    TaxPreparation::TaxAutomations::BaseClient.include TaxPreparation::TaxAutomations::TokenRefreshable\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRIES_COUNT\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRY_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::OPEN_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::UPLOAD_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::TOKEN_REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::I18N_ERRORS_SCOPE\n    TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::Error\n    TaxPreparation::TaxAutomations::BaseClient::NetworkError\n    TaxPreparation::TaxAutomations::BaseClient::ConnectionBusyError\n    TaxPreparation::TaxAutomations::BaseClient::TargetExpiredError\n    TaxPreparation::TaxAutomations::BaseClient::TargetIncompleteError\n    TaxPreparation::TaxAutomations::BaseClient::BadRequestError\n    TaxPreparation::TaxAutomations::BaseClient::UnauthorizedError\n    TaxPreparation::TaxAutomations::BaseClient::ForbiddenError\n    TaxPreparation::TaxAutomations::BaseClient::NotFoundError\n    TaxPreparation::TaxAutomations::BaseClient::LockedError\n    TaxPreparation::TaxAutomations::BaseClient::ServerError\n    TaxPreparation::TaxAutomations::BaseClient::ServiceUnavailableError\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP\n    TaxPreparation::TaxAutomations::BaseClient::QuotaExceededError\n    TaxPreparation::TaxAutomations::BaseClient#vendor_connection\n    TaxPreparation::TaxAutomations::BaseClient#transport\n    TaxPreparation::TaxAutomations::BaseClient#vendor_error_class\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#initialize\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#expired?\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#complete?\n  TaxPreparation::TaxAutomations::BaseClient::RequestError\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#body\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#code\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#headers\n  TaxPreparation::TaxAutomations::BaseClient::RequestError#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError\n  TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after (public)\n  TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete (public)\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for (private)\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#initialize (public)\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete (public)\n  TaxPreparation::TaxAutomations::BaseClient#initialize\n  TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target (public)\n  TaxPreparation::TaxAutomations::BaseClient#request (private)\n  TaxPreparation::TaxAutomations::BaseClient#perform (private)\n  TaxPreparation::TaxAutomations::BaseClient#relative_path (private)\n  TaxPreparation::TaxAutomations::BaseClient#http_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#token_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#upload_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#apply_error_handling (private)\n  TaxPreparation::TaxAutomations::BaseClient#adapter_spec (private)\n  TaxPreparation::TaxAutomations::BaseClient#measured (private)\n  TaxPreparation::TaxAutomations::BaseClient#track_failure (private)\n  TaxPreparation::TaxAutomations::BaseClient#vendor (private)\n  TaxPreparation::TaxAutomations::BaseClient#rate_limit_group_of (private)\n  TaxPreparation::TaxAutomations::BaseClient#base_url (private)\n  TaxPreparation::TaxAutomations::BaseClient#auth_headers (private)\n  TaxPreparation::TaxAutomations::BaseClient#vendor_error_message (private)",
+                    "symbolId": null
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "18cd969e-8135-8758-d808-893691a7b07b",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+                    "content": "app/lib/tax_preparation/tax_automations/token_refreshable.rb\n  TaxPreparation::TaxAutomations::TokenRefreshable\n    TaxPreparation::TaxAutomations::TokenRefreshable.extend ActiveSupport::Concern\n    TaxPreparation::TaxAutomations::TokenRefreshable::CONNECTION_LOCK_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::TokenRefreshable::I18N_ERRORS_SCOPE\n    TaxPreparation::TaxAutomations::TokenRefreshable::INVALID_GRANT_CODE\n    TaxPreparation::TaxAutomations::TokenRefreshable::PKCE_METHOD\n    TaxPreparation::TaxAutomations::TokenRefreshable::DEFAULT_PATHS\n    TaxPreparation::TaxAutomations::TokenRefreshable#renew!\n    TaxPreparation::TaxAutomations::TokenRefreshable#grant_identity\n  TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError\n    TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError#connection\n  TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError#initialize (public)\n  TaxPreparation::TaxAutomations::TokenRefreshable#oauth2_settings\n  TaxPreparation::TaxAutomations::TokenRefreshable#authorization_url\n  TaxPreparation::TaxAutomations::TokenRefreshable#declared_oauth2!\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code! (public)\n  TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens! (public)\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#with_access_token (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh! (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#grant_refused? (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#reject_grant! (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens! (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#token_response (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#tokens_from (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#client_credentials (private)",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {},
+        "find_symbol_bodies": {
+          "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Refusals a status cannot tell apart, named by the vendor in the body through\n  # {#vendor_error_class}. Each carries a decision the caller makes differently\n  # from the status it arrived with, and stays a kind of that status's class so a\n  # caller rescuing the status is not broken by a vendor learning to name it.\n  # Only the refusals every vendor can make live here; one spoken by a single\n  # vendor belongs on that vendor's client.\n  #\n  # The firm is over its plan with the vendor — waiting does not help.\n  class QuotaExceededError < RequestError; end\n\n  # Retried as a group: both mean \"this attempt could not present a usable\n  # token\". The lock timeout belongs here because the refresh sets one, so a\n  # request racing another worker's renewal fails on the lock, not on the vendor.\n  AUTH_ERRORS = [UnauthorizedError, ActiveRecord::LockWaitTimeout].freeze\n\n  # Status => [error class, i18n key used when the vendor sends no message].\n  # Adding a vendor means filling the hooks below, never touching this table.\n  ERRORS_MAP = {\n    400 => [BadRequestError, 'bad_request'],\n    401 => [UnauthorizedError, 'unauthorized'],\n    403 => [ForbiddenError, 'forbidden'],\n    404 => [NotFoundError, 'not_found'],\n    422 => [UnprocessableEntityError, 'unprocessable_entity'],\n    423 => [LockedError, 'locked'],\n    429 => [RateLimitedError, 'rate_limited'],\n    500 => [ServerError, 'server_error'],\n    503 => [ServiceUnavailableError, 'service_unavailable']\n  }.freeze\n\n  private\n\n  attr_reader :vendor_connection, :transport\n\n  # Optional: a vendor that names a decision in its failure body — a quota, a\n  # missing scope — maps it onto one of the classes that carry one. Answering\n  # `nil` leaves the status to decide.\n  #\n  # @param body [Hash, String, nil] parsed response body\n  # @return [Class, nil] a {RequestError} subclass\n  def vendor_error_class(_body)\n    nil\n  end\n\n  # Vendor hooks. `refresh_tokens!` is the fourth, and belongs to\n  # {TaxPreparation::TaxAutomations::TokenRefreshable}.",
+            "startLine": 132,
+            "endLine": 470
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  class RaiseCustomErrors < Faraday::Middleware\ndef on_complete(env)\n      status = env.response.status\n      return if status < 400\n\n      status_class, i18n_key = ERRORS_MAP.fetch(status) { fallback_for(status) }\n\n      body = env.response.body\n      error_class = @classify.call(body) || status_class\n      message = @extract_message.call(body).presence || I18n.t(i18n_key, scope: I18N_ERRORS_SCOPE)\n\n      raise error_class.new(message, body:, code: status, headers: env.response.headers)\n    end",
+            "startLine": 177,
+            "endLine": 188
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  class RaiseCustomErrors < Faraday::Middleware\n    # What an unnamed failure becomes. The map earns a caller the right to tell\n    # one failure from another; a status missing from it is still a failure, and\n    # saying nothing would return the raw body where a parsed one is expected — a\n    # gateway's HTML 502 then reads as \"the vendor has nothing for you\".\ndef fallback_for(status)\n      return [ServerError, 'server_error'] if status >= 500\n\n      [RequestError, 'unexpected_error']\n    end",
+            "startLine": 192,
+            "endLine": 200
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#measured": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # `measure` returns the elapsed time, not the block's value — capture it.\n  #\n  # @param operation [String] one of the `operation` tag's values, declared with\n  #   the metric group in `config/initializers/yabeda.rb`\ndef measured(operation)\n    result = nil\n    Yabeda.tax_automations.requests_duration.measure(vendor:, operation:) { result = yield }\n\n    result\n  end",
+            "startLine": 418,
+            "endLine": 427
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#track_failure": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\ndef track_failure(operation, reason)\n    Yabeda.tax_automations.failed_requests_total.increment({vendor:, operation:, reason:})\n  end",
+            "startLine": 429,
+            "endLine": 431
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # The token endpoint's own failures. Nothing above this layer sees these three\n  # calls, so a refusal counted nowhere else is counted here.\n  #\n  # Named in full for the reason {#refresh!} gives below: the error classes belong\n  # to the one class this module is mixed into.\ndef measured_token_call(operation, &)\n    measured(operation, &)\n  rescue TaxPreparation::TaxAutomations::BaseClient::RequestError => e\n    track_failure(operation, \"HTTP_ERROR: #{e.code}\")\n    raise\n  rescue *TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS => e\n    track_failure(operation, \"NETWORK_ERROR: #{e.class.name}\")\n    raise\n  end",
+            "startLine": 165,
+            "endLine": 178
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Which ceremony the exchange belongs to, in the words of the `operation` tag.\n  # Read before the grant is stored — after it, every row says the same thing.\ndef exchange_operation\n    vendor_connection.connected_at.present? ? 'reconnect' : 'connect'\n  end",
+            "startLine": 159,
+            "endLine": 163
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Withdraws the grant on the vendor's side. Only the refresh token is named: it\n  # is what a renewal would present, and the access token dies with the grant.\n  #\n  # The app names itself here as it does on the exchange. A vendor that checks\n  # refuses an unnamed caller, and the refusal would go unread: the port\n  # disconnects the firm whatever the vendor answered, so the row would say the\n  # grant is gone while it is still live.\n  #\n  # Moving the row is the service layer's job — this reaches the vendor and\n  # returns.\n  #\n  # @return [void]\ndef revoke_tokens!\n    self.class.declared_oauth2!\n    revocation = {token: vendor_connection.refresh_token, token_type_hint: 'refresh_token'}\n\n    measured_token_call('token_revoke') { token_connection.post(relative_path(oauth2_paths[:revoke]), revocation.merge(client_credentials)) }\n  end",
+            "startLine": 138,
+            "endLine": 155
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  AUTH_RETRIES_COUNT = 3\n  AUTH_RETRY_TIMEOUT_SEC = 2\n\n  OPEN_TIMEOUT_SEC = 5\n  # Ordinary calls carry small JSON documents — file bytes go straight to the\n  # vendor's pre-signed target and never pass through here.\n  REQUEST_TIMEOUT_SEC = 30\n\n  # Faraday spends this on each read from and write to the socket rather than on\n  # the transfer as a whole, so it is a threshold for a stalled connection, not a\n  # budget for the bytes: a slow upload that keeps moving is never cut short by\n  # it. The value is the one the AWS SDK carries for the same kind of timeout\n  # against the same kind of endpoint — a bucket that has said nothing for a\n  # minute has stopped listening.\n  UPLOAD_TIMEOUT_SEC = 60\n\n  # The token exchange is the one request made while the connection row is\n  # locked, so it answers to that lock rather than to the budget above: it has\n  # to finish before a worker waiting on the same row gives up. Faraday counts\n  # its two phases in sequence — `open_timeout` establishes the connection, and\n  # only then does the `timeout` clock start — so both are subtracted.\n  TOKEN_REQUEST_TIMEOUT_SEC = TaxPreparation::TaxAutomations::TokenRefreshable::CONNECTION_LOCK_TIMEOUT_SEC - OPEN_TIMEOUT_SEC - 1\n\n  I18N_ERRORS_SCOPE = 'errors.tax_preparation.tax_automations.client'\n\n  NETWORK_ERRORS = [Faraday::ConnectionFailed, Faraday::TimeoutError, Faraday::SSLError].freeze\n\n  class Error < StandardError; end\n\n  # The transport never reached the vendor — always transient.\n  class NetworkError < Error; end\n\n  # The connection row stayed locked for every attempt: another renewal was in\n  # flight, or the caller's own transaction is holding the row it asked us to\n  # renew. Nothing about the authorization failed — the request never got far\n  # enough to try one.\n  class ConnectionBusyError < Error; end\n\n  # The signature on a pre-signed target has lapsed, so nothing was sent: the\n  # bucket would refuse it, and only the vendor can issue another.\n  class TargetExpiredError < Error; end\n\n  # The vendor's answer describes a target nothing could spend: no place to post\n  # to, or nothing to authorize the post with. Raised by the constructor above\n  # and nowhere else, so an adapter mapping a vendor's spelling onto that struct\n  # gets the refusal for free — where a missing field would otherwise surface as\n  # a NoMethodError several frames later, outside this vocabulary and past every\n  # rescue written against it.\n  class TargetIncompleteError < Error; end\n\n  class BadRequestError < RequestError; end\n  # The only status the client retries, which makes it the only one whose escape\n  # carries more than the response it came from: a single 401 never reaches a\n  # caller, so one that does has outlived the whole ladder — three refusals with\n  # a freshly minted token in between each. The vendor is issuing tokens it will\n  # not accept, and the body usually says why.\n  class UnauthorizedError < RequestError; end\n  class ForbiddenError < RequestError; end\n  class NotFoundError < RequestError; end\n  class LockedError < RequestError; end\n  class ServerError < RequestError; end\n  class ServiceUnavailableError < RequestError; end",
+            "startLine": 14,
+            "endLine": 131
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#request": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # @param headers [Hash] per-request headers on top of the authenticating ones\n  # @yieldparam response [Faraday::Response] handed over in place of the parsed\n  #   body when a vendor call assembles a value of its own from the answer — a\n  #   pre-signed target is several of its fields at once, and reading them is the\n  #   vendor's vocabulary rather than the transport's\n  # @return [Hash] the parsed response body, or whatever the block makes of the\n  #   whole response when one is given\ndef request(method_name, path, body: nil, params: nil, headers: {}, &block)\n    Retry.retry_on(AUTH_ERRORS, AUTH_RETRIES_COUNT, timeout: AUTH_RETRY_TIMEOUT_SEC) do\n      with_access_token do |access_token|\n        # The renewal rides an operation of its own: its wait on the row lock says\n        # nothing about how fast the vendor's API is.\n        response = measured('api_request') { perform(method_name, path, access_token, body:, params:, headers:) }\n\n        block ? block.call(response) : response.body\n      end\n    rescue UnauthorizedError => e\n      # Counted on every attempt: a retried rejection is still a rejection, and a\n      # metric that only sees the last one hides the ladder.\n      track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n      # The vendor refused a token whose stored expiry still reads valid, so the\n      # next attempt has to carry one it minted rather than the one it just\n      # rejected.\n      refresh!(force: true)\n      raise\n    rescue ActiveRecord::LockWaitTimeout\n      track_failure('api_request', 'LOCK_TIMEOUT')\n      raise\n    end\n    # Both are retried together — waiting is the right answer to either — but\n    # they leave differently. The 401 goes on as itself: it carries the vendor's\n    # own account of the refusal, and every attempt is already counted, so it\n    # must not fall through to the counting branch below. A lock timeout is not\n    # an authorization failure at all and has nothing of the vendor to carry.\n  rescue UnauthorizedError\n    raise\n  rescue ActiveRecord::LockWaitTimeout\n    raise ConnectionBusyError, I18n.t('connection_busy', scope: I18N_ERRORS_SCOPE)\n  rescue InvalidGrantError\n    # The one failure retrying cannot help with, and the only one the firm has to\n    # act on. Counted here because it reaches the caller through none of the\n    # branches around it — the token module raises it in place of whatever the\n    # vendor said.\n    track_failure('api_request', 'INVALID_GRANT')\n    raise\n  rescue *NETWORK_ERRORS => e\n    track_failure('api_request', \"NETWORK_ERROR: #{e.class.name}\")\n    raise NetworkError, e.message\n  rescue RequestError => e\n    track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n    raise\n  end",
+            "startLine": 280,
+            "endLine": 331
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#perform": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\ndef perform(method_name, path, access_token, body: nil, params: nil, headers: {})\n    http_connection(access_token).public_send(method_name, relative_path(path)) do |request|\n      request.params.update(params) if params.present?\n      request.headers.update(headers)\n      request.body = body if body.present?\n    end\n  end",
+            "startLine": 333,
+            "endLine": 339
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Order matters: response middleware runs innermost-first, so `:json` has to\n  # be registered after the error middleware for the latter to see a parsed body,\n  # and the budget is read inside it so a refusal is recorded before it raises.\ndef apply_error_handling(builder)\n    builder.use RaiseCustomErrors, extract_message: method(:vendor_error_message), classify: method(:vendor_error_class)\n    builder.use RecordRateLimit, vendor:, api_root_path: URI(base_url).path, rate_limit_group_of: method(:rate_limit_group_of)\n    builder.response :json, content_type: /\\bjson$/\n\n    builder.adapter(*adapter_spec)\n  end",
+            "startLine": 397,
+            "endLine": 406
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#token_connection": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # The OAuth2 token endpoint is unauthenticated and form-encoded, so it cannot\n  # reuse the JSON connection above — but it shares the error middleware, which\n  # is what turns a rejected grant into an {InvalidGrantError}. Its own timeout\n  # applies here: this is the call made under the connection row lock.\n  #\n  # @return [Faraday::Connection] for a vendor's `refresh_tokens!` to post to\ndef token_connection\n    Faraday.new(url: base_url) do |builder|\n      builder.request :url_encoded\n\n      builder.options.timeout = TOKEN_REQUEST_TIMEOUT_SEC\n      builder.options.open_timeout = OPEN_TIMEOUT_SEC\n\n      apply_error_handling(builder)\n    end\n  end",
+            "startLine": 362,
+            "endLine": 377
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Turns the code a completed ceremony carried back into the grant. Public,\n  # unlike the renewal: the service layer drives it, because a grant that does not\n  # exist yet cannot be renewed on demand. Unauthenticated, so it needs no live\n  # connection — only the row naming the firm, which decides the transport.\n  #\n  # A refusal leaves as the status the vendor sent rather than as\n  # {InvalidGrantError}: there is no grant yet for a refusal to be about.\n  #\n  # @param code [String]\n  # @param redirect_uri [String] the one the authorize request declared\n  # @param code_verifier [String] the PKCE verifier behind the challenge\n  # @return [Hash] `{access_token:, refresh_token:, expires_in:, refresh_expires_in:}`\n  #   plus whatever {#grant_identity} reads off the same response\ndef exchange_code!(code:, redirect_uri:, code_verifier:)\n    body = token_response(exchange_operation, grant_type: 'authorization_code', code:, redirect_uri:, code_verifier:)\n\n    tokens_from(body).merge(grant_identity(body))\n  end",
+            "startLine": 107,
+            "endLine": 124
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Renews under the row lock. The re-check inside the lock is what makes a\n  # concurrent caller a waiter rather than a second refresher.\n  #\n  # @param force [Boolean] the vendor rejected the token we hold, so its stored\n  #   expiry says nothing — renewing is right unless another caller has already\n  #   replaced that very token.\ndef refresh!(force: false)\n    reject_grant!(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE)) unless vendor_connection.refresh_token_valid?\n\n    rejected_token = vendor_connection.access_token if force\n\n    # On its own DB connection, so the write outlives a rollback of the caller's\n    # transaction. The vendor has already rotated the refresh token by then, and\n    # a rolled-back row keeps a token the vendor no longer honours — the grant is\n    # dead with no way back.\n    ThreadHelper.run_in_new_thread do\n      Thread.current.report_on_exception = false\n\n      vendor_connection.transaction(requires_new: true) do\n        # Bounds the wait when the caller's own transaction already holds this\n        # row: what would be a deadlock against the thread above surfaces as a\n        # LockWaitTimeout the client retries.\n        ActiveRecord::Base.connection.execute(\"SET LOCAL lock_timeout = '#{CONNECTION_LOCK_TIMEOUT_SEC}s'\")\n\n        vendor_connection.with_lock do\n          # The guard at the door read the row as it stood when the request began;\n          # this reads it as it stands now. A withdrawal that landed while we\n          # queued behind the lock leaves a row the transition below does not lead\n          # out of, and the caller is owed the same error as any other dead grant.\n          raise InvalidGrantError.new(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE), connection: vendor_connection) unless vendor_connection.may_refresh?\n\n          # Whoever held the lock before us may have renewed already, and what\n          # counts as \"already\" depends on what sent us here: preemptively any\n          # unexpired token will do, but after a rejection only one that is no\n          # longer the token the vendor turned down.\n          next if force && vendor_connection.access_token != rejected_token\n          next if !force && vendor_connection.access_token_valid?\n\n          vendor_connection.store_tokens!(**refresh_tokens!)\n          # The exchange settles the grant's standing in both directions, so the\n          # transition follows it either way: here it stamps `refreshed_at` and\n          # brings an expired grant back to connected, and in {#reject_grant!} it\n          # moves a refused one further out.\n          vendor_connection.refresh!\n        end\n      end\n    end\n    # Named in full because the exchange reaches the token endpoint through the\n    # including client's error middleware — the one place this module knows it is\n    # mixed into exactly one class.\n  rescue TaxPreparation::TaxAutomations::BaseClient::RequestError => e\n    raise unless grant_refused?(e)\n\n    reject_grant!(e.message)\n  end",
+            "startLine": 200,
+            "endLine": 254
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Presents the refresh token for a new pair. Persisting is {#refresh!}'s job.\n  #\n  # @return [Hash] `{access_token:, refresh_token:, expires_in:, refresh_expires_in:}`\ndef refresh_tokens!\n    tokens_from(token_response('token_refresh', grant_type: 'refresh_token', refresh_token: vendor_connection.refresh_token))\n  end",
+            "startLine": 287,
+            "endLine": 292
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#token_response": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Both grant types answer with the same document — RFC 6749 fixes the field\n  # names — so one request serves the first exchange and every renewal after it.\n  #\n  # The token endpoint is unauthenticated and form-encoded, which is why it goes\n  # over {TaxPreparation::TaxAutomations::BaseClient#token_connection} rather than\n  # the JSON one.\n  #\n  # @return [Hash] the parsed token response\ndef token_response(operation, **grant)\n    self.class.declared_oauth2!\n\n    measured_token_call(operation) { token_connection.post(relative_path(oauth2_paths[:token]), grant.merge(client_credentials)) }.body\n  end",
+            "startLine": 294,
+            "endLine": 306
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "W35-body-and-absence",
+      "prompt": "Which CRM Public API contact lookups expose separate first and last names, what do the synced lists return, and does this Contact API source expose uid or uuid?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "979f7545-59f5-5811-9f2b-6094e51f4171",
+                  "score": 1,
+                  "payload": {
+                    "request": "Crm::Api::Contact.find",
+                    "resolvedAs": "Crm::Api::Contact#find",
+                    "relativePath": "app/services/crm/api/contact.rb",
+                    "symbolId": "Crm::Api::Contact#find",
+                    "startLine": 87,
+                    "endLine": 111,
+                    "content": "module Crm\n  module Api\n    module Contact\n      # Single-contact lookup, scoped to firm. Returns identity (id, name parts,\n      # stored `contact_name`, email, phone, account_id), address (country,\n      # company_name, street_address, city, province, zip), `custom_fields`\n      # (flat array of `{id, name, kind, shortcode_value}` over the firm's\n      # contact_custom_fields), and `account_full_name` (non-nil only when the\n      # contact has exactly one undeleted linked client).\n      #\n      # Cross-firm, missing, or policy-denied contact_id ⇒ failure(:not_authorized)\n      # — existence non-disclosure (SC-005; docs/crm/public_api.md:47,70).\n      #\n      # NOTE: soft-deleted contacts ARE returned (no `without_deleted` scope) —\n      # parity with the pre-TD-87986 master behavior of this shared lookup. The\n      # SMS-campaign caller still rejects soft-deleted recipients downstream via\n      # `Communication::Api::ContactPhoneNumbers.list_by_contact`. Whether this\n      # Public API should filter soft-deleted is a CRM-domain decision tracked\n      # separately, not folded into the SMS cross-cluster cleanup.\ndef find(firm:, user:, actor:, contact_id:)\n        result = Crm::Contacts::Find.call(user, actor, firm, contact_id)\n\n        if result.successful?\n          {success: true, errors: {}, data: contact_data(result.data)}\n        else\n          {success: false, errors: result.errors, reason: :not_authorized, data: nil}\n        end\n      end"
+                  }
+                },
+                {
+                  "id": "cde321c3-ad65-c03f-42f9-c7bdb7541384",
+                  "score": 1,
+                  "payload": {
+                    "request": "Crm::Api::Contact.list_by_account",
+                    "resolvedAs": "Crm::Api::Contact#list_by_account",
+                    "relativePath": "app/services/crm/api/contact.rb",
+                    "symbolId": "Crm::Api::Contact#list_by_account",
+                    "startLine": 170,
+                    "endLine": 184,
+                    "content": "module Crm\n  module Api\n    module Contact\n      # All contacts associated with an account (legacy AR `Client`), scoped\n      # to firm. Cross-firm or non-existent account_id ⇒ empty list.\ndef list_by_account(firm:, user:, actor:, account_id:)\n        result = Crm::Contacts::ListByAccount.call(user, actor, firm, account_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            phone:      row[:phone],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end"
+                  }
+                }
+              ],
+              "count": 2
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "21a83585-4642-0902-69b0-7b88d3ead05c",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/services/crm/api/contact.rb",
+                    "symbolId": "Crm::Api::Contact.contact_data",
+                    "startLine": 387,
+                    "endLine": 406,
+                    "chunkType": "function",
+                    "language": "ruby",
+                    "content": "module Crm\n  module Api\n    module Contact\ndef contact_data(row)\n          {\n            contact_id:        row[:id],\n            contact_name:      row[:contact_name],\n            first_name:        row[:first_name],\n            middle_name:       row[:middle_name],\n            last_name:         row[:last_name],\n            email:             row[:email],\n            phone:             row[:phone],\n            account_id:        row[:account_id],\n            country:           row[:country],\n            company_name:      row[:company_name],\n            street_address:    row[:street_address],\n            city:              row[:city],\n            province:          row[:province],\n            zip:               row[:zip],\n            custom_fields:     row[:custom_fields],\n            account_full_name: row[:account_full_name]\n          }\n        end",
+                    "navigation": {
+                      "prevSymbolId": "Crm::Api::Contact#render_sms_shortcode_text",
+                      "nextSymbolId": "Crm::Api::Contact"
+                    }
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "61f4bc8c-3654-789f-2980-573e4316c3c6",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/services/crm/api/contact.rb",
+                    "language": "ruby",
+                    "content": "app/services/crm/api/contact.rb\n  Crm\n  Crm::Api::Contact\n    Crm::Api::Contact.include ::Api::Contracts::Enforcement\n    Crm::Api::Contact::RENDER_SHORTCODE_TEXT_REASON_MAP\n    Crm::Api::Contact::RENDER_SMS_SHORTCODE_TEXT_REASON_MAP\n    Crm::Api::Contact::FIND_BY_ACCOUNT_USER_REASON_MAP\n    Crm::Api::Contact::UPDATE_REASON_MAP\n  Crm::Api::Contact#create (public)\n  Crm::Api::Contact#update (public)\n  Crm::Api::Contact#find (public)\n  Crm::Api::Contact#find_by_account_user (public)\n  Crm::Api::Contact#list_by_ids (public)\n  Crm::Api::Contact#list_by_account (public)\n  Crm::Api::Contact#list_by_phone_number (public)\n  Crm::Api::Contact#list_active (public)\n  Crm::Api::Contact#list_synced (public)\n  Crm::Api::Contact#list_synced_with_client (public)\n  Crm::Api::Contact#existing_ids (public)\n  Crm::Api::Contact#list_by_sms_thread (public)\n  Crm::Api::Contact#create_email_custom_field (public)\n  Crm::Api::Contact#reset_email_custom_field (public)\n  Crm::Api::Contact#custom_field_definitions (public)\n  Crm::Api::Contact#render_shortcode_text (public)\n  Crm::Api::Contact#render_shortcode_texts (public)\n  Crm::Api::Contact#render_sms_shortcode_text (public)\n  Crm::Api::Contact.contact_data (private)"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/services/crm/api/contact.rb": "# frozen_string_literal: true\n# Compact fixture source assembled from delivered CRM method bodies.\nmodule Crm\n  module Api\n    module Contact\n      # Single-contact lookup, scoped to firm. Returns identity (id, name parts,\n      # stored `contact_name`, email, phone, account_id), address (country,\n      # company_name, street_address, city, province, zip), `custom_fields`\n      # (flat array of `{id, name, kind, shortcode_value}` over the firm's\n      # contact_custom_fields), and `account_full_name` (non-nil only when the\n      # contact has exactly one undeleted linked client).\n      #\n      # Cross-firm, missing, or policy-denied contact_id ⇒ failure(:not_authorized)\n      # — existence non-disclosure (SC-005; docs/crm/public_api.md:47,70).\n      #\n      # NOTE: soft-deleted contacts ARE returned (no `without_deleted` scope) —\n      # parity with the pre-TD-87986 master behavior of this shared lookup. The\n      # SMS-campaign caller still rejects soft-deleted recipients downstream via\n      # `Communication::Api::ContactPhoneNumbers.list_by_contact`. Whether this\n      # Public API should filter soft-deleted is a CRM-domain decision tracked\n      # separately, not folded into the SMS cross-cluster cleanup.\ndef find(firm:, user:, actor:, contact_id:)\n        result = Crm::Contacts::Find.call(user, actor, firm, contact_id)\n\n        if result.successful?\n          {success: true, errors: {}, data: contact_data(result.data)}\n        else\n          {success: false, errors: result.errors, reason: :not_authorized, data: nil}\n        end\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # All contacts associated with an account (legacy AR `Client`), scoped\n      # to firm. Cross-firm or non-existent account_id ⇒ empty list.\ndef list_by_account(firm:, user:, actor:, account_id:)\n        result = Crm::Contacts::ListByAccount.call(user, actor, firm, account_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            phone:      row[:phone],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n\nmodule Crm\n  module Api\n    module Contact\ndef contact_data(row)\n          {\n            contact_id:        row[:id],\n            contact_name:      row[:contact_name],\n            first_name:        row[:first_name],\n            middle_name:       row[:middle_name],\n            last_name:         row[:last_name],\n            email:             row[:email],\n            phone:             row[:phone],\n            account_id:        row[:account_id],\n            country:           row[:country],\n            company_name:      row[:company_name],\n            street_address:    row[:street_address],\n            city:              row[:city],\n            province:          row[:province],\n            zip:               row[:zip],\n            custom_fields:     row[:custom_fields],\n            account_full_name: row[:account_full_name]\n          }\n        end\n\nmodule Crm\n  module Api\n    module Contact\n      # Batch lookup scoped to firm and actor visibility (Spec §FR-022).\n      # See MR description for the `existing_ids` distinction.\ndef list_by_ids(firm:, user:, actor:, contact_ids:, include_accounts: false)\n        result = Crm::Contacts::ListByIds.call(user, actor, firm, contact_ids, include_accounts:)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id:        row[:id],\n            first_name:        row[:first_name],\n            last_name:         row[:last_name],\n            email:             row[:email],\n            middle_name:       row[:middle_name],\n            contact_name:      row[:contact_name],\n            phone_number:      row[:phone_number],\n            country:           row[:country],\n            company_name:      row[:company_name],\n            street_address:    row[:street_address],\n            city:              row[:city],\n            province:          row[:province],\n            zip:               row[:zip],\n            custom_fields:     row[:custom_fields],\n            custom_email_fields: row[:custom_email_fields],\n            account_ids:       row[:account_ids]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # All \"active\" (= non-soft-deleted) contacts in firm. `scope:` is whitelisted\n      # by the underlying service to avoid `public_send`-injection (FR-007).\ndef list_active(firm:, user:, actor:, scope: :without_deleted)\n        result = Crm::Contacts::ListActive.call(user, actor, firm, scope: scope)\n\n        if result.successful?\n          contacts = result.data.map do |row|\n            {\n              contact_id:    row[:id],\n              first_name:    row[:first_name],\n              last_name:     row[:last_name],\n              email:         row[:email],\n              phone:         row[:phone],\n              phone_numbers: row[:phone_numbers]\n            }\n          end\n          {success: true, errors: {}, data: {contacts: contacts}}\n        else\n          {success: false, errors: result.errors, reason: :unsupported_scope, data: nil}\n        end\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # Distinct (contact_id, client_id, email) triples synced through a Nylas\n      # connection. Cross-firm or non-existent nylas_connection_id ⇒ empty list.\n      # Soft-deleted clients excluded (TD-87975 research.md Decision 1).\ndef list_synced(firm:, user:, actor:, nylas_connection_id:)\n        result = Crm::Contacts::ListSynced.call(user, actor, firm, nylas_connection_id)\n\n        contacts = result.data.map do |contact_id, client_id, email|\n          {contact_id: contact_id, client_id: client_id, email: email}\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # Distinct (contact_id, email, client_id) triples synced through a Nylas\n      # connection. A contact in N families yields N rows.\ndef list_synced_with_client(firm:, user:, actor:, nylas_connection_id:)\n        result = Crm::Contacts::ListSyncedWithClient.call(user, actor, firm, nylas_connection_id)\n\n        contacts = result.data.map do |contact_id, email, client_id|\n          {contact_id: contact_id, email: email, client_id: client_id}\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n\n\nmodule Crm\n  module Api\n    module Contact\n      # The contact a portal user acts as on an account: the account's non-deleted\n      # contact whose emails hold the user's email, lowest id first. Returns the\n      # `find` row under `contact`, or `contact: nil` when the user is not linked\n      # to the account or has no such contact. The caller renders shortcodes\n      # from the row itself; CRM only resolves the user → contact rule.\n      #\n      # @param account_id [Integer]\n      # @param user_id [Integer] portal user whose contact is looked up\n      # @return [Result] success: { contact: { contact_id, contact_name, first_name,\n      #   middle_name, last_name, email, phone, account_id, country, company_name,\n      #   street_address, city, province, zip, custom_fields: [{id, name, kind,\n      #   shortcode_value}], account_full_name } | nil }; reason: :not_authorized\n      #   on cross-firm/non-existent account or policy denial (`:not_found`\n      #   collapses to `:not_authorized`). `ArgumentError` on `actor.firm_id != firm.id`.\ndef find_by_account_user(firm:, user:, actor:, account_id:, user_id:)\n        raise ArgumentError, \"actor.firm_id (#{actor.firm_id}) does not match firm.id (#{firm.id})\" if actor.firm_id != firm.id\n\n        result = Crm::Contacts::FindByAccountUser.call(user, actor, firm, account_id, user_id)\n\n        if result.successful?\n          {success: true, errors: {}, data: {contact: result.data && contact_data(result.data)}}\n        else\n          {success: false, errors: result.errors, reason: FIND_BY_ACCOUNT_USER_REASON_MAP.fetch(result.reason), data: nil}\n        end\n      rescue AbstractPolicy::PolicyError => e\n        {success: false, errors: {base: [e.message]}, reason: :not_authorized, data: nil}\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # All contacts linked to a phone number, scoped to firm.\n      # Cross-firm or non-existent phone_number_id ⇒ empty list.\ndef list_by_phone_number(firm:, user:, actor:, phone_number_id:)\n        result = Crm::Contacts::ListByPhoneNumber.call(user, actor, firm, phone_number_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            account_id: row[:account_id],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n\nmodule Crm\n  module Api\n    module Contact\n      # All contacts linked to an SMS \"thread\" (Communication::Contact::PhoneNumber\n      # under the hood — see contracts/list_by_sms_thread.md). The field shape\n      # differs from list_by_phone_number even though the underlying query is\n      # identical: this method ships `phone` + `name`, that one ships `account_id`\n      # + `name`. See tech-design.md Open follow-up #2.\ndef list_by_sms_thread(firm:, user:, actor:, sms_thread_id:)\n        result = Crm::Contacts::ListBySmsThread.call(user, actor, firm, sms_thread_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            phone:      row[:phone],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end\n"
+        },
+        "find_symbol_bodies": {
+          "Crm::Api::Contact#list_by_ids": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # Batch lookup scoped to firm and actor visibility (Spec §FR-022).\n      # See MR description for the `existing_ids` distinction.\ndef list_by_ids(firm:, user:, actor:, contact_ids:, include_accounts: false)\n        result = Crm::Contacts::ListByIds.call(user, actor, firm, contact_ids, include_accounts:)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id:        row[:id],\n            first_name:        row[:first_name],\n            last_name:         row[:last_name],\n            email:             row[:email],\n            middle_name:       row[:middle_name],\n            contact_name:      row[:contact_name],\n            phone_number:      row[:phone_number],\n            country:           row[:country],\n            company_name:      row[:company_name],\n            street_address:    row[:street_address],\n            city:              row[:city],\n            province:          row[:province],\n            zip:               row[:zip],\n            custom_fields:     row[:custom_fields],\n            custom_email_fields: row[:custom_email_fields],\n            account_ids:       row[:account_ids]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end",
+            "startLine": 141,
+            "endLine": 168
+          },
+          "Crm::Api::Contact#list_active": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # All \"active\" (= non-soft-deleted) contacts in firm. `scope:` is whitelisted\n      # by the underlying service to avoid `public_send`-injection (FR-007).\ndef list_active(firm:, user:, actor:, scope: :without_deleted)\n        result = Crm::Contacts::ListActive.call(user, actor, firm, scope: scope)\n\n        if result.successful?\n          contacts = result.data.map do |row|\n            {\n              contact_id:    row[:id],\n              first_name:    row[:first_name],\n              last_name:     row[:last_name],\n              email:         row[:email],\n              phone:         row[:phone],\n              phone_numbers: row[:phone_numbers]\n            }\n          end\n          {success: true, errors: {}, data: {contacts: contacts}}\n        else\n          {success: false, errors: result.errors, reason: :unsupported_scope, data: nil}\n        end\n      end",
+            "startLine": 202,
+            "endLine": 222
+          },
+          "Crm::Api::Contact#list_synced": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # Distinct (contact_id, client_id, email) triples synced through a Nylas\n      # connection. Cross-firm or non-existent nylas_connection_id ⇒ empty list.\n      # Soft-deleted clients excluded (TD-87975 research.md Decision 1).\ndef list_synced(firm:, user:, actor:, nylas_connection_id:)\n        result = Crm::Contacts::ListSynced.call(user, actor, firm, nylas_connection_id)\n\n        contacts = result.data.map do |contact_id, client_id, email|\n          {contact_id: contact_id, client_id: client_id, email: email}\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end",
+            "startLine": 224,
+            "endLine": 235
+          },
+          "Crm::Api::Contact#list_synced_with_client": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # Distinct (contact_id, email, client_id) triples synced through a Nylas\n      # connection. A contact in N families yields N rows.\ndef list_synced_with_client(firm:, user:, actor:, nylas_connection_id:)\n        result = Crm::Contacts::ListSyncedWithClient.call(user, actor, firm, nylas_connection_id)\n\n        contacts = result.data.map do |contact_id, email, client_id|\n          {contact_id: contact_id, email: email, client_id: client_id}\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end",
+            "startLine": 237,
+            "endLine": 247
+          },
+          "Crm::Api::Contact#find_by_account_user": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # The contact a portal user acts as on an account: the account's non-deleted\n      # contact whose emails hold the user's email, lowest id first. Returns the\n      # `find` row under `contact`, or `contact: nil` when the user is not linked\n      # to the account or has no such contact. The caller renders shortcodes\n      # from the row itself; CRM only resolves the user → contact rule.\n      #\n      # @param account_id [Integer]\n      # @param user_id [Integer] portal user whose contact is looked up\n      # @return [Result] success: { contact: { contact_id, contact_name, first_name,\n      #   middle_name, last_name, email, phone, account_id, country, company_name,\n      #   street_address, city, province, zip, custom_fields: [{id, name, kind,\n      #   shortcode_value}], account_full_name } | nil }; reason: :not_authorized\n      #   on cross-firm/non-existent account or policy denial (`:not_found`\n      #   collapses to `:not_authorized`). `ArgumentError` on `actor.firm_id != firm.id`.\ndef find_by_account_user(firm:, user:, actor:, account_id:, user_id:)\n        raise ArgumentError, \"actor.firm_id (#{actor.firm_id}) does not match firm.id (#{firm.id})\" if actor.firm_id != firm.id\n\n        result = Crm::Contacts::FindByAccountUser.call(user, actor, firm, account_id, user_id)\n\n        if result.successful?\n          {success: true, errors: {}, data: {contact: result.data && contact_data(result.data)}}\n        else\n          {success: false, errors: result.errors, reason: FIND_BY_ACCOUNT_USER_REASON_MAP.fetch(result.reason), data: nil}\n        end\n      rescue AbstractPolicy::PolicyError => e\n        {success: false, errors: {base: [e.message]}, reason: :not_authorized, data: nil}\n      end",
+            "startLine": 113,
+            "endLine": 139
+          },
+          "Crm::Api::Contact#list_by_phone_number": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # All contacts linked to a phone number, scoped to firm.\n      # Cross-firm or non-existent phone_number_id ⇒ empty list.\ndef list_by_phone_number(firm:, user:, actor:, phone_number_id:)\n        result = Crm::Contacts::ListByPhoneNumber.call(user, actor, firm, phone_number_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            account_id: row[:account_id],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end",
+            "startLine": 186,
+            "endLine": 200
+          },
+          "Crm::Api::Contact#list_by_sms_thread": {
+            "relativePath": "app/services/crm/api/contact.rb",
+            "content": "module Crm\n  module Api\n    module Contact\n      # All contacts linked to an SMS \"thread\" (Communication::Contact::PhoneNumber\n      # under the hood — see contracts/list_by_sms_thread.md). The field shape\n      # differs from list_by_phone_number even though the underlying query is\n      # identical: this method ships `phone` + `name`, that one ships `account_id`\n      # + `name`. See tech-design.md Open follow-up #2.\ndef list_by_sms_thread(firm:, user:, actor:, sms_thread_id:)\n        result = Crm::Contacts::ListBySmsThread.call(user, actor, firm, sms_thread_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            phone:      row[:phone],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end",
+            "startLine": 256,
+            "endLine": 273
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "C-dependent-new-locators",
+      "prompt": "How does the vendor refresh policy decide whether an HTTP status can be retried?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "symbol": "VendorRefreshPolicy"
+            },
+            "result": {
+              "results": [],
+              "missing": [
+                {
+                  "request": "VendorRefreshPolicy",
+                  "message": "unknown symbol"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/vendor/refresh_policy.rb": "class Vendor::RefreshPolicy\n  def retryable?(status)\n    [429, 503].include?(status)\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "Vendor::RefreshPolicy#retryable?": {
+            "relativePath": "app/lib/vendor/refresh_policy.rb",
+            "content": "class Vendor::RefreshPolicy\n  def retryable?(status)\n    [429, 503].include?(status)\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          }
+        },
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/lib/vendor"
+            },
+            "result": {
+              "results": {
+                "columns": [
+                  "id",
+                  "score",
+                  "payload.relativePath",
+                  "payload.language",
+                  "payload.symbols"
+                ],
+                "rows": [
+                  [
+                    "fixture-0",
+                    1,
+                    "app/lib/vendor/refresh_policy.rb",
+                    "ruby",
+                    [
+                      "Vendor::RefreshPolicy"
+                    ]
+                  ]
+                ]
+              },
+              "directory": {
+                "kind": "directory",
+                "dir": "app/lib/vendor",
+                "subdirs": [],
+                "total": 1,
+                "truncated": false
+              }
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/lib/vendor/refresh_policy.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "fixture-outline-Vendor::RefreshPolicy",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/refresh_policy.rb",
+                    "language": "ruby",
+                    "content": "app/lib/vendor/refresh_policy.rb\n  Vendor::RefreshPolicy\n  Vendor::RefreshPolicy#retryable? (public)\n"
+                  }
+                }
+              ],
+              "count": 1,
+              "kind": "outline"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "C-partial-not-body",
+      "prompt": "What timeout does RequestBudget use for uploads and for ordinary requests?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "fixture-budget-header",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/request_budget.rb",
+                    "symbolId": "Vendor::RequestBudget",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "chunkType": "containerHeader",
+                    "content": "class Vendor::RequestBudget\n  Vendor::RequestBudget#timeout_seconds (public)"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/vendor/request_budget.rb": "class Vendor::RequestBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 60 : 30\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "Vendor::RequestBudget#timeout_seconds": {
+            "relativePath": "app/lib/vendor/request_budget.rb",
+            "content": "class Vendor::RequestBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 60 : 30\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "P-single-exact-suggestion",
+      "prompt": "Which base does TransferBytesWorker inherit from, and what does its perform_operation call?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/workers/tax_preparation/tax_automations/documents/transfer_bytes_worker.rb"
+            },
+            "result": {
+              "results": [],
+              "missing": [
+                {
+                  "request": "app/workers/tax_preparation/tax_automations/documents/transfer_bytes_worker.rb",
+                  "message": "unknown path — retry a suggested path, or find_symbol(relativePath: <dir>)",
+                  "suggestions": [
+                    "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+                    "app/workers/tax_preparation/tax_automations/documents/application_worker.rb",
+                    "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+                    "app/workers/tax_preparation/tax_automations/documents/resume_sends_worker.rb"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb": "# frozen_string_literal: true\n\n# Moves the file's bytes to the target step one received, as step two of the vendor's three-step\n# upload. Spends no Instead request, so it runs outside the throttle.\nclass TaxPreparation::TaxAutomations::Instead::Documents::TransferBytesWorker < TaxPreparation::TaxAutomations::Instead::ExportOperationWorker\n  class Args\n    include StoreModel::Model\n\n    attribute :connection_id, :big_integer\n    attribute :tax_automation_document_id, :big_integer\n\n    validates :connection_id, :tax_automation_document_id, presence: true\n\n    # What `ExportOperationWorker` fails once Sidekiq gives up on this step.\n    def tax_automation_document_ids\n      [tax_automation_document_id]\n    end\n  end\n\n  slug :tax_automations_instead_transfer_bytes\n  args_schema Args\n\n  sidekiq_options queue: :tax_preparation_tax_automations_high\n\n  def perform_operation\n    connection = TaxPreparation::TaxAutomations::Instead::Connection.find(args.connection_id)\n    tax_automation_document = TaxPreparation::TaxAutomations::Document.find(args.tax_automation_document_id)\n\n    TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget.call(user, actor, connection, tax_automation_document)\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "0b01f10c-d9a0-8ba9-36be-2d393b48082e",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+                    "startLine": 1,
+                    "endLine": 31,
+                    "language": "ruby",
+                    "content": "# frozen_string_literal: true\n\n# Moves the file's bytes to the target step one received, as step two of the vendor's three-step\n# upload. Spends no Instead request, so it runs outside the throttle.\nclass TaxPreparation::TaxAutomations::Instead::Documents::TransferBytesWorker < TaxPreparation::TaxAutomations::Instead::ExportOperationWorker\n  class Args\n    include StoreModel::Model\n\n    attribute :connection_id, :big_integer\n    attribute :tax_automation_document_id, :big_integer\n\n    validates :connection_id, :tax_automation_document_id, presence: true\n\n    # What `ExportOperationWorker` fails once Sidekiq gives up on this step.\n    def tax_automation_document_ids\n      [tax_automation_document_id]\n    end\n  end\n\n  slug :tax_automations_instead_transfer_bytes\n  args_schema Args\n\n  sidekiq_options queue: :tax_preparation_tax_automations_high\n\n  def perform_operation\n    connection = TaxPreparation::TaxAutomations::Instead::Connection.find(args.connection_id)\n    tax_automation_document = TaxPreparation::TaxAutomations::Document.find(args.tax_automation_document_id)\n\n    TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget.call(user, actor, connection, tax_automation_document)\n  end\nend\n",
+                    "kind": "file"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "symbol": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "0b01f10c-d9a0-8ba9-36be-2d393b48082e",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+                    "startLine": 1,
+                    "endLine": 31,
+                    "language": "ruby",
+                    "content": "# frozen_string_literal: true\n\n# Moves the file's bytes to the target step one received, as step two of the vendor's three-step\n# upload. Spends no Instead request, so it runs outside the throttle.\nclass TaxPreparation::TaxAutomations::Instead::Documents::TransferBytesWorker < TaxPreparation::TaxAutomations::Instead::ExportOperationWorker\n  class Args\n    include StoreModel::Model\n\n    attribute :connection_id, :big_integer\n    attribute :tax_automation_document_id, :big_integer\n\n    validates :connection_id, :tax_automation_document_id, presence: true\n\n    # What `ExportOperationWorker` fails once Sidekiq gives up on this step.\n    def tax_automation_document_ids\n      [tax_automation_document_id]\n    end\n  end\n\n  slug :tax_automations_instead_transfer_bytes\n  args_schema Args\n\n  sidekiq_options queue: :tax_preparation_tax_automations_high\n\n  def perform_operation\n    connection = TaxPreparation::TaxAutomations::Instead::Connection.find(args.connection_id)\n    tax_automation_document = TaxPreparation::TaxAutomations::Document.find(args.tax_automation_document_id)\n\n    TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget.call(user, actor, connection, tax_automation_document)\n  end\nend\n",
+                    "kind": "file"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "symbols": [
+                "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb"
+              ]
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "0b01f10c-d9a0-8ba9-36be-2d393b48082e",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+                    "startLine": 1,
+                    "endLine": 31,
+                    "language": "ruby",
+                    "content": "# frozen_string_literal: true\n\n# Moves the file's bytes to the target step one received, as step two of the vendor's three-step\n# upload. Spends no Instead request, so it runs outside the throttle.\nclass TaxPreparation::TaxAutomations::Instead::Documents::TransferBytesWorker < TaxPreparation::TaxAutomations::Instead::ExportOperationWorker\n  class Args\n    include StoreModel::Model\n\n    attribute :connection_id, :big_integer\n    attribute :tax_automation_document_id, :big_integer\n\n    validates :connection_id, :tax_automation_document_id, presence: true\n\n    # What `ExportOperationWorker` fails once Sidekiq gives up on this step.\n    def tax_automation_document_ids\n      [tax_automation_document_id]\n    end\n  end\n\n  slug :tax_automations_instead_transfer_bytes\n  args_schema Args\n\n  sidekiq_options queue: :tax_preparation_tax_automations_high\n\n  def perform_operation\n    connection = TaxPreparation::TaxAutomations::Instead::Connection.find(args.connection_id)\n    tax_automation_document = TaxPreparation::TaxAutomations::Document.find(args.tax_automation_document_id)\n\n    TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget.call(user, actor, connection, tax_automation_document)\n  end\nend\n",
+                    "kind": "file"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "C-ambiguous-suggestions",
+      "prompt": "Which bases and operations do the inbound and outbound transfer workers use?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/workers/vendor/transfer_worker.rb"
+            },
+            "result": {
+              "results": [],
+              "missing": [
+                {
+                  "request": "app/workers/vendor/transfer_worker.rb",
+                  "message": "unknown path — retry a suggested path, or find_symbol(relativePath: <dir>)",
+                  "suggestions": [
+                    "app/workers/vendor/inbound/transfer_worker.rb",
+                    "app/workers/vendor/outbound/transfer_worker.rb"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/workers/vendor/inbound/transfer_worker.rb": "class Vendor::Inbound::TransferWorker < Vendor::Inbound::ApplicationWorker\n  def perform_operation\n    Vendor::Inbound::Download.call(args)\n  end\nend\n",
+          "app/workers/vendor/outbound/transfer_worker.rb": "class Vendor::Outbound::TransferWorker < Vendor::Outbound::ApplicationWorker\n  def perform_operation\n    Vendor::Outbound::Upload.call(args)\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/workers/vendor"
+            },
+            "result": {
+              "results": {
+                "columns": [
+                  "id",
+                  "score",
+                  "payload.relativePath",
+                  "payload.language",
+                  "payload.symbols"
+                ],
+                "rows": [
+                  [
+                    "fixture-0",
+                    1,
+                    "app/workers/vendor/inbound/transfer_worker.rb",
+                    "ruby",
+                    [
+                      "Vendor::Inbound::TransferWorker"
+                    ]
+                  ],
+                  [
+                    "fixture-1",
+                    1,
+                    "app/workers/vendor/outbound/transfer_worker.rb",
+                    "ruby",
+                    [
+                      "Vendor::Outbound::TransferWorker"
+                    ]
+                  ]
+                ]
+              },
+              "directory": {
+                "kind": "directory",
+                "dir": "app/workers/vendor",
+                "subdirs": [],
+                "total": 2,
+                "truncated": false
+              }
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/workers/vendor/inbound/transfer_worker.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "app/workers/vendor/inbound/transfer_worker.rb",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/workers/vendor/inbound/transfer_worker.rb",
+                    "kind": "file",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "content": "class Vendor::Inbound::TransferWorker < Vendor::Inbound::ApplicationWorker\n  def perform_operation\n    Vendor::Inbound::Download.call(args)\n  end\nend\n"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/workers/vendor/outbound/transfer_worker.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "app/workers/vendor/outbound/transfer_worker.rb",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/workers/vendor/outbound/transfer_worker.rb",
+                    "kind": "file",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "content": "class Vendor::Outbound::TransferWorker < Vendor::Outbound::ApplicationWorker\n  def perform_operation\n    Vendor::Outbound::Upload.call(args)\n  end\nend\n"
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "C-batch-limit",
+      "prompt": "List the timeout_seconds value for each of these 21 vendor policy classes, with its source path.",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "fixture-policy-01",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_01.rb",
+                    "symbolId": "Vendor::Policies::Policy01#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-02",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_02.rb",
+                    "symbolId": "Vendor::Policies::Policy02#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-03",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_03.rb",
+                    "symbolId": "Vendor::Policies::Policy03#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-04",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_04.rb",
+                    "symbolId": "Vendor::Policies::Policy04#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-05",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_05.rb",
+                    "symbolId": "Vendor::Policies::Policy05#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-06",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_06.rb",
+                    "symbolId": "Vendor::Policies::Policy06#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-07",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_07.rb",
+                    "symbolId": "Vendor::Policies::Policy07#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-08",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_08.rb",
+                    "symbolId": "Vendor::Policies::Policy08#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-09",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_09.rb",
+                    "symbolId": "Vendor::Policies::Policy09#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-10",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_10.rb",
+                    "symbolId": "Vendor::Policies::Policy10#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-11",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_11.rb",
+                    "symbolId": "Vendor::Policies::Policy11#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-12",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_12.rb",
+                    "symbolId": "Vendor::Policies::Policy12#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-13",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_13.rb",
+                    "symbolId": "Vendor::Policies::Policy13#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-14",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_14.rb",
+                    "symbolId": "Vendor::Policies::Policy14#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-15",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_15.rb",
+                    "symbolId": "Vendor::Policies::Policy15#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-16",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_16.rb",
+                    "symbolId": "Vendor::Policies::Policy16#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-17",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_17.rb",
+                    "symbolId": "Vendor::Policies::Policy17#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-18",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_18.rb",
+                    "symbolId": "Vendor::Policies::Policy18#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-19",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_19.rb",
+                    "symbolId": "Vendor::Policies::Policy19#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-20",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_20.rb",
+                    "symbolId": "Vendor::Policies::Policy20#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                },
+                {
+                  "id": "fixture-policy-21",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/policies/policy_21.rb",
+                    "symbolId": "Vendor::Policies::Policy21#timeout_seconds",
+                    "startLine": 2,
+                    "endLine": 4
+                  }
+                }
+              ],
+              "count": 21
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/vendor/policies/policy_01.rb": "class Vendor::Policies::Policy01\n  def timeout_seconds\n    11\n  end\nend\n",
+          "app/lib/vendor/policies/policy_02.rb": "class Vendor::Policies::Policy02\n  def timeout_seconds\n    12\n  end\nend\n",
+          "app/lib/vendor/policies/policy_03.rb": "class Vendor::Policies::Policy03\n  def timeout_seconds\n    13\n  end\nend\n",
+          "app/lib/vendor/policies/policy_04.rb": "class Vendor::Policies::Policy04\n  def timeout_seconds\n    14\n  end\nend\n",
+          "app/lib/vendor/policies/policy_05.rb": "class Vendor::Policies::Policy05\n  def timeout_seconds\n    15\n  end\nend\n",
+          "app/lib/vendor/policies/policy_06.rb": "class Vendor::Policies::Policy06\n  def timeout_seconds\n    16\n  end\nend\n",
+          "app/lib/vendor/policies/policy_07.rb": "class Vendor::Policies::Policy07\n  def timeout_seconds\n    17\n  end\nend\n",
+          "app/lib/vendor/policies/policy_08.rb": "class Vendor::Policies::Policy08\n  def timeout_seconds\n    18\n  end\nend\n",
+          "app/lib/vendor/policies/policy_09.rb": "class Vendor::Policies::Policy09\n  def timeout_seconds\n    19\n  end\nend\n",
+          "app/lib/vendor/policies/policy_10.rb": "class Vendor::Policies::Policy10\n  def timeout_seconds\n    20\n  end\nend\n",
+          "app/lib/vendor/policies/policy_11.rb": "class Vendor::Policies::Policy11\n  def timeout_seconds\n    21\n  end\nend\n",
+          "app/lib/vendor/policies/policy_12.rb": "class Vendor::Policies::Policy12\n  def timeout_seconds\n    22\n  end\nend\n",
+          "app/lib/vendor/policies/policy_13.rb": "class Vendor::Policies::Policy13\n  def timeout_seconds\n    23\n  end\nend\n",
+          "app/lib/vendor/policies/policy_14.rb": "class Vendor::Policies::Policy14\n  def timeout_seconds\n    24\n  end\nend\n",
+          "app/lib/vendor/policies/policy_15.rb": "class Vendor::Policies::Policy15\n  def timeout_seconds\n    25\n  end\nend\n",
+          "app/lib/vendor/policies/policy_16.rb": "class Vendor::Policies::Policy16\n  def timeout_seconds\n    26\n  end\nend\n",
+          "app/lib/vendor/policies/policy_17.rb": "class Vendor::Policies::Policy17\n  def timeout_seconds\n    27\n  end\nend\n",
+          "app/lib/vendor/policies/policy_18.rb": "class Vendor::Policies::Policy18\n  def timeout_seconds\n    28\n  end\nend\n",
+          "app/lib/vendor/policies/policy_19.rb": "class Vendor::Policies::Policy19\n  def timeout_seconds\n    29\n  end\nend\n",
+          "app/lib/vendor/policies/policy_20.rb": "class Vendor::Policies::Policy20\n  def timeout_seconds\n    30\n  end\nend\n",
+          "app/lib/vendor/policies/policy_21.rb": "class Vendor::Policies::Policy21\n  def timeout_seconds\n    31\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "Vendor::Policies::Policy01#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_01.rb",
+            "content": "class Vendor::Policies::Policy01\n  def timeout_seconds\n    11\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy02#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_02.rb",
+            "content": "class Vendor::Policies::Policy02\n  def timeout_seconds\n    12\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy03#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_03.rb",
+            "content": "class Vendor::Policies::Policy03\n  def timeout_seconds\n    13\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy04#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_04.rb",
+            "content": "class Vendor::Policies::Policy04\n  def timeout_seconds\n    14\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy05#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_05.rb",
+            "content": "class Vendor::Policies::Policy05\n  def timeout_seconds\n    15\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy06#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_06.rb",
+            "content": "class Vendor::Policies::Policy06\n  def timeout_seconds\n    16\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy07#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_07.rb",
+            "content": "class Vendor::Policies::Policy07\n  def timeout_seconds\n    17\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy08#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_08.rb",
+            "content": "class Vendor::Policies::Policy08\n  def timeout_seconds\n    18\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy09#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_09.rb",
+            "content": "class Vendor::Policies::Policy09\n  def timeout_seconds\n    19\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy10#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_10.rb",
+            "content": "class Vendor::Policies::Policy10\n  def timeout_seconds\n    20\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy11#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_11.rb",
+            "content": "class Vendor::Policies::Policy11\n  def timeout_seconds\n    21\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy12#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_12.rb",
+            "content": "class Vendor::Policies::Policy12\n  def timeout_seconds\n    22\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy13#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_13.rb",
+            "content": "class Vendor::Policies::Policy13\n  def timeout_seconds\n    23\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy14#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_14.rb",
+            "content": "class Vendor::Policies::Policy14\n  def timeout_seconds\n    24\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy15#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_15.rb",
+            "content": "class Vendor::Policies::Policy15\n  def timeout_seconds\n    25\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy16#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_16.rb",
+            "content": "class Vendor::Policies::Policy16\n  def timeout_seconds\n    26\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy17#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_17.rb",
+            "content": "class Vendor::Policies::Policy17\n  def timeout_seconds\n    27\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy18#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_18.rb",
+            "content": "class Vendor::Policies::Policy18\n  def timeout_seconds\n    28\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy19#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_19.rb",
+            "content": "class Vendor::Policies::Policy19\n  def timeout_seconds\n    29\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy20#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_20.rb",
+            "content": "class Vendor::Policies::Policy20\n  def timeout_seconds\n    30\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::Policies::Policy21#timeout_seconds": {
+            "relativePath": "app/lib/vendor/policies/policy_21.rb",
+            "content": "class Vendor::Policies::Policy21\n  def timeout_seconds\n    31\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          }
+        },
+        "raw_tool_responses": []
+      }
+    }
+  ]
+}

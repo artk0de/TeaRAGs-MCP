@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "actor_visibility": "Never expose this file or grading/controller data to actors.",
+  "primary_metric": "Actual rawResponse/completed identity count plus dependency-correct read wave coverage; nested call count alone is insufficient.",
+  "setup_allowance": "A mandatory skills/schema read response may precede evidence gathering without being marked avoidable.",
+  "verdict_policy": "Mechanical checks plus semantic human review. Failed/unrun remain OPEN; preserve all attempts.",
+  "cases": {
+    "W02-independent-body-and-refs": {
+      "independent_one_wave": true,
+      "scoped_search": {
+        "path": "spec/unit/tax_preparation/lib/tax_automations/base_client_spec.rb",
+        "patterns": [
+          "transport"
+        ],
+        "allow_scopes": [
+          "spec/"
+        ]
+      },
+      "source_paths": [
+        "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+        "app/lib/tax_preparation/tax_automations/base_client.rb",
+        "spec/unit/tax_preparation/lib/tax_automations/base_client_spec.rb"
+      ],
+      "facts": [
+        {
+          "label": "route selects HTTP verb + URL path",
+          "patterns": [
+            "verb|method",
+            "path|url"
+          ]
+        },
+        {
+          "label": "entity guard and dispatch",
+          "patterns": [
+            "ENTITY|entity",
+            "handler|public_send"
+          ]
+        },
+        {
+          "label": "handles UUIDv5 namespace determinism",
+          "patterns": [
+            "UUID|uuid",
+            "v5|version.?5|uuid_v5"
+          ]
+        },
+        {
+          "label": "adapter and test transport",
+          "patterns": [
+            "adapter",
+            "transport",
+            "Faraday|Stubs"
+          ]
+        }
+      ],
+      "required_symbols": [
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#call",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#handle"
+      ],
+      "required_source_read": {
+        "path": "spec/unit/tax_preparation/lib/tax_automations/base_client_spec.rb",
+        "tokens": [
+          "transport: transport",
+          "Faraday::Adapter::Test::Stubs"
+        ]
+      },
+      "known_ready_relevant_symbols": [
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#call",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#handle",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#opaque_token",
+        "TaxPreparation::TaxAutomations::BaseClient#http_connection",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+        "TaxPreparation::TaxAutomations::BaseClient#upload_connection",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router::ENTITY_SCOPED",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#entity",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#file",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#create_entity",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#start_doc_upload",
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router#token",
+        "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling"
+      ],
+      "shared_source_symbols": {
+        "TaxPreparation::TaxAutomations::Instead::Mock::Router::ENTITY_SCOPED": "TaxPreparation::TaxAutomations::Instead::Mock::Router::ROUTES"
+      }
+    },
+    "W21-known-method-batch": {
+      "independent_one_wave": true,
+      "source_paths": [
+        "app/lib/tax_preparation/tax_automations/base_client.rb",
+        "app/lib/tax_preparation/tax_automations/token_refreshable.rb"
+      ],
+      "facts": [
+        {
+          "label": "mapped status failures",
+          "patterns": [
+            "400",
+            "401",
+            "403",
+            "404",
+            "422",
+            "423",
+            "429",
+            "500",
+            "503"
+          ]
+        },
+        {
+          "label": "fallback distinguishes generic request and server",
+          "patterns": [
+            "ServerError",
+            "RequestError",
+            "500"
+          ]
+        },
+        {
+          "label": "vendor body classification and localized fallback",
+          "patterns": [
+            "vendor|classif",
+            "message|I18n|localiz"
+          ]
+        },
+        {
+          "label": "duration metric and failure labels",
+          "patterns": [
+            "requests_duration",
+            "failed_requests_total",
+            "vendor",
+            "operation",
+            "reason"
+          ]
+        },
+        {
+          "label": "token call failure reasons",
+          "patterns": [
+            "HTTP_ERROR",
+            "NETWORK_ERROR"
+          ]
+        },
+        {
+          "label": "connect vs reconnect",
+          "patterns": [
+            "connect",
+            "reconnect",
+            "connected_at"
+          ]
+        },
+        {
+          "label": "revocation refresh token and credentials",
+          "patterns": [
+            "token_revoke",
+            "refresh_token",
+            "client(?:_|\\s+)credentials"
+          ]
+        }
+      ],
+      "required_symbols": [
+        "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+        "TaxPreparation::TaxAutomations::BaseClient#measured",
+        "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection"
+      ],
+      "known_ready_relevant_symbols": [
+        "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+        "TaxPreparation::TaxAutomations::BaseClient#measured",
+        "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection"
+      ],
+      "diagnostic_ready_attempt_symbols": [
+        "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP",
+        "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+        "TaxPreparation::TaxAutomations::BaseClient#request",
+        "TaxPreparation::TaxAutomations::BaseClient#perform",
+        "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling",
+        "TaxPreparation::TaxAutomations::BaseClient#measured",
+        "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+        "TaxPreparation::TaxAutomations::BaseClient#rate_limit_group_of",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#token_response",
+        "TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection"
+      ]
+    },
+    "W35-body-and-absence": {
+      "independent_one_wave": true,
+      "scoped_search": {
+        "path": "app/services/crm/api/contact.rb",
+        "patterns": [
+          "uid",
+          "uuid"
+        ],
+        "absence": true
+      },
+      "source_paths": [
+        "app/services/crm/api/contact.rb"
+      ],
+      "facts": [
+        {
+          "label": "name split exists on single lookup and lists",
+          "patterns": [
+            "find",
+            "list_by_ids",
+            "list_active",
+            "first_name",
+            "last_name",
+            "find_by_account_user"
+          ]
+        },
+        {
+          "label": "synced APIs return contact/client/email triples",
+          "patterns": [
+            "list_synced",
+            "list_synced_with_client",
+            "contact_id",
+            "client_id",
+            "email"
+          ]
+        },
+        {
+          "label": "absence scope explicit",
+          "patterns": [
+            "uid",
+            "uuid",
+            "no |not |absen|нет|не "
+          ]
+        }
+      ],
+      "required_symbols": [
+        "Crm::Api::Contact#list_by_ids",
+        "Crm::Api::Contact#list_active",
+        "Crm::Api::Contact#list_synced",
+        "Crm::Api::Contact#list_synced_with_client",
+        "Crm::Api::Contact#find_by_account_user"
+      ]
+    },
+    "C-dependent-new-locators": {
+      "source_paths": [
+        "app/lib/vendor/refresh_policy.rb"
+      ],
+      "facts": [
+        {
+          "label": "retry statuses exact",
+          "patterns": [
+            "429",
+            "503"
+          ]
+        }
+      ],
+      "discovery_before_body": "Vendor::RefreshPolicy#retryable?",
+      "required_symbols": [
+        "Vendor::RefreshPolicy#retryable?"
+      ]
+    },
+    "C-partial-not-body": {
+      "independent_one_wave": true,
+      "facts": [
+        {
+          "label": "upload 60 ordinary 30",
+          "patterns": [
+            "upload",
+            "60",
+            "30"
+          ]
+        }
+      ],
+      "required_symbols": [
+        "Vendor::RequestBudget#timeout_seconds"
+      ]
+    },
+    "P-single-exact-suggestion": {
+      "direct_suggestion": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+      "source_paths": [
+        "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb"
+      ],
+      "facts": [
+        {
+          "label": "inheritance and operation",
+          "patterns": [
+            "ExportOperationWorker",
+            "TransferBytesToPresignedTarget"
+          ]
+        }
+      ],
+      "required_symbols": []
+    },
+    "C-ambiguous-suggestions": {
+      "ambiguous_directory": "app/workers/vendor",
+      "source_paths": [
+        "app/workers/vendor/inbound/transfer_worker.rb",
+        "app/workers/vendor/outbound/transfer_worker.rb"
+      ],
+      "facts": [
+        {
+          "label": "inbound base and download",
+          "patterns": [
+            "Inbound::ApplicationWorker",
+            "Inbound::Download"
+          ]
+        },
+        {
+          "label": "outbound base and upload",
+          "patterns": [
+            "Outbound::ApplicationWorker",
+            "Outbound::Upload"
+          ]
+        }
+      ],
+      "required_symbols": []
+    },
+    "C-batch-limit": {
+      "independent_one_wave": true,
+      "policy_pairs": true,
+      "facts": [],
+      "required_symbols": [
+        "Vendor::Policies::Policy01#timeout_seconds",
+        "Vendor::Policies::Policy02#timeout_seconds",
+        "Vendor::Policies::Policy03#timeout_seconds",
+        "Vendor::Policies::Policy04#timeout_seconds",
+        "Vendor::Policies::Policy05#timeout_seconds",
+        "Vendor::Policies::Policy06#timeout_seconds",
+        "Vendor::Policies::Policy07#timeout_seconds",
+        "Vendor::Policies::Policy08#timeout_seconds",
+        "Vendor::Policies::Policy09#timeout_seconds",
+        "Vendor::Policies::Policy10#timeout_seconds",
+        "Vendor::Policies::Policy11#timeout_seconds",
+        "Vendor::Policies::Policy12#timeout_seconds",
+        "Vendor::Policies::Policy13#timeout_seconds",
+        "Vendor::Policies::Policy14#timeout_seconds",
+        "Vendor::Policies::Policy15#timeout_seconds",
+        "Vendor::Policies::Policy16#timeout_seconds",
+        "Vendor::Policies::Policy17#timeout_seconds",
+        "Vendor::Policies::Policy18#timeout_seconds",
+        "Vendor::Policies::Policy19#timeout_seconds",
+        "Vendor::Policies::Policy20#timeout_seconds",
+        "Vendor::Policies::Policy21#timeout_seconds"
+      ]
+    }
+  },
+  "grading_revision": "5: separate user-objective native response-depth/factual review gate, recorded before candidate-v3 actor launch; strict ALL-ready/11-body diagnostics retained OPEN.",
+  "limitations": [
+    "Known optional W21 rate_limit_group_of and RateLimitedError#retry_after have no backend body; retain observed misses. Strict readiness uses 11 needed delivered bodies; separate diagnostic tracks18 observed request identities without requiring all18.",
+    "W02 ENTITY_SCOPED declaration shares ROUTES source; no separate body required.",
+    "Do not attribute all model responses to plugin policy: fixture misses and mandatory setup remain explicit."
+  ],
+  "objective_response_depth_gate": {
+    "recorded_before_actor_launch": true,
+    "recorded_unix_ns": 1793409853464619000,
+    "justification": "User target is native model responses, not nested calls. A ready read may share an unavoidable newly dependent wave without adding a model response; delivered facts can make further helper reads unnecessary.",
+    "semantic_review_authoritative": true,
+    "strict_all_ready_diagnostics_policy": "Retain original strict mechanical failures OPEN; objective gate is separate and never overwrites or converts them to PASS.",
+    "limits": {
+      "W02-independent-body-and-refs": 4,
+      "W21-known-method-batch": 3,
+      "W35-body-and-absence": 3,
+      "C-dependent-new-locators": 4,
+      "C-batch-limit": 3,
+      "C-partial-not-body": 3
+    },
+    "factual_automated_checks": [
+      "answer_fact_signals",
+      "scoped_literal_search",
+      "absence_verified_zero_matches",
+      "required_discovered_source_read",
+      "new_locator_observed_before_body",
+      "symbols_batch_max20",
+      "all_21_value_source_pairs"
+    ],
+    "human_review_requirements": [
+      "Each requested subquestion answered accurately from retained or delivered source.",
+      "Preserve source identity; no unsupported absence or inferred implementation claims.",
+      "Metadata/header does not prove method behavior.",
+      "W21 token_connection body unnecessary unless final answer claims connection internals; missing body remains explicit in strict diagnostics."
+    ]
+  }
+}

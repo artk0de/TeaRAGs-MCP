@@ -174,27 +174,42 @@ caller, trigger or flow/impact fact. Outlines, blocked reads and metadata do not
 prove an unseen body. When a caller names a qualified member, request that
 member directly, using its held id or qualified lookup. Inventory the owner only
 after a missing/ambiguous lookup; do not guess an ambiguous receiver. Stop when
-all requested facts are supported. For config filenames/policy names from a
+all requested facts are supported. Codex unknownPath exception: if exactly one
+suggested file has the requested basename, read that relativePath directly. With
+ambiguous suggestions, inventory their common directory first. This replaces the
+unconditional directory fallback. For config filenames/policy names from a
 manifest, resolve paths with one scoped filename inventory
 (`rg --files <known config dir>`), then read the selected files. Searching a
 filename in file contents does not locate that file.
 
-**Tool execution and waiting.** Collect the already-known missing reads into one
-executor wave: `find_symbol(symbols:[…])` for methods/files; config/spec reads
-are bounded per-file calls. Directories use separate
+**Tool execution and waiting.** Before the first evidence call, silently map
+EACH requested subquestion to held facts and missing bodies. From retained
+outlines, select only the known entrypoints, selectors/constants and helpers
+needed to prove each subquestion. A helper is not required when held/delivered
+code already proves the requested fact. Schedule ready missing bodies AND
+independent scoped reference/absence searches, including known targets in
+outlines or nextCall hints. Merge them into this executor wave or an
+already-unavoidable dependent wave; never create an additional model response
+just to read another ready group. Earlier fetching is not better when it adds
+context without saving a response. Use `find_symbol(symbols:[…])` for
+methods/files (at most 20 targets per call; split larger sets into concurrent
+calls); config/spec reads are bounded per-file calls. Directories use separate
 `find_symbol(relativePath:)` calls, never `symbols`. Dispatch independent calls
 together (`Promise.allSettled` / `Promise.all` in code mode); await
-prerequisites before dependent calls. Parallelism never justifies extra context
-reads or competing edits. Keep each result (or error) labelled by its input
-path/id; emit the labelled results after awaiting the batch, never anonymous
-output in completion order. Inspect all settled outcomes and cover every
-requested item. A returned result is ready. A running executor with a
-cell/session id needs its matching native `wait` / `write_stdin`, reusing that
-id; do not restart the work. For subagents use the harness's agent-wait or
-completion notification. For user input ask the question, then yield control
-until the reply; clarification is allowed. Continue independent work when
-useful. Never use `sleep`, shell/Python/JS timer delays or busy polling to await
-tools, agents or users.
+prerequisites before dependent calls. Different tool kinds do not create a
+dependency. Another wave needs a newly discovered locator, ambiguity,
+prerequisite or actual output-budget constraint; merge pending independent work
+before following a continuation. Read only evidence for the current request, not
+future questions. Parallelism never justifies extra context reads or competing
+edits. Keep each result (or error) labelled by its input path/id; emit the
+labelled results after awaiting the batch, never anonymous output in completion
+order. Inspect all settled outcomes and cover every requested item. A returned
+result is ready. A running executor with a cell/session id needs its matching
+native `wait` / `write_stdin`, reusing that id; do not restart the work. For
+subagents use the harness's agent-wait or completion notification. For user
+input ask the question, then yield control until the reply; clarification is
+allowed. Continue independent work when useful. Never use `sleep`,
+shell/Python/JS timer delays or busy polling to await tools, agents or users.
 
 **Skills are not loaded for you** — except this core: `$tea-rags-core` IS this
 text, never open its `SKILL.md`. A task a skill covers (`$name` /

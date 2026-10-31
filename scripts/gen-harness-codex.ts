@@ -94,15 +94,31 @@ fact. Outlines, blocked reads and metadata do not prove an unseen body.
 When a caller names a qualified member, request that member directly, using its
 held id or qualified lookup. Inventory the owner only after a missing/ambiguous
 lookup; do not guess an ambiguous receiver. Stop when all requested facts are supported.
+Codex unknownPath exception: if exactly one suggested file has the requested
+basename, read that relativePath directly. With ambiguous suggestions, inventory
+their common directory first. This replaces the unconditional directory fallback.
 For config filenames/policy names from a manifest, resolve paths with one scoped
 filename inventory (\`rg --files <known config dir>\`), then read the selected files.
 Searching a filename in file contents does not locate that file.
 
-**Tool execution and waiting.** Collect the already-known missing reads into one
-executor wave: \`find_symbol(symbols:[…])\` for methods/files; config/spec reads
-are bounded per-file calls. Directories use separate \`find_symbol(relativePath:)\`
+**Tool execution and waiting.** Before the first evidence call, silently map EACH
+requested subquestion to held facts and missing bodies. From retained outlines,
+select only the known entrypoints, selectors/constants and helpers needed to prove
+each subquestion. A helper is not required when held/delivered code already proves
+the requested fact. Schedule ready missing bodies AND independent scoped
+reference/absence searches, including known targets in outlines or nextCall hints.
+Merge them into this executor wave or an already-unavoidable dependent wave;
+never create an additional model response just to read another ready group.
+Earlier fetching is not better when it adds context without saving a response.
+Use \`find_symbol(symbols:[…])\` for methods/files (at most 20 targets per call;
+split larger sets into concurrent calls); config/spec reads are bounded per-file
+calls. Directories use separate \`find_symbol(relativePath:)\`
 calls, never \`symbols\`. Dispatch independent calls together (\`Promise.allSettled\`
 / \`Promise.all\` in code mode); await prerequisites before dependent calls.
+Different tool kinds do not create a dependency. Another wave needs a newly
+discovered locator, ambiguity, prerequisite or actual output-budget constraint;
+merge pending independent work before following a continuation.
+Read only evidence for the current request, not future questions.
 Parallelism never justifies extra context reads or competing edits.
 Keep each result (or error) labelled by its input path/id; emit the labelled results
 after awaiting the batch, never anonymous output in completion order. Inspect all
@@ -826,7 +842,12 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
     files.set(`${PLUGIN_NAME}/scripts/${script}`, readFileSync(join(pluginRoot, "scripts", script), "utf8"));
   }
   const turnRouting = extractInjectionBlock(readFileSync(join(pluginRoot, TURN_ROUTING_SOURCE), "utf8"));
-  files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${toHarnessText(turnRouting, CODEX_DIALECT, skillNames)}\n`);
+  const codexRouting = toHarnessText(turnRouting, CODEX_DIALECT, skillNames)
+    .replace("- behaviour/concept words → semantic_search", "- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search")
+    .replace("- how it works / impact → get_callees / get_callers", "- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections")
+    .replace("- ids or files needed at once: ONE find_symbol(symbols:[…])", "- Before the first evidence call, silently map EACH requested subquestion to held facts or missing bodies; choose only source needed to prove it. Merge ready IDs + independent scoped reference/absence searches + ready nextCall targets into this wave or an already-unavoidable dependent wave. Never add a model response for another ready group. Do not read a helper whose requested facts are already proved. Different tools are not dependencies. find_symbol(symbols:[…]): max 20 targets per symbols call; split larger sets into concurrent calls. Keep per-input labels and inspect all results. Next wave only for new locators, ambiguity, prerequisites or output budget; no future-question prefetch.")
+    + "\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.";
+  files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${codexRouting}\n`);
   files.set(`${PLUGIN_NAME}/scripts/session-start.sh`, proseHookScript("core.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-codex-rules.sh`, proseHookScript("codex-rules.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-digest.sh`, SESSION_DIGEST_SCRIPT);

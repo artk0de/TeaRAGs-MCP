@@ -1,0 +1,58 @@
+{
+  "version": 3,
+  "date": "2026-10-31",
+  "previous_cases_sha256": "4a492f7046f5388db674111d813721adec4623bcc3eab6bfe7f52a9e0324e960",
+  "cases_sha256": "5bba927dd5d849995ce60e1e353331d7f5a6c641e6c0b8d87f6d5e71f01b0bac",
+  "previous_cases_preserved_at": [
+    ".tmp/optimal-wave-evals/control-v3/cases-source.json",
+    ".tmp/optimal-wave-evals/candidate-v1/cases-source.json"
+  ],
+  "previous_provenance": "fixture-provenance-v2.json",
+  "purpose": "Repair three exact real Router handlers requested by candidate-v1; not plugin policy change or actor rerun.",
+  "models_run": 0,
+  "live_queries": 0,
+  "actor_prompts_and_retained_context_changed": false,
+  "raw_frozen_runs_changed": false,
+  "added_body_provenance": [
+    {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#token",
+      "source_path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "source_sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "raw_chunk_id": "892d4b3e-d319-ae68-43f6-b558ceed482d",
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 81,
+      "endLine": 98,
+      "content_sha256": "21dcd00b217eb7658f214d68402bbbc8f3a785539290b7b723bd222e044da284"
+    },
+    {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#create_entity",
+      "source_path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "source_sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "raw_chunk_id": "79187622-c4b9-67b1-834d-ed03763e9899",
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 114,
+      "endLine": 116,
+      "content_sha256": "dbfcef29240538b9fc6815b247faae26033890112d78681f4d24a2c9e82f4ff6"
+    },
+    {
+      "symbolId": "TaxPreparation::TaxAutomations::Instead::Mock::Router#start_doc_upload",
+      "source_path": ".tmp/gruntworx_codex_steps_AB_2026-10-31/runs/A/Q02-events.json",
+      "source_sha256": "80a0afc5fa9713194486ca5ecdc04b6f3e1fe33b31153085c1ad2e09f066175a",
+      "event_index": 175,
+      "output_index": 2,
+      "raw_chunk_id": "2a027489-05e4-01b2-c918-b4276c63cdb7",
+      "relativePath": "app/lib/tax_preparation/tax_automations/instead/mock/router.rb",
+      "startLine": 118,
+      "endLine": 125,
+      "content_sha256": "3d9f8dfe5921472849e3972236e6854103bb0b86a619e8fa618e953e277c76ba"
+    }
+  ],
+  "limitations": [
+    "Other advertised Router handlers/constants are served only if their source exists in compact fixture; shared declaration content already includes ENTITY_SCOPED.",
+    "No performance attribution or pass is inferred by repairing this backend omission."
+  ]
+}
