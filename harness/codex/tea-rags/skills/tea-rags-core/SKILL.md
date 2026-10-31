@@ -39,9 +39,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   → that search over `db/schema.rb`, then `db/migrate/` (`:<table>`, `"<table>"`
   before "absent"), never `semantic_search`. Other file/dir path, lines N–M, doc
   TOC, how `<dir>` works / what's in it → `find_symbol(relativePath:)` outline
-  first, then ONE batch of needed ids (N–M: spanning ids); known method id →
-  body, no outline. Imports → `get_callees(relativePath:)` (`imports[]`; a row's
-  `imports` = a count)
+  first, then ONE batch of needed ids (N–M: ids whose `L<a>-<b>` covers N–M,
+  never Read offset/limit); known method id → body, no outline. Imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count)
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`

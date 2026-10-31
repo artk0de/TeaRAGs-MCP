@@ -429,9 +429,11 @@ export const CODEX_HOOK_CONTEXT_BUDGET = 9_500;
 /**
  * Cap on one PROSE hook's payload (core, and the Codex-only rules hook), in chars — prose, not the digest's token-dense tables. A
  * 2026-10-27 probe (one SessionStart hook of ~58-char prose lines, 2 runs per size) delivered 9,686
- * chars whole and cut 10,150 (`…80 tokens truncated…`); 9,650 stays under the measured whole size.
+ * chars whole and cut 10,150 (`…80 tokens truncated…`); the cap is that measured whole size. Raised
+ * from 9,650 for the core "lines N–M → ids whose `L<a>-<b>` covers N–M" rule (bd tea-rags-mcp-9f0yn.7),
+ * owner rule: a needed rule raises the cap rather than trimming rules.
  */
-export const CODEX_CORE_HOOK_BUDGET = 9_650;
+export const CODEX_CORE_HOOK_BUDGET = 9_686;
 
 /**
  * Fits the prime digest into {@link CODEX_HOOK_CONTEXT_BUDGET} minus the chars already used: sections in
@@ -635,7 +637,10 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
   are neutral; reset by PostToolUse (\`${TEA_RAGS_MCP_TOOL_MATCHER}\`). Reads are never denied (bd
   tea-rags-mcp-nxg76); then \`node \${PLUGIN_ROOT}/scripts/reread-ledger.mjs --harness codex\` — read steering as
   \`hookSpecificOutput.additionalContext\`: a shell read of indexed source gets one \`find_symbol(relativePath:)\`
-  nudge per file per turn, a re-read of lines already returned one note; it records on PostToolUse (shell and
+  nudge per file per turn (a slice under 80% of the file names the outline ids whose \`L<a>-<b>\` covers it as a
+  literal \`find_symbol(symbols:[…])\`), a re-read of lines already returned one note; the grep-hit note Claude Code
+  and Cursor get after a numbered grep stays off here (no PostToolUse context channel established for Codex); it
+  records on PostToolUse (shell and
   \`${TEA_RAGS_MCP_TOOL_MATCHER}\`), turns on UserPromptSubmit, drops its ledger on SessionStart compact / clear.
   UserPromptSubmit \`\${PLUGIN_ROOT}/scripts/turn-routing.sh --harness codex\` — the routing lines of
   \`scripts/turn-routing.txt\` as \`hookSpecificOutput.additionalContext\` every user turn.
@@ -842,11 +847,19 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
     files.set(`${PLUGIN_NAME}/scripts/${script}`, readFileSync(join(pluginRoot, "scripts", script), "utf8"));
   }
   const turnRouting = extractInjectionBlock(readFileSync(join(pluginRoot, TURN_ROUTING_SOURCE), "utf8"));
-  const codexRouting = toHarnessText(turnRouting, CODEX_DIALECT, skillNames)
-    .replace("- behaviour/concept words → semantic_search", "- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search")
-    .replace("- how it works / impact → get_callees / get_callers", "- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections")
-    .replace("- ids or files needed at once: ONE find_symbol(symbols:[…])", "- Before the first evidence call, silently map EACH requested subquestion to held facts or missing bodies; choose only source needed to prove it. Merge ready IDs + independent scoped reference/absence searches + ready nextCall targets into this wave or an already-unavoidable dependent wave. Never add a model response for another ready group. Do not read a helper whose requested facts are already proved. Different tools are not dependencies. find_symbol(symbols:[…]): max 20 targets per symbols call; split larger sets into concurrent calls. Keep per-input labels and inspect all results. Next wave only for new locators, ambiguity, prerequisites or output budget; no future-question prefetch.")
-    + "\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.";
+  const codexRouting = `${toHarnessText(turnRouting, CODEX_DIALECT, skillNames)
+    .replace(
+      "- behaviour/concept words → semantic_search",
+      "- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search",
+    )
+    .replace(
+      "- how it works / impact → get_callees / get_callers",
+      "- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections",
+    )
+    .replace(
+      "- ids or files needed at once: ONE find_symbol(symbols:[…])",
+      "- Before the first evidence call, silently map EACH requested subquestion to held facts or missing bodies; choose only source needed to prove it. Merge ready IDs + independent scoped reference/absence searches + ready nextCall targets into this wave or an already-unavoidable dependent wave. Never add a model response for another ready group. Do not read a helper whose requested facts are already proved. Different tools are not dependencies. find_symbol(symbols:[…]): max 20 targets per symbols call; split larger sets into concurrent calls. Keep per-input labels and inspect all results. Next wave only for new locators, ambiguity, prerequisites or output budget; no future-question prefetch.",
+    )}\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.`;
   files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${codexRouting}\n`);
   files.set(`${PLUGIN_NAME}/scripts/session-start.sh`, proseHookScript("core.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-codex-rules.sh`, proseHookScript("codex-rules.txt"));

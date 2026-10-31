@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.53.10",
+  "version": "0.54.0",
   "author": {
     "name": "artk0de"
   },
@@ -71,7 +71,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
-            "timeout": 3
+            "timeout": 8
           }
         ]
       }
@@ -98,12 +98,12 @@
         ]
       },
       {
-        "matcher": "^(Read|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*tea-rags.*__",
+        "matcher": "^(Read|Grep|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*tea-rags.*__",
         "hooks": [
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
-            "timeout": 3
+            "timeout": 8
           }
         ]
       }
