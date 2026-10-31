@@ -23,6 +23,8 @@ For config filenames/policy names from a manifest, resolve paths with one scoped
 filename inventory (`rg --files <known config dir>`), then read the selected files.
 Searching a filename in file contents does not locate that file.
 
+A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name.
+
 **Tool execution and waiting.** Before the first evidence call, silently map EACH
 requested subquestion to held facts and missing bodies. From retained outlines,
 select only the known entrypoints, selectors/constants and helpers needed to prove

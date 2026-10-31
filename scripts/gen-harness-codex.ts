@@ -68,6 +68,8 @@ const CODEX_DIALECT: HarnessDialect = {
   codeReadTool: "shell sed -n '<start>,<end>p' <one file>",
 };
 
+const CODEX_ROUTE_SCOPE = "A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name.";
+
 /**
  * Codex lists skills by description only — the body never enters context until
  * the model opens the file, unlike Claude Code's Skill tool. Measured: plans
@@ -100,6 +102,8 @@ their common directory first. This replaces the unconditional directory fallback
 For config filenames/policy names from a manifest, resolve paths with one scoped
 filename inventory (\`rg --files <known config dir>\`), then read the selected files.
 Searching a filename in file contents does not locate that file.
+
+${CODEX_ROUTE_SCOPE}
 
 **Tool execution and waiting.** Before the first evidence call, silently map EACH
 requested subquestion to held facts and missing bodies. From retained outlines,
@@ -863,7 +867,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
       "- ids or files needed at once: ONE find_symbol(symbols:[…])",
       "- Before the first evidence call, silently map EACH requested subquestion to held facts or missing bodies; choose only source needed to prove it. Merge ready IDs + independent scoped reference/absence searches + ready nextCall targets into this wave or an already-unavoidable dependent wave. Never add a model response for another ready group. Do not read a helper whose requested facts are already proved. Different tools are not dependencies. find_symbol(symbols:[…]): max 20 targets per symbols call; split larger sets into concurrent calls. Keep per-input labels and inspect all results. Next wave only for new locators, ambiguity, prerequisites or output budget; no future-question prefetch.",
     )}\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.`;
-  files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${codexRouting}\n`);
+  files.set(`${PLUGIN_NAME}/scripts/turn-routing.txt`, `${codexRouting}\n- ${CODEX_ROUTE_SCOPE}\n`);
   files.set(`${PLUGIN_NAME}/scripts/session-start.sh`, proseHookScript("core.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-codex-rules.sh`, proseHookScript("codex-rules.txt"));
   files.set(`${PLUGIN_NAME}/scripts/session-digest.sh`, SESSION_DIGEST_SCRIPT);

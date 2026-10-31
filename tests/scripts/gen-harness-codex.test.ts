@@ -293,6 +293,8 @@ describe("renderCodexHarness", () => {
       expect(context).toContain("independent scoped reference/absence searches");
       expect(context).toContain("20 targets per symbols call");
       expect(context).toContain("ambiguous suggestions");
+      expect(context).toContain("enclosing namespaces");
+      expect(context).toContain("bounded file header");
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
     }

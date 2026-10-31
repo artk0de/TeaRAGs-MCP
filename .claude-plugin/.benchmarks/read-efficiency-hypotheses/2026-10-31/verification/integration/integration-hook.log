@@ -1,0 +1,159 @@
+ok   - PostToolUse records silently
+ok   - whole-file Read again → note naming range, file and source
+ok   - a sub-range of a served range → note with the requested lines
+ok   - another session has its own ledger
+ok   - a subagent has its own ledger (it never saw the parent's reads)
+ok   - 10 of 30 lines served → no note (< 80%)
+ok   - union of two reads covers 25 of 30 lines → note (≥ 80%)
+ok   - sed -n A,Bp recorded → Read of the same lines noted
+ok   - absolute path, unquoted script → same file
+ok   - cd + cat piped through a blank-line filter is a whole-file read
+ok   - cat piped into a pattern grep is a search, not a read
+ok   - head -n 25 then cat → 25 of 30 covered → note
+ok   - single-file grep -n context lines are recorded from its output
+ok   - path:N: hits of a recursive grep are recorded per file
+ok   - bare N: lines with two numbered greps in one command are never attributed
+ok   - find_symbol body recorded → raw Read of its lines noted
+ok   - find_symbol of a symbol already served → note
+ok   - columnar search rows with content are recorded
+ok   - metaOnly rows (no content) print no lines → nothing recorded
+ok   - an outline (content far shorter than its range) prints no lines → nothing recorded
+ok   - Edit drops the file's entries
+ok   - Bash sed -i drops the file's entries
+ok   - Bash redirect into the file drops its entries
+ok   - a file changed on disk (size / mtime) is never noted
+ok   - UserPromptSubmit answers nothing
+ok   - the note names the turn the lines were returned in
+ok   - compaction drops the session ledger (the lines left the context)
+ok   - a later grep inside a Read range keeps the range labelled Read
+ok   - whole-file Read, then find_symbol bodies → sed of the head is noted as Read
+ok   - tool_response.file startLine/numLines give the printed range
+ok   - lines past the printed range are not noted
+ok   - a Read covering an earlier grep line relabels it Read
+ok   - Read without successful delivered content establishes no coverage: null
+ok   - Read without successful delivered content establishes no coverage: {}
+ok   - Read without successful delivered content establishes no coverage: {"isError":true}
+ok   - Read without successful delivered content establishes no coverage: {"error":"Read blocked"}
+ok   - Read without successful delivered content establishes no coverage: {"file":{"startLine":1,"numLines":30}}
+ok   - partial Read records its delivered line
+ok   - partial Read never claims the requested but undelivered tail
+ok   - an error response with plausible Read metadata still establishes no coverage
+ok   - shell request without source output establishes no coverage: null
+ok   - shell request without source output establishes no coverage: {"stdout":""}
+ok   - shell request without source output establishes no coverage: {"stdout":"command blocked by policy"}
+ok   - shell request without source output establishes no coverage: {"stdout":"","exit_code":1}
+ok   - a failed shell command cannot establish coverage even with plausible stdout
+ok   - partial shell output records its delivered source line
+ok   - partial shell output never claims the unprinted tail
+ok   - an outer MCP error envelope establishes no coverage
+ok   - an explicit outline is not a body even when its line count fits the span
+ok   - containerHeader records only the actual delivered header source
+ok   - containerHeader outline never establishes coverage for a method body
+ok   - containerHeader never marks the complete class symbol as already served
+ok   - numbered grep coordinates without matching source text establish no coverage
+ok   - structuredContent proves delivered source beside a non-JSON banner
+ok   - short containerHeader preserves its actual header data
+ok   - a short containerHeader outline is not a method body even when line counts fit
+ok   - a short header never establishes complete class coverage
+ok   - header span disambiguates a repeated end line
+ok   - a header end cannot be attributed to a method end with the same source text
+ok   - Read of an indexed source file → one nudge line, never a decision
+ok   - the nudge fires once per file per turn
+ok   - next turn, a Bash sed of the same file → nudged again
+ok   - Bash cat of an indexed source file → nudge
+ok   - a grep is a search, not a read → no nudge
+ok   - config/ (zone the core routes to the read tool) → no nudge
+ok   - a migration → no nudge
+ok   - a spec → no nudge
+ok   - a data file → no nudge
+ok   - a file outside the index → no nudge
+ok   - TEA_RAGS_BIN names no binary → no nudge, fail open
+ok   - lines already held → the re-read note
+ok   - … and no nudge beside it
+ok   - the index lookup runs once per file per turn (cached)
+ok   - drift-first: a read streak is never denied, search-drift says nothing, the ledger nudges read 3 and every turn (denies=0 drift=0 nudges=6)
+ok   - ledger-first: a read streak is never denied, search-drift says nothing, the ledger nudges read 3 and every turn (denies=0 drift=0 nudges=6)
+ok   - drift-first: search-drift search deny and the nudge never on the same call (denies=1 nudges=1 overlap=0)
+ok   - ledger-first: search-drift search deny and the nudge never on the same call (denies=1 nudges=2 overlap=0)
+ok   - a zone word in the cwd (…/test/repo) does not exempt a source read from the nudge
+ok   - a session's state stays small
+ok   - a file keeps at most 16 ranges (adjacent ones merge)
+ok   - unparsable input fails open
+ok   - no session id fails open
+ok   - a missing file is never noted
+ok   - codex: ships the plugin's reread-ledger.mjs byte-identical
+ok   - codex: the prompt event advances the turn, answers in the codex shape
+ok   - codex: shell read of indexed source → find_symbol(relativePath:) nudge, non-blocking
+ok   - codex: the result is recorded silently
+ok   - codex: a re-read a turn later → the re-read note
+ok   - codex: … and no nudge beside it
+ok   - codex: missing shell output never establishes coverage
+ok   - codex: the ledger is keyed reread-codex-<session id>
+ok   - codex: a read streak never yields a deny, the nudge fires every turn (nudges=4)
+ok   - codex: a non-read shell command → no note
+ok   - codex: unparsable input fails open
+ok   - cursor: ships the plugin's reread-ledger.mjs byte-identical
+ok   - cursor: the prompt event advances the turn, answers in the cursor shape
+ok   - cursor: shell read of indexed source → find_symbol(relativePath:) nudge, non-blocking
+ok   - cursor: the result is recorded silently
+ok   - cursor: a re-read a turn later → the re-read note
+ok   - cursor: … and no nudge beside it
+ok   - cursor: missing shell output never establishes coverage
+ok   - cursor: the ledger is keyed reread-cursor-<session id>
+ok   - cursor: a read streak never yields a deny, the nudge fires every turn (nudges=4)
+ok   - cursor: a non-read shell command → no note
+ok   - cursor: unparsable input fails open
+ok   - codex: workdir relative to cwd locates the read file
+ok   - cursor: Read of indexed source → nudge as additional_context
+ok   - cursor: a Read result is never recorded (no range in the hook input)
+ok   - cursor: afterMCPExecution records silently
+ok   - cursor: a tea-rags body recorded at afterMCPExecution → raw sed of its lines noted
+ok   - codex: a code-mode tea-rags body is recorded → raw sed of its lines noted
+ok   - Read offset/limit inside one method → its id as a literal find_symbol(symbols:[…]), never a decision
+ok   - … instead of the generic nudge
+ok   - … the visibility suffix is not part of the id
+ok   - sed -n spanning two methods → both covering leaf ids, never the container
+ok   - the outline is fetched once per session (cached)
+ok   - a header-only range → find_symbol(symbol:"<Class>")
+ok   - lines no outline entry covers → the generic nudge, no ids
+ok   - … and never an id for them
+ok   - a read of ≥ 80% of the file → the generic nudge
+ok   - … without an outline call
+ok   - an outline without line ranges → the generic nudge (fail open)
+ok   - an unparsable outline answer → the generic nudge (fail open)
+ok   - PostToolUse Grep content hits → the enclosing ids as one literal find_symbol(symbols:[…]), hookEventName PostToolUse
+ok   - … from ONE batched outline call for both files
+ok   - PostToolUse Bash grep -n on one file → the enclosing id
+ok   - hits in a test / zone file → no note
+ok   - Grep files_with_matches → no note
+ok   - a hit on a line no outline entry covers → no note
+ok   - a hit line that is not the file's content → no note
+ok   - grep without -n (no line numbers) → no note
+ok   - codex: shell range read → covering ids as a PreToolUse note
+ok   - codex: grep hits → no PostToolUse note (channel unproven)
+ok   - cursor: shell range read → covering ids as additional_context
+ok   - cursor: postToolUse grep hits → the enclosing ids as additional_context
+ok   - codex: cmd spelling records delivered shell ranges and notes the same range
+ok   - codex: cmd spelling leaves the undelivered shell tail unread
+ok   - codex: native raw stdout records silently at PostToolUse
+ok   - codex: native raw stdout records the delivered shell range
+ok   - codex: raw stdout never records the undelivered tail
+ok   - codex: blocked or missing shell response stays silent: null
+ok   - codex: blocked or missing shell response creates no coverage: null
+ok   - codex: blocked or missing shell response stays silent: {"isError":true}
+ok   - codex: blocked or missing shell response creates no coverage: {"isError":true}
+ok   - codex: blocked or missing shell response stays silent: {"error":"blocked"}
+ok   - codex: blocked or missing shell response creates no coverage: {"error":"blocked"}
+ok   - codex: raw stdout without matching source creates no coverage
+ok   - codex: compaction invalidates native string delivery coverage
+ok   - claude: raw stdout PostToolUse contract stays quiet
+ok   - claude: Codex raw stdout normalization does not change coverage
+ok   - codex: changed files invalidate native string delivery coverage
+ok   - codex: PreToolUse(shell) wires the ledger
+ok   - codex: PostToolUse(shell, tea-rags MCP) wires the ledger
+ok   - codex: UserPromptSubmit + SessionStart wire the ledger
+ok   - cursor: preToolUse(Shell|Read) wires the ledger
+ok   - cursor: postToolUse + afterMCPExecution + beforeSubmitPrompt wire the ledger
+ok   - claude: PostToolUse(Grep|Bash) wires the ledger
+ok   - claude: the ledger's Pre/PostToolUse timeout is 8 s
+passed=158 failed=0

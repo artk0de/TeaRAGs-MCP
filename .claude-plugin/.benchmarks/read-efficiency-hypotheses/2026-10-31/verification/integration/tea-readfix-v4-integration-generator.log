@@ -1,0 +1,14 @@
+
+ RUN  v5.0.3 /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4
+
+ ✓ |isolated| tests/scripts/gen-harness-codex.test.ts (60 tests | 57 skipped) 4665ms
+   ✓ renderCodexHarness (31)
+     ✓ ships direct content routing for known configuration files through the executable SessionStart hook 2187ms
+     ✓ keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last 1495ms
+     ✓ keeps every hook text payload within Codex's hook-output cap 977ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 57 skipped (60)
+   Start at  16:24:37
+   Duration  5.06s (tests 95%, transform 3%, setup 1%, import 1%)
+
