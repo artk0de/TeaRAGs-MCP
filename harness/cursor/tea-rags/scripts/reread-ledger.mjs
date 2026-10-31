@@ -1525,6 +1525,11 @@ function recordPost(ledger, tool, input, response, cwd, lineCount) {
         ? deliveredHeaderRanges(path, row)
         : deliveredRanges(path, [[row.startLine, row.endLine]], row.content);
     ledger.record(path, ranges, teaRags);
+    // A method row's inlined constant definitions (d0z7b.4) printed their lines too.
+    for (const def of Array.isArray(row.referencedDefinitions) ? row.referencedDefinitions : []) {
+      if (typeof def?.text !== "string" || !Number.isInteger(def.startLine) || !Number.isInteger(def.endLine)) continue;
+      ledger.record(path, deliveredRanges(path, [[def.startLine, def.endLine]], def.text), teaRags);
+    }
     const whole = ranges.length === 1 && ranges[0][0] === row.startLine && ranges[0][1] === row.endLine;
     if (whole && row.kind !== "containerHeader" && typeof row.symbolId === "string" && row.symbolId) {
       ledger.recordSymbol(row.symbolId, path, row.startLine, row.endLine, teaRags);

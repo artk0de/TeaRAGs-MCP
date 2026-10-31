@@ -26,6 +26,14 @@ const RankingOverlaySchema = z.object({
  * and on `fields`, and find_symbol adds synthetic ones — so no key is declared
  * and every key passes through.
  */
+/** Mirrors ReferencedDefinition (domains/explore/referenced-definitions.ts). */
+const ReferencedDefinitionSchema = z.object({
+  symbolId: z.string(),
+  startLine: z.number(),
+  endLine: z.number(),
+  text: z.string().optional(),
+});
+
 const SearchResultPayloadSchema = z
   .object({})
   .passthrough()
@@ -46,6 +54,23 @@ export const SearchResultItemSchema = z.object({
     .enum(["modified", "deleted"])
     .optional()
     .describe("Index row of a file your working tree changed or deleted; content may be stale"),
+});
+
+/**
+ * find_symbol's payload: the shared one plus `referencedDefinitions`, the key
+ * only find_symbol method rows carry (bd tea-rags-mcp-d0z7b.4) — declared on
+ * find_symbol alone, so the other search tools' tools/list stays unchanged.
+ */
+const FindSymbolPayloadSchema = SearchResultPayloadSchema.extend({
+  referencedDefinitions: z
+    .array(ReferencedDefinitionSchema)
+    .optional()
+    .describe("Method row: lines defining class constants its body names; no text = over cap, read by symbolId"),
+});
+
+/** A find_symbol result item. */
+export const FindSymbolResultItemSchema = SearchResultItemSchema.extend({
+  payload: FindSymbolPayloadSchema.optional(),
 });
 
 /** Search results as ColumnTable (columns.ts); each row is one SearchResultItemSchema record. */
@@ -230,4 +255,12 @@ export const SearchResultOutputSchema = {
     })
     .optional()
     .describe("Over the response budget: tail rows dropped whole. next = same call for the rest — run verbatim."),
+};
+
+/** find_symbol's output schema: the shared one with {@link FindSymbolResultItemSchema} records. */
+export const FindSymbolOutputSchema = {
+  ...SearchResultOutputSchema,
+  results: z
+    .union([ColumnTableSchema, z.array(FindSymbolResultItemSchema)])
+    .describe("Two or more results: the table. Zero or one: a plain list of result records."),
 };

@@ -1533,8 +1533,18 @@ function finalizeWorkingTreeMarker(view: WorkingTreeView): WorkingTreeMarker {
  * The payload a find_symbol batch row carries unless `fields` or `rerank` asks
  * for more (N1). `kind` tells a path entry's full text (`file`) from its
  * outline (q1g6s.4); symbol rows carry none, so it never shows on them.
+ * `referencedDefinitions` is a method row's inlined constant definitions
+ * (bd tea-rags-mcp-d0z7b.4), part of its body.
  */
-const BATCH_LEAN_FIELDS = ["symbolId", "relativePath", "kind", "startLine", "endLine", "content"];
+const BATCH_LEAN_FIELDS = [
+  "symbolId",
+  "relativePath",
+  "kind",
+  "startLine",
+  "endLine",
+  "content",
+  "referencedDefinitions",
+];
 
 /** A `table:<name>` / `migration:<id>` address — answered from the migration corpus, not the code index (bd tea-rags-mcp-nplgm). */
 function isMigrationCorpusAddress(symbol: string): boolean {

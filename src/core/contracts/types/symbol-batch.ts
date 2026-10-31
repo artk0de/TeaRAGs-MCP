@@ -63,3 +63,21 @@ export interface SymbolBatchMiss {
    */
   suggestions?: string[];
 }
+
+/**
+ * A find_symbol method row carries `referencedDefinitions` (bd
+ * tea-rags-mcp-d0z7b.4): the statements defining the class-level constants its
+ * body names, read from its owner's header chunks. Their text stays within this
+ * many chars per row; a definition past it is named by id and lines only.
+ * Measured on a Rails corpus (30,955 methods): 8.7% of method rows reference a
+ * same-class constant, adding p50 62 / p90 274 / p99 1,652 chars (max 51k), so
+ * 800 holds ~p95 whole and clips the tail.
+ */
+export const REFERENCED_DEFINITIONS_ROW_CHAR_CAP = 800;
+
+/**
+ * The summed `referencedDefinitions` text of one find_symbol answer (single
+ * symbol or batch), charged against {@link BATCH_FULL_TEXT_CHAR_BUDGET} as
+ * well; a definition past either is named by id and lines only.
+ */
+export const REFERENCED_DEFINITIONS_CHAR_BUDGET = 2_000;

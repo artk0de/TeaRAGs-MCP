@@ -29,7 +29,7 @@ import {
   type WorkingTreeCallAddress,
 } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
-import { SearchResultOutputSchema } from "./output-schemas.js";
+import { FindSymbolOutputSchema, SearchResultOutputSchema } from "./output-schemas.js";
 import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { createSearchSchemas } from "./schemas.js";
 
@@ -49,6 +49,8 @@ interface SearchToolDef {
    * first, whose deferred schema costs it a whole turn.
    */
   alwaysLoad?: true;
+  /** A tool-specific output schema; absent → {@link SearchResultOutputSchema}. */
+  outputSchema?: typeof FindSymbolOutputSchema;
   /** Rows the response budget guard trims (bd tea-rags-mcp-c01gm): always the `results` table. */
   responseRows: ResponseRowsPolicy;
   /**
@@ -219,6 +221,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "rerank preset attaches churn/ownership/bugFixRate labels.\n\n" +
       "Params: tea-rags://guide/overview",
     schemaKey: "FindSymbolSchema",
+    outputSchema: FindSymbolOutputSchema,
     responseRows: FIND_SYMBOL_ROWS,
     invoke: async (app, request) => app.findSymbol(request),
   },
@@ -241,7 +244,7 @@ export function registerSearchTools(
         title: tool.title,
         description: tool.description,
         inputSchema: searchSchemas[tool.schemaKey],
-        outputSchema: SearchResultOutputSchema,
+        outputSchema: tool.outputSchema ?? SearchResultOutputSchema,
         annotations: { readOnlyHint: true },
         ...(tool.alwaysLoad && { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
         responseRows: tool.responseRows,

@@ -111,8 +111,10 @@ const LOCATOR_FIELDS = ["relativePath", "symbolId", "startLine", "endLine", "chu
  * marks a find_symbol file row whose `content` is the file's full text, not
  * an outline (bd tea-rags-mcp-03yel), or a class row whose outline carries its
  * inlined header code (`CONTAINER_HEADER_KIND`); no stored chunk carries it.
+ * `referencedDefinitions` is a find_symbol method row's inlined constant
+ * definitions (bd tea-rags-mcp-d0z7b.4), part of its body.
  */
-const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols", "kind"];
+const CONTENT_FIELDS = [...LOCATOR_FIELDS, "content", "navigation", "symbols", "kind", "referencedDefinitions"];
 
 /** A metaOnly outline row: the locator plus the outline itself. */
 const OUTLINE_META_ONLY_FIELDS = [...LOCATOR_FIELDS, "content", "symbols"];
