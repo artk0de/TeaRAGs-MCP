@@ -70,9 +70,9 @@ describe("SchemaBuilder.buildFilterSchema", () => {
     expect(description).toContain("default filter");
     expect(description).toContain("{}");
     // The auto-skip rule (testFile "only" / "include" …) is reference prose —
-    // it moved to tea-rags://schema/overview (bd tea-rags-mcp-ewg2s); the
+    // it moved to tea-rags://guide/overview (bd tea-rags-mcp-ewg2s); the
     // inline hint points there.
-    expect(description).toContain("tea-rags://schema/overview");
+    expect(description).toContain("tea-rags://guide/overview");
   });
 
   it("omits the named-presets hint when no filter presets are registered", () => {

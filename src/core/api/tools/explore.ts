@@ -146,8 +146,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     description:
       "Analytical search. Return structured JSON; signals via rerank or fields. " +
       "Agentic workflows: analytics, reports, downstream processing.\n\n" +
-      "Examples: tea-rags://schema/search-guide\n" +
-      "Param docs: tea-rags://schema/overview",
+      "Examples: tea-rags://guide/search-examples\n" +
+      "Params: tea-rags://guide/overview",
     schemaKey: "SemanticSearchSchema",
     searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
@@ -160,8 +160,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     description:
       "Semantic + BM25 keyword search. Use when query has exact symbols, identifiers, " +
       "or markers (TODO, FIXME, specific names). Collection must be created enableHybrid=true.\n\n" +
-      "Examples: tea-rags://schema/search-guide\n" +
-      "Param docs: tea-rags://schema/overview",
+      "Examples: tea-rags://guide/search-examples\n" +
+      "Params: tea-rags://guide/overview",
     schemaKey: "HybridSearchSchema",
     searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
@@ -175,8 +175,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "metaOnly defaults true (unlike other search tools) — endpoint " +
       "for offline scoring (hotspot scan, ownership report, decomposition " +
       "candidates), NOT online search. Pair with pathPattern to scope domain.\n\n" +
-      "Examples: tea-rags://schema/search-guide\n" +
-      "Param docs: tea-rags://schema/overview",
+      "Examples: tea-rags://guide/search-examples\n" +
+      "Params: tea-rags://guide/overview",
     schemaKey: "RankChunksSchema",
     searchTool: true,
     responseRows: PAGED_SEARCH_ROWS,
@@ -194,7 +194,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
       'strategy="best_score" to find code maximally UNLIKE negatives — ' +
       "outlier / novelty / refactor-candidate detection.\n\n" +
-      "Param docs: tea-rags://schema/overview",
+      "Params: tea-rags://guide/overview",
     schemaKey: "FindSimilarSchema",
     searchTool: true,
     responseRows: { rows: ["results"], narrowing: SEARCH_NARROWING },
@@ -217,7 +217,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Lines N–M / a grep -n hit → the ids whose ranges cover them, one find_symbol(symbols:[…]); never Read offset/limit. " +
       "Partial names match: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
       "rerank preset attaches churn/ownership/bugFixRate labels.\n\n" +
-      "Param docs: tea-rags://schema/overview",
+      "Params: tea-rags://guide/overview",
     schemaKey: "FindSymbolSchema",
     responseRows: FIND_SYMBOL_ROWS,
     invoke: async (app, request) => app.findSymbol(request),

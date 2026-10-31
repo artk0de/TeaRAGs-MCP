@@ -34,8 +34,8 @@ export function registerSearchTools(
       description:
         "Quick semantic search for user requests. Human-readable output, code snippets + line numbers. " +
         "File-type, path-pattern, git-metadata filters.\n\n" +
-        "Examples: tea-rags://schema/search-guide\n" +
-        "Param docs: tea-rags://schema/overview",
+        "Examples: tea-rags://guide/search-examples\n" +
+        "Params: tea-rags://guide/overview",
       inputSchema: searchSchemas.SearchCodeSchema,
       annotations: { readOnlyHint: true },
     },

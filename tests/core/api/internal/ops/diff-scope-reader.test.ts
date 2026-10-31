@@ -185,6 +185,28 @@ describe("readDiffScope", { timeout: 60_000 }, () => {
     expect(read.addedRanges.get("src/git/fresh.ts")).toEqual([{ start: 1, end: 3 }]);
   });
 
+  // bd tea-rags-mcp-9f0yn.10: a build copy left untracked in the tree (`build-v1/`) was swept into a
+  // `files`-less review — 8.5M chars. Untracked paths the ingest admission rule rejects are not the change.
+  it("an untracked file outside the indexed source set is not reviewed when no `files` are listed, and a notice says so", async () => {
+    mkdirSync(join(repo, "build-v1/git"), { recursive: true });
+    writeFileSync(join(repo, "build-v1/git/file-reader.js"), "export function load() {}\n");
+    writeFileSync(join(repo, "src/git/fresh.ts"), "export class Commit {}\n");
+    const admitsUntracked = (relPath: string): boolean => !relPath.startsWith("build-v1/");
+    const read = await readDiffScope(repo, { admitsUntracked });
+    expect(read.files).toEqual([CHANGED, "src/git/fresh.ts"]);
+    expect(read.changedFiles).toBe(2);
+    expect([...read.touchedFiles]).not.toContain("build-v1/git/file-reader.js");
+    expect(read.notices.join("\n")).toMatch(/1 untracked file outside the indexed source set was not reviewed/);
+  });
+
+  it("a listed untracked file is reviewed whatever the indexed source set admits", async () => {
+    mkdirSync(join(repo, "build-v1/git"), { recursive: true });
+    writeFileSync(join(repo, "build-v1/git/file-reader.js"), "export function load() {}\n");
+    const read = await readDiffScope(repo, { files: ["build-v1/git/file-reader.js"], admitsUntracked: () => false });
+    expect(read.files).toEqual(["build-v1/git/file-reader.js"]);
+    expect(read.addedRanges.get("build-v1/git/file-reader.js")).toEqual([{ start: 1, end: 1 }]);
+  });
+
   it("`files` with no diff against the base reviews every declaration they hold, and says so", async () => {
     git(repo, "add", "-A");
     git(repo, "commit", "-q", "-m", "committed");

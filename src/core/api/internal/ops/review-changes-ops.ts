@@ -43,7 +43,7 @@ import {
   type TreeFileTextLookup,
 } from "./architecture-facts.js";
 import { readOnce } from "./architecture-report-ops.js";
-import { readDiffScope, readTreeLag } from "./diff-scope-reader.js";
+import { readDiffScope, readTreeLag, type DiffScopeRead } from "./diff-scope-reader.js";
 import type { ReviewEdgeExtractionDeps } from "./review-edge-overlay.js";
 import { hoistNotJudgedFiles } from "./review-not-judged-files.js";
 import {
@@ -145,6 +145,12 @@ export interface ReviewChangesOpsDeps {
    * Absent (unit wiring): not checked.
    */
   indexExists?: IndexExistenceCheck;
+  /**
+   * The ingest admission rule for files under a work tree (`FileScanner#accepts`)
+   * — the SAME filter the working-tree overlay measures a tree with (bd
+   * tea-rags-mcp-9f0yn.10). Absent (unit wiring) → every untracked path is reviewed.
+   */
+  createFileFilter?: (root: string) => Promise<(relativePath: string) => boolean>;
 }
 
 export class ReviewChangesOps {
@@ -187,6 +193,24 @@ export class ReviewChangesOps {
     return view ? { ...result, workingTree: (await view).marker } : result;
   }
 
+  /**
+   * The change under review. A `files`-less review admits untracked paths by
+   * the ingest rule the index was built with (bd tea-rags-mcp-9f0yn.10): a
+   * build copy left in the tree is not the change.
+   */
+  private async readReviewScope(workTree: string | undefined, req: ReviewChangesRequest): Promise<DiffScopeRead> {
+    const { createFileFilter } = this.deps;
+    const admitsUntracked =
+      createFileFilter === undefined || workTree === undefined || req.files !== undefined
+        ? undefined
+        : await createFileFilter(workTree);
+    return readDiffScope(workTree, {
+      base: req.changes?.base,
+      files: req.files,
+      ...(admitsUntracked === undefined ? {} : { admitsUntracked }),
+    });
+  }
+
   private async reviewWorkingTree(
     req: ReviewChangesRequest,
     providers: readonly (typeof REVIEW_SECTION_PROVIDERS)[number][],
@@ -204,10 +228,7 @@ export class ReviewChangesOps {
     // A reader that fails rejects `symbolRows` too — the review throws the
     // reader's failure below, so this branch must not surface unhandled.
     symbolRows?.catch(() => undefined);
-    const [readerOutcome, scopeOutcome] = await Promise.allSettled([
-      reader,
-      readDiffScope(workTree, { base: req.changes?.base, files: req.files }),
-    ]);
+    const [readerOutcome, scopeOutcome] = await Promise.allSettled([reader, this.readReviewScope(workTree, req)]);
     if (scopeOutcome.status === "rejected") {
       if (readerOutcome.status === "fulfilled") {
         await symbolRows?.catch(() => undefined);

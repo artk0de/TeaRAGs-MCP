@@ -53,6 +53,15 @@ describe("tool description diet (real tools/list, codegraph ON)", () => {
     }
   });
 
+  // bd tea-rags-mcp-9f0yn.11: `tea-rags://schema/*` is a deprecated alias (plugin-guidance-layers.md);
+  // every pointer the model reads in tools/list names the canonical guide URI.
+  it("no tool description or param hint points at the deprecated tea-rags://schema/* alias", () => {
+    const offenders = tools
+      .filter((t) => JSON.stringify([t.description, t.inputSchema]).includes("tea-rags://schema/"))
+      .map((t) => t.name);
+    expect(offenders).toEqual([]);
+  });
+
   it("project and path hints are ≤ 60 chars and still carry their gotcha", () => {
     const { project, path } = props("semantic_search");
     expect(project.description?.length).toBeLessThanOrEqual(MAX_ADDRESS_HINT);

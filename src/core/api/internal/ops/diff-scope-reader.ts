@@ -39,6 +39,15 @@ const WHOLE_FILE: readonly AddedLineRange[] = [{ start: 1, end: Number.MAX_SAFE_
 export interface DiffScopeRequest {
   base?: string;
   files?: readonly string[];
+  /**
+   * The ingest admission rule for a `workTree`-relative path (`FileScanner#accepts`,
+   * bd tea-rags-mcp-9f0yn.10). With no `files` listed, an untracked path it
+   * rejects is not part of the change: a build copy or other artefact left in
+   * the tree is outside the indexed source set, and `.gitignore` alone does not
+   * name every such directory. Tracked changes and listed files are never
+   * filtered. Absent → every untracked path is reviewed.
+   */
+  admitsUntracked?: (relPath: string) => boolean;
 }
 
 /** One read of a working-tree change: the files, their added lines, and the counts a report opens with. */
@@ -122,9 +131,10 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
   const headCommit = readEnclosingRepoGitState(toplevel)?.commit || undefined;
   const mergeBase = await resolveReviewMergeBase(toplevel, base, headCommit);
   const changes = await gitRead(base, async () => readWorkingTreeChanges(toplevel, mergeBase));
-  const changed = rebaseGitPathsOntoRoot(changes.changed, prefix);
-  const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
   const listed = req.files ? unique(req.files) : undefined;
+  const outsideSourceSet = listed ? new Set<string>() : untrackedOutsideSourceSet(changes.untracked, prefix, req);
+  const changed = rebaseGitPathsOntoRoot(changes.changed, prefix).filter((relPath) => !outsideSourceSet.has(relPath));
+  const deleted = rebaseGitPathsOntoRoot(changes.deleted, prefix);
   const files = listed ?? changed;
   const changedSet = new Set(changed);
   const nonProductionFilter = ontologyNonProductionPathFilter();
@@ -158,7 +168,10 @@ export async function readDiffScope(workTree: string | undefined, req: DiffScope
     workTree,
     base,
     mergeBase,
-    notices: !listed && changed.length === 0 ? [emptyDiffNotice(workTree, base, mergeBase)] : [],
+    notices: [
+      ...(!listed && changed.length === 0 ? [emptyDiffNotice(workTree, base, mergeBase)] : []),
+      ...(outsideSourceSet.size > 0 ? [outsideSourceSetNotice(outsideSourceSet)] : []),
+    ],
     changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
     wholeFiles: whole.size,
     files,
@@ -241,6 +254,28 @@ function realpathOrSelf(path: string): string {
   } catch {
     return path;
   }
+}
+
+/** The change's untracked `workTree`-relative paths the ingest admission rule rejects (bd tea-rags-mcp-9f0yn.10). */
+function untrackedOutsideSourceSet(
+  untracked: readonly string[],
+  prefix: string,
+  req: DiffScopeRequest,
+): ReadonlySet<string> {
+  const { admitsUntracked } = req;
+  if (admitsUntracked === undefined) return new Set();
+  return new Set(rebaseGitPathsOntoRoot(untracked, prefix).filter((relPath) => !admitsUntracked(relPath)));
+}
+
+/** How many untracked paths the review left out, with the first top-level directories — one line, never the list. */
+function outsideSourceSetNotice(paths: ReadonlySet<string>): string {
+  const dirs = unique([...paths].map((relPath) => relPath.split("/")[0])).slice(0, 3);
+  const count = paths.size;
+  return (
+    `${String(count)} untracked ${count === 1 ? "file" : "files"} outside the indexed source set ` +
+    `${count === 1 ? "was" : "were"} not reviewed (${dirs.join(", ")}): the index's ignore rules or ` +
+    `extensions leave them out — list them in files to review them`
+  );
 }
 
 function unique<T>(values: readonly T[]): T[] {

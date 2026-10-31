@@ -45,6 +45,12 @@ const MAX_SUGGESTIONS_PER_PATH = 4;
 /** How deep the suggestion scan walks a payload. Past this, signal namespaces are exhausted. */
 const MAX_SUGGESTION_DEPTH = 5;
 
+/** A sibling key this many edits from the requested leaf is a typo of it (`comitCount` → `commitCount`). */
+const NEAR_MISS_MAX_EDIT_DISTANCE = 2;
+
+/** Shortest requested leaf a sibling may merely contain — below it, containment matches noise. */
+const MIN_CONTAINED_LEAF_LENGTH = 4;
+
 /**
  * The call mode that picks the DEFAULT projection when `fields` is absent
  * (agent turn economy N4, bd tea-rags-mcp-r4rl1). `reranked` = a rerank other
@@ -264,13 +270,43 @@ function writePath(target: Record<string, unknown>, segments: readonly string[],
 function describeUnmatchedPaths(unmatched: readonly string[], results: readonly SearchResult[]): string {
   const available = collectPayloadPaths(results);
   const parts = unmatched.map((path) => {
-    const leaf = path.split(".").pop() ?? path;
-    const candidates = available.filter((known) => known !== path && known.endsWith(`.${leaf}`));
+    const candidates = suggestedPaths(path, available);
     return candidates.length === 0
       ? `no result carried "${path}"`
-      : `no result carried "${path}" — did you mean ${candidates.slice(0, MAX_SUGGESTIONS_PER_PATH).join(", ")}?`;
+      : `no result carried "${path}" — did you mean ${candidates.join(", ")}?`;
   });
   return `fields: ${parts.join("; ")}`;
+}
+
+/**
+ * The paths a miss most likely meant, at most {@link MAX_SUGGESTIONS_PER_PATH}:
+ * first the same leaf anywhere (`git.commitCount` → `git.file.commitCount`),
+ * then a near-miss sibling under the same parent (bd tea-rags-mcp-9f0yn.12) —
+ * a key whose name contains the requested leaf (`git.file.dominantAuthor` →
+ * `git.file.blameDominantAuthor`) or lies within
+ * {@link NEAR_MISS_MAX_EDIT_DISTANCE} edits of it, containment first, then by
+ * distance.
+ */
+function suggestedPaths(path: string, available: readonly string[]): string[] {
+  const leaf = path.split(".").pop() ?? path;
+  const parent = path.slice(0, path.length - leaf.length);
+  const sameLeaf = available.filter((known) => known !== path && known.endsWith(`.${leaf}`));
+  const needle = leaf.toLowerCase();
+  const nearMisses = available
+    .filter((known) => known.startsWith(parent) && !known.slice(parent.length).includes("."))
+    .filter((known) => known !== path && !sameLeaf.includes(known))
+    .map((known) => {
+      const sibling = known.slice(parent.length).toLowerCase();
+      return {
+        known,
+        contains: needle.length >= MIN_CONTAINED_LEAF_LENGTH && sibling.includes(needle),
+        distance: editDistance(needle, sibling),
+      };
+    })
+    .filter(({ contains, distance }) => contains || distance <= NEAR_MISS_MAX_EDIT_DISTANCE)
+    .sort((a, b) => Number(b.contains) - Number(a.contains) || a.distance - b.distance)
+    .map(({ known }) => known);
+  return [...sameLeaf, ...nearMisses].slice(0, MAX_SUGGESTIONS_PER_PATH);
 }
 
 /** Every dot-path present in the returned payloads. Arrays are leaves — a path addresses objects. */
@@ -291,4 +327,23 @@ function collectPayloadPaths(results: readonly SearchResult[]): string[] {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Levenshtein distance, two-row — the same approach the project-alias and CLI
+ * tool-name suggestions use, kept local: the DTO layer imports nothing outside
+ * itself, and a shared primitive edge here re-partitioned the review's
+ * component graph (bd tea-rags-mcp-9f0yn.12).
+ */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const substitution = (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current[j] = Math.min(substitution, (previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1);
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? 0;
 }

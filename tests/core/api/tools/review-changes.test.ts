@@ -11,6 +11,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { App } from "../../../../src/core/api/index.js";
+import type { McpToolResult } from "../../../../src/core/api/tools/format.js";
+import {
+  enforceResponseBudget,
+  type ResponseRowsPolicy,
+  type ResponseTruncation,
+} from "../../../../src/core/api/tools/response-budget.js";
 import { registerReviewChangesTool } from "../../../../src/core/api/tools/review-changes.js";
 import { AGENT_CONTEXT_GUIDES } from "../../../../src/mcp/resources/generated/agent-context.js";
 
@@ -166,5 +172,45 @@ describe("review_changes handler", () => {
     // INVARIANT CHANGE (bd tea-rags-mcp-0y5oj): answer-reading prose moved from the
     // tool description to tea-rags://guide/review.
     for (const term of ["touchedActive", "tier", "critical"]) expect(REVIEW_GUIDE).toContain(term);
+  });
+});
+
+// bd tea-rags-mcp-9f0yn.10: a review over thousands of files went out at 8.5M chars — the tool had
+// no response-budget declaration, so the guard every other read tool carries never ran.
+describe("review_changes response budget", () => {
+  it("an oversized review is trimmed to the budget with `truncated`, naming the knobs that narrow it", async () => {
+    const { handler, app, config } = registered()!;
+    const findings = Array.from({ length: 400 }, (_, i) => ({
+      name: `draft${String(i)}`,
+      relPath: `src/f${String(i)}.ts`,
+      verdict: "MISFIT",
+      suggestion: "x".repeat(40),
+    }));
+    (app.reviewChanges as ReturnType<typeof vi.fn>).mockResolvedValue({
+      review: {
+        workTree: "/w",
+        base: "HEAD",
+        mergeBase: "abc",
+        changedFiles: 400,
+        sections: { naming: { built: true, findings } },
+      },
+    });
+    const args = { project: "p" };
+    const result = (await handler(args)) as unknown as McpToolResult;
+
+    const policy = (config as { responseRows?: ResponseRowsPolicy }).responseRows;
+    expect(policy).toBeDefined();
+    const cut = enforceResponseBudget(result, "review_changes", args, policy!, 4000);
+    const answer = JSON.parse((cut.content[0] as { text: string }).text) as {
+      truncated?: ResponseTruncation;
+      review: { changedFiles: number; sections: { naming: { findings: unknown[] | { rows: unknown[] } } } };
+    };
+    const { findings: kept } = answer.review.sections.naming;
+
+    expect(answer.truncated?.omitted).toBeGreaterThan(0);
+    expect(answer.truncated?.message).toMatch(/files/);
+    // The formatter may compact the rows into a column table; either way only the kept rows remain.
+    expect((Array.isArray(kept) ? kept : kept.rows).length).toBe(answer.truncated?.returned);
+    expect(answer.review.changedFiles).toBe(400);
   });
 });
