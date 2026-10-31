@@ -17,6 +17,9 @@ import { sanitizeRerank } from "../../../../src/core/api/tools/format.js";
 
 const MAX_INTERPRETING_TOOL_DESCRIPTION = 600;
 const MAX_ADDRESS_HINT = 60;
+const MAX_HYBRID_SEARCH_INPUT_SCHEMA_CHARS = 4000;
+const MAX_FIND_SYMBOL_INPUT_SCHEMA_CHARS = 2050;
+const MAX_FIND_SYMBOL_DESCRIPTION_CHARS = 740;
 
 describe("tool description diet (real tools/list, codegraph ON)", () => {
   let tools: Tool[];
@@ -68,6 +71,20 @@ describe("tool description diet (real tools/list, codegraph ON)", () => {
     expect(project.description).toMatch(/list_projects|prime/);
     expect(path.description?.length).toBeLessThanOrEqual(MAX_ADDRESS_HINT);
     expect(path.description).toMatch(/working tree|cwd/i);
+  });
+
+  // bd tea-rags-mcp-d0z7b.5: the alwaysLoad tools ship in every request's
+  // prefix, so their param hints are one clause each (reference prose lives in
+  // tea-rags://guide/overview). Caps = measured input-schema JSON chars.
+  it.each([
+    ["hybrid_search", MAX_HYBRID_SEARCH_INPUT_SCHEMA_CHARS],
+    ["find_symbol", MAX_FIND_SYMBOL_INPUT_SCHEMA_CHARS],
+  ])("alwaysLoad %s input schema stays ≤ its trimmed size", (name, cap) => {
+    expect(JSON.stringify(tool(name).inputSchema).length).toBeLessThanOrEqual(cap);
+  });
+
+  it("alwaysLoad find_symbol description stays ≤ its trimmed size", () => {
+    expect(tool("find_symbol").description?.length).toBeLessThanOrEqual(MAX_FIND_SYMBOL_DESCRIPTION_CHARS);
   });
 });
 
