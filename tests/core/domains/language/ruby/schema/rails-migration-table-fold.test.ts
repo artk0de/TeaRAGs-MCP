@@ -246,3 +246,286 @@ describe("foldRailsTableMigrations — operation semantics", () => {
     ]);
   });
 });
+
+describe("foldRailsTableMigrations — operation stream semantics", () => {
+  const FILE = "db/migrate/20260201000000_step.rb";
+  /** Corpus points as the read path persists them: one per operation, in source order. */
+  const stream = (...statements: [operation: string, content: string, direction?: string][]) =>
+    statements.map(
+      ([operation, content, direction], index): RailsMigrationOperation => ({
+        symbolId: `migration:${FILE}:${operation}:${index + 1}`,
+        version: "20260201000000",
+        operation,
+        ...(direction ? { direction } : {}),
+        table: "items",
+        columns: [],
+        content,
+      }),
+    );
+  const reasons = (state: { unfolded: { reason: string }[] }) => state.unfolded.map((entry) => entry.reason);
+  const names = (state: { columns: { name: string }[] }) => state.columns.map((entry) => entry.name);
+
+  it("tracks an index through add, duplicate add, rename and remove by name or by column", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["create_table", "create_table :items do |t|\n  t.string :sku\n  t.string :title\nend"],
+        ["add_index", "add_index :items, :sku, name: :by_sku, unique: true"],
+        ["add_index", "add_index :items, :sku, name: :by_sku"],
+        ["add_index", "add_index :items, [:title, :sku]"],
+        ["rename_index", "rename_index :items, :by_sku, :items_by_sku"],
+        ["remove_index", "remove_index :items, column: [:title, :sku]"],
+      ),
+    );
+    expect(state.unfolded).toEqual([]);
+    expect(state.indexes).toEqual([
+      {
+        name: "items_by_sku",
+        renamedFrom: "by_sku",
+        columns: ["sku"],
+        unique: true,
+        origin: `migration:${FILE}:add_index:2`,
+      },
+    ]);
+
+    const removed = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_column", "add_column :items, :sku, :string"],
+        ["add_index", "add_index :items, :sku, name: 'by_sku'"],
+        ["remove_index", "remove_index :items, name: :by_sku"],
+      ),
+    );
+    expect(removed.indexes).toEqual([]);
+    expect(removed.unfolded).toEqual([]);
+  });
+
+  it("reports index renames and removals the fold cannot match", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["rename_index", "rename_index :items, :ghost, :other"],
+        ["remove_index", "remove_index :items, name: :ghost"],
+        ["remove_index", "remove_index :items, :missing"],
+      ),
+    );
+    expect(reasons(state)).toEqual([
+      "renames ghost, an index the fold has not seen",
+      "removes ghost, an index the fold has not seen",
+      "removes missing, an index the fold has not seen",
+    ]);
+  });
+
+  it("folds polymorphic and constrained references, then removes them again", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_reference", "add_reference :items, :owner, polymorphic: true, index: { name: :by_owner }"],
+        ["add_belongs_to", "add_belongs_to :items, :box, foreign_key: { to_table: :crates }, index: false"],
+        ["add_reference", "add_reference :items, :batch, type: :uuid, foreign_key: true"],
+      ),
+    );
+    expect(names(state)).toEqual(["owner_type", "owner_id", "box_id", "batch_id"]);
+    expect(state.columns.find((entry) => entry.name === "batch_id")?.type).toBe("uuid");
+    expect(state.indexes.map((index) => [index.name, index.columns])).toEqual([
+      ["by_owner", ["owner_type", "owner_id"]],
+      [undefined, ["batch_id"]],
+    ]);
+    expect(state.foreignKeys.map((key) => [key.column, key.toTable])).toEqual([
+      ["box_id", "crates"],
+      ["batch_id", "batches"],
+    ]);
+
+    const removed = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_reference", "add_reference :items, :owner, polymorphic: true"],
+        ["add_reference", "add_reference :items, :box"],
+        ["remove_reference", "remove_reference :items, :owner, polymorphic: true"],
+        ["remove_belongs_to", "remove_belongs_to :items, :box"],
+      ),
+    );
+    expect(removed.columns).toEqual([]);
+    expect(removed.indexes).toEqual([]);
+  });
+
+  it("adds foreign keys with inferred columns and removes them by table or by column", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_foreign_key", "add_foreign_key :items, :categories"],
+        ["add_foreign_key", "add_foreign_key :items, :boxes"],
+        ["add_foreign_key", "add_foreign_key :items, :users"],
+        ["add_foreign_key", "add_foreign_key :items, :users, column: :editor_id"],
+        ["remove_foreign_key", "remove_foreign_key :items, :boxes"],
+        ["remove_foreign_key", "remove_foreign_key :items, column: :editor_id"],
+      ),
+    );
+    expect(state.unfolded).toEqual([]);
+    expect(state.foreignKeys.map((key) => [key.column, key.toTable])).toEqual([
+      ["category_id", "categories"],
+      ["user_id", "users"],
+    ]);
+
+    const unmatched = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["remove_foreign_key", "remove_foreign_key :items, :ghosts"],
+        ["remove_foreign_key", "remove_foreign_key :items"],
+        ["add_foreign_key", "add_foreign_key :items, table_name"],
+      ),
+    );
+    expect(reasons(unmatched)).toEqual([
+      "removes a foreign key the fold has not seen",
+      "removes a foreign key the fold has not seen",
+      "referenced table is not a literal",
+    ]);
+  });
+
+  it("adds and removes timestamps, follows a rename_table, and skips down-only operations", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_column", "add_column :items, :sku, :string"],
+        ["add_timestamps", "add_timestamps :items, null: false"],
+        ["remove_column", "remove_column :items, :sku", "down"],
+      ),
+    );
+    expect(names(state)).toEqual(["sku", "created_at", "updated_at"]);
+
+    const stripped = foldRailsTableMigrations(
+      "items",
+      stream(["add_timestamps", "add_timestamps :items"], ["remove_timestamps", "remove_timestamps :items"]),
+    );
+    expect(stripped.columns).toEqual([]);
+
+    const renamed = foldRailsTableMigrations(
+      "items",
+      stream(["add_column", "add_column :items, :sku, :string"], ["rename_table", "rename_table :items, :products"]),
+    );
+    expect(renamed.columns).toEqual([]);
+    expect(renamed.dropped).toEqual({ origin: `migration:${FILE}:rename_table:2`, renamedTo: "products" });
+  });
+
+  it("lists join tables, unknown operations, unreadable text and non-literal names as unfolded, once each", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["create_join_table", "create_join_table :items, :tags"],
+        ["add_check_constraint", "add_check_constraint :items, 'price > 0'"],
+        ["add_enum_value", "add_enum_value :status, 'archived'"],
+        ["change_table", "change_table :items do |t|\n  say 'a'\n  say 'b'\nend"],
+        ["add_column", "Item.connection.add_column :items, :sku, :string"],
+        ["add_column", "add_column :items, column_name, :string"],
+        ["rename_column", "rename_column :items, :sku, new_name"],
+        ["rename_column", "rename_column :items, :ghost, :spirit"],
+        ["change_column", "change_column :items, :ghost, :text"],
+        ["add_reference", "add_reference :items, reference_name"],
+        ["remove_reference", "remove_reference :items, reference_name"],
+      ),
+    );
+    expect(reasons(state)).toEqual([
+      "a join table's name is derived from both tables",
+      "add_enum_value is not a schema operation the fold knows",
+      "say is not a table-builder call the fold knows",
+      "add_column text could not be read",
+      "column name is not a literal",
+      "column names are not literals",
+      "renames ghost, a column the fold has not seen",
+      "changes ghost the fold has not seen",
+      "reference name is not a literal",
+      "reference name is not a literal",
+    ]);
+  });
+
+  it("applies every table-builder call inside change_table, reading comments, strings and continuation lines", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        [
+          "create_table",
+          [
+            "create_table :items, primary_key: :uid, id: :uuid do |t| # keyed by uuid",
+            "  t.string :title, :note # two columns",
+            '  t.text :body, default: "it\\"s # not a comment"',
+            "  t.integer :rank,",
+            "    null: false",
+            "  t.references :owner, polymorphic: true",
+            "  t.belongs_to :shelf",
+            "  t.timestamps",
+            "  t.index %i[title rank], name: :by_title",
+            "end",
+          ].join("\n"),
+        ],
+        [
+          "change_table",
+          [
+            "change_table :items do |t|",
+            "  t.change :rank, :bigint",
+            "  t.change_default :rank, from: nil, to: 0",
+            "  t.remove_index name: :by_title",
+            "  t.remove_index :owner_type",
+            "  t.remove_references :owner, polymorphic: true",
+            "  t.remove_belongs_to :shelf",
+            "  t.remove_timestamps",
+            "  t.remove :note",
+            "  say 'not a builder call'",
+            "end",
+          ].join("\n"),
+        ],
+      ),
+    );
+    expect(state.columns.map((entry) => [entry.name, entry.type])).toEqual([
+      ["uid", "uuid"],
+      ["title", "string"],
+      ["body", "text"],
+      ["rank", "bigint"],
+    ]);
+    expect(state.indexes).toEqual([]);
+    expect(reasons(state)).toEqual([
+      "removes owner_type, an index the fold has not seen",
+      "say is not a table-builder call the fold knows",
+    ]);
+  });
+
+  it("applies operations in migration version order regardless of input order", () => {
+    const [create] = stream(["create_table", "create_table :items do |t|\n  t.string :sku\nend"]);
+    const later: RailsMigrationOperation = {
+      ...create,
+      symbolId: "migration:db/migrate/20260301000000_more.rb:add_column:1",
+      version: "20260301000000",
+      operation: "add_column",
+      content: "add_column :items, :sku, :text",
+    };
+    const state = foldRailsTableMigrations("items", [later, create]);
+    expect(state.columns.map((entry) => [entry.name, entry.type, entry.origin])).toEqual([
+      ["id", "primary_key", create.symbolId],
+      ["sku", "text", create.symbolId],
+    ]);
+    expect(state.provenance).toEqual([create.symbolId, later.symbolId]);
+  });
+
+  it("carries indexes and foreign keys through a column rename and rejects shapes it cannot read", () => {
+    const state = foldRailsTableMigrations(
+      "items",
+      stream(
+        ["add_reference", "add_reference :items, :owner, foreign_key: { to_table: :users }"],
+        ["rename_column", "rename_column :items, :owner_id, :creator_id"],
+        ["add_index", "add_index :items, { creator_id: :asc }"],
+        ["change_table", "change_table :items"],
+        ["add_column", "(add_column :items, :sku, :string)"],
+      ),
+    );
+    expect(state.columns).toEqual([
+      {
+        name: "creator_id",
+        type: "bigint",
+        origin: `migration:${FILE}:add_reference:1`,
+        renamedFrom: "owner_id",
+      },
+    ]);
+    expect(state.indexes.map((index) => index.columns)).toEqual([["creator_id"]]);
+    expect(state.foreignKeys.map((key) => [key.column, key.toTable])).toEqual([["creator_id", "users"]]);
+    expect(reasons(state)).toEqual(["index columns are not literals", "add_column text could not be read"]);
+  });
+});
