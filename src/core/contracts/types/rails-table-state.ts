@@ -41,12 +41,18 @@ export interface RailsTableIndex {
   origin: string;
   /** The index's name before the first `rename_index`. */
   renamedFrom?: string;
+  /** A partial index's `where:` predicate, as written; absent for a full index. */
+  where?: string;
 }
 
 export interface RailsTableForeignKey {
   toTable: string;
   column: string;
   origin: string;
+  /** `on_delete:` action (`cascade`, `nullify`, `restrict`…); absent when not declared. */
+  onDelete?: string;
+  /** `on_update:` action; absent when not declared. */
+  onUpdate?: string;
 }
 
 /** An operation that could not be applied deterministically, so the state may miss its effect. */

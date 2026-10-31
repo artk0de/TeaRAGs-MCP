@@ -328,6 +328,8 @@ export interface ExploreResponse {
    * folded from its `change`/`up` migration operations in version order
    * (`down` ignored). `results` stays empty; every fact carries the migration
    * chunk id it came from, drillable as `find_symbol(symbol: "migration:…")`.
+   * A partial index carries its `where` predicate as written; a foreign key
+   * carries `onDelete` / `onUpdate` when the migration declares them.
    */
   table?: RailsTableState;
 }
