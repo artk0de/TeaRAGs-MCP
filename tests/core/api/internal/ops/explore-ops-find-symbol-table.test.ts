@@ -65,10 +65,18 @@ function splitIntoParts(rows: Row[], symbolId: string): Row[] {
 function qdrantHolding(rows: Row[], { corpus = true } = {}) {
   return {
     collectionExists: vi.fn(async (name: string) => corpus || !name.endsWith("_migrations")),
-    scrollFiltered: vi.fn(async (collection: string, filter: { must: { key: string; match: { value: string } }[] }) =>
-      collection.endsWith("_migrations")
-        ? rows.filter((row) => filter.must.every(({ key, match }) => row.payload[key] === match.value))
-        : [],
+    // `match.text` (the text-indexed half of `exactMatchOnTextIndexed`) is modelled as a substring test.
+    scrollFiltered: vi.fn(
+      async (collection: string, filter: { must: { key: string; match: { value?: string; text?: string } }[] }) =>
+        collection.endsWith("_migrations")
+          ? rows.filter((row) =>
+              filter.must.every(({ key, match }) =>
+                match.text !== undefined
+                  ? String(row.payload[key]).includes(match.text)
+                  : row.payload[key] === match.value,
+              ),
+            )
+          : [],
     ),
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: true, pointsCount: 0 }),
     getPoint: vi.fn().mockResolvedValue({ id: 1, payload: { indexingComplete: true } }),

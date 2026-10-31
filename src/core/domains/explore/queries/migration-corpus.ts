@@ -15,6 +15,7 @@
  * both addresses read the operation reassembled.
  */
 
+import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { QdrantCollectionCatalog, QdrantPointReader } from "../../../adapters/qdrant/ports.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type {
@@ -134,7 +135,7 @@ export class MigrationCorpusQuery {
     const relativePath = /^migration:(.*):[^:]+:\d+$/.exec(base)?.[1];
     if (!relativePath) return [];
     const points = await this.scroll(migrationCollection, {
-      must: [{ key: "relativePath", match: { value: relativePath } }],
+      must: exactMatchOnTextIndexed("relativePath", relativePath),
     });
     return reassembleOperations(
       points.filter((point) => textOf(point.payload.symbolId).replace(PART_SUFFIX, "") === base),

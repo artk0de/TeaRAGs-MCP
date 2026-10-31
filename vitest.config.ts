@@ -78,6 +78,8 @@ export default defineConfig({
       "**/dist/**",
       "**/.worktrees/**",
       "**/.claude/worktrees/**",
+      // Gitignored scratch: benchmark actor homes there hold other plugins' tests
+      "**/.tmp/**",
       // Exclude integration tests - they require real external services
       "**/tests/integration/**",
       "**/__integration__/**",
