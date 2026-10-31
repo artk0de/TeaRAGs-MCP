@@ -216,81 +216,31 @@ function typedFilterCatalog() {
       .union([z.string(), z.array(z.string())])
       .optional()
       .describe("File extension(s): '.ts' or ['.ts', '.py']."),
-    chunkType: z.string().optional().describe("Filter by chunk type (function, class, interface, block)"),
+    chunkType: z.string().optional().describe("function | class | interface | block"),
     documentation: z
       .enum(["only", "exclude", "include"])
       .optional()
-      .describe(
-        "Doc chunks: only | exclude | include. Omitted → preset default may exclude docs; only/include drops it.",
-      ),
-    testFile: z
-      .enum(["only", "exclude", "include"])
-      .optional()
-      .describe(
-        "Test files: only | exclude | include. Omitted → preset default may exclude tests; only/include drops it.",
-      ),
-    author: z
-      .string()
-      .optional()
-      .describe(
-        "Blame owner (most live lines, git blame HEAD), exact name. File default; level 'chunk' → chunk lines.",
-      ),
-    recentAuthor: z
-      .string()
-      .optional()
-      .describe("Top committer to the FILE in git log window (not blame), exact name or email. 'What X worked on'."),
-    contributor: z
-      .string()
-      .optional()
-      .describe("Any committer to the FILE in git log window, exact name (no email); superset of recentAuthor."),
-    modifiedAfter: z
-      .string()
-      .optional()
-      .describe("File last commit on/after ISO date ('2024-01-01'). File-level at any level."),
-    modifiedBefore: z
-      .string()
-      .optional()
-      .describe("File last commit on/before ISO date ('2024-12-31'). File-level at any level."),
-    minAgeDays: coerceNumber()
-      .optional()
-      .describe(
-        "Last commit ≥ N days old, query time. Chunk default drops docs + no-commit chunks; level 'file' → file.",
-      ),
-    maxAgeDays: coerceNumber()
-      .optional()
-      .describe("Last commit ≤ N whole days old, query time (0 = within a day). Level-aware like minAgeDays."),
-    minCommitCount: coerceNumber()
-      .optional()
-      .describe("Min commits touching the chunk (churn). Level-aware, chunk default."),
-    taskId: z
-      .string()
-      .optional()
-      .describe("Task ID from commit messages (TD-1234, #567, AB#890). File default; level 'chunk' → chunk commits."),
-    symbolId: z
-      .string()
-      .optional()
-      .describe("Partial symbolId text match: 'Class' hits all its methods, 'method' hits it in any class."),
+      .describe("Omitted → preset default may drop docs."),
+    testFile: z.enum(["only", "exclude", "include"]).optional().describe("Omitted → preset default may drop tests."),
+    author: z.string().optional().describe("Blame owner (git blame HEAD), exact name."),
+    recentAuthor: z.string().optional().describe("Top FILE committer in git log window (not blame); name or email."),
+    contributor: z.string().optional().describe("Any FILE committer in git log window; exact name."),
+    modifiedAfter: z.string().optional().describe("File last commit on/after ISO date."),
+    modifiedBefore: z.string().optional().describe("File last commit on/before ISO date."),
+    minAgeDays: coerceNumber().optional().describe("Last commit ≥ N days ago; chunk level drops no-commit chunks."),
+    maxAgeDays: coerceNumber().optional().describe("Last commit ≤ N days ago (0 = today)."),
+    minCommitCount: coerceNumber().optional().describe("Min commits (churn)."),
+    taskId: z.string().optional().describe("Commit-message task ID, e.g. TD-1234, #567."),
+    symbolId: z.string().optional().describe("Partial symbolId match: 'Class' → all its methods."),
     // Codegraph trajectory — names map to nested Qdrant paths in codegraphFilters.toCondition().
-    minFanIn: coerceNumber()
-      .optional()
-      .describe("Min fan-in. File default = files importing this file; level 'chunk' = call sites."),
-    minFanOut: coerceNumber()
-      .optional()
-      .describe("Min fan-out. File default = files this file imports; level 'chunk' = outgoing calls."),
-    minPageRank: coerceNumber().optional().describe("Min chunk-level PageRank in [0,1] over the method call graph."),
-    minInstability: coerceNumber()
-      .optional()
-      .describe("Min Martin instability fanOut / (fanIn + fanOut), in [0,1]. File-level only."),
-    minTransitiveImpact: coerceNumber()
-      .optional()
-      .describe("Min distinct files transitively importing this file (depth-capped reverse BFS). File-level only."),
-    minConnectionCount: coerceNumber()
-      .optional()
-      .describe("Min file-graph edges (fanIn + fanOut); drops low-confidence instability values. File-level only."),
-    isHub: coerceBoolean()
-      .optional()
-      .describe("Files flagged architectural hubs (fanIn above collection p95). File-level only."),
-    isLeaf: coerceBoolean().optional().describe("Files flagged leaves (fanOut == 0, fanIn > 0). File-level only."),
+    minFanIn: coerceNumber().optional().describe("File: importers; chunk level: call sites."),
+    minFanOut: coerceNumber().optional().describe("File: imports; chunk level: outgoing calls."),
+    minPageRank: coerceNumber().optional().describe("Chunk PageRank, 0-1."),
+    minInstability: coerceNumber().optional().describe("fanOut/(fanIn+fanOut), 0-1. File-level."),
+    minTransitiveImpact: coerceNumber().optional().describe("Transitive importer files. File-level."),
+    minConnectionCount: coerceNumber().optional().describe("fanIn+fanOut. File-level."),
+    isHub: coerceBoolean().optional().describe("fanIn above p95. File-level."),
+    isLeaf: coerceBoolean().optional().describe("fanOut 0, fanIn > 0. File-level."),
   };
 }
 
@@ -348,8 +298,7 @@ function levelField() {
       .enum(["chunk", "file"])
       .optional()
       .describe(
-        "'chunk' ranks chunks; 'file' ranks files, file payload only, no content. " +
-          "Also scopes level-aware filters. Default: preset signalLevel.",
+        "'file' ranks whole files (file payload, no content); also scopes level-aware filters. Default: preset's.",
       ),
   };
 }
@@ -359,9 +308,7 @@ function levelField() {
  * via fields, labels only in rankingOverlay) is stated once in
  * tea-rags://schema/overview (`META_ONLY_CONTRACT` in the resources registry).
  */
-const META_ONLY_HINT =
-  "Drop content. Payload = locator (path, symbolId, lines, signature); labels in rankingOverlay; " +
-  "raw signals via fields. Contract: tea-rags://schema/overview.";
+const META_ONLY_HINT = "Drop content; payload = locator (path, symbolId, lines, signature); signals via fields.";
 
 /**
  * A search tool's `fields` default, interpolated from the constants the
@@ -383,7 +330,7 @@ function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
       .array(z.string())
       .optional()
       .describe(
-        `Payload dot-path allow-list; relativePath always retained. Missing upstream paths → fieldsWarning. ${
+        `Payload dot-paths to return (relativePath always kept); unmatched → fieldsWarning. ${
           omittedHint
         }Paths: tea-rags://schema/signals.`,
       ),
@@ -398,11 +345,7 @@ function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
  */
 function includeImportsField() {
   return {
-    includeImports: coerceBoolean()
-      .optional()
-      .describe(
-        "imports = count by default; true → full lists. Import edges exact: get_callees / get_callers(relativePath).",
-      ),
+    includeImports: coerceBoolean().optional().describe("true → full import lists (default: count)."),
   };
 }
 
@@ -424,9 +367,7 @@ function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeA
     scope: z
       .enum(["code", "migrations"])
       .optional()
-      .describe(
-        "Default code. Use migrations for Rails schema history (not current state); ranks by relevance and ignores signal rerank presets.",
-      ),
+      .describe("migrations = Rails schema history (not current state), relevance-ranked. Default code."),
     ...searchCommonFields(filterSchema),
     ...typedFilterFields(applied),
     ...levelField(),
