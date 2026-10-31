@@ -4,13 +4,10 @@ user-invocable: false
 description: >-
   Agentic-only RED-phase skill — writes failing tests BEFORE implementation,
   from spec/plan acceptance criteria or given test code verbatim, else one test
-  per behaviour of the task. Conventions from tests-as-context (fixture-lookup,
-  assertion idioms of sibling tests). Runs them; each must fail for the RIGHT
-  reason (assertion / missing behaviour) — import, compile, syntax,
-  missing-fixture failures are not red. Modes CREATE/EXTEND, MODIFY behaviour
-  (tests-at-risk green baseline first), refactor/move (baseline only, no new
-  test), bug fix (reproduction first). Invoked by data-driven-generation Step
-  6a. NOT user-invocable.
+  per behaviour of the task. Runs them; each must fail for the RIGHT reason
+  (assertion / missing behaviour, not import / compile / fixture errors). Modes
+  CREATE/EXTEND, MODIFY, refactor/move (baseline only), bug fix (reproduction
+  first). Invoked by data-driven-generation Step 6a. NOT user-invocable.
 ---
 
 # test-first

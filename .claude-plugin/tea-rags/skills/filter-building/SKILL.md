@@ -5,14 +5,9 @@ description: >-
   tea-rags search includes a SCOPE: domain, language, author, time window,
   ticket, prod-vs-test split, directory exclusion. User names scope ("in the X
   domain", "Ruby code", "Alice's work", "modified this week", "for ticket
-  RAGS-142", "production code"), rarely says "filter". Map scope to typed sugar
-  (`language`, `testFile`, `documentation`, `author`, `recentAuthor`,
-  `contributor`, `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`,
-  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`),
-  `level: "file" | "chunk"` switch (filter scope AND result granularity),
-  picomatch negation in `pathPattern` (`!**/test/**`), or raw `filter` (Qdrant
-  `must`/`should`/`must_not`) for keys without sugar. E.g. "tests of
-  AuthService" → `testFile: "only"`. NOT for picking rerank preset — use
+  RAGS-142", "production code"), rarely says "filter". Maps scope to typed
+  filter params, `level`, `pathPattern` negation, or raw `filter`. E.g. "tests
+  of AuthService" → `testFile: "only"`. NOT for picking rerank preset — use
   `tea-rags:analytics-rerank`. NOT for general exploration — use
   `tea-rags:explore`.
 user-invocable: false

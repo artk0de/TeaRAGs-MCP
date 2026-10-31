@@ -3,14 +3,11 @@ name: extract-project-patterns
 user-invocable: false
 description: >-
   Agentic-only — runs on any behaviorQuery / positiveIds handoff: proven code as
-  code-gen templates, not test patterns. Read
-  body before planning: locality cascade L1 = target subdomain → L2 = infra
-  prefix + first semantic segment (skipped when semantic tail ≤ 1 segment) → L3
-  = project; find_similar (behaviorQuery → semantic_search) + rerank proven +
-  battleTested filter, relax to production on empty; label quality gate.
-  Returns templates + locality. Called by data-driven-generation Step 2,
-  dinopowers writing-plans / executing-plans. No input → returns { templates:
-  [], locality: "none", diagnostics: ["no input"] }, zero calls.
+  code-gen templates, not test patterns. Returns templates + locality (target
+  subdomain → infra prefix → project). Read body before planning. Called by
+  data-driven-generation Step 2, dinopowers writing-plans / executing-plans. No
+  input → returns { templates: [], locality: "none", diagnostics: ["no input"]
+  }, zero calls.
 ---
 
 # extract-project-patterns
