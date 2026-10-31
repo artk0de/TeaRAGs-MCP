@@ -1,0 +1,35 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... FAIL
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... FAIL
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... FAIL
+
+======================================================================
+FAIL: test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 87, in test_interrupt_preserves_recoverable_journal_and_partial_snapshot
+    self.assertTrue((out/'Q01-partial-events.jsonl').exists(), 'Missing interrupted-event journal')
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : Missing interrupted-event journal
+
+======================================================================
+FAIL: test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 109, in test_launcher_rejects_runtime_mismatch_before_consuming_rootgo
+    with mock.patch.dict(sys.modules,{'codex61_runner':fake_runner}),mock.patch.object(sys,'argv',['run.py','--base',d,'--rootgo']),self.assertRaisesRegex(RuntimeError,'runtime'):
+                                                                                                                                    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RuntimeError not raised
+
+======================================================================
+FAIL: test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 65, in test_success_uses_one_journal_record_per_callback_and_one_final_snapshot
+    self.assertTrue((out/(prefix+'-partial-events.jsonl')).exists(), 'Missing per-event journal')
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : Missing per-event journal
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.055s
+
+FAILED (failures=3)

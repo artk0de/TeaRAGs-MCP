@@ -1,0 +1,12 @@
+test_connected_exact_inventory_uses_same_thread_before_turn (test_mcp_readiness.ReadinessTests.test_connected_exact_inventory_uses_same_thread_before_turn) ... ok
+test_failed_state_tools_error_or_pagination_fails_closed (test_mcp_readiness.ReadinessTests.test_failed_state_tools_error_or_pagination_fails_closed) ... ok
+test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) ... ok
+test_other_thread_ready_does_not_release_gate (test_mcp_readiness.ReadinessTests.test_other_thread_ready_does_not_release_gate) ... ok
+test_runner_missing_inventory_creates_no_turn (test_mcp_readiness.ReadinessTests.test_runner_missing_inventory_creates_no_turn) ... ok
+test_runner_orders_thread_inventory_then_turn (test_mcp_readiness.ReadinessTests.test_runner_orders_thread_inventory_then_turn) ... ok
+test_startup_ready_wait_preserves_all_pending_notifications (test_mcp_readiness.ReadinessTests.test_startup_ready_wait_preserves_all_pending_notifications) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.056s
+
+OK

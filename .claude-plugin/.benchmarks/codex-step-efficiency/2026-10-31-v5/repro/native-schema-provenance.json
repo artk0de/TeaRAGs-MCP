@@ -1,0 +1,11 @@
+{
+  "cli": "/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+  "version": "codex-cli 0.166.0",
+  "cli_sha256": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+  "command": "codex app-server generate-json-schema --out .tmp/optimal-waves-benchmark/schema",
+  "retained_schema": "schema/ToolRequestUserInputParams.json",
+  "schema_sha256": "fda15b62e7446105b59c8ed85c908abed2a47db70653e57c92c47a2f204fa77a",
+  "semantics": "isBlocking required boolean; autoResolutionMs deprecated: Use isBlocking to decide whether the request should block.",
+  "official_reference": "https://learn.chatgpt.com/docs/app-server#toolrequestuserinput",
+  "limitation": "Official page currently omits isBlocking text; native 0.166 schema is authoritative for this frozen executable."
+}

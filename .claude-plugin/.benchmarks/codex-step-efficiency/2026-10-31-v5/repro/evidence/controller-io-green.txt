@@ -1,0 +1,15 @@
+test_bytes_grow_linearly_without_list_rewrites_or_fsync (test_controller_io.PersistenceTests.test_bytes_grow_linearly_without_list_rewrites_or_fsync) ... ok
+test_completed_snapshot_refuses_overwrite_and_append (test_controller_io.PersistenceTests.test_completed_snapshot_refuses_overwrite_and_append) ... ok
+test_error_writes_one_partial_snapshot_without_completed_answer (test_controller_io.PersistenceTests.test_error_writes_one_partial_snapshot_without_completed_answer) ... ok
+test_event_fidelity_order_and_duplicate_events (test_controller_io.PersistenceTests.test_event_fidelity_order_and_duplicate_events) ... ok
+test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) ... ok
+test_flushed_records_survive_process_crash_without_close (test_controller_io.PersistenceTests.test_flushed_records_survive_process_crash_without_close) ... ok
+test_incomplete_final_record_is_reported_not_silently_accepted (test_controller_io.PersistenceTests.test_incomplete_final_record_is_reported_not_silently_accepted) ... ok
+test_persistence_fields_are_observations_not_model_time (test_controller_io.PersistenceTests.test_persistence_fields_are_observations_not_model_time) ... ok
+test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) ... ok
+test_runtime_identity_freezes_actual_interpreter (test_controller_io.RuntimeTests.test_runtime_identity_freezes_actual_interpreter) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.037s
+
+OK

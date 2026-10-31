@@ -1,0 +1,33 @@
+{
+  "model_turns": 0,
+  "thread_id": "01a19386-437e-7a61-9577-4062eb721b0e",
+  "native_mcp_status": "connected",
+  "native_tool_count": 17,
+  "checks": {
+    "PATH": {
+      "exitCode": 0,
+      "stdout_bytes": 209,
+      "stdout_sha256": "c5322241d13792ea632050a9eae87370063a7c2333666a3abd48acbf551ef353",
+      "stderr": "",
+      "stdout": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/bin-probe:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin\n"
+    },
+    "command_v": {
+      "exitCode": 0,
+      "stdout_bytes": 121,
+      "stdout_sha256": "3d7deb2f26580cc5ac00b36a59d2ea5121ff627b6fcfd6f20ba8ab666f4176bd",
+      "stderr": "",
+      "stdout": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/bin-probe/tea-rags\n"
+    },
+    "resource_cli": {
+      "exitCode": 1,
+      "stdout_bytes": 0,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "Traceback (most recent call last):\n  File \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61_cli.py\", line 8, in <module>\n    from codex61_mcp_proxy import PROJECT,REPO,safe_path,safe_resource\nModuleNotFoundError: No module named 'codex61_mcp_proxy'\n"
+    }
+  },
+  "denial_open_only_no_contents": {
+    "exitCode": 0,
+    "stdout": "OPEN_DENIED 1\nOPEN_DENIED 1\nOPEN_DENIED 1\nOPEN_DENIED 1\nOPEN_DENIED 1\nOPEN_DENIED 2\n",
+    "stderr": ""
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "canonical": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro",
+  "scratch": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/only-a-benchmark-v5",
+  "files": {
+    "README.md": "d97a72fe2c7550a592bf18f4426c3ff2b5f254b6282ab41f7ba880306875571b",
+    "collect.py": "9c0eed6e1da8578d2718722774b11766cb0cfc568538dfb23a48ea8576389361",
+    "controller_io.py": "ff03f80534343293db1b15849ec56c025f182c0f3ccbde1d596b0f7a4eb90224",
+    "job.py": "4d2f9d1c61f206f9e2f0d7d715c9e1fbcf725e98e0247b4638d14ba20679a053",
+    "mcp_readiness.py": "929833469693368e7be3515f73b71cf3906a0ebb5ba72b8a485168ab6fe9a7fc",
+    "native-schema-provenance.json": "49b4a2ebb05b92fda2ad7304ef8235e71933c0f485f7cbba8938abdfd0fc3da8",
+    "observe_index.py": "3e3f6ebc61780736ab9957e9b63e79c1af34705b320bbe8b95911c61b7ca2b5c",
+    "prepare.py": "f951f59a129555c6d1c512a8006abda26d2f78d9958d6524daf0be4d06215b58",
+    "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+    "replay_controller_io.py": "7621dfcc9435550dffb10789250c3b721b11b7d78637558a82de6d4b1b19413d",
+    "run.py": "6c472d159b88eff3812343d8740d21264c76228854f52e43de092f9ef25aa46f",
+    "runner.py": "28fd586ba5ca617ffb26b4ab0a0724713183d9dcb011cbe8fd2f412cb3f84548",
+    "schema/ToolRequestUserInputParams.json": "fda15b62e7446105b59c8ed85c908abed2a47db70653e57c92c47a2f204fa77a",
+    "test_adapter_io.py": "b74fc2611aab8a5cf6459d66f2f622d2029b80a418dad1aaf6c46abaea3efa55",
+    "test_controller_io.py": "3fa2455be814c859189efc33fc7452bef405b71097054b21b7c1bb55a19e6dc8",
+    "test_review_fixes_io.py": "488d9597e9858fdfcf5fff4d6ba9c265127869cd943815b0ff221be959193821",
+    "transport_probe.py": "bf050554c600d8e3e0181ee5967e7240eeccfdbdfca2cd6b8b4552e2eb7843ac",
+    "v4-source-provenance.json": "5a4bcb28201a37c2c752063635d2c30d316b6afa9c1a3799f9a84518c9f68a83"
+  },
+  "exact_byte_copy": true,
+  "source_file_count": 18,
+  "new_targeted_test": {
+    "path": "test_mcp_readiness.py",
+    "sha256": "e4c226dad6d5cf0347abf7adc65dc8079684b1854d66e9fd6bf4edee6e3a9d1c",
+    "location": "canonical only; not a launch adapter"
+  },
+  "tests": {
+    "new_readiness": 7,
+    "affected_adapter_pins": 4,
+    "logs": [
+      "mcp-readiness-green.txt",
+      "mcp-readiness-adapter-pins-green-02.txt"
+    ],
+    "previous_tests_and_failed_attempts_retained": true,
+    "no_full_suite": true
+  },
+  "protocol": "Readiness-only; same native backend/shell/FS/proxy; no CLI experiment grants carried",
+  "prior_proofs_retained": [
+    "scratch-copy-proof.json",
+    "scratch-copy-proof-review-fixes.json",
+    "scratch-copy-proof-naming-proc.json"
+  ],
+  "model_turns": 0
+}

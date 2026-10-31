@@ -9,6 +9,7 @@ coverage/
 .claude/worktrees/
 
 # Historical evidence: preserve the recorded bytes and SHA256 manifests.
+.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/
 research/recovered-swe-rebench-2026-10-30/
 research/codex-q24-replay-2026-10-30/
 research/codex-q24-validated-2026-10-30/

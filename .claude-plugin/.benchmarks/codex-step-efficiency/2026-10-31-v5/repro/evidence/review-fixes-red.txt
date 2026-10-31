@@ -1,0 +1,96 @@
+test_collector_nonzero_is_propagated_and_accounting_failed_is_retained (test_review_fixes_io.ReviewRegressionTests.test_collector_nonzero_is_propagated_and_accounting_failed_is_retained) ... FAIL
+test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) ... 
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='prepare') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='run') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='job') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='verify_runtime') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='prepare') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='run') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='job') ... FAIL
+  test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='verify_runtime') ... FAIL
+
+======================================================================
+FAIL: test_collector_nonzero_is_propagated_and_accounting_failed_is_retained (test_review_fixes_io.ReviewRegressionTests.test_collector_nonzero_is_propagated_and_accounting_failed_is_retained)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 83, in test_collector_nonzero_is_propagated_and_accounting_failed_is_retained
+    self.assertEqual(code,17)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^
+AssertionError: 0 != 17
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='prepare')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='run')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='job')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='argument', entry='verify_runtime')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='prepare')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='run')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='job')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+======================================================================
+FAIL: test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) (mode='environment', entry='verify_runtime')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_review_fixes_io.py", line 67, in test_optimized_python_refused_before_rpc_or_outputs
+    self.assertIn('optimized',result.stdout.lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'optimized' not found in 'offline fake rpc reached\n'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.674s
+
+FAILED (failures=9)

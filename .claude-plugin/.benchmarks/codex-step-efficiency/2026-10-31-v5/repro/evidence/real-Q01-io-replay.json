@@ -1,0 +1,80 @@
+{
+  "measurement": "OBSERVATION",
+  "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q01-events.json",
+  "source_sha256": "73ff179b8bb0235e8ea04bf17245127f0552dbff844cd3b942036142106195b1",
+  "source_bytes": 1482450,
+  "event_count": 2253,
+  "controller_python": {
+    "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+    "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+    "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+    "cache_tag": "cpython-315",
+    "flags": {
+      "bytes_warning": 0,
+      "context_aware_warnings": 0,
+      "debug": 0,
+      "dev_mode": false,
+      "dont_write_bytecode": 0,
+      "gil": 1,
+      "hash_randomization": 1,
+      "ignore_environment": 0,
+      "inspect": 0,
+      "int_max_str_digits": 4300,
+      "interactive": 0,
+      "isolated": 0,
+      "lazy_imports": -1,
+      "n_fields": 22,
+      "n_sequence_fields": 18,
+      "n_unnamed_fields": 0,
+      "no_site": 0,
+      "no_user_site": 0,
+      "optimize": 0,
+      "quiet": 0,
+      "safe_path": false,
+      "thread_inherit_context": 0,
+      "utf8_mode": 1,
+      "verbose": 0,
+      "warn_default_encoding": 0
+    }
+  },
+  "same_interpreter_for_both": true,
+  "old_runner_sha256": "0afc8283aefa7a6e7ee99629659d75931b1868ffcd16cdfa79ab091afc03e38a",
+  "new_helper_sha256": "c8e2ed6d9f218bbaa24a992a7161ef54c2a63ce88b94b2f8e568d690a5ccad42",
+  "old": {
+    "persistence_wall_seconds": 8.047233432531357,
+    "persistence_thread_cpu_seconds": 7.51374273399999,
+    "bytes_written": 2239585668,
+    "full_list_snapshots": 2254
+  },
+  "new": {
+    "persistence_wall_seconds": 0.03546293010003865,
+    "persistence_thread_cpu_seconds": 0.03304847599998961,
+    "bytes_written": 2673619,
+    "full_list_snapshots": 1,
+    "helper_observations": {
+      "event_count": 2253,
+      "journal_bytes": 1191169,
+      "snapshot_count": 1,
+      "snapshot_bytes": 1482450,
+      "append_wall_seconds": 0.02881713054375723,
+      "append_thread_cpu_seconds": 0.026600067999986265,
+      "snapshot_wall_seconds": 0.005028584011597559,
+      "snapshot_thread_cpu_seconds": 0.005024834000000311,
+      "wall_seconds": 0.03384571455535479,
+      "thread_cpu_seconds": 0.03162490199998658,
+      "measurement": "OBSERVATION",
+      "limitation": "Persistence callback/snapshot timings overlap RPC/service activity; never subtract as pure model time. No fsync; RPC events.jsonl remains authoritative."
+    }
+  },
+  "fidelity": {
+    "old_snapshot_equals_input": true,
+    "new_snapshot_equals_input": true,
+    "new_journal_equals_input": true
+  },
+  "limitations": [
+    "Single offline replay, old then new; warm cache/order and system load uncontrolled",
+    "No live RPC/model overlap reproduced; callback CPU is not subtracted from historical wall time",
+    "No historical timing gap attribution or model-efficiency claim",
+    "Input events treated opaquely; no private reasoning analysis or payload output"
+  ]
+}

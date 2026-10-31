@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "context_transport": "One text input includes retained authentic visible tool excerpts followed by the original literal question. No expected answers, grades, wave plans or next-read instructions are sent.",
+  "project": "taxdome-worktree-navmaster",
+  "cwd": "/Users/Shared/nav-ab/repo-master",
+  "cases": [
+    {
+      "id": "T-Q02-independent-discovery-literal",
+      "question": "Instead was first built on a mock transport (the user calls it instead_mocks). What exactly was that mock, how was it switched on, how did specs use it, and is it still wired anywhere?",
+      "retained_visible_context": []
+    },
+    {
+      "id": "T-Q21-known-missing-groups",
+      "question": "How does the shared vendor HTTP client map HTTP statuses to errors, which metrics does it emit, and how are refusals turned into failure reasons?",
+      "retained_visible_context": [
+        {
+          "origin": {
+            "question": "Q01",
+            "native_call_id": "exec-c7bbaa51-973b-4fd9-872b-4d5071bfa4ed",
+            "native_response_id": "resp_0774613464b3f479016ae6054cabfc8191a52ff1512125d279",
+            "response_ordinal": 8,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "payload.symbolId": null,
+            "payload.startLine": null,
+            "payload.endLine": null,
+            "payload.content": "app/lib/tax_preparation/tax_automations/token_refreshable.rb\n  TaxPreparation::TaxAutomations::TokenRefreshable L3-338\n    TaxPreparation::TaxAutomations::TokenRefreshable.extend ActiveSupport::Concern\n    TaxPreparation::TaxAutomations::TokenRefreshable::CONNECTION_LOCK_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::TokenRefreshable::I18N_ERRORS_SCOPE\n    TaxPreparation::TaxAutomations::TokenRefreshable::INVALID_GRANT_CODE\n    TaxPreparation::TaxAutomations::TokenRefreshable::PKCE_METHOD\n    TaxPreparation::TaxAutomations::TokenRefreshable::DEFAULT_PATHS\n    TaxPreparation::TaxAutomations::TokenRefreshable#renew!\n    TaxPreparation::TaxAutomations::TokenRefreshable#grant_identity\n  TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError L41-51\n    TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError#connection\n  TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError#initialize (public) L48-51\n  TaxPreparation::TaxAutomations::TokenRefreshable#oauth2_settings L63-81\n  TaxPreparation::TaxAutomations::TokenRefreshable#authorization_url L83-96\n  TaxPreparation::TaxAutomations::TokenRefreshable#declared_oauth2! L98-104\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code! (public) L107-124\n  TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens! (public) L138-155\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation (private) L159-163\n  TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call (private) L165-178\n  TaxPreparation::TaxAutomations::TokenRefreshable#with_access_token (private) L180-198\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh! (private) L200-254\n  TaxPreparation::TaxAutomations::TokenRefreshable#grant_refused? (private) L256-275\n  TaxPreparation::TaxAutomations::TokenRefreshable#reject_grant! (private) L277-285\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens! (private) L287-292\n  TaxPreparation::TaxAutomations::TokenRefreshable#token_response (private) L294-306\n  TaxPreparation::TaxAutomations::TokenRefreshable#tokens_from (private) L319-330\n  TaxPreparation::TaxAutomations::TokenRefreshable#client_credentials (private) L332-338"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q01",
+            "native_call_id": "exec-c7bbaa51-973b-4fd9-872b-4d5071bfa4ed",
+            "native_response_id": "resp_0774613464b3f479016ae6054cabfc8191a52ff1512125d279",
+            "response_ordinal": 8,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "payload.symbolId": null,
+            "payload.startLine": null,
+            "payload.endLine": null,
+            "payload.content": "app/lib/tax_preparation/tax_automations/base_client.rb\n  TaxPreparation::TaxAutomations::BaseClient L3-479\n    TaxPreparation::TaxAutomations::BaseClient.include TaxPreparation::TaxAutomations::TokenRefreshable\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRIES_COUNT\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_RETRY_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::OPEN_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::UPLOAD_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::TOKEN_REQUEST_TIMEOUT_SEC\n    TaxPreparation::TaxAutomations::BaseClient::I18N_ERRORS_SCOPE\n    TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::Error\n    TaxPreparation::TaxAutomations::BaseClient::NetworkError\n    TaxPreparation::TaxAutomations::BaseClient::ConnectionBusyError\n    TaxPreparation::TaxAutomations::BaseClient::TargetExpiredError\n    TaxPreparation::TaxAutomations::BaseClient::TargetIncompleteError\n    TaxPreparation::TaxAutomations::BaseClient::BadRequestError\n    TaxPreparation::TaxAutomations::BaseClient::UnauthorizedError\n    TaxPreparation::TaxAutomations::BaseClient::ForbiddenError\n    TaxPreparation::TaxAutomations::BaseClient::NotFoundError\n    TaxPreparation::TaxAutomations::BaseClient::LockedError\n    TaxPreparation::TaxAutomations::BaseClient::ServerError\n    TaxPreparation::TaxAutomations::BaseClient::ServiceUnavailableError\n    TaxPreparation::TaxAutomations::BaseClient::QuotaExceededError\n    TaxPreparation::TaxAutomations::BaseClient::AUTH_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP\n    TaxPreparation::TaxAutomations::BaseClient#vendor_connection\n    TaxPreparation::TaxAutomations::BaseClient#transport\n    TaxPreparation::TaxAutomations::BaseClient#vendor_error_class\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget L41-69\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#initialize L49-57\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#expired? L59-62\n  TaxPreparation::TaxAutomations::BaseClient::PresignedUploadTarget#complete? L64-68\n  TaxPreparation::TaxAutomations::BaseClient::RequestError L95-103\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#body\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#code\n    TaxPreparation::TaxAutomations::BaseClient::RequestError#headers\n  TaxPreparation::TaxAutomations::BaseClient::RequestError#initialize (public) L97-103\n  TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError L115-115\n  TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after (public) L121-129\n  TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError L141-142\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors L163-201\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#initialize (public) L164-175\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete (public) L177-188\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for (private) L192-200\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit L203-228\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#initialize (public) L205-214\n  TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete (public) L216-227\n  TaxPreparation::TaxAutomations::BaseClient#initialize L230-241\n  TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target (public) L243-274\n  TaxPreparation::TaxAutomations::BaseClient#request (private) L280-331\n  TaxPreparation::TaxAutomations::BaseClient#perform (private) L333-339\n  TaxPreparation::TaxAutomations::BaseClient#relative_path (private) L341-347\n  TaxPreparation::TaxAutomations::BaseClient#http_connection (private) L349-360\n  TaxPreparation::TaxAutomations::BaseClient#token_connection (private) L362-377\n  TaxPreparation::TaxAutomations::BaseClient#upload_connection (private) L379-395\n  TaxPreparation::TaxAutomations::BaseClient#apply_error_handling (private) L397-406\n  TaxPreparation::TaxAutomations::BaseClient#adapter_spec (private) L408-416\n  TaxPreparation::TaxAutomations::BaseClient#measured (private) L418-427\n  TaxPreparation::TaxAutomations::BaseClient#track_failure (private) L429-431\n  TaxPreparation::TaxAutomations::BaseClient#vendor (private) L433-436\n  TaxPreparation::TaxAutomations::BaseClient#rate_limit_group_of (private) L448-454\n  TaxPreparation::TaxAutomations::BaseClient#base_url (private) L459-463\n  TaxPreparation::TaxAutomations::BaseClient#auth_headers (private) L465-469\n  TaxPreparation::TaxAutomations::BaseClient#vendor_error_message (private) L471-479"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q03",
+            "native_call_id": "exec-82b1e41c-a4f9-44df-924e-4dce4ba6e5ac",
+            "native_response_id": "resp_0774613464b3f479016ae60606b7688191b82c39dd98222040",
+            "response_ordinal": 3,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19287-9c24-7961-8609-83837541f649"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "payload.kind": null,
+            "payload.startLine": 216,
+            "payload.endLine": 227,
+            "payload.content": "class TaxPreparation::TaxAutomations::BaseClient\n  class RecordRateLimit < Faraday::Middleware\ndef on_complete(env)\n      headers = env.response.headers\n      remaining = Integer(headers['X-RateLimit-Remaining'], exception: false)\n      reset_at = Integer(headers['X-RateLimit-Reset'], exception: false)\n      return if remaining.nil? && reset_at.nil?\n\n      path = env.url.path.delete_prefix(@api_root_path).delete_prefix('/')\n      tags = {vendor: @vendor, group: @rate_limit_group_of.call(path)}\n      Yabeda.tax_automations.rate_limit_remaining.set(tags, remaining) unless remaining.nil?\n      # The header is an epoch; how long until the window opens is what a reader acts on.\n      Yabeda.tax_automations.rate_limit_reset_seconds.set(tags, [reset_at - Time.current.to_i, 0].max) unless reset_at.nil?\n    end",
+            "payload.symbolId": "TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q03",
+            "native_call_id": "exec-624c0632-bad3-480d-ad4e-786c0bb46393",
+            "native_response_id": "resp_0774613464b3f479016ae6061c6ac081919979620c505bdf72",
+            "response_ordinal": 6,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19287-ee07-7001-aad7-5bd4aa6f6611"
+            ]
+          },
+          "delivered_row": {
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/refusals_helper.rb",
+            "payload.startLine": 1,
+            "payload.endLine": 73,
+            "payload.language": "ruby",
+            "payload.content": "# frozen_string_literal: true\n\n# The vendor refusals a send step answers rather than raises, since every attempt gets the\n# same answer; any other client error goes to the retry ladder.\nmodule TaxPreparation::TaxAutomations::RefusalsHelper\n  module_function\n\n  TERMINAL_ERRORS = [\n    TaxPreparation::TaxAutomations::BaseClient::QuotaExceededError,\n    TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError,\n    TaxPreparation::TaxAutomations::BaseClient::UnauthorizedError,\n    TaxPreparation::TaxAutomations::BaseClient::ForbiddenError,\n    TaxPreparation::TaxAutomations::BaseClient::NotFoundError,\n    TaxPreparation::TaxAutomations::BaseClient::LockedError,\n    TaxPreparation::TaxAutomations::BaseClient::BadRequestError,\n    TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError,\n    TaxPreparation::TaxAutomations::BaseClient::TargetIncompleteError,\n    TaxPreparation::TaxAutomations::BaseClient::TargetExpiredError,\n    AbstractPolicy::PolicyError\n  ].freeze\n\n  # The refusals whose reason is not `api_error`.\n  REASONS = {\n    TaxPreparation::TaxAutomations::BaseClient::QuotaExceededError => :exceeded,\n    TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError => :unauthorized,\n    TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError => :unauthorized,\n    TaxPreparation::TaxAutomations::BaseClient::UnauthorizedError => :unauthorized,\n    AbstractPolicy::PolicyError => :forbidden\n  }.freeze\n\n  # Refusals the worker base answers, not the step: it kills the job and, for a grant, starts its verification.\n  RAISED_ERRORS = [AbstractPolicy::PolicyError, TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError].freeze\n\n  # Refusals the vendor gives only when its contract or our configuration moved — a firm cannot lift them.\n  REPORTED_ERRORS = [\n    TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError,\n    TaxPreparation::TaxAutomations::BaseClient::BadRequestError,\n    TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError,\n    TaxPreparation::TaxAutomations::BaseClient::TargetIncompleteError\n  ].freeze\n\n  # @param error [StandardError] one of `TERMINAL_ERRORS`\n  # @return [Symbol] one of `TaxPreparation::TaxAutomations::Document::FAILURE_REASONS`\n  def reason_for(error)\n    error_class = REASONS.keys.find { |refusal_class| error.is_a?(refusal_class) }\n    REASONS.fetch(error_class, :api_error)\n  end\n\n  # Ends the step's files under `reason_for(error)` — a system transition, scoped to the connection's firm since the\n  # system passes every policy; the caller answers the refusal, and a policy refusal or a refused grant is raised on.\n  #\n  # @param error [StandardError] one of `TERMINAL_ERRORS`\n  # @param tax_automation_documents [Array<TaxPreparation::TaxAutomations::Document>]\n  # @param connection [TaxPreparation::TaxAutomations::HasOauthConnection]\n  # @return [void]\n  # @raise [AbstractPolicy::PolicyError] the refusal itself, once the files are ended\n  def refuse!(error, tax_automation_documents, connection)\n    reason = reason_for(error)\n\n    report_refusal(error, tax_automation_documents, connection) if REPORTED_ERRORS.any? { |error_class| error.is_a?(error_class) }\n    own_documents = Array(tax_automation_documents).select { |tax_automation_document| tax_automation_document.firm_id == connection.firm_id }\n    system_actor = System.new\n    TaxPreparation::TaxAutomations::Documents::FailUpload.call(system_actor.user, system_actor, own_documents, reason)\n    raise error if RAISED_ERRORS.any? { |error_class| error.is_a?(error_class) }\n  end\n\n  def report_refusal(error, tax_automation_documents, connection)\n    tags = {error_context: Settings.product_clusters.tax_preparation, provider: tax_automation_documents.first.provider}\n    contexts = {tax_automations: {connection_id: connection.id, tax_automation_document_ids: tax_automation_documents.map(&:id)}}\n\n    ErrorReporter.report(error, tags, contexts)\n  end\nend\n",
+            "payload.kind": "file"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q04",
+            "native_call_id": "exec-10d61870-d7bc-4421-80bf-857fe44a1584",
+            "native_response_id": "resp_0774613464b3f479016ae6064bd8108191809d9fb62733127d",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19288-bd4e-7bd1-839f-7524efdf1bc3"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "TaxPreparation::TaxAutomations::TokenRefreshable#with_access_token",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "payload.symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#with_access_token",
+            "payload.startLine": 180,
+            "payload.endLine": 198,
+            "payload.content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # The only door to the vendor API — nothing outside this module reads, checks\n  # or renews a token.\n  #\n  # A withdrawal leaves the tokens in the row, so the state is the only thing\n  # saying they must not be used: without the guard the client would go on\n  # serving requests from a grant the firm took back, and the first renewal after\n  # that would fail inside the state machine rather than here.\n  #\n  # @yieldparam access_token [String] a token verified as unexpired\n  # @raise [InvalidGrantError] when the connection is in no state to carry a\n  #   request — the firm has to authorize us again, which is what the error means\n  #   everywhere else too\ndef with_access_token\n    raise InvalidGrantError.new(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE), connection: vendor_connection) unless vendor_connection.usable?\n\n    refresh! unless vendor_connection.access_token_valid?\n\n    yield vendor_connection.access_token\n  end"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q04",
+            "native_call_id": "exec-10d61870-d7bc-4421-80bf-857fe44a1584",
+            "native_response_id": "resp_0774613464b3f479016ae6064bd8108191809d9fb62733127d",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19288-bd4e-7bd1-839f-7524efdf1bc3"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "TaxPreparation::TaxAutomations::BaseClient#request",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "payload.symbolId": "TaxPreparation::TaxAutomations::BaseClient#request",
+            "payload.startLine": 280,
+            "payload.endLine": 331,
+            "payload.content": "class TaxPreparation::TaxAutomations::BaseClient\n  # @param headers [Hash] per-request headers on top of the authenticating ones\n  # @yieldparam response [Faraday::Response] handed over in place of the parsed\n  #   body when a vendor call assembles a value of its own from the answer — a\n  #   pre-signed target is several of its fields at once, and reading them is the\n  #   vendor's vocabulary rather than the transport's\n  # @return [Hash] the parsed response body, or whatever the block makes of the\n  #   whole response when one is given\ndef request(method_name, path, body: nil, params: nil, headers: {}, &block)\n    Retry.retry_on(AUTH_ERRORS, AUTH_RETRIES_COUNT, timeout: AUTH_RETRY_TIMEOUT_SEC) do\n      with_access_token do |access_token|\n        # The renewal rides an operation of its own: its wait on the row lock says\n        # nothing about how fast the vendor's API is.\n        response = measured('api_request') { perform(method_name, path, access_token, body:, params:, headers:) }\n\n        block ? block.call(response) : response.body\n      end\n    rescue UnauthorizedError => e\n      # Counted on every attempt: a retried rejection is still a rejection, and a\n      # metric that only sees the last one hides the ladder.\n      track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n      # The vendor refused a token whose stored expiry still reads valid, so the\n      # next attempt has to carry one it minted rather than the one it just\n      # rejected.\n      refresh!(force: true)\n      raise\n    rescue ActiveRecord::LockWaitTimeout\n      track_failure('api_request', 'LOCK_TIMEOUT')\n      raise\n    end\n    # Both are retried together — waiting is the right answer to either — but\n    # they leave differently. The 401 goes on as itself: it carries the vendor's\n    # own account of the refusal, and every attempt is already counted, so it\n    # must not fall through to the counting branch below. A lock timeout is not\n    # an authorization failure at all and has nothing of the vendor to carry.\n  rescue UnauthorizedError\n    raise\n  rescue ActiveRecord::LockWaitTimeout\n    raise ConnectionBusyError, I18n.t('connection_busy', scope: I18N_ERRORS_SCOPE)\n  rescue InvalidGrantError\n    # The one failure retrying cannot help with, and the only one the firm has to\n    # act on. Counted here because it reaches the caller through none of the\n    # branches around it — the token module raises it in place of whatever the\n    # vendor said.\n    track_failure('api_request', 'INVALID_GRANT')\n    raise\n  rescue *NETWORK_ERRORS => e\n    track_failure('api_request', \"NETWORK_ERROR: #{e.class.name}\")\n    raise NetworkError, e.message\n  rescue RequestError => e\n    track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n    raise\n  end"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q14",
+            "native_call_id": "exec-d2a9257f-d209-4f75-a69f-00e7f3f300cf",
+            "native_response_id": "resp_0774613464b3f479016ae6077d624c8191b5006e74dbc14d13",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a1928d-4ffa-7980-98a4-083036e83f17"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "TaxPreparation::TaxAutomations::TokenRefreshable#reject_grant!",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "payload.kind": null,
+            "payload.startLine": 277,
+            "payload.endLine": 285,
+            "payload.content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Suspected, not settled: `expired` keeps the row usable for the verification\n  # whose exchange brings it back or `Connections::Renew` revokes.\n  #\n  # @raise [InvalidGrantError] always\ndef reject_grant!(message)\n    vendor_connection.expire! if vendor_connection.may_expire?\n\n    raise InvalidGrantError.new(message, connection: vendor_connection)\n  end",
+            "payload.symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#reject_grant!"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q14",
+            "native_call_id": "exec-d2a9257f-d209-4f75-a69f-00e7f3f300cf",
+            "native_response_id": "resp_0774613464b3f479016ae6077d624c8191b5006e74dbc14d13",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a1928d-4ffa-7980-98a4-083036e83f17"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!",
+            "payload.relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "payload.kind": null,
+            "payload.startLine": 200,
+            "payload.endLine": 254,
+            "payload.content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Renews under the row lock. The re-check inside the lock is what makes a\n  # concurrent caller a waiter rather than a second refresher.\n  #\n  # @param force [Boolean] the vendor rejected the token we hold, so its stored\n  #   expiry says nothing — renewing is right unless another caller has already\n  #   replaced that very token.\ndef refresh!(force: false)\n    reject_grant!(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE)) unless vendor_connection.refresh_token_valid?\n\n    rejected_token = vendor_connection.access_token if force\n\n    # On its own DB connection, so the write outlives a rollback of the caller's\n    # transaction. The vendor has already rotated the refresh token by then, and\n    # a rolled-back row keeps a token the vendor no longer honours — the grant is\n    # dead with no way back.\n    ThreadHelper.run_in_new_thread do\n      Thread.current.report_on_exception = false\n\n      vendor_connection.transaction(requires_new: true) do\n        # Bounds the wait when the caller's own transaction already holds this\n        # row: what would be a deadlock against the thread above surfaces as a\n        # LockWaitTimeout the client retries.\n        ActiveRecord::Base.connection.execute(\"SET LOCAL lock_timeout = '#{CONNECTION_LOCK_TIMEOUT_SEC}s'\")\n\n        vendor_connection.with_lock do\n          # The guard at the door read the row as it stood when the request began;\n          # this reads it as it stands now. A withdrawal that landed while we\n          # queued behind the lock leaves a row the transition below does not lead\n          # out of, and the caller is owed the same error as any other dead grant.\n          raise InvalidGrantError.new(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE), connection: vendor_connection) unless vendor_connection.may_refresh?\n\n          # Whoever held the lock before us may have renewed already, and what\n          # counts as \"already\" depends on what sent us here: preemptively any\n          # unexpired token will do, but after a rejection only one that is no\n          # longer the token the vendor turned down.\n          next if force && vendor_connection.access_token != rejected_token\n          next if !force && vendor_connection.access_token_valid?\n\n          vendor_connection.store_tokens!(**refresh_tokens!)\n          # The exchange settles the grant's standing in both directions, so the\n          # transition follows it either way: here it stamps `refreshed_at` and\n          # brings an expired grant back to connected, and in {#reject_grant!} it\n          # moves a refused one further out.\n          vendor_connection.refresh!\n        end\n      end\n    end\n    # Named in full because the exchange reaches the token endpoint through the\n    # including client's error middleware — the one place this module knows it is\n    # mixed into exactly one class.\n  rescue TaxPreparation::TaxAutomations::BaseClient::RequestError => e\n    raise unless grant_refused?(e)\n\n    reject_grant!(e.message)\n  end",
+            "payload.symbolId": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!"
+          }
+        }
+      ]
+    },
+    {
+      "id": "T-Q34-held-validation-missing-gem",
+      "question": "How do the existing vendor specs validate fixtures and mock answers against the vendor's OpenAPI contract, and with which gem?",
+      "retained_visible_context": [
+        {
+          "origin": {
+            "question": "Q02",
+            "native_call_id": "exec-a2f363dc-ea4e-47f4-b8b1-53cd6e8486c6",
+            "native_response_id": "resp_0774613464b3f479016ae605cede488191b451273203fa2c54",
+            "response_ordinal": 7,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19286-be29-7ea2-b0d2-6dc8079f7cfe"
+            ]
+          },
+          "command": "/bin/zsh -c \"sed -n '1,260p' spec/support/tax_automations_helpers.rb\"",
+          "exitCode": 0,
+          "delivered_stdout": "# frozen_string_literal: true\n\n# Shared setup for tax automation vendor client specs. Lives here rather than in\n# the specs so the next vendor reuses the contract check instead of copying it.\nmodule TaxAutomationsHelpers\n  INSTEAD_CONTRACT_PATH = 'specs/TD-95046-instead-integration/contracts/instead_openapi_spec.yml'\n  INSTEAD_FIXTURES_PATH = 'spec/fixtures/tax_preparation/tax_automations/instead'\n\n  # A Faraday test-stub reply carrying a JSON body. Deliberately keyword-free:\n  # with an optional kwarg, Ruby parses `json_response('Key' => 1)` as keyword\n  # arguments rather than as the positional hash the caller means.\n  def json_response(body)\n    [200, {'Content-Type' => 'application/json'}, body.to_json]\n  end\n\n  # The stand-in endpoint the base-client spec drives its subclass through.\n  def stub_vendor_ping(status:, body: nil, headers: {'Content-Type' => 'application/json'})\n    transport.get('/ping') { [status, headers, body] }\n  end\n\n  # The vendor's token endpoint answering nothing: what a renewal sees during an\n  # outage, before the client's own timeout gives up on it.\n  def stub_instead_token_endpoint_down\n    stub_request(:post, \"#{TaxPreparation::TaxAutomations::Instead::Client::BASE_URL}/oauth2/token\").to_timeout\n  end\n\n  def instead_fixture(name)\n    JSON.parse(Rails.root.join(INSTEAD_FIXTURES_PATH, \"#{name}.json\").read)\n  end\n\n  # The body Instead refuses a request with — `instead_error('NOT_FOUND_DOCUMENT', 'Not found - Document not found.')`.\n  def instead_error(identifier, message, parameters = nil)\n    {'Error' => {'Identifier' => identifier, 'Message' => message, 'Parameters' => parameters}.compact}\n  end\n\n  def instead_started_upload(file_uuid)\n    upload = instead_fixture('start_upload')\n    upload['FileUUID'] = file_uuid\n    upload['Upload']['ExpiresAt'] = 10.minutes.from_now.iso8601\n\n    {status: 201, body: upload.to_json, headers: {'Content-Type' => 'application/json'}}\n  end\n\n  def stub_instead_send(file_uuids:, size:)\n    base_url = TaxPreparation::TaxAutomations::Instead::Client::BASE_URL\n    bucket_url = instead_fixture('start_upload').dig('Upload', 'URL')\n    started_uploads = file_uuids.map { |file_uuid| instead_started_upload(file_uuid) }\n\n    stub_request(:post, \"#{base_url}/entities\").to_return_json(status: 201, body: {'Entity' => instead_fixture('entity').merge('EntityType' => 'INDIVIDUAL')})\n    stub_request(:post, \"#{base_url}/docs/uploads\").to_return(*started_uploads)\n    stub_request(:post, bucket_url).to_return(status: 204)\n    file_uuids.each do |file_uuid|\n      stub_request(:put, \"#{base_url}/docs/#{file_uuid}\").to_return_json(status: 200, body: {'File' => instead_fixture('file').merge('UUID' => file_uuid, 'Size' => size)})\n    end\n  end\n\n  # One answer per page, in order — `{'Files' => [...], 'NextPageToken' => ...}`.\n  def stub_instead_list_docs(*pages)\n    responses = pages.map { |page| {status: 200, body: page} }\n\n    stub_request(:post, \"#{TaxPreparation::TaxAutomations::Instead::Client::BASE_URL}/docs\").to_return_json(*responses)\n  end\n\n  # One answer per page, in order — `{'Entities' => [...], 'NextPageToken' => ...}`; an empty listing by default,\n  # which is what a connect starts the entity sync against.\n  def stub_instead_list_entities(*pages)\n    responses = pages.presence || [{'Entities' => []}]\n    responses = responses.map { |page| {status: 200, body: page} }\n\n    stub_request(:get, \"#{TaxPreparation::TaxAutomations::Instead::Client::BASE_URL}/entities\").with(query: hash_including({})).to_return_json(*responses)\n  end\n\n  # A UUIDv7 minted at `time`, the shape Instead gives a delivery's `id`.\n  def instead_event_id(time)\n    hex = format('%012x', (time.to_r * 1000).to_i) + SecureRandom.hex(10)\n    hex[12] = '7'\n\n    \"#{hex[0, 8]}-#{hex[8, 4]}-#{hex[12, 4]}-#{hex[16, 4]}-#{hex[20, 12]}\"\n  end\n\n  def stub_instead_get_doc_not_found(file_uuid)\n    stub_request(:get, \"#{TaxPreparation::TaxAutomations::Instead::Client::BASE_URL}/docs/#{file_uuid}\").to_return_json(status: 404, body: instead_error('NOT_FOUND_DOCUMENT', 'Not found - Document not found.'))\n  end\n\n  def instead_contract\n    @instead_contract ||= YAML.load_file(Rails.root.join(INSTEAD_CONTRACT_PATH))\n  end\n\n  # Validates a payload against a named component schema of the vendor contract.\n  # The whole document goes in as the schema root so internal `$ref`s resolve.\n  def conforms_to_contract?(schema_name, payload)\n    JSON::Validator.validate(instead_contract.merge('$ref' => \"#/components/schemas/#{schema_name}\"), payload)\n  end\nend\n"
+        },
+        {
+          "origin": {
+            "question": "Q26",
+            "native_call_id": "exec-e522585b-ccd2-46ce-9ac2-b84765464223",
+            "native_response_id": "resp_0774613464b3f479016ae608d5470c81918175a6c9fa43a38f",
+            "response_ordinal": 4,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19292-a0a0-7483-9340-56a72e7d4fba"
+            ]
+          },
+          "command": "/bin/zsh -c \"sed -n '240,285p' spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb\"",
+          "exitCode": 0,
+          "delivered_stdout": "\n  describe '#finalize_doc_upload' do\n    it 'registers the uploaded object and returns the file, unwrapped', :aggregate_failures do\n      VCR.use_cassette('tax_preparation/tax_automations/instead/finalize_doc_upload') do\n        entity_uuid = recorded_entity_uuid\n        file = client.finalize_doc_upload(client.start_doc_upload(entity_uuid:, **upload).external_id, entity_uuid:)\n\n        expect(file).to include('UUID')\n        expect(conforms_to_contract?('File', file)).to be true\n      end\n    end\n\n    it 'sends an overriding Path when one is given' do\n      VCR.use_cassette('tax_preparation/tax_automations/instead/finalize_doc_upload_renamed') do\n        entity_uuid = recorded_entity_uuid\n        file_uuid = client.start_doc_upload(entity_uuid:, **upload).external_id\n        renamed_path = upload[:path].sub('.pdf', '-renamed.pdf')\n        client.finalize_doc_upload(file_uuid, entity_uuid:, path: renamed_path)\n\n        expect(a_request(:put, \"#{base_url}/docs/#{file_uuid}\").with(body: {'Path' => renamed_path})).to have_been_made\n      end\n    end\n\n    it 'names the entity the file is filed under' do\n      VCR.use_cassette('tax_preparation/tax_automations/instead/finalize_doc_upload') do\n        entity_uuid = recorded_entity_uuid\n        file_uuid = client.start_doc_upload(entity_uuid:, **upload).external_id\n        client.finalize_doc_upload(file_uuid, entity_uuid:)\n\n        expect(a_request(:put, \"#{base_url}/docs/#{file_uuid}\").with(headers: {'X-Instead-Entity-UUID' => entity_uuid})).to have_been_made\n      end\n    end\n\n    # A path names one document: finalizing a second upload at a path an earlier\n    # document already holds is answered as a document that does not exist.\n    it 'raises NotFoundError for an upload finalized at a path another document holds' do\n      VCR.use_cassette('tax_preparation/tax_automations/instead/refusals/not_found_document') do\n        entity_uuid = recorded_entity_uuid\n        client.finalize_doc_upload(client.start_doc_upload(entity_uuid:, **upload).external_id, entity_uuid:)\n        second_file_uuid = client.start_doc_upload(entity_uuid:, **upload).external_id\n\n        expect { client.finalize_doc_upload(second_file_uuid, entity_uuid:) }.\n          to raise_error(described_class::NotFoundError) { |error| expect(error.body.dig('Error', 'Identifier')).to eq('NOT_FOUND_DOCUMENT') }\n      end\n    end\n  end\n"
+        }
+      ]
+    },
+    {
+      "id": "C-Q36-new-migration-locators",
+      "question": "Which indexes and foreign keys do the Instead adapter tables carry (connections, documents)?",
+      "retained_visible_context": []
+    },
+    {
+      "id": "C-Q35-missing-helper-body",
+      "question": "Through which CRM Public API calls can tax automations get a taxpayer contact's first and last name and its uuid?",
+      "retained_visible_context": [
+        {
+          "origin": {
+            "question": "Q35",
+            "native_call_id": "exec-a37cc426-ef4f-44a1-9d39-5e6fa7801625",
+            "native_response_id": "resp_0774613464b3f479016ae609db455c81918b1a57c1611180c1",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "Crm::Api::Contact.find",
+            "payload.resolvedAs": "Crm::Api::Contact#find",
+            "payload.relativePath": "app/services/crm/api/contact.rb",
+            "payload.symbolId": "Crm::Api::Contact#find",
+            "payload.startLine": 87,
+            "payload.endLine": 111,
+            "payload.content": "module Crm\n  module Api\n    module Contact\n      # Single-contact lookup, scoped to firm. Returns identity (id, name parts,\n      # stored `contact_name`, email, phone, account_id), address (country,\n      # company_name, street_address, city, province, zip), `custom_fields`\n      # (flat array of `{id, name, kind, shortcode_value}` over the firm's\n      # contact_custom_fields), and `account_full_name` (non-nil only when the\n      # contact has exactly one undeleted linked client).\n      #\n      # Cross-firm, missing, or policy-denied contact_id ⇒ failure(:not_authorized)\n      # — existence non-disclosure (SC-005; docs/crm/public_api.md:47,70).\n      #\n      # NOTE: soft-deleted contacts ARE returned (no `without_deleted` scope) —\n      # parity with the pre-TD-87986 master behavior of this shared lookup. The\n      # SMS-campaign caller still rejects soft-deleted recipients downstream via\n      # `Communication::Api::ContactPhoneNumbers.list_by_contact`. Whether this\n      # Public API should filter soft-deleted is a CRM-domain decision tracked\n      # separately, not folded into the SMS cross-cluster cleanup.\ndef find(firm:, user:, actor:, contact_id:)\n        result = Crm::Contacts::Find.call(user, actor, firm, contact_id)\n\n        if result.successful?\n          {success: true, errors: {}, data: contact_data(result.data)}\n        else\n          {success: false, errors: result.errors, reason: :not_authorized, data: nil}\n        end\n      end"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q35",
+            "native_call_id": "exec-a37cc426-ef4f-44a1-9d39-5e6fa7801625",
+            "native_response_id": "resp_0774613464b3f479016ae609db455c81918b1a57c1611180c1",
+            "response_ordinal": 1,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "Crm::Api::Contact.list_by_account",
+            "payload.resolvedAs": "Crm::Api::Contact#list_by_account",
+            "payload.relativePath": "app/services/crm/api/contact.rb",
+            "payload.symbolId": "Crm::Api::Contact#list_by_account",
+            "payload.startLine": 170,
+            "payload.endLine": 184,
+            "payload.content": "module Crm\n  module Api\n    module Contact\n      # All contacts associated with an account (legacy AR `Client`), scoped\n      # to firm. Cross-firm or non-existent account_id ⇒ empty list.\ndef list_by_account(firm:, user:, actor:, account_id:)\n        result = Crm::Contacts::ListByAccount.call(user, actor, firm, account_id)\n\n        contacts = result.data.map do |row|\n          {\n            contact_id: row[:id],\n            phone:      row[:phone],\n            name:       row[:name]\n          }\n        end\n\n        {success: true, errors: {}, data: {contacts: contacts}}\n      end"
+          }
+        },
+        {
+          "origin": {
+            "question": "Q35",
+            "native_call_id": "exec-1a7a8730-c0e1-4299-b5b5-557c4a53da57",
+            "native_response_id": "resp_0774613464b3f479016ae609e0fa588191b70a0d7da7bb61af",
+            "response_ordinal": 2,
+            "visible_wrapper_output_ids": [
+              "ctco_01a19296-a502-7b13-92b9-9c1264fa752e"
+            ]
+          },
+          "delivered_row": {
+            "payload.request": "app/services/crm/api/contact.rb",
+            "payload.resolvedAs": null,
+            "payload.relativePath": "app/services/crm/api/contact.rb",
+            "payload.symbolId": null,
+            "payload.startLine": null,
+            "payload.endLine": null,
+            "payload.content": "app/services/crm/api/contact.rb\n  Crm L3-410\n  Crm::Api::Contact L14-407\n    Crm::Api::Contact.include ::Api::Contracts::Enforcement\n    Crm::Api::Contact::RENDER_SHORTCODE_TEXT_REASON_MAP\n    Crm::Api::Contact::RENDER_SMS_SHORTCODE_TEXT_REASON_MAP\n    Crm::Api::Contact::FIND_BY_ACCOUNT_USER_REASON_MAP\n    Crm::Api::Contact::UPDATE_REASON_MAP\n  Crm::Api::Contact#create (public) L46-64\n  Crm::Api::Contact#update (public) L66-85\n  Crm::Api::Contact#find (public) L87-111\n  Crm::Api::Contact#find_by_account_user (public) L113-139\n  Crm::Api::Contact#list_by_ids (public) L141-168\n  Crm::Api::Contact#list_by_account (public) L170-184\n  Crm::Api::Contact#list_by_phone_number (public) L186-200\n  Crm::Api::Contact#list_active (public) L202-222\n  Crm::Api::Contact#list_synced (public) L224-235\n  Crm::Api::Contact#list_synced_with_client (public) L237-247\n  Crm::Api::Contact#existing_ids (public) L249-254\n  Crm::Api::Contact#list_by_sms_thread (public) L256-273\n  Crm::Api::Contact#create_email_custom_field (public) L275-287\n  Crm::Api::Contact#reset_email_custom_field (public) L289-298\n  Crm::Api::Contact#custom_field_definitions (public) L300-309\n  Crm::Api::Contact#render_shortcode_text (public) L311-333\n  Crm::Api::Contact#render_shortcode_texts (public) L335-356\n  Crm::Api::Contact#render_sms_shortcode_text (public) L358-382\n  Crm::Api::Contact.contact_data (private) L387-406"
+          }
+        }
+      ]
+    }
+  ],
+  "retained_schema_excerpts": [
+    {
+      "origin": {
+        "question": "Q01",
+        "visible_wrapper_output_id": "ctco_01a19284-4a69-7281-a183-0d53a2f9d0fe"
+      },
+      "delivered_text": "{\"name\":\"mcp__tea_rags__semantic_search\",\"schema\":\"\\n```ts\\ndeclare const tools: { mcp__tea_rags__semantic_search(args: {\\n  // Blame owner (git blame HEAD), exact name.\\n  author?: string;\\n  // function | class | interface | block\\n  chunkType?: string;\\n  // Raw collection; prefer project + path.\\n  collection?: string;\\n  // Any FILE committer in git log window; exact name.\\n  contributor?: string;\\n  // Omitted → preset default may drop docs.\\n  documentation?: \\\"only\\\" | \\\"exclude\\\" | \\\"include\\\";\\n  // Payload dot-paths to return (relativePath always kept); unmatched → fieldsWarning. Omitted → [relativePath,symbolId,startLine,endLine,content]; metaOnly → [relativePath,symbolId,startLine,endLine,signature]. Paths: tea-rags://guide/signals.\\n  fields?: Array<string>;\\n  // File extension(s): '.ts' or ['.ts', '.py'].\\n  fileExtension?: string | Array<string>;\\n  // Raw Qdrant filter (must/should/must_not) or { presets: \\\"a,b\\\" }. Omitted → preset default filter; {} clears. tea-rags://guide/overview. Presets: production, coreLogic, securityPaths, freshLegacyEdits, fragileSilo, panicZone, godMethods, hubs, deadCandidates, unstableCore, battleTested, abandonedHotspots.\\n  filter?: { [key: string]: unknown; } | { presets: string; };\\n  // true → full import lists (default: count).\\n  includeImports?: boolean;\\n  // fanIn above p95. File-level.\\n  isHub?: boolean;\\n  // fanOut 0, fanIn > 0. File-level.\\n  isLeaf?: boolean;\\n  // Filter by programming language\\n  language?: string;\\n  // 'file' ranks whole files (file payload, no content); also scopes level-aware filters. Default: preset's.\\n  level?: \\\"chunk\\\" | \\\"file\\\";\\n  // Maximum number of results (default: 10)\\n  limit?: number;\\n  // Last commit ≤ N days ago (0 = today).\\n  maxAgeDays?: number;\\n  // Drop content; payload = locator (path, symbolId, lines, signature); signals via fields. Default: false.\\n  metaOnly?: boolean;\\n  // Last commit ≥ N days ago; chunk level drops no-commit chunks.\\n  minAgeDays?: number;\\n  // Min commits (churn).\\n  minCommitCount?: number;\\n  // fanIn+fanOut. File-level.\\n  minConnectionCount?: number;\\n  // File: importers; chunk level: call sites.\\n  minFanIn?: number;\\n  // File: imports; chunk level: outgoing calls.\\n  minFanOut?: number;\\n  // fanOut/(fanIn+fanOut), 0-1. File-level.\\n  minInstability?: number;\\n  // Chunk PageRank, 0-1.\\n  minPageRank?: number;\\n  // Transitive importer files. File-level.\\n  minTransitiveImpact?: number;\\n  // File last commit on/after ISO date.\\n  modifiedAfter?: string;\\n  // File last commit on/before ISO date.\\n  modifiedBefore?: string;\\n  // Skip first N results (pagination). Default: 0.\\n  offset?: number;\\n  // Your working tree (cwd / worktree); pass WITH project.\\n  path?: string;\\n  // Glob on file path (picomatch), e.g. '**/workflow/**', 'src/**/*.ts'.\\n  pathPattern?: string;\\n  // Alias from list_projects/prime; pass every call.\\n  project?: string;\\n  // Query text, or up to 5 variants (array or 'a ||| b') fused in one call.\\n  query: string | Array<string>;\\n  // Top FILE committer in git log window (not blame); name or email.\\n  recentAuthor?: string;\\n  // Preset, or {custom: {<signal>: number}}; signals: tea-rags://guide/signals, presets: tea-rags://guide/presets.\\n  rerank?: \\\"relevance\\\" | \\\"decomposition\\\" | \\\"documentationRelevance\\\" | \\\"godModule\\\" | \\\"bugHunt\\\" | \\\"techDebt\\\" | \\\"hotspots\\\" | \\\"codeReview\\\" | \\\"dangerous\\\" | \\\"onboarding\\\" | \\\"securityAudit\\\" | \\\"refactoring\\\" | \\\"ownership\\\" | \\\"recent\\\" | \\\"stable\\\" | \\\"proven\\\" | \\\"criticalMethod\\\" | \\\"hotMethod\\\" | \\\"godMethod\\\" | \\\"blastRadius\\\" | \\\"architecturalHub\\\" | \\\"entryPoint\\\" | \\\"criticalPath\\\" | { custom: { [key: string]: number; }; };\\n  // migrations = Rails schema history (not current state), relevance-ranked. Default code.\\n  scope?: \\\"code\\\" | \\\"migrations\\\";\\n  // Partial symbolId match: 'Class' → all its methods.\\n  symbolId?: string;\\n  // Commit-message task ID, e.g. TD-1234, #567.\\n  taskId?: string;\\n  // Omitted → preset default may drop tests.\\n  testFile?: \\\"only\\\" | \\\"exclude\\\" | \\\"include\\\";\\n}): \"}"
+    },
+    {
+      "origin": {
+        "question": "Q01",
+        "visible_wrapper_output_id": "ctco_01a19284-4a69-7281-a183-0d53a2f9d0fe"
+      },
+      "delivered_text": "{\"name\":\"mcp__tea_rags__find_symbol\",\"schema\":\"\\n```ts\\ndeclare const tools: { mcp__tea_rags__find_symbol(args: {\\n  // Raw collection; prefer project + path.\\n  collection?: string;\\n  // Payload dot-paths to return (relativePath always kept); unmatched → fieldsWarning. Omitted → lean default per mode. Paths: tea-rags://guide/signals.\\n  fields?: Array<string>;\\n  // true → full import lists (default: count).\\n  includeImports?: boolean;\\n  // Filter by programming language (for disambiguation in polyglot codebases)\\n  language?: string;\\n  // Maximum number of results (default: 50)\\n  limit?: number;\\n  // Existence check. Drop content; payload = locator (path, symbolId, lines, signature); signals via fields.\\n  metaOnly?: boolean;\\n  // Skip first N results (pagination). Default: 0.\\n  offset?: number;\\n  // Your working tree (cwd / worktree); pass WITH project.\\n  path?: string;\\n  // Glob scoping symbol-mode lookup, e.g. '**/services/**'. Ignored with relativePath.\\n  pathPattern?: string;\\n  // Alias from list_projects/prime; pass every call.\\n  project?: string;\\n  // File → full text if small, else outline; doc → heading TOC. Directory → files, top-level symbols, subdirs. Excludes symbol.\\n  relativePath?: string;\\n  // Preset or {custom: {<signal>: number}} (tea-rags://guide/signals) — attaches rankingOverlay.\\n  rerank?: \\\"relevance\\\" | \\\"decomposition\\\" | \\\"documentationRelevance\\\" | \\\"godModule\\\" | \\\"bugHunt\\\" | \\\"techDebt\\\" | \\\"hotspots\\\" | \\\"codeReview\\\" | \\\"dangerous\\\" | \\\"onboarding\\\" | \\\"securityAudit\\\" | \\\"refactoring\\\" | \\\"ownership\\\" | \\\"recent\\\" | \\\"stable\\\" | \\\"proven\\\" | \\\"criticalMethod\\\" | \\\"hotMethod\\\" | \\\"godMethod\\\" | \\\"blastRadius\\\" | \\\"architecturalHub\\\" | \\\"entryPoint\\\" | \\\"criticalPath\\\" | { custom: { [key: string]: number; }; };\\n  // Symbol or symbolId: Class#method (instance), Class.method (static), fn. Partial ok. Excludes relativePath.\\n  symbol?: string;\\n  // 1-20 symbol ids or file paths; file ≤150 lines → full text within batch budget, else outline. Excludes symbol, relativePath.\\n  symbols?: Array<string>;\\n}): \"}"
+    }
+  ]
+}

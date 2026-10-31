@@ -1,0 +1,28 @@
+{
+  "model_turns": 0,
+  "thread_id": "01a19381-d4b5-7dc1-84ee-2a799cf19f88",
+  "launch_PATH": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/bin-probe:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  "api_login_flag_supported": false,
+  "checks": {
+    "native_default_PATH": {
+      "exitCode": 0,
+      "stdout": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin:/Users/artk0re/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/codex-path:/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin:/usr/bin:/bin:/usr/sbin:/sbin\n",
+      "stderr": ""
+    },
+    "same_actor_shell_no_login": {
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    "no_login_explicit_launch_PATH": {
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    "shim_readable_in_profile": {
+      "exitCode": 71,
+      "stdout": "",
+      "stderr": "sandbox-exec: execvp() of '/usr/bin/test' failed: No such file or directory\n"
+    }
+  }
+}

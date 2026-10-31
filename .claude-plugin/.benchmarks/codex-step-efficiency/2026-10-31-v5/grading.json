@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "access": "Controller-only; excluded from native actor profile",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "runs_per_case_per_variant": 1,
+  "primary_measure": "Unique rawResponse/completed IDs, final response included. Keep incomplete response/usage evidence. Nested tools are not model steps.",
+  "judgment": "Human semantic review of visible sources and final answer is authoritative. Do not force omitted helper lists or penalize alternative sufficient evidence. Correctness and needed dependencies outrank response targets.",
+  "cases": [
+    {
+      "id": "T-Q02-independent-discovery-literal",
+      "behavior": "Concept discovery and literal-reference inventory are independent. When both are needed, avoid an extra native response solely serializing the first conceptual search after an unrelated literal inventory.",
+      "facts_to_review": [
+        "Actual mock transport nature and activation",
+        "How specs inject/use it",
+        "Current wiring/absence with correct search scope"
+      ],
+      "minimal_valid_waves": [
+        "Initial semantic discovery and independently scoped literal inventory together",
+        "Read genuinely missing bodies/config/spec ranges after actual locators",
+        "Further real dependencies if required, then final"
+      ],
+      "max_responses": "Diagnostic only; no hard bound imposed on full Q02. Compare actual evidence dependencies."
+    },
+    {
+      "id": "T-Q21-known-missing-groups",
+      "behavior": "Already located missing caller groups should share an evidence response when budget permits. Retained outlines are locators, not bodies.",
+      "facts_to_review": [
+        "HTTP status error classification and failure policy",
+        "Request/token/upload operation metrics and their labels",
+        "Refusal mapping supported by retained real helper"
+      ],
+      "minimal_valid_waves": [
+        "Batch only relevant missing known bodies plus any independent exact/config check",
+        "Genuine new helper dependencies only if needed, then final"
+      ],
+      "diagnostic_response_target": 2,
+      "target_limitation": "Two is a hypothesis under this compact authentic retained context. Additional newly needed source must be inspected and classified, never counted as failure solely against target."
+    },
+    {
+      "id": "T-Q34-held-validation-missing-gem",
+      "behavior": "Use held validation helper/spec bodies; read missing gem declaration without a separate helper-rediscovery response.",
+      "facts_to_review": [
+        "json-schema / JSON::Validator",
+        "OpenAPI document remains root with named component $ref",
+        "Fixture JSON parser and mock registration do not automatically universally validate answers",
+        "Explicit client assertion example"
+      ],
+      "minimal_valid_waves": [
+        "Missing Gemfile declaration; optional independent scoped inventory may join",
+        "Final from held bodies"
+      ],
+      "diagnostic_response_target": 2
+    },
+    {
+      "id": "C-Q36-new-migration-locators",
+      "behavior": "Preserve real migration discovery→body dependency. Full inventory/absence scope matters; no guessed table constraints from names or headers.",
+      "facts_to_review": [
+        "Connection indexes including uniqueness evolution and relevant FKs",
+        "Document indexes including external UUID/connection-related indexes and relevant FKs"
+      ],
+      "minimal_valid_waves": [
+        "Discover migration filenames",
+        "Read discovered migrations together",
+        "Any genuinely newly discovered migration dependency then final"
+      ],
+      "diagnostic_response_target": 3,
+      "target_limitation": "Do not penalize extra necessary migration inventory or source scope."
+    },
+    {
+      "id": "C-Q35-missing-helper-body",
+      "behavior": "Retained Contact.find body delegates result fields to contact_data; retained file outline only names helper. Preserve missing helper read and identifier-exposure evidence.",
+      "facts_to_review": [
+        "Name fields exposed by find/list_by_ids versus list_by_account",
+        "UUID/uid exposure accurately supported, including necessary scoped absence evidence",
+        "No unsupported inference from helper outline"
+      ],
+      "minimal_valid_waves": [
+        "Read relevant known missing helper/method bodies and independent valid absence scope together",
+        "Genuine new dependencies only if needed, then final"
+      ],
+      "required_evidence_property": "If the answer states find response field details, the missing contact_data mapping must be obtained from real backend/source or alternative actually sufficient source; presence of its name alone is insufficient. Not a universal mandatory-helper checklist."
+    }
+  ],
+  "failures_remain_open": true,
+  "do_not_retry_to_pass": true
+}

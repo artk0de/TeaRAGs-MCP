@@ -1,0 +1,192 @@
+test_bytes_grow_linearly_without_list_rewrites_or_fsync (test_controller_io.PersistenceTests.test_bytes_grow_linearly_without_list_rewrites_or_fsync) ... ERROR
+test_completed_snapshot_refuses_overwrite_and_append (test_controller_io.PersistenceTests.test_completed_snapshot_refuses_overwrite_and_append) ... ERROR
+test_error_writes_one_partial_snapshot_without_completed_answer (test_controller_io.PersistenceTests.test_error_writes_one_partial_snapshot_without_completed_answer) ... ERROR
+test_event_fidelity_order_and_duplicate_events (test_controller_io.PersistenceTests.test_event_fidelity_order_and_duplicate_events) ... ERROR
+test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) ... 
+  test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-partial-events.jsonl') ... ERROR
+  test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-events.json') ... ERROR
+  test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-partial-events.json') ... ERROR
+test_flushed_records_survive_process_crash_without_close (test_controller_io.PersistenceTests.test_flushed_records_survive_process_crash_without_close) ... FAIL
+test_incomplete_final_record_is_reported_not_silently_accepted (test_controller_io.PersistenceTests.test_incomplete_final_record_is_reported_not_silently_accepted) ... ERROR
+test_persistence_fields_are_observations_not_model_time (test_controller_io.PersistenceTests.test_persistence_fields_are_observations_not_model_time) ... ERROR
+test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) ... 
+  test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='executable') ... ERROR
+  test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='executable_sha256') ... ERROR
+  test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='version') ... ERROR
+  test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='cache_tag') ... ERROR
+  test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='flags') ... ERROR
+test_runtime_identity_freezes_actual_interpreter (test_controller_io.RuntimeTests.test_runtime_identity_freezes_actual_interpreter) ... ERROR
+
+======================================================================
+ERROR: test_bytes_grow_linearly_without_list_rewrites_or_fsync (test_controller_io.PersistenceTests.test_bytes_grow_linearly_without_list_rewrites_or_fsync)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 72, in test_bytes_grow_linearly_without_list_rewrites_or_fsync
+    journal = EventJournal(d, 'Q%02d' % n)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_completed_snapshot_refuses_overwrite_and_append (test_controller_io.PersistenceTests.test_completed_snapshot_refuses_overwrite_and_append)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 95, in test_completed_snapshot_refuses_overwrite_and_append
+    journal = EventJournal(d, 'Q01')
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_error_writes_one_partial_snapshot_without_completed_answer (test_controller_io.PersistenceTests.test_error_writes_one_partial_snapshot_without_completed_answer)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 60, in test_error_writes_one_partial_snapshot_without_completed_answer
+    journal = EventJournal(d, 'Q01')
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_event_fidelity_order_and_duplicate_events (test_controller_io.PersistenceTests.test_event_fidelity_order_and_duplicate_events)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 21, in test_event_fidelity_order_and_duplicate_events
+    journal = EventJournal(d, 'Q01')
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-partial-events.jsonl')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 90, in test_existing_journal_or_snapshot_refuses_overwrite
+    EventJournal(d, 'Q01')
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-events.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 90, in test_existing_journal_or_snapshot_refuses_overwrite
+    EventJournal(d, 'Q01')
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_existing_journal_or_snapshot_refuses_overwrite (test_controller_io.PersistenceTests.test_existing_journal_or_snapshot_refuses_overwrite) (suffix='-partial-events.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 90, in test_existing_journal_or_snapshot_refuses_overwrite
+    EventJournal(d, 'Q01')
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_incomplete_final_record_is_reported_not_silently_accepted (test_controller_io.PersistenceTests.test_incomplete_final_record_is_reported_not_silently_accepted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 51, in test_incomplete_final_record_is_reported_not_silently_accepted
+    recovery = recover_journal(path)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 7, in recover_journal
+    raise NotImplementedError('recover_journal')
+NotImplementedError: recover_journal
+
+======================================================================
+ERROR: test_persistence_fields_are_observations_not_model_time (test_controller_io.PersistenceTests.test_persistence_fields_are_observations_not_model_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 108, in test_persistence_fields_are_observations_not_model_time
+    journal = EventJournal(d, 'Q01')
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+======================================================================
+ERROR: test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='executable')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 133, in test_frozen_runtime_mismatch_is_rejected
+    expected = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+ERROR: test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='executable_sha256')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 133, in test_frozen_runtime_mismatch_is_rejected
+    expected = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+ERROR: test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='version')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 133, in test_frozen_runtime_mismatch_is_rejected
+    expected = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+ERROR: test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='cache_tag')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 133, in test_frozen_runtime_mismatch_is_rejected
+    expected = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+ERROR: test_frozen_runtime_mismatch_is_rejected (test_controller_io.RuntimeTests.test_frozen_runtime_mismatch_is_rejected) (key='flags')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 133, in test_frozen_runtime_mismatch_is_rejected
+    expected = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+ERROR: test_runtime_identity_freezes_actual_interpreter (test_controller_io.RuntimeTests.test_runtime_identity_freezes_actual_interpreter)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 121, in test_runtime_identity_freezes_actual_interpreter
+    identity = runtime_identity()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 10, in runtime_identity
+    raise NotImplementedError('runtime_identity')
+NotImplementedError: runtime_identity
+
+======================================================================
+FAIL: test_flushed_records_survive_process_crash_without_close (test_controller_io.PersistenceTests.test_flushed_records_survive_process_crash_without_close)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_controller_io.py", line 41, in test_flushed_records_survive_process_crash_without_close
+    self.assertEqual(result.returncode, 23, result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 23 : Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import os,sys; from controller_io import EventJournal; j=EventJournal(sys.argv[1],"Q01"); j.append({"method":"kept","params":{"n":1}}); os._exit(23)
+                                                             ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 4, in __init__
+    raise NotImplementedError('EventJournal')
+NotImplementedError: EventJournal
+
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.051s
+
+FAILED (failures=1, errors=15)

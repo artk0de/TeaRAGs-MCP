@@ -1,0 +1,127 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... ok
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... ok
+test_runtime_manifest_cannot_drift_from_frozen_record (test_adapter_io.AdapterTests.test_runtime_manifest_cannot_drift_from_frozen_record) ... ok
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... ok
+test_connected_exact_inventory_uses_same_thread_before_turn (test_mcp_readiness.ReadinessTests.test_connected_exact_inventory_uses_same_thread_before_turn) ... ERROR
+test_failed_state_tools_error_or_pagination_fails_closed (test_mcp_readiness.ReadinessTests.test_failed_state_tools_error_or_pagination_fails_closed) ... ok
+test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) ... 
+  test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=0) ... FAIL
+  test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=16) ... FAIL
+  test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=18) ... FAIL
+test_other_thread_ready_does_not_release_gate (test_mcp_readiness.ReadinessTests.test_other_thread_ready_does_not_release_gate) ... FAIL
+test_runner_missing_inventory_creates_no_turn (test_mcp_readiness.ReadinessTests.test_runner_missing_inventory_creates_no_turn) ... FAIL
+test_runner_orders_thread_inventory_then_turn (test_mcp_readiness.ReadinessTests.test_runner_orders_thread_inventory_then_turn) ... FAIL
+test_startup_ready_wait_preserves_all_pending_notifications (test_mcp_readiness.ReadinessTests.test_startup_ready_wait_preserves_all_pending_notifications) ... ERROR
+
+======================================================================
+ERROR: test_connected_exact_inventory_uses_same_thread_before_turn (test_mcp_readiness.ReadinessTests.test_connected_exact_inventory_uses_same_thread_before_turn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 21, in test_connected_exact_inventory_uses_same_thread_before_turn
+    result=wait_for_mcp_ready(rpc,'thread-1',TOOLS)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 3, in wait_for_mcp_ready
+    raise NotImplementedError('Same-thread MCP readiness gate')
+NotImplementedError: Same-thread MCP readiness gate
+
+======================================================================
+ERROR: test_startup_ready_wait_preserves_all_pending_notifications (test_mcp_readiness.ReadinessTests.test_startup_ready_wait_preserves_all_pending_notifications)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 31, in test_startup_ready_wait_preserves_all_pending_notifications
+    wait_for_mcp_ready(rpc,'thread-1',TOOLS)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 3, in wait_for_mcp_ready
+    raise NotImplementedError('Same-thread MCP readiness gate')
+NotImplementedError: Same-thread MCP readiness gate
+
+======================================================================
+FAIL: test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=0)
+----------------------------------------------------------------------
+NotImplementedError: Same-thread MCP readiness gate
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 37, in test_missing_or_extra_inventory_fails_closed
+    with self.subTest(tools=len(tools)),self.assertRaisesRegex(RuntimeError,'inventory'):
+                                        ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "inventory" does not match "Same-thread MCP readiness gate"
+
+======================================================================
+FAIL: test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=16)
+----------------------------------------------------------------------
+NotImplementedError: Same-thread MCP readiness gate
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 37, in test_missing_or_extra_inventory_fails_closed
+    with self.subTest(tools=len(tools)),self.assertRaisesRegex(RuntimeError,'inventory'):
+                                        ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "inventory" does not match "Same-thread MCP readiness gate"
+
+======================================================================
+FAIL: test_missing_or_extra_inventory_fails_closed (test_mcp_readiness.ReadinessTests.test_missing_or_extra_inventory_fails_closed) (tools=18)
+----------------------------------------------------------------------
+NotImplementedError: Same-thread MCP readiness gate
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 37, in test_missing_or_extra_inventory_fails_closed
+    with self.subTest(tools=len(tools)),self.assertRaisesRegex(RuntimeError,'inventory'):
+                                        ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "inventory" does not match "Same-thread MCP readiness gate"
+
+======================================================================
+FAIL: test_other_thread_ready_does_not_release_gate (test_mcp_readiness.ReadinessTests.test_other_thread_ready_does_not_release_gate)
+----------------------------------------------------------------------
+NotImplementedError: Same-thread MCP readiness gate
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 50, in test_other_thread_ready_does_not_release_gate
+    with self.assertRaisesRegex(RuntimeError,'failed'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "failed" does not match "Same-thread MCP readiness gate"
+
+======================================================================
+FAIL: test_runner_missing_inventory_creates_no_turn (test_mcp_readiness.ReadinessTests.test_runner_missing_inventory_creates_no_turn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 59, in test_runner_missing_inventory_creates_no_turn
+    self.run_runner_gate(missing=True)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 77, in run_runner_gate
+    with self.assertRaisesRegex(RuntimeError,'inventory'):runner.execute('A')
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RuntimeError not raised
+
+======================================================================
+FAIL: test_runner_orders_thread_inventory_then_turn (test_mcp_readiness.ReadinessTests.test_runner_orders_thread_inventory_then_turn)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 56, in test_runner_orders_thread_inventory_then_turn
+    self.run_runner_gate(missing=False)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_mcp_readiness.py", line 81, in run_runner_gate
+    else:self.assertEqual(methods[:3],['thread/start','mcpServerStatus/list','turn/start'])
+         ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['thread/start', 'turn/start', 'turn/start'] != ['thread/start', 'mcpServerStatus/list', 'turn/start']
+
+First differing element 1:
+'turn/start'
+'mcpServerStatus/list'
+
+- ['thread/start', 'turn/start', 'turn/start']
+?                     ^^  ---
+
++ ['thread/start', 'mcpServerStatus/list', 'turn/start']
+?                   ++++++++++++  ^ ++
+
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.165s
+
+FAILED (failures=6, errors=2)

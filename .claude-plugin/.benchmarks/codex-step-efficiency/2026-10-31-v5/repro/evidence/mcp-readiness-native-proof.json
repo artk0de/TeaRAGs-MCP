@@ -1,0 +1,114 @@
+{
+  "protocol": "same-thread-native-inventory-v1",
+  "readiness_only": true,
+  "cli_fallback_fixed": false,
+  "model_turns": 0,
+  "local_native_schema": {
+    "cli_version": "codex-cli 0.166.0",
+    "cli_sha256": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+    "root": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema",
+    "files_sha256": {
+      "v2/ListMcpServerStatusParams.json": "30b978c6502b37c9f0002aeba241f41c91d4c6adf0f92d89242b62ffde415a2d",
+      "v2/ListMcpServerStatusResponse.json": "c5a6c05092a9b1fa90c7cb3a319685a769a67c16e19048e8bbab5007b358be74",
+      "v2/McpServerStatusUpdatedNotification.json": "d6f4cb120b2363d321247592f03b9afbbf2762ad6d8af31b88c1b1bf39c4c7aa",
+      "ServerNotification.json": "cc06d031345c7f1f08f0ac8ccb42d889b3246fadada1aabdf4688027975efad7",
+      "v2/CommandExecParams.json": "e4f20080b92c6199cf132941840c4bd0fb9a90e3fec197ceb0e1ce9084346e18"
+    },
+    "contract": {
+      "method": "mcpServerStatus/list",
+      "params": {
+        "threadId": "exact actor thread",
+        "serverName": "tea-rags",
+        "detail": "toolsAndAuthOnly",
+        "limit": 100
+      },
+      "ready_condition": "runtimeStatus connected +exact17 expected tool keys +no toolsError +no pagination",
+      "startup_notification": "mcpServer/startupStatus/updated; match exact threadId/name, ready then verify actual inventory; failed/cancelled abort"
+    }
+  },
+  "positive_native_helper": {
+    "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/helper-native-result.json",
+    "sha256": "da808706e5e7c476c194aa80b01735b2fd3f603c1c35a39371edfa891b0e47f6",
+    "thread_id": "01a19387-c7a7-7870-b372-91da0ab0cc38",
+    "native_method_order": [
+      "thread/start",
+      "mcpServerStatus/list"
+    ],
+    "tool_names": [
+      "find_co_changed",
+      "find_cycles",
+      "find_similar",
+      "find_symbol",
+      "get_architecture_report",
+      "get_callees",
+      "get_callers",
+      "get_index_metrics",
+      "get_index_status",
+      "get_naming_lexicon",
+      "get_ontology_report",
+      "hybrid_search",
+      "list_projects",
+      "rank_chunks",
+      "search_code",
+      "semantic_search",
+      "trace_path"
+    ],
+    "runtimeStatus": "connected",
+    "no_turn_started": true,
+    "allow_model_turns": false,
+    "helper_sha256": "929833469693368e7be3515f73b71cf3906a0ebb5ba72b8a485168ab6fe9a7fc"
+  },
+  "failed_attempts_retained": [
+    {
+      "attempt": "readiness-probe-01",
+      "cause": "Fresh harness omitted codex61_cli.py, so setup shim could not complete MCP handshake. Not evidence against readiness API."
+    },
+    {
+      "attempt": "readiness-probe-02 shell",
+      "cause": "Native no-login policy PATH overrides launch PATH; explicit PATH still cannot find/read shim under deny boundary. /usr/bin/test diagnostic invalid on macOS and not counted as permission proof."
+    },
+    {
+      "attempt": "readiness-probe-03 exact grants",
+      "cause": "command-v positive, real readonly resource CLI fails ModuleNotFoundError codex61_mcp_proxy. No broad-directory permission grants attempted; CLI NOTFIXED. Five existing sensitive controls got EPERM, one nonexistent extra control got ENOENT and is not denial proof."
+    }
+  ],
+  "scope_decision": "Root chose readiness-only protocol; original shell/FS/proxy/native backend unchanged in future runner and short_native_ready.py. Probe03 experiment permissions are NOT carried.",
+  "causal_limit": "Turn-start before ready and later empty ALL_TOOLS are consistent with a request-snapshot/projection race. This no-model proof cannot establish that catalog projection is fixed or explain historical model responses. Later normalized names include tea_rags, so broader-name predicate alone is insufficient.",
+  "artifacts_sha256": {
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/probe.py": "cf0184a93d4b564c5c1fb348c8d624888b892ae3b1350dea0113a8a877090c80",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/runtime/same-thread-inventory.json": "03fe238321dc159f5193c2112a19baee0991f9a8d8eabce529356f3fb59ed9c7",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/probe.py": "4978f5b0dd8a3a9279a357753a8e04b966043dc8058fc78d63885e15554fb9fb",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/result.json": "9f6ddace299cc49853ae442f4e40d389e0d5c5ff95069e7020fa18b0a10f4364",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/shell_probe.py": "259be0b184a0bab831f9620a19747a03e4921f3cb6377bdef7174a7c2b5167a3",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/shell-diagnostics.json": "442800a2e8465ef8744d41238f6963897f0cb37b94e31afeb566bdab76945474",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/helper_probe.py": "1310d4e097ae9f7864294172409a02ecbd0fe211c9accebd10a742cdc90daef3",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/helper-native-result.json": "da808706e5e7c476c194aa80b01735b2fd3f603c1c35a39371edfa891b0e47f6",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/probe.py": "e44fc922cacab76f087425388c1ec2e18abf1be6b10d908f20d78e7517f26679",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/result.json": "3ae0e6efc6d808206d3153b50dd4c00940c94c6142d815ac4548baa9637913b7",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/narrow-profile-experiment.json": "f5c5e1baec3ea46255a6ce8b71ee8f25023fc827103863abd03aaeeb9b07eb01"
+  },
+  "tests": {
+    "new_readiness": 7,
+    "affected_existing_adapter_pins": 4,
+    "red_logs_retained": true,
+    "prior_proofs_retained": true,
+    "fixture_update": "Only manifest real_tool_names, native inventory reply and timeout signature were added; prior IO assertions unchanged."
+  },
+  "short_controller": {
+    "old_controller": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/short_native.py",
+    "old_controller_sha256": "c160991aa5bf5143bd4cf2b05d46fbea00494ca798725f6fe63e0f676758f22d",
+    "old_controller_unchanged": true,
+    "new_controller": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/short_native_ready.py",
+    "new_controller_sha256": "30c02114483168c8bf7597927d5b48782fa6b582a1c191184eba48ae2c273216",
+    "helper": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/mcp_readiness.py",
+    "helper_sha256": "929833469693368e7be3515f73b71cf3906a0ebb5ba72b8a485168ab6fe9a7fc",
+    "model_turns": 0,
+    "scope": "Readiness-only new controller version; same cases, grading, corpus, native backend, permission profile and proxy; old prepared/actor directories untouched",
+    "limits": [
+      "Native MCP readiness does not prove ALL_TOOLS snapshot causation",
+      "CLI fallback not fixed: original PATH/sandbox profile preserved; no speculative directory grants",
+      "No model runs or profile preparations from this code yet"
+    ]
+  },
+  "no_old_profiles_or_v4_changed": true
+}

@@ -1,0 +1,38 @@
+{
+  "canonical": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro",
+  "scratch": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/only-a-benchmark-v5",
+  "files": {
+    "test_controller_io.py": "3fa2455be814c859189efc33fc7452bef405b71097054b21b7c1bb55a19e6dc8",
+    "collect.py": "9c0eed6e1da8578d2718722774b11766cb0cfc568538dfb23a48ea8576389361",
+    "run.py": "6c472d159b88eff3812343d8740d21264c76228854f52e43de092f9ef25aa46f",
+    "runner.py": "9cbb075ca87a9d62506eed3d6361c25f5d11f5f6ffd898f825ea26e3e49a9d36",
+    "v4-source-provenance.json": "5a4bcb28201a37c2c752063635d2c30d316b6afa9c1a3799f9a84518c9f68a83",
+    "test_review_fixes_io.py": "488d9597e9858fdfcf5fff4d6ba9c265127869cd943815b0ff221be959193821",
+    "transport_probe.py": "bf050554c600d8e3e0181ee5967e7240eeccfdbdfca2cd6b8b4552e2eb7843ac",
+    "controller_io.py": "ff03f80534343293db1b15849ec56c025f182c0f3ccbde1d596b0f7a4eb90224",
+    "observe_index.py": "3e3f6ebc61780736ab9957e9b63e79c1af34705b320bbe8b95911c61b7ca2b5c",
+    "test_adapter_io.py": "12028d874df6def108ed93bd3acb5b1202570c51e9488cde9365fd2061eba50b",
+    "job.py": "9c3b9f64b3acfa23a633df4b5343bb5460310b8d2b53e9d94e115b339873e8d1",
+    "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+    "replay_controller_io.py": "7621dfcc9435550dffb10789250c3b721b11b7d78637558a82de6d4b1b19413d",
+    "README.md": "6c6ebbbce5bf78d6765d2c3e83817203702e370d6afc52a09b00678b67b08758",
+    "native-schema-provenance.json": "49b4a2ebb05b92fda2ad7304ef8235e71933c0f485f7cbba8938abdfd0fc3da8",
+    "prepare.py": "84b920b40b03b3eabdea7f6834917947b4955ce77344cb308a8b38231af52c19",
+    "schema/ToolRequestUserInputParams.json": "fda15b62e7446105b59c8ed85c908abed2a47db70653e57c92c47a2f204fa77a"
+  },
+  "exact_byte_copy": true,
+  "model_turns": 0,
+  "previous_copy_proof_retained": "scratch-copy-proof.json",
+  "review_changes": [
+    "Explicit non-assert optimize!=0 rejection in require_controller_python and direct verify_runtime",
+    "Propagate nonzero collector returncode while preserving accounting_failed"
+  ],
+  "verification": {
+    "focused_tests": 16,
+    "optimized_subprocess_combinations": 8,
+    "green_log": "review-fixes-full-focused-green.txt",
+    "red_log": "review-fixes-red.txt",
+    "previous_14_test_and_replay_evidence": "retained unchanged"
+  },
+  "replay_limitation": "Prior real-Q01 replay source hash is preserved as measured. No second replay: append/snapshot implementation unchanged; only runtime guard and job exit propagation changed."
+}

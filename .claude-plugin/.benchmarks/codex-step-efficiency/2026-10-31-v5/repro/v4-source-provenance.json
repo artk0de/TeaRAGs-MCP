@@ -1,0 +1,16 @@
+{
+  "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/only-a-benchmark-v4",
+  "files": {
+    "prepare.py": "e7e507ecc526a06a7b32255176530e133fc6ac40654f4022dee3f3e749554ed7",
+    "runner.py": "0afc8283aefa7a6e7ee99629659d75931b1868ffcd16cdfa79ab091afc03e38a",
+    "run.py": "7e26050fadb838a66019cfc466d426f3d57dc3772120ed5bf899e0ea2f69d5c0",
+    "collect.py": "9c0eed6e1da8578d2718722774b11766cb0cfc568538dfb23a48ea8576389361",
+    "job.py": "cc4bdc1b869f932ab0963b301cc229dd9f1741cb8e481cebfe6b9a21fda08d4b",
+    "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+    "observe_index.py": "3e3f6ebc61780736ab9957e9b63e79c1af34705b320bbe8b95911c61b7ca2b5c",
+    "transport_probe.py": "bf050554c600d8e3e0181ee5967e7240eeccfdbdfca2cd6b8b4552e2eb7843ac",
+    "native-schema-provenance.json": "49b4a2ebb05b92fda2ad7304ef8235e71933c0f485f7cbba8938abdfd0fc3da8",
+    "schema/ToolRequestUserInputParams.json": "fda15b62e7446105b59c8ed85c908abed2a47db70653e57c92c47a2f204fa77a"
+  },
+  "scope": "v5 adaptation only; v4 remains unchanged"
+}

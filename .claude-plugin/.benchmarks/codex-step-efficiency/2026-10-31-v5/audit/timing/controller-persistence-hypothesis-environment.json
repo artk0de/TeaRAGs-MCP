@@ -1,0 +1,64 @@
+{
+  "current_shell_replay_python": {
+    "executable": "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    "version": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+    "platform": "macOS-27.0.1-arm64-arm-64bit"
+  },
+  "source_observations": {
+    "runner": "persist appends every callback event and rewrites full list via dump(indent=2,ensure_ascii=False). Actor subtracts verify_frozen only.",
+    "protocol": "await_turn invokes on_event before TurnObserver.feed for pending and queue events, synchronously.",
+    "rpc": "Background reader writes+flushes each raw JSONL line, then json.loads and puts unbounded queue. Main callback can contend for GIL; actual backpressure not measured historically."
+  },
+  "historical_interpreter_limitation": "No historical sys.executable record located in searched run provenance JSON/log/txt. Literal python3 is PATH dependent. pycache tags indicate a Python3.15 import occurred, not necessarily the benchmark controller interpreter.",
+  "runs": {
+    "latest_A": {
+      "thread_start_effective_fields": {
+        "model": "gpt-6.1-sol",
+        "modelProvider": "openai",
+        "reasoningEffort": "medium",
+        "serviceTier": null
+      },
+      "speed_field_present": false,
+      "pycache_filenames": [
+        "codex61_mcp_proxy.cpython-315.pyc"
+      ],
+      "thread_start_sha256": "8e5066a6fdf5450913235dc3fc7f755f9a9288381354c55e59901451b0fcb522"
+    },
+    "reference_B": {
+      "thread_start_effective_fields": {
+        "model": "gpt-6.1-sol",
+        "modelProvider": "openai",
+        "reasoningEffort": "medium",
+        "serviceTier": null
+      },
+      "speed_field_present": false,
+      "pycache_filenames": [
+        "codex61_app_rpc.cpython-315.pyc",
+        "codex61_runner.cpython-315.pyc",
+        "protocol.cpython-315.pyc"
+      ],
+      "thread_start_sha256": "53b6e5546b42594109debfc41d6fb2c26a4cd6746b0f3cdfd00b3242594dd914"
+    },
+    "previous_A": {
+      "thread_start_effective_fields": {
+        "model": "gpt-6.1-sol",
+        "modelProvider": "openai",
+        "reasoningEffort": "medium",
+        "serviceTier": null
+      },
+      "speed_field_present": false,
+      "pycache_filenames": [
+        "codex61_app_rpc.cpython-315.pyc",
+        "codex61_mcp_proxy.cpython-315.pyc",
+        "codex61_runner.cpython-315.pyc",
+        "protocol.cpython-315.pyc"
+      ],
+      "thread_start_sha256": "d0c242f8f5b87978a7837541d790990867a16504a16a77a8a50a2404042d9aa7"
+    }
+  },
+  "script_sha256": {
+    "persistence_replay.py": "83188950614a236e6dea93f83d7bf337c18ceed0432f4c8d3b9f470defe98d3c",
+    "persistence_validation.py": "e4458d38aacce01dbb310a6c83eef39971a08965f3ab2c41a6fb02bfdf9bcc71",
+    "persistence_calibration.py": "007dd70dcb40616f35f6ed57d28ae3ab94d5eb5bbc5f6c6f5da54623e31fdfb2"
+  }
+}

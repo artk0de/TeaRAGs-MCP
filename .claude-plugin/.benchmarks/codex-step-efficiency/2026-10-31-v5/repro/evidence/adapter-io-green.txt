@@ -1,0 +1,8 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... ok
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... ok
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.070s
+
+OK

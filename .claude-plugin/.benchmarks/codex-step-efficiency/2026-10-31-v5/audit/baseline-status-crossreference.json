@@ -1,0 +1,142 @@
+{
+  "condition": "baseline-current-policy",
+  "actors_started": 5,
+  "runs_per_case": 1,
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "cases_sha256": "e130c39aba20d857aa239fd94b7e89a93fc03f32c319981e7235a758e02e5faf",
+  "grading_sha256": "37ac4b163ff268a385b671a446c85af15a2e83e95428a3091cf56cff4d41da24",
+  "rootgo_sha256": "38b054667338475dd6a78c7dd8947aa98f7e27170337c3edce368add6d1e2494",
+  "runner_sha256": "4aaf6046b507f84c56e368dbe86637d2263a72c076469ef688fbc0481e94c201",
+  "source": {
+    "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/baseline-verdicts.json",
+    "sha256": "e84a2cb2d83994c6687a82ea548df0e85fa0f8a0b4618cfcb8f5d06aad2e53b5",
+    "bytes": 97799
+  },
+  "cases": [
+    {
+      "case": "C-Q35-missing-helper-body",
+      "native_response_count": 5,
+      "schema_or_catalog_only_setup_count": 0,
+      "skill_or_guide_only_setup_count": 1,
+      "native_response_ids": [
+        "resp_06c4442b05019162016ae63d1233cc8191975645f2576fbbc0",
+        "resp_06c4442b05019162016ae63d15cd3c8191985ad0cbeab72f9c",
+        "resp_06c4442b05019162016ae63d18ecf08191962703f4cd6dc480",
+        "resp_06c4442b05019162016ae63d1cd0b0819199e1267a936d9764",
+        "resp_06c4442b05019162016ae63d1fa1188191bec86e717d609e5a"
+      ],
+      "usage_balanced": true,
+      "accounting_complete": true,
+      "api_equivalent_cost_usd": "0.0680848",
+      "review": {
+        "factual_accuracy": "PASS_VISIBLE_CLAIMS",
+        "honesty": "PASS",
+        "completeness": "PASS_FOR_NAMED_RELEVANT_INTERNAL_API_CALLS",
+        "quality_overall": "PASS_AGENT_SEMANTIC_REVIEW",
+        "efficiency_primary": "CONTROL_PASS_MISSING_HELPER_READ"
+      }
+    },
+    {
+      "case": "C-Q36-new-migration-locators",
+      "native_response_count": 6,
+      "schema_or_catalog_only_setup_count": 0,
+      "skill_or_guide_only_setup_count": 0,
+      "native_response_ids": [
+        "resp_0fa550b77f90c2fb016ae63cb2773081918f8d8e1201ba65ec",
+        "resp_0fa550b77f90c2fb016ae63cb6388c8191b4ec9c719897c611",
+        "resp_0fa550b77f90c2fb016ae63cb869288191b4b5dcfed05b4709",
+        "resp_0fa550b77f90c2fb016ae63cbb86648191bc3d4854a4f457b1",
+        "resp_0fa550b77f90c2fb016ae63cbf324481919c679aec536e523b",
+        "resp_0fa550b77f90c2fb016ae63cc1a29c8191a1d8022b916717f7"
+      ],
+      "usage_balanced": true,
+      "accounting_complete": true,
+      "api_equivalent_cost_usd": "0.0709276",
+      "review": {
+        "factual_accuracy": "PASS_VISIBLE_CLAIMS",
+        "honesty": "PASS",
+        "completeness": "PASS_EXPLICIT_MIGRATION_INDEXES_AND_FKS",
+        "quality_overall": "PASS_AGENT_SEMANTIC_REVIEW",
+        "efficiency_primary": "CONTROL_PASS_GENUINE_DEPENDENCIES_PRESERVED"
+      }
+    },
+    {
+      "case": "T-Q02-independent-discovery-literal",
+      "native_response_count": 8,
+      "schema_or_catalog_only_setup_count": 0,
+      "skill_or_guide_only_setup_count": 1,
+      "native_response_ids": [
+        "resp_0971b938a66be124016ae63c8d066c8191b74087f3f51035b5",
+        "resp_0971b938a66be124016ae63c90b3b881918a819be442c35404",
+        "resp_0971b938a66be124016ae63c971db881918967d831c9499e03",
+        "resp_0971b938a66be124016ae63c9b96088191a4ee47039bcda837",
+        "resp_0971b938a66be124016ae63ca10ea08191b123b933a0f93efd",
+        "resp_0971b938a66be124016ae63ca883508191873ebcfb85a25c2f",
+        "resp_0971b938a66be124016ae63cb1fbcc819189af646d25e06c56",
+        "resp_0971b938a66be124016ae63cba16008191a62f1414eb79f52b"
+      ],
+      "usage_balanced": true,
+      "accounting_complete": true,
+      "api_equivalent_cost_usd": "0.1164608",
+      "review": {
+        "factual_accuracy": "PASS_VISIBLE_CURRENT_STATE_CLAIMS",
+        "honesty": "PASS",
+        "completeness": "PARTIAL_HISTORY_NOT_ESTABLISHED",
+        "quality_overall": "PARTIAL/UNKNOWN",
+        "efficiency_primary": "NO_REPRO"
+      }
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "native_response_count": 5,
+      "schema_or_catalog_only_setup_count": 1,
+      "skill_or_guide_only_setup_count": 1,
+      "native_response_ids": [
+        "resp_055e2a1134466e35016ae63c6999788191b15e6e3774bc4a7f",
+        "resp_055e2a1134466e35016ae63c6d377881919cc3589ce138546b",
+        "resp_055e2a1134466e35016ae63c6eee348191a2ab2efde31cc74f",
+        "resp_055e2a1134466e35016ae63c725ff48191825e2972d148c308",
+        "resp_055e2a1134466e35016ae63c78b824819189d50e397c91adc9"
+      ],
+      "usage_balanced": true,
+      "accounting_complete": true,
+      "api_equivalent_cost_usd": "0.0896676",
+      "review": {
+        "factual_accuracy": "PASS_VISIBLE_CLAIMS",
+        "honesty": "PASS",
+        "completeness": "PASS_REQUESTED_CURRENT_BEHAVIOR",
+        "quality_overall": "PASS_AGENT_SEMANTIC_REVIEW",
+        "efficiency_primary": "REPRO_KNOWN_READY_GROUP_SPLIT"
+      }
+    },
+    {
+      "case": "T-Q34-held-validation-missing-gem",
+      "native_response_count": 3,
+      "schema_or_catalog_only_setup_count": 0,
+      "skill_or_guide_only_setup_count": 0,
+      "native_response_ids": [
+        "resp_08be5954541c35c8016ae63c69a8ac8191a68f71a332992c75",
+        "resp_08be5954541c35c8016ae63c6d6b8c8191b8c45515f1b44d77",
+        "resp_08be5954541c35c8016ae63c73865c8191af9114e1c217fc37"
+      ],
+      "usage_balanced": true,
+      "accounting_complete": true,
+      "api_equivalent_cost_usd": "0.0561340",
+      "review": {
+        "factual_accuracy": "PASS_VISIBLE_CLAIMS",
+        "honesty": "PASS",
+        "completeness": "PASS_REQUESTED_CURRENT_BEHAVIOR",
+        "quality_overall": "PASS_AGENT_SEMANTIC_REVIEW",
+        "efficiency_primary": "PARTIAL_REPRO_INDEPENDENT_READY_FILE_SPLIT"
+      }
+    }
+  ],
+  "status": "BASELINE_ONLY; candidate results pending; no candidate-success inference",
+  "limits": [
+    "n=1 extracted contexts; not original full-history replay",
+    "Native transcripts, inventories and visible finals archived separately by parent",
+    "Q02 scheduling hypothesis NO_REPRO; historical completeness PARTIAL/UNKNOWN",
+    "Q21/Q34 baseline scheduling reproduction does not establish candidate improvement"
+  ]
+}

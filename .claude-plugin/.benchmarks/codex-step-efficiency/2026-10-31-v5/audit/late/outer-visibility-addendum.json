@@ -1,0 +1,386 @@
+{
+  "correction_to_initial_audit": "Initial native-row coverage was insufficient by itself; this addendum positively revalidates top3 held locators and bodies against actual rawResponseItem/completed custom_tool_call_output output texts. Initial audit retained.",
+  "Q21_five_ready_locator_proofs": [
+    {
+      "locator": "TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target",
+      "prior_outer_visible_hits": [
+        {
+          "q": 1,
+          "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+          "event_index": 370
+        }
+      ]
+    },
+    {
+      "locator": "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+      "prior_outer_visible_hits": [
+        {
+          "q": 1,
+          "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+          "event_index": 370
+        }
+      ]
+    },
+    {
+      "locator": "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+      "prior_outer_visible_hits": [
+        {
+          "q": 1,
+          "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+          "event_index": 370
+        }
+      ]
+    },
+    {
+      "locator": "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+      "prior_outer_visible_hits": [
+        {
+          "q": 1,
+          "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+          "event_index": 370
+        }
+      ]
+    },
+    {
+      "locator": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+      "prior_outer_visible_hits": [
+        {
+          "q": 1,
+          "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+          "event_index": 370
+        }
+      ]
+    }
+  ],
+  "positive_complete_body_or_outline_proofs": [
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 1,
+      "source_call_id": "exec-c7bbaa51-973b-4fd9-872b-4d5071bfa4ed",
+      "content_sha256": "8cfff5ea2c1a9d34dcf4878ecea7ea005df56504f4fdd8ecf05311910c95b7e0",
+      "chars": 2198,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 1,
+      "source_call_id": "exec-c7bbaa51-973b-4fd9-872b-4d5071bfa4ed",
+      "content_sha256": "6fa4e33047012290bee55c8a94f060298affec26a1d2b5e241b3fdd8a2007fdd",
+      "chars": 4758,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 3,
+      "source_call_id": "exec-82b1e41c-a4f9-44df-924e-4dce4ba6e5ac",
+      "content_sha256": "26f0cf84f2b6cecb7e877e1cc6231b854554e99df64b3612a87cbac2c17a94fa",
+      "chars": 813,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19287-9c24-7961-8609-83837541f649"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 3,
+      "source_call_id": "exec-624c0632-bad3-480d-ad4e-786c0bb46393",
+      "content_sha256": "4a9a0b51662da537ccd6da34723d80f4d282f10efd25c7603e5ef8ac7ffbd2f1",
+      "chars": 3968,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19287-ee07-7001-aad7-5bd4aa6f6611"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 4,
+      "source_call_id": "exec-10d61870-d7bc-4421-80bf-857fe44a1584",
+      "content_sha256": "5b04ccb7dd04e9df2c79b8412333346e749094c7b98be48f0557e2831fcfe84a",
+      "chars": 993,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19288-bd4e-7bd1-839f-7524efdf1bc3"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 4,
+      "source_call_id": "exec-10d61870-d7bc-4421-80bf-857fe44a1584",
+      "content_sha256": "646c93c56be67626a18b05e1e0bf11bf18b77545803fa0c6753e2a9ef9d0076d",
+      "chars": 2757,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19288-bd4e-7bd1-839f-7524efdf1bc3"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 14,
+      "source_call_id": "exec-d2a9257f-d209-4f75-a69f-00e7f3f300cf",
+      "content_sha256": "cfaaf751d6010440db03064b720b3ebcf6284ec93034c6e88930a4cd27e92df9",
+      "chars": 413,
+      "full_content_in_outer_outputs": [
+        "ctco_01a1928d-4ffa-7980-98a4-083036e83f17"
+      ]
+    },
+    {
+      "case": "T-Q21-known-missing-groups",
+      "q": 14,
+      "source_call_id": "exec-d2a9257f-d209-4f75-a69f-00e7f3f300cf",
+      "content_sha256": "d13894304c67201af595a75333db2a2b03d3e29ff473e221ff7b8a1e1cdc45c6",
+      "chars": 3042,
+      "full_content_in_outer_outputs": [
+        "ctco_01a1928d-4ffa-7980-98a4-083036e83f17"
+      ]
+    },
+    {
+      "case": "T-Q34-held-validation-missing-gem",
+      "q": 2,
+      "source_call_id": "exec-a2f363dc-ea4e-47f4-b8b1-53cd6e8486c6",
+      "content_sha256": "7eb7ca4381790ff11e4eb83b8dd6c219fccd41f3c4fa3fb9a2bc3a0b64f7081e",
+      "chars": 4526,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19286-be29-7ea2-b0d2-6dc8079f7cfe"
+      ]
+    },
+    {
+      "case": "T-Q34-held-validation-missing-gem",
+      "q": 26,
+      "source_call_id": "exec-e522585b-ccd2-46ce-9ac2-b84765464223",
+      "content_sha256": "74bf93c30f931898df6b472c917a40b9c7bfac17a6e34a86d37a0a14e133b196",
+      "chars": 2380,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19292-a0a0-7483-9340-56a72e7d4fba"
+      ]
+    },
+    {
+      "case": "C-Q35-missing-helper-body",
+      "q": 35,
+      "source_call_id": "exec-a37cc426-ef4f-44a1-9d39-5e6fa7801625",
+      "content_sha256": "fe01c00eae054b8b815eb5772bd903158316ecb7b685ba5b7d4a942d042daca2",
+      "chars": 1469,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+      ]
+    },
+    {
+      "case": "C-Q35-missing-helper-body",
+      "q": 35,
+      "source_call_id": "exec-a37cc426-ef4f-44a1-9d39-5e6fa7801625",
+      "content_sha256": "00d8d9501d8e8ee98b118e9e1e608052b230ae2215c615085623c58ba6f53e0e",
+      "chars": 587,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+      ]
+    },
+    {
+      "case": "C-Q35-missing-helper-body",
+      "q": 35,
+      "source_call_id": "exec-1a7a8730-c0e1-4299-b5b5-557c4a53da57",
+      "content_sha256": "33c3dca0cef369077f5a4533a13fa5160e4ce95da6c6d4fbb65f0e60db580c1a",
+      "chars": 1391,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-a502-7b13-92b9-9c1264fa752e"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient",
+      "chars": 9660,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError",
+      "chars": 280,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError",
+      "chars": 199,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors",
+      "chars": 214,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+      "chars": 549,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+      "chars": 547,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient#measured",
+      "chars": 419,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+      "chars": 182,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call",
+      "chars": 686,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-0ebb-7ad1-bb38-13125fe2459b"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target",
+      "chars": 1657,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-1b8f-7be2-b99a-ee0c4756d01d"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+      "chars": 314,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-1b8f-7be2-b99a-ee0c4756d01d"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+      "chars": 1074,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-1b8f-7be2-b99a-ee0c4756d01d"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+      "chars": 902,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-1b8f-7be2-b99a-ee0c4756d01d"
+      ]
+    },
+    {
+      "audit_body_q": 21,
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+      "chars": 378,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19290-1b8f-7be2-b99a-ee0c4756d01d"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#find",
+      "chars": 1469,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#list_by_account",
+      "chars": 587,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-95fd-7bc0-b28b-993a50b15785"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact.contact_data",
+      "chars": 865,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-a502-7b13-92b9-9c1264fa752e"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": null,
+      "chars": 1391,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-a502-7b13-92b9-9c1264fa752e"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#list_by_ids",
+      "chars": 1286,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-c3ff-76b1-b836-ab184da93af6"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#list_active",
+      "chars": 921,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-c3ff-76b1-b836-ab184da93af6"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#list_synced",
+      "chars": 651,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-c3ff-76b1-b836-ab184da93af6"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#list_synced_with_client",
+      "chars": 578,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-c3ff-76b1-b836-ab184da93af6"
+      ]
+    },
+    {
+      "audit_body_q": 35,
+      "symbol": "Crm::Api::Contact#find_by_account_user",
+      "chars": 1765,
+      "full_content_in_outer_outputs": [
+        "ctco_01a19296-c3ff-76b1-b836-ab184da93af6"
+      ]
+    }
+  ],
+  "outer_wrapper_truncation_events": [
+    {
+      "q": 1,
+      "event_index": 370,
+      "output_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+      "call_id": "call_4d11146f48894fa0b29bf82c17eaba6b"
+    }
+  ],
+  "truncation_counts": {
+    "all39": 1,
+    "late21_39": 0
+  },
+  "top3_effect": "Q21/Q34/Q35 hypotheses survive this visibility check: all selected retained full bodies/outlines appear verbatim (possibly JSON-escaped) in actual outer output. Q01 W8 is truncated overall but both needed BaseClient/TokenRefreshable outlines are complete in visible output, so no reconstruction of hidden middle occurs.",
+  "nonfinding_correction": "Earlier global no-exact-body-repetition claim was computed from native rows and is not model-visible exhaustive evidence; downgrade to UNVERIFIED/global, not an actionable absence claim.",
+  "prepared_case_constraint": "Every retained source context body/outline has positive full-string visibility proof. Cases preserve actual content excerpts, not hidden native middle. Source row projection discards unrelated rows but does not reconstruct content."
+}

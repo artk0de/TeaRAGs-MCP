@@ -1,0 +1,63 @@
+{
+  "status": "IMPLEMENTED_UNCOMMITTED_FOR_PARENT_REVIEW",
+  "scope": "New benchmark/repro utilities only; no production plugin/routing/policy files edited",
+  "validation": {
+    "focused_tests": 14,
+    "green": true,
+    "command": "/opt/homebrew/bin/python3 -m unittest discover -s REPRO -p 'test_*io.py' -v",
+    "red_evidence": [
+      "controller-io-red.txt",
+      "adapter-io-red.txt",
+      "runtime-record-red.txt"
+    ],
+    "initial_harness_attempt_retained": "adapter-io-initial-harness-attempt.txt",
+    "native_protocol_and_transport_byte_identical_to_v4": true,
+    "old_v4_sources_preserved": true,
+    "no_actor_or_model_runs": true,
+    "no_index_or_build_or_full_suite": true
+  },
+  "io_replay": {
+    "input_events": 2253,
+    "old": {
+      "persistence_wall_seconds": 8.047233432531357,
+      "persistence_thread_cpu_seconds": 7.51374273399999,
+      "bytes_written": 2239585668,
+      "full_list_snapshots": 2254
+    },
+    "new": {
+      "persistence_wall_seconds": 0.03546293010003865,
+      "persistence_thread_cpu_seconds": 0.03304847599998961,
+      "bytes_written": 2673619,
+      "full_list_snapshots": 1,
+      "helper_observations": {
+        "event_count": 2253,
+        "journal_bytes": 1191169,
+        "snapshot_count": 1,
+        "snapshot_bytes": 1482450,
+        "append_wall_seconds": 0.02881713054375723,
+        "append_thread_cpu_seconds": 0.026600067999986265,
+        "snapshot_wall_seconds": 0.005028584011597559,
+        "snapshot_thread_cpu_seconds": 0.005024834000000311,
+        "wall_seconds": 0.03384571455535479,
+        "thread_cpu_seconds": 0.03162490199998658,
+        "measurement": "OBSERVATION",
+        "limitation": "Persistence callback/snapshot timings overlap RPC/service activity; never subtract as pure model time. No fsync; RPC events.jsonl remains authoritative."
+      }
+    },
+    "fidelity": {
+      "old_snapshot_equals_input": true,
+      "new_snapshot_equals_input": true,
+      "new_journal_equals_input": true
+    },
+    "same_interpreter": true,
+    "limitation": "Single offline persistence replay; no model time subtraction or historical gap attribution"
+  },
+  "runtime": "Actual resolved sys.executable path/hash/version/cache tag/flags stored in manifest and frozen controller-python.json; executable and runtime record join frozen_files; prelaunch verifies both",
+  "review_gate": {
+    "collateral_scan": "SAFE (no existing-file edits)",
+    "tea_rags_review_changes": "Requested scoped 5-file new-utility review; still pending after >2min, canceled. No graph-based PASS claimed; no reindex requested."
+  },
+  "scratch": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/only-a-benchmark-v5",
+  "parent_action": "Review and commit if appropriate; no commit performed here",
+  "audit_correction": "Main .tmp/codex-speed-v5-audit-2026-10-31/early/outer-output-correction.json withdraws two redundant-body claims after actual ctco truncation check; other timing premises retained with caveats"
+}

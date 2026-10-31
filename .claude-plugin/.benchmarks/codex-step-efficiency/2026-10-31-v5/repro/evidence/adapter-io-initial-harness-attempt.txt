@@ -1,0 +1,50 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... ERROR
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... ERROR
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... ERROR
+
+======================================================================
+ERROR: test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 86, in test_interrupt_preserves_recoverable_journal_and_partial_snapshot
+    events=recover_journal(out/'Q01-partial-events.jsonl')['events']
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 50, in recover_journal
+    with Path(path).open('rb') as stream:
+         ~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/pathlib/__init__.py", line 970, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/4p/pvskkvc96z374lpzn9c8l88c0000gn/T/tmpv8ecweqq/runs/A/Q01-partial-events.jsonl'
+
+======================================================================
+ERROR: test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 102, in test_launcher_rejects_runtime_mismatch_before_consuming_rootgo
+    launcher.main()
+    ~~~~~~~~~~~~~^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/run.py", line 12, in main
+    assert manifest['order']==['A'] and manifest['runs_authorized']==['A'] and manifest['runs_per_condition']==1
+           ~~~~~~~~^^^^^^^^^
+KeyError: 'order'
+
+======================================================================
+ERROR: test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 65, in test_success_uses_one_journal_record_per_callback_and_one_final_snapshot
+    self.assertEqual(recover_journal(out/(prefix+'-partial-events.jsonl'))['events'],events)
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/controller_io.py", line 50, in recover_journal
+    with Path(path).open('rb') as stream:
+         ~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/pathlib/__init__.py", line 970, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/4p/pvskkvc96z374lpzn9c8l88c0000gn/T/tmp9p3zhkz3/runs/A/Q01-partial-events.jsonl'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.057s
+
+FAILED (errors=3)

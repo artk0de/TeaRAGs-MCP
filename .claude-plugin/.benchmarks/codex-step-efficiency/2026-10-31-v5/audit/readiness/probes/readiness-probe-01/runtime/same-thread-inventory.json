@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "name": "tea-rags",
+      "runtimeStatus": "failed",
+      "pluginId": "tea-rags@tea-rags",
+      "httpOrigin": null,
+      "serverInfo": null,
+      "serverCapabilities": null,
+      "toolListMeta": null,
+      "tools": {},
+      "toolsError": "MCP startup failed: handshaking with MCP server failed: connection closed: initialize response: connection closed: initialize response",
+      "resources": [],
+      "resourceTemplates": [],
+      "authStatus": "unsupported"
+    }
+  ],
+  "nextCursor": null
+}

@@ -1,0 +1,15 @@
+{
+  "before_config_sha256": "2de457bbab9582aeb57949674dca553c5378f1469fb231a77912c6bafe490c29",
+  "after_config_sha256": "4fa5e8c34da6e16b9019a8be15270226472af2a8eddd3b182175ed8dea30a827",
+  "exact_read_files": [
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/bin-probe/tea-rags",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/proxy-probe.json",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61_cli.py",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61_mcp_proxy.py",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61_metrics.py",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61_context_metrics.py",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/lib/codex61/metadata-table-schemas.json"
+  ],
+  "no_directory_grants": true,
+  "model_turns": 0
+}

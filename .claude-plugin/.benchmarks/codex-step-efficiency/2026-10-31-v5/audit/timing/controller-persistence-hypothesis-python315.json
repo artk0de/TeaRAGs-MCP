@@ -1,0 +1,45 @@
+{
+  "python": {
+    "executable": "/opt/homebrew/opt/python@3.15/bin/python3.15",
+    "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O"
+  },
+  "script_sha256": "007dd70dcb40616f35f6ed57d28ae3ab94d5eb5bbc5f6c6f5da54623e31fdfb2",
+  "replay_script_sha256": "83188950614a236e6dea93f83d7bf337c18ceed0432f4c8d3b9f470defe98d3c",
+  "replays": [
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "wall_seconds": 7.311097917001462,
+      "cpu_seconds": 7.049498,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6284443741606083,
+        "final_stream_persistence_seconds": 6.679362975206459
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "wall_seconds": 5.6327090410050005,
+      "cpu_seconds": 5.567212,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.3374705550959334,
+        "final_stream_persistence_seconds": 5.294197551498655
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q01",
+      "wall_seconds": 5.233597500016913,
+      "cpu_seconds": 5.193250999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.5669565221178345,
+        "final_stream_persistence_seconds": 4.665342016378418
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    }
+  ],
+  "rest_unrun_reason": "Q01 exceeded cheap calibration threshold (5s); no automatic broad alternate replay."
+}

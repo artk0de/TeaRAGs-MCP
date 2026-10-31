@@ -1,0 +1,11 @@
+# Highest-priority early native-response hypotheses
+
+1. **Q02 8 → 7 responses:** dispatch initial exact-name existence searches and independently ready semantic mock-transport discovery together. Actual response1 (`resp_0774613464b3f479016ae605a1072481919cefc37d11483ddf`) performs only narrow spelling checks; actual response2 (`resp_0774613464b3f479016ae605aa38f08191acecb125ab75dc78`) semantic search already answers where both mock files live. That semantic query depends on literal Q02, not empty narrow spelling results. Move existing response2 discovery into response1, then actual response3 file reads can start in response2. Preserve exact searches and all later necessary bodies/helpers. No budget increase/new retrieval required.
+
+2. **Q03 7 → 6 responses:** `RefusalsHelper` file locator is known since Q01 directory metadata `exec-c6877897-1837-4dd7-9700-eac834fef699`; body is missing and genuinely needed for explicit failure-vocabulary part of Q03. The actor waits until a final tool-only response (`resp_0774613464b3f479016ae6061c6ac081919979620c505bdf72`) to read it. Move that read into preceding response (`resp_0774613464b3f479016ae606151b8481918b77858efb44ff41`) or earlier concurrent batch. The retained source footprint and answer evidence stay identical.
+
+3. **Q12 5 → 4 responses:** advance `get_callers` schema lookup into first body-read response; graph can accompany deletion-body reads in response2, consumer bodies response3, final response4. Keep graph because CRM trigger proof is part of the literal question. Exact IDs in initial `findings.json`.
+
+These are dependency-based wave plans, **not measured behavioral improvements**. Extracted small cases can test the timing mechanism but cannot claim original-question replay without exact original pre-question context/injection/tools/source. See `focused-Q02-Q03.json` for literal prompts, visible outer code, source anchor IDs and restoration limitations. No models or behavioral evals run.
+
+Q02 also uses a later `bugHunt`-ranked semantic search as “history mock wiring.” Its output is existing mock paths, unrelated ActivationMock tests and a 42-column git overlay; it does not retrieve historical implementation. Removing it saves call/payload only, since other required reads share its native response.

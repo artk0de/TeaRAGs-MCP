@@ -1,0 +1,537 @@
+{
+  "scope": "Read-only offline visible transcript audit Q21-Q39; no actors, models, benchmarks, indexing, source edits, gold or grading answers. Raw reasoning records excluded from extraction.",
+  "source_identity": {
+    "latestA": "0.54.0 source commit ced48 (parent-provided identity; not equated with current main)",
+    "latestA_directory": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A",
+    "B_directory": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B"
+  },
+  "counts": [
+    {
+      "q": 21,
+      "A": 3,
+      "B": 3,
+      "previousA": 3
+    },
+    {
+      "q": 22,
+      "A": 3,
+      "B": 2,
+      "previousA": 2
+    },
+    {
+      "q": 23,
+      "A": 4,
+      "B": 4,
+      "previousA": 5
+    },
+    {
+      "q": 24,
+      "A": 1,
+      "B": 2,
+      "previousA": 1
+    },
+    {
+      "q": 25,
+      "A": 1,
+      "B": 1,
+      "previousA": 2
+    },
+    {
+      "q": 26,
+      "A": 5,
+      "B": 3,
+      "previousA": 3
+    },
+    {
+      "q": 27,
+      "A": 1,
+      "B": 1,
+      "previousA": 1
+    },
+    {
+      "q": 28,
+      "A": 1,
+      "B": 2,
+      "previousA": 1
+    },
+    {
+      "q": 29,
+      "A": 2,
+      "B": 2,
+      "previousA": 1
+    },
+    {
+      "q": 30,
+      "A": 6,
+      "B": 5,
+      "previousA": 6
+    },
+    {
+      "q": 31,
+      "A": 1,
+      "B": 1,
+      "previousA": 1
+    },
+    {
+      "q": 32,
+      "A": 1,
+      "B": 1,
+      "previousA": 1
+    },
+    {
+      "q": 33,
+      "A": 3,
+      "B": 2,
+      "previousA": 2
+    },
+    {
+      "q": 34,
+      "A": 3,
+      "B": 2,
+      "previousA": 4
+    },
+    {
+      "q": 35,
+      "A": 5,
+      "B": 3,
+      "previousA": 4
+    },
+    {
+      "q": 36,
+      "A": 3,
+      "B": 3,
+      "previousA": 3
+    },
+    {
+      "q": 37,
+      "A": 3,
+      "B": 2,
+      "previousA": 4
+    },
+    {
+      "q": 38,
+      "A": 1,
+      "B": 1,
+      "previousA": 1
+    },
+    {
+      "q": 39,
+      "A": 4,
+      "B": 4,
+      "previousA": 4
+    }
+  ],
+  "totals": {
+    "A": 51,
+    "B": 44,
+    "previousA": 49
+  },
+  "top_patterns": [
+    {
+      "rank": 1,
+      "pattern": "Known missing method bodies deferred to a separate evidence response",
+      "primary_question": 21,
+      "observed_native_responses": 3,
+      "conservative_alternative_native_responses": 2,
+      "evidence": [
+        {
+          "q": 21,
+          "call_id": "exec-fb54e898-a76b-496c-a237-d9ecf1205d0d",
+          "event_index_zero_based": 43,
+          "response_ordinal": 1,
+          "response_id": "resp_0774613464b3f479016ae6082e67f48191806308dc5e375afc",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::BaseClient",
+              "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+              "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+              "TaxPreparation::TaxAutomations::BaseClient#measured",
+              "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call"
+            ]
+          }
+        },
+        {
+          "q": 21,
+          "call_id": "exec-01b2af5f-66ef-478a-9b5e-b07e0a40404f",
+          "event_index_zero_based": 58,
+          "response_ordinal": 2,
+          "response_id": "resp_0774613464b3f479016ae6083528d481918f1f17645ae932df",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!"
+            ]
+          }
+        },
+        {
+          "q": 1,
+          "call_id": "exec-c7bbaa51-973b-4fd9-872b-4d5071bfa4ed",
+          "event_index_zero_based": 356,
+          "response_ordinal": 8,
+          "response_id": "resp_0774613464b3f479016ae6054cabfc8191a52ff1512125d279",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::ExportAsync#perform",
+              "TaxPreparation::TaxAutomations::ExportAsync#send_to_provider!",
+              "TaxPreparation::TaxAutomations::ExportAsync#create_tax_automation_documents!",
+              "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+              "app/lib/tax_preparation/tax_automations/base_client.rb"
+            ]
+          }
+        }
+      ],
+      "held": "Q01 W8 delivered BaseClient and TokenRefreshable file outlines including all five Q21 W2 exact IDs. Q04 W1 delivered request and with_access_token bodies; Q14 W1 delivered refresh! body. These are locators or specifically named bodies, not a claim that the five W2 bodies were held.",
+      "missing": "All five Q21 W2 bodies were genuinely missing: upload_to_signed_target, exchange_operation, exchange_code!, revoke_tokens!, refresh_tokens!. Read them, do not omit them.",
+      "minimal_valid_plan": "Join the five missing already-located IDs into Q21 W1 find_symbol batch: 11 requested IDs total, below max20; the delivered payload.content sum for both observed waves is 17061 characters including large class headers, below 24k. Reuse held request/refresh/rate-limit bodies. Then final answer.",
+      "fixture": "Retain two small outlines naming a metrics wrapper and the already-known upload/exchange callers; hold the shared request body. User asks emitted operation tags and error mapping. Full production-equivalent catalog, genuine missing caller bodies available. Actor should join ready relevant missing callers into first body response.",
+      "nearby_control": "A wrapper calls a previously unknown helper whose exact identifier is absent from retained context; preserve the post-body dependent read. Also exercise >20 methods or >24k body budget so genuine batching limits are not penalized.",
+      "confidence": "high"
+    },
+    {
+      "rank": 2,
+      "pattern": "Rediscovering already-held validation context with a separate broad reference search",
+      "primary_question": 34,
+      "observed_native_responses": 3,
+      "conservative_alternative_native_responses": 2,
+      "evidence": [
+        {
+          "q": 2,
+          "call_id": "exec-a2f363dc-ea4e-47f4-b8b1-53cd6e8486c6",
+          "event_index_zero_based": 368,
+          "response_ordinal": 7,
+          "response_id": "resp_0774613464b3f479016ae605cede488191b451273203fa2c54",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"sed -n '1,260p' spec/support/tax_automations_helpers.rb\""
+        },
+        {
+          "q": 26,
+          "call_id": "exec-e522585b-ccd2-46ce-9ac2-b84765464223",
+          "event_index_zero_based": 115,
+          "response_ordinal": 4,
+          "response_id": "resp_0774613464b3f479016ae608d5470c81918175a6c9fa43a38f",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"sed -n '240,285p' spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb\""
+        },
+        {
+          "q": 34,
+          "call_id": "exec-d90c400d-872d-46e7-b970-0361b9e42877",
+          "event_index_zero_based": 62,
+          "response_ordinal": 1,
+          "response_id": "resp_0774613464b3f479016ae609bbfa948191acd5f34c7a4b3085",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"sed -n '/json-schema/p; /json_schema/p' Gemfile\""
+        },
+        {
+          "q": 34,
+          "call_id": "exec-3c987484-0afd-44ba-b282-3a5b2efced97",
+          "event_index_zero_based": 66,
+          "response_ordinal": 1,
+          "response_id": "resp_0774613464b3f479016ae609bbfa948191acd5f34c7a4b3085",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'conforms_to_contract\\\\?|JSON::Validator' spec/unit/tax_preparation/lib/tax_automations spec/services/tax_preparation/tax_automations\""
+        },
+        {
+          "q": 34,
+          "call_id": "exec-5db5b00c-ed20-4ce1-bc65-13e93357078b",
+          "event_index_zero_based": 85,
+          "response_ordinal": 2,
+          "response_id": "resp_0774613464b3f479016ae609c60d08819184da4c1939a99b9f",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'conforms_to_contract\\\\?|INSTEAD_CONTRACT_PATH|instead_openapi_spec' spec/\""
+        }
+      ],
+      "held": "Q02 W7 delivered the complete spec/support/tax_automations_helpers.rb (fixture JSON parser, mock registration helpers, contract path, instead_contract and conforms_to_contract? using JSON::Validator with the OpenAPI root). Q26 W4 delivered finalize_doc_upload specs asserting conforms_to_contract?(File,...).",
+      "missing": "Exact Gemfile gem declaration was not previously shown; keep Q34 W1 Gemfile read.",
+      "minimal_valid_plan": "Read Gemfile in one evidence response and answer from the held helper/spec bodies. If scope verification is desired, perform one full spec/ filename-only search alongside the Gemfile read; the W2 broad search depends on no W1 result and adds no new body. No user request for every reference requires two successive scoped filename inventories.",
+      "fixture": "Retain actual helper body and one contract assertion in delivered conversation; leave Gemfile declaration missing. Ask how fixtures/mock responses are checked and the gem. Require one missing gem read, permit concurrent scoped search, prohibit extra response merely locating the already-held helper.",
+      "nearby_control": "Hold only helper outline or JSON::Validator name without helper body, and a newly discovered component helper. The body read must remain necessary; never infer whole-root $ref handling from the symbol alone.",
+      "confidence": "high"
+    },
+    {
+      "rank": 3,
+      "pattern": "Guessed nonexistent absence-search scope creates its own recovery response",
+      "primary_question": 35,
+      "observed_native_responses": 5,
+      "conservative_alternative_native_responses": 4,
+      "evidence": [
+        {
+          "q": 35,
+          "call_id": "exec-a37cc426-ef4f-44a1-9d39-5e6fa7801625",
+          "event_index_zero_based": 44,
+          "response_ordinal": 1,
+          "response_id": "resp_0774613464b3f479016ae609db455c81918b1a57c1611180c1",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "Crm::Api::Contact.find",
+              "Crm::Api::Contact.list_by_account"
+            ]
+          }
+        },
+        {
+          "q": 35,
+          "call_id": "exec-1a7a8730-c0e1-4299-b5b5-557c4a53da57",
+          "event_index_zero_based": 59,
+          "response_ordinal": 2,
+          "response_id": "resp_0774613464b3f479016ae609e0fa588191b70a0d7da7bb61af",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "Crm::Api::Contact#contact_data",
+              "app/services/crm/api/contact.rb"
+            ]
+          }
+        },
+        {
+          "q": 35,
+          "call_id": "exec-eafbc7cf-9e0a-4678-91f9-7d296d499360",
+          "event_index_zero_based": 75,
+          "response_ordinal": 3,
+          "response_id": "resp_0774613464b3f479016ae609e4df7c81918c0a98fc54f16e47",
+          "tool": "find_symbol",
+          "arguments": {
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "Crm::Api::Contact#list_by_ids",
+              "Crm::Api::Contact#list_active",
+              "Crm::Api::Contact#list_synced",
+              "Crm::Api::Contact#list_synced_with_client",
+              "Crm::Api::Contact#find_by_account_user"
+            ]
+          }
+        },
+        {
+          "q": 35,
+          "call_id": "exec-872eecb2-69e1-4f0a-8f70-6ad035105d74",
+          "event_index_zero_based": 88,
+          "response_ordinal": 3,
+          "response_id": "resp_0774613464b3f479016ae609e4df7c81918c0a98fc54f16e47",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' '\\\\buid\\\\b|\\\\buuid\\\\b' app/services/crm/api app/contracts/crm\""
+        },
+        {
+          "q": 35,
+          "call_id": "exec-5e41c3c7-be80-4f74-b7ce-7f9283747ca6",
+          "event_index_zero_based": 107,
+          "response_ordinal": 4,
+          "response_id": "resp_0774613464b3f479016ae609ecc3808191bbee2ca575d4ed9d",
+          "tool": "commandExecution",
+          "arguments": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' '\\\\buid\\\\b|\\\\buuid\\\\b' app/services/crm/api/\""
+        }
+      ],
+      "held": "After W1, find and list_by_account bodies are held. W2 reveals contact_data body and file outline. The existing app/services/crm/api path is certain from the delivered file locator; the file outline newly supplies list_by_ids/list_active/list_synced/list_synced_with_client/find_by_account_user IDs.",
+      "missing": "contact_data requires a genuine W1-to-W2 dependency. The W3 additional method bodies follow the new W2 outline. A complete successful uid/uuid absence check is also needed for the broad no-public-exposure claim.",
+      "minimal_valid_plan": "Preserve W1, W2 helper/outline, W3 newly-discovered methods. Run the valid existing-scope app/services/crm/api uid/uuid absence search alongside W2 or W3. Do not add guessed app/contracts/crm, whose error2 forced the clean W4 retry. Then final answer. This saves one response, without pretending error2 proves absence.",
+      "fixture": "Use a known services API file and existing nested contracts path under it; sibling app/contracts/crm does not exist. User asks identifier exposure. Actor should scope absence to known root, retain needed helper read, and not manufacture a failed search wave.",
+      "nearby_control": "A user explicitly asks a second possibly absent contract directory; preserve existence/absence verification and recovery after any actual error. A final empty result exit1 must be distinguished from error2.",
+      "confidence": "high"
+    }
+  ],
+  "secondary_candidate": {
+    "question": 26,
+    "observed_native_responses": 5,
+    "classification": "secondary scheduling candidate; do not erase task-attribution discovery",
+    "evidence": [
+      {
+        "q": 26,
+        "call_id": "exec-5a89a806-fb41-40ca-9689-ef90a95c33a8",
+        "event_index_zero_based": 37,
+        "response_ordinal": 1,
+        "response_id": "resp_0774613464b3f479016ae608c110f88191a7797dce34526da9",
+        "tool": "semantic_search",
+        "arguments": {
+          "path": "/Users/Shared/nav-ab/repo-master",
+          "query": "Instead mock transport contract drift fix",
+          "taskId": "TD-99833",
+          "level": "chunk",
+          "metaOnly": true,
+          "limit": 5,
+          "documentation": "exclude"
+        }
+      },
+      {
+        "q": 26,
+        "call_id": "exec-89a401d0-eee5-499c-b206-4aeb3e3c2184",
+        "event_index_zero_based": 52,
+        "response_ordinal": 2,
+        "response_id": "resp_0774613464b3f479016ae608c703b4819181d132e667c04229",
+        "tool": "semantic_search",
+        "arguments": {
+          "path": "/Users/Shared/nav-ab/repo-master",
+          "query": [
+            "Instead API contract correction upload entity header OAuth schema mock",
+            "TD-99833 real vendor drift fix"
+          ],
+          "taskId": "TD-99833",
+          "level": "chunk",
+          "metaOnly": true,
+          "limit": 20,
+          "documentation": "exclude",
+          "testFile": "include"
+        }
+      },
+      {
+        "q": 26,
+        "call_id": "exec-9fbe5755-f36b-4c6c-aedc-26d4d7ab223f",
+        "event_index_zero_based": 67,
+        "response_ordinal": 3,
+        "response_id": "resp_0774613464b3f479016ae608ce61748191b3b17e6653139f31",
+        "tool": "find_symbol",
+        "arguments": {
+          "path": "/Users/Shared/nav-ab/repo-master",
+          "symbols": [
+            "TaxPreparation::TaxAutomations::BaseClient#relative_path"
+          ]
+        }
+      },
+      {
+        "q": 26,
+        "call_id": "exec-ec387708-f1bd-41ea-bf29-deec753dbda4",
+        "event_index_zero_based": 75,
+        "response_ordinal": 3,
+        "response_id": "resp_0774613464b3f479016ae608ce61748191b3b17e6653139f31",
+        "tool": "semantic_search",
+        "arguments": {
+          "path": "/Users/Shared/nav-ab/repo-master",
+          "query": "Instead contract API OAuth upload corrections",
+          "taskId": "TD-99833",
+          "level": "chunk",
+          "metaOnly": true,
+          "limit": 20,
+          "testFile": "exclude",
+          "documentation": "exclude"
+        }
+      },
+      {
+        "q": 26,
+        "call_id": "exec-54e6d0d1-1999-4425-94bd-7a190390251a",
+        "event_index_zero_based": 91,
+        "response_ordinal": 4,
+        "response_id": "resp_0774613464b3f479016ae608d5470c81918175a6c9fa43a38f",
+        "tool": "find_symbol",
+        "arguments": {
+          "path": "/Users/Shared/nav-ab/repo-master",
+          "symbols": [
+            "TaxPreparation::TaxAutomations::TokenRefreshable#token_response",
+            "TaxPreparation::TaxAutomations::BaseClient#perform"
+          ]
+        }
+      }
+    ],
+    "finding": "W1 metadata search locates finalization and OAuth contract spec IDs; W2 broadens metadata but reads no bodies. W3 finally reads relative_path plus another production search. W4 reads token_response/perform and specs. BaseClient/TokenRefreshable outlines from Q01 already contained relative_path/token_response/perform locators. Those missing bodies and W1-discovered specs can join an unavoidable discovery/body wave. Historical task scope may justify broadened searches, so no claim all discovery can be eliminated or that present bodies prove original before/after history."
+  },
+  "controls_and_nonfindings": [
+    "No exact repeated delivered method/file body content found among normalized A late rows versus prior A rows; this does not claim semantic duplicate absence across shell formatting. Main remaining waste here is scheduling and reference rediscovery, not indiscriminate full-body reopening.",
+    "Q29 adapter ExportAsync body was genuinely missing; Q01 had only its locator. Preserve its Q29 read.",
+    "Q33 transfer/finalize worker bodies and exact locators were absent from all earlier delivered A results. Directory inventory supplies real new locators; preserve inventory→body dependency. StartUploadWorker/ExportOperationWorker/Webhook worker bases were held from Q03/Q15.",
+    "Q39 large document serializer first returns an outline, not six method bodies; preserve the subsequent methods read. Small serializer bodies are delivered in W2. Config discovery is genuine.",
+    "Q30 schema.rb is absent/error; migrations filename inventory, fresh UID migrations, schema ranges, and firm UUID absence need evidence. No all-in-one counterfactual asserted.",
+    "Q36 migration filenames are newly discovered W1 and read together W2; genuine dependency.",
+    "Q37 A metrics.rb was only a locator earlier, so full helper body is genuinely missing. B had already read complete metrics.rb at Q21, an accidental relevance/coverage confound; B faster Q37 is not proof A should skip helper.",
+    "Q22 config line search and bounded read are a real locator→body dependency as executed. Direct bounded reading could reduce steps but not established as top avoidable issue from held A evidence.",
+    "No repeated skill/schema metadata rediscovery visible in A Q21-Q39; exact searches appear primarily config/absence scopes."
+  ],
+  "limitations": [
+    "Native response counts count unique rawResponse/completed IDs, not nested tool invocations. Final response is included.",
+    "Single existing run each; no causal performance or statistical claim.",
+    "Only actual delivered body rows or successful shell outputs treated as held bodies; outlines and headers treated as locators.",
+    "Top3 valid alternatives save at least one native response each in isolation (3 response opportunities total); no behavior reruns performed, so improvements remain hypotheses.",
+    "No current-source implementation diagnosis: newest main differs from audited A plugin."
+  ],
+  "input_event_sha256": {
+    "A": {
+      "Q01": "73ff179b8bb0235e8ea04bf17245127f0552dbff844cd3b942036142106195b1",
+      "Q02": "28c19b40ffba36ab18348e3c20286578a7f56067d99e6963fa664689461cc9cb",
+      "Q03": "aead499e1c7305ff12bb28beb37ddda7c188e75795de4e4c282d9a46c8d718df",
+      "Q04": "5c8f3973328cc147ca3f64f173d8614ae886f38f0136a483ab05434d744b2f61",
+      "Q05": "8b6c37bc7eee043a61b7f20c3a529f0f31bf8821f5c41f88c471a9588231020d",
+      "Q06": "52ef4929e847a66fe21dd69d7414f3307441ac0abf9508e1b0a2dc6728320f84",
+      "Q07": "f7059ad98cb2eeb215cffd6e918bac33e74cc501ad1bedca221bc71be4a610f0",
+      "Q08": "d926839b365895451f9e68293265c61c42adcf49e47708b2fc3cdc38a03eb4e6",
+      "Q09": "0858350802432e9b88f1b61a8a55eab758e9bd39c1b76f7d20dc4be4215b5613",
+      "Q10": "faa299710bfcd2b3e612b7393c119b55f5009492a867cae91bfc3c1fb8c7969c",
+      "Q11": "fedad750e1fae99adbda166bcd43d1451d0599d3729f14ac7ca7f0226523d578",
+      "Q12": "f342849cb10cde39a85cd9037377097d8a2102f3fc0540a68a91a961e6b290a4",
+      "Q13": "13fa16bb71e7a48fd16a5f4feddc9ad219299f395555cd8cfc7b557e8d723079",
+      "Q14": "3cc91328843dfd68f97025c1b55fd234f98cedd946f7df236ccece1405425743",
+      "Q15": "2be5c5970cdc0b4df8f3e28a106bfbbcbb11da27b054a8d7bbe0efcb9e9d99ab",
+      "Q16": "d50816521342e486cb254615b465f99976a58d1864dfade75d4e85464434c29e",
+      "Q17": "322440bbd8c0096d9ee927699650ea4f68f7ae886006d6cf153e8ece00206e6f",
+      "Q18": "caf7d6d23c2b5983aaf3df08cd07f74a62f2cb38bdd867338b144ab015762cb6",
+      "Q19": "d4ec49752c40ad555d3842828a67b3ecc2f99abccae5af9983e9a84be3fc1515",
+      "Q20": "9f25b1a8e35eaff1ac4a9e60beedaa2736c1a5376a61b0256573396d67bd875b",
+      "Q21": "d38dac00e00c2c15000a3760a09283f6083c1480c1631e43649379f09fe90f41",
+      "Q22": "f17214d75d75da6e929d4100d3cfaef615c0d8cecb188ddbdf00c4e27c347481",
+      "Q23": "aef3b5e92efee277a22224a613c73d7311b824d20238e79f84dcb510945b5af4",
+      "Q24": "6ce09a598492e42988d9d1efdc2a054675f3f3f315fd2cdadaf3fb1e335bf90d",
+      "Q25": "32c0397c888c5212394143d51229fcbf03932f584a4b0751aa6ab01242268781",
+      "Q26": "bc78c472433a1bb2ccc86102f6f357293d428a8403a91cd9f4698e75433f83c1",
+      "Q27": "f6bc98420b05ff44bb36d9eda761867277e34431e0dc7ebb056a7c8659063d68",
+      "Q28": "32d9755944ae3b7fc4167a4fb2e0ca41aeef033bb34120cfdc2cda1614bf7e87",
+      "Q29": "46f4f06c3e1c66de34175e2cf81b3208c7c5042e1ab51f520b9fd7045a9f55d7",
+      "Q30": "db22d04814b3250f473c7ce2e79ff6a1453243ef138736b513db446d28de30af",
+      "Q31": "7da8851fc100ed822821890b2c0b1335c7a888723955ed8de82d39ef6ce19999",
+      "Q32": "bd9a80cfb2ac2ddabeb7bfcdbd9fa737ddd46094708a4d28346c258c95d6a8ee",
+      "Q33": "08cbb675b8d044a139a7dc68120a5601f5e75d96917f1c04de37d6241463fd75",
+      "Q34": "066959779308cc6fa7f5b4d1ec2e45bf0ec56bd1f52d08fa76ea6d628f5efc9b",
+      "Q35": "6dfdd708ecd715d20852d10488ff74be3a6c23873c3b2baad66c368941451d69",
+      "Q36": "c99aaa096a6f906762e24a534a765d67c079f2f9da444d8a725c0a61e78e420f",
+      "Q37": "80b32268963e855b0dc765ed7c1dcb0f3dbc829016bdb37688478e4582c77805",
+      "Q38": "4bc23f05c07f6b65c27df0bd57005b45a25309c1211626e95732eb4015cfb03a",
+      "Q39": "9986136b84b10cce0ece60e46aaa49cef881f33160737bef4b4717fb7efbc6e8"
+    },
+    "B": {
+      "Q01": "eeed84fc0c1a1a908eee017c4e49d2721bae1c8f16cccbd98cbfe29ae3720d09",
+      "Q02": "21bd6c16598a22aa394001ba822936356b72e8efb497ad2e53e07ea18b98fd8f",
+      "Q03": "52908d25d4fa59cb5ddbffe9dc3e6f2cbe41ca6f7a44c9a4c383e43734c6b04a",
+      "Q04": "b5ef6e8c08abf1152ac5260f8eb49a4bc3a242f97421641954c3dd705f7b49bd",
+      "Q05": "a569075fd97c6a0df7df6c512165e678dfd416e2b033cf7a1803cbdaeddd9f4d",
+      "Q06": "58e8fdf06e3c8b6cb953223187a0211d84db3eab7f1333e9d6af88fdb8b8dd5f",
+      "Q07": "2bebfb9b1045f5c66cb2ffbf69b4fcab48ee39ead70a17ed2ddb22105e77795e",
+      "Q08": "6aa14d9012dec43a8f50c03b80a2bf7b9ec537eaef6805a4e7fae6a669445273",
+      "Q09": "ad971e8c96030d97b5b13f1741d211ed6bb4dda73bf079d38f7520c7e49c9fa9",
+      "Q10": "06442d213ee95ec651a13038e7dd74d306efa2d4078cf4b5a662999988a974d9",
+      "Q11": "b2cc71b04638c0d418f4bb449e32c56873e727caf7d59d137427aa99f16034f0",
+      "Q12": "2647c232264569c7e3524174d517694c0d8143b8f5fe8b651af512eb6598e3a6",
+      "Q13": "ee6d2b0e9a48fbbbd65acac1fe9fc8e1cba7ef1b11221b8c0f473b029a136724",
+      "Q14": "4c1cdb3f9fab13542c7a96f2c7ff97ba7021331770edd67435aeee3d383d7c1a",
+      "Q15": "e47c353382dae9617d2c0dcf13b0f6a5d067c2ceffcd1a18197be0d80a5a11f5",
+      "Q16": "b4811cd8874b98936b1b489f43719e594836a83a438f27d491ccbd32a21637a9",
+      "Q17": "6b0a5e9e2793196bf88722bd85a1fdedaa21814aaf157b40c22a97f72be6d0fe",
+      "Q18": "20d8d705869ea9c6aeb146269eb41e8e037dce32a470d742e2423196d73cd045",
+      "Q19": "3e8460c2d4cd126b3e3d273b55d11a0363b057ab169f29129af3d0e6c13b5c08",
+      "Q20": "0fe26c311434a0c231608f42d58126a86b6c73fba7fd9454fa55b6d3ee677178",
+      "Q21": "73fdf9f227e0bf8ef03fa9ec76a6594141868d73e39c30f6e72b733837e7d2a0",
+      "Q22": "6e23f344d068c6c62f66880f5d8daae2ff7d4dc0932f14a3b34d9e99011c1d21",
+      "Q23": "19d9b983368a6e30ad6b14b4ddf283192565a8e8827f4773b3e4c86ba638c4ba",
+      "Q24": "812074a6ec1535ce66da34f1acad6e2efa7cd633c6d434c07cfbe44640cf0cfa",
+      "Q25": "45035e0ef54e1171fbf4317f17877c6504864a8abc7eb757079c2c36a30f6639",
+      "Q26": "43e6c9c109ec12538e9490dbc7d992205a8da5b0240c14c8c85bf5ddb1951086",
+      "Q27": "91de6c0d066f52c6ca7201a31984718442229a3b9c42892578f15e076ab5927a",
+      "Q28": "764719be493cc94fb04bf26469db51f7b3c354683d6a52b489651d8200094239",
+      "Q29": "bdb2756184f8ba12147df4d8d92d12796c5fcfa4e518d5d53406039ad032ed3d",
+      "Q30": "ba17bbddadd099e798ce1d50b68e1c7c7e44ef96f9708442bd66ea1644458d4f",
+      "Q31": "ef1f64a88e5aa7b7edc7bb319c1088e1e89c69999a48276994a12f8e3e0d2431",
+      "Q32": "b2f624196a9d290b919a21dfcbff28e20073d94fc91a925f01ebbc9ffbdf3fb2",
+      "Q33": "7566f54458f76dd524fc3bea7e6e808e1132e506385996c70eac5691d4f86812",
+      "Q34": "1d4a0e6c4b5c2cd8d9174e0fa4de8d9e90361a73785e68cf0e1f546cf24eb37d",
+      "Q35": "3f3d577b00d60a70e9d4a0f46706bc1c77a136071cc9166804a330c97482c093",
+      "Q36": "1b69200a7b6f073e1cb08fd90f9fec32c144d721ca9f80445b436cf25f834192",
+      "Q37": "e17d099fab3fd97594772304181a734589bd503d09d0c804f24a84f116c846bd",
+      "Q38": "bd65d40d2455e9c4468fb58d4e15d3b086b3ce056739880816bd7af6e9d39e2f",
+      "Q39": "bff3d9005a5d5655d4151c9141df89526d64cd39db724dead403ab1953a4f2c0"
+    }
+  }
+}

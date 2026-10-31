@@ -1,0 +1,249 @@
+{
+  "format_version": 1,
+  "date": "2026-10-31",
+  "status": "HISTORICAL_OFFLINE_AND_BASELINE_ONLY; CANDIDATE_PENDING",
+  "source_audit_root": ".tmp/codex-speed-v5-audit-2026-10-31",
+  "native_eval_archive": "Separate parent-owned archive; only aggregate baseline crossreference retained here",
+  "payload_file_count": 27,
+  "payload_bytes": 1855344,
+  "manifest_excludes_itself": true,
+  "precedence": [
+    "early/outer-output-correction.* supersedes initial VerifyGrant/DisconnectAll redundant-body claims",
+    "late/outer-visibility-addendum.* supersedes exhaustive no-repetition claim",
+    "baseline-status-crossreference.json Q02 NO_REPRO supersedes the historical untested Q02 scheduling hypothesis",
+    "No candidate outcome or candidate-success claim"
+  ],
+  "omitted": [
+    "Raw actor event/transcript files and visible source-body dumps",
+    "Private reasoning text, summaries, encrypted reasoning, auth files and actor homes",
+    "Early backend body ledger and giant safe-visible/selected raw extracts",
+    "Redundant console logs and derivation scripts superseded by aggregate reports"
+  ],
+  "limitations": [
+    "Exact source hashes/IDs and original limitations retained inside copied aggregates",
+    "Metadata timing residual is not pure inference or proven plugin latency",
+    "Offline persistence wall/CPU cannot be subtracted from overlapping historical service/model time",
+    "Historical controller interpreter identity unproven; pycache hints are insufficient",
+    "B broad preload and non-interleaved n=1 runs confound causal/optimality claims",
+    "Extracted baseline contexts are not exact original full-history replays",
+    "Archival script ROOT/layout assumptions remain unchanged; no tests/replays/actors/index/build run for packaging"
+  ],
+  "artifacts": [
+    {
+      "path": "baseline-status-crossreference.json",
+      "sha256": "20420005bd55dd97d1d484172679646fe37138fe21eec0f4d5e37446a22db2cc",
+      "bytes": 6082,
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/baseline-verdicts.json",
+      "source_sha256": "e84a2cb2d83994c6687a82ea548df0e85fa0f8a0b4618cfcb8f5d06aad2e53b5",
+      "transform": "Derived whitelist of baseline counts/verdicts/IDs; no raw finals or package inventories"
+    },
+    {
+      "path": "controller/real-Q01-io-replay.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/evidence/real-Q01-io-replay.json",
+      "source_sha256": "134df51899cdfbd54e45284ecc097e1d21da6b83f0c79d90fdbc0ab74cf0d252",
+      "sha256": "134df51899cdfbd54e45284ecc097e1d21da6b83f0c79d90fdbc0ab74cf0d252",
+      "bytes": 3093,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "early/focused-Q02-Q03.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/early/focused-Q02-Q03.md",
+      "source_sha256": "b28e64fe506f460b9506c10927c026480a842d20a86f48ffa4e9a5bd7844343b",
+      "sha256": "b28e64fe506f460b9506c10927c026480a842d20a86f48ffa4e9a5bd7844343b",
+      "bytes": 2302,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "early/initial-findings.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/early/findings.json",
+      "source_sha256": "842a625956bfd8a5e2788495ea44bfe4bdbcb2f7bfe2fdbe80428247113ba3ce",
+      "sha256": "842a625956bfd8a5e2788495ea44bfe4bdbcb2f7bfe2fdbe80428247113ba3ce",
+      "bytes": 18214,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "early/initial-findings.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/early/findings.md",
+      "source_sha256": "d1dc86e010a2ccee4209669693d872ead6b0e29559b8d96c28699b3cec659dee",
+      "sha256": "d1dc86e010a2ccee4209669693d872ead6b0e29559b8d96c28699b3cec659dee",
+      "bytes": 3941,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "early/outer-output-correction.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/early/outer-output-correction.json",
+      "source_sha256": "d7c56ff86ac19303a5b860d1ba544352fa5cd46ee40aee68b86020b6780175e5",
+      "sha256": "d7c56ff86ac19303a5b860d1ba544352fa5cd46ee40aee68b86020b6780175e5",
+      "bytes": 11170,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "early/outer-output-correction.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/early/outer-output-correction.md",
+      "source_sha256": "5b43179dbdd47143f31a40a4c9e8e72ed938d5774c8fe43a35c03b0aa81c223c",
+      "sha256": "5b43179dbdd47143f31a40a4c9e8e72ed938d5774c8fe43a35c03b0aa81c223c",
+      "bytes": 1197,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "late/late-audit.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/late/late-audit.json",
+      "source_sha256": "ac38997a9f32cf79562a3e8fdf16a6448a05f7428c039bc4fb58a6416c22b843",
+      "sha256": "ac38997a9f32cf79562a3e8fdf16a6448a05f7428c039bc4fb58a6416c22b843",
+      "bytes": 27031,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "late/late-audit.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/late/late-audit.md",
+      "source_sha256": "42eb852aa189fac8b633c786951938f4c19b60a0769a0300b563ad5fdfd777b3",
+      "sha256": "42eb852aa189fac8b633c786951938f4c19b60a0769a0300b563ad5fdfd777b3",
+      "bytes": 10234,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "late/outer-visibility-addendum.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/late/outer-visibility-addendum.json",
+      "source_sha256": "e796584db514bfbedab16f1d71f010063ff2421d2c296a476217b9afcacd0954",
+      "sha256": "e796584db514bfbedab16f1d71f010063ff2421d2c296a476217b9afcacd0954",
+      "bytes": 12747,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "late/outer-visibility-addendum.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/late/outer-visibility-addendum.md",
+      "source_sha256": "170d39016242294224db2fc87e50d1a2e965e522438d00931ec6fef53a88168b",
+      "sha256": "170d39016242294224db2fc87e50d1a2e965e522438d00931ec6fef53a88168b",
+      "bytes": 1876,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "README.md",
+      "sha256": "281e7f124b5af003884d9aeca0373f50b1c30346d33570b3434991e4ff4bfe00",
+      "bytes": 8646,
+      "source": "Derived narrative from archived aggregates and baseline crossreference",
+      "source_sha256": null,
+      "transform": "New synthesis; original artifacts unchanged"
+    },
+    {
+      "path": "timing/accounting.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/accounting.json",
+      "source_sha256": "ae35bb5402e5389d9e2ca9017e1db01f75bf2f0bc50ae36d111cd785cafa6ab6",
+      "sha256": "ae35bb5402e5389d9e2ca9017e1db01f75bf2f0bc50ae36d111cd785cafa6ab6",
+      "bytes": 1364591,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/analyze.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/analyze.py",
+      "source_sha256": "e2e48313c2e15b349fcc6fcd542d1a865f3730401068903275c78eb6a3fd7ca5",
+      "sha256": "e2e48313c2e15b349fcc6fcd542d1a865f3730401068903275c78eb6a3fd7ca5",
+      "bytes": 9325,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/controller-persistence-hypothesis-environment.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/controller-persistence-hypothesis-environment.json",
+      "source_sha256": "2fd40f3ae091585debdaecea02c0417a3f4f7a3f662569d3d10305bfb57c225a",
+      "sha256": "2fd40f3ae091585debdaecea02c0417a3f4f7a3f662569d3d10305bfb57c225a",
+      "bytes": 2830,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/controller-persistence-hypothesis-python315.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/controller-persistence-hypothesis-python315.json",
+      "source_sha256": "651c5b5431df4df56d427bc165a04ed4ebea1c1d5af55aede888ea8608ecf603",
+      "sha256": "651c5b5431df4df56d427bc165a04ed4ebea1c1d5af55aede888ea8608ecf603",
+      "bytes": 1667,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/controller-persistence-hypothesis-summary.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/controller-persistence-hypothesis-summary.json",
+      "source_sha256": "91084b2a3bc24dd9c1e8fc52eda49f1cf3d95464a806ce3f62474e46584b67f6",
+      "sha256": "91084b2a3bc24dd9c1e8fc52eda49f1cf3d95464a806ce3f62474e46584b67f6",
+      "bytes": 5411,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/controller-persistence-hypothesis.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/controller-persistence-hypothesis.json",
+      "source_sha256": "dd84ef5a87925b64cd6cc168eaea40d39e6530a8b7448d1ec4f2674c4e57e064",
+      "sha256": "dd84ef5a87925b64cd6cc168eaea40d39e6530a8b7448d1ec4f2674c4e57e064",
+      "bytes": 156046,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/controller-persistence-hypothesis.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/controller-persistence-hypothesis.md",
+      "source_sha256": "d928311669e28224965ecbe8a067f8d7649327939ed2a7a2a8c057909612ee97",
+      "sha256": "d928311669e28224965ecbe8a067f8d7649327939ed2a7a2a8c057909612ee97",
+      "bytes": 7679,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/findings.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/findings.md",
+      "source_sha256": "855ea936a3178ffe09a60456d92673515daf78ae0c7b5aa7d66a4f19cf0b425a",
+      "sha256": "855ea936a3178ffe09a60456d92673515daf78ae0c7b5aa7d66a4f19cf0b425a",
+      "bytes": 5617,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/persistence_calibration.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/persistence_calibration.py",
+      "source_sha256": "007dd70dcb40616f35f6ed57d28ae3ab94d5eb5bbc5f6c6f5da54623e31fdfb2",
+      "sha256": "007dd70dcb40616f35f6ed57d28ae3ab94d5eb5bbc5f6c6f5da54623e31fdfb2",
+      "bytes": 1367,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/persistence_replay.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/persistence_replay.py",
+      "source_sha256": "83188950614a236e6dea93f83d7bf337c18ceed0432f4c8d3b9f470defe98d3c",
+      "sha256": "83188950614a236e6dea93f83d7bf337c18ceed0432f4c8d3b9f470defe98d3c",
+      "bytes": 6004,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/persistence_summarize.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/persistence_summarize.py",
+      "source_sha256": "d87f3275a2c3785cf79dd16079b63180fd6cca9450c16ed2574264907d68bd82",
+      "sha256": "d87f3275a2c3785cf79dd16079b63180fd6cca9450c16ed2574264907d68bd82",
+      "bytes": 3419,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/persistence_validation.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/persistence_validation.py",
+      "source_sha256": "e4458d38aacce01dbb310a6c83eef39971a08965f3ab2c41a6fb02bfdf9bcc71",
+      "sha256": "e4458d38aacce01dbb310a6c83eef39971a08965f3ab2c41a6fb02bfdf9bcc71",
+      "bytes": 1300,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/refine.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/refine.py",
+      "source_sha256": "ffd87426cd299dff2b2baf327e5cbe98ca569aa9603e839be910048930288a7c",
+      "sha256": "ffd87426cd299dff2b2baf327e5cbe98ca569aa9603e839be910048930288a7c",
+      "bytes": 6581,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/timing-refinement.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/timing-refinement.json",
+      "source_sha256": "71a990546b831f821ed132929e3a6ecd789b245983ff6978b136104101f578c1",
+      "sha256": "71a990546b831f821ed132929e3a6ecd789b245983ff6978b136104101f578c1",
+      "bytes": 172681,
+      "transform": "none; byte-exact archival copy"
+    },
+    {
+      "path": "timing/timing-refinement.md",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/timing/timing-refinement.md",
+      "source_sha256": "d41510c78febdf20fcc8a37b5ab71690252cb3d77fc5b74bf3fe0645beff4782",
+      "sha256": "d41510c78febdf20fcc8a37b5ab71690252cb3d77fc5b74bf3fe0645beff4782",
+      "bytes": 4293,
+      "transform": "none; byte-exact archival copy"
+    }
+  ]
+}

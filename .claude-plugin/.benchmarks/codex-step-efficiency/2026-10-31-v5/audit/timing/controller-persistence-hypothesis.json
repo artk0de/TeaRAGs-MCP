@@ -1,0 +1,4364 @@
+{
+  "source_fingerprints": {
+    "latest_A": {
+      "codex61_runner.py": "0afc8283aefa7a6e7ee99629659d75931b1868ffcd16cdfa79ab091afc03e38a",
+      "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+      "codex61_app_rpc.py": "0a2c38241347cf1d8a2907823c9d0fe11b9c2263d8ce52615ac9fae51d21e6b3"
+    },
+    "reference_B": {
+      "codex61_runner.py": "705c158be51678e204dfcfe584ff83621c750756538bfbaf896bced6addab32e",
+      "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+      "codex61_app_rpc.py": "0a2c38241347cf1d8a2907823c9d0fe11b9c2263d8ce52615ac9fae51d21e6b3"
+    },
+    "previous_A": {
+      "codex61_runner.py": "705c158be51678e204dfcfe584ff83621c750756538bfbaf896bced6addab32e",
+      "protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407",
+      "codex61_app_rpc.py": "0a2c38241347cf1d8a2907823c9d0fe11b9c2263d8ce52615ac9fae51d21e6b3"
+    }
+  },
+  "inventory": {
+    "latest_A": [
+      {
+        "question_id": "Q01",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q01-events.json",
+        "source_sha256": "73ff179b8bb0235e8ea04bf17245127f0552dbff844cd3b942036142106195b1",
+        "event_count": 2253,
+        "delta_count": 1979,
+        "final_bytes": 1482450,
+        "cumulative_bytes_rewritten": 2238103218,
+        "method_counts": {
+          "remoteControl/status/changed": 1,
+          "account/updated": 1,
+          "thread/started": 1,
+          "warning": 1,
+          "mcpServer/startupStatus/updated": 3,
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 40,
+          "hook/started": 57,
+          "hook/completed": 57,
+          "item/started": 32,
+          "item/completed": 32,
+          "item/agentMessage/delta": 1979,
+          "turn/moderationMetadata": 11,
+          "rawResponse/completed": 11,
+          "thread/tokenUsage/updated": 11,
+          "account/rateLimits/updated": 11,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q02",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q02-events.json",
+        "source_sha256": "28c19b40ffba36ab18348e3c20286578a7f56067d99e6963fa664689461cc9cb",
+        "event_count": 1164,
+        "delta_count": 878,
+        "final_bytes": 949553,
+        "cumulative_bytes_rewritten": 721047485,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 24,
+          "hook/started": 75,
+          "hook/completed": 75,
+          "item/started": 29,
+          "item/completed": 29,
+          "item/agentMessage/delta": 878,
+          "turn/moderationMetadata": 8,
+          "rawResponse/completed": 8,
+          "thread/tokenUsage/updated": 8,
+          "account/rateLimits/updated": 8,
+          "item/commandExecution/outputDelta": 17,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q03",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q03-events.json",
+        "source_sha256": "aead499e1c7305ff12bb28beb37ddda7c188e75795de4e4c282d9a46c8d718df",
+        "event_count": 1427,
+        "delta_count": 1256,
+        "final_bytes": 1008180,
+        "cumulative_bytes_rewritten": 961693914,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 39,
+          "hook/completed": 39,
+          "rawResponseItem/completed": 20,
+          "item/started": 20,
+          "item/completed": 20,
+          "item/agentMessage/delta": 1256,
+          "turn/moderationMetadata": 7,
+          "rawResponse/completed": 7,
+          "thread/tokenUsage/updated": 7,
+          "account/rateLimits/updated": 7,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q04",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q04-events.json",
+        "source_sha256": "5c8f3973328cc147ca3f64f173d8614ae886f38f0136a483ab05434d744b2f61",
+        "event_count": 1205,
+        "delta_count": 1165,
+        "final_bytes": 543714,
+        "cumulative_bytes_rewritten": 338622558,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 1165,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q05",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q05-events.json",
+        "source_sha256": "8b6c37bc7eee043a61b7f20c3a529f0f31bf8821f5c41f88c471a9588231020d",
+        "event_count": 401,
+        "delta_count": 289,
+        "final_bytes": 473879,
+        "cumulative_bytes_rewritten": 120332169,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 25,
+          "hook/completed": 25,
+          "rawResponseItem/completed": 13,
+          "item/started": 14,
+          "item/completed": 14,
+          "item/agentMessage/delta": 289,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q06",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q06-events.json",
+        "source_sha256": "52ef4929e847a66fe21dd69d7414f3307441ac0abf9508e1b0a2dc6728320f84",
+        "event_count": 1505,
+        "delta_count": 1452,
+        "final_bytes": 655944,
+        "cumulative_bytes_rewritten": 496451579,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 9,
+          "hook/completed": 9,
+          "rawResponseItem/completed": 8,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 1452,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q07",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q07-events.json",
+        "source_sha256": "f7059ad98cb2eeb215cffd6e918bac33e74cc501ad1bedca221bc71be4a610f0",
+        "event_count": 271,
+        "delta_count": 201,
+        "final_bytes": 321325,
+        "cumulative_bytes_rewritten": 48218864,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 15,
+          "hook/completed": 15,
+          "rawResponseItem/completed": 9,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 201,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q08",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q08-events.json",
+        "source_sha256": "d926839b365895451f9e68293265c61c42adcf49e47708b2fc3cdc38a03eb4e6",
+        "event_count": 153,
+        "delta_count": 131,
+        "final_bytes": 128157,
+        "cumulative_bytes_rewritten": 5571923,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 131,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q09",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q09-events.json",
+        "source_sha256": "0858350802432e9b88f1b61a8a55eab758e9bd39c1b76f7d20dc4be4215b5613",
+        "event_count": 273,
+        "delta_count": 233,
+        "final_bytes": 268670,
+        "cumulative_bytes_rewritten": 37756706,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 233,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q10",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q10-events.json",
+        "source_sha256": "faa299710bfcd2b3e612b7393c119b55f5009492a867cae91bfc3c1fb8c7969c",
+        "event_count": 324,
+        "delta_count": 302,
+        "final_bytes": 189802,
+        "cumulative_bytes_rewritten": 20276621,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 302,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q11",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q11-events.json",
+        "source_sha256": "fedad750e1fae99adbda166bcd43d1451d0599d3729f14ac7ca7f0226523d578",
+        "event_count": 322,
+        "delta_count": 300,
+        "final_bytes": 190057,
+        "cumulative_bytes_rewritten": 19988365,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 300,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q12",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q12-events.json",
+        "source_sha256": "f342849cb10cde39a85cd9037377097d8a2102f3fc0540a68a91a961e6b290a4",
+        "event_count": 514,
+        "delta_count": 438,
+        "final_bytes": 617938,
+        "cumulative_bytes_rewritten": 209860631,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 11,
+          "hook/completed": 11,
+          "rawResponseItem/completed": 13,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 438,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q13",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q13-events.json",
+        "source_sha256": "13fa16bb71e7a48fd16a5f4feddc9ad219299f395555cd8cfc7b557e8d723079",
+        "event_count": 330,
+        "delta_count": 308,
+        "final_bytes": 201284,
+        "cumulative_bytes_rewritten": 21025719,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 308,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q14",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q14-events.json",
+        "source_sha256": "3cc91328843dfd68f97025c1b55fd234f98cedd946f7df236ccece1405425743",
+        "event_count": 390,
+        "delta_count": 353,
+        "final_bytes": 329840,
+        "cumulative_bytes_rewritten": 66369120,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 6,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 353,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q15",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q15-events.json",
+        "source_sha256": "2be5c5970cdc0b4df8f3e28a106bfbbcbb11da27b054a8d7bbe0efcb9e9d99ab",
+        "event_count": 739,
+        "delta_count": 669,
+        "final_bytes": 683622,
+        "cumulative_bytes_rewritten": 328179903,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 11,
+          "hook/completed": 11,
+          "rawResponseItem/completed": 11,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 669,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q16",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q16-events.json",
+        "source_sha256": "d50816521342e486cb254615b465f99976a58d1864dfade75d4e85464434c29e",
+        "event_count": 793,
+        "delta_count": 716,
+        "final_bytes": 581952,
+        "cumulative_bytes_rewritten": 266094762,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 13,
+          "hook/completed": 13,
+          "rawResponseItem/completed": 10,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 716,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 8,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q17",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q17-events.json",
+        "source_sha256": "322440bbd8c0096d9ee927699650ea4f68f7ae886006d6cf153e8ece00206e6f",
+        "event_count": 239,
+        "delta_count": 198,
+        "final_bytes": 291702,
+        "cumulative_bytes_rewritten": 33547664,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 6,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 198,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q18",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q18-events.json",
+        "source_sha256": "caf7d6d23c2b5983aaf3df08cd07f74a62f2cb38bdd867338b144ab015762cb6",
+        "event_count": 259,
+        "delta_count": 237,
+        "final_bytes": 193591,
+        "cumulative_bytes_rewritten": 13694570,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 237,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q19",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q19-events.json",
+        "source_sha256": "d4ec49752c40ad555d3842828a67b3ecc2f99abccae5af9983e9a84be3fc1515",
+        "event_count": 441,
+        "delta_count": 419,
+        "final_bytes": 254025,
+        "cumulative_bytes_rewritten": 35574870,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 419,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q20",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q20-events.json",
+        "source_sha256": "9f25b1a8e35eaff1ac4a9e60beedaa2736c1a5376a61b0256573396d67bd875b",
+        "event_count": 435,
+        "delta_count": 398,
+        "final_bytes": 373251,
+        "cumulative_bytes_rewritten": 82215810,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 6,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 398,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q21",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q21-events.json",
+        "source_sha256": "d38dac00e00c2c15000a3760a09283f6083c1480c1631e43649379f09fe90f41",
+        "event_count": 928,
+        "delta_count": 876,
+        "final_bytes": 689688,
+        "cumulative_bytes_rewritten": 382005966,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 9,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 876,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q22",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q22-events.json",
+        "source_sha256": "f17214d75d75da6e929d4100d3cfaef615c0d8cecb188ddbdf00c4e27c347481",
+        "event_count": 828,
+        "delta_count": 758,
+        "final_bytes": 639320,
+        "cumulative_bytes_rewritten": 307716113,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 15,
+          "hook/completed": 15,
+          "rawResponseItem/completed": 9,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 758,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q23",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q23-events.json",
+        "source_sha256": "aef3b5e92efee277a22224a613c73d7311b824d20238e79f84dcb510945b5af4",
+        "event_count": 410,
+        "delta_count": 296,
+        "final_bytes": 695844,
+        "cumulative_bytes_rewritten": 175421400,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 29,
+          "hook/completed": 29,
+          "rawResponseItem/completed": 11,
+          "item/started": 12,
+          "item/completed": 12,
+          "item/agentMessage/delta": 296,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q24",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q24-events.json",
+        "source_sha256": "6ce09a598492e42988d9d1efdc2a054675f3f3f315fd2cdadaf3fb1e335bf90d",
+        "event_count": 117,
+        "delta_count": 95,
+        "final_bytes": 167402,
+        "cumulative_bytes_rewritten": 4010361,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 95,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q25",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q25-events.json",
+        "source_sha256": "32c0397c888c5212394143d51229fcbf03932f584a4b0751aa6ab01242268781",
+        "event_count": 234,
+        "delta_count": 209,
+        "final_bytes": 211842,
+        "cumulative_bytes_rewritten": 12370314,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 209,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q26",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q26-events.json",
+        "source_sha256": "bc78c472433a1bb2ccc86102f6f357293d428a8403a91cd9f4698e75433f83c1",
+        "event_count": 571,
+        "delta_count": 450,
+        "final_bytes": 935425,
+        "cumulative_bytes_rewritten": 364115638,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 25,
+          "hook/completed": 25,
+          "rawResponseItem/completed": 16,
+          "item/started": 15,
+          "item/completed": 15,
+          "item/agentMessage/delta": 450,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q27",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q27-events.json",
+        "source_sha256": "f6bc98420b05ff44bb36d9eda761867277e34431e0dc7ebb056a7c8659063d68",
+        "event_count": 318,
+        "delta_count": 296,
+        "final_bytes": 247184,
+        "cumulative_bytes_rewritten": 20159258,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 296,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q28",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q28-events.json",
+        "source_sha256": "32d9755944ae3b7fc4167a4fb2e0ca41aeef033bb34120cfdc2cda1614bf7e87",
+        "event_count": 589,
+        "delta_count": 564,
+        "final_bytes": 341508,
+        "cumulative_bytes_rewritten": 63091836,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 564,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q29",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q29-events.json",
+        "source_sha256": "46f4f06c3e1c66de34175e2cf81b3208c7c5042e1ab51f520b9fd7045a9f55d7",
+        "event_count": 312,
+        "delta_count": 272,
+        "final_bytes": 389645,
+        "cumulative_bytes_rewritten": 58737718,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 272,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q30",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q30-events.json",
+        "source_sha256": "db22d04814b3250f473c7ce2e79ff6a1453243ef138736b513db446d28de30af",
+        "event_count": 488,
+        "delta_count": 314,
+        "final_bytes": 1131384,
+        "cumulative_bytes_rewritten": 362834505,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 47,
+          "hook/completed": 47,
+          "rawResponseItem/completed": 17,
+          "item/started": 17,
+          "item/completed": 17,
+          "item/agentMessage/delta": 314,
+          "turn/moderationMetadata": 6,
+          "rawResponse/completed": 6,
+          "thread/tokenUsage/updated": 6,
+          "account/rateLimits/updated": 6,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q31",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q31-events.json",
+        "source_sha256": "7da8851fc100ed822821890b2c0b1335c7a888723955ed8de82d39ef6ce19999",
+        "event_count": 365,
+        "delta_count": 340,
+        "final_bytes": 277722,
+        "cumulative_bytes_rewritten": 26556491,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 340,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q32",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q32-events.json",
+        "source_sha256": "bd9a80cfb2ac2ddabeb7bfcdbd9fa737ddd46094708a4d28346c258c95d6a8ee",
+        "event_count": 258,
+        "delta_count": 236,
+        "final_bytes": 241714,
+        "cumulative_bytes_rewritten": 13926807,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 236,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q33",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q33-events.json",
+        "source_sha256": "08cbb675b8d044a139a7dc68120a5601f5e75d96917f1c04de37d6241463fd75",
+        "event_count": 641,
+        "delta_count": 589,
+        "final_bytes": 688902,
+        "cumulative_bytes_rewritten": 259880212,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 9,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 589,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q34",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q34-events.json",
+        "source_sha256": "066959779308cc6fa7f5b4d1ec2e45bf0ec56bd1f52d08fa76ea6d628f5efc9b",
+        "event_count": 461,
+        "delta_count": 383,
+        "final_bytes": 649742,
+        "cumulative_bytes_rewritten": 171234897,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 15,
+          "hook/completed": 15,
+          "rawResponseItem/completed": 11,
+          "item/started": 9,
+          "item/completed": 9,
+          "item/agentMessage/delta": 383,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "item/commandExecution/outputDelta": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q35",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q35-events.json",
+        "source_sha256": "6dfdd708ecd715d20852d10488ff74be3a6c23873c3b2baad66c368941451d69",
+        "event_count": 427,
+        "delta_count": 331,
+        "final_bytes": 1000095,
+        "cumulative_bytes_rewritten": 279131927,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 17,
+          "hook/completed": 17,
+          "rawResponseItem/completed": 15,
+          "item/started": 11,
+          "item/completed": 11,
+          "item/agentMessage/delta": 331,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q36",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q36-events.json",
+        "source_sha256": "c99aaa096a6f906762e24a534a765d67c079f2f9da444d8a725c0a61e78e420f",
+        "event_count": 764,
+        "delta_count": 637,
+        "final_bytes": 836464,
+        "cumulative_bytes_rewritten": 389707425,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 39,
+          "hook/completed": 39,
+          "rawResponseItem/completed": 8,
+          "item/started": 12,
+          "item/completed": 12,
+          "item/agentMessage/delta": 637,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q37",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q37-events.json",
+        "source_sha256": "80b32268963e855b0dc765ed7c1dcb0f3dbc829016bdb37688478e4582c77805",
+        "event_count": 629,
+        "delta_count": 566,
+        "final_bytes": 761059,
+        "cumulative_bytes_rewritten": 284982921,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 13,
+          "hook/completed": 13,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 566,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q38",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q38-events.json",
+        "source_sha256": "4bc23f05c07f6b65c27df0bd57005b45a25309c1211626e95732eb4015cfb03a",
+        "event_count": 270,
+        "delta_count": 245,
+        "final_bytes": 276477,
+        "cumulative_bytes_rewritten": 16238554,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 245,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q39",
+        "source": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q39-events.json",
+        "source_sha256": "9986136b84b10cce0ece60e46aaa49cef881f33160737bef4b4717fb7efbc6e8",
+        "event_count": 593,
+        "delta_count": 495,
+        "final_bytes": 988319,
+        "cumulative_bytes_rewritten": 376808466,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 23,
+          "hook/completed": 23,
+          "rawResponseItem/completed": 11,
+          "item/started": 10,
+          "item/completed": 10,
+          "item/agentMessage/delta": 495,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      }
+    ],
+    "reference_B": [
+      {
+        "question_id": "Q01",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q01-events.json",
+        "source_sha256": "eeed84fc0c1a1a908eee017c4e49d2721bae1c8f16cccbd98cbfe29ae3720d09",
+        "event_count": 2142,
+        "delta_count": 2023,
+        "final_bytes": 1277972,
+        "cumulative_bytes_rewritten": 1815849477,
+        "method_counts": {
+          "remoteControl/status/changed": 1,
+          "account/updated": 1,
+          "thread/started": 1,
+          "warning": 1,
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 29,
+          "item/started": 15,
+          "item/completed": 15,
+          "item/agentMessage/delta": 2023,
+          "turn/moderationMetadata": 9,
+          "rawResponse/completed": 9,
+          "item/commandExecution/outputDelta": 15,
+          "thread/tokenUsage/updated": 9,
+          "account/rateLimits/updated": 9,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q02",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q02-events.json",
+        "source_sha256": "21bd6c16598a22aa394001ba822936356b72e8efb497ad2e53e07ea18b98fd8f",
+        "event_count": 864,
+        "delta_count": 805,
+        "final_bytes": 527240,
+        "cumulative_bytes_rewritten": 296743316,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 12,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 805,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "item/commandExecution/outputDelta": 6,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q03",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q03-events.json",
+        "source_sha256": "52908d25d4fa59cb5ddbffe9dc3e6f2cbe41ca6f7a44c9a4c383e43734c6b04a",
+        "event_count": 1275,
+        "delta_count": 1197,
+        "final_bytes": 737602,
+        "cumulative_bytes_rewritten": 607490760,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 12,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 1197,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "item/commandExecution/outputDelta": 25,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q04",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q04-events.json",
+        "source_sha256": "b5ef6e8c08abf1152ac5260f8eb49a4bc3a242f97421641954c3dd705f7b49bd",
+        "event_count": 1129,
+        "delta_count": 1092,
+        "final_bytes": 549700,
+        "cumulative_bytes_rewritten": 359258308,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 1092,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q05",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q05-events.json",
+        "source_sha256": "a569075fd97c6a0df7df6c512165e678dfd416e2b033cf7a1803cbdaeddd9f4d",
+        "event_count": 483,
+        "delta_count": 306,
+        "final_bytes": 513072,
+        "cumulative_bytes_rewritten": 146418351,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 15,
+          "item/started": 10,
+          "item/completed": 10,
+          "item/agentMessage/delta": 306,
+          "turn/moderationMetadata": 6,
+          "rawResponse/completed": 6,
+          "item/commandExecution/outputDelta": 113,
+          "thread/tokenUsage/updated": 6,
+          "account/rateLimits/updated": 6,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q06",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q06-events.json",
+        "source_sha256": "58e8fdf06e3c8b6cb953223187a0211d84db3eab7f1333e9d6af88fdb8b8dd5f",
+        "event_count": 1433,
+        "delta_count": 1379,
+        "final_bytes": 604234,
+        "cumulative_bytes_rewritten": 448431156,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 6,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 1379,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 25,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q07",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q07-events.json",
+        "source_sha256": "2bebfb9b1045f5c66cb2ffbf69b4fcab48ee39ead70a17ed2ddb22105e77795e",
+        "event_count": 368,
+        "delta_count": 331,
+        "final_bytes": 242004,
+        "cumulative_bytes_rewritten": 47020397,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 6,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 331,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 8,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q08",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q08-events.json",
+        "source_sha256": "6aa14d9012dec43a8f50c03b80a2bf7b9ec537eaef6805a4e7fae6a669445273",
+        "event_count": 158,
+        "delta_count": 131,
+        "final_bytes": 151851,
+        "cumulative_bytes_rewritten": 11569354,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 131,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 1,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q09",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q09-events.json",
+        "source_sha256": "ad971e8c96030d97b5b13f1741d211ed6bb4dda73bf079d38f7520c7e49c9fa9",
+        "event_count": 244,
+        "delta_count": 218,
+        "final_bytes": 193587,
+        "cumulative_bytes_rewritten": 23763432,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 218,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q10",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q10-events.json",
+        "source_sha256": "06442d213ee95ec651a13038e7dd74d306efa2d4078cf4b5a662999988a974d9",
+        "event_count": 337,
+        "delta_count": 308,
+        "final_bytes": 231580,
+        "cumulative_bytes_rewritten": 40188230,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 308,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 3,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q11",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q11-events.json",
+        "source_sha256": "b2cc71b04638c0d418f4bb449e32c56873e727caf7d59d137427aa99f16034f0",
+        "event_count": 346,
+        "delta_count": 320,
+        "final_bytes": 232407,
+        "cumulative_bytes_rewritten": 40764970,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 320,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q12",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q12-events.json",
+        "source_sha256": "2647c232264569c7e3524174d517694c0d8143b8f5fe8b651af512eb6598e3a6",
+        "event_count": 401,
+        "delta_count": 370,
+        "final_bytes": 291053,
+        "cumulative_bytes_rewritten": 64255794,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 370,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 5,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q13",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q13-events.json",
+        "source_sha256": "ee6d2b0e9a48fbbbd65acac1fe9fc8e1cba7ef1b11221b8c0f473b029a136724",
+        "event_count": 309,
+        "delta_count": 283,
+        "final_bytes": 240882,
+        "cumulative_bytes_rewritten": 38149555,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 283,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q14",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q14-events.json",
+        "source_sha256": "4c1cdb3f9fab13542c7a96f2c7ff97ba7021331770edd67435aeee3d383d7c1a",
+        "event_count": 414,
+        "delta_count": 386,
+        "final_bytes": 281810,
+        "cumulative_bytes_rewritten": 60659740,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 386,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q15",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q15-events.json",
+        "source_sha256": "e47c353382dae9617d2c0dcf13b0f6a5d067c2ceffcd1a18197be0d80a5a11f5",
+        "event_count": 673,
+        "delta_count": 635,
+        "final_bytes": 477087,
+        "cumulative_bytes_rewritten": 194725218,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 635,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "item/commandExecution/outputDelta": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q16",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q16-events.json",
+        "source_sha256": "b4811cd8874b98936b1b489f43719e594836a83a438f27d491ccbd32a21637a9",
+        "event_count": 747,
+        "delta_count": 705,
+        "final_bytes": 480225,
+        "cumulative_bytes_rewritten": 208751975,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 705,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 8,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q17",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q17-events.json",
+        "source_sha256": "6b0a5e9e2793196bf88722bd85a1fdedaa21814aaf157b40c22a97f72be6d0fe",
+        "event_count": 282,
+        "delta_count": 255,
+        "final_bytes": 241172,
+        "cumulative_bytes_rewritten": 32966869,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 255,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 1,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q18",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q18-events.json",
+        "source_sha256": "20d8d705869ea9c6aeb146269eb41e8e037dce32a470d742e2423196d73cd045",
+        "event_count": 396,
+        "delta_count": 338,
+        "final_bytes": 298076,
+        "cumulative_bytes_rewritten": 60880803,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 338,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 32,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q19",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q19-events.json",
+        "source_sha256": "3e8460c2d4cd126b3e3d273b55d11a0363b057ab169f29129af3d0e6c13b5c08",
+        "event_count": 496,
+        "delta_count": 470,
+        "final_bytes": 328627,
+        "cumulative_bytes_rewritten": 82489073,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 470,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q20",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q20-events.json",
+        "source_sha256": "0fe26c311434a0c231608f42d58126a86b6c73fba7fd9454fa55b6d3ee677178",
+        "event_count": 441,
+        "delta_count": 415,
+        "final_bytes": 323821,
+        "cumulative_bytes_rewritten": 73697038,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 415,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q21",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q21-events.json",
+        "source_sha256": "73fdf9f227e0bf8ef03fa9ec76a6594141868d73e39c30f6e72b733837e7d2a0",
+        "event_count": 806,
+        "delta_count": 762,
+        "final_bytes": 580876,
+        "cumulative_bytes_rewritten": 284356010,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 762,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 7,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q22",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q22-events.json",
+        "source_sha256": "6e23f344d068c6c62f66880f5d8daae2ff7d4dc0932f14a3b34d9e99011c1d21",
+        "event_count": 689,
+        "delta_count": 663,
+        "final_bytes": 424741,
+        "cumulative_bytes_rewritten": 152461161,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 663,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q23",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q23-events.json",
+        "source_sha256": "19d9b983368a6e30ad6b14b4ddf283192565a8e8827f4773b3e4c86ba638c4ba",
+        "event_count": 339,
+        "delta_count": 292,
+        "final_bytes": 530878,
+        "cumulative_bytes_rewritten": 118545989,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 10,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 292,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "item/commandExecution/outputDelta": 2,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q24",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q24-events.json",
+        "source_sha256": "812074a6ec1535ce66da34f1acad6e2efa7cd633c6d434c07cfbe44640cf0cfa",
+        "event_count": 178,
+        "delta_count": 149,
+        "final_bytes": 261550,
+        "cumulative_bytes_rewritten": 19908084,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 6,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 149,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q25",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q25-events.json",
+        "source_sha256": "45035e0ef54e1171fbf4317f17877c6504864a8abc7eb757079c2c36a30f6639",
+        "event_count": 225,
+        "delta_count": 207,
+        "final_bytes": 172183,
+        "cumulative_bytes_rewritten": 9696901,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 3,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 207,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q26",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q26-events.json",
+        "source_sha256": "43e6c9c109ec12538e9490dbc7d992205a8da5b0240c14c8c85bf5ddb1951086",
+        "event_count": 596,
+        "delta_count": 308,
+        "final_bytes": 4117293,
+        "cumulative_bytes_rewritten": 1571044360,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 308,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 251,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q27",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q27-events.json",
+        "source_sha256": "91de6c0d066f52c6ca7201a31984718442229a3b9c42892578f15e076ab5927a",
+        "event_count": 323,
+        "delta_count": 308,
+        "final_bytes": 207322,
+        "cumulative_bytes_rewritten": 18034935,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 2,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 308,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q28",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q28-events.json",
+        "source_sha256": "764719be493cc94fb04bf26469db51f7b3c354683d6a52b489651d8200094239",
+        "event_count": 763,
+        "delta_count": 734,
+        "final_bytes": 478737,
+        "cumulative_bytes_rewritten": 182789866,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 6,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 734,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q29",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q29-events.json",
+        "source_sha256": "bdb2756184f8ba12147df4d8d92d12796c5fcfa4e518d5d53406039ad032ed3d",
+        "event_count": 327,
+        "delta_count": 301,
+        "final_bytes": 329863,
+        "cumulative_bytes_rewritten": 54431331,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 301,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q30",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q30-events.json",
+        "source_sha256": "ba17bbddadd099e798ce1d50b68e1c7c7e44ef96f9708442bd66ea1644458d4f",
+        "event_count": 365,
+        "delta_count": 307,
+        "final_bytes": 708752,
+        "cumulative_bytes_rewritten": 172691763,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 12,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 307,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "item/commandExecution/outputDelta": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q31",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q31-events.json",
+        "source_sha256": "ef1f64a88e5aa7b7edc7bb319c1088e1e89c69999a48276994a12f8e3e0d2431",
+        "event_count": 328,
+        "delta_count": 310,
+        "final_bytes": 221319,
+        "cumulative_bytes_rewritten": 19454069,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 3,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 310,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q32",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q32-events.json",
+        "source_sha256": "b2f624196a9d290b919a21dfcbff28e20073d94fc91a925f01ebbc9ffbdf3fb2",
+        "event_count": 176,
+        "delta_count": 161,
+        "final_bytes": 169329,
+        "cumulative_bytes_rewritten": 5915901,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 2,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 161,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q33",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q33-events.json",
+        "source_sha256": "7566f54458f76dd524fc3bea7e6e808e1132e506385996c70eac5691d4f86812",
+        "event_count": 506,
+        "delta_count": 480,
+        "final_bytes": 408249,
+        "cumulative_bytes_rewritten": 103373105,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 480,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q34",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q34-events.json",
+        "source_sha256": "1d4a0e6c4b5c2cd8d9174e0fa4de8d9e90361a73785e68cf0e1f546cf24eb37d",
+        "event_count": 341,
+        "delta_count": 314,
+        "final_bytes": 351606,
+        "cumulative_bytes_rewritten": 59206022,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 314,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 1,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q35",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q35-events.json",
+        "source_sha256": "3f3d577b00d60a70e9d4a0f46706bc1c77a136071cc9166804a330c97482c093",
+        "event_count": 400,
+        "delta_count": 359,
+        "final_bytes": 534881,
+        "cumulative_bytes_rewritten": 128469545,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 359,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 4,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q36",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q36-events.json",
+        "source_sha256": "1b69200a7b6f073e1cb08fd90f9fec32c144d721ca9f80445b436cf25f834192",
+        "event_count": 678,
+        "delta_count": 644,
+        "final_bytes": 604313,
+        "cumulative_bytes_rewritten": 243610255,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 644,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q37",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q37-events.json",
+        "source_sha256": "e17d099fab3fd97594772304181a734589bd503d09d0c804f24a84f116c846bd",
+        "event_count": 614,
+        "delta_count": 588,
+        "final_bytes": 482636,
+        "cumulative_bytes_rewritten": 153657545,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 5,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 588,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q38",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q38-events.json",
+        "source_sha256": "bd65d40d2455e9c4468fb58d4e15d3b086b3ce056739880816bd7af6e9d39e2f",
+        "event_count": 239,
+        "delta_count": 224,
+        "final_bytes": 206262,
+        "cumulative_bytes_rewritten": 10419968,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 2,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 224,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q39",
+        "source": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q39-events.json",
+        "source_sha256": "bff3d9005a5d5655d4151c9141df89526d64cd39db724dead403ab1953a4f2c0",
+        "event_count": 644,
+        "delta_count": 599,
+        "final_bytes": 758301,
+        "cumulative_bytes_rewritten": 319109997,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 10,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 599,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      }
+    ],
+    "previous_A": [
+      {
+        "question_id": "Q01",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q01-events.json",
+        "source_sha256": "2902df9962fe5daacddc7ee0348200cb51c142cd32fb7e14b09c30abcb704def",
+        "event_count": 1816,
+        "delta_count": 1522,
+        "final_bytes": 1384486,
+        "cumulative_bytes_rewritten": 1719356863,
+        "method_counts": {
+          "remoteControl/status/changed": 1,
+          "account/updated": 1,
+          "thread/started": 1,
+          "warning": 1,
+          "mcpServer/startupStatus/updated": 3,
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "rawResponseItem/completed": 40,
+          "hook/started": 65,
+          "hook/completed": 65,
+          "item/started": 34,
+          "item/completed": 34,
+          "item/agentMessage/delta": 1522,
+          "turn/moderationMetadata": 11,
+          "rawResponse/completed": 11,
+          "thread/tokenUsage/updated": 11,
+          "account/rateLimits/updated": 11,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q02",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q02-events.json",
+        "source_sha256": "67bbaeb8578555edb15e71527cdd63e838a9d191f316e34b2b1bc8d7615c7cbf",
+        "event_count": 1087,
+        "delta_count": 791,
+        "final_bytes": 909391,
+        "cumulative_bytes_rewritten": 647400159,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 65,
+          "hook/completed": 65,
+          "rawResponseItem/completed": 23,
+          "item/started": 27,
+          "item/completed": 27,
+          "item/agentMessage/delta": 791,
+          "turn/moderationMetadata": 8,
+          "rawResponse/completed": 8,
+          "item/commandExecution/outputDelta": 52,
+          "thread/tokenUsage/updated": 8,
+          "account/rateLimits/updated": 8,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q03",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q03-events.json",
+        "source_sha256": "486ac78adca4876b9dd69a8a48a2b5bcc53b809d88d3c90c4dc03327487c268d",
+        "event_count": 1365,
+        "delta_count": 1132,
+        "final_bytes": 1038163,
+        "cumulative_bytes_rewritten": 959510948,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 63,
+          "hook/completed": 63,
+          "rawResponseItem/completed": 21,
+          "item/started": 26,
+          "item/completed": 26,
+          "item/agentMessage/delta": 1132,
+          "turn/moderationMetadata": 7,
+          "rawResponse/completed": 7,
+          "thread/tokenUsage/updated": 7,
+          "account/rateLimits/updated": 7,
+          "item/commandExecution/outputDelta": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q04",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q04-events.json",
+        "source_sha256": "9941ac7827b74219ad8b81f1352d236a365d4ed7f911db73b194e0cfc145d0f2",
+        "event_count": 1223,
+        "delta_count": 1180,
+        "final_bytes": 552220,
+        "cumulative_bytes_rewritten": 349631914,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 8,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 1180,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q05",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q05-events.json",
+        "source_sha256": "f3ba307966f3a098d46882a5b3a4ceb45e14903175f7397b057d62fe72478b16",
+        "event_count": 428,
+        "delta_count": 276,
+        "final_bytes": 624785,
+        "cumulative_bytes_rewritten": 173166720,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 35,
+          "hook/completed": 35,
+          "rawResponseItem/completed": 19,
+          "item/started": 17,
+          "item/completed": 17,
+          "item/agentMessage/delta": 276,
+          "turn/moderationMetadata": 6,
+          "rawResponse/completed": 6,
+          "thread/tokenUsage/updated": 6,
+          "account/rateLimits/updated": 6,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q06",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q06-events.json",
+        "source_sha256": "d0b913321ef1fb8927c19148a80483d716ecf28cf68b4a7da2b10896a47c5051",
+        "event_count": 1442,
+        "delta_count": 1362,
+        "final_bytes": 651073,
+        "cumulative_bytes_rewritten": 478089027,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 9,
+          "hook/completed": 9,
+          "rawResponseItem/completed": 8,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 1362,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "item/commandExecution/outputDelta": 27,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q07",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q07-events.json",
+        "source_sha256": "1b12d1df81a4bf89ec503d9b1ad0daac8a9d3d1e437fd9e9c995db390d421247",
+        "event_count": 286,
+        "delta_count": 184,
+        "final_bytes": 435206,
+        "cumulative_bytes_rewritten": 69819870,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 23,
+          "hook/completed": 23,
+          "rawResponseItem/completed": 13,
+          "item/started": 11,
+          "item/completed": 11,
+          "item/agentMessage/delta": 184,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q08",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q08-events.json",
+        "source_sha256": "508cab0d05c089114eec285d12e65c7e07684e1a5c5957cac3ca1ac0c9680e6a",
+        "event_count": 147,
+        "delta_count": 125,
+        "final_bytes": 130899,
+        "cumulative_bytes_rewritten": 5191079,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 125,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q09",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q09-events.json",
+        "source_sha256": "a5349c183fea5f5e695f37136e60fe8902f91a95642f6973c3ac055b53795dfb",
+        "event_count": 296,
+        "delta_count": 241,
+        "final_bytes": 371052,
+        "cumulative_bytes_rewritten": 63230423,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 10,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 241,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q10",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q10-events.json",
+        "source_sha256": "e5ac557ecb6617d2e0b97f40ee9ce7d8fba1f87bb1d19f326cbcb821cc8b5738",
+        "event_count": 302,
+        "delta_count": 277,
+        "final_bytes": 191447,
+        "cumulative_bytes_rewritten": 18631760,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 277,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q11",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q11-events.json",
+        "source_sha256": "c0e596310a6d9a553e4113a590ac0e96c2000eede93a87c685828182da5d7989",
+        "event_count": 301,
+        "delta_count": 276,
+        "final_bytes": 192636,
+        "cumulative_bytes_rewritten": 18514302,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 276,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q12",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q12-events.json",
+        "source_sha256": "c306c938b55b2d632e496529f5ccbcc72ae877429d0bba5c1f5a92d530ea108f",
+        "event_count": 469,
+        "delta_count": 405,
+        "final_bytes": 464455,
+        "cumulative_bytes_rewritten": 128113113,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 11,
+          "hook/completed": 11,
+          "rawResponseItem/completed": 9,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 405,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 2,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q13",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q13-events.json",
+        "source_sha256": "997f83682b86cf49de5b1ddc2c9b35d0a1286672b5c0ce7e0e374040865b14ef",
+        "event_count": 282,
+        "delta_count": 257,
+        "final_bytes": 192809,
+        "cumulative_bytes_rewritten": 16528868,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 257,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q14",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q14-events.json",
+        "source_sha256": "527088af5872785e3e6c822bff5c664cde51087578d6a0c7d7142b6207438eae",
+        "event_count": 397,
+        "delta_count": 357,
+        "final_bytes": 345678,
+        "cumulative_bytes_rewritten": 70961546,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 357,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q15",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q15-events.json",
+        "source_sha256": "b4c9f265976dcd3dbe7dd986f0167c76db0f2f4ea74dfce953c2535ddb8abf76",
+        "event_count": 711,
+        "delta_count": 615,
+        "final_bytes": 830594,
+        "cumulative_bytes_rewritten": 404917776,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 17,
+          "hook/completed": 17,
+          "rawResponseItem/completed": 15,
+          "item/started": 11,
+          "item/completed": 11,
+          "item/agentMessage/delta": 615,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q16",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q16-events.json",
+        "source_sha256": "c68847dec4b2aa32541e79974fd0b3f4fa604174938d2e4a69c30bca58df333f",
+        "event_count": 809,
+        "delta_count": 707,
+        "final_bytes": 614875,
+        "cumulative_bytes_rewritten": 288116984,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 13,
+          "hook/completed": 13,
+          "rawResponseItem/completed": 10,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 707,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "item/commandExecution/outputDelta": 33,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q17",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q17-events.json",
+        "source_sha256": "453f69e16b9a3ecd50d7b1867616316f43a12ec407dfc3464abb8dc40f532742",
+        "event_count": 243,
+        "delta_count": 202,
+        "final_bytes": 306511,
+        "cumulative_bytes_rewritten": 35113334,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 6,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 202,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q18",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q18-events.json",
+        "source_sha256": "c0606927fc3dd063de4c6b7e5ccf4db9eaa3cf8aede8b84672a89ad96bbdd92f",
+        "event_count": 295,
+        "delta_count": 270,
+        "final_bytes": 215617,
+        "cumulative_bytes_rewritten": 18121336,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 270,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q19",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q19-events.json",
+        "source_sha256": "bcda588c693afbf7da037b249a6d7e3d6a1d219242c6600b2698de57d6c85af1",
+        "event_count": 459,
+        "delta_count": 437,
+        "final_bytes": 266777,
+        "cumulative_bytes_rewritten": 38144755,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 437,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q20",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q20-events.json",
+        "source_sha256": "4e7079e4cffe9fe518af053497fb4aa72fcbff05fbc1bc247c6826a807896018",
+        "event_count": 416,
+        "delta_count": 379,
+        "final_bytes": 377126,
+        "cumulative_bytes_rewritten": 78679011,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 6,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 379,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q21",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q21-events.json",
+        "source_sha256": "628cfc85c3f0389332ef67c5dd29feb0077b087c4eb7905656b7d887e002164e",
+        "event_count": 833,
+        "delta_count": 781,
+        "final_bytes": 670456,
+        "cumulative_bytes_rewritten": 333759904,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 9,
+          "item/started": 6,
+          "item/completed": 6,
+          "item/agentMessage/delta": 781,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q22",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q22-events.json",
+        "source_sha256": "5fd6aa081fa5ce121bd9dbde243a67b2d215f5a916f954cc4452bdffa70f32ba",
+        "event_count": 722,
+        "delta_count": 682,
+        "final_bytes": 488417,
+        "cumulative_bytes_rewritten": 174895986,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 682,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q23",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q23-events.json",
+        "source_sha256": "abbe0948fdb9a50679587bef83e7386ff6f491779967cd625fc67f3634b9dbc8",
+        "event_count": 448,
+        "delta_count": 325,
+        "final_bytes": 847687,
+        "cumulative_bytes_rewritten": 247102725,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 29,
+          "hook/completed": 29,
+          "rawResponseItem/completed": 14,
+          "item/started": 13,
+          "item/completed": 13,
+          "item/agentMessage/delta": 325,
+          "turn/moderationMetadata": 5,
+          "rawResponse/completed": 5,
+          "thread/tokenUsage/updated": 5,
+          "account/rateLimits/updated": 5,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q24",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q24-events.json",
+        "source_sha256": "88585390f429f6d4a924dbeabd46f817c3248b6958eb5fa375f613148a59c566",
+        "event_count": 119,
+        "delta_count": 94,
+        "final_bytes": 177986,
+        "cumulative_bytes_rewritten": 4434120,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 94,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q25",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q25-events.json",
+        "source_sha256": "ad72df4f9f5e014b41cbc7aba1b22bb48782fb5bc5fcd7a48d8b8bde2023d64d",
+        "event_count": 279,
+        "delta_count": 237,
+        "final_bytes": 368619,
+        "cumulative_bytes_rewritten": 46769127,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 7,
+          "hook/completed": 7,
+          "rawResponseItem/completed": 7,
+          "item/started": 4,
+          "item/completed": 4,
+          "item/agentMessage/delta": 237,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q26",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q26-events.json",
+        "source_sha256": "2c69f8c701ed418f7bc39bc47c90154ac7f8b096cb875a5b7242788664bd43e8",
+        "event_count": 498,
+        "delta_count": 437,
+        "final_bytes": 628096,
+        "cumulative_bytes_rewritten": 187289827,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 9,
+          "hook/completed": 9,
+          "rawResponseItem/completed": 10,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 437,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q27",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q27-events.json",
+        "source_sha256": "a16c9575fd3baa6dc32e408da70e0e840115a5dcf774e3e2678c8e4f59566bf5",
+        "event_count": 316,
+        "delta_count": 294,
+        "final_bytes": 251734,
+        "cumulative_bytes_rewritten": 19831952,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 294,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q28",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q28-events.json",
+        "source_sha256": "a486ed7e8b328621e28c872ca27b8c324e31726e4bc701c8adea83598127a077",
+        "event_count": 637,
+        "delta_count": 612,
+        "final_bytes": 365635,
+        "cumulative_bytes_rewritten": 74491525,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 612,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q29",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q29-events.json",
+        "source_sha256": "2b3caafe633a73c5adaabf7abd044bbb1c33e2f4ad541d37c3f10fea869fcbd1",
+        "event_count": 237,
+        "delta_count": 215,
+        "final_bytes": 225840,
+        "cumulative_bytes_rewritten": 11892721,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 215,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q30",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q30-events.json",
+        "source_sha256": "d94337bb472b3f46718ba2d3cdb186bd59eadcad92c531a711e382d2e9be02c3",
+        "event_count": 506,
+        "delta_count": 319,
+        "final_bytes": 1173623,
+        "cumulative_bytes_rewritten": 370923004,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 51,
+          "hook/completed": 51,
+          "rawResponseItem/completed": 18,
+          "item/started": 19,
+          "item/completed": 19,
+          "item/agentMessage/delta": 319,
+          "turn/moderationMetadata": 6,
+          "rawResponse/completed": 6,
+          "thread/tokenUsage/updated": 6,
+          "account/rateLimits/updated": 6,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q31",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q31-events.json",
+        "source_sha256": "0df7d376d93802b43dce666a311c2daadcc2b3bff1e5de3e1a22269723662c0b",
+        "event_count": 392,
+        "delta_count": 367,
+        "final_bytes": 291719,
+        "cumulative_bytes_rewritten": 30303628,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 367,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q32",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q32-events.json",
+        "source_sha256": "82ade3d0f6d68ee0f5b2fc097d62e1b52689b00bf8fa1f2ecd5c46318e1b7b93",
+        "event_count": 260,
+        "delta_count": 238,
+        "final_bytes": 246288,
+        "cumulative_bytes_rewritten": 14014671,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 3,
+          "item/started": 2,
+          "item/completed": 2,
+          "item/agentMessage/delta": 238,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q33",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q33-events.json",
+        "source_sha256": "8bb76fe2f8b555b3380f58b86d95bbad0319bfd902d1101e01f8ee36a8f97782",
+        "event_count": 595,
+        "delta_count": 555,
+        "final_bytes": 532272,
+        "cumulative_bytes_rewritten": 158900588,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 5,
+          "hook/completed": 5,
+          "rawResponseItem/completed": 7,
+          "item/started": 5,
+          "item/completed": 5,
+          "item/agentMessage/delta": 555,
+          "turn/moderationMetadata": 2,
+          "rawResponse/completed": 2,
+          "thread/tokenUsage/updated": 2,
+          "account/rateLimits/updated": 2,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q34",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q34-events.json",
+        "source_sha256": "331efa77762c461a1ed22367422a84708397efacd67ae3b6c32cb8bc2dd90975",
+        "event_count": 452,
+        "delta_count": 343,
+        "final_bytes": 839586,
+        "cumulative_bytes_rewritten": 232507652,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 27,
+          "hook/completed": 27,
+          "rawResponseItem/completed": 12,
+          "item/started": 11,
+          "item/completed": 11,
+          "item/agentMessage/delta": 343,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q35",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q35-events.json",
+        "source_sha256": "da9f14c8d388dc35b56293123a1a6a54ceb7468d7b1c9eba454a99d4e0ea3b32",
+        "event_count": 429,
+        "delta_count": 362,
+        "final_bytes": 846774,
+        "cumulative_bytes_rewritten": 232041941,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 9,
+          "hook/completed": 9,
+          "rawResponseItem/completed": 12,
+          "item/started": 8,
+          "item/completed": 8,
+          "item/agentMessage/delta": 362,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q36",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q36-events.json",
+        "source_sha256": "d5faebb98823ef53baf6d4741539625a36ae450b0065c6e7f6ff8b56b10726b3",
+        "event_count": 774,
+        "delta_count": 647,
+        "final_bytes": 849753,
+        "cumulative_bytes_rewritten": 399082873,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 39,
+          "hook/completed": 39,
+          "rawResponseItem/completed": 8,
+          "item/started": 12,
+          "item/completed": 12,
+          "item/agentMessage/delta": 647,
+          "turn/moderationMetadata": 3,
+          "rawResponse/completed": 3,
+          "thread/tokenUsage/updated": 3,
+          "account/rateLimits/updated": 3,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q37",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q37-events.json",
+        "source_sha256": "59e8cd24cc368950b5f158c0b17ce554e1be198a6c1899d88914ca2a35101581",
+        "event_count": 598,
+        "delta_count": 526,
+        "final_bytes": 930951,
+        "cumulative_bytes_rewritten": 361812529,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 13,
+          "hook/completed": 13,
+          "rawResponseItem/completed": 11,
+          "item/started": 7,
+          "item/completed": 7,
+          "item/agentMessage/delta": 526,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q38",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q38-events.json",
+        "source_sha256": "b605598e8d5ca7f67b3683e9188184c073057ecd80fc614415c10b0a4c007376",
+        "event_count": 289,
+        "delta_count": 264,
+        "final_bytes": 287854,
+        "cumulative_bytes_rewritten": 18477258,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 3,
+          "hook/completed": 3,
+          "rawResponseItem/completed": 4,
+          "item/started": 3,
+          "item/completed": 3,
+          "item/agentMessage/delta": 264,
+          "turn/moderationMetadata": 1,
+          "rawResponse/completed": 1,
+          "thread/tokenUsage/updated": 1,
+          "account/rateLimits/updated": 1,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      },
+      {
+        "question_id": "Q39",
+        "source": ".tmp/gruntworx_codex_optimal_AB_2026-10-31/runs/A/Q39-events.json",
+        "source_sha256": "7c677cdde26cbbdb5a414044fbd26326daa5767d73bad9a59f06a307c88f8947",
+        "event_count": 653,
+        "delta_count": 548,
+        "final_bytes": 1015223,
+        "cumulative_bytes_rewritten": 424167633,
+        "method_counts": {
+          "thread/status/changed": 2,
+          "turn/started": 1,
+          "hook/started": 23,
+          "hook/completed": 23,
+          "rawResponseItem/completed": 11,
+          "item/started": 10,
+          "item/completed": 10,
+          "item/agentMessage/delta": 548,
+          "turn/moderationMetadata": 4,
+          "rawResponse/completed": 4,
+          "item/commandExecution/outputDelta": 7,
+          "thread/tokenUsage/updated": 4,
+          "account/rateLimits/updated": 4,
+          "thread/readState/changed": 1,
+          "turn/completed": 1
+        }
+      }
+    ]
+  },
+  "replays": [
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "mode": "direct",
+      "wall_seconds": 27.504955458,
+      "cpu_seconds": 27.144614,
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "mode": "direct",
+      "wall_seconds": 20.478023042,
+      "cpu_seconds": 20.153037,
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q01",
+      "mode": "direct",
+      "wall_seconds": 20.767425416000002,
+      "cpu_seconds": 20.584311999999997,
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q02",
+      "mode": "direct",
+      "wall_seconds": 11.188194708,
+      "cpu_seconds": 11.046115,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.7363757919999976,
+        "final_stream_persistence_seconds": 9.448786076999982
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q02",
+      "mode": "direct",
+      "wall_seconds": 4.145527958000001,
+      "cpu_seconds": 4.043837999999999,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.13350642199999996,
+        "final_stream_persistence_seconds": 4.009726152999988
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q02",
+      "mode": "direct",
+      "wall_seconds": 9.686283499999998,
+      "cpu_seconds": 9.608619000000001,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.6179694630000085,
+        "final_stream_persistence_seconds": 8.065337252000017
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q03",
+      "mode": "direct",
+      "wall_seconds": 15.444933625000004,
+      "cpu_seconds": 15.108584999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.2202681700000007,
+        "final_stream_persistence_seconds": 14.22032523699992
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q03",
+      "mode": "direct",
+      "wall_seconds": 7.715072333000002,
+      "cpu_seconds": 7.652605999999999,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.21109820399998114,
+        "final_stream_persistence_seconds": 7.50088541100002
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q03",
+      "mode": "direct",
+      "wall_seconds": 15.244556791,
+      "cpu_seconds": 14.936633999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.72320846300007,
+        "final_stream_persistence_seconds": 13.518144256999989
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q04",
+      "mode": "direct",
+      "wall_seconds": 5.5162761250000045,
+      "cpu_seconds": 5.448178999999996,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.12491054100000554,
+        "final_stream_persistence_seconds": 5.388965067000328
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q04",
+      "mode": "direct",
+      "wall_seconds": 5.3468065,
+      "cpu_seconds": 5.2548869999999965,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.09705304299998829,
+        "final_stream_persistence_seconds": 5.247484199999917
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q04",
+      "mode": "direct",
+      "wall_seconds": 5.86110462500001,
+      "cpu_seconds": 5.749285999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.10586775100001944,
+        "final_stream_persistence_seconds": 5.752162828999886
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q05",
+      "mode": "direct",
+      "wall_seconds": 2.039578000000006,
+      "cpu_seconds": 2.025317000000001,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.3662207929999397,
+        "final_stream_persistence_seconds": 1.6724556679998983
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q05",
+      "mode": "direct",
+      "wall_seconds": 2.353997917000001,
+      "cpu_seconds": 2.3055810000000037,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.43035595999997156,
+        "final_stream_persistence_seconds": 1.9224649160000098
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q05",
+      "mode": "direct",
+      "wall_seconds": 3.111032249999994,
+      "cpu_seconds": 3.0926220000000058,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.7834280869999333,
+        "final_stream_persistence_seconds": 2.3265031269998673
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q06",
+      "mode": "direct",
+      "wall_seconds": 9.105186125000003,
+      "cpu_seconds": 8.915230000000008,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.2012081699999584,
+        "final_stream_persistence_seconds": 8.899839711999945
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q06",
+      "mode": "direct",
+      "wall_seconds": 7.540345040999995,
+      "cpu_seconds": 7.342250000000007,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.1729792890000681,
+        "final_stream_persistence_seconds": 7.362933668999943
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q06",
+      "mode": "direct",
+      "wall_seconds": 7.911000041999998,
+      "cpu_seconds": 7.844189,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.23488545500002544,
+        "final_stream_persistence_seconds": 7.672688358000073
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q07",
+      "mode": "direct",
+      "wall_seconds": 0.8900500000000022,
+      "cpu_seconds": 0.8889800000000037,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.1728128310000301,
+        "final_stream_persistence_seconds": 0.7170049989999683
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q07",
+      "mode": "direct",
+      "wall_seconds": 0.7171056250000021,
+      "cpu_seconds": 0.7161380000000008,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.06165954200002943,
+        "final_stream_persistence_seconds": 0.6551803749999436
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q07",
+      "mode": "direct",
+      "wall_seconds": 1.3103569590000035,
+      "cpu_seconds": 1.3010940000000062,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.34943091200017307,
+        "final_stream_persistence_seconds": 0.9605629549998582
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q08",
+      "mode": "direct",
+      "wall_seconds": 0.09466166600000747,
+      "cpu_seconds": 0.09445099999999229,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.017786665999977913,
+        "final_stream_persistence_seconds": 0.07678875400000607
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q08",
+      "mode": "direct",
+      "wall_seconds": 0.22461691600000222,
+      "cpu_seconds": 0.22119600000000617,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03446879299998784,
+        "final_stream_persistence_seconds": 0.1900534120000259
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q08",
+      "mode": "direct",
+      "wall_seconds": 0.08972687499999665,
+      "cpu_seconds": 0.08966399999999908,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.01808787699997083,
+        "final_stream_persistence_seconds": 0.07156208100009565
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q09",
+      "mode": "direct",
+      "wall_seconds": 0.6327406249999967,
+      "cpu_seconds": 0.6320169999999905,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.06744558600000516,
+        "final_stream_persistence_seconds": 0.5650799539999269
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q09",
+      "mode": "direct",
+      "wall_seconds": 0.423372332999989,
+      "cpu_seconds": 0.4229930000000053,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.041790293000019574,
+        "final_stream_persistence_seconds": 0.3814045420000127
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q09",
+      "mode": "direct",
+      "wall_seconds": 1.1218389579999979,
+      "cpu_seconds": 1.1211870000000062,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.1267567920001369,
+        "final_stream_persistence_seconds": 0.9947988429998702
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q10",
+      "mode": "direct",
+      "wall_seconds": 0.3344857500000131,
+      "cpu_seconds": 0.3273510000000073,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.02537354100002176,
+        "final_stream_persistence_seconds": 0.30889733799979524
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q10",
+      "mode": "direct",
+      "wall_seconds": 0.7881707919999883,
+      "cpu_seconds": 0.7738020000000034,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0541390409999849,
+        "final_stream_persistence_seconds": 0.733434502999927
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q10",
+      "mode": "direct",
+      "wall_seconds": 0.3388955839999994,
+      "cpu_seconds": 0.31532799999999384,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.026819249000041623,
+        "final_stream_persistence_seconds": 0.31176195899989523
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q11",
+      "mode": "direct",
+      "wall_seconds": 0.5354775409999917,
+      "cpu_seconds": 0.3769619999999918,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.029075331999948162,
+        "final_stream_persistence_seconds": 0.505971208000048
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q11",
+      "mode": "direct",
+      "wall_seconds": 0.8308956660000035,
+      "cpu_seconds": 0.816166999999993,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.04570646199998407,
+        "final_stream_persistence_seconds": 0.7845866649999778
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q11",
+      "mode": "direct",
+      "wall_seconds": 0.31374466599999096,
+      "cpu_seconds": 0.3077349999999939,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.026209456999993108,
+        "final_stream_persistence_seconds": 0.287273790999933
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q12",
+      "mode": "direct",
+      "wall_seconds": 4.253661500000007,
+      "cpu_seconds": 4.183773000000002,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.33615374700002576,
+        "final_stream_persistence_seconds": 3.9160699230000517
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q12",
+      "mode": "direct",
+      "wall_seconds": 0.9789459999999934,
+      "cpu_seconds": 0.9752100000000041,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.057987372999988906,
+        "final_stream_persistence_seconds": 0.9204256970000984
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q12",
+      "mode": "direct",
+      "wall_seconds": 2.400798750000007,
+      "cpu_seconds": 2.3695419999999956,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.20607570499998928,
+        "final_stream_persistence_seconds": 2.1936590869998867
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q13",
+      "mode": "direct",
+      "wall_seconds": 0.412643834000022,
+      "cpu_seconds": 0.402000000000001,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.029765790999903174,
+        "final_stream_persistence_seconds": 0.38241340999985596
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q13",
+      "mode": "direct",
+      "wall_seconds": 0.7114030410000112,
+      "cpu_seconds": 0.7048130000000015,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.05070421000010583,
+        "final_stream_persistence_seconds": 0.6601064530000542
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q13",
+      "mode": "direct",
+      "wall_seconds": 0.2855390409999927,
+      "cpu_seconds": 0.28167700000000195,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.02687658100003887,
+        "final_stream_persistence_seconds": 0.25842704699974206
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q14",
+      "mode": "direct",
+      "wall_seconds": 1.1974646670000197,
+      "cpu_seconds": 1.1885540000000105,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07203217099987569,
+        "final_stream_persistence_seconds": 1.1248218299997177
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q14",
+      "mode": "direct",
+      "wall_seconds": 1.0819252910000046,
+      "cpu_seconds": 1.063067999999987,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.055111957999827155,
+        "final_stream_persistence_seconds": 1.0261640820002071
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q14",
+      "mode": "direct",
+      "wall_seconds": 1.321646166999983,
+      "cpu_seconds": 1.299997999999988,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.09429720900001826,
+        "final_stream_persistence_seconds": 1.2265716710001016
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q15",
+      "mode": "direct",
+      "wall_seconds": 6.111455833000008,
+      "cpu_seconds": 6.003169999999983,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.29603250400029424,
+        "final_stream_persistence_seconds": 5.813273906999825
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q15",
+      "mode": "direct",
+      "wall_seconds": 3.2226231669999947,
+      "cpu_seconds": 3.1794889999999896,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.1151884160001373,
+        "final_stream_persistence_seconds": 3.105962079999699
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q15",
+      "mode": "direct",
+      "wall_seconds": 7.522646292000019,
+      "cpu_seconds": 7.362365000000011,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.5448046619999616,
+        "final_stream_persistence_seconds": 6.976023621000081
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q16",
+      "mode": "direct",
+      "wall_seconds": 5.066999541000001,
+      "cpu_seconds": 4.975965000000002,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.2791616700001498,
+        "final_stream_persistence_seconds": 4.786485262000099
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q16",
+      "mode": "direct",
+      "wall_seconds": 3.4945665830000223,
+      "cpu_seconds": 3.4645009999999843,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.11602487700005781,
+        "final_stream_persistence_seconds": 3.3775614179999423
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q16",
+      "mode": "direct",
+      "wall_seconds": 4.932345541999979,
+      "cpu_seconds": 4.926244000000025,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.3294722099999774,
+        "final_stream_persistence_seconds": 4.602258987999846
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q17",
+      "mode": "direct",
+      "wall_seconds": 0.6093070000000012,
+      "cpu_seconds": 0.6092940000000056,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07627453700007436,
+        "final_stream_persistence_seconds": 0.5328937530001951
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q17",
+      "mode": "direct",
+      "wall_seconds": 0.7104728330000114,
+      "cpu_seconds": 0.6241429999999752,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.05294774799997981,
+        "final_stream_persistence_seconds": 0.6572542839998903
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q17",
+      "mode": "direct",
+      "wall_seconds": 0.7286398339999778,
+      "cpu_seconds": 0.7055119999999988,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0894116269999472,
+        "final_stream_persistence_seconds": 0.6388994110000965
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q18",
+      "mode": "direct",
+      "wall_seconds": 0.281435082999991,
+      "cpu_seconds": 0.26733600000000024,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.04746495700004516,
+        "final_stream_persistence_seconds": 0.233680545000027
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q18",
+      "mode": "direct",
+      "wall_seconds": 1.2930068750000032,
+      "cpu_seconds": 1.201954999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.19208612300027994,
+        "final_stream_persistence_seconds": 1.1001124640000626
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q18",
+      "mode": "direct",
+      "wall_seconds": 0.27464200000000005,
+      "cpu_seconds": 0.27430799999999067,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.02799920699990821,
+        "final_stream_persistence_seconds": 0.24649367499995378
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q19",
+      "mode": "direct",
+      "wall_seconds": 0.9053213329999892,
+      "cpu_seconds": 0.5873729999999853,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03423537500009388,
+        "final_stream_persistence_seconds": 0.8707496909999293
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q19",
+      "mode": "direct",
+      "wall_seconds": 1.4148397920000093,
+      "cpu_seconds": 1.4120530000000144,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.05943203800003971,
+        "final_stream_persistence_seconds": 1.3550103890003982
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q19",
+      "mode": "direct",
+      "wall_seconds": 0.5746198749999962,
+      "cpu_seconds": 0.5745550000000037,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03128495899997574,
+        "final_stream_persistence_seconds": 0.5431059609997817
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q20",
+      "mode": "direct",
+      "wall_seconds": 1.4192171659999815,
+      "cpu_seconds": 1.4190250000000049,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07954254599999899,
+        "final_stream_persistence_seconds": 1.3394277009998063
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q20",
+      "mode": "direct",
+      "wall_seconds": 1.2215310420000094,
+      "cpu_seconds": 1.2110730000000274,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.05573045900010243,
+        "final_stream_persistence_seconds": 1.1654797139997868
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q20",
+      "mode": "direct",
+      "wall_seconds": 1.4143745840000008,
+      "cpu_seconds": 1.411200000000008,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0802152529999205,
+        "final_stream_persistence_seconds": 1.3338775760001909
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q21",
+      "mode": "direct",
+      "wall_seconds": 6.351774541999987,
+      "cpu_seconds": 6.330838999999997,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.17945232900018482,
+        "final_stream_persistence_seconds": 6.1714030539999385
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q21",
+      "mode": "direct",
+      "wall_seconds": 4.470678915999997,
+      "cpu_seconds": 4.446814999999987,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.13682733099986422,
+        "final_stream_persistence_seconds": 4.332999263999852
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q21",
+      "mode": "direct",
+      "wall_seconds": 6.130111916999994,
+      "cpu_seconds": 5.973150000000004,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.18205999399998518,
+        "final_stream_persistence_seconds": 5.946802883999595
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q22",
+      "mode": "direct",
+      "wall_seconds": 5.584968083000007,
+      "cpu_seconds": 5.563072000000005,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.23540800100010983,
+        "final_stream_persistence_seconds": 5.348549839000043
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q22",
+      "mode": "direct",
+      "wall_seconds": 2.5245970409999927,
+      "cpu_seconds": 2.5197499999999877,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0727756650000515,
+        "final_stream_persistence_seconds": 2.4510183409993545
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q22",
+      "mode": "direct",
+      "wall_seconds": 3.233446249999986,
+      "cpu_seconds": 3.221084000000019,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.10567329100001643,
+        "final_stream_persistence_seconds": 3.1267265969996174
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q23",
+      "mode": "direct",
+      "wall_seconds": 3.4275805409999975,
+      "cpu_seconds": 3.363271999999995,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6005355450000422,
+        "final_stream_persistence_seconds": 2.825996834999671
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q23",
+      "mode": "direct",
+      "wall_seconds": 2.0626132499999983,
+      "cpu_seconds": 2.05930699999999,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.1819819159999554,
+        "final_stream_persistence_seconds": 1.8801907939997022
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q23",
+      "mode": "direct",
+      "wall_seconds": 4.837499374999993,
+      "cpu_seconds": 4.773252000000014,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.8060403810001162,
+        "final_stream_persistence_seconds": 4.03073570999959
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q24",
+      "mode": "direct",
+      "wall_seconds": 0.07224462499999618,
+      "cpu_seconds": 0.07209100000000035,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0234009989999322,
+        "final_stream_persistence_seconds": 0.048772836000267716
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q24",
+      "mode": "direct",
+      "wall_seconds": 0.36532120800001167,
+      "cpu_seconds": 0.35835700000001225,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07248062600012872,
+        "final_stream_persistence_seconds": 0.29272337500026424
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q24",
+      "mode": "direct",
+      "wall_seconds": 0.07515875000001415,
+      "cpu_seconds": 0.07506100000000515,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.0247298769999702,
+        "final_stream_persistence_seconds": 0.05036109100012709
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q25",
+      "mode": "direct",
+      "wall_seconds": 0.19462149999998246,
+      "cpu_seconds": 0.19446499999997968,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.028641293000077894,
+        "final_stream_persistence_seconds": 0.16585154800006308
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q25",
+      "mode": "direct",
+      "wall_seconds": 0.18186379200000147,
+      "cpu_seconds": 0.1783360000000016,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.031015666999962832,
+        "final_stream_persistence_seconds": 0.1506682420002221
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q25",
+      "mode": "direct",
+      "wall_seconds": 0.9468914159999997,
+      "cpu_seconds": 0.9338929999999834,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.11110912999998845,
+        "final_stream_persistence_seconds": 0.8354657040002849
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q26",
+      "mode": "direct",
+      "wall_seconds": 6.725834499999991,
+      "cpu_seconds": 6.69834800000001,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.9344177959997637,
+        "final_stream_persistence_seconds": 5.790638331000139
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q26",
+      "mode": "direct",
+      "wall_seconds": 5.861341374999995,
+      "cpu_seconds": 5.76585399999999,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.7687274729998137,
+        "final_stream_persistence_seconds": 4.09170078600016
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q26",
+      "mode": "direct",
+      "wall_seconds": 3.4237310000000036,
+      "cpu_seconds": 3.408325999999988,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.25307370500010506,
+        "final_stream_persistence_seconds": 3.170072349000094
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q27",
+      "mode": "direct",
+      "wall_seconds": 0.31183999999998946,
+      "cpu_seconds": 0.31179299999999444,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.030502412999965145,
+        "final_stream_persistence_seconds": 0.28117550799967717
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q27",
+      "mode": "direct",
+      "wall_seconds": 0.2912200000000098,
+      "cpu_seconds": 0.2911420000000078,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.023931041999958325,
+        "final_stream_persistence_seconds": 0.26712855400006674
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q27",
+      "mode": "direct",
+      "wall_seconds": 0.31090929100000153,
+      "cpu_seconds": 0.31077200000001426,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03173416800001405,
+        "final_stream_persistence_seconds": 0.27901362699998344
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q28",
+      "mode": "direct",
+      "wall_seconds": 0.9560177089999797,
+      "cpu_seconds": 0.9522019999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.04008662500001492,
+        "final_stream_persistence_seconds": 0.915539980000176
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q28",
+      "mode": "direct",
+      "wall_seconds": 2.9808964579999895,
+      "cpu_seconds": 2.9675459999999987,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.08542896699987068,
+        "final_stream_persistence_seconds": 2.894986292000141
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q28",
+      "mode": "direct",
+      "wall_seconds": 1.1173960000000136,
+      "cpu_seconds": 1.104877000000016,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.04234421000003863,
+        "final_stream_persistence_seconds": 1.0746605819998933
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q29",
+      "mode": "direct",
+      "wall_seconds": 1.0957084169999973,
+      "cpu_seconds": 1.0954869999999914,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.10200474900005929,
+        "final_stream_persistence_seconds": 0.9935168429999806
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q29",
+      "mode": "direct",
+      "wall_seconds": 0.9856682500000034,
+      "cpu_seconds": 0.9739989999999921,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.061681623000026775,
+        "final_stream_persistence_seconds": 0.923716499999955
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q29",
+      "mode": "direct",
+      "wall_seconds": 0.19009762500002125,
+      "cpu_seconds": 0.19005500000000097,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.02845008599993548,
+        "final_stream_persistence_seconds": 0.1615310059998194
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q30",
+      "mode": "direct",
+      "wall_seconds": 7.042882792,
+      "cpu_seconds": 7.004846000000015,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.7277404250002348,
+        "final_stream_persistence_seconds": 5.314286166999921
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q30",
+      "mode": "direct",
+      "wall_seconds": 3.2740414170000065,
+      "cpu_seconds": 3.2330279999999902,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.3334734590000039,
+        "final_stream_persistence_seconds": 2.940115825999982
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q30",
+      "mode": "direct",
+      "wall_seconds": 7.196567041000037,
+      "cpu_seconds": 7.144177000000013,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 1.7435377110001298,
+        "final_stream_persistence_seconds": 5.4522019060000275
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q31",
+      "mode": "direct",
+      "wall_seconds": 0.4144564169999967,
+      "cpu_seconds": 0.4137589999999989,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03602629199997409,
+        "final_stream_persistence_seconds": 0.37820475199947623
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q31",
+      "mode": "direct",
+      "wall_seconds": 0.3196918749999895,
+      "cpu_seconds": 0.31860399999999345,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.027321789999859902,
+        "final_stream_persistence_seconds": 0.2921652849993279
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q31",
+      "mode": "direct",
+      "wall_seconds": 0.47608620900001597,
+      "cpu_seconds": 0.4730819999999767,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.037755371999935505,
+        "final_stream_persistence_seconds": 0.43807031599976654
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q32",
+      "mode": "direct",
+      "wall_seconds": 0.23056979199998295,
+      "cpu_seconds": 0.23032399999999598,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03191433400002097,
+        "final_stream_persistence_seconds": 0.19849979899964865
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q32",
+      "mode": "direct",
+      "wall_seconds": 0.11511983299999429,
+      "cpu_seconds": 0.11430599999999913,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.022283956999956445,
+        "final_stream_persistence_seconds": 0.09272699799959128
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q32",
+      "mode": "direct",
+      "wall_seconds": 0.2535823750000077,
+      "cpu_seconds": 0.24510499999999524,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.048299708000115515,
+        "final_stream_persistence_seconds": 0.2051165389996754
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q33",
+      "mode": "direct",
+      "wall_seconds": 4.955074749999994,
+      "cpu_seconds": 4.929861000000017,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.20853691300021637,
+        "final_stream_persistence_seconds": 4.745856809999395
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q33",
+      "mode": "direct",
+      "wall_seconds": 1.8957039580000128,
+      "cpu_seconds": 1.839382999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07689324800003305,
+        "final_stream_persistence_seconds": 1.8184194909997586
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q33",
+      "mode": "direct",
+      "wall_seconds": 2.877090124999995,
+      "cpu_seconds": 2.866673999999989,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.12811766899977783,
+        "final_stream_persistence_seconds": 2.74839925000083
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q34",
+      "mode": "direct",
+      "wall_seconds": 3.25285704099997,
+      "cpu_seconds": 3.2413760000000025,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.32228908000024603,
+        "final_stream_persistence_seconds": 2.9301375430000007
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q34",
+      "mode": "direct",
+      "wall_seconds": 1.1180177909999998,
+      "cpu_seconds": 1.1138300000000072,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07047991900009265,
+        "final_stream_persistence_seconds": 1.0472955760002378
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q34",
+      "mode": "direct",
+      "wall_seconds": 4.531013415999951,
+      "cpu_seconds": 4.516930000000002,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6450024570002029,
+        "final_stream_persistence_seconds": 3.8855030830003443
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q35",
+      "mode": "direct",
+      "wall_seconds": 5.490768540999966,
+      "cpu_seconds": 5.476617999999974,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.776542661999656,
+        "final_stream_persistence_seconds": 4.713681666000866
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q35",
+      "mode": "direct",
+      "wall_seconds": 2.3225886660000015,
+      "cpu_seconds": 2.291120000000035,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.16622004999987894,
+        "final_stream_persistence_seconds": 2.1558173720002856
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q35",
+      "mode": "direct",
+      "wall_seconds": 4.441742916999999,
+      "cpu_seconds": 4.429722000000027,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.4440962529999979,
+        "final_stream_persistence_seconds": 3.997196787999144
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q36",
+      "mode": "direct",
+      "wall_seconds": 6.967247291999968,
+      "cpu_seconds": 6.9549690000000055,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.7688613320000286,
+        "final_stream_persistence_seconds": 6.19766292800017
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q36",
+      "mode": "direct",
+      "wall_seconds": 4.454803374999983,
+      "cpu_seconds": 4.434233000000006,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.14233641899966187,
+        "final_stream_persistence_seconds": 4.311926122000841
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q36",
+      "mode": "direct",
+      "wall_seconds": 7.296432374999995,
+      "cpu_seconds": 7.263900999999976,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.7761182860000986,
+        "final_stream_persistence_seconds": 6.519214495999734
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q37",
+      "mode": "direct",
+      "wall_seconds": 5.344904583000016,
+      "cpu_seconds": 5.322890000000029,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.29877841699993724,
+        "final_stream_persistence_seconds": 5.045459577001225
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q37",
+      "mode": "direct",
+      "wall_seconds": 2.6213999170000193,
+      "cpu_seconds": 2.5940859999999475,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.07671220699978676,
+        "final_stream_persistence_seconds": 2.544074698999168
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q37",
+      "mode": "direct",
+      "wall_seconds": 7.066493334000029,
+      "cpu_seconds": 7.056600000000003,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.4690367039997341,
+        "final_stream_persistence_seconds": 6.596785546001058
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q38",
+      "mode": "direct",
+      "wall_seconds": 0.2542256250000037,
+      "cpu_seconds": 0.2540569999999889,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03601862099998243,
+        "final_stream_persistence_seconds": 0.21804962000032901
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q38",
+      "mode": "direct",
+      "wall_seconds": 0.18116624999998976,
+      "cpu_seconds": 0.1809470000000033,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.024931747999971776,
+        "final_stream_persistence_seconds": 0.15610845900050663
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q38",
+      "mode": "direct",
+      "wall_seconds": 0.2801016669999967,
+      "cpu_seconds": 0.2761010000000397,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.03634616699980597,
+        "final_stream_persistence_seconds": 0.24360934599980055
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q39",
+      "mode": "direct",
+      "wall_seconds": 7.120526208999991,
+      "cpu_seconds": 7.084821999999974,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6052582049999842,
+        "final_stream_persistence_seconds": 6.514562511000577
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q39",
+      "mode": "direct",
+      "wall_seconds": 5.986982667000007,
+      "cpu_seconds": 5.9721720000000005,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.24930166800004372,
+        "final_stream_persistence_seconds": 5.736916922999853
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q39",
+      "mode": "direct",
+      "wall_seconds": 8.011502708000023,
+      "cpu_seconds": 7.992053999999996,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6612096230003317,
+        "final_stream_persistence_seconds": 7.349541211999508
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 0.03416366599998355,
+      "cpu_seconds": 0.04197900000002619,
+      "reader_wall_seconds": 0.034050458000024264,
+      "max_reader_delivery_gap_seconds": 0.00021287499998834392,
+      "fidelity": true,
+      "persist_enabled": false
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 26.787851250000017,
+      "cpu_seconds": 26.55283000000003,
+      "reader_wall_seconds": 0.4567152920000126,
+      "max_reader_delivery_gap_seconds": 0.00942820800003119,
+      "fidelity": true,
+      "persist_enabled": true
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 0.028379874999984622,
+      "cpu_seconds": 0.03565800000001218,
+      "reader_wall_seconds": 0.028281416000027093,
+      "max_reader_delivery_gap_seconds": 0.00022408299997778158,
+      "fidelity": true,
+      "persist_enabled": false
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 18.54288783300001,
+      "cpu_seconds": 18.324455999999998,
+      "reader_wall_seconds": 0.18625441699998646,
+      "max_reader_delivery_gap_seconds": 0.002754499999980453,
+      "fidelity": true,
+      "persist_enabled": true
+    }
+  ],
+  "limitations": [
+    "Replay measures present-machine CPU/filesystem cost, not historical load or server backpressure. No fsync matches actual callback.",
+    "Unpaced reader replay uses an in-memory historical JSONL source, not a live RPC; it tests queue/GIL contention but cannot recreate server emission or prove causation."
+  ],
+  "replay_python": {
+    "executable": "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    "version": "3.9.6 (default, Aug 17 2026, 12:07:42) \n[Clang 21.0.0 (clang-2100.3.34.1)]",
+    "platform": "macOS-27.0.1-arm64-arm-64bit"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "direct_python39": {
+    "latest_A": {
+      "event_count": 22641,
+      "delta_count": 19874,
+      "final_bytes": 20908672,
+      "cumulative_bytes_rewritten": 9633557260,
+      "wall_seconds": 159.33814853899986,
+      "cpu_seconds": 157.13938199999996,
+      "final_stream_phase_measured_questions": 38,
+      "final_stream_persistence_wall_seconds_for_Q02_to_Q39": 119.60177618300088
+    },
+    "reference_B": {
+      "event_count": 21475,
+      "delta_count": 19677,
+      "final_bytes": 19773093,
+      "cumulative_bytes_rewritten": 8281250623,
+      "wall_seconds": 106.70696478600004,
+      "cpu_seconds": 105.19161499999994,
+      "final_stream_phase_measured_questions": 38,
+      "final_stream_persistence_wall_seconds_for_Q02_to_Q39": 80.53692932599918
+    },
+    "previous_A": {
+      "event_count": 21811,
+      "delta_count": 18841,
+      "final_bytes": 21134313,
+      "cumulative_bytes_rewritten": 8923939452,
+      "wall_seconds": 147.90707154200004,
+      "cpu_seconds": 146.4108870000001,
+      "final_stream_phase_measured_questions": 38,
+      "final_stream_persistence_wall_seconds_for_Q02_to_Q39": 114.09112052099806
+    }
+  },
+  "q01_python315": [
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "wall_seconds": 7.311097917001462,
+      "cpu_seconds": 7.049498,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.6284443741606083,
+        "final_stream_persistence_seconds": 6.679362975206459
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "wall_seconds": 5.6327090410050005,
+      "cpu_seconds": 5.567212,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.3374705550959334,
+        "final_stream_persistence_seconds": 5.294197551498655
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    },
+    {
+      "run": "previous_A",
+      "question_id": "Q01",
+      "wall_seconds": 5.233597500016913,
+      "cpu_seconds": 5.193250999999998,
+      "phase_wall_seconds": {
+        "other_persistence_seconds": 0.5669565221178345,
+        "final_stream_persistence_seconds": 4.665342016378418
+      },
+      "final_body_fidelity": "byte-for-byte equal to frozen dump(events)"
+    }
+  ],
+  "background_reader": [
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 0.03416366599998355,
+      "cpu_seconds": 0.04197900000002619,
+      "reader_wall_seconds": 0.034050458000024264,
+      "max_reader_delivery_gap_seconds": 0.00021287499998834392,
+      "fidelity": true,
+      "persist_enabled": false
+    },
+    {
+      "run": "latest_A",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 26.787851250000017,
+      "cpu_seconds": 26.55283000000003,
+      "reader_wall_seconds": 0.4567152920000126,
+      "max_reader_delivery_gap_seconds": 0.00942820800003119,
+      "fidelity": true,
+      "persist_enabled": true
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 0.028379874999984622,
+      "cpu_seconds": 0.03565800000001218,
+      "reader_wall_seconds": 0.028281416000027093,
+      "max_reader_delivery_gap_seconds": 0.00022408299997778158,
+      "fidelity": true,
+      "persist_enabled": false
+    },
+    {
+      "run": "reference_B",
+      "question_id": "Q01",
+      "mode": "background_reader",
+      "wall_seconds": 18.54288783300001,
+      "cpu_seconds": 18.324455999999998,
+      "reader_wall_seconds": 0.18625441699998646,
+      "max_reader_delivery_gap_seconds": 0.002754499999980453,
+      "fidelity": true,
+      "persist_enabled": true
+    }
+  ],
+  "validation": {
+    "source_event_files_sha256_and_exact_dump_fidelity": 117,
+    "direct_replay_count": 117,
+    "background_reader_probe_count": 4,
+    "alternate_interpreter_calibration_count": 3,
+    "base_accounting_unchanged": true,
+    "unit_tests": "3 passed in persistence_validation.py; exact Unicode prefix bytes, dump fidelity/no mutation, all frozen dump ASTs equal",
+    "missing_phase_timing": "Initial Q01 direct pass predates phase counters; Q02-Q39 phase sums cover38 questions only. Q01 alternate interpreter pass has phase counters."
+  },
+  "comparisons": {
+    "reference_B": {
+      "same_python39_persistence_wall_delta_seconds": 52.63118375299982,
+      "same_python39_persistence_cpu_delta_seconds": 51.94776700000001,
+      "historical_controller_actor_delta_seconds": 485.39200000000005
+    },
+    "previous_A": {
+      "same_python39_persistence_wall_delta_seconds": 11.43107699699982,
+      "same_python39_persistence_cpu_delta_seconds": 10.728494999999867,
+      "historical_controller_actor_delta_seconds": 158.51700000000005
+    }
+  },
+  "limitations": [
+    "Offline persistence CPU/wall is not directly subtractable from historical actor wall: live work can overlap model/network waits.",
+    "Historical interpreter unproven; current3.9 and explicit3.15 measured separately. No full alternate3.15 replay:Q01 exceeded chosen5-second cheap-calibration threshold.",
+    "Unpaced backgroundreader uses historical JSONL in memory and writes/flushes/parses into unbounded queue; no live RPC/pipe/server pacing or historical load replicated.",
+    "No causal server/service attribution follows from remaining residual."
+  ]
+}

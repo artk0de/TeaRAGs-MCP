@@ -1,0 +1,359 @@
+{
+  "scope": "Read-only offline visible-event audit Q01–Q20; no production/source discovery; no gold or expected answers; no actors/models/evals/reindex run",
+  "source_claim": "Parent supplied latestA plugin tea-rags 0.54.0 commit ced48; not independently validated against production",
+  "method": "Whitelist event types: userMessage/agentMessage, outer custom_tool_call, native mcpToolCall/commandExecution, rawResponse/completed IDs. Never read reasoning text. Model responses include final; native call counts are not response counts. Native MCP ids associated with outer wrappers by event order; native tools may complete before or after rawResponse/completed.",
+  "top3": [
+    {
+      "rank": 1,
+      "pattern": "Known locator kind + independent discovery incorrectly spread across responses",
+      "question": "Q01",
+      "literal_need": "ports, registration, capability passport, data model",
+      "known_inputs": "semantic metadata supplied registry.rb path; parent directory follows directly from that path; question independently asks data model",
+      "response_ids": [
+        "resp_0774613464b3f479016ae605372a988191a4afab3c42fc627e",
+        "resp_0774613464b3f479016ae6053ad0c08191aa2a58c354bf8ea7"
+      ],
+      "native_ids": [
+        "exec-15f19631-308f-45c3-b4c5-d8fa705f8f44",
+        "exec-c6877897-1837-4dd7-9700-eac834fef699",
+        "exec-9435118d-a955-4cef-9bf9-10c47da3809c"
+      ],
+      "delivered": "registry body L1–133 delivered; directory argument in symbols rejected with missing directory and instruction to call relativePath on its own; following response repeats locator correctly and then runs independent model semantic search",
+      "missing_fact": "Library entries and model anchors needed, not a second registry body",
+      "fix": "Dispatch file registry read, standalone relativePath directory locator, and independent model semantic_search concurrently in one outer wrapper once registry path has been discovered.",
+      "counterfactual_wave_plan": [
+        "Keep initial skill/schema/search discovery as recorded",
+        "One response: registry file + correct standalone directory outline + model semantic locator in parallel",
+        "Continue actual dependent model/service reads after results; no invented filenames"
+      ],
+      "savings": {
+        "native_tool_calls": 1,
+        "model_responses": 1,
+        "condition": "One response saved only when model semantic locator is advanced into same ready batch. Correcting directory kind alone saves a call but does not remove the response containing model search."
+      },
+      "repro": "A local locator-kind microcase can reproduce directory-in-symbols rejection; a local ready-input actor case can test batching but is not original-question reproduction. Exact full original pre-Q01 prompt/injection/tools and source snapshot required for original replay; not run.",
+      "B_comparison": "B Q01 uses 9 responses versus A 11, but broad early file reads and separate inaccurate locators prevent attribution of this delta to this fix."
+    },
+    {
+      "rank": 2,
+      "pattern": "Ready schema discovery delayed, serializing graph evidence behind unrelated body read",
+      "question": "Q12",
+      "literal_need": "What happens to files already sent when CRM merges contacts?",
+      "known_inputs": "Q01 exec-81be775f provides MergeForContact#perform id and L32–60 outline, not its body. Q01 only merge_provider_records! L89–99 body was held; full merge service execution body is correctly fetched in Q12.",
+      "response_ids": [
+        "resp_0774613464b3f479016ae607454a188191ae76044205a39cbb",
+        "resp_0774613464b3f479016ae607496bfc8191b028c3a5139d9698",
+        "resp_0774613464b3f479016ae6074f70e88191b8e3603c7e17622d",
+        "resp_0774613464b3f479016ae6075209848191b376e33cc1e7a9d5",
+        "resp_0774613464b3f479016ae6075511248191b30dad56c04d2864"
+      ],
+      "native_ids": [
+        "exec-cccdea24-a621-4f3a-b78b-bca50b75d84e",
+        "exec-d556573c-4f06-4a7a-886b-dc0f9bec21f4",
+        "exec-35468b06-770a-4118-a977-640eba11b9c5",
+        "exec-c9daa607-dcb8-4423-bed3-620d91f0c3c0"
+      ],
+      "delivered": "Q12 response1 merge method bodies; response2 get_callers schema lookup + downstream deletion bodies; response3 get_callers; response4 ContactsConsumer bodies; response5 final.",
+      "missing_fact": "CRM event→merge caller edge and consumer behavior; graph is relevant and retained in proposed plan.",
+      "fix": "Move get_callers schema lookup into first response alongside merge body read, then run graph and newly discovered dependent deletion bodies together in response2.",
+      "counterfactual_wave_plan": [
+        "W1: get_callers schema lookup + actual initial MergeForContact/Instead merge reads",
+        "W2: graph from already known MergeForContact#perform id + newly needed BatchDestroy/Instead destroy bodies concurrently",
+        "W3: ContactsConsumer methods discovered by graph",
+        "W4: answer"
+      ],
+      "savings": {
+        "model_responses": 1,
+        "native_tool_calls": 0,
+        "condition": "Preserves all actual evidence; no shortcut to CRM consumer guessed from namespace."
+      },
+      "repro": "Ready-schema timing microcase is testable with literal prompt plus Q01 known-id outline and original tool metadata. That extracted case tests batching behavior only; replaying original Q12 requires all prior delivered context Q01–Q11 and exact injections, not just a hand-picked evidence set. Not run.",
+      "B_comparison": "B uses one tool wave + final (2 responses), reading five guessed/known files at once. B already held full merge service from Q04; its prequestion body context differs, so B is not proof A could immediately answer."
+    },
+    {
+      "rank": 3,
+      "pattern": "File-complete bodies not recognized when later batching method ids",
+      "question": "Q01",
+      "literal_need": "vendor-neutral port inventory and adapter contract",
+      "response_ids": [
+        "resp_0774613464b3f479016ae6054cabfc8191a52ff1512125d279",
+        "resp_0774613464b3f479016ae60552cd6881918b3d5a63ef8f90b8"
+      ],
+      "native_ids": [
+        "exec-81be775f-5b1a-4324-bf5e-21c9fec0744b",
+        "exec-e9f246ed-ba3c-4eef-a1be-2196071ede3a"
+      ],
+      "held_ranges": [
+        {
+          "file": "app/services/tax_preparation/tax_automations/connections/verify_grant.rb",
+          "full_file": [
+            1,
+            36
+          ],
+          "reread_method": [
+            26,
+            35
+          ]
+        },
+        {
+          "file": "app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+          "full_file": [
+            1,
+            55
+          ],
+          "reread_method": [
+            28,
+            47
+          ]
+        }
+      ],
+      "missing_fact": "None for these two methods; other five batch entries may still close real gaps.",
+      "fix": "Before executing the method-id batch, subtract methods whose exact line range is already covered by a delivered full source body. Do not use containing filename or outline range as proof of coverage.",
+      "counterfactual_wave_plan": [
+        "Keep response schedule and other needed reads unchanged",
+        "Remove VerifyGrant#perform and DisconnectAll#perform from later seven-method batch; retain five unheld methods",
+        "Answer from original complete file bodies for removed entries"
+      ],
+      "savings": {
+        "model_responses": 0,
+        "native_tool_calls": 0,
+        "returned_body_rows": 2,
+        "condition": "Same native call remains necessary for other five methods. Only body/context and payload cost are evidenced."
+      },
+      "repro": "A locally extracted held-file→later-method actor case can genuinely test body-reuse quality with unchanged source bodies. It cannot establish original-question step savings; those are zero here. Original full context replay not run.",
+      "B_comparison": "B also rereads some retained content (e.g. Q02 feature flags twice); use explicit coverage accounting instead of treating B as globally optimal."
+    }
+  ],
+  "additional_findings": [
+    {
+      "q": "Q16",
+      "evidence": "exec-23041e24-b95e-4740-bf2b-3ca9662aede1 returns unrelated TaxSoftwareBackups registry body L1–25 (689 chars) alongside needed KeepAliveWorker. The tax registry was already held L1–133 from Q01; DestroyCleanup method L53–61 held Q01; ReconcileSweepWorker full L1–43 held Q03.",
+      "effect": "Omit unrelated source row; combine initially ready ADAPTERS/adapters filename locators if completeness desired. Context/call savings, zero supported response savings."
+    },
+    {
+      "q": "Q07",
+      "evidence": "First settings.yml tax_automations range extraction delivered actual block correctly. Second response executes both sed /mock/= and sed /mock/p; both return empty.",
+      "effect": "Not a broken locator. One existence/content query suffices, but same-response call-only saving."
+    }
+  ],
+  "positive_controls": {
+    "no_read_answers": [
+      "Q08",
+      "Q10",
+      "Q11",
+      "Q13",
+      "Q18",
+      "Q19"
+    ],
+    "qualification": "No blind assertion all followup reads redundant: Q12 initial merge bodies were NOT previously held; Q09 ExportAsync initialize/prepare_params were outline-only earlier; Q14 ResumeSends#perform held but failed_send_documents selector was missing."
+  },
+  "limitations": [
+    "No causal actor evals performed; savings are counterfactual dependency analysis, not measured improvement.",
+    "Exact original pre-question context is required for original-question replay; extracted microcases cannot silently stand in for it.",
+    "B broad initial reading causes future relevance and held-context confounds.",
+    "Q01 one-response saving combines locator correction and ready-query batching; isolated locator correction saves only one call."
+  ],
+  "input_fingerprints": [
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q01-events.json",
+      "sha256": "73ff179b8bb0235e8ea04bf17245127f0552dbff844cd3b942036142106195b1"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q02-events.json",
+      "sha256": "28c19b40ffba36ab18348e3c20286578a7f56067d99e6963fa664689461cc9cb"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q03-events.json",
+      "sha256": "aead499e1c7305ff12bb28beb37ddda7c188e75795de4e4c282d9a46c8d718df"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q04-events.json",
+      "sha256": "5c8f3973328cc147ca3f64f173d8614ae886f38f0136a483ab05434d744b2f61"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q05-events.json",
+      "sha256": "8b6c37bc7eee043a61b7f20c3a529f0f31bf8821f5c41f88c471a9588231020d"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q06-events.json",
+      "sha256": "52ef4929e847a66fe21dd69d7414f3307441ac0abf9508e1b0a2dc6728320f84"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q07-events.json",
+      "sha256": "f7059ad98cb2eeb215cffd6e918bac33e74cc501ad1bedca221bc71be4a610f0"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q08-events.json",
+      "sha256": "d926839b365895451f9e68293265c61c42adcf49e47708b2fc3cdc38a03eb4e6"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q09-events.json",
+      "sha256": "0858350802432e9b88f1b61a8a55eab758e9bd39c1b76f7d20dc4be4215b5613"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q10-events.json",
+      "sha256": "faa299710bfcd2b3e612b7393c119b55f5009492a867cae91bfc3c1fb8c7969c"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q11-events.json",
+      "sha256": "fedad750e1fae99adbda166bcd43d1451d0599d3729f14ac7ca7f0226523d578"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q12-events.json",
+      "sha256": "f342849cb10cde39a85cd9037377097d8a2102f3fc0540a68a91a961e6b290a4"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q13-events.json",
+      "sha256": "13fa16bb71e7a48fd16a5f4feddc9ad219299f395555cd8cfc7b557e8d723079"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q14-events.json",
+      "sha256": "3cc91328843dfd68f97025c1b55fd234f98cedd946f7df236ccece1405425743"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q15-events.json",
+      "sha256": "2be5c5970cdc0b4df8f3e28a106bfbbcbb11da27b054a8d7bbe0efcb9e9d99ab"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q16-events.json",
+      "sha256": "d50816521342e486cb254615b465f99976a58d1864dfade75d4e85464434c29e"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q17-events.json",
+      "sha256": "322440bbd8c0096d9ee927699650ea4f68f7ae886006d6cf153e8ece00206e6f"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q18-events.json",
+      "sha256": "caf7d6d23c2b5983aaf3df08cd07f74a62f2cb38bdd867338b144ab015762cb6"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q19-events.json",
+      "sha256": "d4ec49752c40ad555d3842828a67b3ecc2f99abccae5af9983e9a84be3fc1515"
+    },
+    {
+      "run": "A",
+      "path": ".tmp/gruntworx_codex_A_2026-10-31_v4_01/runs/A/Q20-events.json",
+      "sha256": "9f25b1a8e35eaff1ac4a9e60beedaa2736c1a5376a61b0256573396d67bd875b"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q01-events.json",
+      "sha256": "eeed84fc0c1a1a908eee017c4e49d2721bae1c8f16cccbd98cbfe29ae3720d09"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q02-events.json",
+      "sha256": "21bd6c16598a22aa394001ba822936356b72e8efb497ad2e53e07ea18b98fd8f"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q03-events.json",
+      "sha256": "52908d25d4fa59cb5ddbffe9dc3e6f2cbe41ca6f7a44c9a4c383e43734c6b04a"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q04-events.json",
+      "sha256": "b5ef6e8c08abf1152ac5260f8eb49a4bc3a242f97421641954c3dd705f7b49bd"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q05-events.json",
+      "sha256": "a569075fd97c6a0df7df6c512165e678dfd416e2b033cf7a1803cbdaeddd9f4d"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q06-events.json",
+      "sha256": "58e8fdf06e3c8b6cb953223187a0211d84db3eab7f1333e9d6af88fdb8b8dd5f"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q07-events.json",
+      "sha256": "2bebfb9b1045f5c66cb2ffbf69b4fcab48ee39ead70a17ed2ddb22105e77795e"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q08-events.json",
+      "sha256": "6aa14d9012dec43a8f50c03b80a2bf7b9ec537eaef6805a4e7fae6a669445273"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q09-events.json",
+      "sha256": "ad971e8c96030d97b5b13f1741d211ed6bb4dda73bf079d38f7520c7e49c9fa9"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q10-events.json",
+      "sha256": "06442d213ee95ec651a13038e7dd74d306efa2d4078cf4b5a662999988a974d9"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q11-events.json",
+      "sha256": "b2cc71b04638c0d418f4bb449e32c56873e727caf7d59d137427aa99f16034f0"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q12-events.json",
+      "sha256": "2647c232264569c7e3524174d517694c0d8143b8f5fe8b651af512eb6598e3a6"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q13-events.json",
+      "sha256": "ee6d2b0e9a48fbbbd65acac1fe9fc8e1cba7ef1b11221b8c0f473b029a136724"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q14-events.json",
+      "sha256": "4c1cdb3f9fab13542c7a96f2c7ff97ba7021331770edd67435aeee3d383d7c1a"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q15-events.json",
+      "sha256": "e47c353382dae9617d2c0dcf13b0f6a5d067c2ceffcd1a18197be0d80a5a11f5"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q16-events.json",
+      "sha256": "b4811cd8874b98936b1b489f43719e594836a83a438f27d491ccbd32a21637a9"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q17-events.json",
+      "sha256": "6b0a5e9e2793196bf88722bd85a1fdedaa21814aaf157b40c22a97f72be6d0fe"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q18-events.json",
+      "sha256": "20d8d705869ea9c6aeb146269eb41e8e037dce32a470d742e2423196d73cd045"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q19-events.json",
+      "sha256": "3e8460c2d4cd126b3e3d273b55d11a0363b057ab169f29129af3d0e6c13b5c08"
+    },
+    {
+      "run": "B",
+      "path": ".tmp/gruntworx_codex_optimal_B_retry_2026-10-31_01/runs/B/Q20-events.json",
+      "sha256": "0fe26c311434a0c231608f42d58126a86b6c73fba7fd9454fa55b6d3ee677178"
+    }
+  ],
+  "priority_update": "For native-response savings prioritize focused-Q02-Q03.json/md: Q02 initial ready semantic discovery; Q03 known helper read scheduled earlier; then Q12 schema discovery. Original top3 retained below as evidence history; rank3 body reuse is payload-only."
+}

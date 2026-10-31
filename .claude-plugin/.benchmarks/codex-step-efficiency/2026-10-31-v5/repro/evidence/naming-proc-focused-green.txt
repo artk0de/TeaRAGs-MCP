@@ -1,0 +1,7 @@
+test_collector_nonzero_is_propagated_and_accounting_failed_is_retained (test_review_fixes_io.ReviewRegressionTests.test_collector_nonzero_is_propagated_and_accounting_failed_is_retained) ... ok
+test_optimized_python_refused_before_rpc_or_outputs (test_review_fixes_io.ReviewRegressionTests.test_optimized_python_refused_before_rpc_or_outputs) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 1.335s
+
+OK

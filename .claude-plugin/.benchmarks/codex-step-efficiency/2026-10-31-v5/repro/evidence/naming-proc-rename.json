@@ -1,0 +1,9 @@
+{
+  "change": "Local subprocess result run → proc, naming-only",
+  "before_job_sha256": "9c3b9f64b3acfa23a633df4b5343bb5460310b8d2b53e9d94e115b339873e8d1",
+  "after_job_sha256": "4d2f9d1c61f206f9e2f0d7d715c9e1fbcf725e98e0247b4638d14ba20679a053",
+  "canonical": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/job.py",
+  "scratch": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/only-a-benchmark-v5/job.py",
+  "behavior_change": false,
+  "archived_v4_changed": false
+}

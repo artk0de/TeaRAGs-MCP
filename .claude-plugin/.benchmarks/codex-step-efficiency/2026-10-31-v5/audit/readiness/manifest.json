@@ -1,0 +1,256 @@
+{
+  "format_version": 1,
+  "archive": "readiness-only no-model extension",
+  "status": "NATIVE_READY17_CONFIRMED; CLI_NOT_FIXED; MODEL_CAUSATION_UNPROVEN",
+  "model_turns": 0,
+  "parent_manifest": {
+    "path": "../manifest.json",
+    "sha256": "da78c3aefc802290424c71eb8e709daf5ff67da0b0110c9ebb9be5c37309af11",
+    "bytes": 13600,
+    "modified": false
+  },
+  "copied_artifact_count": 23,
+  "payload_file_count": 24,
+  "payload_bytes": 732696,
+  "manifest_excludes_itself": true,
+  "allowlist": {
+    "diagnostic_artifacts": 11,
+    "local_cli_schemas": 5,
+    "opaque_rpc_journal_or_stderr": 6,
+    "existing_native_proof_summary": 1
+  },
+  "opaque_journals_not_parsed_or_printed": true,
+  "narrow_profile_experiment": "Metadata only; contains config hashes and exact file paths, no config body. Archived historical experiment, not adopted.",
+  "exclusions": [
+    "auth/credentials files",
+    "actor homes",
+    "full profile configs",
+    "runtime binaries",
+    "private upstream stderr",
+    "all files outside the explicit proof/schema/journal allowlist"
+  ],
+  "limits": [
+    "Probe01 incomplete fresh harness failed; retained, not silently retried",
+    "Probe02 invalid /usr/bin/test readability diagnostic retained, not counted as permission proof",
+    "Probe03 command-v passed but real resource CLI failed; CLI NOT_FIXED",
+    "No experimental PATH/file grants carried into readiness-only runner/controller",
+    "Native same-thread connected17 inventory does not prove ALL_TOOLS projection or model-step causal improvement",
+    "No actors, tests, proofs, reindex, replay or implementation changes during packaging"
+  ],
+  "artifacts": [
+    {
+      "path": "journals/probe-01/events.jsonl",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/runtime/same-thread/events.jsonl",
+      "sha256": "1af760cacdf1187a5081225b56359547f595a0a8530dd1e7ce976254442f5f24",
+      "bytes": 4404,
+      "source_sha256": "1af760cacdf1187a5081225b56359547f595a0a8530dd1e7ce976254442f5f24",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "journals/probe-01/stderr.txt",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/runtime/same-thread/stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "journals/probe-02/events.jsonl",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/same-thread-helper/events.jsonl",
+      "sha256": "2725f0a8573470a266d65a2da811389fe067c299d5c04769f21aa4a4d0041f7c",
+      "bytes": 111690,
+      "source_sha256": "2725f0a8573470a266d65a2da811389fe067c299d5c04769f21aa4a4d0041f7c",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "journals/probe-02/stderr.txt",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/same-thread-helper/stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "journals/probe-03/events.jsonl",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/same-thread/events.jsonl",
+      "sha256": "c0038d79c8938186d4d4fd31219693a57de259cdb810d7b28d26c16d80e541aa",
+      "bytes": 112660,
+      "source_sha256": "c0038d79c8938186d4d4fd31219693a57de259cdb810d7b28d26c16d80e541aa",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "journals/probe-03/stderr.txt",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/same-thread/stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "transform": "none; byte-exact copy",
+      "kind": "opaque no-model RPC journal/stderr; not parsed"
+    },
+    {
+      "path": "mcp-readiness-native-proof.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/evidence/mcp-readiness-native-proof.json",
+      "sha256": "d68db171ec6acb97b3e3e2d95a6d9913c4cfcc17d749cba01f1e29d699d4461b",
+      "bytes": 7436,
+      "source_sha256": "d68db171ec6acb97b3e3e2d95a6d9913c4cfcc17d749cba01f1e29d699d4461b",
+      "transform": "none; byte-exact copy",
+      "kind": "aggregate native-proof summary"
+    },
+    {
+      "path": "probes/readiness-probe-01/probe.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/probe.py",
+      "sha256": "cf0184a93d4b564c5c1fb348c8d624888b892ae3b1350dea0113a8a877090c80",
+      "bytes": 3260,
+      "source_sha256": "cf0184a93d4b564c5c1fb348c8d624888b892ae3b1350dea0113a8a877090c80",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-01/runtime/same-thread-inventory.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/runtime/same-thread-inventory.json",
+      "sha256": "03fe238321dc159f5193c2112a19baee0991f9a8d8eabce529356f3fb59ed9c7",
+      "bytes": 531,
+      "source_sha256": "03fe238321dc159f5193c2112a19baee0991f9a8d8eabce529356f3fb59ed9c7",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/helper_probe.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/helper_probe.py",
+      "sha256": "1310d4e097ae9f7864294172409a02ecbd0fe211c9accebd10a742cdc90daef3",
+      "bytes": 2082,
+      "source_sha256": "1310d4e097ae9f7864294172409a02ecbd0fe211c9accebd10a742cdc90daef3",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/probe.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/probe.py",
+      "sha256": "4978f5b0dd8a3a9279a357753a8e04b966043dc8058fc78d63885e15554fb9fb",
+      "bytes": 3481,
+      "source_sha256": "4978f5b0dd8a3a9279a357753a8e04b966043dc8058fc78d63885e15554fb9fb",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/runtime/helper-native-result.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/helper-native-result.json",
+      "sha256": "da808706e5e7c476c194aa80b01735b2fd3f603c1c35a39371edfa891b0e47f6",
+      "bytes": 228185,
+      "source_sha256": "da808706e5e7c476c194aa80b01735b2fd3f603c1c35a39371edfa891b0e47f6",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/runtime/result.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/result.json",
+      "sha256": "9f6ddace299cc49853ae442f4e40d389e0d5c5ff95069e7020fa18b0a10f4364",
+      "bytes": 12185,
+      "source_sha256": "9f6ddace299cc49853ae442f4e40d389e0d5c5ff95069e7020fa18b0a10f4364",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/runtime/shell-diagnostics.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/runtime/shell-diagnostics.json",
+      "sha256": "442800a2e8465ef8744d41238f6963897f0cb37b94e31afeb566bdab76945474",
+      "bytes": 1150,
+      "source_sha256": "442800a2e8465ef8744d41238f6963897f0cb37b94e31afeb566bdab76945474",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-02/shell_probe.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-02/shell_probe.py",
+      "sha256": "259be0b184a0bab831f9620a19747a03e4921f3cb6377bdef7174a7c2b5167a3",
+      "bytes": 1856,
+      "source_sha256": "259be0b184a0bab831f9620a19747a03e4921f3cb6377bdef7174a7c2b5167a3",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-03/probe.py",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/probe.py",
+      "sha256": "e44fc922cacab76f087425388c1ec2e18abf1be6b10d908f20d78e7517f26679",
+      "bytes": 4567,
+      "source_sha256": "e44fc922cacab76f087425388c1ec2e18abf1be6b10d908f20d78e7517f26679",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-03/runtime/narrow-profile-experiment.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/narrow-profile-experiment.json",
+      "sha256": "f5c5e1baec3ea46255a6ce8b71ee8f25023fc827103863abd03aaeeb9b07eb01",
+      "bytes": 1206,
+      "source_sha256": "f5c5e1baec3ea46255a6ce8b71ee8f25023fc827103863abd03aaeeb9b07eb01",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "probes/readiness-probe-03/runtime/result.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-03/runtime/result.json",
+      "sha256": "3ae0e6efc6d808206d3153b50dd4c00940c94c6142d815ac4548baa9637913b7",
+      "bytes": 1584,
+      "source_sha256": "3ae0e6efc6d808206d3153b50dd4c00940c94c6142d815ac4548baa9637913b7",
+      "transform": "none; byte-exact copy",
+      "kind": "allowlisted diagnostic script/result"
+    },
+    {
+      "path": "README.md",
+      "sha256": "08fb73a131345bbf90ccbb00dc37daa83f9cb94b18867350faf368b335325db6",
+      "bytes": 4652,
+      "kind": "New scope/limitations and failed-attempt guide",
+      "transform": "Derived narrative; original artifacts unchanged"
+    },
+    {
+      "path": "schema/ServerNotification.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema/ServerNotification.json",
+      "sha256": "cc06d031345c7f1f08f0ac8ccb42d889b3246fadada1aabdf4688027975efad7",
+      "bytes": 215730,
+      "source_sha256": "cc06d031345c7f1f08f0ac8ccb42d889b3246fadada1aabdf4688027975efad7",
+      "transform": "none; byte-exact copy",
+      "kind": "exact local CLI 0.166 schema"
+    },
+    {
+      "path": "schema/v2/CommandExecParams.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema/v2/CommandExecParams.json",
+      "sha256": "e4f20080b92c6199cf132941840c4bd0fb9a90e3fec197ceb0e1ce9084346e18",
+      "bytes": 7397,
+      "source_sha256": "e4f20080b92c6199cf132941840c4bd0fb9a90e3fec197ceb0e1ce9084346e18",
+      "transform": "none; byte-exact copy",
+      "kind": "exact local CLI 0.166 schema"
+    },
+    {
+      "path": "schema/v2/ListMcpServerStatusParams.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema/v2/ListMcpServerStatusParams.json",
+      "sha256": "30b978c6502b37c9f0002aeba241f41c91d4c6adf0f92d89242b62ffde415a2d",
+      "bytes": 1223,
+      "source_sha256": "30b978c6502b37c9f0002aeba241f41c91d4c6adf0f92d89242b62ffde415a2d",
+      "transform": "none; byte-exact copy",
+      "kind": "exact local CLI 0.166 schema"
+    },
+    {
+      "path": "schema/v2/ListMcpServerStatusResponse.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema/v2/ListMcpServerStatusResponse.json",
+      "sha256": "c5a6c05092a9b1fa90c7cb3a319685a769a67c16e19048e8bbab5007b358be74",
+      "bytes": 6444,
+      "source_sha256": "c5a6c05092a9b1fa90c7cb3a319685a769a67c16e19048e8bbab5007b358be74",
+      "transform": "none; byte-exact copy",
+      "kind": "exact local CLI 0.166 schema"
+    },
+    {
+      "path": "schema/v2/McpServerStatusUpdatedNotification.json",
+      "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-audit-2026-10-31/readiness-probe-01/schema/v2/McpServerStatusUpdatedNotification.json",
+      "sha256": "d6f4cb120b2363d321247592f03b9afbbf2762ad6d8af31b88c1b1bf39c4c7aa",
+      "bytes": 973,
+      "source_sha256": "d6f4cb120b2363d321247592f03b9afbbf2762ad6d8af31b88c1b1bf39c4c7aa",
+      "transform": "none; byte-exact copy",
+      "kind": "exact local CLI 0.166 schema"
+    }
+  ]
+}

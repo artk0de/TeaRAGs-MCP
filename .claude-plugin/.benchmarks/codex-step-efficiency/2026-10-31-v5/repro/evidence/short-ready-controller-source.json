@@ -1,0 +1,16 @@
+{
+  "old_controller": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/short_native.py",
+  "old_controller_sha256": "c160991aa5bf5143bd4cf2b05d46fbea00494ca798725f6fe63e0f676758f22d",
+  "old_controller_unchanged": true,
+  "new_controller": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/short_native_ready.py",
+  "new_controller_sha256": "30c02114483168c8bf7597927d5b48782fa6b582a1c191184eba48ae2c273216",
+  "helper": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/codex-speed-v5-evals/mcp_readiness.py",
+  "helper_sha256": "929833469693368e7be3515f73b71cf3906a0ebb5ba72b8a485168ab6fe9a7fc",
+  "model_turns": 0,
+  "scope": "Readiness-only new controller version; same cases, grading, corpus, native backend, permission profile and proxy; old prepared/actor directories untouched",
+  "limits": [
+    "Native MCP readiness does not prove ALL_TOOLS snapshot causation",
+    "CLI fallback not fixed: original PATH/sandbox profile preserved; no speculative directory grants",
+    "No model runs or profile preparations from this code yet"
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "method_correction": "Model-held evidence must be established from actual rawResponseItem/completed custom_tool_call_output.output, not full native item/completed mcpToolCall.result. Earlier native extraction is diagnostic/backend evidence only, not a held-body ledger.",
+  "withdrawn": [
+    {
+      "initial_claim": "Q01 VerifyGrant full L1–36 and DisconnectAll full L1–55 were held before later perform reads, so two rereads redundant",
+      "verdict": "WITHDRAWN",
+      "reason": "Q01 W8 outer ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696 truncates 1270 of 11270 original tokens. Both files/classes are absent from delivered text; DisconnectAll survives only as an unrelated caller reference. Later perform reads may be necessary recovery; no redundant-row savings claimed."
+    }
+  ],
+  "retained": [
+    {
+      "claim": "Q02 initial exact and semantic discovery can share ready wave",
+      "proof": "ctco_01a19286-41eb-7452-9f82-c7788a3d171d delivers both mock file locators untruncated; query depends only on literal question."
+    },
+    {
+      "claim": "Q03 RefusalsHelper locator already delivered Q01",
+      "proof": "ctco_01a19284-7d53-7040-8fee-c903ca6e7661 visibly contains file/module row, untruncated. Body missing until actual final Q03 helper read ctco_01a19287-ee07-7001-aad7-5bd4aa6f6611. Selection-premise caveat unchanged."
+    },
+    {
+      "claim": "Q12 graph schema can advance into earlier ready wave",
+      "proof": "MergeForContact#perform id visibly survives as outline entry in ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696. It is an id, NOT held body. Q12 schema and graph outputs untruncated."
+    },
+    {
+      "claim": "Q01 directory-in-symbols invalid locator",
+      "proof": "ctco_01a19284-6cc9-7a03-927a-11d0421be32b visibly returns missing directory instruction. Wave saving still conditional on moving independent model semantic discovery too."
+    }
+  ],
+  "no_new_runs": "No models/actors/evals; opaque IO replay is separate, no private reasoning text analyzed/output.",
+  "evidence": [
+    {
+      "ctco_id": "ctco_01a19284-6cc9-7a03-927a-11d0421be32b",
+      "q": "Q01",
+      "call_id": "call_4cec94dfe52a47f4a7a8655f167f3e61",
+      "outer_call_id": "ctc_0774613464b3f479016ae60538b25c81918df7db2eca08b87e",
+      "truncated": false,
+      "output_chars": 5623,
+      "probes": {
+        "directory — call find_symbol": true,
+        "refusals_helper.rb": false,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": false,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": false,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": [
+        {
+          "needle": "directory — call find_symbol",
+          "text": " firm)\\n  end\\nend\\n\"}}],\"missing\":[{\"request\":\"app/lib/tax_preparation/tax_automations\",\"message\":\"directory — call find_symbol(relativePath: app/lib/tax_preparation/tax_automations) on its own\"}],\"batchNotice\":\"a directory → missing\"}}"
+        }
+      ]
+    },
+    {
+      "ctco_id": "ctco_01a19284-7d53-7040-8fee-c903ca6e7661",
+      "q": "Q01",
+      "call_id": "call_500ea2cbdaa147b099ea93ecb9c01922",
+      "outer_call_id": "ctc_0774613464b3f479016ae6053cbef0819199e679ea098e8ea0",
+      "truncated": false,
+      "output_chars": 3276,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": true,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": true,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": false,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": [
+        {
+          "needle": "refusals_helper.rb",
+          "text": "ions::Metrics\"]],[\"50cc1315-3602-37b7-ee09-177e1eeed003\",1,\"app/lib/tax_preparation/tax_automations/refusals_helper.rb\",\"ruby\",[\"TaxPreparation::TaxAutomations::RefusalsHelper\"]],[\"d542ce11-f3e4-d5da-1594-192c7c8aee86\",1,\"app/lib/tax_preparation/tax_automations/registry.rb\",\"ruby\",[\"TaxPreparation::TaxAutomations::Registry\"]],[\"fc073ea5-7a2c-7826-6448-db3c90acc520\",1,\"app/lib/tax_preparation/tax_automations/return_type.rb\",\"ru"
+        }
+      ]
+    },
+    {
+      "ctco_id": "ctco_01a19284-c9cd-7462-aeaa-7bb63cb98696",
+      "q": "Q01",
+      "call_id": "call_4d11146f48894fa0b29bf82c17eaba6b",
+      "outer_call_id": "ctc_0774613464b3f479016ae6054f57408191aeefb957711bd5ab",
+      "truncated": true,
+      "output_chars": 40114,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": false,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": false,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": true,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": [
+        {
+          "needle": "tokens truncated",
+          "text": "ansaction do\\n      # A ceremony that finished while the vendor was answering stored a grant o…1270 tokens truncated….call(user, actor, firm_id)\\n  #   @param user [User] - required\\n  #   @param actor [System] - required\\n  #   @param firm_id [Integer] - required\\n  #   @return [ServiceResult] success: nil\\n  def initialize(user, actor, firm_id)\\n    @user = user\\n    @actor = actor\\n    @firm_id = firm_id\\n  end\\n\\n  private"
+        },
+        {
+          "needle": "MergeForContact#perform",
+          "text": "ons::MergeForContact#initialize (public) L15-28\\n  TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#perform (private) L32-60\\n  TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#source_tax_preparations (private) L62-64\\n  TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#survivor_for (private) L66-70\\n  TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#move_tax_autom"
+        }
+      ]
+    },
+    {
+      "ctco_id": "ctco_01a19286-41eb-7452-9f82-c7788a3d171d",
+      "q": "Q02",
+      "call_id": "call_d31ba4342a5047a3bde1f80e682d9526",
+      "outer_call_id": "ctc_0774613464b3f479016ae605ae1e4081919dbf9c4358b4ebba",
+      "truncated": false,
+      "output_chars": 1530,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": false,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": false,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": false,
+        "instead/mock/adapter.rb": true,
+        "instead/mock/router.rb": true
+      },
+      "snippets": []
+    },
+    {
+      "ctco_id": "ctco_01a19287-ee07-7001-aad7-5bd4aa6f6611",
+      "q": "Q03",
+      "call_id": "call_f9e3a6385b9d4244ab4db63002b42f5c",
+      "outer_call_id": "ctc_0774613464b3f479016ae6061f2eb08191be07dd2b60018acf",
+      "truncated": false,
+      "output_chars": 4353,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": true,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": true,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": false,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": [
+        {
+          "needle": "refusals_helper.rb",
+          "text": "7b7-ee09-177e1eeed003\",\"score\":1,\"payload\":{\"relativePath\":\"app/lib/tax_preparation/tax_automations/refusals_helper.rb\",\"startLine\":1,\"endLine\":73,\"language\":\"ruby\",\"content\":\"# frozen_string_literal: true\\n\\n# The vendor refusals a send step answers rather than raises, since every attempt gets the\\n# same answer; any other client error goes to the retry ladder.\\nmodule TaxPreparation::TaxAutomations::RefusalsHelper\\n  module_"
+        }
+      ]
+    },
+    {
+      "ctco_id": "ctco_01a1928c-8d19-7961-9705-79b042a6a410",
+      "q": "Q12",
+      "call_id": "call_234590a80f46488b8436053aa18e31fe",
+      "outer_call_id": "ctc_0774613464b3f479016ae6074e02488191ae5086d1a145ad15",
+      "truncated": false,
+      "output_chars": 5729,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": false,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": false,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": false,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": []
+    },
+    {
+      "ctco_id": "ctco_01a1928c-9790-7dc3-bd6d-affa52126edc",
+      "q": "Q12",
+      "call_id": "call_029227ba804745909e4e6323ec84b966",
+      "outer_call_id": "ctc_0774613464b3f479016ae6075113848191a06a34759594b3f5",
+      "truncated": false,
+      "output_chars": 775,
+      "probes": {
+        "directory — call find_symbol": false,
+        "refusals_helper.rb": false,
+        "TaxPreparation::TaxAutomations::RefusalsHelper": false,
+        "connections/verify_grant.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::VerifyGrant": false,
+        "connections/disconnect_all.rb": false,
+        "class TaxPreparation::TaxAutomations::Connections::DisconnectAll": false,
+        "MergeForContact#perform": true,
+        "instead/mock/adapter.rb": false,
+        "instead/mock/router.rb": false
+      },
+      "snippets": [
+        {
+          "needle": "MergeForContact#perform",
+          "text": ", \\\"confidence\\\", \\\"signature\\\"], \\\"rows\\\": [[1, \\\"TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#perform\\\", \\\"TaxPreparation::TaxAutomations::ContactsConsumer#handle_merged\\\", \\\"app/consumers/tax_preparation/tax_automations/contacts_consumer.rb\\\", \\\"exact\\\", 1, \\\"def handle_merged(firm_id, source_contact_id, target_contact_id)\\\"], [2, \\\"TaxPreparation::TaxAutomations::ContactsConsumer#handle_merged\\\", \\\"TaxP"
+        }
+      ]
+    }
+  ]
+}

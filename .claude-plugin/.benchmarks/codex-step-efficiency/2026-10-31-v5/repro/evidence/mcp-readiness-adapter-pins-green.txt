@@ -1,0 +1,55 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... ERROR
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... ok
+test_runtime_manifest_cannot_drift_from_frozen_record (test_adapter_io.AdapterTests.test_runtime_manifest_cannot_drift_from_frozen_record) ... ok
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... ERROR
+
+======================================================================
+ERROR: test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 89, in test_interrupt_preserves_recoverable_journal_and_partial_snapshot
+    runner.execute('A')
+    ~~~~~~~~~~~~~~^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/runner.py", line 99, in execute
+    readiness = wait_for_mcp_ready(rpc, tid, manifest['real_tool_names'])
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 49, in wait_for_mcp_ready
+    result = inventory()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 29, in inventory
+    response = rpc.call('mcpServerStatus/list', params, timeout=remaining())
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+TypeError: AdapterTests.fake_rpc.<locals>.call() got an unexpected keyword argument 'timeout'
+
+======================================================================
+ERROR: test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 65, in test_success_uses_one_journal_record_per_callback_and_one_final_snapshot
+    runner.execute('A')
+    ~~~~~~~~~~~~~~^^^^^
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/runner.py", line 99, in execute
+    readiness = wait_for_mcp_ready(rpc, tid, manifest['real_tool_names'])
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 49, in wait_for_mcp_ready
+    result = inventory()
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/mcp_readiness.py", line 29, in inventory
+    response = rpc.call('mcpServerStatus/list', params, timeout=remaining())
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/lib/python3.15/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+TypeError: AdapterTests.fake_rpc.<locals>.call() got an unexpected keyword argument 'timeout'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.031s
+
+FAILED (errors=2)

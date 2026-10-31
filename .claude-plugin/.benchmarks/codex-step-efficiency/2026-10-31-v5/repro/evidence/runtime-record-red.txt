@@ -1,0 +1,18 @@
+test_interrupt_preserves_recoverable_journal_and_partial_snapshot (test_adapter_io.AdapterTests.test_interrupt_preserves_recoverable_journal_and_partial_snapshot) ... ok
+test_launcher_rejects_runtime_mismatch_before_consuming_rootgo (test_adapter_io.AdapterTests.test_launcher_rejects_runtime_mismatch_before_consuming_rootgo) ... ok
+test_runtime_manifest_cannot_drift_from_frozen_record (test_adapter_io.AdapterTests.test_runtime_manifest_cannot_drift_from_frozen_record) ... FAIL
+test_success_uses_one_journal_record_per_callback_and_one_final_snapshot (test_adapter_io.AdapterTests.test_success_uses_one_journal_record_per_callback_and_one_final_snapshot) ... ok
+
+======================================================================
+FAIL: test_runtime_manifest_cannot_drift_from_frozen_record (test_adapter_io.AdapterTests.test_runtime_manifest_cannot_drift_from_frozen_record)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-efficiency-v5/.claude-plugin/.benchmarks/codex-step-efficiency/2026-10-31-v5/repro/test_adapter_io.py", line 105, in test_runtime_manifest_cannot_drift_from_frozen_record
+    with self.assertRaisesRegex(AssertionError,'runtime record'):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: AssertionError not raised
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.064s
+
+FAILED (failures=1)
