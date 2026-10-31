@@ -22,7 +22,7 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       description:
         "Index codebase for semantic code search. AST-aware chunking, respects .gitignore. " +
         "CODE_ENABLE_GIT_METADATA=true enables git blame analysis.\n\n" +
-        "Indexing options + git metadata guide: tea-rags://schema/indexing-guide",
+        "Indexing options + git metadata guide: tea-rags://guide/indexing",
       inputSchema: schemas.IndexCodebaseSchema,
       annotations: { idempotentHint: true },
     },

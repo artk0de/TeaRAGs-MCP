@@ -18,7 +18,7 @@
  *
  * Users of typed filters never see the path: they pass `minFanIn: 3` and the
  * descriptor below translates to the right Qdrant key per-level.
- * Documented in `tea-rags://schema/filters`. bd tea-rags-mcp-tr5k + k6xu.
+ * Documented in `tea-rags://guide/filters`. bd tea-rags-mcp-tr5k + k6xu.
  */
 
 import { codegraphSymbolsPayloadKey } from "../../../../contracts/codegraph-payload.js";

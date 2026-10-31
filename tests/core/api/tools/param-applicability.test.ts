@@ -19,7 +19,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { buildToolSurface, type ToolSurface } from "../../../../scripts/measure-tools-list.js";
 import { TYPED_FILTER_PARAM_NAMES, WORKING_TREE_PATH_HINT } from "../../../../src/core/api/tools/schemas.js";
 
-/** Longest inline param hint; reference prose belongs to tea-rags://schema/overview. */
+/** Longest inline param hint; reference prose belongs to tea-rags://guide/overview. */
 const MAX_PARAM_HINT_WORDS = 20;
 
 function paramNames(tool: Tool): string[] {

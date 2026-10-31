@@ -6,13 +6,13 @@
  * and Reranker.getPresetNames(), which aggregate data from registered trajectories.
  *
  * Descriptions are intentionally omitted from the generated schemas — detailed
- * documentation lives in MCP resources (tea-rags://schema/*).
+ * documentation lives in MCP resources (tea-rags://guide/*).
  */
 
 import { z } from "zod";
 
 import { PROJECT_NAME_RE } from "../../../contracts/types/registry.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
+import type { RerankerPort } from "../../../domains/explore/index.js";
 import { ConfigValueInvalidError } from "../../../primitives/errors/index.js";
 import type { RerankSchema, SchemaBuilderPort, ScoringWeightsSchema } from "../../public/schema-builder-port.js";
 
@@ -121,11 +121,11 @@ export class SchemaBuilder implements SchemaBuilderPort {
     const presetsSchema = z.object({ presets: z.string() });
 
     // Inline hint only; the default-resolution rules (auto-skip, notice) live
-    // in tea-rags://schema/overview (bd tea-rags-mcp-ewg2s).
+    // in tea-rags://guide/overview (bd tea-rags-mcp-ewg2s).
     const names = this.reranker.filterPresetNames();
     let description =
       'Raw Qdrant filter (must/should/must_not) or { presets: "a,b" }. ' +
-      "Omitted → preset default filter; {} clears. tea-rags://schema/overview.";
+      "Omitted → preset default filter; {} clears. tea-rags://guide/overview.";
     if (names.length > 0) {
       description += ` Presets: ${names.join(", ")}.`;
     }

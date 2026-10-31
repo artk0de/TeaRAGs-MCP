@@ -13,7 +13,7 @@
  * Param descriptions are INLINE HINTS (≤ 20 words): the one semantic an agent
  * would otherwise get wrong. Reference prose — per-filter level defaults, the
  * metaOnly contract, filter-default resolution — lives in
- * tea-rags://schema/overview (`buildOverview`), which every search tool links.
+ * tea-rags://guide/overview (`buildOverview`), which every search tool links.
  * `tests/mcp/tools/param-applicability.test.ts` enforces the budget over the
  * real tools/list (bd tea-rags-mcp-ewg2s).
  */
@@ -290,7 +290,7 @@ function searchCommonFields(filterSchema: z.ZodTypeAny) {
 /**
  * Shared level field for all structured search tools. Per-filter level
  * defaults (which filters are level-aware, which default where) are reference
- * prose in tea-rags://schema/overview (`buildOverview`).
+ * prose in tea-rags://guide/overview (`buildOverview`).
  */
 function levelField() {
   return {
@@ -306,7 +306,7 @@ function levelField() {
 /**
  * metaOnly hint. The full response contract (default locator payload, raw signals
  * via fields, labels only in rankingOverlay) is stated once in
- * tea-rags://schema/overview (`META_ONLY_CONTRACT` in the resources registry).
+ * tea-rags://guide/overview (`META_ONLY_CONTRACT` in the resources registry).
  */
 const META_ONLY_HINT = "Drop content; payload = locator (path, symbolId, lines, signature); signals via fields.";
 
@@ -332,7 +332,7 @@ function fieldsField(omittedHint: string = SEARCH_FIELDS_OMITTED_HINT) {
       .describe(
         `Payload dot-paths to return (relativePath always kept); unmatched → fieldsWarning. ${
           omittedHint
-        }Paths: tea-rags://schema/signals.`,
+        }Paths: tea-rags://guide/signals.`,
       ),
     ...includeImportsField(),
   };

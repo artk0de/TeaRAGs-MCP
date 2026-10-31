@@ -369,7 +369,7 @@ describe("contributor typed filter", () => {
   });
 });
 
-// The per-filter level defaults moved to tea-rags://schema/overview
+// The per-filter level defaults moved to tea-rags://guide/overview
 // (bd tea-rags-mcp-ewg2s) — pinned in tests/mcp/resources/resources.test.ts.
 // The inline hint keeps the one fact a caller must not miss: level also
 // scopes the level-aware filters.

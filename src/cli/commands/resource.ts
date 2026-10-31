@@ -130,7 +130,7 @@ export const resourceCommand: CommandModule<object, ResourceArgs> = {
       .option("project", { type: "string", describe: "Project alias for {alias}; wins over --path" })
       .option("json", { type: "boolean", default: false, describe: "Print raw ReadResourceResult JSON" })
       .option("list", { type: "boolean", default: false, describe: "List resource URIs + template URIs" })
-      .example("$0 resource tea-rags://schema/filters", "")
+      .example("$0 resource tea-rags://guide/filters", "")
       .example("$0 resource 'tea-rags://project/{alias}/digest' --path .", "")
       .epilog("Exit codes: 0 success; 1 unknown resource, unresolvable alias or server failure."),
   handler: async (argv) => {
