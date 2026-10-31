@@ -510,6 +510,10 @@ noted "$SVC_NUDGE"; note $? "an outline without line ranges → the generic nudg
 FAKE_OUTLINE='not json'
 pre o6 Read "$(read_in "$REPO/svc.rb" 35 10)"
 noted "$SVC_NUDGE"; note $? "an unparsable outline answer → the generic nudge (fail open)"
+# d0z7b.2: find_symbol drops payload.request when it equals relativePath — the row is keyed by its path.
+FAKE_OUTLINE=$(jq -cn --arg s "$SVC_OUTLINE" '{results: [{id: "p1", payload: {relativePath: "svc.rb", content: $s}}]}')
+pre onoreq Read "$(read_in "$REPO/svc.rb" 35 10)"
+noted 'find_symbol(symbols:["Svc#beta"])'; note $? "an outline row without payload.request (request = path, dropped) still records the outline"
 FAKE_OUTLINE=$(outline_answer "$SVC_OUTLINE" "$TWO_OUTLINE")
 grep_out() { jq -cn --arg c "$1" '{mode: "content", numFiles: 1, filenames: [], content: $c, numLines: 2}'; }
 post_context() { [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.hookEventName // empty')" = PostToolUse ] || return 1

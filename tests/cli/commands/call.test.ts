@@ -339,7 +339,11 @@ describe("runCall — results and exit codes", () => {
 
     expect(code).toBe(0);
     expect(h.stdout).toHaveLength(1);
-    expect((JSON.parse(h.stdout[0]) as { results: unknown }).results).toEqual(records);
+    // PIN-UPDATED d0z7b.2: find_symbol rows with a symbolId carry no point id, and no score at 1.
+    expect((JSON.parse(h.stdout[0]) as { results: unknown }).results).toEqual([
+      { payload: records[0].payload },
+      { score: 0.5, payload: records[1].payload },
+    ]);
   });
 
   it("--json prints the full CallToolResult as one JSON document and nothing else", async () => {
