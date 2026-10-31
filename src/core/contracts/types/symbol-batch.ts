@@ -8,6 +8,19 @@ import type { WorkingTreeState } from "./working-tree.js";
 export const FULL_TEXT_MAX_LINES = 150;
 
 /**
+ * A find_symbol file over {@link FULL_TEXT_MAX_LINES} still answers its full
+ * text while it stays within this many chars (bd tea-rags-mcp-d0z7b.3) — the
+ * line rule alone outlined 151–200-line files no bigger than a 150-line one.
+ * Measured on a Rails app (app+lib) / tea-rags src: ≤150-line files p95 4.7k /
+ * 6.0k chars, the 101–150 band p95 6.3k / 7.1k; the 151–200 band p50 6.2k /
+ * 7.4k, p90 8.2k / 9.0k. At 9k the union admits 46% / 28% of the >150-line
+ * files (7.1% / 9.3% of all); offline replay of a real thread: −3.0k net chars,
+ * −1 request. A union, not a char-only rule: a pure 9k cap would outline files
+ * that are full text today.
+ */
+export const FULL_TEXT_MAX_CHARS = 9_000;
+
+/**
  * A find_symbol batch is not `cat` (bd tea-rags-mcp-yz10n): its path entries
  * answer full text, in request order, while their summed text stays within
  * this many chars; an entry past it answers its outline. Measured on files of

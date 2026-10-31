@@ -13,6 +13,7 @@ import type {
 import {
   BATCH_FULL_TEXT_CHAR_BUDGET,
   CONTAINER_HEADER_CHAR_BUDGET,
+  FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
   type App,
   type McpAutoUpdateTrigger,
@@ -211,7 +212,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "symbol: method → full body; class/module → member OUTLINE (method ids, no bodies) + header chunks " +
       `(consts, DSL; ≤${CONTAINER_HEADER_CHAR_BUDGET} chars/class inlined, else 'not inlined'); ` +
       "doc:<hash> → section; table:<name> → Rails table state folded from migrations; migration:<id> → that operation. " +
-      `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines → full text, else outline; doc → TOC; directory → files + subdirs. ` +
+      `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines or ≤${FULL_TEXT_MAX_CHARS} chars → full text, else outline; doc → TOC; directory → files + subdirs. ` +
       `symbols: 1-20 ids / paths in one call (full text until ${BATCH_FULL_TEXT_CHAR_BUDGET} chars, then outline); misses → missing. ` +
       "Outline lines are addresses: drill via find_symbol(symbol: '<id>'), never Read the file. " +
       "Member lines end in visibility (if known), then line range, e.g. 'Class#helper (private) L40-58'; " +

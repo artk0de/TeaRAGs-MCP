@@ -273,7 +273,7 @@ export FAKE_OUT='{"indexed":true,"project":"p","collectionName":"c","relativePat
 NUDGE='a.ts is indexed source — find_symbol(relativePath: "a.ts") returns it'
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'
 pre s40 Read "$(read_in "$A")"
-noted "$NUDGE" "full text ≤150 lines, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
+noted "$NUDGE" "full text ≤150 lines or ≤9000 chars, else an outline to drill" "several files → ONE find_symbol(symbols:[…])"; note $? "Read of an indexed source file → one nudge line, never a decision"
 pre s40 Read "$(read_in "$A" 3 4)"
 silent; note $? "the nudge fires once per file per turn"
 run '{"hook_event_name":"UserPromptSubmit","session_id":"s40","prompt":"p"}'

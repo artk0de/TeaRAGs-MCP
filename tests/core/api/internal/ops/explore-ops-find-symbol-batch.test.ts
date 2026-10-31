@@ -223,8 +223,13 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
       const linesOf = (n: number): string =>
         `${Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join("\n")}\n`;
 
-      it("answers a file over 150 lines with its outline, as relativePath mode does, and says why", async () => {
-        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": linesOf(151) } });
+      /** `n` lines padded to ~65 chars each, so 151 of them pass 9000 chars. */
+      const wideLinesOf = (n: number): string =>
+        `${Array.from({ length: n }, (_, i) => `export const v${i} = ${i}; // ${"x".repeat(40)}`).join("\n")}\n`;
+
+      // PIN-UPDATED d0z7b.3: outlined only over 150 lines AND 9000 chars.
+      it("answers a file over 150 lines and 9000 chars with its outline, as relativePath mode does, and says why", async () => {
+        const view = () => fakeWorkingTreeView({ files: { "src/lib/h.ts": wideLinesOf(151) } });
 
         const batch = await facade(view()).findSymbol({ collection: "code_x", symbols: ["src/lib/h.ts"] });
         const single = await facade(view()).findSymbol({ collection: "code_x", relativePath: "src/lib/h.ts" });
@@ -235,8 +240,28 @@ describe("ExploreFacade.findSymbol batch and directory modes", () => {
         expect(batch.results[0].payload?.content).not.toContain("export const v0");
         expect(single.results[0].payload?.kind).toBeUndefined();
         expect(batch.batchNotice).toMatch(/outline/);
-        expect(batch.batchNotice).toContain("over 150 lines");
+        expect(batch.batchNotice).toContain("over 150 lines and 9000 chars");
         expect(batch.batchNotice).toContain("src/lib/h.ts");
+      });
+
+      // bd tea-rags-mcp-d0z7b.3: a >150-line file within 9000 chars is full text, still under the batch budget.
+      it("answers 193-line files of ~7.5k chars with full text until the batch budget, then outlines", async () => {
+        const PATHS = ["src/a/one.ts", "src/a/two.ts", "src/a/three.ts", "src/a/four.ts"];
+        const rows = PATHS.map((relativePath, i) =>
+          codeRow(`p${i}`, { symbolId: `fn${i}`, name: `fn${i}`, relativePath, content: `fn${i} body` }),
+        );
+        const mid = `${Array.from({ length: 193 }, () => "x".repeat(38)).join("\n")}\n`;
+        const files = Object.fromEntries(PATHS.map((path) => [path, mid]));
+
+        const response = await facade(fakeWorkingTreeView({ files }), rows).findSymbol({
+          collection: "code_x",
+          symbols: PATHS,
+        });
+
+        expect(response.results.map((r) => r.payload?.kind)).toEqual(["file", "file", "file", undefined]);
+        expect(response.batchNotice).toContain(`${BATCH_FULL_TEXT_CHAR_BUDGET}-char`);
+        expect(response.batchNotice).toContain("src/a/four.ts");
+        expect(response.batchNotice).not.toContain("over 150 lines");
       });
 
       // The benchmark agent got outlines for 133- and 112-line files in a batch

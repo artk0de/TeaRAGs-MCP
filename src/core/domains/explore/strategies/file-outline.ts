@@ -20,7 +20,7 @@ import type { SymbolVisibilityResolver } from "../../../contracts/types/codegrap
 import type { DirectoryOutline } from "../../../contracts/types/directory-outline.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RerankMode } from "../../../contracts/types/reranker.js";
-import { FULL_TEXT_MAX_LINES } from "../../../contracts/types/symbol-batch.js";
+import { FULL_TEXT_MAX_CHARS, FULL_TEXT_MAX_LINES } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DirectoryChunkGrouper, DocChunkGrouper, type ScrollChunk } from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
@@ -181,7 +181,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
   /**
    * A small file answers with its own text (bd tea-rags-mcp-03yel): at most
-   * {@link FULL_TEXT_MAX_LINES} lines, or an outline at least as long as the
+   * {@link FULL_TEXT_MAX_LINES} lines or {@link FULL_TEXT_MAX_CHARS} chars, or an outline at least as long as the
    * file, costs the caller a second turn reading the file anyway. The text is
    * the tree's, read whole — chunks overlap and member chunks carry container
    * headers, so no concatenation of them is the file. A file the view serves
@@ -196,7 +196,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     if (text === undefined) return outline;
     const lineCount = countLines(text);
     const outlineText = typeof outline.payload?.content === "string" ? outline.payload.content : "";
-    if (lineCount > FULL_TEXT_MAX_LINES && outlineText.length < text.length) {
+    if (lineCount > FULL_TEXT_MAX_LINES && text.length > FULL_TEXT_MAX_CHARS && outlineText.length < text.length) {
       this.treeTextWithheld = true;
       return outline;
     }

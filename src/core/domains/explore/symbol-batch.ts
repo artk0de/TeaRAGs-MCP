@@ -14,6 +14,7 @@
 import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
 import {
   BATCH_FULL_TEXT_CHAR_BUDGET,
+  FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
   REFERENCED_DEFINITIONS_CHAR_BUDGET,
   type SymbolBatchMiss,
@@ -43,7 +44,9 @@ const UNKNOWN_PATH_HINT = "retry a suggested path, or find_symbol(relativePath: 
 function batchPathNotice(overLines: readonly string[], overBudget: readonly string[], directory: boolean): string {
   const parts: string[] = [];
   if (overLines.length > 0) {
-    parts.push(`over ${FULL_TEXT_MAX_LINES} lines, outlined: ${overLines.join(", ")} — read bodies by the member ids`);
+    parts.push(
+      `over ${FULL_TEXT_MAX_LINES} lines and ${FULL_TEXT_MAX_CHARS} chars, outlined: ${overLines.join(", ")} — read bodies by the member ids`,
+    );
   }
   if (overBudget.length > 0) {
     parts.push(

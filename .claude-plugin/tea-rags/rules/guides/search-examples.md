@@ -37,7 +37,7 @@ examples per tool.
 - Batch drill → symbols=["Reranker#rerank","Reranker.create"] (N bodies, one call)
 
 **By file path (relativePath param, mutually exclusive with symbol):**
-- File outline → relativePath="src/reranker.ts" (code structure with hierarchy; small file ≤150 lines → full text, kind:"file")
+- File outline → relativePath="src/reranker.ts" (code structure with hierarchy; small file ≤150 lines or ≤9000 chars → full text, kind:"file")
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
 - Directory → relativePath="src/explore/" (files + top-level symbols, subdirs w/ counts)
 - From search result → find_symbol(symbol: parentSymbolId) → class outline or doc TOC (doc parent = doc path)

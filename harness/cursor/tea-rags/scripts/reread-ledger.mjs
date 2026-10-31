@@ -1376,7 +1376,7 @@ function indexedSourceHit(ledger, paths, cwd, lookup) {
  * verdict is looked up once per session (indexedSourceHit).
  */
 function indexedSourceNudge(file) {
-  return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
+  return `tea-rags: ${file} is indexed source — find_symbol(relativePath: "${file}") returns it (full text ≤150 lines or ≤9000 chars, else an outline to drill); several files → ONE find_symbol(symbols:[…])`;
 }
 
 /**
