@@ -16,7 +16,7 @@ import {
   type HookChunkingConfig,
 } from "../../../../contracts/types/chunker.js";
 import { classifyMethod, type MethodClassification } from "../../../../primitives/ids/index.js";
-import { foldSubFloorGroups } from "../../kernel/index.js";
+import { foldSubFloorGroups, type SubFloorGroupFold } from "../../kernel/index.js";
 import { RUBY_DSL, type DslCategory, type RubyDslEntry } from "../dsl/index.js";
 import { STRUCTURED_MACROS } from "../walker/structured/index.js";
 import { collectMethodCommentRows } from "./comment-capture.js";
@@ -547,7 +547,8 @@ export function extractBodyChunks(
   // the budget is split at row boundaries here, never line-cut by the post-pass.
   // Each run of container rows between two extracted children is grouped on
   // its own, so no header chunk spans a method (bd tea-rags-mcp-9f0yn.3).
-  const plainGroups = splitAtChildBoundaries(bodyLines).flatMap((run) => bodyGrouper.groupLines(run, budget));
+  const plainRuns = splitAtChildBoundaries(bodyLines).map((run) => bodyGrouper.groupLines(run, budget));
+  const plainGroups = plainRuns.flat();
   const commentGroups = bodyGrouper.groupLines(containerLeadingCommentLines(containerNode, code), budget);
   // The floor measures the group's rows joined and trimmed, not the chunk text:
   // the first row's indentation, kept for display, must not lift a lone
@@ -565,10 +566,18 @@ export function extractBodyChunks(
     merge: mergeBodyGroups,
     startOf: (group: BodyGroup) => group.lines[0].sourceLine,
   };
-  const bodyGroups = withLeadingComment(plainGroups, commentGroups, fits);
+  // The leading comment sits above the class header, so it joins the first run
+  // only when no extracted child precedes that run (bd tea-rags-mcp-9f0yn.3).
+  const [firstRun = [], ...laterRuns] = plainRuns;
+  const firstRunLeads =
+    firstRun.length > 0 && childNodes.every((child) => child.startPosition.row + 1 > firstRun[0].lines[0].sourceLine);
+  const bodyRuns = firstRunLeads
+    ? [withLeadingComment(firstRun, commentGroups, fits), ...laterRuns]
+    : [commentGroups, ...plainRuns];
+  const bodyGroups = bodyRuns.flat();
   const groups =
     commentGroups.length === 0 || foldSubFloorGroups(plainGroups, subFloorFold).length > 0
-      ? foldSubFloorGroups(bodyGroups, subFloorFold)
+      ? foldRunLocalGroups(bodyRuns, subFloorFold)
       : commentOnlyHeaderBlock(foldSubFloorGroups(bodyGroups, subFloorFold), bodyGroups, {
           headerLine: containerNode.startPosition.row + 1,
           endLine: containerNode.endPosition.row + 1,
@@ -656,6 +665,27 @@ function withLeadingComment(
 }
 
 /** Two body line groups as one, rows in source order, under the host's type. */
+/**
+ * Folds sub-floor groups without leaving the run they were grouped in, so a
+ * fold never joins rows across an extracted child (bd tea-rags-mcp-9f0yn.3).
+ * A visibility-only group first joins the next group of its run — the keyword
+ * governs what follows it; one left last in its run folds into the previous
+ * group of that run, and one alone in its run keeps its own chunk. A container
+ * whose every group is sub-floor still yields none (bd tea-rags-mcp-30qdc).
+ */
+function foldRunLocalGroups(runs: BodyGroup[][], fold: SubFloorGroupFold<BodyGroup>): BodyGroup[] {
+  if (runs.flat().every(fold.isSubFloor)) return [];
+  return runs.flatMap((run) => {
+    const led = [...run];
+    for (let i = led.length - 2; i >= 0; i--) {
+      if (!isVisibilityOnly(led[i])) continue;
+      const joined = fold.merge(led[i + 1], led[i]);
+      if (fold.fits(joined)) led.splice(i, 2, joined);
+    }
+    return led.every(fold.isSubFloor) ? led : foldSubFloorGroups(led, fold);
+  });
+}
+
 function mergeBodyGroups(host: BodyGroup, guest: BodyGroup): BodyGroup {
   const lines = [...host.lines, ...guest.lines].sort((a, b) => a.sourceLine - b.sourceLine);
   return { type: host.type, lines, lineRanges: computeLineRanges(lines) };

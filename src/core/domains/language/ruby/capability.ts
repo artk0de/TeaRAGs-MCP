@@ -186,8 +186,9 @@ export const capability: LanguageCapability = {
   // multi-line statement's continuation rows stay in its own body chunk.
   // Same chunking 3 (one bump per release), bd tea-rags-mcp-9f0yn.3: container rows are
   // grouped per run between two extracted children, so no header chunk spans a method,
-  // and a visibility-only group (`private`, `module_function`) folds into a neighbour
-  // whatever the class header length.
+  // and every fold stays inside its run: a visibility-only group (`private`,
+  // `module_function`) joins the next group of its run whatever the class header
+  // length, the previous one when last, and keeps its own chunk when alone.
   versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
