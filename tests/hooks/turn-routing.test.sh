@@ -37,6 +37,25 @@ LINES=$(printf '%s\n' "$BLOCK" | wc -l | tr -d ' ')
 for word in find_symbol semantic_search get_callees get_callers "symbols:"; do
   printf '%s' "$BLOCK" | grep -qF -- "$word"; note $? "block names $word"
 done
+# Claude Code gets its own compact block (bd tea-rags-mcp-d0z7b.1); Codex and Cursor keep the one above.
+COMPACT=$(awk '/^## The compact block \(Claude\)/ { s = 1; next } s && /^```/ { if (i) exit; i = 1; next } i { print }' "$SRC" 2>/dev/null)
+[ -n "$COMPACT" ]; note $? "compact Claude block exists in rules/references/turn-routing.md"
+# Characters, locale-free: UTF-8 continuation bytes (0x80–0xBF) dropped before counting.
+CCHARS=$(printf '%s' "$COMPACT" | LC_ALL=C tr -d '\200-\277' | wc -c | tr -d ' ')
+[ "$CCHARS" -le 160 ]; note $? "compact block ≤ 160 characters (is $CCHARS)"
+CLINES=$(printf '%s\n' "$COMPACT" | wc -l | tr -d ' ')
+[ "$CLINES" = 4 ]; note $? "compact block is a heading + 3 lines (is $CLINES lines)"
+for word in find_symbol semantic_search get_callees get_callers "symbols:" Grep/Read; do
+  printf '%s' "$COMPACT" | grep -qF -- "$word"; note $? "compact block names $word"
+done
+for HOOK in "$(hook_of claude)" "$ROOT/.claude-plugin/tea-rags/scripts/turn-routing.sh"; do
+  run claude '{"hook_event_name":"UserPromptSubmit","session_id":"s1"}' "$HOOK"
+  [ "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)" = "$COMPACT" ]
+  note $? "claude ($HOOK): UserPromptSubmit injects exactly the compact block"
+done
+run codex '{"hook_event_name":"UserPromptSubmit","session_id":"s1"}'
+[ "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext // empty')" = "$(cat "$ROOT/harness/codex/tea-rags/scripts/turn-routing.txt")" ]
+note $? "codex: injects its generated turn-routing.txt unchanged"
 
 for H in claude codex; do
   run "$H" '{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"how does X work"}'
@@ -53,14 +72,16 @@ note $? "codex: turn-routing.txt is generated in the Codex dialect (shell rg -l)
 # bd tea-rags-mcp-onli7: the Claude Code package names its own search tool, not the role.
 run claude '{"hook_event_name":"UserPromptSubmit","session_id":"s1"}' "$ROOT/.claude-plugin/tea-rags/scripts/turn-routing.sh"
 CTX=$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)
-printf '%s' "$CTX" | grep -qF 'Grep tool' && ! printf '%s' "$CTX" | grep -qiE 'default code (search|read) tool|ripgrep|rg -'
-note $? "claude package: the routing lines name the Grep tool"
+printf '%s' "$CTX" | grep -qF 'Grep/Read' && ! printf '%s' "$CTX" | grep -qiE 'default code (search|read) tool|ripgrep|rg -'
+note $? "claude package: the routing lines name the Grep and Read tools"
 [ -s "$ROOT/harness/cursor/tea-rags/scripts/turn-routing.txt" ]; note $? "cursor: turn-routing.txt is generated"
 
 run cursor '{"hook_event_name":"beforeSubmitPrompt","conversation_id":"c1","prompt":"q","attachments":[]}'
 [ "$CODE" = 0 ] && [ "$(printf '%s' "$OUT" | jq -r '.continue')" = true ]; note $? "cursor: beforeSubmitPrompt answers continue:true"
 run cursor '{"hook_event_name":"postToolUse","conversation_id":"c1","tool_name":"Shell","tool_input":{},"tool_output":"{}"}'
 printf '%s' "$OUT" | jq -r '.additional_context // empty' | grep -qF find_symbol; note $? "cursor: first postToolUse of the turn injects the lines"
+[ "$(printf '%s' "$OUT" | jq -r '.additional_context // empty')" = "$(cat "$ROOT/harness/cursor/tea-rags/scripts/turn-routing.txt")" ]
+note $? "cursor: injects its generated turn-routing.txt unchanged"
 run cursor '{"hook_event_name":"postToolUse","conversation_id":"c1","tool_name":"Shell","tool_input":{},"tool_output":"{}"}'
 [ "$CODE" = 0 ] && [ -z "$(printf '%s' "$OUT" | jq -r '.additional_context // empty')" ]; note $? "cursor: later postToolUse of the turn injects nothing"
 run cursor '{"hook_event_name":"postToolUse","conversation_id":"c2","tool_name":"Shell"}'
