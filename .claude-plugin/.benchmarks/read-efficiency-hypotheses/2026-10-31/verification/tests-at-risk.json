@@ -1,0 +1,256 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "↳ Body shown in full — answer from it; do not reopen the file."
+    }
+  ],
+  "structuredContent": {
+    "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+    "results": {
+      "columns": [
+        "payload.relativePath",
+        "payload.symbolId",
+        "payload.startLine",
+        "payload.endLine",
+        "payload.content",
+        "rankingOverlay.preset",
+        "rankingOverlay.file.ageDays.value",
+        "rankingOverlay.file.ageDays.label",
+        "rankingOverlay.file.commitCount.value",
+        "rankingOverlay.file.commitCount.label",
+        "rankingOverlay.chunk.ageDays.value",
+        "rankingOverlay.chunk.ageDays.label",
+        "rankingOverlay.chunk.commitCount.value",
+        "rankingOverlay.chunk.commitCount.label"
+      ],
+      "rows": [
+        [
+          "tests/scripts/codegraph-chain-tally.test.ts",
+          "codegraph-chain-tally project root.describe \"codegraph-chain-tally project root\".it \"resolves a module-path import through the corpus's go.mod, as production does\"",
+          220,
+          226,
+          "describe(\"codegraph-chain-tally project root\", () => {\nbeforeEach(async () => {\n    corpus = mkdtempSync(join(tmpdir(), \"chain-tally-gomod-\"));\n    write(\"go.mod\", \"module github.com/gin-gonic/gin\\n\");\n    write(\n      \"internal/bytesconv/bytesconv.go\",\n      \"package bytesconv\\n\\nfunc StringToBytes(s string) []byte { return nil }\\n\",\n    );\n    write(\n      \"auth.go\",\n      [\n        \"package gin\",\n        \"\",\n        'import \"github.com/gin-gonic/gin/internal/bytesconv\"',\n        \"\",\n        \"func authorizationHeader(user string) []byte {\",\n        \"\\treturn bytesconv.StringToBytes(user)\",\n        \"}\",\n        \"\",\n      ].join(\"\\n\"),\n    );\n    result = await run(corpus, \"go\", null, Number.MAX_SAFE_INTEGER, true, true, { timeOnly: true });\n  }, 30_000);\n  afterEach(() => {\n    rmSync(corpus, { recursive: true, force: true });\n  });\n  let corpus: string;\n  let result: RunResult;\n  function write(relPath: string, content: string): void {\n    const absolute = join(corpus, relPath);\n    mkdirSync(dirname(absolute), { recursive: true });\n    writeFileSync(absolute, content, \"utf8\");\n  }\nit(\"resolves a module-path import through the corpus's go.mod, as production does\", () => {\n    const row = result.rows.find((r) => r.receiver === \"bytesconv\" && r.member === \"StringToBytes\");\n    expect(row?.runnerAnswer).toEqual({\n      targetRelPath: \"internal/bytesconv/bytesconv.go\",\n      targetSymbolId: \"StringToBytes\",\n    });\n  });",
+          "custom",
+          42,
+          "old",
+          5,
+          "high",
+          42,
+          "typical",
+          1,
+          "low"
+        ],
+        [
+          "tests/mcp/resources/resources.test.ts",
+          "Resource builders.describe \"buildFiltersDoc\".it \"documents codegraph typed filter params (tea-rags-mcp-tr5k)\"",
+          441,
+          457,
+          "describe(\"Resource builders\", () => {\n// bd tea-rags-mcp-yd6zp — schema v13 renamed contributorCount →\n  // recentContributorCount and authors → recentAuthors, but this doc kept naming\n  // the pre-v13 keys, so a raw filter built from the resource matched nothing,\n  // silently. Every git payload key the doc names must be a declared payload\n  // signal descriptor key or an explicit written-but-undeclared allowlist entry.\n  // bd tea-rags-mcp-9mwny — a param no search-tool schema lists is stripped by\n  // Zod before the handler runs, so a search built from the resource comes back\n  // silently unfiltered. recentAuthor had that bug; the indexing guide then\n  // still advertised blameOwner. Every param a resource advertises must be a\n  // real key of the schema of the tool it is advertised for.\n// bd tea-rags-mcp-9mwny — author became level-aware (default file).\ndescribe \"buildFiltersDoc\"\n    it(\"documents codegraph typed filter params (tea-rags-mcp-tr5k)\", () => {\n      const md = buildFiltersDoc(gitPayloadSignalDescriptors);\n      expect(md).toContain(\"Codegraph metadata\");\n      // File-level codegraph params (default level)\n      expect(md).toContain(\"minFanIn\");\n      expect(md).toContain(\"minFanOut\");\n      expect(md).toContain(\"minInstability\");\n      expect(md).toContain(\"minTransitiveImpact\");\n      expect(md).toContain(\"minConnectionCount\");\n      expect(md).toContain(\"isHub\");\n      expect(md).toContain(\"isLeaf\");\n      // Chunk-only codegraph params\n      expect(md).toContain(\"minPageRank\");\n      // The doc must explain that raw Qdrant filter keys won't resolve\n      // (the bug users hit before the typed-filter wiring).\n      expect(md).toContain(\"codegraph.symbols\");\n    });",
+          "custom",
+          4,
+          "recent",
+          27,
+          "extreme",
+          41,
+          "typical",
+          2,
+          "high"
+        ],
+        [
+          "tests/benchmarks/lib/output.test.ts",
+          "printUsage.describe \"printUsage\".it \"emits every measured knob as a `claude mcp add` -e flag\"",
+          216,
+          236,
+          "describe(\"printUsage\", () => {\n/**\n   * A pasteable shell command: every continuation line ends with `\\` and the\n   * last flag does not. The marker belongs to the flag's POSITION, so it must\n   * hold for any subset of tuned knobs.\n   */\n  function expectPasteableCommand(optimal: typeof OPTIMAL | Record<string, unknown>, expectedFlags: number): void {\n    const lines = captureLog(() => {\n      printUsage(optimal);\n    }).filter((line) => line.trim() !== \"\");\n    const commandLines = lines.slice(lines.findIndex((line) => line.includes(\"claude mcp add\")));\n    const flags = commandLines.filter((line) => line.trim().startsWith(\"-e \"));\n    expect(flags).toHaveLength(expectedFlags);\n    for (const line of commandLines.slice(0, -1)) {\n      expect(line.trimEnd().endsWith(\"\\\\\")).toBe(true);\n    }\n    expect(commandLines.at(-1)?.trimEnd().endsWith(\"\\\\\")).toBe(false);\n    expect(commandLines.at(-1)).toBe(flags.at(-1));\n  }\nit(\"emits every measured knob as a `claude mcp add` -e flag\", () => {\n    const printed = captureLog(() => {\n      printUsage(ALL_KNOBS_TUNED);\n    }).join(\"\\n\");\n\n    expect(printed).toContain(\"claude mcp add tea-rags\");\n    expect(printed).toContain(\"-e EMBEDDING_BATCH_SIZE=512\");\n    expect(printed).toContain(\"-e EMBEDDING_CONCURRENCY=4\");\n    expect(printed).toContain(\"-e QDRANT_UPSERT_BATCH_SIZE=256\");\n    expect(printed).toContain(\"-e QDRANT_BATCH_ORDERING=weak\");\n    expect(printed).toContain(\"-e QDRANT_FLUSH_INTERVAL_MS=100\");\n    expect(printed).toContain(\"-e BATCH_FORMATION_TIMEOUT_MS=50\");\n    expect(printed).toContain(\"-e QDRANT_DELETE_BATCH_SIZE=1000\");\n    expect(printed).toContain(\"-e QDRANT_DELETE_CONCURRENCY=4\");\n    expect(printed).toContain(\"-e INGEST_TUNE_CHUNKER_POOL_SIZE=3\");\n    expect(printed).toContain(\"-e INGEST_TUNE_FILE_CONCURRENCY=8\");\n    expect(printed).toContain(\"-e INGEST_TUNE_IO_CONCURRENCY=16\");\n    expect(printed).toContain(\"-e QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=2000\");\n    expect(printed).toContain(\"-e EMBEDDING_TUNE_MIN_BATCH_SIZE=32\");\n    expect(printed).toContain(\"-e TRAJECTORY_GIT_CHUNK_CONCURRENCY=5\");\n  });",
+          "custom",
+          37,
+          "old",
+          3,
+          "typical",
+          83,
+          "old",
+          1,
+          "low"
+        ],
+        [
+          "tests/scripts/gen-harness-claude.test.ts",
+          "renderClaudePackage(%s).describe.each \"renderClaudePackage(%s)\".it \"copies the source verbatim (SKILL.md minus codex-description, Markdown with the code tools named), executable bits included\"",
+          38,
+          66,
+          "describe.each([\"tea-rags\", \"dinopowers\", \"tea-rags-setup\"])(\"renderClaudePackage(%s)\", (name) => {\nit(\"copies the source verbatim (SKILL.md minus codex-description, Markdown with the code tools named), executable bits included\", () => {\n    const rendered = renderClaudePackage(ROOT, name);\n    const src = join(ROOT, PLUGINS_DIR, name);\n\n    expect([...rendered.keys()].sort()).toEqual(\n      walk(src)\n        .map((file) => relative(src, file))\n        .sort(),\n    );\n    for (const [path, file] of rendered) {\n      const source = readFileSync(join(src, path));\n      const text = source.toString(\"utf8\");\n      const expected = path.endsWith(\"SKILL.md\")\n        ? Buffer.from(nameCodeTools(stripFrontmatterKey(text, \"codex-description\"), CLAUDE_CODE_TOOLS))\n        : path.endsWith(\".md\")\n          ? Buffer.from(nameCodeTools(text, CLAUDE_CODE_TOOLS))\n          : source;\n      expect(file.content.equals(expected), path).toBe(true);\n      if (path.endsWith(\"SKILL.md\")) expect(file.content.toString(\"utf8\"), path).not.toMatch(/^codex-description:/m);\n      expect(file.mode & 0o111, path).toBe(statSync(join(src, path)).mode & 0o111);\n    }\n  });\nit(\"names Claude Code's Grep tool / Read tool, never a code tool by role nor ripgrep\", () => {\n    for (const [path, file] of renderClaudePackage(ROOT, name)) {\n      if (!path.endsWith(\".md\")) continue;\n      expect(file.content.toString(\"utf8\"), path).not.toMatch(/default\\s+code\\s+(?:search|read)\\s+tool/i);\n    }\n  });",
+          "custom",
+          2,
+          "recent",
+          4,
+          "high",
+          3,
+          "recent",
+          3,
+          "extreme"
+        ],
+        [
+          "tests/core/domains/language/rust/resolver/rustc-call-sites.test.ts",
+          "macroInvocation rows through the driver slot (research/rustc-driver/RESIDUAL.md R3).describe \"macroInvocation rows through the driver slot (research/rustc-driver/RESIDUAL.md R3)\".it \"resolves an in-project macro_rules invocation to the macro's table symbol\"",
+          414,
+          439,
+          "describe(\"macroInvocation rows through the driver slot (research/rustc-driver/RESIDUAL.md R3)\", () => {\n/** `write!` as the decoder serves a `macroInvocation` row of `std::write`. */\n  const STD_WRITE: RustCallSiteDefinition = {\n    symbol: \"rustc core std::write\",\n    package: \"core\",\n    inProject: false,\n    name: \"write\",\n    kind: \"macro\",\n    packageInProject: false,\n  };\n  const writeSite = call('write!(f, \"x\")', null, \"write\", 9, 4);\nit(\"resolves an in-project macro_rules invocation to the macro's table symbol\", () => {\n    const t = table(\n      def(\"src/log.rs\", \"my_log\", \"my_log\", 4, 8, \"macro\"),\n      def(\"src/log.rs\", \"my_log\", \"Logger#my_log\", 12, 14),\n    );\n    const callSites = stubIndex({ \"src/main.rs:9:4\": inProject(\"my_log\", \"src/log.rs\", 4, \"macro\") });\n    expect(strategy.attempt(call('my_log!(\"x\")', null, \"my_log\", 9, 4), ctxWith(t, { callSites }))).toEqual({\n      kind: \"resolved\",\n      target: { targetRelPath: \"src/log.rs\", targetSymbolId: \"my_log\" },\n    });\n  });\nit(\"DROPs `write!(f, …)` as external although the project declares `fn write`\", () => {\n    const t = table(def(\"src/io.rs\", \"write\", \"Sink#write\", 3, 6));\n    const callSites = stubIndex({ \"src/main.rs:9:4\": STD_WRITE });\n    expect(strategy.attempt(writeSite, ctxWith(t, { callSites }))).toEqual({ kind: \"drop\" });\n  });\nit(\"moves a std macro whose name a project macro_rules shares out of the residual\", async () => {\n    const t = table(def(\"src/doc/help.rs\", \"write\", \"write\", 19, 24, \"macro\"));\n    const without = await facade();\n    expect(classifyResolveMiss(writeSite, ctxWith(t), without, t)).toBe(\"missWithInProjectDef\");\n    const resolver = await facade({ callSites: stubIndex({ \"src/main.rs:9:4\": STD_WRITE }) });\n    expect(resolver.resolve(writeSite, ctxWith(t))).toBeNull();\n    expect(classifyResolveMiss(writeSite, ctxWith(t), resolver, t)).toBe(\"externalSkipped\");\n  });",
+          "custom",
+          8,
+          "recent",
+          7,
+          "high",
+          8,
+          "recent",
+          1,
+          "low"
+        ],
+        [
+          "tests/scripts/rust-codegraph-inventory.test.ts",
+          "independent Rust source inventory.describe \"independent Rust source inventory\".it \"preserves multiline UTF16 ranges and inner cfg_attr evidence without assuming activation\"",
+          198,
+          215,
+          "describe(\"independent Rust source inventory\", () => {\nit(\"preserves multiline UTF16 ranges and inner cfg_attr evidence without assuming activation\", () => {\n    const source = [\n      '#![cfg_attr(feature = \"x\", cfg(unix))]',\n      'mod gated { #![cfg(test)] fn f() { let s = \"🦀\"; target(\\n  café()\\n); } }',\n    ].join(\"\\n\");\n    const result = inventory(source);\n    expect(result.parseErrors).toEqual([]);\n    expect(result.sites.map((site) => site.expressionRange)).toEqual([\n      rangeOf(source, \"target(\\n  café()\\n)\"),\n      rangeOf(source, \"café()\"),\n    ]);\n    expect(result.sites[0].cfg).toEqual({\n      status: \"unknown\",\n      attributes: ['#![cfg_attr(feature = \"x\", cfg(unix))]', \"#![cfg(test)]\"],\n    });\n    expect(result.symbols[0].cfg).toEqual(result.sites[0].cfg);\n    expect(result.sites.every((site) => site.provenance === \"source\")).toBe(true);\n  });",
+          "custom",
+          15,
+          "recent",
+          1,
+          "low",
+          15,
+          "recent",
+          1,
+          "low"
+        ],
+        [
+          "tests/cli/commands/projects.test.ts",
+          "CLI 'projects' command group.describe \"info — symlink/realpath mismatch (audit #13)\".it \"text mode omits the realpath line when stored path already equals realpathSync\"",
+          1025,
+          1046,
+          "describe(\"CLI 'projects' command group\", () => {\nbeforeEach(() => {\n    dir = mkdtempSync(join(tmpdir(), \"cli-proj-\"));\n    repo = join(dir, \"repo\");\n    mkdirSync(repo);\n    writeFileSync(join(repo, \".keep\"), \"\");\n    process.env.TEA_RAGS_DATA_DIR = dir;\n    // Layout assertions read plain text: force color off regardless of the\n    // developer's terminal (FORCE_COLOR in the shell would otherwise leak in).\n    vi.stubEnv(\"NO_COLOR\", \"1\");\n  });\n  afterEach(() => {\n    vi.unstubAllEnvs();\n    delete process.env.TEA_RAGS_DATA_DIR;\n    rmSync(dir, { recursive: true, force: true });\n  });\n  let dir: string;\n  let repo: string;\ndescribe \"info — symlink/realpath mismatch (audit #13)\"\n    it(\"text mode omits the realpath line when stored path already equals realpathSync\", async () => {\n      const stdout = vi.spyOn(process.stdout, \"write\").mockImplementation(() => true);\n      try {\n        const reg = new CollectionRegistry(dir);\n        reg.record({\n          collectionName: \"code_direct\",\n          path: realpathSync(repo),\n          embeddingModel: \"m\",\n          embeddingDimensions: 1,\n          qdrantUrl: \"http://q\",\n          indexedAt: \"\",\n          teaRagsVersion: \"\",\n          chunksCount: 0,\n        });\n        reg.setName(\"code_direct\", \"direct\");\n        runInfo({ name: \"direct\" });\n        const out = stdout.mock.calls.map((c) => String(c[0])).join(\"\");\n        expect(out).not.toContain(\"realpath:\");\n      } finally {\n        stdout.mockRestore();\n      }\n    });",
+          "custom",
+          20,
+          "recent",
+          13,
+          "extreme",
+          169,
+          "legacy",
+          1,
+          "low"
+        ],
+        [
+          "tests/core/domains/ingest/pipeline/debug-logger.test.ts",
+          "Stage Profiling.describe \"Stage Profiling\".it \"should track the csyve setup stages with addStageTime\"",
+          676,
+          703,
+          "describe(\"Stage Profiling\", () => {\nbeforeEach(() => {\n    consoleErrorSpy = vi.spyOn(console, \"error\").mockImplementation(() => {});\n    vi.clearAllMocks();\n    pipelineLog.resetProfiler();\n  });\n  afterEach(() => {\n    consoleErrorSpy.mockRestore();\n  });\n  let consoleErrorSpy: any;\n  // csyve — setup-stage attribution: the four pre-first-file stages must be\n  // accepted by addStageTime and flow into the stage summary + rendered table.\nit(\"should track the csyve setup stages with addStageTime\", () => {\n    pipelineLog.addStageTime(\"embed-warmup\", 120);\n    pipelineLog.addStageTime(\"qdrant-setup\", 450);\n    pipelineLog.addStageTime(\"codegraph-init\", 800);\n    pipelineLog.addStageTime(\"codegraph-init\", 200);\n\n    const summary = pipelineLog.getStageSummary();\n\n    expect(summary[\"embed-warmup\"].totalMs).toBe(120);\n    expect(summary[\"embed-warmup\"].count).toBe(1);\n    expect(summary[\"qdrant-setup\"].totalMs).toBe(450);\n    expect(summary[\"codegraph-init\"].totalMs).toBe(1000);\n    expect(summary[\"codegraph-init\"].count).toBe(2);\n  });\nit(\"should render the csyve setup stages in the summary output\", () => {\n    pipelineLog.addStageTime(\"embed-warmup\", 100);\n    pipelineLog.addStageTime(\"qdrant-setup\", 200);\n    pipelineLog.addStageTime(\"codegraph-init\", 300);\n    pipelineLog.addStageTime(\"embed\", 1000);\n\n    const ctx: LogContext = { component: \"IndexPipeline\" };\n    pipelineLog.summary(ctx, { uptimeMs: 5000 });\n\n    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining(\"embed-warmup\"));\n    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining(\"qdrant-setup\"));\n    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining(\"codegraph-init\"));\n  });",
+          "custom",
+          19,
+          "recent",
+          24,
+          "extreme",
+          126,
+          "old",
+          1,
+          "low"
+        ],
+        [
+          "tests/scripts/gen-harness-claude.test.ts",
+          "renderClaudePackage(%s).describe.each \"renderClaudePackage(%s)\".it \"renders byte-identically twice\"",
+          68,
+          84,
+          "describe.each([\"tea-rags\", \"dinopowers\", \"tea-rags-setup\"])(\"renderClaudePackage(%s)\", (name) => {\nit(\"renders byte-identically twice\", () => {\n    expect(renderClaudePackage(ROOT, name)).toEqual(renderClaudePackage(ROOT, name));\n  });\nit(\"resolves every hook command path to an executable file inside the package\", () => {\n    const rendered = renderClaudePackage(ROOT, name);\n    const manifest = rendered.get(\".claude-plugin/plugin.json\");\n    expect(manifest).toBeDefined();\n    const text = manifest?.content.toString(\"utf8\") ?? \"\";\n    JSON.parse(text);\n\n    for (const [, path] of text.matchAll(PLUGIN_ROOT_PATH)) {\n      const file = rendered.get(path);\n      expect(file, path).toBeDefined();\n      expect((file?.mode ?? 0) & 0o111, `${path} executable`).not.toBe(0);\n    }\n  });",
+          "custom",
+          2,
+          "recent",
+          4,
+          "high",
+          8,
+          "recent",
+          1,
+          "low"
+        ],
+        [
+          "tests/core/domains/explore/post-process.test.ts",
+          "filterMetaOnly.describe \"payload stays raw whatever the overlay carries\".it \"carries no {value,label} anywhere in the payload\"",
+          149,
+          179,
+          "describe(\"filterMetaOnly\", () => {\nconst payloadSignals: PayloadSignalDescriptor[] = [\n    { key: \"relativePath\", type: \"string\", treeDependence: \"history-only\", description: \"File path\" },\n    { key: \"language\", type: \"string\", treeDependence: \"history-only\", description: \"Language\" },\n    { key: \"startLine\", type: \"number\", treeDependence: \"history-only\", description: \"Start line\" },\n    // Git signals declared as the git trajectory declares them in production.\n    { key: \"git.file.ageDays\", type: \"number\", treeDependence: \"history-only\", description: \"File age\" },\n    { key: \"git.file.commitCount\", type: \"number\", treeDependence: \"history-only\", description: \"File commits\" },\n    { key: \"git.chunk.commitCount\", type: \"number\", treeDependence: \"history-only\", description: \"Chunk commits\" },\n  ];\n  // metaOnly contract (2026-09-24, supersedes bd tea-rags-mcp-rtjrn): the\n  // payload is RAW everywhere — every value at its owner path in its stored\n  // form, never a {value,label}. Labels live only on the hit's rankingOverlay.\n  // Live shape: a techDebt file-level overlay carries a git signal, a static\n  // flat signal (`imports`) and a codegraph signal (`fanIn`).\n  // bd tea-rags-mcp-947xf: the score lives on the hit, not in its payload.\n  // tea-rags-mcp-0am0 — codegraph projection in metaOnly mode.\n  // EnrichmentApplier writes codegraph file-level signals under\n  // `payload.codegraph.symbols.{file,chunk}` with dotted inner keys. Before\n  // this fix, filterMetaOnly only forwarded the git namespace, so MCP\n  // callers requesting metaOnly never saw codegraph signals even when\n  // they were present in the payload.\n  // bd tea-rags-mcp-947xf — the file-level members outline is gone; a stray\n  // undeclared `members` key is rebuilt away like any other undeclared field.\nconst ownedSignals: PayloadSignalDescriptor[] = [\n      ...payloadSignals,\n      { key: \"git.file.bugFixRate\", type: \"number\", treeDependence: \"history-only\", description: \"Bug-fix rate\" },\n      { key: \"imports\", type: \"string[]\", treeDependence: \"history-only\", description: \"File imports\", level: \"file\" },\n      { key: \"codegraph.file.fanIn\", type: \"number\", treeDependence: \"history-only\", description: \"File fan-in\" },\n      { key: \"codegraph.chunk.fanIn\", type: \"number\", treeDependence: \"history-only\", description: \"Symbol fan-in\" },\n    ];\n    const liveFileHit = (): SearchResult => ({\n      score: 0.8,\n      payload: {\n        relativePath: \"src/hub.ts\",\n        imports: [\"./a\", \"./b\"],\n        git: { file: { commitCount: 27, bugFixRate: 40 } },\n        codegraph: { symbols: { file: { fanIn: 12, fanOut: 3 } } },\n      },\n      rankingOverlay: {\n        preset: \"techDebt\",\n        file: {\n          commitCount: { value: 27, label: \"high\" },\n          imports: [\"./a\", \"./b\"],\n          fanIn: { value: 12, label: \"frequent\" },\n        },\n      },\n    });\ndescribe \"payload stays raw whatever the overlay carries\"\nit(\"carries no {value,label} anywhere in the payload\", () => {\n      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [\"git.file.commitCount\"])[0];\n      expect(JSON.stringify(meta)).not.toContain('\"label\"');\n    });\nit(\"keeps git essential fields raw at their owner path\", () => {\n      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [\"git.file.commitCount\"])[0];\n      expect(meta.git).toEqual({ file: { commitCount: 27 } });\n    });\nit(\"keeps a static signal raw at the payload root\", () => {\n      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];\n      expect(meta.imports).toEqual([\"./a\", \"./b\"]);\n    });\nit(\"forwards the codegraph branch raw\", () => {\n      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];\n      expect((meta.codegraph as any).symbols.file).toEqual({ fanIn: 12, fanOut: 3 });\n    });\nit(\"adds no overlay-only git field and no preset to the payload\", () => {\n      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];\n      expect(meta.git).toBeUndefined();\n      expect(meta).not.toHaveProperty(\"preset\");\n    });\nit(\"does not mutate the hit's own payload\", () => {\n      const hit = liveFileHit();\n      filterMetaOnly([hit], ownedSignals, []);\n      expect((hit.payload as any).codegraph.symbols.file.fanIn).toBe(12);\n    });",
+          "custom",
+          4,
+          "recent",
+          22,
+          "extreme",
+          37,
+          "typical",
+          2,
+          "high"
+        ],
+        [
+          "tests/cli/commands/llama-server-command-format.test.ts",
+          "renderLlamaServerCommands — macos.describe \"renderLlamaServerCommands — macos\".it \"logs stdout and stderr to an absolute ~/.tea-rags/logs/llama-server-<port>.log\"",
+          276,
+          295,
+          "describe(\"renderLlamaServerCommands — macos\", () => {\nconst sheet = renderLlamaServerCommands(\n    options({\n      os: \"macos\",\n      bin: \"/opt/homebrew/bin/llama-server\",\n      devices: [\"MTL0\"],\n      autostart: true,\n      gguf: GGUF,\n      advertise: \"mac.local\",\n    }),\n  );\n  // A re-run must replace the agent: bootstrap fails on a label that is already loaded.\n  // bd n18nj: BTM names a background item after its first ProgramArguments entry; a /bin/sh wrapper shows up as 'sh'.\nit(\"logs stdout and stderr to an absolute ~/.tea-rags/logs/llama-server-<port>.log\", () => {\n    const lines = section(sheet, \"5.\");\n    const log = \"$HOME/.tea-rags/logs/llama-server-8081.log\";\n    expect(lines).toContain(\"mkdir -p ~/Library/LaunchAgents ~/.tea-rags/logs\");\n    expect(lines).toContain(`  <key>StandardOutPath</key><string>${log}</string>`);\n    expect(lines).toContain(`  <key>StandardErrorPath</key><string>${log}</string>`);\n  });\nit(\"keeps a literal $ or backtick in an argument from expanding inside the unquoted heredoc\", () => {\n    const risky = renderLlamaServerCommands(\n      options({ os: \"macos\", devices: [\"MTL0\"], autostart: true, apiKey: \"a$b`c&d\" }),\n    );\n    expect(section(risky, \"4.\")).toContain(\"    <string>a\\\\$b\\\\`c&amp;d</string>\");\n  });\nit(\"tells the operator to allow it in the background and how to check\", () => {\n    const lines = section(sheet, \"5.\");\n    expect(lines.some((l) => l.startsWith(\"#\") && l.includes(\"Allow in the Background\"))).toBe(true);\n    expect(lines.some((l) => l.startsWith(\"#\") && l.includes(\"sfltool dumpbtm | grep -A3 llama-server\"))).toBe(true);\n  });",
+          "custom",
+          8,
+          "recent",
+          3,
+          "typical",
+          17,
+          "recent",
+          1,
+          "low"
+        ]
+      ]
+    },
+    "confidence": {
+      "value": 0.06,
+      "label": "low"
+    },
+    "truncated": {
+      "returned": 11,
+      "omitted": 1,
+      "next": {
+        "tool": "semantic_search",
+        "args": {
+          "project": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4",
+          "query": "Codex native hook raw stdout delivered source range accounting and known configuration direct content routing",
+          "limit": 1,
+          "filter": {
+            "must_not": [
+              {
+                "key": "relativePath",
+                "match": {
+                  "any": [
+                    ".claude-plugin/tea-rags/scripts/reread-ledger.mjs",
+                    "harness/codex/AGENTS.tea-rags.md",
+                    "harness/codex/tea-rags/scripts/core.txt",
+                    "harness/codex/tea-rags/scripts/reread-ledger.mjs",
+                    "harness/codex/tea-rags/skills/tea-rags-core/SKILL.md",
+                    "harness/cursor/tea-rags/scripts/reread-ledger.mjs",
+                    "plugins/tea-rags/scripts/reread-ledger.mjs",
+                    "scripts/gen-harness-codex.ts",
+                    "tests/hooks/reread-ledger.test.sh",
+                    "tests/scripts/gen-harness-codex.test.ts"
+                  ]
+                }
+              }
+            ]
+          },
+          "chunkType": "test",
+          "rerank": {
+            "custom": {
+              "similarity": 0.7,
+              "age": -0.1,
+              "churn": 0.2
+            }
+          },
+          "metaOnly": false,
+          "offset": 11
+        },
+        "why": "the rows this answer omitted to stay within the response budget"
+      }
+    }
+  }
+}

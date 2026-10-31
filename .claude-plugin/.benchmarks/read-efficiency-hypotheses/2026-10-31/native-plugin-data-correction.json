@@ -1,0 +1,91 @@
+{
+  "correction": "Native plugin supplies writable plugin data path automatically (CLAUDE_PLUGIN_DATA or PLUGIN_DATA; exact variable not captured). Earlier inference from TMPDIR=/nonexistent that state was disabled/unavailable was too strong and incorrect. Turn files prove native persistence. Shell file-span absence is consistent with baseline rawstdout bug; metrics virtual source has no physical worker path and is skipped by stat guard.",
+  "prior_state_files": [
+    {
+      "condition": "baseline-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/baseline-subset4-attempt1/cases/T-known-metrics-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19202-fb02-7cc1-9379-81e1e98cbff7/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "baseline-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/baseline-subset4-attempt1/cases/C-unknown-filename/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19203-6cb5-7612-a66b-b475c4ad58be/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "baseline-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/baseline-subset4-attempt1/cases/T-held-naming-context/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19203-328f-7bc2-8399-e5b47cc885a8/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "baseline-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/baseline-subset4-attempt1/cases/T-known-contract-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19202-fb0a-7981-8bec-277e3ff58ff1/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "compact-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/compact-subset4-attempt1/cases/T-known-metrics-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19204-8b39-7d93-8846-b11d4567bbc5/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "compact-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/compact-subset4-attempt1/cases/C-unknown-filename/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19205-01de-7fb0-84ec-4dfd07e468fe/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "compact-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/compact-subset4-attempt1/cases/T-held-naming-context/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19204-d063-76b1-904c-92f610a51ac0/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "compact-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/compact-subset4-attempt1/cases/T-known-contract-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19204-8b39-73d2-8d1b-823210221232/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "procedural-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/procedural-subset4-attempt1/cases/T-known-metrics-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19205-853e-7f61-96a7-235b2e274a78/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "procedural-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/procedural-subset4-attempt1/cases/C-unknown-filename/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19205-d854-77a1-8d98-cf3786b02cbc/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "procedural-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/procedural-subset4-attempt1/cases/T-held-naming-context/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19205-bef8-7163-ba90-7c4cce6c621d/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "procedural-subset4-attempt1",
+      "path": ".tmp/readfix-v4-evals/procedural-subset4-attempt1/cases/T-known-contract-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19205-853e-7952-9029-1318c14e4292/turn",
+      "kind": "turn",
+      "text": "1"
+    },
+    {
+      "condition": "diagnostic-hook-stdin-attempt1",
+      "path": ".tmp/readfix-v4-evals/diagnostic-hook-stdin-attempt1/cases/T-known-metrics-content/home/plugins/data/tea-rags-tea-rags/reread-codex-01a19200-b048-7380-909c-d17a8403c667/turn",
+      "kind": "turn",
+      "text": "1"
+    }
+  ],
+  "controlled_harness": "Fresh explicit protected percase TEA_RAGS_HOOK_STATE_DIR is retained for matched raw-only/Postnote comparison. No prior model actors rerun.",
+  "supersedes_interpretation_only": [
+    "harness-controlled-state-transition.json older_condition_limitation",
+    "prior parent messages describing disabled/unavailable ledger"
+  ],
+  "prior_evidence_retained": true,
+  "immutable_archive_member": "evals/native-plugin-data-correction.json",
+  "reference_note": "Observed native call and filesystem paths remain verbatim evidence; use immutable_archive_member to locate archived report."
+}

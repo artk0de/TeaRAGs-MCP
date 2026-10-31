@@ -24,9 +24,9 @@ alone; then use `project=<workingTree.project> + path`. No cwd → `project`
 alone. `workingTree.tree` ≠ cwd → discard those rows, re-call with `path=<cwd>`.
 `index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.
 
-Shell rg -l --hidden --glob '!.git': `-l` filenames first for
-config/inventory/absence; `| head` ≠ absence proof. Use anchor dir, else
-`<src dir>` (a dir under cwd, never cwd itself); no dir search or find/Glob.
+Shell rg -l --hidden --glob '!.git': unknown filenames/inventory/absence; known
+file → content; `| head` ≠ absence proof. Use anchor dir, else `<src dir>` (a
+dir under cwd, never cwd itself); no dir search or find/Glob.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
 a file path in them → row 1; tools `mcp__tea-rags__*`):

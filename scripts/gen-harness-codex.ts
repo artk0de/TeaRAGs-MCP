@@ -827,7 +827,10 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   if (hasCore) {
     const coreRules = withCodexPrelude(
       withCodexGuideReads(
-        toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames),
+        toHarnessText(parseFrontmatter(readFileSync(corePath, "utf8")).body, CODEX_DIALECT, skillNames).replace(
+          "`-l` filenames first for config/inventory/absence;",
+          "unknown filenames/inventory/absence; known file → content;",
+        ),
       ),
       CODEX_READ_DISCIPLINE,
     );

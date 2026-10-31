@@ -1,0 +1,467 @@
+{
+  "selected_change": "Narrow known-file/unknown-locator routing clarification + technical native raw shell stdout delivery recording fix; no added policy prose or Postnote.",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "runs_per_case_variant": 1,
+  "max_concurrent_actors": 2,
+  "selected12": {
+    "totals": {
+      "input_tokens": 668254,
+      "cached_input_tokens": 445312,
+      "fresh_input_tokens": 222942,
+      "output_tokens": 5584,
+      "native_model_steps_including_final": 36,
+      "cost_proxy_usd": "0.5462552"
+    },
+    "factual_source_checks_supported": 12,
+    "cases": [
+      {
+        "case": "T-known-contract-content",
+        "input_tokens": 54181,
+        "cached_input_tokens": 34432,
+        "fresh_input_tokens": 19749,
+        "output_tokens": 393,
+        "reasoning_output_tokens": 38,
+        "native_model_steps_including_final": 3,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.0468712",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "LOCAL_KNOWN_CONTENT_PASS_NO_SPEED_GAIN_ESTABLISHED",
+        "limitations": "Baseline already acquired known content directly; narrow rule compatible, original local failure not reproduced.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-known-contract-content/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-known-contract-content/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-known-contract-content/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-known-metrics-content",
+        "input_tokens": 100996,
+        "cached_input_tokens": 78464,
+        "fresh_input_tokens": 22532,
+        "output_tokens": 1236,
+        "reasoning_output_tokens": 82,
+        "native_model_steps_including_final": 5,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.0652704",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "NO_REPRO_STAGING",
+        "limitations": "Already parallel in every condition; later unavailable helper predicate probes may be reasonable. Virtual method lacks physical ledger anchor.",
+        "actor_archive_directory": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-known-metrics-content/actor/",
+        "review_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-known-metrics-content/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-known-metrics-content/actor-input.json",
+        "grading_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-held-naming-context",
+        "input_tokens": 122239,
+        "cached_input_tokens": 103296,
+        "fresh_input_tokens": 18943,
+        "output_tokens": 719,
+        "reasoning_output_tokens": 34,
+        "native_model_steps_including_final": 7,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.0554056",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "NO_REPRO_ORIGINAL_OPEN_FIXTURE_DIAGNOSTIC",
+        "limitations": "No Superpowers path attempt; required naming tool omitted from fixture drives schema/fallback sequence. No efficiency fix/regression conclusion.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-full-file-coverage",
+        "input_tokens": 18534,
+        "cached_input_tokens": 0,
+        "fresh_input_tokens": 18534,
+        "output_tokens": 289,
+        "reasoning_output_tokens": 46,
+        "native_model_steps_including_final": 1,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.039958",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "LOCAL_EXTRACTED_REUSE_PASS",
+        "limitations": "Focused neutral subquestion from original; held complete files1final/0reads; not original whole-context replay or comparative improvement.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-full-file-coverage/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-full-file-coverage/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-full-file-coverage/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-ready-method-batch",
+        "input_tokens": 67141,
+        "cached_input_tokens": 46208,
+        "fresh_input_tokens": 20933,
+        "output_tokens": 1241,
+        "reasoning_output_tokens": 42,
+        "native_model_steps_including_final": 3,
+        "initial_cached_input_tokens": 8832,
+        "cost_proxy_usd": "0.0588968",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "LOCAL_BATCH_PASS",
+        "limitations": "Sixteen explicit known bodies requested together; optional helper selection not correctness gate. No broad speed claim.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-ready-method-batch/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-ready-method-batch/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-ready-method-batch/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-config-range-batch",
+        "input_tokens": 51650,
+        "cached_input_tokens": 33792,
+        "fresh_input_tokens": 17858,
+        "output_tokens": 257,
+        "reasoning_output_tokens": 84,
+        "native_model_steps_including_final": 3,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.0416652",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "RAW_COVERAGE_PASS_POSTNOTE_CONTROL_OPEN_FAIL",
+        "limitations": "Raw reads both ranges; note-only713–758 final misses outer scope. No valid shorter result claimed.",
+        "actor_archive_directory": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-config-range-batch/actor/",
+        "review_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-config-range-batch/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-config-range-batch/actor-input.json",
+        "grading_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-complete-spec-stop",
+        "input_tokens": 20538,
+        "cached_input_tokens": 0,
+        "fresh_input_tokens": 20538,
+        "output_tokens": 135,
+        "reasoning_output_tokens": 0,
+        "native_model_steps_including_final": 1,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.042426",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "LOCAL_EXTRACTED_STOP_PASS",
+        "limitations": "Focused neutral spec subquestion;1final/0reads; original broader task not replayed.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-complete-spec-stop/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-complete-spec-stop/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-complete-spec-stop/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "T-backend-preview-stop",
+        "input_tokens": 19471,
+        "cached_input_tokens": 0,
+        "fresh_input_tokens": 19471,
+        "output_tokens": 246,
+        "reasoning_output_tokens": 90,
+        "native_model_steps_including_final": 1,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.041402",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "LOCAL_HELD_FACTS_PASS",
+        "limitations": "Original request with authentic held backend source;1final/0reads; frontend behavior not substituted.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-backend-preview-stop/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-backend-preview-stop/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-backend-preview-stop/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "C-dependent-new-locator",
+        "input_tokens": 75155,
+        "cached_input_tokens": 55040,
+        "fresh_input_tokens": 20115,
+        "output_tokens": 515,
+        "reasoning_output_tokens": 0,
+        "native_model_steps_including_final": 4,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.050884",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "CONTROL_PASS",
+        "limitations": "Semantic metadata discovery then concrete method source; no guessed locator gate.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-dependent-new-locator/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-dependent-new-locator/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-dependent-new-locator/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "C-body-coverage-boundaries",
+        "input_tokens": 54121,
+        "cached_input_tokens": 44032,
+        "fresh_input_tokens": 10089,
+        "output_tokens": 309,
+        "reasoning_output_tokens": 0,
+        "native_model_steps_including_final": 3,
+        "initial_cached_input_tokens": 8832,
+        "cost_proxy_usd": "0.0276712",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "CONTROL_PASS",
+        "limitations": "Current4 native bodies acquired; stale150/35 not credited; current180/50 answered.",
+        "actor_archive_directory": "evals/rawfix-subset3-controlled-state-attempt1/cases/C-body-coverage-boundaries/actor/",
+        "review_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/C-body-coverage-boundaries/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/C-body-coverage-boundaries/actor-input.json",
+        "grading_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "C-unknown-filename",
+        "input_tokens": 50603,
+        "cached_input_tokens": 33408,
+        "fresh_input_tokens": 17195,
+        "output_tokens": 143,
+        "reasoning_output_tokens": 0,
+        "native_model_steps_including_final": 3,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.0391608",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "CONTROL_PASS",
+        "limitations": "Complete scoped literal filename inventory then content.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-unknown-filename/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-unknown-filename/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-unknown-filename/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      },
+      {
+        "case": "C-complete-absence",
+        "input_tokens": 33625,
+        "cached_input_tokens": 16640,
+        "fresh_input_tokens": 16985,
+        "output_tokens": 101,
+        "reasoning_output_tokens": 0,
+        "native_model_steps_including_final": 2,
+        "initial_cached_input_tokens": 0,
+        "cost_proxy_usd": "0.036644",
+        "factual_source_verdict": "PASS",
+        "audit_disposition": "CONTROL_PASS",
+        "limitations": "Complete synthetic config YAML literal search exit1 empty; no absence from padded historical excerpts.",
+        "actor_archive_directory": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-complete-absence/actor/",
+        "review_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/semantic-review.json",
+        "raw_case_fixture_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-complete-absence/fixture.json",
+        "raw_actor_input_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-complete-absence/actor-input.json",
+        "grading_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/grading-source.json"
+      }
+    ],
+    "important_disposition": "Scoped final-answer/source support is not all original audit findings fixed. Q25 invented-path and Q37 staging lever NO_REPRO locally; naming7 is OPEN fixture-capability diagnostic."
+  },
+  "policy_comparison": {
+    "totals_table": [
+      {
+        "condition": "baseline",
+        "input_tokens": 291120,
+        "cached_input_tokens": 213504,
+        "fresh_input_tokens": 77616,
+        "output_tokens": 2131,
+        "native_model_steps_including_final": 16,
+        "cost_proxy_usd": "0.1978924",
+        "final_factual_answers_supported": 4,
+        "efficacy_status": "NO_NET_GAIN / n=1 diagnostic; naming tool omitted from fixture",
+        "manifest_archive_member": "evals/baseline-subset4-attempt1/manifest.json",
+        "review_archive_member": "evals/baseline-subset4-attempt1/semantic-review.json",
+        "initial_cache_by_case": {
+          "T-known-contract-content": 0,
+          "T-known-metrics-content": 0,
+          "T-held-naming-context": 0,
+          "C-unknown-filename": 0
+        }
+      },
+      {
+        "condition": "compact_rejected",
+        "input_tokens": 300709,
+        "cached_input_tokens": 221312,
+        "fresh_input_tokens": 79397,
+        "output_tokens": 2292,
+        "native_model_steps_including_final": 16,
+        "cost_proxy_usd": "0.2038452",
+        "final_factual_answers_supported": 4,
+        "efficacy_status": "NO_NET_GAIN / n=1 diagnostic; naming tool omitted from fixture",
+        "manifest_archive_member": "evals/compact-subset4-attempt1/manifest.json",
+        "review_archive_member": "evals/compact-subset4-attempt1/semantic-review.json",
+        "initial_cache_by_case": {
+          "T-known-contract-content": 0,
+          "T-known-metrics-content": 0,
+          "T-held-naming-context": 0,
+          "C-unknown-filename": 0
+        }
+      },
+      {
+        "condition": "procedural_rejected",
+        "input_tokens": 318400,
+        "cached_input_tokens": 239104,
+        "fresh_input_tokens": 79296,
+        "output_tokens": 2283,
+        "native_model_steps_including_final": 17,
+        "cost_proxy_usd": "0.2053324",
+        "final_factual_answers_supported": 4,
+        "efficacy_status": "NO_NET_GAIN / n=1 diagnostic; naming tool omitted from fixture",
+        "manifest_archive_member": "evals/procedural-subset4-attempt1/manifest.json",
+        "review_archive_member": "evals/procedural-subset4-attempt1/semantic-review.json",
+        "initial_cache_by_case": {
+          "T-known-contract-content": 8832,
+          "T-known-metrics-content": 8832,
+          "T-held-naming-context": 0,
+          "C-unknown-filename": 0
+        }
+      }
+    ],
+    "steps_by_case_table": [
+      {
+        "case": "T-known-contract-content",
+        "baseline_steps": 3,
+        "compact_rejected_steps": 4,
+        "procedural_rejected_steps": 3
+      },
+      {
+        "case": "T-known-metrics-content",
+        "baseline_steps": 5,
+        "compact_rejected_steps": 5,
+        "procedural_rejected_steps": 5
+      },
+      {
+        "case": "T-held-naming-context",
+        "baseline_steps": 5,
+        "compact_rejected_steps": 4,
+        "procedural_rejected_steps": 6
+      },
+      {
+        "case": "C-unknown-filename",
+        "baseline_steps": 3,
+        "compact_rejected_steps": 3,
+        "procedural_rejected_steps": 3
+      }
+    ],
+    "decision": "Reject both added-prose variants: totals16/16/17; no net native response-depth gain. Naming count is fixture-capability limited, not demonstrated production redundant acquisition."
+  },
+  "ledger_comparison": {
+    "totals_table": [
+      {
+        "condition": "raw_delivery_fix_selected",
+        "input_tokens": 206767,
+        "cached_input_tokens": 156288,
+        "fresh_input_tokens": 50479,
+        "output_tokens": 1802,
+        "native_model_steps_including_final": 11,
+        "cost_proxy_usd": "0.1346068",
+        "factual_source_passes": 3,
+        "case_count": 3,
+        "manifest_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/manifest.json",
+        "native_ledger_and_note_proof_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/native-state-proof.json",
+        "review_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/semantic-review.json",
+        "initial_cache_by_case": {
+          "T-known-metrics-content": 0,
+          "T-config-range-batch": 0,
+          "C-body-coverage-boundaries": 8832
+        }
+      },
+      {
+        "condition": "post_delivery_note_rejected",
+        "input_tokens": 215685,
+        "cached_input_tokens": 146816,
+        "fresh_input_tokens": 68869,
+        "output_tokens": 1765,
+        "native_model_steps_including_final": 11,
+        "cost_proxy_usd": "0.1700696",
+        "factual_source_passes": 2,
+        "case_count": 3,
+        "manifest_archive_member": "evals/postnote-subset3-controlled-state-attempt1/manifest.json",
+        "native_ledger_and_note_proof_archive_member": "evals/postnote-subset3-controlled-state-attempt1/native-state-proof.json",
+        "review_archive_member": "evals/postnote-subset3-controlled-state-attempt1/semantic-review.json",
+        "initial_cache_by_case": {
+          "T-known-metrics-content": 0,
+          "T-config-range-batch": 0,
+          "C-body-coverage-boundaries": 8832
+        }
+      }
+    ],
+    "steps_and_verdicts_by_case_table": [
+      {
+        "case": "T-known-metrics-content",
+        "raw_delivery_fix_selected": {
+          "steps": 5,
+          "factual_source_verdict": "PASS"
+        },
+        "post_delivery_note_rejected": {
+          "steps": 6,
+          "factual_source_verdict": "PASS"
+        }
+      },
+      {
+        "case": "T-config-range-batch",
+        "raw_delivery_fix_selected": {
+          "steps": 3,
+          "factual_source_verdict": "PASS"
+        },
+        "post_delivery_note_rejected": {
+          "steps": 2,
+          "factual_source_verdict": "OPEN_FAIL"
+        },
+        "rejected_control_failure": "Postnote actor read only713–758 and omitted required outer tax_preparation scope/full controller; raw-only also read1–28. Lower step count loses coverage; failed attempt preserved without retry."
+      },
+      {
+        "case": "C-body-coverage-boundaries",
+        "raw_delivery_fix_selected": {
+          "steps": 3,
+          "factual_source_verdict": "PASS"
+        },
+        "post_delivery_note_rejected": {
+          "steps": 3,
+          "factual_source_verdict": "PASS"
+        }
+      }
+    ],
+    "decision": "Select raw-delivery fix; reject Postnote. Both11 steps; note loses route control coverage, metrics5→6, boundary3→3. n=1 does not prove causality."
+  },
+  "evidence": {
+    "archive": "evidence.tar.gz",
+    "archive_sha256": "82a61d8bb4b38cddaf44ac2879b3b5ef3377c318829f31ff577965acc5a4bd73",
+    "archive_members": 1559,
+    "archive_inventory": "evidence-inventory.json",
+    "all_member_hashes_verified": true,
+    "selected_source_native_package_archive_prefix": "evals/sources/raw-delivery-fix/harness/codex/tea-rags/",
+    "source_provenance_archive_member": "evals/sources/raw-delivery-fix/provenance.json",
+    "combined_verdicts_archive_member": "evals/final-raw12-verdicts.json",
+    "comparison_archive_members": [
+      "evals/subset4-comparison.json",
+      "evals/ledger-subset3-comparison.json"
+    ],
+    "readable_sidecars": [
+      "final12-audit-disposition-matrix.json",
+      "naming-fixture-capability-review.json",
+      "subset4-review-qualification.json",
+      "native-plugin-data-correction.json",
+      "harness-controlled-state-transition.json"
+    ],
+    "verification_sidecars": [
+      {
+        "file": "verification/review-before-archive.json",
+        "sha256": "d29d10f7a1dad66475ef15529d6a8233afa50c9cc9b881a3f42bef67e890c96a",
+        "bytes": 23161,
+        "preservation": "Root-supplied verification artifact copied verbatim after archive closure; archive remains unchanged."
+      },
+      {
+        "file": "verification/collateral-scan.json",
+        "sha256": "26a8fc75fc84cba23bd434ae9ab0ac05d31e420971b35927fb5c196e67ad8e6b",
+        "bytes": 14908,
+        "preservation": "Root-supplied verification artifact copied verbatim after archive closure; archive remains unchanged."
+      },
+      {
+        "file": "verification/tests-at-risk.json",
+        "sha256": "a99a4284c02886d4ddb2e75b8040686f7ca680fe7bd8158b61ac6042751dd269",
+        "bytes": 27852,
+        "preservation": "Root-supplied verification artifact copied verbatim after archive closure; archive remains unchanged."
+      }
+    ]
+  },
+  "expectation_boundary": "Raw cases/fixtures/actor inputs are separate archive members from grading-source.json and reviews; actors were denied controller/expected-answer paths. Sidecar reports are evaluator outputs, never actor inputs.",
+  "limitations": [
+    "n=1; synthetic extracted local contexts; Q01/Q15 focused questions do not replay original broader sessions. Source-completeness/provenance.json retained.",
+    "Metrics virtual worker body has no physical file for ledger stat guard; native shell initializer and physical body-boundary cases demonstrate recording separately.",
+    "Native plugin data turn files existed in prior conditions; earlier disabled/unavailable-state inference is corrected. Old shell recording was absent due rawstdout bug, not proven environment disable. Explicit controlled state matched final raw/note variants.",
+    "Service cache cannot be disabled. Cached/fresh/initial tokens reported; procedural contract+metrics initial cache8832; raw/note boundary initial cache8832. No local history/cache copied.",
+    "Cost is fixed accounting proxy ($2 fresh input/$0.10 cached input/$10 output per million), not subscription billing or a current pricing assertion.",
+    "Initial parser syntax failure, superseded zero-turn prep, rejected variants and Postnote OPEN_FAIL retained; no silent model retries.",
+    "One separately instrumented diagnostic actor is excluded from efficacy totals. Native actual hook payloads/context entries and source fingerprints retained."
+  ]
+}

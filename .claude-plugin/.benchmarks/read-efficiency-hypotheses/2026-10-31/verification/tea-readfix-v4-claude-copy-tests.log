@@ -1,0 +1,10 @@
+
+ RUN  v5.0.3 /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4
+
+ ✓ |module-sharing| tests/scripts/gen-harness-claude.test.ts (22 tests | 19 skipped) 61ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 19 skipped (22)
+   Start at  16:07:16
+   Duration  285ms (transform 36%, tests 35%, setup 14%, import 13%, worker 2%)
+

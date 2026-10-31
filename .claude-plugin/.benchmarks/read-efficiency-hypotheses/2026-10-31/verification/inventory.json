@@ -1,0 +1,23 @@
+{
+  "archive-verification-attempt1.json": "b5fbbc669e7c5c60bffd011635085e65b103663cc7e49f1711fc87c2497ad8d5",
+  "archive-verification-attempt2.json": "1714e56227acc8341634b5a3816bc76ba75ac748fc06b1c0baaf40affe58c3ca",
+  "collateral-scan.json": "26a8fc75fc84cba23bd434ae9ab0ac05d31e420971b35927fb5c196e67ad8e6b",
+  "final-ledger-status.md": "3a537802739ccd8b8a0265eda08eda1f7cc328c7115bbf1499d7936b27b2880a",
+  "final-review.json": "f64c84ab8ec73a43d2751f07f861df9c77069cee5d50963f28eba51ad114ae66",
+  "plan.md": "f0cce656044f1826eac270fcd022d9fe7fd80553768bb42a0d6bd16008c8367d",
+  "review-before-archive.json": "d29d10f7a1dad66475ef15529d6a8233afa50c9cc9b881a3f42bef67e890c96a",
+  "review-triage.md": "f212aaad49d2c4f1988b84c45425d779e1e01e0d337d0c3c62f1833afaf5b6f9",
+  "summary.json": "942121fc5d3a02f0165d8acc603ae58d8fdc783385c86f3b4f10345510afca92",
+  "tea-readfix-v4-claude-copy-tests.log": "75e85fd2f3b8d918a7a79830ac347edc9ede7fa0c155561c00186be65a8a674f",
+  "tea-readfix-v4-final-eslint-corrected.log": "21d116442d4f9102c5e18f22a7ffb5039fedf7d2ddaf0e0fea0ae5279c9871e9",
+  "tea-readfix-v4-final-eslint.log": "e65c33b444168d5344c76964c683e221b45e2dbf71cd306b17fa908adb6746e8",
+  "tea-readfix-v4-final-generation.log": "1ec436ef564f205cb4c837522bee05f23806bcbc658129a70354e7ef25692f88",
+  "tea-readfix-v4-final-generator-tests.log": "7d9bae3bd69424ac28240ef83fb6912decf0a6aeda6cc5464df38eac0df0321f",
+  "tea-readfix-v4-final-hook-tests.log": "c6109cb124751bd455de5e34c37d5f2d03048a2b2d1e413c2c61cf4012d7fdee",
+  "tea-readfix-v4-generator-baseline.log": "b73642bc3555f5c3328044229d2207f4560b00ff51ed1f8a2dda679fedcb0220",
+  "tea-readfix-v4-routing-compact-caps.log": "4b8d0e5e26145ed7d9029076d36881cfc6a5c4ae3f66c3122964895384c4ec07",
+  "tea-readfix-v4-routing-compact.log": "fb281dc74acf0f9ef5406d512c888223c54b535bbc83006d5eb7c6799217108a",
+  "tea-readfix-v4-routing-red.log": "ec6db5dc0d02a6462c98856c540855472b8e5b880db0d7876523beca8662993b",
+  "tea-readfix-v4-search-drift-tests.log": "93c60600212f0319c4ce73ac5b2272480b35dbd6ee8e456307aa910372415f34",
+  "tests-at-risk.json": "a99a4284c02886d4ddb2e75b8040686f7ca680fe7bd8158b61ac6042751dd269"
+}

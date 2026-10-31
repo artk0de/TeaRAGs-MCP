@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q01.json",
+      "sha256": "31def48e7726b56bb35d8cc94de7a6d448fac7a11dd2d395772336206e994c24"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q05.json",
+      "sha256": "301eb90f56e6e4def6531821ecefb129f39ecd20ffb0633f0f86539bd07a9449"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q15.json",
+      "sha256": "32e577a5063524d50cdc703a9b6eaac831c87c4ec33c5631c06b1076e76a2a9e"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q21.json",
+      "sha256": "c656507b349cf888807273d9672ec05f3de1eaee189efcfac569ab80c260016d"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q23.json",
+      "sha256": "abb658c2474ee3b72bcdf108066b10508efca9da73d1448033af8de90ab66329"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q25.json",
+      "sha256": "6990dce8f4d60b42d4382a06fb5fd3e08cc8f92a26a51ee8df654c015bb781e9"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q34.json",
+      "sha256": "33ade282af233bd556a096ab3241dcc0c97590aaed2d4cfc602a8ba870793dac"
+    },
+    {
+      "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_optimal_AB_2026-10-31/optimization-audit/Q37.json",
+      "sha256": "ad2f4f86fda964546dd8434aeffeaa14963bf7516a2f2d1d0f18b868c7379ebb"
+    },
+    {
+      "path": ".claude-plugin/.benchmarks/optimal-reading-waves/2026-10-31/cases.json",
+      "sha256": "5bba927dd5d849995ce60e1e353331d7f5a6c641e6c0b8d87f6d5e71f01b0bac"
+    }
+  ],
+  "case_provenance": [
+    {
+      "case": "T-known-contract-content",
+      "source": [
+        "Q34 calls 2,3,5 outputs"
+      ],
+      "limitations": [
+        "Sparse line-preserving positive replay files; omitted lines are unknown, not absence evidence. Prompt narrows original Q34 to facts these delivered fragments support."
+      ],
+      "purpose": "Known Gemfile/lock/spec filenames need positive content, not filename rediscovery."
+    },
+    {
+      "case": "T-known-metrics-content",
+      "source": [
+        "Q37 calls 1,2 outputs"
+      ],
+      "limitations": [
+        "Initializer is a sparse positive replay, lines25–115 only. Method address is supplied explicitly to isolate known-locator behavior."
+      ],
+      "purpose": "Known initializer and stale-count method can be acquired in one ready wave."
+    },
+    {
+      "case": "T-held-naming-context",
+      "source": [
+        "Q25 original user prompt only"
+      ],
+      "limitations": [
+        "No invented skill availability or semantic prior context. The shipped actor environment determines actual skill availability. Russian naming discussion; no code naming verdict claimed."
+      ],
+      "purpose": "Naming alternatives from held user wording; never invent an unavailable skill path."
+    },
+    {
+      "case": "T-full-file-coverage",
+      "source": [
+        "Q01 call17 complete renew.rb/revoke.rb rows"
+      ],
+      "limitations": [
+        "Focused follow-up at the recorded read boundary; full files are actual delivered source."
+      ],
+      "original_prompt": "How is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?",
+      "boundary": {
+        "original_question": "Q01",
+        "held_through_call_index": 17,
+        "kind": "extracted local decision test",
+        "interpretation": "Counterfactual isolated behavior at an intermediate decision boundary; not full original-question replay and not measured original-response savings."
+      },
+      "purpose": "Complete delivered Renew/Revoke files already contain requested behavior."
+    },
+    {
+      "case": "T-ready-method-batch",
+      "source": [
+        "Existing W21 fixture; Q01 outlines, Q21 call0/1 bodies"
+      ],
+      "limitations": [
+        "Outlines projected to supported delivered locators only; optional support bodies do not imply required reads."
+      ],
+      "purpose": "Acquire independently known HTTP/token method bodies together within capacity."
+    },
+    {
+      "case": "T-config-range-batch",
+      "source": [
+        "Q23 calls6/7"
+      ],
+      "limitations": [
+        "Sparse known route ranges1–28 and713–758; surrounding ranges unknown."
+      ],
+      "purpose": "Known route block and enclosing file header belong in the same ready wave."
+    },
+    {
+      "case": "T-complete-spec-stop",
+      "source": [
+        "Q15 call3 held; call4 available replay only"
+      ],
+      "limitations": [
+        "Question narrowed to observed spec assertions; no global absence claim. Tail call4 contains closing context and repeated expectation."
+      ],
+      "original_prompt": "How does the existing Instead webhook endpoint verify, validate and acknowledge deliveries, and does it deduplicate events?",
+      "boundary": {
+        "original_question": "Q15",
+        "held_through_call_index": 3,
+        "kind": "extracted local decision test",
+        "interpretation": "Counterfactual isolated behavior at an intermediate decision boundary; not full original-question replay and not measured original-response savings."
+      },
+      "purpose": "Delivered substantive spec evidence answers the focused question without a closing-tail read."
+    },
+    {
+      "case": "T-backend-preview-stop",
+      "source": [
+        "Q05 calls2/3 backend rows, call9 settings"
+      ],
+      "limitations": [
+        "Focused backend question; frontend import-definition speculation is outside requested fact. Saved settings lines only."
+      ],
+      "original_prompt": "GruntWorx returns result files as PDF, XLS and XLSM. Does TaxDome restrict which file extensions a stored client document may have, and would an .xlsm file be stored and previewable?",
+      "boundary": {
+        "original_question": "Q05",
+        "held_through_call_index": 9,
+        "kind": "extracted local decision test",
+        "interpretation": "Counterfactual isolated behavior at an intermediate decision boundary; not full original-question replay and not measured original-response savings."
+      },
+      "purpose": "Backend source and settings settle extension storage/preview without speculative frontend lookup."
+    },
+    {
+      "case": "C-dependent-new-locator",
+      "source": [
+        "Synthetic prior C-dependent-new-locators control"
+      ],
+      "limitations": [
+        "Synthetic; dependent locator is not present before first tool result."
+      ],
+      "purpose": "A locator first discovered by a tool cannot be treated as ready beforehand."
+    },
+    {
+      "case": "C-body-coverage-boundaries",
+      "source": [
+        "Synthetic prior C-partial-not-body control"
+      ],
+      "limitations": [
+        "Synthetic four-policy control: header-only, outline-only, explicit missing reason budget, and user-declared post-result file edit. No production budget algorithm is simulated."
+      ],
+      "purpose": "Header, outline, missing budget body, and post-read changed file cannot substitute for current bodies."
+    },
+    {
+      "case": "C-unknown-filename",
+      "source": [
+        "Synthetic complete two-file config corpus"
+      ],
+      "limitations": [
+        "Synthetic filename-discovery control; all files in scoped config corpus are supplied."
+      ],
+      "purpose": "Unknown config locator genuinely requires discovery."
+    },
+    {
+      "case": "C-complete-absence",
+      "source": [
+        "Synthetic complete two-file config corpus"
+      ],
+      "limitations": [
+        "Synthetic absence control; full scoped config corpus is supplied, no truncation permitted."
+      ],
+      "purpose": "Negative claim requires complete scoped search without truncated filename output."
+    }
+  ],
+  "normalization": {
+    "project": "step-fixture",
+    "tree": "__FIXTURE_ROOT__",
+    "banners": "removed",
+    "final_answers": "excluded",
+    "outline_projection": "retained supported locators only"
+  },
+  "limitations": [
+    "Fixtures are short counterfactual read-boundary replays, not whole original conversations.",
+    "No model runs or verdicts performed by fixture author.",
+    "Q30 absence behavior represented by synthetic complete-scope control; Q23 represents config-range batching."
+  ],
+  "context_boundary": "Q01/Q15 use neutral focused subquestions and authentic held content. Exact original prompts and boundaries are retained separately. Q05 retains the exact original prompt. These are extracted local decision tests, not whole original-question replay or proof of original response savings.",
+  "recommended_paired_subsets": {
+    "known_file_content": [
+      "T-known-contract-content",
+      "T-known-metrics-content",
+      "C-unknown-filename",
+      "C-complete-absence"
+    ],
+    "delivered_body_coverage": [
+      "T-full-file-coverage",
+      "C-body-coverage-boundaries"
+    ],
+    "ready_waves": [
+      "T-ready-method-batch",
+      "T-config-range-batch",
+      "T-known-metrics-content",
+      "C-dependent-new-locator"
+    ],
+    "supported_evidence_stop": [
+      "T-complete-spec-stop",
+      "T-backend-preview-stop",
+      "C-body-coverage-boundaries"
+    ],
+    "skill_availability": [
+      "T-held-naming-context"
+    ]
+  },
+  "comparison_policy": "Run each affected subset identically against baseline and candidate with the chosen model/run count. Baseline optimal behavior is no reproduction, not a reason to edit prompts or force failure. Preserve all attempts.",
+  "cases_sha256": "acaf32c8eb23af38e04f7cbb910d4add8d28619e75e20c1235f78217570837bf"
+}

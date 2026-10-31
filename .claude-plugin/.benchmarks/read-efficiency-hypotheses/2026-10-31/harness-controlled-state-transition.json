@@ -1,0 +1,21 @@
+{
+  "old_runner_sha256": "cc191ea6bd20866f3e14dc9ebf9b1c6f5d3bfcf2c607e1cc35dde508f3dd6db9",
+  "controlled_state_runner_sha256": "23ede651ebd564670e536e901119997d8234924952f70aca53c656706f3ee72c",
+  "change": "Both raw-only/Postnote variants receive a fresh per-case TEA_RAGS_HOOK_STATE_DIR in native process and shell policy; path remains outside actor read roots and preflight checks denial. Package instrumentation unchanged.",
+  "old_preparation": {
+    "path": ".tmp/readfix-v4-evals/rawfix-subset3-attempt1",
+    "model_turns": 0,
+    "status": "UNRUN_OPEN",
+    "reason": "No deterministic writable hook state; retained without overwrite"
+  },
+  "older_policy_conditions": [
+    "baseline-subset4-attempt1",
+    "compact-subset4-attempt1",
+    "procedural-subset4-attempt1"
+  ],
+  "older_condition_limitation": "Prior policy comparison used matched uncontrolled/unavailable ledger state (TMPDIR=/nonexistent with no explicit state env); it remains a matched prose comparison, not full production ledger behavior. No reruns.",
+  "native_session_start_limitation": "Native thread/start does not dispatch SessionStart without first actor turn. Zero-turn proof verifies writable controller dir, native command env and actor denial; actual SessionStart/turn/Post records checked after actor.",
+  "immutable_archive_member": "evals/harness-controlled-state-transition.json",
+  "reference_note": "Observed native call and filesystem paths remain verbatim evidence; use immutable_archive_member to locate archived report.",
+  "superseded_interpretation_notice": "The historical older_condition_limitation inference below is superseded by native-plugin-data-correction.json. Native plugin data turn files existed; state was not proven disabled. Raw shell spans were absent due baseline stdout bug; metrics method virtual file absent."
+}

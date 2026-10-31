@@ -1035,12 +1035,16 @@ export function harnessEvent(input, harness) {
     return null;
   }
   if (SHELL_TOOLS.has(tool)) {
-    const command = shellCommandText(toolInput.command);
+    const command = shellCommandText(toolInput.command ?? (harness === "codex" ? toolInput.cmd : undefined));
     if (!command) return null;
     const dir = toolInput.workdir ?? toolInput.cwd;
     if (typeof dir === "string" && dir) base.cwd = base.cwd ? resolve(base.cwd, dir) : dir;
     tool = "Bash";
     toolInput = { command };
+    // Native Codex PostToolUse delivers shell stdout directly as a string.
+    if (harness === "codex" && hookEvent === "posttooluse" && typeof response === "string") {
+      response = { stdout: response };
+    }
   }
   return { ...base, hook_event_name: hookEvent, tool_name: tool, tool_input: toolInput, tool_response: response };
 }

@@ -1,0 +1,5 @@
+{
+  "verdict": "FAIL",
+  "reason": "External inventory omitted archive internal member-sha256.json; archive itself unchanged",
+  "correction": "Add its digest to external inventory; preserve prior inventory"
+}

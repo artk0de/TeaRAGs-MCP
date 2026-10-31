@@ -1,0 +1,212 @@
+{
+  "case": "T-held-naming-context",
+  "original_audit": "Q25 invented Superpowers path",
+  "current_prompt": "step_available? - мне все-таки не нравится слово \"step\", оно слишком широкое. Давай это будет ... operation/feature(тогда с фф будет путаница)/ какие варианты есть?",
+  "current_actor_context": {
+    "project": "step-fixture",
+    "messages": []
+  },
+  "fixture_tools": [
+    "find_symbol",
+    "semantic_search",
+    "hybrid_search",
+    "get_callees",
+    "get_callers",
+    "get_architecture_report",
+    "get_index_metrics",
+    "list_projects",
+    "rank_chunks",
+    "resolve_metrics"
+  ],
+  "fixture_naming_tool_available": false,
+  "real_controller_session_tool_available": "mcp__tea_rags__get_naming_lexicon (observed active tool metadata; no call made)",
+  "shipped_requirement": "Known name fit -> get_naming_lexicon(names:[{name,kind}]); naming verdict is answer.",
+  "actual_discovery_outputs_and_schema": [
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_01a19210-8e09-7551-a5e2-40df98a88025",
+      "call_id": "call_a335fd9a56404c83894bf0cf0378eb84",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "undefined"
+        },
+        {
+          "type": "input_text",
+          "text": "undefined"
+        }
+      ],
+      "internal_chat_message_metadata_passthrough": {
+        "turn_id": "01a19210-743e-7e02-a1a2-5b309d5f1b8a",
+        "create_time": 1793451920.905614
+      }
+    },
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_01a19210-96b2-77f0-b0be-78400005f99e",
+      "call_id": "call_91df9a1e85ef438288e04e5b317d1364",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "[{\"name\":\"mcp__tea_rags__find_symbol\"},{\"name\":\"mcp__tea_rags__get_architecture_report\"},{\"name\":\"mcp__tea_rags__get_callees\"},{\"name\":\"mcp__tea_rags__get_callers\"},{\"name\":\"mcp__tea_rags__get_index_metrics\"},{\"name\":\"mcp__tea_rags__hybrid_search\"},{\"name\":\"mcp__tea_rags__list_projects\"},{\"name\":\"mcp__tea_rags__rank_chunks\"},{\"name\":\"mcp__tea_rags__resolve_metrics\"},{\"name\":\"mcp__tea_rags__semantic_search\"}]"
+        }
+      ],
+      "internal_chat_message_metadata_passthrough": {
+        "turn_id": "01a19210-743e-7e02-a1a2-5b309d5f1b8a",
+        "create_time": 1793451923.122497
+      }
+    },
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_01a19210-9ff1-78f0-98ff-51ecf4f50d5b",
+      "call_id": "call_77bfb68da551443ebf099fcae9777a0d",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "\n```ts\ndeclare const tools: { mcp__tea_rags__find_symbol(args: {\n  depth?: number;\n  limit?: number;\n  metaOnly?: boolean;\n  path?: string;\n  pathPattern?: string;\n  project?: string;\n  query?: string;\n  relativePath?: string;\n  rerank?: string;\n  restructure?: { [key: string]: unknown; };\n  symbol?: string;\n  symbolId?: string;\n  // 1-20 symbol ids or file paths. Excludes symbol, relativePath.\n  symbols?: Array<string>;\n  [key: string]: unknown;\n}): "
+        }
+      ],
+      "internal_chat_message_metadata_passthrough": {
+        "turn_id": "01a19210-743e-7e02-a1a2-5b309d5f1b8a",
+        "create_time": 1793451925.489236
+      }
+    }
+  ],
+  "actual_outer_sequence": [
+    {
+      "step": 1,
+      "input": "const t = ALL_TOOLS.find(t=>t.name.includes(\"tea_rags\") && t.name.endsWith(\"get_naming_lexicon\")); text(t?.name); text(t?.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\n"
+    },
+    {
+      "step": 2,
+      "input": "text(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")).map(t=>({name:t.name,description:t.name.includes(\"naming\")?t.description:undefined})));\n"
+    },
+    {
+      "step": 3,
+      "input": "const t=ALL_TOOLS.find(t=>t.name.endsWith(\"__find_symbol\")); text(t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\n"
+    },
+    {
+      "step": 4,
+      "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"routing-metadata-t-held-naming-context\",path:\"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace\",symbol:\"step_available?\"}));\n"
+    },
+    {
+      "step": 5,
+      "input": "const t=ALL_TOOLS.find(t=>t.name.endsWith(\"__semantic_search\")); text(t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\n"
+    },
+    {
+      "step": 6,
+      "input": "text(await tools.mcp__tea_rags__semantic_search({project:\"routing-metadata-t-held-naming-context\",path:\"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace\",query:\"step availability predicate ||| operation feature availability\",metaOnly:true,limit:5}));\n"
+    }
+  ],
+  "actual_native_lookup_outcomes": [
+    {
+      "tool": "find_symbol",
+      "arguments": {
+        "project": "routing-metadata-t-held-naming-context",
+        "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace",
+        "symbol": "step_available?"
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"workingTree\": {\"project\": \"routing-metadata-t-held-naming-context\", \"tree\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace\"}, \"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\", \"payload.kind\", \"payload.chunkType\", \"payload.request\", \"payload.resolvedAs\", \"payload.content\"], \"rows\": []}, \"count\": 0, \"empty\": {\"reason\": \"unknownSymbol\", \"missing\": [\"step_available?\"]}}"
+          }
+        ],
+        "structuredContent": {
+          "workingTree": {
+            "project": "routing-metadata-t-held-naming-context",
+            "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace"
+          },
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.kind",
+              "payload.chunkType",
+              "payload.request",
+              "payload.resolvedAs",
+              "payload.content"
+            ],
+            "rows": []
+          },
+          "count": 0,
+          "empty": {
+            "reason": "unknownSymbol",
+            "missing": [
+              "step_available?"
+            ]
+          }
+        },
+        "_meta": null
+      },
+      "model_response_ordinal": 4
+    },
+    {
+      "tool": "semantic_search",
+      "arguments": {
+        "project": "routing-metadata-t-held-naming-context",
+        "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace",
+        "query": "step availability predicate ||| operation feature availability",
+        "metaOnly": true,
+        "limit": 5
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"workingTree\": {\"project\": \"routing-metadata-t-held-naming-context\", \"tree\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace\"}, \"results\": {\"columns\": [\"payload.relativePath\", \"payload.symbolId\", \"payload.startLine\", \"payload.endLine\", \"payload.kind\", \"payload.chunkType\", \"payload.request\", \"payload.resolvedAs\"], \"rows\": []}, \"count\": 0}"
+          }
+        ],
+        "structuredContent": {
+          "workingTree": {
+            "project": "routing-metadata-t-held-naming-context",
+            "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/.tmp/readfix-v4-evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/workspace"
+          },
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.kind",
+              "payload.chunkType",
+              "payload.request",
+              "payload.resolvedAs"
+            ],
+            "rows": []
+          },
+          "count": 0
+        },
+        "_meta": null
+      },
+      "model_response_ordinal": 6
+    }
+  ],
+  "final_answer": "Я бы выбрал **`operation_available?`**, если речь о конкретной операции, которую сейчас можно выполнить.\n\nВарианты зависят от смысла:\n\n| Название | Что подразумевает |\n|---|---|\n| `operation_available?` | Доступна ли операция: запустить, отменить, повторить |\n| `action_available?` | Доступно ли действие пользователя |\n| `capability_available?` | Есть ли такая возможность у системы или интеграции |\n| `transition_available?` | Возможен ли переход в другое состояние |\n\n`feature` я бы исключил из-за пересечения с feature flags. `operation` — хороший основной вариант; `action` звучит естественнее для кнопок и пользовательских действий.\n\nЕсли операция уже следует из имени, ещё точнее будет **`can_retry?`**, **`can_cancel?`** или **`retry_available?`**.\n\nСам `step_available?` в индексе не нашёл, поэтому выбор между `operation` и `action` пока зависит от того, что именно он проверяет.",
+  "native_model_responses": 7,
+  "actual_code_bodies_delivered": 0,
+  "invented_superpowers_path_attempts_final12": [],
+  "disposition": {
+    "Q25_original_invented_path": "NO_REPRO in this extracted final actor/suite; no confirmed fix/regression",
+    "naming_7_responses": "OPEN_DIAGNOSTIC_FIXTURE_CAPABILITY_LIMIT; schema discovery and fallback induced by missing required naming tool; not established redundant code acquisition or production latency regression",
+    "final_source_fact_review": "Conditional identifier suggestions, feature-flag ambiguity and negative fixture lookup limitation are supported; no unsupported implementation claims."
+  },
+  "no_mutations_or_retries": true,
+  "immutable_archive_member": "evals/naming-fixture-capability-review.json",
+  "reference_note": "Observed native call and filesystem paths remain verbatim evidence; use immutable_archive_member to locate archived report."
+}

@@ -1,0 +1,9 @@
+
+/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/codex-read-efficiency-v4/scripts/gen-harness-codex.ts
+  826:12  error    Unnecessary escape character: \`  no-useless-escape
+  826:16  error    Unnecessary escape character: \`  no-useless-escape
+  849:5   warning  Unexpected string concatenation   prefer-template
+
+✖ 3 problems (2 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

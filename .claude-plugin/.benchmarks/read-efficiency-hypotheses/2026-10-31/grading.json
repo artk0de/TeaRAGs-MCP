@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "frozen_before_actors": true,
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "runs_per_case_variant": 1,
+  "max_concurrent_actors": 2,
+  "verdict_policy": "Automatic evidence checks and regex signals are provisional; actual final answer semantic review is authoritative. Efficiency evaluated separately. Failed/unrun cases remain OPEN.",
+  "cache_policy": "Service cache cannot be disabled; record cachedInputTokens and initial response cache. Local caches/history not copied.",
+  "cases": {
+    "T-known-contract-content": {
+      "factual_review": [
+        "json-schema 6.2.0 and json_schemer 2.4.0 are installed; distinguish gem declarations from resolved lock versions.",
+        "Entity/entity.json, File/file.json, SignedUpload/start_upload Upload object, TokenResponse/token.json are asserted."
+      ],
+      "hypothesis_review": [
+        "Known filenames supply acquisition scope; avoid extra filename discovery before obtaining their content."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": [],
+      "required_source_snippets": [
+        {
+          "label": "resolved-json-schema",
+          "relativePath": "Gemfile.lock",
+          "content": "json-schema (6.2.0)"
+        },
+        {
+          "label": "resolved-json-schemer",
+          "relativePath": "Gemfile.lock",
+          "content": "json_schemer (2.4.0)"
+        },
+        {
+          "label": "spec-Entity",
+          "relativePath": "spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "content": "expect(conforms_to_contract?('Entity', instead_fixture('entity'))).to be true"
+        },
+        {
+          "label": "spec-File",
+          "relativePath": "spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "content": "expect(conforms_to_contract?('File', instead_fixture('file'))).to be true"
+        },
+        {
+          "label": "spec-SignedUpload",
+          "relativePath": "spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "content": "expect(conforms_to_contract?('SignedUpload', instead_fixture('start_upload')['Upload'])).to be true"
+        },
+        {
+          "label": "spec-TokenResponse",
+          "relativePath": "spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb",
+          "content": "expect(conforms_to_contract?('TokenResponse', instead_fixture('token'))).to be true"
+        }
+      ]
+    },
+    "T-known-metrics-content": {
+      "factual_review": [
+        "Identify requests_duration, failed_requests_total, rate_limit_remaining, rate_limit_reset_seconds, installation_changes_total, reconciled_documents_total, entity_matches_total, installations, stale_sends and meaningful tags/purposes.",
+        "Stale-send query groups sent documents by firm, counts, and sums only firms with a reconcilable connection for adapter/provider."
+      ],
+      "hypothesis_review": [
+        "Configuration and named method are independent ready source; acquire without unnecessary broad discovery."
+      ],
+      "required_source_units": [
+        "TaxPreparation::TaxAutomations::Documents::ReconcileSweepWorker.count_stale_sends"
+      ],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "T-held-naming-context": {
+      "factual_review": [
+        "Discuss reasonable narrower alternatives to step_available? and explain operation/feature ambiguity based on current user intent.",
+        "Do not invent unseen implementation or claim naming-lexicon evidence exists. No exact suggested identifier is required."
+      ],
+      "hypothesis_review": [
+        "No repository evidence is needed merely to propose naming alternatives from the supplied discussion."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "T-full-file-coverage": {
+      "factual_review": [
+        "Renew authorizes refresh and invokes client.renew!, succeeding normally; InvalidGrantError revokes only usable connection and returns invalid_grant failure; other transport/request errors propagate.",
+        "Revoke authorizes disconnect and proceeds only for disconnected row with refresh token; calls revoke_tokens!, then drops tokens under lock only if still disconnected and same captured token, preserving concurrent reconnection."
+      ],
+      "hypothesis_review": [
+        "Held complete files already cover these methods; avoid rereading equivalent bodies for reassurance."
+      ],
+      "required_source_units": [
+        "app/services/tax_preparation/tax_automations/connections/renew.rb",
+        "app/services/tax_preparation/tax_automations/connections/revoke.rb"
+      ],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "T-ready-method-batch": {
+      "factual_review": [
+        "Explain mapped HTTP status errors and vendor-specific/fallback behavior without inventing supported statuses.",
+        "Explain request timing with operation/provider labels, exception failure reasons, token operation measurement and revocation semantics from acquired relevant code."
+      ],
+      "hypothesis_review": [
+        "The retained outlines identify ready independent code; batch needed bodies in one model response when possible. Supporting helper reads are optional and any sufficient equivalent source is valid."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": [
+        "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete",
+        "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for",
+        "TaxPreparation::TaxAutomations::BaseClient#measured",
+        "TaxPreparation::TaxAutomations::BaseClient#track_failure",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!",
+        "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS",
+        "TaxPreparation::TaxAutomations::BaseClient#request",
+        "TaxPreparation::TaxAutomations::BaseClient#perform",
+        "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling",
+        "TaxPreparation::TaxAutomations::BaseClient#token_connection",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!",
+        "TaxPreparation::TaxAutomations::TokenRefreshable#token_response"
+      ]
+    },
+    "T-config-range-batch": {
+      "factual_review": [
+        "Outermost tax_preparation module scope encloses webhooks, with tax_automations module then Instead namespace and events#create receiving POST events.",
+        "Do not confuse a module-only scope with URL prefix."
+      ],
+      "hypothesis_review": [
+        "Read the given route block and missing enclosing scope as independent bounded ranges when their need is known; stop when nesting is supported."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": [],
+      "required_source_snippets": [
+        {
+          "label": "outer-scope",
+          "relativePath": "config/routes/tax_preparation.rb",
+          "content": "scope module: :tax_preparation do"
+        },
+        {
+          "label": "inner-scope",
+          "relativePath": "config/routes/tax_preparation.rb",
+          "content": "scope module: :tax_automations do"
+        },
+        {
+          "label": "events-route",
+          "relativePath": "config/routes/tax_preparation.rb",
+          "content": "post 'events', controller: :events, action: :create"
+        }
+      ]
+    },
+    "T-complete-spec-stop": {
+      "factual_review": [
+        "Verified matching delivery is acknowledged200 and completed indexing creates owner operation/processed send; bad signature and older-than-five-minute signature yield401.",
+        "Invalid envelope is acknowledged200, warned, and creates no operation. Do not infer duplicate-processing guarantees not established in source."
+      ],
+      "hypothesis_review": [
+        "The retained full request spec already covers the question; no further implementation read is necessary to state what it establishes."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "T-backend-preview-stop": {
+      "factual_review": [
+        "Stored client documents do have extension restrictions: a case-insensitive configured blacklist is checked by validate_file_extension/invalid_format? (with documented attachment/directory/skip conditions), not a universal whitelist inferred from unrelated settings.",
+        "PDF and XLS are not blacklisted and are backend-previewable; XLSM is not blacklisted and passes this extension validation but backend previewable? regex excludes it. Storage still depends on remaining validations including positive size and relevant size limits.",
+        "Separate backend extension acceptance from backend preview and do not substitute frontend support or claim all extensions are allowed."
+      ],
+      "hypothesis_review": [
+        "Reuse held backend bodies and setting; no frontend/helper reread needed for these facts."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": [
+        "TaxPreparation::Document#validate_file_extension",
+        "TaxPreparation::Document#previewable?",
+        "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX",
+        "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX",
+        "TaxPreparation::Document#invalid_format?",
+        "TaxPreparation::Document#attach",
+        "TaxPreparation::Document#file_extension",
+        "TaxPreparation::Document#validate_file_size",
+        "isPreviewAvailable"
+      ]
+    },
+    "C-dependent-new-locator": {
+      "factual_review": [
+        "Vendor::RefreshPolicy#retryable? returns true only for429 or503 via include?; source identity is unambiguous."
+      ],
+      "hypothesis_review": [
+        "Retained discovery supplies no concrete method locator; necessary discovery before source is valid. No direct-body guess is required."
+      ],
+      "required_source_units": [
+        "Vendor::RefreshPolicy#retryable?"
+      ],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "C-body-coverage-boundaries": {
+      "factual_review": [
+        "Associate RequestBudget uploads60/ordinary30, RetryBudget90/45, UploadBudget120/40, ChangedBudget current180/50; old ChangedBudget150/35 is stale.",
+        "Header/outline/budget-shortfall do not establish omitted method implementation."
+      ],
+      "hypothesis_review": [
+        "Fetch source for missing or explicitly changed bodies; reuse only fresh sufficient rows even in mixed responses."
+      ],
+      "required_source_units": [
+        "Vendor::RequestBudget#timeout_seconds",
+        "Vendor::RetryBudget#timeout_seconds",
+        "Vendor::UploadBudget#timeout_seconds",
+        "Vendor::ChangedBudget#timeout_seconds"
+      ],
+      "facts": [],
+      "optional_backend_symbols": []
+    },
+    "C-unknown-filename": {
+      "factual_review": [
+        "Identify config/vendor_policy.yml and429,503, correctly associated with retry_statuses."
+      ],
+      "hypothesis_review": [
+        "An unknown config filename needs complete scoped filename discovery; then obtain content. Known-file shortcut must not skip this gap."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": [],
+      "required_source_snippets": [
+        {
+          "label": "retry-status-setting",
+          "relativePath": "config/vendor_policy.yml",
+          "content": "retry_statuses: [429, 503]"
+        }
+      ]
+    },
+    "C-complete-absence": {
+      "factual_review": [
+        "No config YAML in complete fixture scope defines retry_statuses; qualify scope and base absence on complete literal search."
+      ],
+      "hypothesis_review": [
+        "Complete filename/scoped literal inventory is required for absence; partial padded excerpts cannot prove it."
+      ],
+      "required_source_units": [],
+      "facts": [],
+      "optional_backend_symbols": []
+    }
+  }
+}

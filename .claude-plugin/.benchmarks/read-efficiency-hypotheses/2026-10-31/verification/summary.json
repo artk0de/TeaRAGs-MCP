@@ -1,0 +1,30 @@
+{
+  "selected_source_sha256": "a64bce28a27b4c275aad1613198bdf75535d5dc2142698e5995f23c7033f948f",
+  "generator_tests": {
+    "passed": 60,
+    "failed": 0
+  },
+  "reread_hook_tests": {
+    "passed": 132,
+    "failed": 0
+  },
+  "search_drift_hook_tests": {
+    "passed": 132,
+    "failed": 0
+  },
+  "claude_copy_affected_tests": {
+    "passed": 3,
+    "failed": 0,
+    "unselected": 19
+  },
+  "eslint": {
+    "exit_code": 0,
+    "errors": 0,
+    "pre_existing_warnings": 1,
+    "warning": "prefer-template on unchanged concatenation in turn routing"
+  },
+  "scope": "Affected checks only; no full-suite or full39 rerun.",
+  "compiled_package": "87 TeaCodex files byte-identical to selected raw-delivery-fix snapshot; source generator formatting changes do not change output.",
+  "review_limitations": "Naming not judged (nonProduction/noCodegraphLanguage); Bash architecture unsupported. All detector sections built; zero introduced architecture findings. Historical coupling triaged separately.",
+  "phase1_env_correction": "Native PLUGIN_DATA persisted state despite nonexistent TMPDIR. Prior disabled-ledger assumption disproven; shell ranges were missing from raw stdout bug. Keep correction authoritative."
+}

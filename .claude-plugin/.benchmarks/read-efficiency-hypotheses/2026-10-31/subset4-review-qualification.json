@@ -1,0 +1,34 @@
+{
+  "qualification": "Q37 known initializer+named method parallel acquisition was already present in every baseline/compact/procedural actor; the audited staging problem did not reproduce locally. Additional helper predicates were unavailable in this synthetic fixture; probing them may be reasonable for the broad how-calculate question and is not demonstrated unnecessary. Factual PASS concerns top-level algorithm and explicit limits, not unseen helper internals. No source staging or stopping optimization benefit is demonstrated.",
+  "cache_correction": "Earlier parent message saying all initial_cache0 was incorrect. JSON per-actor cache values below are authoritative; service cache cannot be disabled.",
+  "initial_cache_by_condition_case": {
+    "baseline": {
+      "T-known-contract-content": 0,
+      "T-known-metrics-content": 0,
+      "T-held-naming-context": 0,
+      "C-unknown-filename": 0
+    },
+    "compact": {
+      "T-known-contract-content": 0,
+      "T-known-metrics-content": 0,
+      "T-held-naming-context": 0,
+      "C-unknown-filename": 0
+    },
+    "procedural": {
+      "T-known-contract-content": 8832,
+      "T-known-metrics-content": 8832,
+      "T-held-naming-context": 0,
+      "C-unknown-filename": 0
+    }
+  },
+  "preserved_reports": {
+    ".tmp/readfix-v4-evals/subset4-comparison.json": "ad2890a7a3cd07f0ff23be974aa0d5217e826f3f3e74f5cf5a75990f643375f8",
+    ".tmp/readfix-v4-evals/baseline-subset4-attempt1/semantic-review.json": "5885c4d0da13fc1190202e9439b789f63f509c5544932f0f96d1c8047856a198",
+    ".tmp/readfix-v4-evals/compact-subset4-attempt1/semantic-review.json": "395b0e203e3517855bc5809fa547b9ea6dba4b90a4e1296e1b1b4f3c0c424e54",
+    ".tmp/readfix-v4-evals/procedural-subset4-attempt1/semantic-review.json": "e642f20f13dc4b061d58dd85f19191837ab849cd808d7955025e264afd07ae03"
+  },
+  "verdict": "Reject added compact/procedural prose as no net native response-depth gain in tested subset; n=1 not statistical evidence.",
+  "model_turns_added": 0,
+  "immutable_archive_member": "evals/subset4-review-qualification.json",
+  "reference_note": "Observed native call and filesystem paths remain verbatim evidence; use immutable_archive_member to locate archived report."
+}

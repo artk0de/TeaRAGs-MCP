@@ -1,0 +1,862 @@
+{
+  "schema_version": 1,
+  "evals": [
+    {
+      "id": "T-known-contract-content",
+      "prompt": "Gemfile, Gemfile.lock and spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb are the relevant files. Which schema gems are installed, and which fixture schemas does the spec assert?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "Gemfile": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ngem 'json-schema'\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n  gem 'json_schemer'\n",
+          "Gemfile.lock": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n      json-schema (>= 5.0, < 7.0)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n    json-schema (6.2.0)\n\n\n    json_schemer (2.4.0)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n      json-schema (>= 2.2, < 7.0)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n  json-schema\n  json_schemer\n",
+          "spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n  context 'fixture conformance with the OpenAPI contract' do\n    it 'entity.json conforms to the Entity schema' do\n      expect(conforms_to_contract?('Entity', instead_fixture('entity'))).to be true\n    end\n\n    it 'file.json conforms to the File schema' do\n      expect(conforms_to_contract?('File', instead_fixture('file'))).to be true\n    end\n\n    it 'start_upload.json carries an Upload conforming to the SignedUpload schema' do\n      expect(conforms_to_contract?('SignedUpload', instead_fixture('start_upload')['Upload'])).to be true\n    end\n\n    it 'token.json conforms to the TokenResponse schema' do\n      expect(conforms_to_contract?('TokenResponse', instead_fixture('token'))).to be true\n    end\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-known-metrics-content",
+      "prompt": "Which tax automation metrics are configured in config/initializers/yabeda.rb, and how does TaxPreparation::TaxAutomations::Documents::ReconcileSweepWorker.count_stale_sends calculate the stale-send count?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/initializers/yabeda.rb": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n    counter :authorization_failure_count, comment: 'Number of Quickbooks::AuthorizationFailure errors'\n    counter :other_authorization_failure_error_count, comment: 'Number of Quickbooks::AuthorizationFailure errors with code different than 3200'\n    counter :unauthorized_connection_within_refresh_connection_count, comment: 'Number of quickbooks_connection updates with unauthorized state'\n    counter :refresh_token_lock_wait_timeout_count, comment: 'Number of QBO refresh_token attempts that hit the row-lock wait timeout (TD-88067)'\n    counter :api_rate_limit_error_count, comment: 'Number of Quickbooks::TooManyRequests errors', tags: %i[call_type call_name]\n    counter :webhook_received_count, comment: 'Number of QBO webhook events received', tags: %i[format event_type]\n  end\n\n  group :tax_automations do\n    # `vendor` is the adapter namespace segment — `instead`, `juno`, `gruntworx`.\n    # `operation` is `api_request` for the vendor's API, `connect`, `reconnect`,\n    # `token_refresh` or `token_revoke` for its OAuth2 token endpoint, and\n    # `upload_transfer` for the bytes posted to a target the vendor hands out.\n    #\n    # The buckets run to twenty minutes for that last one alone: its duration\n    # follows the size of a file rather than the vendor's latency, and nothing\n    # bounds it from above — the upload timeout is a threshold for a stalled\n    # socket, not a budget for the transfer. A ceiling of 30s would leave every\n    # real upload in `+Inf`, where no quantile can tell one from another. The\n    # last edge is read against the size ceiling the vendor's own policy carries:\n    # 2 GB inside 1200s is 1.7 MB/s, so a transfer that falls out of the top\n    # bucket is a stalled one rather than merely a large file on a slow link.\n    histogram :requests_duration,\n      tags: %i[vendor operation],\n      unit: :seconds,\n      comment: 'Duration of a tax automation vendor operation (seconds) — an API request, a token exchange, ' \\\n               'or a byte transfer to a pre-signed target.',\n      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 900, 1200]\n\n    # `reason` is `HTTP_ERROR: <status>`, `NETWORK_ERROR: <exception class>`,\n    # `LOCK_TIMEOUT` for contention on the connection row, `INVALID_GRANT` when\n    # the firm has to authorize us again, or `NO_PRINCIPAL` on `token_revoke` for\n    # a deleted firm's grants, left to lapse because nobody is left to withdraw them.\n    #\n    # A refused renewal lands twice — once as `token_refresh`, once as the\n    # `api_request` that needed it. Sum by `operation`, never across it.\n    counter :failed_requests_total,\n      tags: %i[vendor operation reason],\n      comment: 'Number of failed tax automation vendor API requests'\n\n    # Read off the vendor's `X-RateLimit-*` headers on every answer that carries\n    # them — the budget of one connection in one API `group`.\n    gauge :rate_limit_remaining,\n      tags: %i[vendor group],\n      comment: 'Requests left in the tax automation vendor rate-limit window'\n    gauge :rate_limit_reset_seconds,\n      tags: %i[vendor group],\n      comment: 'Seconds until the tax automation vendor rate-limit window resets'\n    # Counted by the rule of the `installations` gauge: installed − uninstalled over a range is its change.\n    counter :installation_changes_total,\n      tags: %i[vendor change],\n      comment: 'Tax automation vendor connections a firm made (installed) or ended (uninstalled)'\n    # A send whose status a reconciliation read back — a lost webhook repaired. A status the record already held is not counted.\n    counter :reconciled_documents_total,\n      tags: %i[vendor processing_status],\n      comment: 'Tax automation sends whose status a reconciliation read back from the vendor'\n    # How an export's search for a vendor entity under the taxpayer's name ended: `matched` or `matched_swapped`\n    # (first and last name swapped) linked one, `namesakes` and `swapped_namesakes` found several, `no_match` found none.\n    counter :entity_matches_total,\n      tags: %i[vendor outcome],\n      comment: 'Tax automation exports that searched the vendor entities for the taxpayer, by how the search ended'\n    gauge :installations,\n      tags: %i[vendor],\n      aggregation: :most_recent,\n      comment: 'Tax automation vendor connections not ended by their firm. Periodic collector, Sidekiq processes only.'\n    # The `sent` sends the reconciliation sweep hands over — lost deliveries not yet repaired.\n    gauge :stale_sends,\n      tags: %i[vendor],\n      aggregation: :most_recent,\n      comment: 'Tax automation sends still waiting for the vendor status past their window. Periodic collector, Sidekiq processes only.'\n\n    # Every Sidekiq process reports the same cached count, so no process keeps a value another one has moved past.\n    collect do\n      next unless Sidekiq.server?\n\n      TaxPreparation::TaxAutomations::Registry.adapters.each do |adapter|\n        provider = TaxPreparation::TaxAutomations::Registry.provider_of(adapter)\n        installations = TaxPreparation::TaxAutomations::Metrics.cached_count('installations', provider) { TaxPreparation::TaxAutomations::Metrics.count_installations(adapter) }\n        tax_automations.installations.set({vendor: provider}, installations)\n\n        stale_sends = TaxPreparation::TaxAutomations::Metrics.cached_count('stale_sends', provider) { TaxPreparation::TaxAutomations::Documents::ReconcileSweepWorker.count_stale_sends(adapter) }\n        tax_automations.stale_sends.set({vendor: provider}, stale_sends)\n      end\n    rescue StandardError => e # a /metrics scrape must never 500\n      Rails.logger.warn(\"tax_automations collector skipped: #{e.class}: #{e.message}\")\n    end\n  end\n\n  # TODO: Remove together with FF stripe_unified_accounts_reonboarding\n  group :stripe_migration do\n    counter :reonboarding_emails_sent, comment: 'Number of Express -> Unified and legacy -> Unified re-onboarding emails enqueued', tags: %i[kind source]\n"
+        },
+        "find_symbol_bodies": {
+          "TaxPreparation::TaxAutomations::Documents::ReconcileSweepWorker.count_stale_sends": {
+            "relativePath": "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+            "content": "class TaxPreparation::TaxAutomations::Documents::ReconcileSweepWorker < TaxPreparation::TaxAutomations::Documents::ApplicationWorker\n    # The `sent` sends a tick hands over, for the `stale_sends` gauge.\ndef count_stale_sends(adapter)\n      provider = TaxPreparation::TaxAutomations::Registry.provider_of(adapter)\n      stale_sends_by_firm_id = TaxPreparation::TaxAutomations::Documents::ReconcileCandidatesQuery.list_sent_tax_automation_documents(provider).group(:firm_id).count\n\n      stale_sends_by_firm_id.sum do |firm_id, stale_sends|\n        TaxPreparation::TaxAutomations::Documents::ReconcileCandidatesQuery.find_reconcilable_connection(adapter, provider, firm_id).present? ? stale_sends : 0\n      end\n    end",
+            "startLine": 10,
+            "endLine": 18
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-held-naming-context",
+      "prompt": "step_available? - мне все-таки не нравится слово \"step\", оно слишком широкое. Давай это будет ... operation/feature(тогда с фф будет путаница)/ какие варианты есть?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {},
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-full-file-coverage",
+      "prompt": "How do Connections::Renew and Connections::Revoke behave, including grant refusal and a concurrent reconnection?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "project": "step-fixture",
+              "path": "__FIXTURE_ROOT__",
+              "symbols": [
+                "app/services/tax_preparation/tax_automations/authorizations/create.rb",
+                "app/services/tax_preparation/tax_automations/connections/create.rb",
+                "app/services/tax_preparation/tax_automations/connections/find.rb",
+                "app/services/tax_preparation/tax_automations/connections/disconnect.rb",
+                "app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+                "app/services/tax_preparation/tax_automations/connections/renew.rb",
+                "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+                "app/services/tax_preparation/tax_automations/connections/revoke_async.rb",
+                "app/services/tax_preparation/tax_automations/connections/verify_grant.rb",
+                "app/services/tax_preparation/tax_automations/export_async.rb",
+                "app/services/tax_preparation/tax_automations/documents/update_status.rb",
+                "app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+                "app/services/tax_preparation/tax_automations/documents/delete_moved_to_another_client.rb",
+                "app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+                "app/services/tax_preparation/tax_automations/tax_preparations/merge_for_contact.rb",
+                "app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb"
+              ]
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "5caa4bae-d7fd-68d2-df85-35c274d4687e",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "app/services/tax_preparation/tax_automations/connections/renew.rb",
+                    "relativePath": "app/services/tax_preparation/tax_automations/connections/renew.rb",
+                    "kind": "file",
+                    "startLine": 1,
+                    "endLine": 47,
+                    "content": "# frozen_string_literal: true\n\n# Renews the grant now, whatever the access token's expiry reads: the keep-alive\n# sweep sends a grant here before its refresh token lapses, when nothing else\n# would touch it. One call, and the row moves with the answer: a renewal the\n# vendor accepts stamps `refreshed_at` and pushes `refresh_expires_at` out of the\n# sweep's horizon, a refused one is the exchange that settles the grant as dead,\n# so the row is revoked here and its tokens go with it (FR-017).\nclass TaxPreparation::TaxAutomations::Connections::Renew\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] -\n  #     required; the sweep hands over the row it selected\n  #   @return [ServiceResult] success, with no payload. Failure `:invalid_grant`\n  #     when the vendor refused the grant: the row reads `revoked` and nothing is\n  #     worth retrying against it.\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not renew\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or answered with anything but a\n  #     refusal of the grant, as the token module raises them. Left to the\n  #     caller: a worker retries it, a request reports it.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :refresh, connection)\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).renew!\n\n    success\n  rescue TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError => e\n    # A row the firm let go of keeps its tokens for the withdrawal that tells the vendor.\n    connection.revoke! if connection.usable?\n\n    failure(general_error(e.message, :invalid_grant))\n  end\nend\n"
+                  }
+                },
+                {
+                  "id": "cc02315e-7d00-60e6-5c3e-ecfb337657af",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+                    "relativePath": "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+                    "kind": "file",
+                    "startLine": 1,
+                    "endLine": 45,
+                    "content": "# frozen_string_literal: true\n\n# Tells the vendor about a grant the firm let go of, then drops the tokens it was\n# withdrawn with. A row that is no longer `disconnected` with a refresh token — connected again, or already\n# without tokens — is left as it is.\nclass TaxPreparation::TaxAutomations::Connections::Revoke\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [System, Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] - required\n  #   @return [ServiceResult] success: nil\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not end\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or did not accept the withdrawal.\n  #     Left to the caller: the operation running it retries.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :disconnect, connection)\n    return success unless connection.disconnected? && connection.encrypted_refresh_token.present?\n\n    revoked_refresh_token = connection.encrypted_refresh_token\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).revoke_tokens!\n\n    transaction do\n      # A ceremony that finished while the vendor was answering stored a grant of its own; that one stays.\n      connection.with_lock do\n        connection.drop_tokens! if connection.disconnected? && connection.encrypted_refresh_token == revoked_refresh_token\n      end\n    end\n\n    success\n  end\nend\n"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/services/tax_preparation/tax_automations/connections/renew.rb": "# frozen_string_literal: true\n\n# Renews the grant now, whatever the access token's expiry reads: the keep-alive\n# sweep sends a grant here before its refresh token lapses, when nothing else\n# would touch it. One call, and the row moves with the answer: a renewal the\n# vendor accepts stamps `refreshed_at` and pushes `refresh_expires_at` out of the\n# sweep's horizon, a refused one is the exchange that settles the grant as dead,\n# so the row is revoked here and its tokens go with it (FR-017).\nclass TaxPreparation::TaxAutomations::Connections::Renew\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] -\n  #     required; the sweep hands over the row it selected\n  #   @return [ServiceResult] success, with no payload. Failure `:invalid_grant`\n  #     when the vendor refused the grant: the row reads `revoked` and nothing is\n  #     worth retrying against it.\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not renew\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or answered with anything but a\n  #     refusal of the grant, as the token module raises them. Left to the\n  #     caller: a worker retries it, a request reports it.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :refresh, connection)\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).renew!\n\n    success\n  rescue TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError => e\n    # A row the firm let go of keeps its tokens for the withdrawal that tells the vendor.\n    connection.revoke! if connection.usable?\n\n    failure(general_error(e.message, :invalid_grant))\n  end\nend\n",
+          "app/services/tax_preparation/tax_automations/connections/revoke.rb": "# frozen_string_literal: true\n\n# Tells the vendor about a grant the firm let go of, then drops the tokens it was\n# withdrawn with. A row that is no longer `disconnected` with a refresh token — connected again, or already\n# without tokens — is left as it is.\nclass TaxPreparation::TaxAutomations::Connections::Revoke\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [System, Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] - required\n  #   @return [ServiceResult] success: nil\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not end\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or did not accept the withdrawal.\n  #     Left to the caller: the operation running it retries.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :disconnect, connection)\n    return success unless connection.disconnected? && connection.encrypted_refresh_token.present?\n\n    revoked_refresh_token = connection.encrypted_refresh_token\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).revoke_tokens!\n\n    transaction do\n      # A ceremony that finished while the vendor was answering stored a grant of its own; that one stays.\n      connection.with_lock do\n        connection.drop_tokens! if connection.disconnected? && connection.encrypted_refresh_token == revoked_refresh_token\n      end\n    end\n\n    success\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "app/services/tax_preparation/tax_automations/connections/renew.rb": {
+            "relativePath": "app/services/tax_preparation/tax_automations/connections/renew.rb",
+            "content": "# frozen_string_literal: true\n\n# Renews the grant now, whatever the access token's expiry reads: the keep-alive\n# sweep sends a grant here before its refresh token lapses, when nothing else\n# would touch it. One call, and the row moves with the answer: a renewal the\n# vendor accepts stamps `refreshed_at` and pushes `refresh_expires_at` out of the\n# sweep's horizon, a refused one is the exchange that settles the grant as dead,\n# so the row is revoked here and its tokens go with it (FR-017).\nclass TaxPreparation::TaxAutomations::Connections::Renew\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] -\n  #     required; the sweep hands over the row it selected\n  #   @return [ServiceResult] success, with no payload. Failure `:invalid_grant`\n  #     when the vendor refused the grant: the row reads `revoked` and nothing is\n  #     worth retrying against it.\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not renew\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or answered with anything but a\n  #     refusal of the grant, as the token module raises them. Left to the\n  #     caller: a worker retries it, a request reports it.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :refresh, connection)\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).renew!\n\n    success\n  rescue TaxPreparation::TaxAutomations::TokenRefreshable::InvalidGrantError => e\n    # A row the firm let go of keeps its tokens for the withdrawal that tells the vendor.\n    connection.revoke! if connection.usable?\n\n    failure(general_error(e.message, :invalid_grant))\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 47
+          },
+          "app/services/tax_preparation/tax_automations/connections/revoke.rb": {
+            "relativePath": "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+            "content": "# frozen_string_literal: true\n\n# Tells the vendor about a grant the firm let go of, then drops the tokens it was\n# withdrawn with. A row that is no longer `disconnected` with a refresh token — connected again, or already\n# without tokens — is left as it is.\nclass TaxPreparation::TaxAutomations::Connections::Revoke\n  include KindOfService\n\n  attr_reader :user, :actor, :connection\n\n  # @!method self.call(user, actor, connection)\n  #   @param user [User] - required\n  #   @param actor [System, Owner, Employee] - required\n  #   @param connection [TaxPreparation::TaxAutomations::HasOauthConnection] - required\n  #   @return [ServiceResult] success: nil\n  #   @raise [AbstractPolicy::ForbiddenAccessError] for a member who may not end\n  #     the firm's connection\n  #   @raise [Faraday::Error, TaxPreparation::TaxAutomations::BaseClient::RequestError]\n  #     when the vendor could not be reached or did not accept the withdrawal.\n  #     Left to the caller: the operation running it retries.\n  def initialize(user, actor, connection)\n    @user = user\n    @actor = actor\n    @connection = connection\n  end\n\n  private\n\n  def perform\n    TaxPreparation::TaxAutomations::ConnectionPolicy.authorize!(user, actor, :disconnect, connection)\n    return success unless connection.disconnected? && connection.encrypted_refresh_token.present?\n\n    revoked_refresh_token = connection.encrypted_refresh_token\n    TaxPreparation::TaxAutomations::Registry.client_for(connection).revoke_tokens!\n\n    transaction do\n      # A ceremony that finished while the vendor was answering stored a grant of its own; that one stays.\n      connection.with_lock do\n        connection.drop_tokens! if connection.disconnected? && connection.encrypted_refresh_token == revoked_refresh_token\n      end\n    end\n\n    success\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 45
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-ready-method-batch",
+      "prompt": "How does the shared vendor HTTP client classify HTTP failures, record request duration and failure reasons, and measure OAuth token calls and revocation?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "project": "step-fixture"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "1bf34181-05dc-1b87-ef97-6bdcd6618b72",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null,
+                    "content": "app/lib/tax_preparation/tax_automations/base_client.rb\n    TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS\n    TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete (public)\n  TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for (private)\n  TaxPreparation::TaxAutomations::BaseClient#request (private)\n  TaxPreparation::TaxAutomations::BaseClient#perform (private)\n  TaxPreparation::TaxAutomations::BaseClient#token_connection (private)\n  TaxPreparation::TaxAutomations::BaseClient#apply_error_handling (private)\n  TaxPreparation::TaxAutomations::BaseClient#measured (private)\n  TaxPreparation::TaxAutomations::BaseClient#track_failure (private)",
+                    "symbolId": null
+                  }
+                }
+              ],
+              "count": 1
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+              "project": "step-fixture"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "18cd969e-8135-8758-d808-893691a7b07b",
+                  "score": 1,
+                  "payload": {
+                    "request": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+                    "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+                    "content": "app/lib/tax_preparation/tax_automations/token_refreshable.rb\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code! (public)\n  TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens! (public)\n  TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh! (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens! (private)\n  TaxPreparation::TaxAutomations::TokenRefreshable#token_response (private)",
+                    "kind": null,
+                    "startLine": null,
+                    "endLine": null
+                  }
+                }
+              ],
+              "count": 1
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {},
+        "find_symbol_bodies": {
+          "TaxPreparation::TaxAutomations::BaseClient::ERRORS_MAP": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Refusals a status cannot tell apart, named by the vendor in the body through\n  # {#vendor_error_class}. Each carries a decision the caller makes differently\n  # from the status it arrived with, and stays a kind of that status's class so a\n  # caller rescuing the status is not broken by a vendor learning to name it.\n  # Only the refusals every vendor can make live here; one spoken by a single\n  # vendor belongs on that vendor's client.\n  #\n  # The firm is over its plan with the vendor — waiting does not help.\n  class QuotaExceededError < RequestError; end\n\n  # Retried as a group: both mean \"this attempt could not present a usable\n  # token\". The lock timeout belongs here because the refresh sets one, so a\n  # request racing another worker's renewal fails on the lock, not on the vendor.\n  AUTH_ERRORS = [UnauthorizedError, ActiveRecord::LockWaitTimeout].freeze\n\n  # Status => [error class, i18n key used when the vendor sends no message].\n  # Adding a vendor means filling the hooks below, never touching this table.\n  ERRORS_MAP = {\n    400 => [BadRequestError, 'bad_request'],\n    401 => [UnauthorizedError, 'unauthorized'],\n    403 => [ForbiddenError, 'forbidden'],\n    404 => [NotFoundError, 'not_found'],\n    422 => [UnprocessableEntityError, 'unprocessable_entity'],\n    423 => [LockedError, 'locked'],\n    429 => [RateLimitedError, 'rate_limited'],\n    500 => [ServerError, 'server_error'],\n    503 => [ServiceUnavailableError, 'service_unavailable']\n  }.freeze\n\n  private\n\n  attr_reader :vendor_connection, :transport\n\n  # Optional: a vendor that names a decision in its failure body — a quota, a\n  # missing scope — maps it onto one of the classes that carry one. Answering\n  # `nil` leaves the status to decide.\n  #\n  # @param body [Hash, String, nil] parsed response body\n  # @return [Class, nil] a {RequestError} subclass\n  def vendor_error_class(_body)\n    nil\n  end\n\n  # Vendor hooks. `refresh_tokens!` is the fourth, and belongs to\n  # {TaxPreparation::TaxAutomations::TokenRefreshable}.",
+            "startLine": 132,
+            "endLine": 470
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#on_complete": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  class RaiseCustomErrors < Faraday::Middleware\ndef on_complete(env)\n      status = env.response.status\n      return if status < 400\n\n      status_class, i18n_key = ERRORS_MAP.fetch(status) { fallback_for(status) }\n\n      body = env.response.body\n      error_class = @classify.call(body) || status_class\n      message = @extract_message.call(body).presence || I18n.t(i18n_key, scope: I18N_ERRORS_SCOPE)\n\n      raise error_class.new(message, body:, code: status, headers: env.response.headers)\n    end",
+            "startLine": 177,
+            "endLine": 188
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors#fallback_for": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  class RaiseCustomErrors < Faraday::Middleware\n    # What an unnamed failure becomes. The map earns a caller the right to tell\n    # one failure from another; a status missing from it is still a failure, and\n    # saying nothing would return the raw body where a parsed one is expected — a\n    # gateway's HTML 502 then reads as \"the vendor has nothing for you\".\ndef fallback_for(status)\n      return [ServerError, 'server_error'] if status >= 500\n\n      [RequestError, 'unexpected_error']\n    end",
+            "startLine": 192,
+            "endLine": 200
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#measured": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # `measure` returns the elapsed time, not the block's value — capture it.\n  #\n  # @param operation [String] one of the `operation` tag's values, declared with\n  #   the metric group in `config/initializers/yabeda.rb`\ndef measured(operation)\n    result = nil\n    Yabeda.tax_automations.requests_duration.measure(vendor:, operation:) { result = yield }\n\n    result\n  end",
+            "startLine": 418,
+            "endLine": 427
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#track_failure": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\ndef track_failure(operation, reason)\n    Yabeda.tax_automations.failed_requests_total.increment({vendor:, operation:, reason:})\n  end",
+            "startLine": 429,
+            "endLine": 431
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#measured_token_call": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # The token endpoint's own failures. Nothing above this layer sees these three\n  # calls, so a refusal counted nowhere else is counted here.\n  #\n  # Named in full for the reason {#refresh!} gives below: the error classes belong\n  # to the one class this module is mixed into.\ndef measured_token_call(operation, &)\n    measured(operation, &)\n  rescue TaxPreparation::TaxAutomations::BaseClient::RequestError => e\n    track_failure(operation, \"HTTP_ERROR: #{e.code}\")\n    raise\n  rescue *TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS => e\n    track_failure(operation, \"NETWORK_ERROR: #{e.class.name}\")\n    raise\n  end",
+            "startLine": 165,
+            "endLine": 178
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_operation": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Which ceremony the exchange belongs to, in the words of the `operation` tag.\n  # Read before the grant is stored — after it, every row says the same thing.\ndef exchange_operation\n    vendor_connection.connected_at.present? ? 'reconnect' : 'connect'\n  end",
+            "startLine": 159,
+            "endLine": 163
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#revoke_tokens!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Withdraws the grant on the vendor's side. Only the refresh token is named: it\n  # is what a renewal would present, and the access token dies with the grant.\n  #\n  # The app names itself here as it does on the exchange. A vendor that checks\n  # refuses an unnamed caller, and the refusal would go unread: the port\n  # disconnects the firm whatever the vendor answered, so the row would say the\n  # grant is gone while it is still live.\n  #\n  # Moving the row is the service layer's job — this reaches the vendor and\n  # returns.\n  #\n  # @return [void]\ndef revoke_tokens!\n    self.class.declared_oauth2!\n    revocation = {token: vendor_connection.refresh_token, token_type_hint: 'refresh_token'}\n\n    measured_token_call('token_revoke') { token_connection.post(relative_path(oauth2_paths[:revoke]), revocation.merge(client_credentials)) }\n  end",
+            "startLine": 138,
+            "endLine": 155
+          },
+          "TaxPreparation::TaxAutomations::BaseClient::NETWORK_ERRORS": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  AUTH_RETRIES_COUNT = 3\n  AUTH_RETRY_TIMEOUT_SEC = 2\n\n  OPEN_TIMEOUT_SEC = 5\n  # Ordinary calls carry small JSON documents — file bytes go straight to the\n  # vendor's pre-signed target and never pass through here.\n  REQUEST_TIMEOUT_SEC = 30\n\n  # Faraday spends this on each read from and write to the socket rather than on\n  # the transfer as a whole, so it is a threshold for a stalled connection, not a\n  # budget for the bytes: a slow upload that keeps moving is never cut short by\n  # it. The value is the one the AWS SDK carries for the same kind of timeout\n  # against the same kind of endpoint — a bucket that has said nothing for a\n  # minute has stopped listening.\n  UPLOAD_TIMEOUT_SEC = 60\n\n  # The token exchange is the one request made while the connection row is\n  # locked, so it answers to that lock rather than to the budget above: it has\n  # to finish before a worker waiting on the same row gives up. Faraday counts\n  # its two phases in sequence — `open_timeout` establishes the connection, and\n  # only then does the `timeout` clock start — so both are subtracted.\n  TOKEN_REQUEST_TIMEOUT_SEC = TaxPreparation::TaxAutomations::TokenRefreshable::CONNECTION_LOCK_TIMEOUT_SEC - OPEN_TIMEOUT_SEC - 1\n\n  I18N_ERRORS_SCOPE = 'errors.tax_preparation.tax_automations.client'\n\n  NETWORK_ERRORS = [Faraday::ConnectionFailed, Faraday::TimeoutError, Faraday::SSLError].freeze\n\n  class Error < StandardError; end\n\n  # The transport never reached the vendor — always transient.\n  class NetworkError < Error; end\n\n  # The connection row stayed locked for every attempt: another renewal was in\n  # flight, or the caller's own transaction is holding the row it asked us to\n  # renew. Nothing about the authorization failed — the request never got far\n  # enough to try one.\n  class ConnectionBusyError < Error; end\n\n  # The signature on a pre-signed target has lapsed, so nothing was sent: the\n  # bucket would refuse it, and only the vendor can issue another.\n  class TargetExpiredError < Error; end\n\n  # The vendor's answer describes a target nothing could spend: no place to post\n  # to, or nothing to authorize the post with. Raised by the constructor above\n  # and nowhere else, so an adapter mapping a vendor's spelling onto that struct\n  # gets the refusal for free — where a missing field would otherwise surface as\n  # a NoMethodError several frames later, outside this vocabulary and past every\n  # rescue written against it.\n  class TargetIncompleteError < Error; end\n\n  class BadRequestError < RequestError; end\n  # The only status the client retries, which makes it the only one whose escape\n  # carries more than the response it came from: a single 401 never reaches a\n  # caller, so one that does has outlived the whole ladder — three refusals with\n  # a freshly minted token in between each. The vendor is issuing tokens it will\n  # not accept, and the body usually says why.\n  class UnauthorizedError < RequestError; end\n  class ForbiddenError < RequestError; end\n  class NotFoundError < RequestError; end\n  class LockedError < RequestError; end\n  class ServerError < RequestError; end\n  class ServiceUnavailableError < RequestError; end",
+            "startLine": 14,
+            "endLine": 131
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#request": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # @param headers [Hash] per-request headers on top of the authenticating ones\n  # @yieldparam response [Faraday::Response] handed over in place of the parsed\n  #   body when a vendor call assembles a value of its own from the answer — a\n  #   pre-signed target is several of its fields at once, and reading them is the\n  #   vendor's vocabulary rather than the transport's\n  # @return [Hash] the parsed response body, or whatever the block makes of the\n  #   whole response when one is given\ndef request(method_name, path, body: nil, params: nil, headers: {}, &block)\n    Retry.retry_on(AUTH_ERRORS, AUTH_RETRIES_COUNT, timeout: AUTH_RETRY_TIMEOUT_SEC) do\n      with_access_token do |access_token|\n        # The renewal rides an operation of its own: its wait on the row lock says\n        # nothing about how fast the vendor's API is.\n        response = measured('api_request') { perform(method_name, path, access_token, body:, params:, headers:) }\n\n        block ? block.call(response) : response.body\n      end\n    rescue UnauthorizedError => e\n      # Counted on every attempt: a retried rejection is still a rejection, and a\n      # metric that only sees the last one hides the ladder.\n      track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n      # The vendor refused a token whose stored expiry still reads valid, so the\n      # next attempt has to carry one it minted rather than the one it just\n      # rejected.\n      refresh!(force: true)\n      raise\n    rescue ActiveRecord::LockWaitTimeout\n      track_failure('api_request', 'LOCK_TIMEOUT')\n      raise\n    end\n    # Both are retried together — waiting is the right answer to either — but\n    # they leave differently. The 401 goes on as itself: it carries the vendor's\n    # own account of the refusal, and every attempt is already counted, so it\n    # must not fall through to the counting branch below. A lock timeout is not\n    # an authorization failure at all and has nothing of the vendor to carry.\n  rescue UnauthorizedError\n    raise\n  rescue ActiveRecord::LockWaitTimeout\n    raise ConnectionBusyError, I18n.t('connection_busy', scope: I18N_ERRORS_SCOPE)\n  rescue InvalidGrantError\n    # The one failure retrying cannot help with, and the only one the firm has to\n    # act on. Counted here because it reaches the caller through none of the\n    # branches around it — the token module raises it in place of whatever the\n    # vendor said.\n    track_failure('api_request', 'INVALID_GRANT')\n    raise\n  rescue *NETWORK_ERRORS => e\n    track_failure('api_request', \"NETWORK_ERROR: #{e.class.name}\")\n    raise NetworkError, e.message\n  rescue RequestError => e\n    track_failure('api_request', \"HTTP_ERROR: #{e.code}\")\n    raise\n  end",
+            "startLine": 280,
+            "endLine": 331
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#perform": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\ndef perform(method_name, path, access_token, body: nil, params: nil, headers: {})\n    http_connection(access_token).public_send(method_name, relative_path(path)) do |request|\n      request.params.update(params) if params.present?\n      request.headers.update(headers)\n      request.body = body if body.present?\n    end\n  end",
+            "startLine": 333,
+            "endLine": 339
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#apply_error_handling": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # Order matters: response middleware runs innermost-first, so `:json` has to\n  # be registered after the error middleware for the latter to see a parsed body,\n  # and the budget is read inside it so a refusal is recorded before it raises.\ndef apply_error_handling(builder)\n    builder.use RaiseCustomErrors, extract_message: method(:vendor_error_message), classify: method(:vendor_error_class)\n    builder.use RecordRateLimit, vendor:, api_root_path: URI(base_url).path, rate_limit_group_of: method(:rate_limit_group_of)\n    builder.response :json, content_type: /\\bjson$/\n\n    builder.adapter(*adapter_spec)\n  end",
+            "startLine": 397,
+            "endLine": 406
+          },
+          "TaxPreparation::TaxAutomations::BaseClient#token_connection": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+            "content": "class TaxPreparation::TaxAutomations::BaseClient\n  # The OAuth2 token endpoint is unauthenticated and form-encoded, so it cannot\n  # reuse the JSON connection above — but it shares the error middleware, which\n  # is what turns a rejected grant into an {InvalidGrantError}. Its own timeout\n  # applies here: this is the call made under the connection row lock.\n  #\n  # @return [Faraday::Connection] for a vendor's `refresh_tokens!` to post to\ndef token_connection\n    Faraday.new(url: base_url) do |builder|\n      builder.request :url_encoded\n\n      builder.options.timeout = TOKEN_REQUEST_TIMEOUT_SEC\n      builder.options.open_timeout = OPEN_TIMEOUT_SEC\n\n      apply_error_handling(builder)\n    end\n  end",
+            "startLine": 362,
+            "endLine": 377
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#exchange_code!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Turns the code a completed ceremony carried back into the grant. Public,\n  # unlike the renewal: the service layer drives it, because a grant that does not\n  # exist yet cannot be renewed on demand. Unauthenticated, so it needs no live\n  # connection — only the row naming the firm, which decides the transport.\n  #\n  # A refusal leaves as the status the vendor sent rather than as\n  # {InvalidGrantError}: there is no grant yet for a refusal to be about.\n  #\n  # @param code [String]\n  # @param redirect_uri [String] the one the authorize request declared\n  # @param code_verifier [String] the PKCE verifier behind the challenge\n  # @return [Hash] `{access_token:, refresh_token:, expires_in:, refresh_expires_in:}`\n  #   plus whatever {#grant_identity} reads off the same response\ndef exchange_code!(code:, redirect_uri:, code_verifier:)\n    body = token_response(exchange_operation, grant_type: 'authorization_code', code:, redirect_uri:, code_verifier:)\n\n    tokens_from(body).merge(grant_identity(body))\n  end",
+            "startLine": 107,
+            "endLine": 124
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#refresh!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Renews under the row lock. The re-check inside the lock is what makes a\n  # concurrent caller a waiter rather than a second refresher.\n  #\n  # @param force [Boolean] the vendor rejected the token we hold, so its stored\n  #   expiry says nothing — renewing is right unless another caller has already\n  #   replaced that very token.\ndef refresh!(force: false)\n    reject_grant!(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE)) unless vendor_connection.refresh_token_valid?\n\n    rejected_token = vendor_connection.access_token if force\n\n    # On its own DB connection, so the write outlives a rollback of the caller's\n    # transaction. The vendor has already rotated the refresh token by then, and\n    # a rolled-back row keeps a token the vendor no longer honours — the grant is\n    # dead with no way back.\n    ThreadHelper.run_in_new_thread do\n      Thread.current.report_on_exception = false\n\n      vendor_connection.transaction(requires_new: true) do\n        # Bounds the wait when the caller's own transaction already holds this\n        # row: what would be a deadlock against the thread above surfaces as a\n        # LockWaitTimeout the client retries.\n        ActiveRecord::Base.connection.execute(\"SET LOCAL lock_timeout = '#{CONNECTION_LOCK_TIMEOUT_SEC}s'\")\n\n        vendor_connection.with_lock do\n          # The guard at the door read the row as it stood when the request began;\n          # this reads it as it stands now. A withdrawal that landed while we\n          # queued behind the lock leaves a row the transition below does not lead\n          # out of, and the caller is owed the same error as any other dead grant.\n          raise InvalidGrantError.new(I18n.t('invalid_grant', scope: I18N_ERRORS_SCOPE), connection: vendor_connection) unless vendor_connection.may_refresh?\n\n          # Whoever held the lock before us may have renewed already, and what\n          # counts as \"already\" depends on what sent us here: preemptively any\n          # unexpired token will do, but after a rejection only one that is no\n          # longer the token the vendor turned down.\n          next if force && vendor_connection.access_token != rejected_token\n          next if !force && vendor_connection.access_token_valid?\n\n          vendor_connection.store_tokens!(**refresh_tokens!)\n          # The exchange settles the grant's standing in both directions, so the\n          # transition follows it either way: here it stamps `refreshed_at` and\n          # brings an expired grant back to connected, and in {#reject_grant!} it\n          # moves a refused one further out.\n          vendor_connection.refresh!\n        end\n      end\n    end\n    # Named in full because the exchange reaches the token endpoint through the\n    # including client's error middleware — the one place this module knows it is\n    # mixed into exactly one class.\n  rescue TaxPreparation::TaxAutomations::BaseClient::RequestError => e\n    raise unless grant_refused?(e)\n\n    reject_grant!(e.message)\n  end",
+            "startLine": 200,
+            "endLine": 254
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#refresh_tokens!": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Presents the refresh token for a new pair. Persisting is {#refresh!}'s job.\n  #\n  # @return [Hash] `{access_token:, refresh_token:, expires_in:, refresh_expires_in:}`\ndef refresh_tokens!\n    tokens_from(token_response('token_refresh', grant_type: 'refresh_token', refresh_token: vendor_connection.refresh_token))\n  end",
+            "startLine": 287,
+            "endLine": 292
+          },
+          "TaxPreparation::TaxAutomations::TokenRefreshable#token_response": {
+            "relativePath": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+            "content": "module TaxPreparation::TaxAutomations::TokenRefreshable\n  # Both grant types answer with the same document — RFC 6749 fixes the field\n  # names — so one request serves the first exchange and every renewal after it.\n  #\n  # The token endpoint is unauthenticated and form-encoded, which is why it goes\n  # over {TaxPreparation::TaxAutomations::BaseClient#token_connection} rather than\n  # the JSON one.\n  #\n  # @return [Hash] the parsed token response\ndef token_response(operation, **grant)\n    self.class.declared_oauth2!\n\n    measured_token_call(operation) { token_connection.post(relative_path(oauth2_paths[:token]), grant.merge(client_credentials)) }.body\n  end",
+            "startLine": 294,
+            "endLine": 306
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-config-range-batch",
+      "prompt": "In config/routes/tax_preparation.rb, what module scope encloses the webhook route, and which controller/action receives Instead events? The relevant route block is at lines713–758.",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/routes/tax_preparation.rb": "# frozen_string_literal: true\n\n# Routes for the tax_preparation domain. See TD-74318.\n# Rails merges resources defined here with those in other route files\n# at the same nesting level, so per-controller carve-outs work.\n\nscope module: :tax_preparation do\n  namespace 'api', api_scope: true, defaults: {format: :json} do\n    namespace 'v1' do\n      namespace :admin do\n        resources :firms, only: %i[] do\n          scope module: :firms do\n            resources :site_contact_form_assignments, only: %i[index] do\n              collection do\n                patch :batch_update\n              end\n            end\n\n            resource :site, controller: :sites, only: %i[show update]\n          end\n        end\n      end\n\n      resources :archives, only: %i[create]\n\n      resource :client, only: %i[] do\n        scope module: :client do\n          resources :ai_actions, only: [] do\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n          end\n        end\n      end\n\n      namespace :guest do\n        resources :blobs, only: %i[show create], param: :signed_id\n      end\n    end\n  end\n\n  constraints RouteConstraints::AppDomainConstraint do\n    defaults host: HostHelper.app_subdomain do\n      namespace :editor do\n        resources :firms, only: %i[] do\n          scope module: :firms do\n            resource :site, controller: :sites, only: %i[show]\n          end\n        end\n      end\n\n      namespace :webhooks do\n        namespace 'eid_easy' do\n          resource :qes, controller: :qes, only: %i[create]\n        end\n\n        resource :site_pro, controller: :site_pro, only: %i[] do\n          get 'zyro/action/:id', action: :show, as: :status\n          post 'zyro/action', action: :create, as: :create\n        end\n\n        namespace :intake do\n          post 'text_extractions/completed', controller: :text_extractions, action: :completed\n        end\n\n        namespace :delivery do\n          post 'predict/completed', controller: :predicts, action: :completed\n        end\n\n        # The URL is what Instead is configured to call, so the aggregate stays out of it.\n        scope module: :tax_automations do\n          namespace :instead do\n            post 'events', controller: :events, action: :create\n          end\n        end\n      end\n\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-complete-spec-stop",
+      "prompt": "What does this request spec establish about verified deliveries, invalid signatures and invalid envelopes?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "exec_command",
+            "arguments": {
+              "cmd": "/bin/zsh -c \"sed -n '1,250p' spec/requests/tax_preparation/webhooks/tax_automations/instead/events_controller_spec.rb\"",
+              "workdir": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "output": "# frozen_string_literal: true\n\nrequire 'spec_helper'\n\nRSpec.describe TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController, type: :request do\n  let(:secret) { 'current-signing-secret' }\n  let(:timestamp) { Time.current.to_i.to_s }\n  let(:firm) { create :firm }\n  let(:client) { create :client, :with_authorized_contact_email, :with_doc_dirs, firm: }\n  let(:contact) { client.contacts.first }\n  let(:envelope) { create :juno_tax_preparation, firm:, juno_client: nil, client_id: client.id, contact_id: contact.id, year: 2025, return_type: '1040' }\n  let(:document) { create :document, firm:, client:, doc_dir: client.silo_with_client_read_write_access, creator: firm.owner }\n  let(:send_record) { create :tax_automations_document, firm:, tax_preparation: envelope, document:, provider: :instead }\n  let(:entity) { create :instead_entity, firm: }\n  let(:instead_document) { create :instead_document, firm:, tax_automation_document: send_record, instead_entity: entity }\n  let(:body) do\n    {\n      data: {EntityUUID: entity.external_uuid, UUID: instead_document.external_uuid, IndexStatus: 'completed'},\n      entity: entity.external_uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f35',\n      resource: instead_document.external_uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n  end\n  let(:sign) { ->(payload, at = timestamp) { OpenSSL::HMAC.hexdigest('SHA256', secret, \"#{at}.#{payload}\") } }\n  let(:headers) do\n    {\n      'CONTENT_TYPE' => 'application/json',\n      'X-Instead-Signature' => sign.call(body),\n      'X-Instead-Signature-Algorithm' => 'hmac-sha256',\n      'X-Instead-Signature-Timestamp' => timestamp,\n      'x-skip-middleware' => 'true'\n    }\n  end\n\n  before { stub_const('TaxPreparation::TaxAutomations::Instead::Webhooks::Signature::SECRETS', [secret]) }\n\n  it 'acknowledges a verified delivery for a file this firm sent' do\n    post webhooks_instead_events_url, params: body, headers: headers\n\n    expect(response).to have_http_status(:ok)\n  end\n\n  it 'processes a completed indexing for a file this firm sent as the firm Owner', :aggregate_failures do\n    post webhooks_instead_events_url, params: body, headers: headers\n\n    operation = Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event')\n    expect(operation.creator).to eq(firm.owner)\n    expect(operation.firm_id).to eq(firm.id)\n    expect(operation.args).to eq(\n      'event' => 'webhooks.entities.docs.indexed',\n      'event_id' => '01a0a584-ce08-7bef-87a4-442c77f47f35',\n      'entity_uuid' => entity.external_uuid,\n      'file_uuid' => instead_document.external_uuid,\n      'index_status' => 'completed',\n      'index_error_reason' => nil,\n      'name' => nil,\n      'entity_type' => nil\n    )\n    expect(send_record.reload.processing_status).to eq('processed')\n  end\n\n  it 'processes a failed indexing as a failed send and logs the reason Instead named', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    failed_body = JSON.parse(body).deep_merge('data' => {'IndexStatus' => 'failed', 'IndexErrorReason' => 'password_required'}).to_json\n\n    post webhooks_instead_events_url, params: failed_body, headers: headers.merge('X-Instead-Signature' => sign.call(failed_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/index_status=\"failed\" index_error_reason=\"password_required\"/))\n    expect(send_record.reload.processing_status).to eq('error')\n    expect(send_record.failure_reason).to eq('encrypted')\n  end\n\n  it 'processes an archive, which carries no indexing outcome', :aggregate_failures do\n    send_record.complete_processing!\n    archive_body = {\n      data: {EntityUUID: entity.external_uuid, UUID: instead_document.external_uuid},\n      entity: entity.external_uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f36',\n      resource: instead_document.external_uuid,\n      type: 'webhooks.entities.docs.archived'\n    }.to_json\n\n    post webhooks_instead_events_url, params: archive_body, headers: headers.merge('X-Instead-Signature' => sign.call(archive_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event').args).to include('event' => 'webhooks.entities.docs.archived', 'index_status' => nil)\n    expect(send_record.reload.processing_status).to eq('archived')\n  end\n\n  it 'drops a delivery naming a file this firm sent under another entity', :aggregate_failures do\n    other_entity_body = JSON.parse(body).merge('entity' => SecureRandom.uuid).to_json\n\n    post webhooks_instead_events_url, params: other_entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(other_entity_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    expect(send_record.reload.processing_status).to eq('sent')\n  end\n\n  it 'acknowledges and drops a verified delivery naming a file of another account', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    foreign_body = {\n      data: {EntityUUID: SecureRandom.uuid, UUID: SecureRandom.uuid, IndexStatus: 'completed'},\n      entity: SecureRandom.uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f38',\n      resource: SecureRandom.uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n\n    post webhooks_instead_events_url, params: foreign_body, headers: headers.merge('X-Instead-Signature' => sign.call(foreign_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/event_id=\\S+ .*unmatched$/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'processes an upsert, which reports the indexing under way, as processing', :aggregate_failures do\n    upsert_body = JSON.parse(body).merge('type' => 'webhooks.entities.docs.upserted').deep_merge('data' => {'IndexStatus' => 'processing', 'Size' => 165_825}).to_json\n\n    post webhooks_instead_events_url, params: upsert_body, headers: headers.merge('X-Instead-Signature' => sign.call(upsert_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event').args).to include('event' => 'webhooks.entities.docs.upserted', 'index_status' => 'processing')\n    expect(send_record.reload.processing_status).to eq('processing')\n  end\n\n  it 'acknowledges an indexed delivery whose outcome is outside the vocabulary and logs it as invalid', :aggregate_failures do\n    allow(Rails.logger).to receive(:warn).and_call_original\n    blank_body = JSON.parse(body).deep_merge('data' => {'IndexStatus' => 'queued'}).to_json\n\n    post webhooks_instead_events_url, params: blank_body, headers: headers.merge('X-Instead-Signature' => sign.call(blank_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\\[Instead webhook\\] invalid event=webhooks\\.entities\\.docs\\.indexed event_id=\\S+ .*index_status=\"queued\".* errors=index_status/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'reads the envelope from the signed body, not from a query string repeating its keys', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    send_record.complete_processing!\n    foreign_body = {\n      data: {EntityUUID: SecureRandom.uuid, UUID: SecureRandom.uuid, IndexStatus: 'completed'},\n      entity: SecureRandom.uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f37',\n      resource: SecureRandom.uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n    query = {type: 'webhooks.entities.docs.archived', entity: entity.external_uuid, resource: instead_document.external_uuid}.to_query\n\n    post \"#{webhooks_instead_events_url}?#{query}\", params: foreign_body, headers: headers.merge('X-Instead-Signature' => sign.call(foreign_body))\n\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/event=webhooks\\.entities\\.docs\\.indexed event_id=\\S+ .*unmatched$/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    expect(send_record.reload.processing_status).to eq('processed')\n  end\n\n  it 'refuses a delivery whose signature does not match the body', :aggregate_failures do\n    post webhooks_instead_events_url, params: body, headers: headers.merge('X-Instead-Signature' => sign.call(\"#{body} \"))\n\n    expect(response).to have_http_status(:unauthorized)\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'refuses a delivery signed more than five minutes ago' do\n    stale = (Time.current - 5.minutes - 1.second).to_i.to_s\n\n    post webhooks_instead_events_url, params: body,\n      headers: headers.merge('X-Instead-Signature-Timestamp' => stale, 'X-Instead-Signature' => sign.call(body, stale))\n\n    expect(response).to have_http_status(:unauthorized)\n  end\n\n  context 'when the delivery is about an entity' do\n    let(:instead_firm_uuid) { SecureRandom.uuid }\n    let(:entity_uuid) { SecureRandom.uuid }\n    let(:other_firm) { create :firm, subdomain: 'other-firm' }\n    let(:entity_body) do\n      {\n        data: {UUID: entity_uuid, Name: 'Bill Herrington', EntityType: 'INDIVIDUAL'},\n        entity: entity_uuid,\n        firm: instead_firm_uuid,\n        id: '019a0a58-4ce0-7bef-87a4-442c77f47f39',\n        resource: entity_uuid,\n        type: 'webhooks.entities.created'\n      }.to_json\n    end\n\n    it 'starts one operation per firm bound to the Instead firm, as each firm Owner', :aggregate_failures, :multiple_firms do\n      create :tax_automations_firm_settings, firm:, external_tenant_uuid: instead_firm_uuid\n      create :tax_automations_firm_settings, firm: other_firm, external_tenant_uuid: instead_firm_uuid\n      create(:instead_connection, :connected, firm:)\n      create :instead_connection, :connected, firm: other_firm\n\n      post webhooks_instead_events_url, params: entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(entity_body))\n\n      operations = Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')\n      expect(response).to have_http_status :ok\n      expect(operations.map(&:creator)).to contain_exactly firm.owner, other_firm.owner\n      expect(operations.first.args).to eq(\n        'event' => 'webhooks.entities.created',\n        'event_id' => '019a0a58-4ce0-7bef-87a4-442c77f47f39',\n        'entity_uuid' => entity_uuid,\n        'file_uuid' => nil,\n        'index_status' => nil,\n        'index_error_reason' => nil,\n        'name' => 'Bill Herrington',\n        'entity_type' => 'INDIVIDUAL'\n      )\n      expect(TaxPreparation::TaxAutomations::Instead::Entity.where(external_uuid: entity_uuid).map(&:firm_id)).to contain_exactly firm.id, other_firm.id\n    end\n\n    it 'acknowledges and drops a delivery about an Instead firm no firm is bound to', :aggregate_failures do\n      allow(Rails.logger).to receive(:info).and_call_original\n      create :tax_automations_firm_settings, firm:, external_tenant_uuid: SecureRandom.uuid\n\n      post webhooks_instead_events_url, params: entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(entity_body))\n\n      expect(response).to have_http_status :ok\n      expect(Rails.logger).to have_received(:info).with(a_string_matching(/firm=#{instead_firm_uuid} unmatched$/))\n      expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    end\n\n    it 'acknowledges and drops a delivery naming no Instead firm', :aggregate_failures do\n      allow(Rails.logger).to receive(:info).and_call_original\n      create(:tax_automations_firm_settings, firm:)\n      unbound_body = JSON.parse(entity_body).merge('firm' => '').to_json\n\n      post webhooks_instead_events_url, params: unbound_body, headers: headers.merge('X-Instead-Signature' => sign.call(unbound_body))\n\n      expect(response).to have_http_status :ok\n      expect(Rails.logger).to have_received(:info).with(a_string_matching(/event=webhooks\\.entities\\.created event_id=\\S+ entity=\\S+ firm= unmatched$/))\n      expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    end\n  end\n\n  it 'acknowledges a body that is not the documented envelope and logs it as invalid', :aggregate_failures do\n    allow(Rails.logger).to receive(:warn).and_call_original\n    other_body = {entity: entity.external_uuid, type: 'webhooks.entities.created'}.to_json\n\n    post webhooks_instead_events_url, params: other_body, headers: headers.merge('X-Instead-Signature' => sign.call(other_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\\[Instead webhook\\] invalid event=webhooks\\.entities\\.created /))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n",
+              "exit_code": 0
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "spec/requests/tax_preparation/webhooks/tax_automations/instead/events_controller_spec.rb": "# frozen_string_literal: true\n\nrequire 'spec_helper'\n\nRSpec.describe TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController, type: :request do\n  let(:secret) { 'current-signing-secret' }\n  let(:timestamp) { Time.current.to_i.to_s }\n  let(:firm) { create :firm }\n  let(:client) { create :client, :with_authorized_contact_email, :with_doc_dirs, firm: }\n  let(:contact) { client.contacts.first }\n  let(:envelope) { create :juno_tax_preparation, firm:, juno_client: nil, client_id: client.id, contact_id: contact.id, year: 2025, return_type: '1040' }\n  let(:document) { create :document, firm:, client:, doc_dir: client.silo_with_client_read_write_access, creator: firm.owner }\n  let(:send_record) { create :tax_automations_document, firm:, tax_preparation: envelope, document:, provider: :instead }\n  let(:entity) { create :instead_entity, firm: }\n  let(:instead_document) { create :instead_document, firm:, tax_automation_document: send_record, instead_entity: entity }\n  let(:body) do\n    {\n      data: {EntityUUID: entity.external_uuid, UUID: instead_document.external_uuid, IndexStatus: 'completed'},\n      entity: entity.external_uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f35',\n      resource: instead_document.external_uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n  end\n  let(:sign) { ->(payload, at = timestamp) { OpenSSL::HMAC.hexdigest('SHA256', secret, \"#{at}.#{payload}\") } }\n  let(:headers) do\n    {\n      'CONTENT_TYPE' => 'application/json',\n      'X-Instead-Signature' => sign.call(body),\n      'X-Instead-Signature-Algorithm' => 'hmac-sha256',\n      'X-Instead-Signature-Timestamp' => timestamp,\n      'x-skip-middleware' => 'true'\n    }\n  end\n\n  before { stub_const('TaxPreparation::TaxAutomations::Instead::Webhooks::Signature::SECRETS', [secret]) }\n\n  it 'acknowledges a verified delivery for a file this firm sent' do\n    post webhooks_instead_events_url, params: body, headers: headers\n\n    expect(response).to have_http_status(:ok)\n  end\n\n  it 'processes a completed indexing for a file this firm sent as the firm Owner', :aggregate_failures do\n    post webhooks_instead_events_url, params: body, headers: headers\n\n    operation = Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event')\n    expect(operation.creator).to eq(firm.owner)\n    expect(operation.firm_id).to eq(firm.id)\n    expect(operation.args).to eq(\n      'event' => 'webhooks.entities.docs.indexed',\n      'event_id' => '01a0a584-ce08-7bef-87a4-442c77f47f35',\n      'entity_uuid' => entity.external_uuid,\n      'file_uuid' => instead_document.external_uuid,\n      'index_status' => 'completed',\n      'index_error_reason' => nil,\n      'name' => nil,\n      'entity_type' => nil\n    )\n    expect(send_record.reload.processing_status).to eq('processed')\n  end\n\n  it 'processes a failed indexing as a failed send and logs the reason Instead named', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    failed_body = JSON.parse(body).deep_merge('data' => {'IndexStatus' => 'failed', 'IndexErrorReason' => 'password_required'}).to_json\n\n    post webhooks_instead_events_url, params: failed_body, headers: headers.merge('X-Instead-Signature' => sign.call(failed_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/index_status=\"failed\" index_error_reason=\"password_required\"/))\n    expect(send_record.reload.processing_status).to eq('error')\n    expect(send_record.failure_reason).to eq('encrypted')\n  end\n\n  it 'processes an archive, which carries no indexing outcome', :aggregate_failures do\n    send_record.complete_processing!\n    archive_body = {\n      data: {EntityUUID: entity.external_uuid, UUID: instead_document.external_uuid},\n      entity: entity.external_uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f36',\n      resource: instead_document.external_uuid,\n      type: 'webhooks.entities.docs.archived'\n    }.to_json\n\n    post webhooks_instead_events_url, params: archive_body, headers: headers.merge('X-Instead-Signature' => sign.call(archive_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event').args).to include('event' => 'webhooks.entities.docs.archived', 'index_status' => nil)\n    expect(send_record.reload.processing_status).to eq('archived')\n  end\n\n  it 'drops a delivery naming a file this firm sent under another entity', :aggregate_failures do\n    other_entity_body = JSON.parse(body).merge('entity' => SecureRandom.uuid).to_json\n\n    post webhooks_instead_events_url, params: other_entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(other_entity_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    expect(send_record.reload.processing_status).to eq('sent')\n  end\n\n  it 'acknowledges and drops a verified delivery naming a file of another account', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    foreign_body = {\n      data: {EntityUUID: SecureRandom.uuid, UUID: SecureRandom.uuid, IndexStatus: 'completed'},\n      entity: SecureRandom.uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f38',\n      resource: SecureRandom.uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n\n    post webhooks_instead_events_url, params: foreign_body, headers: headers.merge('X-Instead-Signature' => sign.call(foreign_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/event_id=\\S+ .*unmatched$/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'processes an upsert, which reports the indexing under way, as processing', :aggregate_failures do\n    upsert_body = JSON.parse(body).merge('type' => 'webhooks.entities.docs.upserted').deep_merge('data' => {'IndexStatus' => 'processing', 'Size' => 165_825}).to_json\n\n    post webhooks_instead_events_url, params: upsert_body, headers: headers.merge('X-Instead-Signature' => sign.call(upsert_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Tech::AsyncOperation.find_by(slug: 'tax_automations_instead_webhook_event').args).to include('event' => 'webhooks.entities.docs.upserted', 'index_status' => 'processing')\n    expect(send_record.reload.processing_status).to eq('processing')\n  end\n\n  it 'acknowledges an indexed delivery whose outcome is outside the vocabulary and logs it as invalid', :aggregate_failures do\n    allow(Rails.logger).to receive(:warn).and_call_original\n    blank_body = JSON.parse(body).deep_merge('data' => {'IndexStatus' => 'queued'}).to_json\n\n    post webhooks_instead_events_url, params: blank_body, headers: headers.merge('X-Instead-Signature' => sign.call(blank_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\\[Instead webhook\\] invalid event=webhooks\\.entities\\.docs\\.indexed event_id=\\S+ .*index_status=\"queued\".* errors=index_status/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'reads the envelope from the signed body, not from a query string repeating its keys', :aggregate_failures do\n    allow(Rails.logger).to receive(:info).and_call_original\n    send_record.complete_processing!\n    foreign_body = {\n      data: {EntityUUID: SecureRandom.uuid, UUID: SecureRandom.uuid, IndexStatus: 'completed'},\n      entity: SecureRandom.uuid,\n      firm: '',\n      id: '01a0a584-ce08-7bef-87a4-442c77f47f37',\n      resource: SecureRandom.uuid,\n      type: 'webhooks.entities.docs.indexed'\n    }.to_json\n    query = {type: 'webhooks.entities.docs.archived', entity: entity.external_uuid, resource: instead_document.external_uuid}.to_query\n\n    post \"#{webhooks_instead_events_url}?#{query}\", params: foreign_body, headers: headers.merge('X-Instead-Signature' => sign.call(foreign_body))\n\n    expect(Rails.logger).to have_received(:info).with(a_string_matching(/event=webhooks\\.entities\\.docs\\.indexed event_id=\\S+ .*unmatched$/))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    expect(send_record.reload.processing_status).to eq('processed')\n  end\n\n  it 'refuses a delivery whose signature does not match the body', :aggregate_failures do\n    post webhooks_instead_events_url, params: body, headers: headers.merge('X-Instead-Signature' => sign.call(\"#{body} \"))\n\n    expect(response).to have_http_status(:unauthorized)\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\n\n  it 'refuses a delivery signed more than five minutes ago' do\n    stale = (Time.current - 5.minutes - 1.second).to_i.to_s\n\n    post webhooks_instead_events_url, params: body,\n      headers: headers.merge('X-Instead-Signature-Timestamp' => stale, 'X-Instead-Signature' => sign.call(body, stale))\n\n    expect(response).to have_http_status(:unauthorized)\n  end\n\n  context 'when the delivery is about an entity' do\n    let(:instead_firm_uuid) { SecureRandom.uuid }\n    let(:entity_uuid) { SecureRandom.uuid }\n    let(:other_firm) { create :firm, subdomain: 'other-firm' }\n    let(:entity_body) do\n      {\n        data: {UUID: entity_uuid, Name: 'Bill Herrington', EntityType: 'INDIVIDUAL'},\n        entity: entity_uuid,\n        firm: instead_firm_uuid,\n        id: '019a0a58-4ce0-7bef-87a4-442c77f47f39',\n        resource: entity_uuid,\n        type: 'webhooks.entities.created'\n      }.to_json\n    end\n\n    it 'starts one operation per firm bound to the Instead firm, as each firm Owner', :aggregate_failures, :multiple_firms do\n      create :tax_automations_firm_settings, firm:, external_tenant_uuid: instead_firm_uuid\n      create :tax_automations_firm_settings, firm: other_firm, external_tenant_uuid: instead_firm_uuid\n      create(:instead_connection, :connected, firm:)\n      create :instead_connection, :connected, firm: other_firm\n\n      post webhooks_instead_events_url, params: entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(entity_body))\n\n      operations = Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')\n      expect(response).to have_http_status :ok\n      expect(operations.map(&:creator)).to contain_exactly firm.owner, other_firm.owner\n      expect(operations.first.args).to eq(\n        'event' => 'webhooks.entities.created',\n        'event_id' => '019a0a58-4ce0-7bef-87a4-442c77f47f39',\n        'entity_uuid' => entity_uuid,\n        'file_uuid' => nil,\n        'index_status' => nil,\n        'index_error_reason' => nil,\n        'name' => 'Bill Herrington',\n        'entity_type' => 'INDIVIDUAL'\n      )\n      expect(TaxPreparation::TaxAutomations::Instead::Entity.where(external_uuid: entity_uuid).map(&:firm_id)).to contain_exactly firm.id, other_firm.id\n    end\n\n    it 'acknowledges and drops a delivery about an Instead firm no firm is bound to', :aggregate_failures do\n      allow(Rails.logger).to receive(:info).and_call_original\n      create :tax_automations_firm_settings, firm:, external_tenant_uuid: SecureRandom.uuid\n\n      post webhooks_instead_events_url, params: entity_body, headers: headers.merge('X-Instead-Signature' => sign.call(entity_body))\n\n      expect(response).to have_http_status :ok\n      expect(Rails.logger).to have_received(:info).with(a_string_matching(/firm=#{instead_firm_uuid} unmatched$/))\n      expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    end\n\n    it 'acknowledges and drops a delivery naming no Instead firm', :aggregate_failures do\n      allow(Rails.logger).to receive(:info).and_call_original\n      create(:tax_automations_firm_settings, firm:)\n      unbound_body = JSON.parse(entity_body).merge('firm' => '').to_json\n\n      post webhooks_instead_events_url, params: unbound_body, headers: headers.merge('X-Instead-Signature' => sign.call(unbound_body))\n\n      expect(response).to have_http_status :ok\n      expect(Rails.logger).to have_received(:info).with(a_string_matching(/event=webhooks\\.entities\\.created event_id=\\S+ entity=\\S+ firm= unmatched$/))\n      expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    end\n  end\n\n  it 'acknowledges a body that is not the documented envelope and logs it as invalid', :aggregate_failures do\n    allow(Rails.logger).to receive(:warn).and_call_original\n    other_body = {entity: entity.external_uuid, type: 'webhooks.entities.created'}.to_json\n\n    post webhooks_instead_events_url, params: other_body, headers: headers.merge('X-Instead-Signature' => sign.call(other_body))\n\n    expect(response).to have_http_status(:ok)\n    expect(Rails.logger).to have_received(:warn).with(a_string_matching(/\\[Instead webhook\\] invalid event=webhooks\\.entities\\.created /))\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n    expect(Tech::AsyncOperation.where(slug: 'tax_automations_instead_webhook_event')).to be_empty\n  end\nend\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "T-backend-preview-stop",
+      "prompt": "GruntWorx returns result files as PDF, XLS and XLSM. Does TaxDome restrict which file extensions a stored client document may have, and would an .xlsm file be stored and previewable?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "project": "step-fixture",
+              "path": "__FIXTURE_ROOT__",
+              "symbols": [
+                "TaxPreparation::Document#validate_file_extension",
+                "TaxPreparation::Document#previewable?",
+                "app/javascript/react-app/modules/taxPreparation/helpers/DocumentHelper.ts",
+                "Tech::Blobs::UploadKindsHelper::Kind#extension_allowed?",
+                "app/models/tax_preparation/document.rb"
+              ]
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "443893b7-c217-8d51-8e55-b1999e7a5589",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#validate_file_extension",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#validate_file_extension",
+                    "startLine": 1050,
+                    "endLine": 1055,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef validate_file_extension\n    return unless file.attached?\n    return if skip_validate_file_extension\n\n    errors.add(:extension, I18n.t('pages.client.documents.flash.invalid_file_format', extension: file_extension)) if invalid_format?\n  end"
+                  }
+                },
+                {
+                  "id": "dcbde152-c75a-3d0e-1e5d-e5dd5892462f",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#previewable?",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#previewable?",
+                    "startLine": 843,
+                    "endLine": 845,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef previewable?\n    TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX.match?(file_extension) && file_size.positive?\n  end"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "project": "step-fixture",
+              "path": "__FIXTURE_ROOT__",
+              "symbols": [
+                "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX",
+                "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX",
+                "TaxPreparation::Document#invalid_format?",
+                "TaxPreparation::Document#attach",
+                "TaxPreparation::Document#file_extension",
+                "TaxPreparation::Document#validate_file_size",
+                "isPreviewAvailable"
+              ]
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "a4936270-0965-00e5-26b4-1eb95af89c3d",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX",
+                    "startLine": 9,
+                    "endLine": 36,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\n  self.table_name = 'documents'\n  self.legacy_reminder_association = :approval_reminder\n\n  STATUSES = {\n    created: 'created',\n    approved: 'approved',\n    disapproved: 'disapproved',\n    pending_approval: 'pending_approval',\n    pending_payment: 'pending_payment'\n  }.freeze\n\n  DELIVERY_APPROVAL_STATE_MAP = {\n    pending_approval: :awaiting_approval,\n    approved: :approved,\n    disapproved: :changes_requested\n  }.freeze\n\n  DELIVERY_STATUS_TO_APPROVAL_STATE = {\n    'awaiting_approval' => 'no_state',\n    'approved' => 'approved',\n    'changes_requested' => 'disapproved'\n  }.freeze\n\n  EXTENSIONS_BLACK_LIST_REGEX = Regexp.new(\"^#{Settings.documents.extensions_black_list_regexp}\", Regexp::IGNORECASE)\n  PREVIEWABLE_EXTENSIONS_REGEX = Regexp.new(Settings.documents.previewable_extensions_regexp, Regexp::IGNORECASE)\n  NAME_PROHIBITED_CHARS_REGEX = Regexp.new(Settings.documents.name_prohibited_chars_regexp, Regexp::IGNORECASE)\n  DISAPPROVAL_FEEDBACK_SCHEMA = Tech::JsonbValidator.schema_path('document', 'disapproval_feedback.json')\n  RECENT_TIME_LIMIT = 30.days.freeze",
+                    "sameChunkAs": null
+                  }
+                },
+                {
+                  "id": "a4936270-0965-00e5-26b4-1eb95af89c3d",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX",
+                    "startLine": 9,
+                    "endLine": 36,
+                    "content": null,
+                    "sameChunkAs": "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX"
+                  }
+                },
+                {
+                  "id": "3ef040a1-1d35-8280-9add-1fc90541d682",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#invalid_format?",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#invalid_format?",
+                    "startLine": 1057,
+                    "endLine": 1061,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef invalid_format?\n    return false if doc_dir.blank?\n\n    EXTENSIONS_BLACK_LIST_REGEX.match(file_extension)\n  end",
+                    "sameChunkAs": null
+                  }
+                },
+                {
+                  "id": "7e94b53c-1c7f-cb9a-0ced-1fe49acae341",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#attach",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#attach",
+                    "startLine": 814,
+                    "endLine": 817,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef attach(blob)\n    file.attach(blob)\n    update_file_attached!\n  end",
+                    "sameChunkAs": null
+                  }
+                },
+                {
+                  "id": "12d7a7f3-d3e5-a9f5-bc8c-013136b56d45",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#file_extension",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#file_extension",
+                    "startLine": 875,
+                    "endLine": 879,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef file_extension\n    return nil if file.blob.blank?\n\n    file.blob.filename.extension\n  end",
+                    "sameChunkAs": null
+                  }
+                },
+                {
+                  "id": "04a1ff42-eb18-9aaa-df25-97ac302fc8ea",
+                  "score": 1,
+                  "payload": {
+                    "score": 1,
+                    "request": "TaxPreparation::Document#validate_file_size",
+                    "relativePath": "app/models/tax_preparation/document.rb",
+                    "symbolId": "TaxPreparation::Document#validate_file_size",
+                    "startLine": 1043,
+                    "endLine": 1048,
+                    "content": "class TaxPreparation::Document < ApplicationRecord\ndef validate_file_size\n    return unless file.attached?\n    return if skip_validate_file_size\n\n    errors.add(:file, I18n.t('pages.client.documents.flash.invalid_file_size', max_size: Settings.documents.max_file_size_mb)) if file_size > Settings.documents.max_file_size_mb.megabytes\n  end",
+                    "sameChunkAs": null
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "tool",
+            "name": "exec_command",
+            "arguments": {
+              "cmd": "/bin/zsh -c \"rg -n 'extensions_black_list_regexp|previewable_extensions_regexp|allowed_extensions' config/settings.yml\"",
+              "workdir": "__FIXTURE_ROOT__"
+            },
+            "result": {
+              "output": "1093:  extensions_black_list_regexp: '(avchd|flv|swf|mov|qt|avi|wmv|mp4|m4p|m4v|ogg|mpg|mp2|mpeg|mpe|mpv|mkv|webm|zst|zipx|zip|xpi|whl|war|tlz|tgz|tbz2|tar|shar|s7z|rar|pea|mar|iso|gz|epub|egg|dmg|deb|cpio|cab|ar|apk|a|7z|bat|exe|cmd|sh|php([0-9])?|pl|cgi|386|dll|com|torrent|js|app|jar|pif|vb|vbscript|asp|cer|csr|jsp|drv|sys|ade|adp|bas|chm|cpl|crt|csh|fxp|hlp|hta|inf|ins|isp|jse|htaccess|htpasswd|ksh|lnk|mdb|mde|mdt|mdw|msc|msi|msp|mst|ops|pcd|prg|reg|scr|sct|shb|shs|url|vbe|vbs|wsc|wsf|wsh)$'\n1096:  system_extensions_black_list_regexp: '(DS_Store)$|^\\.'\n1098:  previewable_extensions_regexp: '(doc|docx|pdf|xls|xlsx|jpg|jpeg|png|gif|jfif|pjpeg|pjp|apng|bmp|webp|heic|heif)$'\n1735:      allowed_extensions: ['7z', 'zip']\n",
+              "exit_code": 0
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "config/settings.yml": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n  extensions_black_list_regexp: '(avchd|flv|swf|mov|qt|avi|wmv|mp4|m4p|m4v|ogg|mpg|mp2|mpeg|mpe|mpv|mkv|webm|zst|zipx|zip|xpi|whl|war|tlz|tgz|tbz2|tar|shar|s7z|rar|pea|mar|iso|gz|epub|egg|dmg|deb|cpio|cab|ar|apk|a|7z|bat|exe|cmd|sh|php([0-9])?|pl|cgi|386|dll|com|torrent|js|app|jar|pif|vb|vbscript|asp|cer|csr|jsp|drv|sys|ade|adp|bas|chm|cpl|crt|csh|fxp|hlp|hta|inf|ins|isp|jse|htaccess|htpasswd|ksh|lnk|mdb|mde|mdt|mdw|msc|msi|msp|mst|ops|pcd|prg|reg|scr|sct|shb|shs|url|vbe|vbs|wsc|wsf|wsh)$'\n\n\n  system_extensions_black_list_regexp: '(DS_Store)$|^\\.'\n\n  previewable_extensions_regexp: '(doc|docx|pdf|xls|xlsx|jpg|jpeg|png|gif|jfif|pjpeg|pjp|apng|bmp|webp|heic|heif)$'\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n      allowed_extensions: ['7z', 'zip']\n"
+        },
+        "find_symbol_bodies": {
+          "TaxPreparation::Document#validate_file_extension": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef validate_file_extension\n    return unless file.attached?\n    return if skip_validate_file_extension\n\n    errors.add(:extension, I18n.t('pages.client.documents.flash.invalid_file_format', extension: file_extension)) if invalid_format?\n  end",
+            "startLine": 1050,
+            "endLine": 1055
+          },
+          "TaxPreparation::Document#previewable?": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef previewable?\n    TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX.match?(file_extension) && file_size.positive?\n  end",
+            "startLine": 843,
+            "endLine": 845
+          },
+          "TaxPreparation::Document::EXTENSIONS_BLACK_LIST_REGEX": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\n  self.table_name = 'documents'\n  self.legacy_reminder_association = :approval_reminder\n\n  STATUSES = {\n    created: 'created',\n    approved: 'approved',\n    disapproved: 'disapproved',\n    pending_approval: 'pending_approval',\n    pending_payment: 'pending_payment'\n  }.freeze\n\n  DELIVERY_APPROVAL_STATE_MAP = {\n    pending_approval: :awaiting_approval,\n    approved: :approved,\n    disapproved: :changes_requested\n  }.freeze\n\n  DELIVERY_STATUS_TO_APPROVAL_STATE = {\n    'awaiting_approval' => 'no_state',\n    'approved' => 'approved',\n    'changes_requested' => 'disapproved'\n  }.freeze\n\n  EXTENSIONS_BLACK_LIST_REGEX = Regexp.new(\"^#{Settings.documents.extensions_black_list_regexp}\", Regexp::IGNORECASE)\n  PREVIEWABLE_EXTENSIONS_REGEX = Regexp.new(Settings.documents.previewable_extensions_regexp, Regexp::IGNORECASE)\n  NAME_PROHIBITED_CHARS_REGEX = Regexp.new(Settings.documents.name_prohibited_chars_regexp, Regexp::IGNORECASE)\n  DISAPPROVAL_FEEDBACK_SCHEMA = Tech::JsonbValidator.schema_path('document', 'disapproval_feedback.json')\n  RECENT_TIME_LIMIT = 30.days.freeze",
+            "startLine": 9,
+            "endLine": 36
+          },
+          "TaxPreparation::Document::PREVIEWABLE_EXTENSIONS_REGEX": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\n  self.table_name = 'documents'\n  self.legacy_reminder_association = :approval_reminder\n\n  STATUSES = {\n    created: 'created',\n    approved: 'approved',\n    disapproved: 'disapproved',\n    pending_approval: 'pending_approval',\n    pending_payment: 'pending_payment'\n  }.freeze\n\n  DELIVERY_APPROVAL_STATE_MAP = {\n    pending_approval: :awaiting_approval,\n    approved: :approved,\n    disapproved: :changes_requested\n  }.freeze\n\n  DELIVERY_STATUS_TO_APPROVAL_STATE = {\n    'awaiting_approval' => 'no_state',\n    'approved' => 'approved',\n    'changes_requested' => 'disapproved'\n  }.freeze\n\n  EXTENSIONS_BLACK_LIST_REGEX = Regexp.new(\"^#{Settings.documents.extensions_black_list_regexp}\", Regexp::IGNORECASE)\n  PREVIEWABLE_EXTENSIONS_REGEX = Regexp.new(Settings.documents.previewable_extensions_regexp, Regexp::IGNORECASE)\n  NAME_PROHIBITED_CHARS_REGEX = Regexp.new(Settings.documents.name_prohibited_chars_regexp, Regexp::IGNORECASE)\n  DISAPPROVAL_FEEDBACK_SCHEMA = Tech::JsonbValidator.schema_path('document', 'disapproval_feedback.json')\n  RECENT_TIME_LIMIT = 30.days.freeze",
+            "startLine": 9,
+            "endLine": 36
+          },
+          "TaxPreparation::Document#invalid_format?": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef invalid_format?\n    return false if doc_dir.blank?\n\n    EXTENSIONS_BLACK_LIST_REGEX.match(file_extension)\n  end",
+            "startLine": 1057,
+            "endLine": 1061
+          },
+          "TaxPreparation::Document#attach": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef attach(blob)\n    file.attach(blob)\n    update_file_attached!\n  end",
+            "startLine": 814,
+            "endLine": 817
+          },
+          "TaxPreparation::Document#file_extension": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef file_extension\n    return nil if file.blob.blank?\n\n    file.blob.filename.extension\n  end",
+            "startLine": 875,
+            "endLine": 879
+          },
+          "TaxPreparation::Document#validate_file_size": {
+            "relativePath": "app/models/tax_preparation/document.rb",
+            "content": "class TaxPreparation::Document < ApplicationRecord\ndef validate_file_size\n    return unless file.attached?\n    return if skip_validate_file_size\n\n    errors.add(:file, I18n.t('pages.client.documents.flash.invalid_file_size', max_size: Settings.documents.max_file_size_mb)) if file_size > Settings.documents.max_file_size_mb.megabytes\n  end",
+            "startLine": 1043,
+            "endLine": 1048
+          },
+          "isPreviewAvailable": {
+            "relativePath": "app/javascript/react-app/modules/taxPreparation/helpers/DocumentHelper.ts",
+            "content": "const isPreviewAvailable = (document: Pick<DocumentEntity, 'name'>) => PREVIEWABLE_EXTENSIONS_REGEX.test(document.name);",
+            "startLine": 404,
+            "endLine": 404
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "C-dependent-new-locator",
+      "prompt": "How does the vendor refresh policy decide whether an HTTP status can be retried?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "symbol": "VendorRefreshPolicy"
+            },
+            "result": {
+              "results": [],
+              "missing": [
+                {
+                  "request": "VendorRefreshPolicy",
+                  "message": "unknown symbol"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/vendor/refresh_policy.rb": "class Vendor::RefreshPolicy\n  def retryable?(status)\n    [429, 503].include?(status)\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "Vendor::RefreshPolicy#retryable?": {
+            "relativePath": "app/lib/vendor/refresh_policy.rb",
+            "content": "class Vendor::RefreshPolicy\n  def retryable?(status)\n    [429, 503].include?(status)\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          }
+        },
+        "raw_tool_responses": [
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/lib/vendor"
+            },
+            "result": {
+              "results": {
+                "columns": [
+                  "id",
+                  "score",
+                  "payload.relativePath",
+                  "payload.language",
+                  "payload.symbols"
+                ],
+                "rows": [
+                  [
+                    "fixture-0",
+                    1,
+                    "app/lib/vendor/refresh_policy.rb",
+                    "ruby",
+                    [
+                      "Vendor::RefreshPolicy"
+                    ]
+                  ]
+                ]
+              },
+              "directory": {
+                "kind": "directory",
+                "dir": "app/lib/vendor",
+                "subdirs": [],
+                "total": 1,
+                "truncated": false
+              }
+            }
+          },
+          {
+            "tool": "find_symbol",
+            "arguments": {
+              "relativePath": "app/lib/vendor/refresh_policy.rb"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "fixture-outline-Vendor::RefreshPolicy",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/refresh_policy.rb",
+                    "language": "ruby",
+                    "content": "app/lib/vendor/refresh_policy.rb\n  Vendor::RefreshPolicy\n  Vendor::RefreshPolicy#retryable? (public)\n"
+                  }
+                }
+              ],
+              "count": 1,
+              "kind": "outline"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "C-body-coverage-boundaries",
+      "prompt": "What timeout do RequestBudget, RetryBudget, UploadBudget and ChangedBudget currently use for uploads and ordinary requests?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": [
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "path": "__FIXTURE_ROOT__",
+              "project": "step-fixture"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "fixture-budget-header",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/request_budget.rb",
+                    "symbolId": "Vendor::RequestBudget",
+                    "startLine": 1,
+                    "endLine": 5,
+                    "chunkType": "containerHeader",
+                    "content": "class Vendor::RequestBudget\n  Vendor::RequestBudget#timeout_seconds (public)"
+                  }
+                },
+                {
+                  "id": "retry-outline",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/retry_budget.rb",
+                    "kind": "outline",
+                    "content": "app/lib/vendor/retry_budget.rb\n  Vendor::RetryBudget#timeout_seconds (private)"
+                  }
+                }
+              ],
+              "count": 2,
+              "missing": [
+                {
+                  "request": "Vendor::UploadBudget#timeout_seconds",
+                  "reason": "budget"
+                }
+              ]
+            }
+          },
+          {
+            "role": "tool",
+            "name": "find_symbol",
+            "arguments": {
+              "project": "step-fixture",
+              "path": "__FIXTURE_ROOT__",
+              "symbol": "Vendor::ChangedBudget#timeout_seconds"
+            },
+            "result": {
+              "workingTree": {
+                "project": "step-fixture",
+                "tree": "__FIXTURE_ROOT__"
+              },
+              "results": [
+                {
+                  "id": "old-changed-body",
+                  "score": 1,
+                  "payload": {
+                    "relativePath": "app/lib/vendor/changed_budget.rb",
+                    "symbolId": "Vendor::ChangedBudget#timeout_seconds",
+                    "content": "class Vendor::ChangedBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 150 : 35\n  end\nend\n",
+                    "startLine": 1,
+                    "endLine": 5
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "user",
+            "content": "I have since changed app/lib/vendor/changed_budget.rb. The other files are unchanged."
+          }
+        ]
+      },
+      "fixture": {
+        "files": {
+          "app/lib/vendor/request_budget.rb": "class Vendor::RequestBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 60 : 30\n  end\nend\n",
+          "app/lib/vendor/retry_budget.rb": "class Vendor::RetryBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 90 : 45\n  end\nend\n",
+          "app/lib/vendor/upload_budget.rb": "class Vendor::UploadBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 120 : 40\n  end\nend\n",
+          "app/lib/vendor/changed_budget.rb": "class Vendor::ChangedBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 180 : 50\n  end\nend\n"
+        },
+        "find_symbol_bodies": {
+          "Vendor::RequestBudget#timeout_seconds": {
+            "relativePath": "app/lib/vendor/request_budget.rb",
+            "content": "class Vendor::RequestBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 60 : 30\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::RetryBudget#timeout_seconds": {
+            "relativePath": "app/lib/vendor/retry_budget.rb",
+            "content": "class Vendor::RetryBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 90 : 45\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::UploadBudget#timeout_seconds": {
+            "relativePath": "app/lib/vendor/upload_budget.rb",
+            "content": "class Vendor::UploadBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 120 : 40\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          },
+          "Vendor::ChangedBudget#timeout_seconds": {
+            "relativePath": "app/lib/vendor/changed_budget.rb",
+            "content": "class Vendor::ChangedBudget\n  def timeout_seconds(operation)\n    operation == :upload ? 180 : 50\n  end\nend\n",
+            "startLine": 1,
+            "endLine": 5
+          }
+        },
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "C-unknown-filename",
+      "prompt": "Which config YAML file declares vendor retry_statuses, and what statuses are configured?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/vendor_policy.yml": "vendor:\n  timeout_seconds: 30\n  retry_statuses: [429, 503]\n",
+          "config/application.yml": "application:\n  timezone: UTC\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    },
+    {
+      "id": "C-complete-absence",
+      "prompt": "Does any config YAML file configure retry_statuses for vendor requests?",
+      "actor_context": {
+        "project": "step-fixture",
+        "messages": []
+      },
+      "fixture": {
+        "files": {
+          "config/vendor_policy.yml": "vendor:\n  timeout_seconds: 30\n",
+          "config/application.yml": "application:\n  timezone: UTC\n"
+        },
+        "find_symbol_bodies": {},
+        "raw_tool_responses": []
+      }
+    }
+  ]
+}

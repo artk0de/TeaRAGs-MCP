@@ -247,6 +247,31 @@ describe("extractInjectionBlock", () => {
 });
 
 describe("renderCodexHarness", () => {
+  it("ships direct content routing for known configuration files through the executable SessionStart hook", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const pluginRoot = mkdtempSync(join(tmpdir(), "codex-content-routing-"));
+    try {
+      mkdirSync(join(pluginRoot, "scripts"));
+      for (const name of ["session-start.sh", "core.txt"]) {
+        writeFileSync(join(pluginRoot, "scripts", name), rendered.get(`tea-rags/scripts/${name}`) ?? "");
+      }
+      const injected = (script: string, event: string) =>
+        JSON.parse(
+          execFileSync("bash", [join(pluginRoot, "scripts", script), "--harness", "codex"], {
+            input: JSON.stringify({ hook_event_name: event }),
+            encoding: "utf8",
+          }),
+        ).hookSpecificOutput.additionalContext as string;
+      const core = injected("session-start.sh", "SessionStart");
+      expect(core).not.toContain("filenames first for config/inventory/absence");
+      expect(core).toContain("unknown filenames/inventory/absence; known file → content;");
+      expect(core).toContain("`| head` ≠ absence proof");
+      expect(core).toContain("path unknown → shell rg -l");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("delivers the missing-evidence wave policy through the actual per-turn hook", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-routing-"));
@@ -255,9 +280,12 @@ describe("renderCodexHarness", () => {
       for (const name of ["turn-routing.sh", "turn-routing.txt"]) {
         writeFileSync(join(pluginRoot, "scripts", name), rendered.get(`tea-rags/scripts/${name}`) ?? "");
       }
-      const output = JSON.parse(execFileSync("bash", [join(pluginRoot, "scripts/turn-routing.sh"), "--harness", "codex"], {
-        input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }), encoding: "utf8",
-      }));
+      const output = JSON.parse(
+        execFileSync("bash", [join(pluginRoot, "scripts/turn-routing.sh"), "--harness", "codex"], {
+          input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }),
+          encoding: "utf8",
+        }),
+      );
       const context = output.hookSpecificOutput.additionalContext;
       expect(output.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
       expect(context).toContain("missing flow/impact fact");

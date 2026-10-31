@@ -1,0 +1,139 @@
+{
+  "cases": [
+    {
+      "case": "T-known-metrics-content",
+      "audit_origin": "Q37",
+      "lever": "Known initializer and named method should batch",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 5,
+      "disposition": "NO_REPRO_STAGING",
+      "limits": "Already parallel in every condition; later unavailable helper predicate probes may be reasonable. Virtual method lacks physical ledger anchor.",
+      "evidence_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-known-metrics-content/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-known-metrics-content/actor/answer.txt"
+    },
+    {
+      "case": "T-config-range-batch",
+      "audit_origin": "Q23",
+      "lever": "Route block plus missing enclosing scope",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 3,
+      "disposition": "RAW_COVERAGE_PASS_POSTNOTE_CONTROL_OPEN_FAIL",
+      "limits": "Raw reads both ranges; note-only713–758 final misses outer scope. No valid shorter result claimed.",
+      "evidence_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-config-range-batch/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/T-config-range-batch/actor/answer.txt"
+    },
+    {
+      "case": "C-body-coverage-boundaries",
+      "audit_origin": "control",
+      "lever": "Header/outline/budget/stale content is insufficient",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 3,
+      "disposition": "CONTROL_PASS",
+      "limits": "Current4 native bodies acquired; stale150/35 not credited; current180/50 answered.",
+      "evidence_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/C-body-coverage-boundaries/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-subset3-controlled-state-attempt1/cases/C-body-coverage-boundaries/actor/answer.txt"
+    },
+    {
+      "case": "T-known-contract-content",
+      "audit_origin": "Q34",
+      "lever": "Known filenames should obtain content directly",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 3,
+      "disposition": "LOCAL_KNOWN_CONTENT_PASS_NO_SPEED_GAIN_ESTABLISHED",
+      "limits": "Baseline already acquired known content directly; narrow rule compatible, original local failure not reproduced.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-known-contract-content/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-known-contract-content/actor/answer.txt"
+    },
+    {
+      "case": "T-held-naming-context",
+      "audit_origin": "Q25",
+      "lever": "Invented Superpowers path during naming discussion",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 7,
+      "disposition": "NO_REPRO_ORIGINAL_OPEN_FIXTURE_DIAGNOSTIC",
+      "limits": "No Superpowers path attempt; required naming tool omitted from fixture drives schema/fallback sequence. No efficiency fix/regression conclusion.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-held-naming-context/actor/answer.txt"
+    },
+    {
+      "case": "T-full-file-coverage",
+      "audit_origin": "Q01",
+      "lever": "Reuse complete file source that covers members",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 1,
+      "disposition": "LOCAL_EXTRACTED_REUSE_PASS",
+      "limits": "Focused neutral subquestion from original; held complete files1final/0reads; not original whole-context replay or comparative improvement.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-full-file-coverage/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-full-file-coverage/actor/answer.txt"
+    },
+    {
+      "case": "T-ready-method-batch",
+      "audit_origin": "Q21",
+      "lever": "Batch known ready method bodies",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 3,
+      "disposition": "LOCAL_BATCH_PASS",
+      "limits": "Sixteen explicit known bodies requested together; optional helper selection not correctness gate. No broad speed claim.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-ready-method-batch/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-ready-method-batch/actor/answer.txt"
+    },
+    {
+      "case": "T-complete-spec-stop",
+      "audit_origin": "Q15",
+      "lever": "Stop when complete held spec establishes asked facts",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 1,
+      "disposition": "LOCAL_EXTRACTED_STOP_PASS",
+      "limits": "Focused neutral spec subquestion;1final/0reads; original broader task not replayed.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-complete-spec-stop/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-complete-spec-stop/actor/answer.txt"
+    },
+    {
+      "case": "T-backend-preview-stop",
+      "audit_origin": "Q05",
+      "lever": "Reuse sufficient backend extension/preview facts",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 1,
+      "disposition": "LOCAL_HELD_FACTS_PASS",
+      "limits": "Original request with authentic held backend source;1final/0reads; frontend behavior not substituted.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-backend-preview-stop/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/T-backend-preview-stop/actor/answer.txt"
+    },
+    {
+      "case": "C-dependent-new-locator",
+      "audit_origin": "control",
+      "lever": "Preserve necessary new method discovery",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 4,
+      "disposition": "CONTROL_PASS",
+      "limits": "Semantic metadata discovery then concrete method source; no guessed locator gate.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-dependent-new-locator/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-dependent-new-locator/actor/answer.txt"
+    },
+    {
+      "case": "C-unknown-filename",
+      "audit_origin": "control",
+      "lever": "Preserve unknown config filename discovery",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 3,
+      "disposition": "CONTROL_PASS",
+      "limits": "Complete scoped literal filename inventory then content.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-unknown-filename/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-unknown-filename/actor/answer.txt"
+    },
+    {
+      "case": "C-complete-absence",
+      "audit_origin": "control",
+      "lever": "Complete scoped evidence for absence",
+      "actual_native_final_factual_source": "PASS",
+      "native_model_responses": 2,
+      "disposition": "CONTROL_PASS",
+      "limits": "Complete synthetic config YAML literal search exit1 empty; no absence from padded historical excerpts.",
+      "evidence_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-complete-absence/actor/events.jsonl",
+      "final_answer_archive_member": "evals/rawfix-remaining9-controlled-state-attempt1/cases/C-complete-absence/actor/answer.txt"
+    }
+  ],
+  "conclusion": "12 scoped final-answer/source checks supported; do not report all original audit findings fixed. Naming capability diagnostic remains OPEN; Q37 and Q25 original lever not locally reproduced; rejected Postnote control remains OPEN_FAIL.",
+  "actors_added": 0,
+  "source_archive_member": "evals/final12-audit-disposition-matrix.json"
+}
