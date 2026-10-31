@@ -150,6 +150,30 @@ describe("projectSearchResultPayloads", () => {
     expect(outcome.fieldsWarning).not.toContain("did you mean");
   });
 
+  // bd tea-rags-mcp-9f0yn.12 (eval C3): every agent guessed `git.file.dominantAuthor` for
+  // `git.file.blameDominantAuthor`; a warning with no suggestion cost one more call.
+  it("a near-miss leaf under the same parent gets a did-you-mean naming the real key", () => {
+    const results: SearchResult[] = [
+      {
+        id: "n1",
+        score: 0.5,
+        payload: {
+          relativePath: "src/a.ts",
+          git: { file: { blameDominantAuthor: "ann", blameDominantAuthorPct: 80, commitCount: 3 } },
+        },
+      },
+    ];
+
+    expect(projectSearchResultPayloads(results, ["git.file.dominantAuthor"]).fieldsWarning).toBe(
+      'fields: no result carried "git.file.dominantAuthor" — did you mean git.file.blameDominantAuthor, ' +
+        "git.file.blameDominantAuthorPct?",
+    );
+    // A one-letter typo is a near miss too; an unrelated sibling is not.
+    expect(projectSearchResultPayloads(results, ["git.file.comitCount"]).fieldsWarning).toBe(
+      'fields: no result carried "git.file.comitCount" — did you mean git.file.commitCount?',
+    );
+  });
+
   it("warns only about the paths that missed, not the ones that landed", () => {
     const outcome = projectSearchResultPayloads(makeResults(), ["relativePath", "git.commitCount"]);
 
