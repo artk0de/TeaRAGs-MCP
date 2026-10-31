@@ -124,15 +124,15 @@ describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
     const outline = CodeChunkGrouper.groupFile(rows).payload?.content as string;
     expect(outline.split("\n")).toEqual([
       RAKE_PATH,
-      "  sync_logger",
-      "  billing:sync",
-      "  billing:invoices:reconcile",
-      "  billing:invoices:prune",
-      "  billing:export",
-      "  billing:parallel_sync",
-      "  billing.csv",
-      "  .json",
-      "  billing_all",
+      "  sync_logger L4-6",
+      "  billing:sync L9-14",
+      "  billing:invoices:reconcile L17-20",
+      "  billing:invoices:prune L22-24",
+      "  billing:export L27-29",
+      "  billing:parallel_sync L31-31",
+      "  billing.csv L32-32",
+      "  .json L33-35",
+      "  billing_all L38-42",
     ]);
   });
 });

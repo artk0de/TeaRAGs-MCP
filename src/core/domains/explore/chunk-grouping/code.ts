@@ -37,6 +37,58 @@ function fileCodegraph(chunk: ScrollChunk): Record<string, unknown> | undefined 
 }
 
 /** Determine member separator: # for instance, . for static. */
+/** A trailing ` (visibility)` or ` L<start>-<end>` an outline line adds after its id. */
+const OUTLINE_LINE_SUFFIX = / +(?:L\d+[-–]\d+|\((?:public|private|protected)\))$/;
+
+/**
+ * The address an outline line stands for: the line trimmed, its line-range and
+ * declared-visibility suffixes dropped (bd tea-rags-mcp-9f0yn.1). The inverse of
+ * the line this module draws, so a line pasted back verbatim still resolves;
+ * an id holding spaces (`X.include KindOfService`) keeps them.
+ */
+export function outlineAddressOf(line: string): string {
+  let address = line.trim();
+  for (;;) {
+    const stripped = address.replace(OUTLINE_LINE_SUFFIX, "");
+    if (stripped === address) return address;
+    address = stripped;
+  }
+}
+
+type OwnLineRanges = Map<string, [start: number, end: number]>;
+
+/** Per outline id, min start / max end over the chunks it owns — same-id windows merge. */
+function ownLineRanges(rows: readonly ScrollChunk[]): OwnLineRanges {
+  const ranges: OwnLineRanges = new Map();
+  for (const row of rows) {
+    const id = outlineIdOf(row);
+    const start = Number(row.payload.startLine);
+    const end = Number(row.payload.endLine);
+    if (!id || !Number.isFinite(start) || !Number.isFinite(end) || start <= 0) continue;
+    const seen = ranges.get(id);
+    ranges.set(id, seen ? [Math.min(seen[0], start), Math.max(seen[1], end)] : [start, end]);
+  }
+  return ranges;
+}
+
+/** Widen each container's range over its members' (`X` covers `X#m`, `X.m`, `X::Y`). */
+function spanContainers(ranges: OwnLineRanges): void {
+  for (const [id, range] of ranges) {
+    for (const [other, [start, end]] of ranges) {
+      if (other.startsWith(`${id}#`) || other.startsWith(`${id}.`) || other.startsWith(`${id}::`)) {
+        range[0] = Math.min(range[0], start);
+        range[1] = Math.max(range[1], end);
+      }
+    }
+  }
+}
+
+/** ` L<start>-<end>` for an id that owns chunks; a declaration-only id carries none. */
+function lineRangeSuffix(ranges: OwnLineRanges, id: string): string {
+  const range = ranges.get(id);
+  return range ? ` L${range[0]}-${range[1]}` : "";
+}
+
 function formatMember(symbolId: string): string {
   // Static members use ClassName.method, instance use ClassName#method
   // symbolId already contains the separator from the chunker
@@ -80,12 +132,14 @@ function ancestorLines(containerSymbolId: string, ancestorsOf: ContainerAncestor
 function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibilityLookup): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
+  const ranges = ownLineRanges(sortedMembers);
   for (const chunk of sortedMembers) {
     const symbolId = outlineIdOf(chunk) ?? "";
     for (const id of addressesOf(chunk)) {
       if (id === "" || seen.has(id)) continue;
       seen.add(id);
-      lines.push(`  ${formatMember(id)}${id === symbolId ? visibilitySuffix(chunk, visibilityOf) : ""}`);
+      const visibility = id === symbolId ? visibilitySuffix(chunk, visibilityOf) : "";
+      lines.push(`  ${formatMember(id)}${visibility}${lineRangeSuffix(ranges, id)}`);
     }
   }
   return lines;
@@ -372,10 +426,15 @@ export const CodeChunkGrouper = {
     // a line of its own.
     const drawn = new Set<string>();
     const declared = declaredMembersByLabel(roots, childrenByParent);
+    // Each drawn id ends in its line range; a container line spans its members.
+    const ranges = ownLineRanges(sorted);
+    spanContainers(ranges);
     const draw = (indent: string, label: string, row: ScrollChunk): void => {
       if (label === "" || drawn.has(label)) return;
       drawn.add(label);
-      lines.push(`${indent}${label}${visibilitySuffix(row, visibilityOf)}`);
+      lines.push(
+        `${indent}${label}${visibilitySuffix(row, visibilityOf)}${lineRangeSuffix(ranges, outlineIdOf(row) ?? "")}`,
+      );
       // Members a class-level window declares without chunks of their own
       // (constants, short defs) are addresses too: listed under the container,
       // undecorated, as `CodeChunkGrouper.group` lists them.

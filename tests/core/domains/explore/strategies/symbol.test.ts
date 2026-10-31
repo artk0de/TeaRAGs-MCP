@@ -783,7 +783,9 @@ describe("SymbolSearchStrategy", () => {
       const result = await strategy.execute({ collectionName: "c", limit: 50 });
 
       expect(result).toHaveLength(1);
-      expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`, `  ${huge}`].join("\n"));
+      expect(result[0].payload?.content).toBe(
+        [scopeId, `  ${scopeId}.it 'can invite' L10-13`, `  ${huge} L20-23`].join("\n"),
+      );
     });
 
     it("does not let a sibling scope's examples into the outline", async () => {
@@ -795,7 +797,7 @@ describe("SymbolSearchStrategy", () => {
       const strategy = new SymbolSearchStrategy(qdrant, reranker, [], [], buildRegistry(), { symbol: scopeId });
       const result = await strategy.execute({ collectionName: "c", limit: 50 });
 
-      expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`].join("\n"));
+      expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite' L10-13`].join("\n"));
     });
   });
 

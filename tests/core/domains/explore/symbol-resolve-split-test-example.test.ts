@@ -124,7 +124,7 @@ describe("find_symbol over a test example split into #partN parts", () => {
     const results = resolveSymbols(await indexedPayloads(), scopeId);
 
     expect(results).toHaveLength(1);
-    expect(results[0].payload?.content).toBe([scopeId, `  ${exampleId}`].join("\n"));
+    expect(results[0].payload?.content).toBe([scopeId, `  ${exampleId} L3-${exampleEnd}`].join("\n"));
   });
 });
 

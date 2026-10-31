@@ -77,7 +77,7 @@ describe("FileOutlineStrategy directory mode", () => {
     const results = await run(strategy);
 
     expect(results).toHaveLength(1);
-    expect(results[0].payload?.content).toBe(`${DIR}/vector.ts\n  VectorStrategy`);
+    expect(results[0].payload?.content).toBe(`${DIR}/vector.ts\n  VectorStrategy L1-3`);
     expect(strategy.directory).toBeUndefined();
   });
 

@@ -95,7 +95,12 @@ const runExplore = async (strat: unknown, metaOnly = false) =>
     metaOnly,
   });
 
-const DECORATED_MEMBERS = ["  Svc#run (public)", "  Svc#helper (private)", "  Svc#hook (protected)", "  Svc#legacy"];
+const DECORATED_MEMBERS = [
+  "  Svc#run (public) L5-7",
+  "  Svc#helper (private) L10-12",
+  "  Svc#hook (protected) L15-17",
+  "  Svc#legacy L20-22",
+];
 /** A class-chunk outline: the header chunk listed, the members, then the header inlined. */
 const withSvcHeader = (members: string[]): string =>
   ["Svc", "  header 1–40", ...members, "", "── header 1–40 ──", "class Svc {}"].join("\n");
@@ -122,7 +127,7 @@ describe("find_symbol outline — declared visibility (bd tea-rags-mcp-sqqkz)", 
     const results = await runExplore(fileStrategy(vis));
 
     expect(results[0].payload.content).toBe(
-      [PATH, "  Svc", ...DECORATED_MEMBERS.map((line) => `  ${line}`)].join("\n"),
+      [PATH, "  Svc L1-40", ...DECORATED_MEMBERS.map((line) => `  ${line}`)].join("\n"),
     );
     expect(vis.resolveSymbolVisibilities).toHaveBeenCalledTimes(1);
   });
@@ -130,14 +135,23 @@ describe("find_symbol outline — declared visibility (bd tea-rags-mcp-sqqkz)", 
   it("no resolver (codegraph off) renders today's outline", async () => {
     const results = await runExplore(symbolStrategy("Svc", [CLASS_CHUNK, ...MEMBERS]));
 
-    expect(results[0].payload.content).toBe(withSvcHeader(["  Svc#run", "  Svc#helper", "  Svc#hook", "  Svc#legacy"]));
+    expect(results[0].payload.content).toBe(
+      withSvcHeader(["  Svc#run L5-7", "  Svc#helper L10-12", "  Svc#hook L15-17", "  Svc#legacy L20-22"]),
+    );
   });
 
   it("a throwing resolver (codegraph unreadable) degrades silently to today's outline", async () => {
     const results = await runExplore(fileStrategy(resolver(new Error("lock held"))));
 
     expect(results[0].payload.content).toBe(
-      [PATH, "  Svc", "    Svc#run", "    Svc#helper", "    Svc#hook", "    Svc#legacy"].join("\n"),
+      [
+        PATH,
+        "  Svc L1-40",
+        "    Svc#run L5-7",
+        "    Svc#helper L10-12",
+        "    Svc#hook L15-17",
+        "    Svc#legacy L20-22",
+      ].join("\n"),
     );
   });
 

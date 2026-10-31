@@ -16,6 +16,7 @@
  */
 
 import { isUnderOwner, lastNameSegment, qualifiedOwnerOf } from "../../primitives/ids/index.js";
+import { outlineAddressOf } from "./chunk-grouping/index.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
 import type { ExploreContext } from "./strategies/types.js";
 
@@ -141,7 +142,7 @@ function outlineMemberIds(content: string, containerId: string): string[] {
   return content
     .split("\n")
     .filter((line) => line.startsWith("  "))
-    .map((line) => line.trim().replace(/ \([^)]*\)$/, ""))
+    .map((line) => outlineAddressOf(line))
     .filter((id) => isUnderOwner(id, containerId));
 }
 

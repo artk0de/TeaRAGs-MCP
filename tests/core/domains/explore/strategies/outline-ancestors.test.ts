@@ -96,7 +96,7 @@ const runExplore = async (strat: unknown, metaOnly = false) =>
     metaOnly,
   });
 
-const PLAIN_MEMBERS = ["  Svc#run", "  Svc#helper"];
+const PLAIN_MEMBERS = ["  Svc#run L5-7", "  Svc#helper L10-12"];
 const withSvcHeader = (ancestorLines: string[]): string =>
   [
     "Svc",

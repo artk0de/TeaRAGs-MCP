@@ -321,10 +321,13 @@ function outlineMemberChunks(group: ScrollChunk[]): ScrollChunk[] {
   if (whole.length > 0) return whole;
   const head = [...group].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0))[0];
   const base = splitFragmentBase(head.payload);
+  // The representative spans every part, so the outline line's range is the
+  // symbol's, not its first window's (bd tea-rags-mcp-9f0yn.1).
+  const endLine = Math.max(...group.map((c) => Number(c.payload.endLine) || 0));
   return [
     {
       ...head,
-      payload: { ...head.payload, symbolId: base, name: stripPartName(head.payload.name) },
+      payload: { ...head.payload, symbolId: base, name: stripPartName(head.payload.name), endLine },
     },
   ];
 }
