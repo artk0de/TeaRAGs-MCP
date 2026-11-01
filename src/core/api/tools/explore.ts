@@ -13,6 +13,7 @@ import type {
 import {
   BATCH_FULL_TEXT_CHAR_BUDGET,
   CONTAINER_HEADER_CHAR_BUDGET,
+  FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
   type App,
   type McpAutoUpdateTrigger,
@@ -20,6 +21,7 @@ import {
 } from "../public/index.js";
 import { tabulateRecords } from "./columns.js";
 import { compactSearchResults, type SearchResultCompaction } from "./compact-results.js";
+import { batchAddressOf, withoutRedundantLocators } from "./find-symbol-rows.js";
 import {
   appendAutoUpdateHint,
   compactWorkingTreeMarkerForCall,
@@ -29,7 +31,7 @@ import {
   type WorkingTreeCallAddress,
 } from "./format.js";
 import type { RegisterToolFn } from "./middleware/error-handler.js";
-import { SearchResultOutputSchema } from "./output-schemas.js";
+import { FindSymbolOutputSchema, SearchResultOutputSchema } from "./output-schemas.js";
 import { offsetContinuation, type ResponseRowsPolicy } from "./response-budget.js";
 import { createSearchSchemas } from "./schemas.js";
 
@@ -49,6 +51,8 @@ interface SearchToolDef {
    * first, whose deferred schema costs it a whole turn.
    */
   alwaysLoad?: true;
+  /** A tool-specific output schema; absent → {@link SearchResultOutputSchema}. */
+  outputSchema?: typeof FindSymbolOutputSchema;
   /** Rows the response budget guard trims (bd tea-rags-mcp-c01gm): always the `results` table. */
   responseRows: ResponseRowsPolicy;
   /**
@@ -57,6 +61,8 @@ interface SearchToolDef {
    * find_similar(positiveIds) accepts too.
    */
   searchTool?: true;
+  /** The tool's own row shaping before tabulation; a search tool's id/score drop takes precedence. */
+  shapeRows?: (results: readonly SearchResult[]) => object[];
 }
 
 /** `fields` absent, empty or all-blank — the default projection answers, as in `projectSearchResultPayloads`. */
@@ -86,10 +92,21 @@ const FIND_SYMBOL_ROWS: ResponseRowsPolicy = {
   rows: ["results"],
   continuation: (args, cut) => {
     if (!Array.isArray(args.symbols)) return offsetContinuation()(args, cut);
-    // Rows are tabulated from `payload.request` (q1g6s.15: a bare `request` lookup never matched).
-    const requestColumn = cut.columns?.indexOf("payload.request") ?? -1;
-    if (requestColumn < 0) return undefined;
-    const symbols = [...new Set(cut.omittedRows.map((row) => (row as unknown[])[requestColumn]))];
+    // Rows are tabulated from `payload.request` (q1g6s.15: a bare `request` lookup never matched);
+    // a row whose request was redundant is addressed by its symbolId, else its path (d0z7b.2).
+    const cellOf = (row: unknown, column: string): unknown => {
+      const i = cut.columns?.indexOf(column) ?? -1;
+      return i < 0 ? undefined : ((row as unknown[])[i] ?? undefined);
+    };
+    const addresses = cut.omittedRows.map((row) =>
+      batchAddressOf(
+        cellOf(row, "payload.request"),
+        cellOf(row, "payload.symbolId"),
+        cellOf(row, "payload.relativePath"),
+      ),
+    );
+    if (addresses.some((address) => address === undefined)) return undefined;
+    const symbols = [...new Set(addresses)];
     const { offset: _offset, ...rest } = args;
     return { ...rest, symbols };
   },
@@ -110,14 +127,14 @@ const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 function formatStructuredResult(
   response: ExploreResponse,
   compaction: SearchResultCompaction,
-  omitIdAndScore: boolean,
+  shapeRows: ((results: readonly SearchResult[]) => object[]) | undefined,
   address: WorkingTreeCallAddress,
 ): McpToolResult {
   const rows = compactSearchResults(response.results, compaction);
   const workingTree = response.workingTree && compactWorkingTreeMarkerForCall(response.workingTree, address);
   return {
     structuredContent: {
-      results: tabulateRecords(omitIdAndScore ? withoutIdAndScore(rows) : rows),
+      results: tabulateRecords(shapeRows ? shapeRows(rows) : rows),
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
@@ -206,20 +223,19 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     alwaysLoad: true,
     description:
       "Direct lookup by name or path, no embedding. " +
-      "symbol: method → full body; class/module → member OUTLINE (method ids, no bodies) + header chunks " +
-      `(consts, DSL; ≤${CONTAINER_HEADER_CHAR_BUDGET} chars/class inlined, else 'not inlined'); ` +
-      "doc:<hash> → section; table:<name> → Rails table state folded from migrations; migration:<id> → that operation. " +
-      `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines → full text, else outline; doc → TOC; directory → files + subdirs. ` +
-      `symbols: 1-20 ids / paths in one call (full text until ${BATCH_FULL_TEXT_CHAR_BUDGET} chars, then outline); misses → missing. ` +
+      "symbol: method → body; class → member outline + header " +
+      `(consts, DSL; ≤${CONTAINER_HEADER_CHAR_BUDGET} chars inlined); doc:<hash>, table:<name>, migration:<id> resolve too. ` +
+      `relativePath: file ≤${FULL_TEXT_MAX_LINES} lines or ≤${FULL_TEXT_MAX_CHARS} chars → full text, else outline; doc → TOC; dir → listing. ` +
+      `symbols: 1-20 ids / paths in one call (full text until ${BATCH_FULL_TEXT_CHAR_BUDGET} chars, then outline). ` +
       "Outline lines are addresses: drill via find_symbol(symbol: '<id>'), never Read the file. " +
-      "Member lines end in visibility (if known), then line range, e.g. 'Class#helper (private) L40-58'; " +
-      "a file outline's container spans its members; a pasted suffix is tolerated. " +
+      "Member line e.g. 'Class#helper (private) L40-58'; a pasted suffix is tolerated. " +
       "Lines N–M / a grep -n hit → the ids whose ranges cover them, one find_symbol(symbols:[…]); never Read offset/limit. " +
-      "Partial names match: 'Reranker' → class outline; 'B::C' → 'A::B::C'. " +
-      "rerank preset attaches churn/ownership/bugFixRate labels.\n\n" +
+      "Partial names match ('B::C' → 'A::B::C').\n\n" +
       "Params: tea-rags://guide/overview",
     schemaKey: "FindSymbolSchema",
+    outputSchema: FindSymbolOutputSchema,
     responseRows: FIND_SYMBOL_ROWS,
+    shapeRows: withoutRedundantLocators,
     invoke: async (app, request) => app.findSymbol(request),
   },
 ];
@@ -241,7 +257,7 @@ export function registerSearchTools(
         title: tool.title,
         description: tool.description,
         inputSchema: searchSchemas[tool.schemaKey],
-        outputSchema: SearchResultOutputSchema,
+        outputSchema: tool.outputSchema ?? SearchResultOutputSchema,
         annotations: { readOnlyHint: true },
         ...(tool.alwaysLoad && { _meta: { [ALWAYS_LOAD_META_KEY]: true } }),
         responseRows: tool.responseRows,
@@ -253,7 +269,7 @@ export function registerSearchTools(
         const result = formatStructuredResult(
           await tool.invoke(app, sanitized),
           { includeImports: includeImports === true },
-          tool.searchTool === true && fieldsAbsent(search.fields),
+          tool.searchTool === true && fieldsAbsent(search.fields) ? withoutIdAndScore : tool.shapeRows,
           search,
         );
         const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;

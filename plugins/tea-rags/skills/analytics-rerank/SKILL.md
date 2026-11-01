@@ -3,17 +3,12 @@ name: analytics-rerank
 description: >-
   Pick tea-rags rerank preset, build `{custom: {...}}` weight set, or compose
   analytics-driven search (ownership, tech-debt, hotspots, code-review,
-  security-audit, fragile-silo). Covers rerank decision tree (documentation
-  auto-preset vs explicit preset vs custom weights), preset catalog pointer
-  (`tea-rags://guide/presets`), weight-key catalog pointer
-  (`tea-rags://guide/signals`), recipes (e.g. Fragile Silo: `{ bugFix: 0.45,
-  knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 }`). Invoke on intent like
-  "rank by ownership", "find tech debt", "hotspot scan", "code review of recent
-  changes", "security audit of auth code", "code that looks stable but breaks a
-  lot", "custom weights for impact analysis". NOT for project health scan
-  needing cross-preset overlap — use `tea-rags:risk-assessment`. NOT for debug
-  root-cause — use `tea-rags:bug-hunt`. NOT for filter shape — use
-  `tea-rags:filter-building`.
+  security-audit, fragile-silo). Invoke on intent like "rank by ownership",
+  "find tech debt", "hotspot scan", "code review of recent changes", "security
+  audit of auth code", "code that looks stable but breaks a lot", "custom
+  weights for impact analysis". NOT for project health scan needing cross-preset
+  overlap — use `tea-rags:risk-assessment`. NOT for debug root-cause — use
+  `tea-rags:bug-hunt`. NOT for filter shape — use `tea-rags:filter-building`.
 user-invocable: false
 ---
 

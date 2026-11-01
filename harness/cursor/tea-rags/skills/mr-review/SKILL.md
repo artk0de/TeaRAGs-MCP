@@ -5,9 +5,7 @@ description:
   tea-rags (blast radius, fragile zones, silo style, missing tests, doc
   invariants, cycles, naming), emit plain-language comments each naming a
   concrete fix. Triggers on "review this MR <url>", "review MR/PR", "проведи
-  ревью MR", "сделай ревью ветки", "review my branch". External URL → inline
-  comments posted via session''s MR-platform mechanism after ONE draft-gate
-  confirm, signed agent, [minor] prefix on style nits. NOT for building reviewer
+  ревью MR", "сделай ревью ветки", "review my branch". NOT for building reviewer
   context before requesting review (use requesting-code-review), NOT for health
   scan without a diff (use risk-assessment), NOT for debugging a concrete
   failure (use bug-hunt).'

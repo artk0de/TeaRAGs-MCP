@@ -114,13 +114,48 @@ describe("FileOutlineStrategy working-tree chunk floor", () => {
       });
     });
 
-    it("keeps the outline of a file over 150 lines whose outline is shorter than its text", async () => {
+    // PIN-UPDATED d0z7b.3: outlined only over 150 lines AND 9000 chars (151 × ~63 chars = 9.5k).
+    it("keeps the outline of a file over 150 lines and 9000 chars whose outline is shorter than its text", async () => {
       mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
 
-      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: lines(151, 40) } }));
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: lines(151, 60) } }));
 
       expect(results[0].payload?.kind).toBeUndefined();
       expect(String(results[0].payload?.content)).toContain("Foo#bar");
+    });
+
+    // bd tea-rags-mcp-d0z7b.3: full text when lines ≤ 150 OR chars ≤ 9000.
+    it("answers a 193-line file of 7.5k chars with its full text", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+      const text = lines(193, 35);
+      expect(text.length).toBeGreaterThan(7_400);
+      expect(text.length).toBeLessThan(7_600);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: text } }));
+
+      expect(results[0].payload).toMatchObject({ kind: "file", content: text, startLine: 1, endLine: 193 });
+    });
+
+    it("outlines a 204-line file of 9.4k chars", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+      const text = lines(204, 43);
+      expect(text.length).toBeGreaterThan(9_300);
+      expect(text.length).toBeLessThan(9_500);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: text } }));
+
+      expect(results[0].payload?.kind).toBeUndefined();
+      expect(String(results[0].payload?.content)).toContain("Foo#bar");
+    });
+
+    it("answers a 120-line file of 12k chars with its full text — the line rule still holds", async () => {
+      mockScrollFiltered.mockResolvedValue([member("m", "Foo#bar")]);
+      const text = lines(120, 98);
+      expect(text.length).toBeGreaterThan(11_900);
+
+      const results = await outlineCtx(fakeWorkingTreeView({ files: { [FOO]: text } }));
+
+      expect(results[0].payload).toMatchObject({ kind: "file", content: text, startLine: 1, endLine: 120 });
     });
 
     it("answers a file over 150 lines with its text when the outline is at least as long", async () => {

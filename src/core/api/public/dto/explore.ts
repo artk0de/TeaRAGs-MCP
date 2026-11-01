@@ -309,7 +309,7 @@ export interface ExploreResponse {
   missing?: SymbolBatchMiss[];
   /**
    * find_symbol `symbols` batch only, and only when a path entry answered
-   * as an outline or refused — a file outlined over 150 lines, one outlined
+   * as an outline or refused — a file outlined over 150 lines and 9000 chars, one outlined
    * past the batch's full-text char budget, or a directory refused into
    * `missing` (bd tea-rags-mcp-yz10n) — naming those paths and why. One line,
    * never per entry.

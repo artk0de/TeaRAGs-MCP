@@ -306,6 +306,16 @@ describe("projectSearchResultPayloads — default projection by call mode (N4)",
     expect(payload).not.toHaveProperty("methodLines");
   });
 
+  // bd tea-rags-mcp-d0z7b.4: a method row's inlined constant definitions are part of its body.
+  it("keeps a content row's referencedDefinitions", () => {
+    const definitions = [{ symbolId: "A::X", startLine: 2, endLine: 2, text: "X = 1" }];
+    const hit = makeFullHit();
+    const withDefinitions = { ...hit, payload: { ...hit.payload, referencedDefinitions: definitions } };
+    const outcome = projectSearchResultPayloads([withDefinitions], undefined, { metaOnly: false, reranked: false });
+
+    expect(outcome.results[0]?.payload?.referencedDefinitions).toEqual(definitions);
+  });
+
   it("leaves a reranked content row's payload whole — the signals were asked for", () => {
     const hit = makeFullHit({ rankingOverlay: { preset: "techDebt" } });
     const outcome = projectSearchResultPayloads([hit], undefined, { metaOnly: false, reranked: true });

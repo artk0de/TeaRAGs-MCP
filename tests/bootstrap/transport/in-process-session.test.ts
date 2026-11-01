@@ -63,7 +63,11 @@ describe("openInProcessMcpSession", () => {
       ambientEnvRole: "server",
       watchWorkingTrees: false,
     });
-    expect(createConfiguredServer).toHaveBeenCalledWith(expect.anything(), null, { autoUpdate: false });
+    // bd d0z7b.8 — unaddressed read tools resolve from the shell cwd, as the env replay does.
+    expect(createConfiguredServer).toHaveBeenCalledWith(expect.anything(), null, {
+      autoUpdate: false,
+      ambientCwd: process.cwd(),
+    });
   });
 
   it("round-trips list + call through the in-memory transport", async () => {

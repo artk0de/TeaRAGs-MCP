@@ -77,15 +77,27 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RerankMode } from "../../../contracts/types/reranker.js";
+import { REFERENCED_DEFINITIONS_CHAR_BUDGET } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeGraphReader } from "../../../contracts/types/working-tree.js";
 import { isUnderOwner } from "../../../primitives/ids/index.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
-import { isTestExampleChunk, memberOwnerOf, splitFragmentBase, type ScrollChunk } from "../chunk-grouping/index.js";
+import {
+  isTestChunk,
+  isTestExampleChunk,
+  memberOwnerOf,
+  splitFragmentBase,
+  type ScrollChunk,
+} from "../chunk-grouping/index.js";
 import { historyClockRerankOption } from "../history-clock.js";
 import { lookupContainerAncestors } from "../outline-ancestors.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals, keepPathPatternMatches } from "../post-process.js";
+import {
+  collectReferencedDefinitions,
+  REFERENCED_DEFINITIONS_KEY,
+  spendReferencedDefinitionsAllowance,
+} from "../referenced-definitions.js";
 import type { RerankerPort } from "../reranker-port.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { examplePackMember } from "../test-pack.js";
@@ -451,7 +463,78 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
     // An example id answers with the example runnable in the head (msv3l):
     // its scope setup is stored once per scope and put back here (5xpq4).
-    return this.hydrateTestSetup(processed, originalCtx);
+    return this.hydrateTestSetup(await this.attachReferencedDefinitions(processed, originalCtx), originalCtx);
+  }
+
+  /**
+   * Method rows gain `referencedDefinitions` (bd tea-rags-mcp-d0z7b.4): the
+   * statements defining the class-level constants their body names, found
+   * through the owner's header chunks and read from the tree file the view
+   * reads — so the caller does not grep for the definition next. Their summed
+   * text stays within {@link REFERENCED_DEFINITIONS_CHAR_BUDGET} per answer. No
+   * tree file reader, or a file the view serves from the index → rows unchanged.
+   */
+  private async attachReferencedDefinitions(results: ExploreResult[], ctx: ExploreContext): Promise<ExploreResult[]> {
+    const view = ctx.workingTreeView;
+    const readTreeFile = view?.readTreeFile;
+    if (!readTreeFile) return results;
+    // One header scroll per (file, owner) and one tree read per file, however many rows share them.
+    const headerChunksByOwner = new Map<string, Promise<ScrollChunk[]>>();
+    const treeTexts = new Map<string, Promise<string | undefined>>();
+    let allowance = REFERENCED_DEFINITIONS_CHAR_BUDGET;
+    const attached: ExploreResult[] = [];
+    for (const result of results) {
+      const row = methodRowOf(result);
+      if (!row || view.indexServedPaths?.has(row.relativePath)) {
+        attached.push(result);
+        continue;
+      }
+      const ownerKey = `${row.relativePath}\0${row.owner}`;
+      if (!headerChunksByOwner.has(ownerKey)) {
+        headerChunksByOwner.set(ownerKey, this.scrollOwnerHeaderChunks(ctx, row.owner, row.relativePath));
+      }
+      if (!treeTexts.has(row.relativePath)) treeTexts.set(row.relativePath, readTreeFile(row.relativePath));
+      const [headerChunks, treeText] = await Promise.all([
+        headerChunksByOwner.get(ownerKey),
+        treeTexts.get(row.relativePath),
+      ]);
+      const definitions =
+        treeText === undefined || !headerChunks || headerChunks.length === 0
+          ? []
+          : collectReferencedDefinitions({ body: row.body, ownerSymbolId: row.owner, headerChunks, treeText });
+      if (definitions.length === 0) {
+        attached.push(result);
+        continue;
+      }
+      const spent = spendReferencedDefinitionsAllowance(
+        { ...result, payload: { ...result.payload, [REFERENCED_DEFINITIONS_KEY]: definitions } },
+        allowance,
+      );
+      allowance -= spent?.spent ?? 0;
+      attached.push(spent?.result ?? result);
+    }
+    return attached;
+  }
+
+  /** The owner's class-level block chunks in `relativePath` — the tree's rows for a file it changed. */
+  private async scrollOwnerHeaderChunks(
+    ctx: ExploreContext,
+    owner: string,
+    relativePath: string,
+  ): Promise<ScrollChunk[]> {
+    const filter = {
+      must: [
+        ...exactMatchOnTextIndexed("parentSymbolId", owner, symbolIdTextToken(owner)),
+        { key: "chunkType", match: { value: "block" } },
+      ],
+    };
+    const isOwnHeader = (row: ScrollChunk): boolean =>
+      row.payload.parentSymbolId === owner &&
+      row.payload.chunkType === "block" &&
+      relativePathOf(row.payload) === relativePath;
+    const scrolled = await this.qdrant.scrollFiltered(ctx.collectionName, filter, SCROLL_LIMIT);
+    const substituted = await this.substituteFromWorkingTree(scrolled, ctx, isOwnHeader);
+    return substituted.filter(isOwnHeader);
   }
 
   /**
@@ -693,4 +776,18 @@ function spanOf(lines: { start: number; end: number } | undefined): number {
 function withoutContent(payload: Record<string, unknown>): Record<string, unknown> {
   const { content: _content, ...rest } = payload;
   return rest;
+}
+
+/**
+ * A row whose body may reference its owner's class-level constants: a code
+ * member with content and an owner — never an outline, a header block or a test.
+ */
+function methodRowOf(result: ExploreResult): { body: string; owner: string; relativePath: string } | undefined {
+  const { payload } = result;
+  if (!payload || payload.kind !== undefined) return undefined;
+  const { content, parentSymbolId, relativePath, chunkType } = payload;
+  if (typeof content !== "string" || content === "" || typeof parentSymbolId !== "string") return undefined;
+  if (typeof relativePath !== "string" || chunkType === "class" || chunkType === "block") return undefined;
+  if (isTestChunk({ id: result.id ?? "", payload })) return undefined;
+  return { body: content, owner: parentSymbolId, relativePath };
 }

@@ -121,6 +121,7 @@ import {
   type App,
   type CodegraphDeps,
   type CodegraphWorkerConfig,
+  type CollectionEntry,
   type GraphFacadeDeps,
   type HealthProbes,
   type ReviewChangesOpsDeps,
@@ -229,6 +230,12 @@ export interface AppContext {
   calibrateCodegraphResidual: IngestFacade["calibrateCodegraphResidual"];
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
+  /**
+   * The registry entry whose index a request addressed by `path` alone is
+   * served from — `App#resolveBaseIndexEntry` over the live (watched) registry.
+   * Backs the ambient-cwd addressing of read tools (bd tea-rags-mcp-d0z7b.8).
+   */
+  resolveIndexEntry: (path: string) => CollectionEntry | null;
   embeddedRelease?: () => void;
   /**
    * Graceful shutdown: terminate embedding provider + release embedded Qdrant,
@@ -1659,6 +1666,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       embeddingProvider: infra.embeddings.getProviderName(),
       ...(infra.embeddings.getBaseUrl ? { embeddingUrl: infra.embeddings.getBaseUrl() } : {}),
     },
+    resolveIndexEntry: (path) => app.resolveBaseIndexEntry(collectionRegistry, path),
     embeddedRelease: infra.embeddedRelease,
     cleanup,
   };
@@ -2525,6 +2533,14 @@ export interface ConfiguredServerOptions {
   instructionsMode?: ServerInstructionsMode;
   /** Register the hidden experimental `locate` tool (`EXPERIMENTAL_LOCATE_ENABLE`). Default off. */
   experimentalLocate?: boolean;
+  /**
+   * The server process cwd, when it means the client's project (bd
+   * tea-rags-mcp-d0z7b.8): a stdio server is spawned by its client in the
+   * project dir, `tea-rags call` runs in the shell's. Read tools called with no
+   * `project` / `path` / `collection` are then addressed by it. Absent (HTTP —
+   * the process cwd is unrelated to a remote client) = explicit addressing only.
+   */
+  ambientCwd?: string;
 }
 
 export function createConfiguredServer(
@@ -2544,6 +2560,9 @@ export function createConfiguredServer(
     schemaBuilder: ctx.schemaBuilder,
     healthProbes: ctx.healthProbes,
     ...(options.experimentalLocate === true ? { experimentalLocate: true } : {}),
+    ...(options.ambientCwd === undefined
+      ? {}
+      : { ambientWorkingTree: { cwd: options.ambientCwd, resolveIndexEntry: ctx.resolveIndexEntry } }),
     // Auto-update trigger (hpg2): fires on search tools, spawns the detached
     // updater when the freshness verdict allows. Config lives in the registry.
     // The api-side resolvers are injected here (bd tea-rags-mcp-54xwd.3) —

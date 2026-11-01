@@ -14,13 +14,16 @@
 import type { EmptyAnswerExplanation } from "../../contracts/types/empty-answer.js";
 import {
   BATCH_FULL_TEXT_CHAR_BUDGET,
+  FULL_TEXT_MAX_CHARS,
   FULL_TEXT_MAX_LINES,
+  REFERENCED_DEFINITIONS_CHAR_BUDGET,
   type SymbolBatchMiss,
 } from "../../contracts/types/symbol-batch.js";
 import { Semaphore } from "../../primitives/concurrency/index.js";
 import { lastNameSegment } from "../../primitives/ids/index.js";
 import { spendContainerHeaderAllowance } from "./chunk-grouping/index.js";
 import { containerMemberMessage, findContainerMembers, rankByNamespaceProximity } from "./member-miss.js";
+import { spendReferencedDefinitionsAllowance } from "./referenced-definitions.js";
 import type { FileOutlineStrategy } from "./strategies/file-outline.js";
 import type { SymbolSearchStrategy } from "./strategies/symbol.js";
 import type { ExploreContext, ExploreResult } from "./strategies/types.js";
@@ -41,7 +44,9 @@ const UNKNOWN_PATH_HINT = "retry a suggested path, or find_symbol(relativePath: 
 function batchPathNotice(overLines: readonly string[], overBudget: readonly string[], directory: boolean): string {
   const parts: string[] = [];
   if (overLines.length > 0) {
-    parts.push(`over ${FULL_TEXT_MAX_LINES} lines, outlined: ${overLines.join(", ")} — read bodies by the member ids`);
+    parts.push(
+      `over ${FULL_TEXT_MAX_LINES} lines and ${FULL_TEXT_MAX_CHARS} chars, outlined: ${overLines.join(", ")} — read bodies by the member ids`,
+    );
   }
   if (overBudget.length > 0) {
     parts.push(
@@ -341,7 +346,24 @@ function withinFullTextBudget(answers: readonly AddressAnswer[]): { answers: Add
       return { ...row, result: rendered.result };
     }),
   }));
-  return { answers: withHeaders, overBudget };
+  // Referenced definitions come last: each address's strategy capped its own
+  // answer, the batch caps their sum across addresses (bd tea-rags-mcp-d0z7b.4).
+  let definitionsSpent = 0;
+  const withDefinitions = withHeaders.map((answer) => ({
+    ...answer,
+    rows: answer.rows.map((row) => {
+      const allowance = Math.min(
+        REFERENCED_DEFINITIONS_CHAR_BUDGET - definitionsSpent,
+        Math.max(0, BATCH_FULL_TEXT_CHAR_BUDGET - spent),
+      );
+      const rendered = spendReferencedDefinitionsAllowance(row.result, allowance);
+      if (!rendered) return row;
+      spent += rendered.spent;
+      definitionsSpent += rendered.spent;
+      return { ...row, result: rendered.result };
+    }),
+  }));
+  return { answers: withDefinitions, overBudget };
 }
 
 function contentLengthOf(result: ExploreResult): number {

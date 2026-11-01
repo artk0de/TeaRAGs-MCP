@@ -27,6 +27,8 @@ export async function openInProcessMcpSession(): Promise<InProcessToolSession> {
   const server = createConfiguredServer(ctx, promptsConfig, {
     autoUpdate: false,
     experimentalLocate: config.experimentalLocateEnable,
+    // The same cwd `prepareCallProjectEnv` replays the project env from (bd d0z7b.8).
+    ambientCwd: process.cwd(),
   });
   const session = await connectInProcessClient(server);
 

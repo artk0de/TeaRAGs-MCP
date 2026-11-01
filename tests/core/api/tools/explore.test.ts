@@ -327,10 +327,127 @@ describe("registerSearchTools — default rows drop id and score (q1g6s.16)", ()
     });
   }
 
-  it("find_symbol keeps id / score — out of scope", async () => {
+  // PIN-UPDATED d0z7b.2: a find_symbol row with a symbolId drops its point id; a score other than 1 stays.
+  it("find_symbol drops id on rows with a symbolId, keeps a score other than 1", async () => {
     const columns = await columnsOf("find_symbol", { symbol: "run" });
 
-    expect(columns.slice(0, 2)).toEqual(["id", "score"]);
+    expect(columns).not.toContain("id");
+    expect(columns[0]).toBe("score");
+  });
+});
+
+// bd tea-rags-mcp-d0z7b.2: a find_symbol row repeats its address up to three
+// times (point id, payload.request, payload.symbolId / relativePath) and the
+// lookup score is always 1. The row keeps one locator.
+describe("registerSearchTools — find_symbol rows drop redundant locators (d0z7b.2)", () => {
+  const recordsFor = async (rows: unknown[], args: Record<string, unknown>) => {
+    const { captured } = makeHarness({ findSymbol: vi.fn().mockResolvedValue({ results: rows }) });
+    const tool = captured.find((t) => t.name === "find_symbol")!;
+    const result = (await tool.handler({ path: "/x", ...args }, {})) as {
+      structuredContent: { results: Parameters<typeof recordsOf>[0] };
+    };
+    return recordsOf(result.structuredContent.results);
+  };
+
+  it("drops id on a row with a symbolId and score 1 on every row; a row without symbolId keeps its id", async () => {
+    const records = await recordsFor(
+      [
+        { id: "p1", score: 1, payload: { relativePath: "src/a.ts", symbolId: "A#run", content: "body" } },
+        { id: "p2", score: 1, payload: { relativePath: "README.md", content: "doc" } },
+      ],
+      { symbol: "run" },
+    );
+
+    expect(records[0]).not.toHaveProperty("id");
+    expect(records[0]).not.toHaveProperty("score");
+    expect(records[1]).toMatchObject({ id: "p2" });
+    expect(records[1]).not.toHaveProperty("score");
+  });
+
+  it("relativePath mode: a file outline row without symbolId keeps its id", async () => {
+    const [record] = await recordsFor(
+      [{ id: "f1", score: 1, payload: { relativePath: "src/a.ts", content: "src/a.ts\n  A" } }],
+      { relativePath: "src/a.ts" },
+    );
+
+    expect(record).toMatchObject({ id: "f1", payload: { relativePath: "src/a.ts" } });
+  });
+
+  it("symbols batch: request equal to symbolId, or to relativePath on a row without symbolId, is absent", async () => {
+    const records = await recordsFor(
+      [
+        { id: "p1", score: 1, payload: { request: "A#run", relativePath: "src/a.ts", symbolId: "A#run" } },
+        { id: "p2", score: 1, payload: { request: "src/b.ts", relativePath: "src/b.ts", content: "src/b.ts\n  B" } },
+      ],
+      { symbols: ["A#run", "src/b.ts"] },
+    );
+
+    expect(records[0].payload).not.toHaveProperty("request");
+    expect(records[1].payload).not.toHaveProperty("request");
+  });
+
+  it("symbols batch: request stays for a partial name, a resolvedAs swap, and a path on a symbol row", async () => {
+    const records = await recordsFor(
+      [
+        { id: "p1", score: 1, payload: { request: "Reranker", relativePath: "src/r.ts", symbolId: "core::Reranker" } },
+        {
+          id: "p2",
+          score: 1,
+          payload: { request: "A.run", resolvedAs: "A#run", relativePath: "src/a.ts", symbolId: "A#run" },
+        },
+        { id: "p3", score: 1, payload: { request: "src/c.ts", relativePath: "src/c.ts", symbolId: "C" } },
+      ],
+      { symbols: ["Reranker", "A.run", "src/c.ts"] },
+    );
+
+    expect(records.map((r) => (r.payload as Record<string, unknown>).request)).toEqual([
+      "Reranker",
+      "A.run",
+      "src/c.ts",
+    ]);
+  });
+
+  it("symbols batch: sameChunkAs still names a row of the answer by its symbolId or path", async () => {
+    const records = await recordsFor(
+      [
+        {
+          id: "h",
+          score: 1,
+          payload: { request: "Svc", relativePath: "src/svc.ts", symbolId: "Svc", content: "class Svc" },
+        },
+        {
+          id: "h",
+          score: 1,
+          payload: { request: "Svc::LIMIT", sameChunkAs: "Svc", relativePath: "src/svc.ts", symbolId: "Svc::LIMIT" },
+        },
+      ],
+      { symbols: ["Svc", "Svc::LIMIT"] },
+    );
+    const carrier = (records[1].payload as Record<string, unknown>).sameChunkAs;
+    const addresses = records.map((r) => {
+      const payload = r.payload as Record<string, unknown>;
+      return payload.request ?? payload.symbolId ?? payload.relativePath;
+    });
+
+    expect(addresses).toContain(carrier);
+    expect(records[0].payload).not.toHaveProperty("request");
+  });
+
+  it("search tools keep the point id on rows with a symbolId when fields is passed", async () => {
+    const rows = [
+      { id: "s1", score: 1, payload: { relativePath: "src/a.ts", symbolId: "A#run" } },
+      { id: "s2", score: 0.5, payload: { relativePath: "src/b.ts", symbolId: "B#run" } },
+    ];
+    const { captured } = makeHarness({ hybridSearch: vi.fn().mockResolvedValue({ results: rows }) });
+    const tool = captured.find((t) => t.name === "hybrid_search")!;
+    const result = (await tool.handler({ path: "/x", query: "q", fields: ["relativePath"] }, {})) as {
+      structuredContent: { results: Parameters<typeof recordsOf>[0] };
+    };
+
+    expect(recordsOf(result.structuredContent.results).map((r) => [r.id, r.score])).toEqual([
+      ["s1", 1],
+      ["s2", 0.5],
+    ]);
   });
 });
 
@@ -656,6 +773,36 @@ describe("registerSearchTools — find_symbol batch over the response budget", (
     expect(truncated.next?.tool).toBe("find_symbol");
     expect(truncated.next?.args.symbols).toEqual(["A#a", "B#b", "C#c", "D#d"].slice(truncated.returned));
     expect(truncated.next?.args).toMatchObject({ project: "p", path: "/x" });
+  });
+
+  it("continues with each cut row's address when its request was dropped: symbolId, else relativePath (d0z7b.2)", async () => {
+    const symbolRow = (symbolId: string) => ({
+      id: symbolId,
+      score: 1,
+      payload: { request: symbolId, symbolId, relativePath: "src/a.ts", content: "x".repeat(400) },
+    });
+    const fileRow = (relativePath: string) => ({
+      id: relativePath,
+      score: 1,
+      payload: { request: relativePath, relativePath, content: "y".repeat(400) },
+    });
+    const symbols = ["A#a", "src/b.ts", "C#c", "src/d.ts"];
+    const { captured } = makeHarness({
+      findSymbol: vi.fn().mockResolvedValue({
+        results: [symbolRow("A#a"), fileRow("src/b.ts"), symbolRow("C#c"), fileRow("src/d.ts")],
+        workingTree: { tree: "/x", project: "p" },
+      }),
+    });
+    const tool = captured.find((t) => t.name === "find_symbol")!;
+    const args = { project: "p", path: "/x", symbols };
+    const result = (await tool.handler(args, {})) as McpToolResult;
+
+    const policy = (tool.config as { responseRows: ResponseRowsPolicy }).responseRows;
+    const cut = enforceResponseBudget(result, "find_symbol", args, policy, 1200);
+    const { truncated } = cut.structuredContent as { truncated: ResponseTruncation };
+
+    expect(truncated.omitted).toBeGreaterThan(0);
+    expect(truncated.next?.args.symbols).toEqual(symbols.slice(truncated.returned));
   });
 });
 

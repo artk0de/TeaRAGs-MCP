@@ -14,7 +14,8 @@
 #
 # Single source of the lines: the fenced block under "## The block to inject" in
 # rules/references/turn-routing.md. Codex and Cursor get it pre-rendered in their
-# dialect as scripts/turn-routing.txt next to this script.
+# dialect as scripts/turn-routing.txt next to this script. Claude Code reads the
+# fenced block under "## The compact block (Claude)" of the same file instead.
 #
 # Fails open: no jq, no text, unparsable input, unwritable state — the prompt
 # and the tool proceed (Cursor: always a schema-valid JSON answer). Exit 0.
@@ -43,8 +44,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [ -f "$SCRIPT_DIR/turn-routing.txt" ]; then
   BLOCK=$(cat "$SCRIPT_DIR/turn-routing.txt" 2>/dev/null)
 else
-  BLOCK=$(awk '
-    /^## The block to inject/ { section = 1; next }
+  # Claude Code reads its own compact block; any other harness without a .txt, the full one.
+  HEADING="## The block to inject"
+  [ "$HARNESS" = claude ] && HEADING="## The compact block (Claude)"
+  BLOCK=$(awk -v heading="$HEADING" '
+    index($0, heading) == 1 { section = 1; next }
     section && /^```/ { if (inside) exit; inside = 1; next }
     inside { print }
   ' "$SCRIPT_DIR/../rules/references/turn-routing.md" 2>/dev/null)

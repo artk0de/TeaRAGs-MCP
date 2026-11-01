@@ -474,6 +474,27 @@ describe("createConfiguredServer", () => {
     // Verify it has connect method (MCP server interface)
     expect(typeof server.connect).toBe("function");
   });
+
+  it("addresses unaddressed read tools by the ambient cwd only when the entry point declares one (bd d0z7b.8)", async () => {
+    const { registerAllTools } = await import("../../src/core/api/tools/index.js");
+    const ctx = await createAppContext(makeConfig());
+
+    vi.mocked(registerAllTools).mockClear();
+    createConfiguredServer(ctx, null, { ambientCwd: "/work/project" });
+    expect(vi.mocked(registerAllTools).mock.calls[0][1].ambientWorkingTree).toEqual({
+      cwd: "/work/project",
+      resolveIndexEntry: ctx.resolveIndexEntry,
+    });
+
+    vi.mocked(registerAllTools).mockClear();
+    createConfiguredServer(ctx, null);
+    expect(vi.mocked(registerAllTools).mock.calls[0][1]).not.toHaveProperty("ambientWorkingTree");
+  });
+
+  it("resolves an ambient cwd through the live registry (null when no entry claims it)", async () => {
+    const ctx = await createAppContext(makeConfig());
+    expect(ctx.resolveIndexEntry("/definitely/not/a/registered/project")).toBeNull();
+  });
 });
 
 describe("loadPrompts", () => {

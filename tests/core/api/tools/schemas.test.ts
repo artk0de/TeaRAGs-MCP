@@ -12,6 +12,7 @@ import {
   IndexCodebaseSchema,
   TYPED_FILTER_PARAM_NAMES,
 } from "../../../../src/core/api/tools/schemas.js";
+import { buildOverview } from "../../../../src/mcp/resources/registry.js";
 
 // Minimal mock SchemaBuilder — returns a simple string schema for rerank
 // since we only care about coercion of number/boolean fields, not rerank shape.
@@ -377,12 +378,15 @@ describe("fields hint names the search defaults (q1g6s.16)", () => {
   const { FindSimilarSchema, FindSymbolSchema } = createSearchSchemas(mockSchemaBuilder);
   const hintOf = (schema: Record<string, unknown>) => (schema.fields as z.ZodTypeAny).description ?? "";
 
-  it("every search tool's fields hint interpolates both default constants", () => {
+  // bd tea-rags-mcp-d0z7b.5: the alwaysLoad hint is one clause; the two default
+  // lists moved to the overview, still interpolated from the constants.
+  it("every search tool's fields hint points at the signals guide; the overview states both default constants", () => {
     for (const schema of [SemanticSearchSchema, HybridSearchSchema, RankChunksSchema, FindSimilarSchema]) {
-      const hint = hintOf(schema);
-      expect(hint).toContain(`[${DEFAULT_SEARCH_FIELDS.join(",")}]`);
-      expect(hint).toContain(`[${DEFAULT_META_ONLY_FIELDS.join(",")}]`);
+      expect(hintOf(schema)).toContain("tea-rags://guide/signals");
     }
+    const overview = buildOverview();
+    expect(overview).toContain(DEFAULT_SEARCH_FIELDS.join(", "));
+    expect(overview).toContain(DEFAULT_META_ONLY_FIELDS.join(", "));
   });
 
   it("find_similar's example ids take the symbolId a default row carries", () => {

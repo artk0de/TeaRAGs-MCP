@@ -60,8 +60,8 @@ function anonymousRows(path: string): Row[] {
   }));
 }
 
-function treeView(path: string, lineCount: number) {
-  const text = Array.from({ length: lineCount }, (_, i) => `line_${i}`).join("\n");
+function treeView(path: string, lineCount: number, width = 0) {
+  const text = Array.from({ length: lineCount }, (_, i) => `line_${i}${"x".repeat(width)}`).join("\n");
   return fakeWorkingTreeView({ files: { [path]: text } });
 }
 
@@ -92,13 +92,14 @@ describe("FileOutlineStrategy — answer contract (hditp)", () => {
     expect(outline).not.toContain("def helper_0");
   });
 
+  // PIN-UPDATED d0z7b.3: large = over 150 lines AND 9000 chars (240 × ~48 chars).
   it("answers a large file without symbol chunks with the noSymbols empty reason", async () => {
     const path = "config/initializers/metrics.rb";
     const strategy = new FileOutlineStrategy(cappedQdrant(anonymousRows(path)), reranker, [], [], {
       relativePath: path,
     });
 
-    const results = await strategy.execute({ collectionName: "c", limit: 1, workingTreeView: treeView(path, 240) });
+    const results = await strategy.execute({ collectionName: "c", limit: 1, workingTreeView: treeView(path, 240, 40) });
 
     expect(results).toEqual([]);
     expect(strategy.emptyAnswer?.reason).toBe("noSymbols");
