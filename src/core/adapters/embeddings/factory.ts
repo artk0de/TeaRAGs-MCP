@@ -6,6 +6,9 @@ import { join } from "node:path";
 
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../primitives/errors/index.js";
+import { LlamaServerPools } from "../llama-server/pools/llama-server-pools.js";
+import { reviveManagedLlamaServerPool } from "../llama-server/pools/pool-revive.js";
+import { productionLlamaServerPoolsDeps } from "../llama-server/pools/production-deps.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { EmbeddingEndpointDownVerdictStore } from "./endpoint-down-verdicts.js";
@@ -23,6 +26,8 @@ export interface EmbeddingPaths {
   daemonPid: string;
   /** Cross-process endpoint-down verdict file (llama-server); absent → no verdicts are shared. */
   endpointDownVerdicts?: string;
+  /** tea-rags data dir holding the managed llama-server pools (`llama-server/pools.json`); absent → no pool is restarted. */
+  dataDir?: string;
 }
 
 /* v8 ignore start -- fallback for backward compat when DI paths not provided */
@@ -49,6 +54,26 @@ function rejectOllamaEndpointList(variable: string, value: string | undefined): 
 function endpointDownVerdictStore(paths: EmbeddingPaths | undefined): EmbeddingEndpointDownVerdictStore | undefined {
   const file = (paths ?? fallbackPaths()).endpointDownVerdicts;
   return file === undefined ? undefined : new EmbeddingEndpointDownVerdictStore(file);
+}
+
+/**
+ * Restart-on-demand for llama-server endpoints that are a managed pool. The
+ * registry is read at outage time, so endpoints matching no recorded pool are
+ * left alone. Restart replays the recorded binary, so no binary lookup runs.
+ */
+function managedPoolReviver(
+  paths: EmbeddingPaths | undefined,
+): ((endpoints: string[]) => Promise<boolean>) | undefined {
+  const dataDir = paths?.dataDir;
+  if (dataDir === undefined) return undefined;
+  return async (endpoints) =>
+    reviveManagedLlamaServerPool(endpoints, {
+      dataDir,
+      pools: new LlamaServerPools(productionLlamaServerPoolsDeps({ dataDir, env: process.env, which: () => null })),
+      log: (line) => {
+        console.error(line);
+      },
+    });
 }
 
 export class EmbeddingProviderFactory {
@@ -120,7 +145,7 @@ export class EmbeddingProviderFactory {
           baseUrl || LLAMA_SERVER_DEFAULT_URL,
           config.fallbackBaseUrl,
           config.apiKey,
-          { endpointDownVerdicts: endpointDownVerdictStore(paths) },
+          { endpointDownVerdicts: endpointDownVerdictStore(paths), reviveEndpoints: managedPoolReviver(paths) },
         );
 
       case "onnx": {

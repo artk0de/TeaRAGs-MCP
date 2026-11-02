@@ -323,6 +323,7 @@ async function resolveInfrastructure(
         daemonSocket: config.paths.daemonSocket,
         daemonPid: config.paths.daemonPid,
         endpointDownVerdicts: config.paths.embeddingEndpointHealth,
+        dataDir: config.paths.appData,
       },
       onRecoveryWait: onEmbeddingRecoveryWait,
     });
