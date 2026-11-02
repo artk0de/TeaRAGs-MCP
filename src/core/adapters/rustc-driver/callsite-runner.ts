@@ -53,7 +53,7 @@ import {
 } from "node:fs";
 import { rm } from "node:fs/promises";
 import { availableParallelism, homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -77,6 +77,7 @@ import {
 } from "../process-tree/supervised-child.js";
 import { DaemonLock } from "../qdrant/embedded/daemon-lock.js";
 import { decodeRustcCallSites } from "./callsite-decoder.js";
+import { cargoRootsCallSiteIndex, findCargoRoots } from "./cargo-roots.js";
 import {
   computeRustcDriverSourceHash,
   defaultRustcDriverBuildFs,
@@ -294,13 +295,102 @@ export async function acquireRustcCallSites(
     return { status: "disabled", diagnostics: emptyDiagnostics() };
   }
   try {
-    return await acquire(deps, options);
+    return await acquireAcrossCargoRoots(deps, options);
   } catch (error) {
     return {
       status: "failed",
       diagnostics: { ...emptyDiagnostics(), detail: error instanceof Error ? error.message : String(error) },
     };
   }
+}
+
+/**
+ * One acquisition per cargo root ({@link findCargoRoots}): each root is its own
+ * driver cwd, project dir, `Cargo.lock` and `cargo fetch` hint. A project whose
+ * only root is `projectRoot` takes the single-root path unchanged.
+ */
+async function acquireAcrossCargoRoots(
+  deps: RustcCallSiteRunnerDeps,
+  options: RustcCallSiteRunOptions,
+): Promise<RustcCallSiteAcquisition> {
+  const manifests = deps.readCargoManifests(options.projectRoot);
+  const contentByPath = new Map(
+    manifests.map((manifest) => [join(options.projectRoot, manifest.relDir, manifest.fileName), manifest.content]),
+  );
+  const roots = findCargoRoots(
+    options.projectRoot,
+    manifests.map((manifest) => posix.join(manifest.relDir, manifest.fileName)),
+    (path) => contentByPath.get(path) ?? "",
+  );
+  if (roots.length === 1 && roots[0] === options.projectRoot) return acquire(deps, options);
+  const rooted: CargoRootAcquisition[] = [];
+  for (const root of roots) {
+    const relDir = relative(options.projectRoot, root).split(sep).join("/");
+    rooted.push({ relDir, acquisition: await acquire(deps, cargoRootOptions(options, root, relDir)) });
+  }
+  return mergeCargoRootAcquisitions(rooted);
+}
+
+interface CargoRootAcquisition {
+  /** Project-relative, `/`-separated. */
+  relDir: string;
+  acquisition: RustcCallSiteAcquisition;
+}
+
+/** The root as the driver's cwd; the admission still judges project-relative paths. */
+function cargoRootOptions(options: RustcCallSiteRunOptions, root: string, relDir: string): RustcCallSiteRunOptions {
+  const { admission } = options;
+  const prefix = relDir === "" ? "" : `${relDir}/`;
+  return {
+    ...options,
+    projectRoot: root,
+    ...(admission
+      ? { admission: (paths: readonly string[]) => admission(paths.map((path) => `${prefix}${path}`)) }
+      : {}),
+  };
+}
+
+/** Unindexed roots, by precedence, when no root produced an index. */
+const UNINDEXED_STATUS_ORDER: readonly RustcCallSiteAcquisitionStatus[] = [
+  "failed",
+  "unavailable",
+  "noCache",
+  "disabled",
+];
+
+function mergeCargoRootAcquisitions(rooted: readonly CargoRootAcquisition[]): RustcCallSiteAcquisition {
+  const statuses = rooted.map(({ acquisition }) => acquisition.status);
+  const all = rooted.map(({ acquisition }) => acquisition.diagnostics);
+  const diagnostics: RustcCallSiteDiagnostics = {
+    ranCargoCheck: all.some((each) => each.ranCargoCheck),
+    unitCount: all.reduce((sum, each) => sum + each.unitCount, 0),
+    failedCrates: all.flatMap((each) => each.failedCrates),
+    missingUnits: all.reduce((sum, each) => sum + each.missingUnits, 0),
+    retried: all.some((each) => each.retried),
+    wallMs: all.reduce((sum, each) => sum + each.wallMs, 0),
+  };
+  const envKeys = all.flatMap((each) => (each.envKey ? [each.envKey] : []));
+  if (envKeys.length > 0) diagnostics.envKey = envKeys.join(",");
+  for (const each of all) {
+    diagnostics.latched ??= each.latched;
+    diagnostics.budget ??= each.budget;
+    diagnostics.hint ??= each.hint;
+    diagnostics.detail ??= each.detail;
+  }
+  const indexed = rooted.flatMap(({ relDir, acquisition }) =>
+    acquisition.index ? [{ relDir, index: acquisition.index }] : [],
+  );
+  if (indexed.length === 0) {
+    const status = UNINDEXED_STATUS_ORDER.find((candidate) => statuses.includes(candidate)) ?? "failed";
+    return { status, diagnostics };
+  }
+  const status: RustcCallSiteAcquisitionStatus =
+    indexed.length < rooted.length || statuses.includes("partial")
+      ? "partial"
+      : statuses.every((each) => each === "reused")
+        ? "reused"
+        : "ok";
+  return { status, index: cargoRootsCallSiteIndex(indexed), diagnostics };
 }
 
 async function acquire(
