@@ -38,9 +38,11 @@ function detectGpuBackend() {
 }
 
 function detectHarness(env) {
-  if (env.CODEX_HOME || env.CODEX_SANDBOX) return "codex";
-  if (env.CURSOR_AGENT) return "cursor";
+  // Runtime markers of the CURRENT harness first; CODEX_HOME is a user config
+  // variable that can be exported under any harness, so it ranks last.
   if (env.CLAUDECODE) return "claude";
+  if (env.CURSOR_AGENT) return "cursor";
+  if (env.CODEX_SANDBOX || env.CODEX_HOME) return "codex";
   return "unknown";
 }
 
