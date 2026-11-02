@@ -23,11 +23,12 @@
  */
 
 import { once } from "node:events";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { resolveGitExecutable, type BlameLine, type GitAdapterKind } from "../../../../../adapters/vcs/index.js";
+import { compiledModuleDir } from "../../../../../primitives/paths/index.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
 import type {
   BlameJobInput,
@@ -38,7 +39,7 @@ import type {
 
 /** Worker script path — always compiled JS in build/ (worker_threads require
  *  compiled JS; same idiom as churn-walk/thread.ts). */
-const WORKER_PATH = join(dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"), "worker.js");
+const WORKER_PATH = join(compiledModuleDir(fileURLToPath(import.meta.url)), "worker.js");
 
 /** How long close() waits for a graceful worker exit before terminate(). */
 const CLOSE_TIMEOUT_MS = 5000;

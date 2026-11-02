@@ -17,7 +17,25 @@ import {
   type TrajectoryGitConfig,
   type VcsConfig,
 } from "./schemas.js";
-import { createEnvReader, type DeprecationNotice, type EnvReader, type EnvSource } from "./utils.js";
+import {
+  createEnvReader,
+  describeDeprecation,
+  type DeprecationNotice,
+  type EnvReader,
+  type EnvSource,
+} from "./utils.js";
+
+/**
+ * Env vars a release removed outright. Setting one changes nothing; it is
+ * reported once through the deprecation notices, without a replacement.
+ *
+ * The squash-aware session pair went in a BREAKING release: a future-bug-fix
+ * backtest on two corpora showed no consistent gain, files carry 1.02–1.17
+ * commits per session, and session-unit percentiles were not comparable across
+ * indexes. An index built with it on reports env drift instead
+ * (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` in `REGISTRY_ENV_GROUPS`).
+ */
+const REMOVED_ENV_VARS = ["TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", "TRAJECTORY_GIT_SESSION_GAP_MINUTES"] as const;
 
 function validateSchema<T>(
   schema: {
@@ -152,8 +170,6 @@ function buildEnvInputs(env: EnvReader) {
     chunkMaxAgeMonths: env("TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", "GIT_CHUNK_MAX_AGE_MONTHS"),
     chunkTimeoutMs: env("TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", "GIT_CHUNK_TIMEOUT_MS"),
     chunkMaxFileLines: env("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", "GIT_CHUNK_MAX_FILE_LINES"),
-    squashAwareSessions: env("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS"),
-    sessionGapMinutes: env("TRAJECTORY_GIT_SESSION_GAP_MINUTES"),
     anchor: env("TRAJECTORY_GIT_ANCHOR"),
   };
 
@@ -271,6 +287,12 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
   };
 } {
   const deprecations: DeprecationNotice[] = [];
+  // Read from `source` directly, not through the recording reader: an ignored
+  // variable is no operator decision and must not reach `explicitEnvKeys`.
+  for (const removed of REMOVED_ENV_VARS) {
+    const value = source[removed];
+    if (value !== undefined && value !== "") deprecations.push({ oldName: removed });
+  }
   const read = createEnvReader(deprecations, source);
   const explicitEnvKeys = new Set<string>();
   const inputs = buildEnvInputs((newName, ...oldNames) => {
@@ -346,7 +368,7 @@ export function assertRegistryEnvValueParses(key: string, value: string): void {
 
 export function printDeprecationWarnings(notices: DeprecationNotice[]): void {
   if (notices.length === 0) return;
-  const lines = notices.map((n) => `  - ${n.oldName} -> use ${n.newName} instead`).join("\n");
+  const lines = notices.map((n) => `  - ${describeDeprecation(n)}`).join("\n");
   process.stderr.write(`[tea-rags] Deprecated env vars detected:\n${lines}\n`);
 }
 

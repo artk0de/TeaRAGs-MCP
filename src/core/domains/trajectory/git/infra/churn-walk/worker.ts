@@ -117,7 +117,6 @@ async function runWalk(job: ChunkChurnWalkJobInput): Promise<ChunkChurnWalkOutco
     job.concurrency,
     job.maxAgeMonths,
     job.fileChurnData,
-    job.squashOpts,
     job.chunkTimeoutMs,
     job.maxFileLines,
     job.useSharedLimiter ? sharedLimiter : undefined,

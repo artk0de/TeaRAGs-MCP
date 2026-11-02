@@ -77,7 +77,6 @@ import {
   OnDemandHeadGitReadMemo,
   type OnDemandGitSignalOptions,
   type OnDemandGitSignalTarget,
-  type SquashOptions,
 } from "../../../domains/trajectory/git/index.js";
 import type {
   WorkingTreeGitSignalBlock,
@@ -97,8 +96,6 @@ export interface WorkingTreeGitSignalConfig {
   vcsAdapter: GitAdapterKind;
   /** Per git-call stall budget of the file walk (`TRAJECTORY_GIT_LOG_TIMEOUT_MS`). */
   timeoutMs: number;
-  /** Squash-aware session grouping, as ingest computes `commitCount`. */
-  squashOpts?: SquashOptions;
   /** The file walk's window (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`); absent → whole histories. */
   file?: OnDemandGitSignalOptions["file"];
   /** The chunk walk's window and budgets (`TRAJECTORY_GIT_CHUNK_*`). */
@@ -111,8 +108,8 @@ export interface WorkingTreeGitSignalSourceDeps extends WorkingTreeGitSignalConf
   /**
    * The config the index whose checkout is `indexRoot` was written with — its
    * project's registry env over the serving process's (round-4 P1: a server
-   * started without the self-index's squash flag mixed session and commit
-   * counts in one answer). Undefined, or no such hook → this source's own.
+   * started with another git config than the index's mixed two units in one
+   * answer). Undefined, or no such hook → this source's own.
    */
   configFor?: (indexRoot: string) => WorkingTreeGitSignalConfig | undefined;
   /** Keeps computed blocks across processes. Absent → the process map only. */
@@ -413,8 +410,8 @@ function partitionByEnrichmentPolicy(
 
 /**
  * What the blocks depend on besides the record's own key: the computing build
- * and the configuration that shapes the values — squash sessions, the file and
- * chunk walks' windows, the chunk walk's line limit. Stall budgets and
+ * and the configuration that shapes the values — the file and chunk walks'
+ * windows, the chunk walk's line limit. Stall budgets and
  * concurrency are left out: they decide whether a value is computed, never what
  * it is. Two indexes written with different configs never share a record.
  */
@@ -424,7 +421,9 @@ function signalFingerprintOf(builderVersion: string | undefined, config: Working
       JSON.stringify([
         builderVersion ?? "",
         config.vcsAdapter,
-        config.squashOpts ?? null,
+        // The retired squash-session slot: always null now, kept so every
+        // commit-unit record written before the removal keeps its fingerprint.
+        null,
         config.file?.maxAgeMonths ?? null,
         config.chunk.maxAgeMonths,
         config.chunk.maxFileLines,
@@ -477,7 +476,6 @@ async function computeSignals(
     timeoutMs: config.timeoutMs,
     chunk: config.chunk,
     ...(config.file ? { file: config.file } : {}),
-    ...(config.squashOpts ? { squashOpts: config.squashOpts } : {}),
     ...(config.anchor ? { anchor: config.anchor } : {}),
   });
 }

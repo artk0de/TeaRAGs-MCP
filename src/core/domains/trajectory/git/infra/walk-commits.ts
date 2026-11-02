@@ -29,7 +29,7 @@ import {
   type HeadAttributedChangedPath,
   type TaskIdVocabulary,
 } from "../history/index.js";
-import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { isBugFixCommitOrBranch, type ChunkAccumulator } from "./metrics.js";
 import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
 
 /** Duck type for injected concurrency limiter — matches primitives/concurrency/semaphore.ts Semaphore shape. */
@@ -96,11 +96,6 @@ export interface WalkCommitsOptions {
   maxAgeMonths: number;
   chunkTimeoutMs: number;
   externalSemaphore?: ChunkConcurrencySemaphore;
-  /**
-   * Optional reference squashOpts so signature parity with the original is
-   * preserved for callers that mutate later phases; not consumed here.
-   */
-  squashOpts?: SquashOptions;
   fileChurnDataMap?: Map<string, FileChurnData>;
   /**
    * Run-scoped, caller-owned `git cat-file --batch` reader. When provided, the

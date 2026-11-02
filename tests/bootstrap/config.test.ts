@@ -66,8 +66,6 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.ingestCode.chunkOverlap).toBe(300);
     expect(config.ingestCode.enableHybridSearch).toBe(true);
     expect(config.trajectoryIngest.enableGitMetadata).toBe(true);
-    expect(config.trajectoryIngest.squashAwareSessions).toBe(false);
-    expect(config.trajectoryIngest.sessionGapMinutes).toBe(30);
   });
 
   it("should parse env vars when set (via deprecated names)", async () => {

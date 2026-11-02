@@ -111,7 +111,7 @@ describe("assembleFileSignals", () => {
     };
     // bd tea-rags-mcp-8rcox: ids are read under the run's learned vocabulary.
     const vocabulary = { projectKeys: new Set(["TD"]), forgeIssueRefs: false };
-    const result = assembleFileSignals(churnData, 100, undefined, undefined, undefined, vocabulary);
+    const result = assembleFileSignals(churnData, 100, undefined, undefined, vocabulary);
     expect(result.taskIds).toContain("TD-123");
     expect(result.taskIds).toContain("TD-456");
     expect(result.taskIds).toHaveLength(2);
@@ -128,7 +128,7 @@ describe("assembleFileSignals", () => {
       { lineNumber: 2, sha: "x", author: "Carol", authorEmail: "c@x.com", timestamp: 1700000000 },
       { lineNumber: 3, sha: "y", author: "Dave", authorEmail: "d@x.com", timestamp: 1700000100 },
     ];
-    const result = assembleFileSignals(churnData, 10, undefined, undefined, blameLines);
+    const result = assembleFileSignals(churnData, 10, undefined, blameLines);
 
     // Recent activity (commit-based) — alice is sole committer
     expect(result.recentDominantAuthor).toBe("alice");
@@ -145,7 +145,7 @@ describe("assembleFileSignals", () => {
       linesAdded: 1,
       linesDeleted: 0,
     };
-    const result = assembleFileSignals(churnData, 10, undefined, undefined, []);
+    const result = assembleFileSignals(churnData, 10, undefined, []);
 
     expect(result.blameDominantAuthor).toBe("unknown");
     expect(result.blameDominantAuthorPct).toBe(0);

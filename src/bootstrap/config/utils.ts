@@ -2,7 +2,15 @@ import { z } from "zod";
 
 export interface DeprecationNotice {
   oldName: string;
-  newName: string;
+  /** The spelling to use instead; absent when the variable was removed outright and is ignored. */
+  newName?: string;
+}
+
+/** One human-readable line for a deprecated or removed env var. */
+export function describeDeprecation(notice: DeprecationNotice): string {
+  return notice.newName === undefined
+    ? `${notice.oldName} was removed and is ignored`
+    : `${notice.oldName} -> use ${notice.newName}`;
 }
 
 /** Where config values are read from. Defaults to the process env everywhere. */

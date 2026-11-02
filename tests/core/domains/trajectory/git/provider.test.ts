@@ -207,7 +207,7 @@ describe("GitEnrichmentProvider", () => {
       await provider.buildChunkSignals("/repo", chunkMap);
 
       const lastCall = vi.mocked(buildChunkChurnMap).mock.calls.at(-1);
-      const blameByPathArg = lastCall?.[12] as Map<string, unknown>;
+      const blameByPathArg = lastCall?.[11] as Map<string, unknown>;
       expect(blameByPathArg).toBeInstanceOf(Map);
       expect(blameByPathArg.get("src/a.ts")).toEqual([blameLineA]);
       expect(blameByPathArg.get("src/b.ts")).toEqual([blameLineB]);
@@ -281,7 +281,6 @@ describe("GitEnrichmentProvider", () => {
         10, // concurrency (default)
         6, // maxAgeMonths (default)
         fakeData, // lastFileResult passed through
-        undefined, // squashOpts
         120000, // chunkTimeoutMs (default)
         5000, // chunkMaxFileLines (default)
         undefined, // externalSemaphore (not passed when no options)
@@ -740,7 +739,7 @@ describe("GitEnrichmentProvider", () => {
       expect(statsB.mock.calls[0][0]).toMatchObject({ files: 2, hits: 0, misses: 1, joined: 1 });
 
       await provider.buildChunkSignals(root, new Map([["b.ts", [{ chunkId: "cb", startLine: 1, endLine: 1 }]]]));
-      const blameArg = vi.mocked(buildChunkChurnMap).mock.calls.at(-1)?.[12] as Map<string, unknown>;
+      const blameArg = vi.mocked(buildChunkChurnMap).mock.calls.at(-1)?.[11] as Map<string, unknown>;
       expect(blameArg.get("b.ts")).toEqual([line("sha-b.ts")]);
     });
 
@@ -840,7 +839,7 @@ describe("GitEnrichmentProvider", () => {
     const churn = (author: string) => ({ commits: [{ hash: `h-${author}`, author }], recentAuthors: [author] });
     const chunk = (id: string) => [{ chunkId: id, startLine: 1, endLine: 1 }];
     const blameArgOf = (call: number) =>
-      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[12] as Map<string, unknown>;
+      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[11] as Map<string, unknown>;
     const churnArgOf = (call: number) =>
       vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[6] as Map<string, unknown> | undefined;
     const liveBlame = (): Map<string, unknown> =>

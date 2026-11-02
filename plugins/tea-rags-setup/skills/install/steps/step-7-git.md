@@ -45,14 +45,4 @@ fails loud on any git op when binding can't load (escape hatch:
 Save progress `gitAdapter` (`"git"` / `"es-git"`) — explicitly for BOTH; pinned
 per-project in MCP env (step 8), captured into registry at first indexing.
 
-Git enabled AND `hasFrequentCommits` true → AskUserQuestion:
-
-```
-question: "Enable squash-aware sessions? Detected frequent commits from {topAuthor} (median {avgGapMinutes}min gap). Groups rapid commits into logical sessions for cleaner analytics."
-options: [
-  { label: "Yes", description: "Recommended for this commit pattern" },
-  { label: "No", description: "Keep individual commit granularity" }
-]
-```
-
 Save choices to progress.

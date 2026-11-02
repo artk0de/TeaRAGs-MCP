@@ -31,7 +31,10 @@
  * run did not mark them `preExisting`. Families an edge overlay cannot move (silent coupling and
  * shotgun surgery read git history, norms read the indexed type rows — see
  * `ARCHITECTURE_FACTS_NOT_REFRESHED_BY_EDGE_OVERLAY`) are never introduced,
- * so they persist by construction. So do splitCandidates MERGE verdicts (key
+ * so they persist by construction. A silent-coupling key the overlaid REPORT
+ * run alone holds is introduced only when the overlay changed an endpoint's
+ * edges (bd tea-rags-mcp-u6pc0, `edgeChangedFiles` below); a flip carried by
+ * edges elsewhere persists. So do splitCandidates MERGE verdicts (key
  * family `splitCandidates.merge`): pure co-change history, which a diff cannot
  * move. SPLIT verdicts stay — a diff-added inter-cluster edge gates them.
  */
@@ -43,6 +46,8 @@ import {
   type ArchitectureFindingKeyFamily,
 } from "../../../contracts/types/architecture-finding-key.js";
 import type { ArchitectureViolation } from "../../../contracts/types/architecture-report.js";
+import type { FileDependencyEdge } from "../../../contracts/types/codegraph-graph.js";
+import type { RelPath } from "../../../contracts/types/codegraph.js";
 import type { DiffDetectorFamily, DiffDetectorFinding } from "../../../contracts/types/diff-detector-finding.js";
 import type { ArchitectureChangeSubject } from "../../public/dto/review.js";
 
@@ -60,11 +65,22 @@ export interface ArchitectureViolationDelta {
  * Compare two UNCAPPED violation sets by key. A capped set would fabricate
  * deltas: a violation cut from one side and listed on the other reads as
  * introduced or resolved.
+ *
+ * `edgeChangedFiles` (bd tea-rags-mcp-u6pc0) — the files whose dependency
+ * edges the overlay changed ({@link filesWithChangedDependencyEdges}), in the
+ * base's paths. When given, a silent-coupling key only the overlaid run holds
+ * is introduced ONLY when one of its endpoints is in that set; otherwise it
+ * persists. Both runs read the same co-change history, so such a flip comes
+ * from the detector's population statistics alone — a shared neighbour grown
+ * more popular through third-party importers, a BH cut shifted by edges
+ * elsewhere — and neither endpoint changed, so the author has nothing to
+ * repair. Every other family is keyed as before.
  */
 export function measureArchitectureViolationDelta(
   baseViolations: readonly ArchitectureViolation[],
   overlaidViolations: readonly ArchitectureViolation[],
   renamedFrom?: ReadonlyMap<string, string>,
+  options: { edgeChangedFiles?: ReadonlySet<RelPath> } = {},
 ): ArchitectureViolationDelta {
   const baseByKey = keyedViolations(baseViolations);
   const overlaidByKey = keyedViolations(
@@ -73,8 +89,9 @@ export function measureArchitectureViolationDelta(
   const introduced = new Map<string, ArchitectureViolation>();
   const persisting = new Set<string>();
   for (const [key, violation] of overlaidByKey) {
-    if (baseByKey.has(key)) persisting.add(key);
-    else introduced.set(key, violation);
+    if (baseByKey.has(key) || isSilentCouplingFlipOffEndpoints(violation, options.edgeChangedFiles)) {
+      persisting.add(key);
+    } else introduced.set(key, violation);
   }
   const resolved = new Map([...baseByKey].filter(([key]) => !overlaidByKey.has(key)));
   return { introduced, resolved, persisting };
@@ -231,4 +248,54 @@ function findingKeyFamily(key: string): ArchitectureFindingKeyFamily {
 
 function isFindingKeyFamily(family: string): family is ArchitectureFindingKeyFamily {
   return Object.hasOwn(ARCHITECTURE_FINDING_KEY_REVISION, family);
+}
+
+/**
+ * Every file on an edge one graph holds and the other does not — both ends of
+ * each added or removed edge, and of each edge whose imported or re-exported
+ * names changed (the names decide facade-chain consumption). Edge identity
+ * ignores call weights: they move with any body edit and no silent-coupling
+ * explanation reads them.
+ */
+export function filesWithChangedDependencyEdges(
+  baseEdges: readonly FileDependencyEdge[],
+  overlaidEdges: readonly FileDependencyEdge[],
+): ReadonlySet<RelPath> {
+  const baseIdentities = new Set(baseEdges.map(dependencyEdgeIdentity));
+  const overlaidIdentities = new Set(overlaidEdges.map(dependencyEdgeIdentity));
+  const changed = new Set<RelPath>();
+  for (const [edges, other] of [
+    [baseEdges, overlaidIdentities],
+    [overlaidEdges, baseIdentities],
+  ] as const) {
+    for (const edge of edges) {
+      if (other.has(dependencyEdgeIdentity(edge))) continue;
+      changed.add(edge.sourceRelPath);
+      changed.add(edge.targetRelPath);
+    }
+  }
+  return changed;
+}
+
+function dependencyEdgeIdentity(edge: FileDependencyEdge): string {
+  return JSON.stringify([
+    edge.sourceRelPath,
+    edge.targetRelPath,
+    [...(edge.importedExportNames ?? [])].sort(),
+    [...(edge.reexportedExportNames ?? [])].sort(),
+    Object.entries(edge.reexportedExportBindings ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  ]);
+}
+
+/** A silent-coupling violation none of whose endpoints sits on a changed edge. */
+function isSilentCouplingFlipOffEndpoints(
+  violation: ArchitectureViolation,
+  edgeChangedFiles: ReadonlySet<RelPath> | undefined,
+): boolean {
+  if (edgeChangedFiles === undefined || violation.detector !== "silentCoupling") return false;
+  const endpoints =
+    "kind" in violation
+      ? [violation.relPath, ...violation.partners.map((partner) => partner.relPath)]
+      : [violation.sourceRelPath, violation.targetRelPath];
+  return !endpoints.some((relPath) => edgeChangedFiles.has(relPath));
 }

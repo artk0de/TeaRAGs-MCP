@@ -79,7 +79,10 @@ foundation edges).
 - Full detector set judged on index vs index+tree edges, keyed by endpoints,
   renames canonicalized. silentCoupling, shotgunSurgery, norms read git/type
   history no edge overlay moves; splitCandidates merge verdicts too = persisting
-  by construction.
+  by construction. silentCoupling pair flipping in index+tree run alone =
+  introduced only when overlay changes an endpoint's edges (incl. endpoint's
+  import of shared neighbour); flip carried by third-party edges (shared
+  neighbour gains importers) = persisting, never `nonLocal`.
 - `tier` (impact tier: structural | active | critical) rides findings and change
   entries — introduced = overlaid run's, else base run's; absent = family
   untierable or no co-change history; pairs touching the diff judged without the

@@ -21,7 +21,6 @@ import {
   gitPayloadSignalDescriptors,
   gitStatsAccumulators,
   type GitProviderConfig,
-  type SquashOptions,
 } from "./git/index.js";
 
 export class GitTrajectory implements Trajectory {
@@ -38,10 +37,9 @@ export class GitTrajectory implements Trajectory {
 
   constructor(
     config?: Partial<GitProviderConfig>,
-    squashOpts?: SquashOptions,
     workerDescriptor?: WorkerEnrichmentDescriptor,
     temporalSymbolCommits?: TemporalSymbolCommitBuffer,
   ) {
-    this.enrichment = new GitEnrichmentProvider(config, squashOpts, workerDescriptor, temporalSymbolCommits);
+    this.enrichment = new GitEnrichmentProvider(config, workerDescriptor, temporalSymbolCommits);
   }
 }

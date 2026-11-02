@@ -29,22 +29,15 @@ export interface ChunkAccumulator {
   linesAdded: number;
   linesDeleted: number;
   commitTimestamps: number[];
-  /** Per-timestamp author identity key (parallel array with commitTimestamps) for session grouping */
-  commitAuthors: string[];
   /**
-   * Per-timestamp bug-fix flag (parallel array with commitTimestamps). Lets the
-   * squash path count bug-fix SESSIONS — keeping the bugFixRate numerator in the
-   * same unit as its session-count denominator. Optional: minimal accumulators
-   * (recovery / test fixtures) may omit it; the squash path then sees zero fixes.
+   * Per-timestamp author identity key (parallel array with commitTimestamps).
+   * No reader since squash-aware sessions were removed; kept until the fixtures
+   * that build accumulators drop it.
    */
+  commitAuthors: string[];
+  /** Per-timestamp bug-fix flag (parallel array with commitTimestamps). No reader, as `commitAuthors`. */
   commitIsFix?: boolean[];
   taskIds: Set<string>;
-}
-
-/** Squash-aware session options passed through the call chain. */
-export interface SquashOptions {
-  squashAwareSessions?: boolean;
-  sessionGapMinutes?: number;
 }
 
 export { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT };

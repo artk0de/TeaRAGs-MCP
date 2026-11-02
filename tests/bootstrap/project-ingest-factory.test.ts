@@ -268,7 +268,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     EMBEDDING_MODEL: "jina-v2",
     QDRANT_URL: "http://127.0.0.1:6333",
     CODE_CHUNK_SIZE: "2000",
-    TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true",
+    TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "24",
     INGEST_TUNE_CHUNKER_POOL_SIZE: "8",
   };
 
@@ -296,7 +296,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
         path: "/repo/taxdome",
         env: {
           INGEST_CHUNK_SIZE: "4500",
-          TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false",
+          TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "18",
           INGEST_TUNE_CHUNKER_POOL_SIZE: "4",
         },
       }),
@@ -306,7 +306,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     const config = parseAppConfigZod(seen[0]);
 
     expect(config.ingest.chunkSize).toBe(4500);
-    expect(config.trajectoryGit.squashAwareSessions).toBe(false);
+    expect(config.trajectoryGit.logMaxAgeMonths).toBe(18);
     expect(config.ingest.tune.chunkerPoolSize).toBe(8);
   });
 
@@ -325,7 +325,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     const { factory, seen } = serverFactoryFor([
       entry({
         path: "/repo/tea-rags",
-        env: { INGEST_CHUNK_SIZE: "2000", TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true" },
+        env: { INGEST_CHUNK_SIZE: "2000", TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "24" },
       }),
     ]);
 
@@ -341,18 +341,18 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
       [
         entry({
           path: "/repo/self",
-          env: { TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true", TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS: "3" },
+          env: { TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "36", TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS: "3" },
         }),
       ],
-      { EMBEDDING_MODEL: "jina-v2", TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false" },
+      { EMBEDDING_MODEL: "jina-v2", TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "6" },
     );
 
     const own = parseAppConfigZod(factory.envForPath("/repo/self"));
     const unregistered = parseAppConfigZod(factory.envForPath("/repo/unknown"));
 
-    expect(own.trajectoryGit.squashAwareSessions).toBe(true);
+    expect(own.trajectoryGit.logMaxAgeMonths).toBe(36);
     expect(own.trajectoryGit.chunkMaxAgeMonths).toBe(3);
-    expect(unregistered.trajectoryGit.squashAwareSessions).toBe(false);
+    expect(unregistered.trajectoryGit.logMaxAgeMonths).toBe(6);
   });
 
   it("lets the server env win over a BORROWED seed — only a project's own stamp outranks it", () => {

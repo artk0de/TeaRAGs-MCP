@@ -5,10 +5,9 @@
  * Computes ChunkChurnOverlay from a ChunkAccumulator.
  */
 
-import { groupTimestampsIntoFixSessions } from "../../history/index.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { BlameOwnership } from "../blame-ownership.js";
-import type { ChunkAccumulator, SquashOptions } from "../metrics.js";
+import type { ChunkAccumulator } from "../metrics.js";
 import { historyNowSec } from "./extractors.js";
 
 export function assembleChunkSignals(
@@ -16,7 +15,6 @@ export function assembleChunkSignals(
   fileCommitCount: number,
   fileContributorCount?: number,
   chunkLineCount?: number,
-  squashOpts?: SquashOptions,
   ownership?: BlameOwnership,
   /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
   historyAnchorSec?: number,
@@ -25,22 +23,9 @@ export function assembleChunkSignals(
   const totalChurn = acc.linesAdded + acc.linesDeleted;
   const lineCount = Math.max(chunkLineCount ?? 1, 1);
 
-  // Squash-aware: use session timestamps instead of raw commit timestamps
-  const useSquash = squashOpts?.squashAwareSessions === true;
-  const sessions = useSquash
-    ? groupTimestampsIntoFixSessions(
-        acc.commitTimestamps,
-        acc.commitAuthors,
-        acc.commitIsFix ?? [],
-        squashOpts?.sessionGapMinutes ?? 30,
-      )
-    : undefined;
-  const effectiveTimestamps = sessions ? sessions.map((s) => s.timestamp) : acc.commitTimestamps;
-  const commitCount = useSquash ? effectiveTimestamps.length : acc.commitShas.size;
-  // bugFixRate numerator MUST share the denominator's unit: bug-fix SESSIONS
-  // under squash (raw bug-fix commits over a session count yields >100%),
-  // raw bug-fix commits otherwise.
-  const fixCount = sessions ? sessions.filter((s) => s.isFix).length : acc.bugFixCount;
+  const effectiveTimestamps = acc.commitTimestamps;
+  const commitCount = acc.commitShas.size;
+  const fixCount = acc.bugFixCount;
 
   // Chunk-level recencyWeightedFreq: sum of exp(-0.1 * daysAgo)
   const recencyWeightedFreq =
@@ -53,7 +38,7 @@ export function assembleChunkSignals(
         ) / 100
       : 0;
 
-  // Chunk-level changeDensity: sessions (or commits) / months
+  // Chunk-level changeDensity: commits / months
   let changeDensity = 0;
   if (effectiveTimestamps.length > 0) {
     const minTs = Math.min(...effectiveTimestamps);
@@ -62,7 +47,7 @@ export function assembleChunkSignals(
     changeDensity = Math.round((effectiveTimestamps.length / spanMonths) * 100) / 100;
   }
 
-  // Churn volatility: stddev of days between consecutive sessions (or commits)
+  // Churn volatility: stddev of days between consecutive commits
   let churnVolatility = 0;
   const sortedTs = [...effectiveTimestamps].sort((a, b) => a - b);
   if (sortedTs.length > 1) {

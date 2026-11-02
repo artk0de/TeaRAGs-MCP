@@ -19,10 +19,10 @@ build your own.
 | `stable` | Boost low-churn, long-lived code | Reliable implementations | Same as above |
 | `proven` | Battle-tested: long-lived + multi-author + low-bug | Reference/template code | `search_code`, `semantic_search`, `hybrid_search` |
 | `onboarding` | Documented, stable, multi-author | New-developer entry points | `semantic_search`, `hybrid_search`, `find_similar` |
-| `hotspots` | High churn + high bug-fix + burst activity | Bug-prone areas | `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar` |
-| `bugHunt` | Burst + volatility + relative churn + bug-fix history | Root-cause investigation | `search_code` + above |
-| `dangerous` | Bug-prone + volatile + single-owner | High-risk code audit | `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar` |
-| `techDebt` | Old + churning + bug-fixed | Legacy code assessment | Same as above |
+| `hotspots` | High chunk churn + bug-fix history | Bug-prone areas | `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar` |
+| `bugHunt` | Commit churn + bug-fix history + change density + recency | Root-cause investigation | `search_code` + above |
+| `dangerous` | Bug-prone + churning + recently active + single-owner | High-risk code audit | `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar` |
+| `techDebt` | Old + still churning | Legacy code assessment | Same as above |
 | `securityAudit` | Old critical code in sensitive paths | Security review | `semantic_search`, `hybrid_search`, `find_similar` |
 | `codeReview` | Recent + burst + density + chunk churn | Reviewing recent changes | `semantic_search`, `hybrid_search`, `rank_chunks`, `find_similar` |
 | `refactoring` | Large + volatile + bug-fixed chunks | Refactor candidates | Same as above |
@@ -82,41 +82,57 @@ required, just rank by signal.
 ### `hotspots`
 
 ```
-similarity:0.2 · chunkSize:0.1 · chunkChurn:0.15 · chunkRelativeChurn:0.15
-burstActivity:0.15 · bugFix:0.1 · volatility:0.15 · blockPenalty:-0.15
+similarity:0.2 · chunkSize:0.1 · chunkChurn:0.4 · chunkRelativeChurn:0.15
+bugFix:0.1 · relativeChurnNorm:0.05 · blockPenalty:-0.15
 ```
 
-Classic risk signal: frequently-changing bug-prone code. Used by
-`/tea-rags:risk-assessment`.
+Frequently-changing code at method granularity: the chunks that take the most
+commits, and the largest share of their file's commits. Weights calibrated by a
+chunk-level backtest on this repository: chunk signals at T-90d and T-180d
+predict which chunks a later bug-fix commit touches, scored on global ranking
+and on ranking inside each file. Burst activity and volatility added nothing out
+of fold and were dropped. Used by `/tea-rags:risk-assessment`.
 
 ### `bugHunt`
 
 ```
-similarity:0.25 · burstActivity:0.2 · volatility:0.2 · relativeChurnNorm:0.15
-bugFix:0.15 · recency:0.05 · blockPenalty:-0.05
+similarity:0.25 · churn:0.25 · bugFix:0.2 · density:0.15 · recency:0.1
+burstActivity:0.05 · blockPenalty:-0.05
 ```
 
-Tuned for active investigation: weighs recent burst activity and volatility
-higher. Used by `/tea-rags:bug-hunt`.
+Weights calibrated by a history backtest: signals at T-90d predict which files
+receive a bug-fix commit in the following 90 and 180 days, measured on a
+205-author Rails monolith and on this repository. Commit churn and bug-fix
+history carry most of the signal, followed by change density and recency.
+Volatility and relative churn were redundant with churn and were dropped. Used
+by `/tea-rags:bug-hunt`.
 
 ### `dangerous`
 
 ```
-bugFix:0.35 · volatility:0.25 · knowledgeSilo:0.2 · burstActivity:0.1 · similarity:0.1
+bugFix:0.25 · churn:0.2 · density:0.15 · recency:0.15 · knowledgeSilo:0.1
+burstActivity:0.05 · similarity:0.1 · blockPenalty:-0.05
 ```
 
-High-risk code: bug-prone AND volatile AND single-owner. The intersection of
-three danger signals. Low `similarity` weight — signal dominates over relevance.
+High-risk code: bug-prone AND churning AND recently active AND single-owner.
+Calibrated by the same backtest as `bugHunt`; volatility was redundant with
+churn and dropped. `knowledgeSilo` stays at 0.1 as the bus-factor term: it is a
+design choice, since the backtest does not show it predicting fixes consistently
+(opposite sign on the two corpora). Low `similarity` weight — signal dominates over relevance.
 
 ### `techDebt`
 
 ```
-similarity:0.15 · age:0.15 · churn:0.1 · chunkChurn:0.1 · bugFix:0.15
-volatility:0.1 · knowledgeSilo:0.1 · density:0.1 · blockPenalty:-0.05
+similarity:0.15 · age:0.15 · chunkChurn:0.3 · burstActivity:0.2 · bugFix:0.05
+chunkRelativeChurn:0.05 · relativeChurnNorm:0.05 · blockPenalty:-0.05
 ```
 
-Old code that keeps accumulating patches. Unlike `hotspots`, weighs `age` — new
-churny code isn't tech debt yet.
+Old code that keeps accumulating patches. Unlike `hotspots`, weighs `age`, so
+new churny code isn't tech debt yet. Calibrated by the same chunk-level backtest
+as `hotspots`, with `age` held at 0.15: on its own, older code receives fewer
+later fixes, so an unconstrained fit removes the legacy lens and turns the
+preset into a copy of `hotspots`. Single ownership, volatility and change
+density did not predict fixes and were dropped.
 
 ### `securityAudit`
 

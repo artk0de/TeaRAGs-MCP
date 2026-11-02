@@ -49,22 +49,23 @@ describe("BugHuntCompositePreset", () => {
   it("rebalances the git temporal signals and adds pageRank", () => {
     expect(composite.weights).toEqual({
       similarity: 0.2,
-      burstActivity: 0.18,
-      volatility: 0.18,
-      bugFix: 0.15,
+      churn: 0.22,
+      bugFix: 0.18,
       pageRank: 0.14,
-      relativeChurnNorm: 0.1,
-      recency: 0.05,
+      density: 0.13,
+      recency: 0.09,
+      burstActivity: 0.04,
       blockPenalty: -0.05,
     });
   });
 
   it("keeps the temporal signals dominant over the structural one", () => {
     const temporal =
-      (composite.weights.burstActivity ?? 0) +
-      (composite.weights.volatility ?? 0) +
+      (composite.weights.churn ?? 0) +
       (composite.weights.bugFix ?? 0) +
-      (composite.weights.relativeChurnNorm ?? 0);
+      (composite.weights.density ?? 0) +
+      (composite.weights.burstActivity ?? 0) +
+      (composite.weights.recency ?? 0);
     expect(temporal).toBeGreaterThan(composite.weights.pageRank ?? 0);
   });
 

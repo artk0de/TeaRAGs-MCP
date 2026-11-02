@@ -85,7 +85,6 @@ describe("chunk walk visits commits in history order", () => {
       4,
       12,
       undefined,
-      undefined,
       30000,
       5000,
       undefined,

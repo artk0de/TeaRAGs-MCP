@@ -46,7 +46,6 @@ import {
   enrichmentSkipReason,
   fileLinesOf,
 } from "../../../../../src/core/domains/ingest/pipeline/enrichment/policy.js";
-import type { SquashOptions } from "../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 import { GitEnrichmentProvider } from "../../../../../src/core/domains/trajectory/git/provider.js";
 
 // The file phase blames on a worker-thread pool whose worker runs
@@ -169,7 +168,7 @@ function commitAll(root: string, commits: readonly ParityCommit[], init = true):
 /**
  * The repository every variant of one case starts from — its history through the
  * stamp, built ONCE per case and copied per test (`copyGitRepoTemplate`). The
- * two squash variants run identical stamp-state histories, so the second
+ * variants of a case run identical stamp-state histories, so a later
  * variant's `init` + `fast-import` + `unpack-objects` chain was pure repetition
  * — three spawns per case that bought nothing (the copy is a plain directory
  * copy). What a test does to its copy afterwards stays live git.
@@ -198,21 +197,17 @@ function stampStateRepo(
 async function ingestReference(
   root: string,
   paths: readonly string[],
-  squashOpts: SquashOptions | undefined,
 ): Promise<{ file: Map<string, Block>; chunk: Map<string, Block> }> {
-  const provider = new GitEnrichmentProvider(
-    {
-      vcsAdapter: "git",
-      logMaxAgeMonths: WINDOWS.file,
-      logTimeoutMs: TIMEOUT_MS,
-      chunkConcurrency: 4,
-      blamePoolSize: 1,
-      chunkMaxAgeMonths: WINDOWS.chunk,
-      chunkTimeoutMs: TIMEOUT_MS,
-      chunkMaxFileLines: WINDOWS.maxFileLines,
-    },
-    squashOpts,
-  );
+  const provider = new GitEnrichmentProvider({
+    vcsAdapter: "git",
+    logMaxAgeMonths: WINDOWS.file,
+    logTimeoutMs: TIMEOUT_MS,
+    chunkConcurrency: 4,
+    blamePoolSize: 1,
+    chunkMaxAgeMonths: WINDOWS.chunk,
+    chunkTimeoutMs: TIMEOUT_MS,
+    chunkMaxFileLines: WINDOWS.maxFileLines,
+  });
   const enrichedAt = new Date().toISOString();
   const rowsOf = new Map(paths.map((path) => [path, chunksOf(readFileSync(join(root, path), "utf8"))]));
   const maxEndLine = (path: string): number => Math.max(0, ...(rowsOf.get(path) ?? []).map((row) => row.endLine));
@@ -289,12 +284,8 @@ async function ingestReference(
 }
 
 /** The index's stored points of `paths`, as ingest wrote them at the stamp. */
-async function indexAt(
-  root: string,
-  paths: readonly string[],
-  squashOpts: SquashOptions | undefined,
-): Promise<Map<string, WorkingTreeBasePoint[]>> {
-  const reference = await ingestReference(root, paths, squashOpts);
+async function indexAt(root: string, paths: readonly string[]): Promise<Map<string, WorkingTreeBasePoint[]>> {
+  const reference = await ingestReference(root, paths);
   const points = new Map<string, WorkingTreeBasePoint[]>();
   for (const path of paths) {
     points.set(
@@ -321,7 +312,6 @@ async function overlayRows(
   paths: readonly string[],
   basePoints: Map<string, WorkingTreeBasePoint[]>,
   indexedCommit: string,
-  squashOpts: SquashOptions | undefined,
   renamedFrom?: ReadonlyMap<string, string>,
 ): Promise<WorkingTreeDeltaRow[]> {
   const rows: WorkingTreeDeltaRow[] = paths.flatMap((path) =>
@@ -342,7 +332,6 @@ async function overlayRows(
     gitSignals: createWorkingTreeGitSignalSource({
       vcsAdapter: "git",
       timeoutMs: TIMEOUT_MS,
-      ...(squashOpts ? { squashOpts } : {}),
       file: { maxAgeMonths: WINDOWS.file },
       chunk: { maxAgeMonths: WINDOWS.chunk, timeoutMs: TIMEOUT_MS, maxFileLines: WINDOWS.maxFileLines, concurrency: 4 },
     }),
@@ -408,10 +397,7 @@ const ENGINE_V1 = [
   "",
 ].join("\n");
 
-describe.each([
-  { label: "plain commits", squashOpts: undefined },
-  { label: "squash-aware sessions", squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 } },
-])("working-tree delta rows carry ingest's git blocks ($label)", ({ squashOpts }) => {
+describe.each([{ label: "plain commits" }])("working-tree delta rows carry ingest's git blocks ($label)", () => {
   let scratch: string;
   /** Root of this test's copy of the case's stamp-state template, if it took one. */
   let copyRoot: string | undefined;
@@ -443,7 +429,7 @@ describe.each([
         who: "alice",
         when: at(40),
       },
-      // Three quick helperB edits by one author — one squash session.
+      // Three quick helperB edits by one author.
       ...[1, 2, 3].map((i) => ({
         files: { "src/engine.ts": ENGINE_V1.replace("// b0", `// b${i}`) },
         message: `feat: helperB ${i}`,
@@ -462,7 +448,7 @@ describe.each([
     const { stamp } = built.shas;
     const { repo } = built;
     const indexed = ["src/engine.ts", "src/user.ts", "src/renamer.ts", "src/main.ts", "src/zoo/animal.ts"];
-    const basePoints = await indexAt(repo, indexed, squashOpts);
+    const basePoints = await indexAt(repo, indexed);
 
     const userNow = `${readFileSync(join(repo, "src/user.ts"), "utf8")}\nexport function carolCommitted(): number {\n  return 77;\n}\n`;
     const engineHelperA = readFileSync(join(repo, "src/engine.ts"), "utf8").replace("helperB() + 1", "helperB() + 2");
@@ -511,13 +497,12 @@ describe.each([
       "src/zoo/animal.ts",
       "src/core/fresh.ts",
     ];
-    const reference = await ingestReference(repo, delta, squashOpts);
+    const reference = await ingestReference(repo, delta);
     const rows = await overlayRows(
       repo,
       delta,
       basePoints,
       stamp,
-      squashOpts,
       new Map([["src/renamerCommitted.ts", "src/renamer.ts"]]),
     );
 
@@ -544,7 +529,7 @@ describe.each([
     copyRoot = built.root;
     const { branchPoint, stamp } = built.shas;
     const { repo } = built;
-    const basePoints = await indexAt(repo, ["src/engine.ts", "src/cyc/b.ts"], squashOpts);
+    const basePoints = await indexAt(repo, ["src/engine.ts", "src/cyc/b.ts"]);
     const tree = join(scratch, "div");
     // The branch commit goes in by import; checking `div` out in its linked worktree stays live.
     commitAll(
@@ -564,8 +549,8 @@ describe.each([
     repoGit(repo, ["worktree", "add", "-q", tree, "div"]);
 
     const delta = ["src/engine.ts", "src/core/branch-work.ts"];
-    const reference = await ingestReference(tree, delta, squashOpts);
-    const rows = await overlayRows(tree, delta, basePoints, stamp, squashOpts);
+    const reference = await ingestReference(tree, delta);
+    const rows = await overlayRows(tree, delta, basePoints, stamp);
 
     expectParity(rows, reference);
   });
@@ -592,7 +577,7 @@ describe.each([
     copyRoot = built.root;
     const { stamp } = built.shas;
     const { repo } = built;
-    const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
+    const basePoints = await indexAt(repo, ["src/engine.ts"]);
 
     // Uncommitted: lines added ABOVE every symbol (shifting all of them), and
     // lines added INSIDE helperA (growing its range).
@@ -602,8 +587,8 @@ describe.each([
     write(repo, "src/engine.ts", dirty);
 
     const delta = ["src/engine.ts"];
-    const reference = await ingestReference(repo, delta, squashOpts);
-    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+    const reference = await ingestReference(repo, delta);
+    const rows = await overlayRows(repo, delta, basePoints, stamp);
 
     // Ingest carries a dirty file's working rows onto HEAD before the chunk
     // walk, as the overlay does: each symbol keeps its own HEAD commits
@@ -642,7 +627,7 @@ describe.each([
     copyRoot = built.root;
     const { stamp } = built.shas;
     const { repo } = built;
-    const basePoints = await indexAt(repo, ["src/engine.ts"], squashOpts);
+    const basePoints = await indexAt(repo, ["src/engine.ts"]);
 
     // Uncommitted: header lines above every symbol, a line inside helperA, and
     // a brand-new symbol BETWEEN helperA and Engine — rows after it sit on
@@ -657,8 +642,8 @@ describe.each([
     write(repo, "src/engine.ts", dirty);
 
     const delta = ["src/engine.ts"];
-    const reference = await ingestReference(repo, delta, squashOpts);
-    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+    const reference = await ingestReference(repo, delta);
+    const rows = await overlayRows(repo, delta, basePoints, stamp);
 
     expectParity(rows, reference);
     const chunkOf = (symbol: string) => unstamped(reference.chunk.get(`src/engine.ts::${symbol}`), symbol);
@@ -694,7 +679,7 @@ describe.each([
     copyRoot = built.root;
     const { stamp } = built.shas;
     const { repo } = built;
-    const basePoints = await indexAt(repo, ["src/engine.ts", "src/dormant.ts"], squashOpts);
+    const basePoints = await indexAt(repo, ["src/engine.ts", "src/dormant.ts"]);
 
     // Uncommitted: an edit inside a symbol of the dormant file.
     write(
@@ -704,8 +689,8 @@ describe.each([
     );
 
     const delta = ["src/dormant.ts"];
-    const reference = await ingestReference(repo, delta, squashOpts);
-    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+    const reference = await ingestReference(repo, delta);
+    const rows = await overlayRows(repo, delta, basePoints, stamp);
 
     expectParity(rows, reference);
     // Window counters are a zero observation; the age stamps are exact and follow the rename.
@@ -736,7 +721,7 @@ describe.each([
     copyRoot = built.root;
     const { stamp } = built.shas;
     const { repo } = built;
-    const basePoints = await indexAt(repo, ["src/engine.ts", "src/big.ts"], squashOpts);
+    const basePoints = await indexAt(repo, ["src/engine.ts", "src/big.ts"]);
 
     // Since the index: an oversized file committed; uncommitted: a new symbol in the indexed oversized file.
     commitAll(
@@ -747,8 +732,8 @@ describe.each([
     appendFileSync(join(repo, "src/big.ts"), "\nexport function tailSymbol(): number {\n  return 9;\n}\n");
 
     const delta = ["src/big.ts", "src/big2.ts"];
-    const reference = await ingestReference(repo, delta, squashOpts);
-    const rows = await overlayRows(repo, delta, basePoints, stamp, squashOpts);
+    const reference = await ingestReference(repo, delta);
+    const rows = await overlayRows(repo, delta, basePoints, stamp);
 
     expect(rows.map((row) => (row.payload.git as { chunk?: Block } | undefined)?.chunk)).toEqual(
       rows.map(() => ({ skippedAs: "oversized" })),

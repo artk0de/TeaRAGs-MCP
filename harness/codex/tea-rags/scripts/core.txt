@@ -126,8 +126,7 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
   code pass.
 - `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower
-  bound) + install command (`installed-pending`: its recompute command); never
-  install it, never "no callers"/"dead code".
+  bound) + install command; never install it, never "no callers"/"dead code".
 - User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → shell sed -n '<start>,<end>p' <one file>, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for
   context"/"lines N–M" of source code without that order → `find_symbol` (hit's
   `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`

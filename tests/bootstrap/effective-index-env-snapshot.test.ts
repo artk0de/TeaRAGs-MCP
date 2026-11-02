@@ -20,6 +20,7 @@ import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
 import { buildEffectiveIndexEnvSnapshot } from "../../src/bootstrap/effective-index-env-snapshot.js";
 import { resolveDomainEnvCodeDefaults } from "../../src/core/api/internal/domain-env-code-defaults.js";
 import { EnvDriftMonitor } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
+import { renderIndexDriftRemedy } from "../../src/core/domains/maintenance/drift/remedy.js";
 import { isDebug, setDebug } from "../../src/core/primitives/diagnostics/debug-flag.js";
 
 /** A stamp in the shape `buildRegistryEnvSnapshot` writes: canonical keys only. */
@@ -238,6 +239,50 @@ describe("the two current sides wired into EnvDriftMonitor", () => {
       taxdome,
       (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, serverEnv, "server"),
       buildRunningIndexEnvSnapshot(parseAppConfigZod(serverEnv), resolveDomainEnvCodeDefaults()),
+    );
+
+    expect(monitor.check(COLLECTION)).toEqual([]);
+  });
+
+  it("reports a stamp recorded with squash-aware sessions on as git drift — its payload counts sessions, the build now counts commits", () => {
+    const squashed = {
+      get: () => ({
+        env: { ...STAMP, TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true", TRAJECTORY_GIT_SESSION_GAP_MINUTES: "30" },
+        codegraphEnabled: true,
+      }),
+    } as never;
+    const ambient = { CODEGRAPH_ENABLED: "true" };
+    const monitor = new EnvDriftMonitor(
+      squashed,
+      (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, ambient),
+      buildRunningIndexEnvSnapshot(parseAppConfigZod(ambient), resolveDomainEnvCodeDefaults()),
+    );
+
+    const findings = monitor.check(COLLECTION);
+
+    expect(findings).toEqual([
+      {
+        axis: "env",
+        subject: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
+        indexed: "true",
+        current: "false",
+        remedy: { kind: "recompute", trajectories: new Set(["git"]), languages: null },
+      },
+    ]);
+    expect(renderIndexDriftRemedy(findings[0].remedy, "proj")).toBe(
+      "Run: tea-rags index-codebase --project proj --force-enrichments git",
+    );
+  });
+
+  it("stays quiet on a stamp recorded with squash-aware sessions off", () => {
+    const plain = {
+      get: () => ({ env: { ...STAMP, TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false" }, codegraphEnabled: true }),
+    } as never;
+    const ambient = { CODEGRAPH_ENABLED: "true" };
+    const monitor = new EnvDriftMonitor(
+      plain,
+      (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, ambient),
+      buildRunningIndexEnvSnapshot(parseAppConfigZod(ambient), resolveDomainEnvCodeDefaults()),
     );
 
     expect(monitor.check(COLLECTION)).toEqual([]);

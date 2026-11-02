@@ -73,7 +73,6 @@ describe("createComposition", () => {
       const { registry } = createComposition({
         git: {
           config: { logMaxAgeMonths: 6, chunkMaxAgeMonths: 6 },
-          squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 },
         },
       });
       expect(registry.getAllEnrichmentProviders().some((p) => p.key === "git")).toBe(true);
@@ -99,7 +98,7 @@ describe("createComposition", () => {
     });
 
     it("git provider has NO workerDescriptor by default (production path — inline executor)", () => {
-      // Production path: createComposition({ git: { config, squashOpts } }) omits
+      // Production path: createComposition({ git: { config } }) omits
       // workerDescriptor. WorkerPoolEnrichmentExecutor sees !provider.workerDescriptor
       // and falls through to InlineEnrichmentExecutor (in-process, zero postMessage
       // overhead, automatic blame-cache reuse). This is the correct path per

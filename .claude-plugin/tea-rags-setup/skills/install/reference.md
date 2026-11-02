@@ -127,31 +127,30 @@ No `EMBEDDING_CONCURRENCY` fallback: unset → runtime tuner climbs concurrency 
 
 ## All Env Vars for MCP Configuration
 
-| Variable                               | Source                    |
-| -------------------------------------- | ------------------------- |
-| `EMBEDDING_PROVIDER`                   | step 4                    |
-| `EMBEDDING_BASE_URL`                   | step 4L (llama-server)    |
-| `EMBEDDING_FALLBACK_URL`               | step 4L (if local tier)   |
-| `EMBEDDING_API_KEY`                    | step 4L (if `--api-key`)  |
-| `EMBEDDING_MODEL`                      | step 4L-local (non-jina)  |
-| `QDRANT_URL`                           | step 5 (omit if embedded) |
-| `EMBEDDING_BATCH_SIZE`                 | tuneValues                |
-| `EMBEDDING_CONCURRENCY`                | tuneValues                |
-| `QDRANT_UPSERT_BATCH_SIZE`             | tuneValues                |
-| `QDRANT_BATCH_ORDERING`                | tuneValues                |
-| `QDRANT_FLUSH_INTERVAL_MS`             | tuneValues                |
-| `BATCH_FORMATION_TIMEOUT_MS`           | tuneValues                |
-| `QDRANT_DELETE_BATCH_SIZE`             | tuneValues                |
-| `QDRANT_DELETE_CONCURRENCY`            | tuneValues                |
-| `INGEST_TUNE_CHUNKER_POOL_SIZE`        | tuneValues                |
-| `INGEST_TUNE_FILE_CONCURRENCY`         | tuneValues                |
-| `INGEST_TUNE_IO_CONCURRENCY`           | tuneValues                |
-| `QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS`  | tuneValues                |
-| `EMBEDDING_TUNE_MIN_BATCH_SIZE`        | tuneValues                |
-| `TRAJECTORY_GIT_CHUNK_CONCURRENCY`     | tuneValues                |
-| `TRAJECTORY_GIT_ENABLED`               | step 7                    |
-| `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | step 7 (if applicable)    |
-| `GIT_ADAPTER`                          | step 7 (always, explicit) |
+| Variable                              | Source                    |
+| ------------------------------------- | ------------------------- |
+| `EMBEDDING_PROVIDER`                  | step 4                    |
+| `EMBEDDING_BASE_URL`                  | step 4L (llama-server)    |
+| `EMBEDDING_FALLBACK_URL`              | step 4L (if local tier)   |
+| `EMBEDDING_API_KEY`                   | step 4L (if `--api-key`)  |
+| `EMBEDDING_MODEL`                     | step 4L-local (non-jina)  |
+| `QDRANT_URL`                          | step 5 (omit if embedded) |
+| `EMBEDDING_BATCH_SIZE`                | tuneValues                |
+| `EMBEDDING_CONCURRENCY`               | tuneValues                |
+| `QDRANT_UPSERT_BATCH_SIZE`            | tuneValues                |
+| `QDRANT_BATCH_ORDERING`               | tuneValues                |
+| `QDRANT_FLUSH_INTERVAL_MS`            | tuneValues                |
+| `BATCH_FORMATION_TIMEOUT_MS`          | tuneValues                |
+| `QDRANT_DELETE_BATCH_SIZE`            | tuneValues                |
+| `QDRANT_DELETE_CONCURRENCY`           | tuneValues                |
+| `INGEST_TUNE_CHUNKER_POOL_SIZE`       | tuneValues                |
+| `INGEST_TUNE_FILE_CONCURRENCY`        | tuneValues                |
+| `INGEST_TUNE_IO_CONCURRENCY`          | tuneValues                |
+| `QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS` | tuneValues                |
+| `EMBEDDING_TUNE_MIN_BATCH_SIZE`       | tuneValues                |
+| `TRAJECTORY_GIT_CHUNK_CONCURRENCY`    | tuneValues                |
+| `TRAJECTORY_GIT_ENABLED`              | step 7                    |
+| `GIT_ADAPTER`                         | step 7 (always, explicit) |
 
 llama-server: omit `EMBEDDING_BATCH_SIZE`, `EMBEDDING_CONCURRENCY`,
 `EMBEDDING_TUNE_MIN_BATCH_SIZE` — runtime tuner owns them; low

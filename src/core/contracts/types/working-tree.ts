@@ -373,9 +373,8 @@ export interface WorkingTreeGitSignalSource {
    *
    * `indexRoot` — the base index's checkout (`WorkingTree#baseIndex.root`). The
    * blocks are computed with the git config THAT index was written with (its
-   * project's registry env), so they share the base rows' units — a squash
-   * session count beside session counts, never a raw commit count. Absent →
-   * the source's own config.
+   * project's registry env), so they share the base rows' windows and limits.
+   * Absent → the source's own config.
    */
   signalsOf: (
     root: string,

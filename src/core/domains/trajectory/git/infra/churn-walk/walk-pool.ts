@@ -23,11 +23,12 @@
  */
 
 import { once } from "node:events";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { resolveGitExecutable } from "../../../../../adapters/vcs/index.js";
+import { compiledModuleDir } from "../../../../../primitives/paths/index.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
 import type {
   ChunkChurnWalkJobInput,
@@ -43,7 +44,7 @@ import type {
  *   production: .../build/.../churn-walk/walk-pool.js
  *   vitest:     .../src/.../churn-walk/walk-pool.ts (remap to build/)
  */
-const WORKER_PATH = join(dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"), "worker.js");
+const WORKER_PATH = join(compiledModuleDir(fileURLToPath(import.meta.url)), "worker.js");
 
 /** How long close() waits for a graceful worker exit before terminate(). */
 const CLOSE_TIMEOUT_MS = 5000;

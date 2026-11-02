@@ -21,7 +21,7 @@
  * PRE-DECLARED PRIMARY VARIANT (fixed before the first run, so the headline
  * number cannot be shopped for):
  *   corpus      commit-level, 24h window, same author, >=1 shared file
- *   matrix      session bundles (author + 30min gap, mirrors squashOpts),
+ *   matrix      session bundles (author + 30min gap, mirrors groupIntoSessions),
  *               bundles touching more than 15 files dropped
  *   ranking     max confidence over anchor files, support floor 2
  *   headline    per-case top-3 hit rate over the FULL corpus
@@ -71,7 +71,7 @@ const OUT_REPORT = join(OUT_DIR, "cochange-gate-report.json");
 const WINDOW_HOURS = Number(process.env.COCHANGE_WINDOW_HOURS ?? 24);
 /** Mass refactors poison pairs — bundles wider than this never enter the matrix. */
 const MAX_FILES = Number(process.env.COCHANGE_MAX_FILES ?? 15);
-/** squashOpts default (`bootstrap/factory.ts`: sessionGapMinutes ?? 30). */
+/** Session gap in minutes; 30 was the removed squash-aware sessions' default. */
 const SESSION_GAP_MIN = Number(process.env.COCHANGE_SESSION_GAP_MIN ?? 30);
 /** A pair below this many co-occurrences is noise, not a rule. */
 const MIN_SUPPORT = Number(process.env.COCHANGE_MIN_SUPPORT ?? 2);

@@ -40,3 +40,10 @@ tea-rags call) — same protocol: STOP, `AskUserQuestion` to start Qdrant per th
 error's `Hint` (`docker-compose up`), WAIT for the explicit answer, then retry a
 LIVE `get_index_status`. Never run the Hint yourself unasked, never index
 anyway, never fall back to text search — every tea-rags read needs Qdrant.
+
+**Rust driver installed after the last index**
+(`rustc driver: installed-pending` in status, prime or a graph tool's notice) —
+the driver is on disk, but this index's Rust call edges were built without it,
+so callers / callees / cycles over Rust stay a lower bound. Tell the user ONCE
+and give the line's `recompute:` command; do not reinstall the driver, never
+read the edges as complete, and never run the recompute unasked.

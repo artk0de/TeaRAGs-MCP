@@ -111,8 +111,6 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
     paths,
     trajectoryIngest: {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
-      squashAwareSessions: zodConfig.trajectoryGit.squashAwareSessions,
-      sessionGapMinutes: zodConfig.trajectoryGit.sessionGapMinutes,
       trajectoryGit: {
         logMaxAgeMonths: zodConfig.trajectoryGit.logMaxAgeMonths,
         logTimeoutMs: zodConfig.trajectoryGit.logTimeoutMs,

@@ -67,7 +67,6 @@ import {
   type WindowedFileChurn,
 } from "./infra/file-lifetime.js";
 import { buildFileSignalDiscovery, buildFileSignalMap, sliceFileSignalsByPaths } from "./infra/file-reader.js";
-import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { carryDirtyChunkMapOntoHead, zeroOverlaysOfUncommittedRows } from "./infra/working-rows.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
@@ -156,7 +155,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   // ── Ingest-side contract ──
   readonly optionalOverlayKeys = GIT_OPTIONAL_OVERLAY_KEYS;
 
-  private readonly squashOpts?: SquashOptions;
   private readonly config: GitProviderConfig & { blamePoolSize: number };
   /** Bug-fix SHAs resolved from merge branch prefixes. Updated per buildFileSignals() call. */
   private bugFixShas: Set<string> = new Set();
@@ -251,7 +249,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   constructor(
     config?: Partial<GitProviderConfig>,
-    squashOpts?: SquashOptions,
     workerDescriptor?: WorkerEnrichmentDescriptor,
     /**
      * bd tea-rags-mcp-3gz4f — the run-scoped buffer the temporal hook drains.
@@ -269,20 +266,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       ...config,
       blamePoolSize: config?.blamePoolSize ?? defaultBlamePoolSize(),
     };
-    this.squashOpts = squashOpts;
     this.workerDescriptor = workerDescriptor;
     this.temporalSymbolCommits = temporalSymbolCommits;
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
-      return assembleFileSignals(
-        churnData,
-        maxEndLine,
-        this.squashOpts,
-        this.bugFixShas,
-        blameLines,
-        this.fileTaskIdVocabulary,
-      );
+      return assembleFileSignals(churnData, maxEndLine, this.bugFixShas, blameLines, this.fileTaskIdVocabulary);
     };
   }
 
@@ -930,7 +919,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       uncommittedOverlays = zeroOverlaysOfUncommittedRows(adapter.repoRoot, carried.uncommittedRows, {
         fileChurnDataMap: handoff.churnByPath,
         maxFileLines: this.config.chunkMaxFileLines,
-        ...(this.squashOpts ? { squashOpts: this.squashOpts } : {}),
       });
       if (walkThread && options?.commitDiscovery && options.skipCache) {
         const outcome = await this.walkChunkChurnOffThread(
@@ -954,7 +942,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
           this.config.chunkConcurrency,
           this.config.chunkMaxAgeMonths,
           handoff.churnByPath,
-          this.squashOpts,
           this.config.chunkTimeoutMs,
           this.config.chunkMaxFileLines,
           options?.concurrencySemaphore,
@@ -1064,7 +1051,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       // the awaits above — reading the live maps here raced other batches.
       blameByPath: handoff.blameByPath,
       fileChurnData: handoff.churnByPath,
-      squashOpts: this.squashOpts,
       concurrency: this.config.chunkConcurrency,
       maxAgeMonths: this.config.chunkMaxAgeMonths,
       chunkTimeoutMs: this.config.chunkTimeoutMs,
