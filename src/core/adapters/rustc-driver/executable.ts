@@ -77,6 +77,8 @@ export interface RustcDriverDiscoveryDeps {
     exists: (path: string) => boolean;
     listDir: (path: string) => readonly string[];
   };
+  /** Host platform; win32 looks for the `.exe` binary. Defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /** Parse a `-V` banner; null for anything that is not one. */
@@ -131,13 +133,17 @@ function envCandidates(deps: RustcDriverDiscoveryDeps): string[] {
 function* pathCandidates(deps: RustcDriverDiscoveryDeps): Iterable<string> {
   for (const dir of (deps.env.PATH ?? "").split(delimiter)) {
     if (!dir) continue;
-    const candidate = join(dir, BINARY);
+    const candidate = join(dir, driverBinaryName(deps));
     if (deps.fs.exists(candidate)) yield candidate;
   }
 }
 
+function driverBinaryName(deps: RustcDriverDiscoveryDeps): string {
+  return (deps.platform ?? process.platform) === "win32" ? `${BINARY}.exe` : BINARY;
+}
+
 function* cacheCandidates(deps: RustcDriverDiscoveryDeps): Iterable<string> {
-  const candidate = join(deps.dataDir, "rustc-driver", "bin", `${deps.pin}-${deps.sourceHash}`, BINARY);
+  const candidate = join(deps.dataDir, "rustc-driver", "bin", `${deps.pin}-${deps.sourceHash}`, driverBinaryName(deps));
   if (deps.fs.exists(candidate)) yield candidate;
 }
 

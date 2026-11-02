@@ -93,6 +93,18 @@ describe("discoverRustcDriver", () => {
     expect(discoverRustcDriver(d)).toMatchObject({ tier: "cache", path: cached });
   });
 
+  it("finds the Windows .exe in the data-dir build cache (gr8wr)", () => {
+    const cached = `${HOME}/.tea-rags/rustc-driver/bin/${PIN}-${HASH}/${BIN}.exe`;
+    const d = { ...deps({ versions: { [cached]: ok(banner()) }, existing: [cached] }), platform: "win32" as const };
+    expect(discoverRustcDriver(d)).toMatchObject({ kind: "binary", tier: "cache", path: cached });
+  });
+
+  it("finds the Windows .exe on PATH (gr8wr)", () => {
+    const onPath = `/opt/bin/${BIN}.exe`;
+    const d = { ...deps({ versions: { [onPath]: ok(banner()) }, existing: [onPath] }), platform: "win32" as const };
+    expect(discoverRustcDriver(d)).toMatchObject({ kind: "binary", tier: "path", path: onPath });
+  });
+
   it("reports buildable via rustup which when rustc-dev is present", () => {
     const sysroot = "/r/toolchains/nightly-2026-05-01-aarch64-apple-darwin";
     const d = deps({ rustupWhich: `${sysroot}/bin/rustc`, dirs: sysrootLibs(sysroot) });
