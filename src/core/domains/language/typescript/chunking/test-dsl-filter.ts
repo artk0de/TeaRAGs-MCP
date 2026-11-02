@@ -205,9 +205,15 @@ function isInvokedInPlace(fn: AstNode): boolean {
  * Before, each `it` there became a leaf chunk `<helper>.it` — title lost, ids
  * colliding — and a nested describe claimed its rows while the helper's own
  * statements reached no chunk at all.
+ *
+ * The walk stops at a Vitest in-source block: a call inside
+ * `if (import.meta.vitest) { … }` belongs to the block, which runs where it
+ * stands, even when the block sits in a function body. A helper defined
+ * INSIDE the block is still met first, below the block.
  */
-export function isInsideHelperDefinition(node: AstNode): boolean {
+export function isInsideHelperDefinition(node: AstNode, code: string): boolean {
   for (let cursor = node.parent; cursor; cursor = cursor.parent) {
+    if (isInlineTestNode(cursor, code)) return false;
     if (FUNCTION_TYPES.has(cursor.type) && !isInvokedInPlace(cursor)) return true;
   }
   return false;
@@ -238,7 +244,7 @@ export const testDslFilterHook: ChunkingHook = {
 
     const callName = getCallName(node, code);
     if (!callName) return false;
-    return ALL_DSL_METHODS.has(callName) && !isInsideHelperDefinition(node);
+    return ALL_DSL_METHODS.has(callName) && !isInsideHelperDefinition(node, code);
   },
 
   process(_ctx: HookContext): void {

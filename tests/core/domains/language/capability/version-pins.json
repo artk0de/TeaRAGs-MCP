@@ -38,11 +38,11 @@
   "javascript": {
     "chunking": {
       "version": 4,
-      "digest": "sha256:2f782c30181a0efad3000b435aa712eac34dfe8fde0e2b622cc748469cf0a376"
+      "digest": "sha256:df01d05191fee73332b7b42d242d202b1a0ede30b816cb2e6133f2c04a4bcd8e"
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:0cb6a1f283f8d88a08a5b6081f901b9bf0e2425029098bbc57ac75c3cff45612"
+      "digest": "sha256:a628065c23209bf888d824fe556d3879f7748df75c291ade824675a691a48d8f"
     }
   },
   "markdown": {
@@ -90,11 +90,11 @@
   "typescript": {
     "chunking": {
       "version": 4,
-      "digest": "sha256:f1313cf12cd0acb619f97f589adbde73deebacd2b4736d2e5f62d524fe35a835"
+      "digest": "sha256:b58e8a8b1855e5df070090e3d9f1371bda98cda3fd3b225d65a1b40f11d993df"
     },
     "walker": {
       "version": 17,
-      "digest": "sha256:6ba5895fca49654ec8851e520f9cdd0c7b97733e233d40b5e12d24db84fc47d1"
+      "digest": "sha256:7f73241f24f50810dfbb9c535eee2591920bd3b8a82616e932e8ac2c6c7da3d5"
     }
   },
   "yaml": {

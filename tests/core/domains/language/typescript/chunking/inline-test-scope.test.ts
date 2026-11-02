@@ -53,6 +53,71 @@ if (import.meta.vitest) {
     expect(setup[0].startLine).toBe(7);
   });
 
+  const nestedFixture = `export function nestedInSource(value: number): number {
+  const doubled = value * 2;
+  if (import.meta.vitest) {
+    const { it, expect } = import.meta.vitest;
+    it("doubles", () => {
+      expect(nestedInSource(2)).toBe(4);
+    });
+  }
+  return doubled;
+}
+`;
+
+  it("chunks an in-source block inside a function body as the top-level block's test chunks", async () => {
+    const chunks = await chunker.chunk(nestedFixture, "src/math.ts", "typescript");
+
+    const example = chunks.find((c) => c.metadata.symbolId === 'math.vitest.it "doubles"');
+    expect(example?.metadata.chunkType).toBe("test");
+    expect(example?.metadata.parentSymbolId).toBe("math.vitest");
+    expect(chunks.find((c) => c.metadata.symbolId === "math.vitest")?.metadata.chunkType).toBe("test_setup");
+  });
+
+  it("keeps the function's other rows in its function chunk, without the in-source block", async () => {
+    const chunks = await chunker.chunk(nestedFixture, "src/math.ts", "typescript");
+
+    const fn = chunks.filter((c) => c.metadata.symbolId === "nestedInSource");
+    expect(fn.length).toBeGreaterThan(0);
+    for (const chunk of fn) {
+      expect(chunk.metadata.chunkType).toBe("function");
+      expect(chunk.content).not.toContain('it("doubles"');
+      expect(chunk.content).not.toContain("import.meta.vitest");
+    }
+    expect(fn.some((c) => c.content.includes("return doubled;"))).toBe(true);
+  });
+
+  it("chunks a function with a plain inner if exactly as before", async () => {
+    const code = `export function clamp(value: number): number {
+  const limit = 100;
+  if (value > limit) {
+    console.log("clamping an out-of-range value to the configured limit");
+    return limit;
+  }
+  return value;
+}
+`;
+    const chunks = await chunker.chunk(code, "src/clamp.ts", "typescript");
+
+    expect(
+      chunks.map((c) => ({
+        chunkType: c.metadata.chunkType,
+        symbolId: c.metadata.symbolId,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        content: c.content,
+      })),
+    ).toEqual([
+      {
+        chunkType: "function",
+        symbolId: "clamp",
+        startLine: 1,
+        endLine: 8,
+        content: code.trim().replace(/^export /, ""),
+      },
+    ]);
+  });
+
   it("chunks a plain top-level if exactly as before", async () => {
     const code = `export function init(): void {
   console.log("starting the service with the configured environment");

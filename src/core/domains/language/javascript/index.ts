@@ -112,7 +112,12 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // shares the `method_definition` shape, so it needs the same descent.
   // `call_expression` reaches DSL containers nested inside an already-claimed
   // container (mirrors TypeScript). bd tea-rags-mcp-ll0u9.
-  childChunkTypes: ["method_definition", "call_expression"],
+  // `if_statement` is a child only as a Vitest in-source block inside a
+  // function or method body (`jsTestDslFilterHook` rejects every other `if`, so
+  // discovery descends through it as before). Its `it(...)` calls make it a
+  // nested container, which `jsTestScopeChunkerHook` claims exactly as a
+  // top-level block, while the enclosing function keeps its other rows.
+  childChunkTypes: ["method_definition", "call_expression", "if_statement"],
   alwaysExtractChildren: true,
   // `export_statement` is chunkable above, so the engine claims the export
   // rather than the `class_declaration` it wraps — and an export carries no

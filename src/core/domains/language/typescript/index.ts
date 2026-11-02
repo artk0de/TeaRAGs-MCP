@@ -94,7 +94,12 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
     "lexical_declaration",
     "variable_declaration",
   ],
-  childChunkTypes: ["method_definition", "call_expression"],
+  // `if_statement` is a child only as a Vitest in-source block inside a
+  // function or method body (`testDslFilterHook` rejects every other `if`, so
+  // discovery descends through it as before). Its `it(...)` calls make it a
+  // nested container, which `testScopeChunkerHook` claims exactly as a
+  // top-level block, while the enclosing function keeps its other rows.
+  childChunkTypes: ["method_definition", "call_expression", "if_statement"],
   alwaysExtractChildren: true,
   hooks: typescriptHooks,
   classifier: typescriptChunkClassifier,
