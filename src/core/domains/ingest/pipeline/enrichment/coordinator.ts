@@ -981,7 +981,13 @@ export class EnrichmentCoordinator {
     // Nothing stored and nothing re-extracted: no run to open. A forced repair
     // that walked chunkless files still needs the run below — its finalize
     // is where pass-2 resolves the re-extracted rows and `cg_run_stats` lands.
-    if (stored.items.length === 0 && forcedRepaired === 0) return EMPTY_METRICS;
+    // A provider whose forced repair threw still owes its `failed` verdict,
+    // and only a run's terminal markers carry it to enrichmentHealth and the
+    // CLI `outcome.failed` (bd tea-rags-mcp-63bdw) — so that case opens a run
+    // over the failed providers alone; the rest keep the no-run path.
+    const nothingToRun = stored.items.length === 0 && forcedRepaired === 0;
+    if (nothingToRun && failedProviderErrors.size === 0) return EMPTY_METRICS;
+    const runProviderKeys = nothingToRun ? [...failedProviderErrors.keys()] : matched;
 
     // `languages` reaches the run itself, not just the scroll: the terminal
     // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s). Every
@@ -992,7 +998,7 @@ export class EnrichmentCoordinator {
         absolutePath,
         collection: physicalCollectionName,
         fileCount: stored.fileCount,
-        onlyProviderKeys: matched,
+        onlyProviderKeys: runProviderKeys,
         languages: languages ?? ALL_LANGUAGES,
         // Known before the first batch — the one run that can say so, which is
         // what lets the executor split it by language (bd tea-rags-mcp-sgo8v).
