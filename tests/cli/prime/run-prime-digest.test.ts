@@ -142,7 +142,7 @@ describe("runPrime — reads the project digest resource", () => {
     expect(out).not.toContain("## tea-rags package");
   });
 
-  it("prints the qdrant-cold placeholder and opens no session when Qdrant is unreachable", async () => {
+  it("keeps known addressing with unconfirmed readiness and opens no session when Qdrant is unreachable", async () => {
     pingMock.mockResolvedValue(false);
     const openSession = vi.fn();
 
@@ -156,8 +156,9 @@ describe("runPrime — reads the project digest resource", () => {
 
     expect(openSession).not.toHaveBeenCalled();
     expect(output()).toBe(
-      "# tea-rags prime — /repo/proj\n" +
-        "Qdrant warm-up pending — index queries will be available after MCP server attaches.\n",
+      "# tea-rags digest — proj\n" +
+        'project `proj` · collection `code_proj` — pass `project: "proj"` + `path` on tea-rags calls\n' +
+        "index readiness and freshness unconfirmed; use get_index_status if needed\n",
     );
   });
 

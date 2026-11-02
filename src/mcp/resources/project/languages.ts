@@ -1,10 +1,5 @@
-import {
-  formatResolveRate,
-  type CollectionEntry,
-  type IndexMetrics,
-  type IndexStatus,
-  type LanguageCapability,
-} from "../../../core/api/public/index.js";
+import type { CollectionEntry, IndexMetrics, IndexStatus, LanguageCapability } from "../../../core/api/public/index.js";
+import { formatResolveRate } from "../../../core/api/public/project-format.js";
 
 export type CodegraphResolve = NonNullable<IndexStatus["codegraphResolve"]>;
 

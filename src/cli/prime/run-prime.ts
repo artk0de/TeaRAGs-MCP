@@ -296,7 +296,7 @@ export async function runPrime(input: {
     registryExternalQdrantUrl(registryEntry, input.registryRuntime.externalQdrantUrlOf) ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
-    writePrime({ kind: "qdrant-cold", path });
+    writePrime({ kind: "qdrant-cold", path, registry: registryEntry });
     return;
   }
 
@@ -318,7 +318,7 @@ export async function runPrime(input: {
   try {
     session = await input.openSession();
   } catch (error) {
-    writePrime(statusFailure(path, error));
+    writePrime({ ...statusFailure(path, error), registry: registryEntry });
     return;
   }
 
@@ -343,7 +343,7 @@ export async function runPrime(input: {
       ...(input.agent === true ? { agent: true } : {}),
     });
   } catch (error) {
-    writePrime(statusFailure(path, error));
+    writePrime({ ...statusFailure(path, error), registry: registryEntry });
   } finally {
     // Best-effort teardown, not awaited: the guaranteed reap is process.exit(0)
     // in the prime command handler, which releases the DuckDB file lock and

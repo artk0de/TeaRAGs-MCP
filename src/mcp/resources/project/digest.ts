@@ -1,13 +1,15 @@
+import type {
+  CollectionEntry,
+  CollectionMemoryMetrics,
+  IndexStatus,
+  OptimizerRecoveryTarget,
+} from "../../../core/api/public/index.js";
 import {
   formatIndexHolesLine,
   formatRustcDriverLine,
   isOptimizerFailure,
   renderOptimizerRecoveryCommand,
-  type CollectionEntry,
-  type CollectionMemoryMetrics,
-  type IndexStatus,
-  type OptimizerRecoveryTarget,
-} from "../../../core/api/public/index.js";
+} from "../../../core/api/public/project-format.js";
 import { formatLanguageCapabilitySection, formatResolveWarnings, languageSplit, registryEnv } from "./languages.js";
 import type { ProjectDigestData } from "./types.js";
 
@@ -24,20 +26,27 @@ const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
  * trigger instead — `get_index_status` / `index_codebase` answers, degraded
  * search answers, empty graph answers.
  */
-export function formatAgentDigest(data: ProjectDigestData, now: Date): string {
+export function formatAgentDigest(
+  data: Omit<ProjectDigestData, "status"> & { status: ProjectDigestData["status"] | null },
+  now: Date,
+): string {
   const alias = data.projectName ?? data.registry?.collectionName ?? data.path;
   const lines: string[] = [`# tea-rags digest — ${alias}`];
-  if (data.status.status !== "indexed") {
+  if (data.status !== null && data.status.status !== "indexed") {
     lines.push(formatStatusLine(data.status, now, null));
     return `${lines.join("\n")}\n`;
   }
-  const collection = `collection \`${data.status.collectionName ?? "unknown"}\``;
+  const collection = `collection \`${data.status?.collectionName ?? data.registry?.collectionName ?? "unknown"}\``;
   lines.push(
     data.projectName
       ? `project \`${data.projectName}\` · ${collection} — pass \`project: "${data.projectName}"\` + \`path\` on tea-rags calls`
       : collection,
   );
-  lines.push(...formatAgentFreshnessLines(data, alias, now));
+  if (data.status === null) {
+    lines.push("index readiness and freshness unconfirmed; use get_index_status if needed");
+  } else {
+    lines.push(...formatAgentFreshnessLines({ ...data, status: data.status }, alias, now));
+  }
   return `${lines.join("\n")}\n`;
 }
 

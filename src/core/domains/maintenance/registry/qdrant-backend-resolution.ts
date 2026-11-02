@@ -25,8 +25,11 @@
  * instead of letting it second-guess entries the current write path produced.
  */
 
-import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
-import type { CollectionEntry, RegistryQdrantBackend } from "../../../contracts/types/registry.js";
+import {
+  EMBEDDED_MARKER,
+  type CollectionEntry,
+  type RegistryQdrantBackend,
+} from "../../../contracts/types/registry.js";
 import { RegistryQdrantBackendUnresolvedError } from "./errors.js";
 
 // `RegistryQdrantBackend` is defined in contracts (bd tea-rags-mcp-0qaht.36);

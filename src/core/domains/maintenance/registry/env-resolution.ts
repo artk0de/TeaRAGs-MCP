@@ -15,11 +15,10 @@
  * its lifetime — applies it per request through `ProjectIngestFactory`.
  */
 
-import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/index.js";
 // RegistryLookup is defined in contracts (bd tea-rags-mcp-0qaht.36); this
 // module re-exports it unchanged for its existing consumers.
-import type { CollectionEntry, RegistryLookup } from "../../../contracts/types/registry.js";
+import { EMBEDDED_MARKER, type CollectionEntry, type RegistryLookup } from "../../../contracts/types/registry.js";
 import { canonicalRegistryEnvKeys, isBackendRegistryEnvKey, isThroughputTunedEnvKey } from "./env-groups.js";
 import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./env-replay.js";
 import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
