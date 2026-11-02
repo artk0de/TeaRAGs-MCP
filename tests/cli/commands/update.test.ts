@@ -2,7 +2,12 @@ import EventEmitter from "node:events";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runUpdateCommand, updateCommand, type RunUpdateDeps } from "../../../src/cli/commands/update.js";
+import {
+  performUpdate,
+  runUpdateCommand,
+  updateCommand,
+  type RunUpdateDeps,
+} from "../../../src/cli/commands/update.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
 
@@ -74,7 +79,22 @@ function makeRunClaude(answers: Record<string, FakeClaudeRun>) {
 const claudeMissing = vi.fn(async () => ({ code: null, stdout: "", missing: true }));
 
 const PLUGIN_LIST = "plugin list --json";
-const MARKETPLACE_UPDATE = "plugin marketplace update tea-rags --json";
+const MARKETPLACE_LIST = "plugin marketplace list --json";
+
+/** The tea-rags marketplace already pinned to the tag of the version `available(…, "1.24.0")` installs. */
+const pinnedMarketplace = claudeResult([
+  { name: "tea-rags", source: "git", url: "https://github.com/artk0de/TeaRAGs-MCP.git", ref: "v1.24.0" },
+]);
+
+/** No codex CLI, and HOMEs where no Cursor plugin is installed — keeps every run off the real machine. */
+const NO_HOME = "/nonexistent-home-for-update-test";
+const isolatedHarnesses = {
+  runCodex: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
+  homedir: NO_HOME,
+  codexHome: `${NO_HOME}/.codex`,
+  packageRoot: "/nonexistent-package-root",
+  clientVersion: () => "1.23.1",
+};
 
 function installedPlugins(...ids: string[]): FakeClaudeRun {
   return {
@@ -91,8 +111,10 @@ function printed(mock: ReturnType<typeof vi.fn>): string {
 describe("runUpdateCommand", () => {
   it("prints up-to-date message and exits 0", async () => {
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(upToDate("1.23.1")),
       spawn: makeSpawn({}),
+      runClaude: claudeMissing,
       exit: exitMock,
     });
     expect(stdoutMock).toHaveBeenCalled();
@@ -100,9 +122,56 @@ describe("runUpdateCommand", () => {
     expect(exitMock).toHaveBeenCalledWith(0);
   });
 
+  it("syncs harness plugins against the current version when already up to date", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: installedPlugins("tea-rags@tea-rags"),
+      [MARKETPLACE_LIST]: claudeResult([
+        { name: "tea-rags", source: "git", url: "https://github.com/artk0de/TeaRAGs-MCP.git", ref: "v1.23.1" },
+      ]),
+      "plugin update tea-rags@tea-rags --json": claudeResult({
+        outcome: "ok",
+        oldVersion: "0.1.0",
+        newVersion: "0.2.0",
+      }),
+    });
+
+    await runUpdateCommand({
+      ...isolatedHarnesses,
+      service: makeService(upToDate("1.23.1")),
+      spawn: makeSpawn({}),
+      runClaude,
+      exit: exitMock,
+    });
+
+    expect(runClaude.mock.calls.map((c) => c[0].join(" "))).toEqual([
+      PLUGIN_LIST,
+      MARKETPLACE_LIST,
+      "plugin update tea-rags@tea-rags --json",
+    ]);
+    expect(printed(stdoutMock)).toContain("tea-rags@tea-rags 0.1.0 → 0.2.0");
+    expect(printed(stdoutMock)).toContain("Restart Claude Code to load the updated plugins.");
+    expect(exitMock).toHaveBeenCalledWith(0);
+  });
+
+  it("still syncs harness plugins when the registry is unreachable, and exits 1", async () => {
+    const runClaude = makeRunClaude({ [PLUGIN_LIST]: installedPlugins("superpowers@claude-plugins-official") });
+
+    await runUpdateCommand({
+      ...isolatedHarnesses,
+      service: makeService(unavailable("network")),
+      spawn: makeSpawn({}),
+      runClaude,
+      exit: exitMock,
+    });
+
+    expect(runClaude).toHaveBeenCalledWith(["plugin", "list", "--json"]);
+    expect(exitMock).toHaveBeenCalledWith(1);
+  });
+
   it("on 'available', prints upgrade message and spawns npm install -g tea-rags@latest", async () => {
     const spawn = makeSpawn({ exitCode: 0 });
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(available("1.23.1", "1.24.0")),
       spawn,
       runClaude: claudeMissing,
@@ -123,6 +192,7 @@ describe("runUpdateCommand", () => {
 
   it("forwards non-zero npm exit code", async () => {
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(available("1.23.1", "1.24.0")),
       spawn: makeSpawn({ exitCode: 7 }),
       exit: exitMock,
@@ -133,7 +203,9 @@ describe("runUpdateCommand", () => {
 
   it("on 'unavailable', prints to stderr and exits 1", async () => {
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(unavailable("network")),
+      runClaude: claudeMissing,
       spawn: makeSpawn({}),
       exit: exitMock,
     });
@@ -144,6 +216,7 @@ describe("runUpdateCommand", () => {
 
   it("on spawn 'error' event (npm not in PATH), prints helpful stderr and exits 127", async () => {
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(available("1.23.1", "1.24.0")),
       spawn: makeSpawn({ errorEvent: new Error("ENOENT") }),
       exit: exitMock,
@@ -157,7 +230,9 @@ describe("runUpdateCommand", () => {
   it("calls service with allowNetwork=true and preferCache=false (live HTTP)", async () => {
     const svc = makeService(upToDate("1.23.1"));
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: svc,
+      runClaude: claudeMissing,
       spawn: makeSpawn({}),
       exit: exitMock,
     });
@@ -172,6 +247,7 @@ describe("runUpdateCommand", () => {
     // npm-not-found code path), so the user still sees a typed failure
     // instead of a silent hang.
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(available("1.23.1", "1.24.0")),
       spawn: makeSpawn({ errorEvent: new Error("EACCES: permission denied") }),
       exit: exitMock,
@@ -188,6 +264,7 @@ describe("runUpdateCommand", () => {
 describe("runUpdateCommand — Claude Code plugin sync", () => {
   async function update(runClaude: RunUpdateDeps["runClaude"], npmExitCode = 0): Promise<void> {
     await runUpdateCommand({
+      ...isolatedHarnesses,
       service: makeService(available("1.23.1", "1.24.0")),
       spawn: makeSpawn({ exitCode: npmExitCode }),
       runClaude,
@@ -205,7 +282,7 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
         "dinopowers@tea-rags",
         "superpowers@claude-plugins-official",
       ),
-      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      [MARKETPLACE_LIST]: pinnedMarketplace,
       "plugin update tea-rags@tea-rags --json": claudeResult({
         command: "update",
         outcome: "ok",
@@ -226,7 +303,7 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
 
     expect(runClaude.mock.calls.map((c) => c[0].join(" "))).toEqual([
       PLUGIN_LIST,
-      MARKETPLACE_UPDATE,
+      MARKETPLACE_LIST,
       "plugin update tea-rags@tea-rags --json",
       "plugin update dinopowers@tea-rags --json",
     ]);
@@ -263,7 +340,7 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
   it("reports a failed plugin update, still updates the others and exits 0", async () => {
     const runClaude = makeRunClaude({
       [PLUGIN_LIST]: installedPlugins("tea-rags@tea-rags", "dinopowers@tea-rags"),
-      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      [MARKETPLACE_LIST]: pinnedMarketplace,
       "plugin update tea-rags@tea-rags --json": claudeResult(
         { command: "update", outcome: "failed", pluginId: "tea-rags@tea-rags", message: "network unreachable" },
         1,
@@ -287,7 +364,7 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
   it("shows a marketplace-declared command for confirmation instead of accepting it", async () => {
     const runClaude = makeRunClaude({
       [PLUGIN_LIST]: installedPlugins("tea-rags@tea-rags"),
-      [MARKETPLACE_UPDATE]: claudeResult({ command: "marketplace-update", outcome: "ok" }),
+      [MARKETPLACE_LIST]: pinnedMarketplace,
       "plugin update tea-rags@tea-rags --json": claudeResult(
         {
           command: "update",
@@ -335,7 +412,12 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
       const enoent = Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
       const spawn = routedSpawn({ errorEvent: enoent });
 
-      await runUpdateCommand({ service: makeService(available("1.23.1", "1.24.0")), spawn, exit: exitMock });
+      await runUpdateCommand({
+        ...isolatedHarnesses,
+        service: makeService(available("1.23.1", "1.24.0")),
+        spawn,
+        exit: exitMock,
+      });
       await vi.waitFor(() => {
         expect(exitMock).toHaveBeenCalled();
       });
@@ -348,7 +430,12 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
     it("reads the plugin list from the spawned claude stdout", async () => {
       const spawn = routedSpawn({ stdout: "[]" });
 
-      await runUpdateCommand({ service: makeService(available("1.23.1", "1.24.0")), spawn, exit: exitMock });
+      await runUpdateCommand({
+        ...isolatedHarnesses,
+        service: makeService(available("1.23.1", "1.24.0")),
+        spawn,
+        exit: exitMock,
+      });
       await vi.waitFor(() => {
         expect(exitMock).toHaveBeenCalled();
       });
@@ -390,11 +477,63 @@ describe("updateCommand", () => {
     const exitSpy = vi
       .spyOn(process, "exit")
       .mockImplementation((() => undefined) as unknown as (code?: string | number | null) => never);
+    // The default deps sync the real harness plugins: an empty PATH makes claude
+    // and codex "missing" and a nonexistent HOME holds no Cursor plugin, so this
+    // run never touches the machine's real plugin installs.
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME };
+    process.env.PATH = "";
+    process.env.HOME = NO_HOME;
+    process.env.CODEX_HOME = `${NO_HOME}/.codex`;
     try {
       await (updateCommand.handler as (a: unknown) => Promise<void>)({});
       expect(exitSpy).toHaveBeenCalledWith(1);
     } finally {
       exitSpy.mockRestore();
+      for (const [key, value] of Object.entries(env)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
+  });
+});
+
+describe("performUpdate", () => {
+  it("with install: false never spawns npm, prints nothing and still syncs plugins against the current version", async () => {
+    const spawn = makeSpawn({});
+
+    const report = await performUpdate(
+      {
+        ...isolatedHarnesses,
+        service: makeService(available("1.23.1", "1.24.0")),
+        spawn,
+        runClaude: claudeMissing,
+        exit: exitMock,
+      },
+      { install: false },
+    );
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(stdoutMock).not.toHaveBeenCalled();
+    expect(report.install).toEqual({ kind: "not-requested" });
+    expect(report.exitCode).toBe(0);
+    expect(report.plugins?.harnesses.map((h) => h.harness)).toEqual(["claude", "codex", "cursor"]);
+  });
+
+  it("returns the npm exit code and no plugin report when the install fails", async () => {
+    const report = await performUpdate(
+      {
+        ...isolatedHarnesses,
+        service: makeService(available("1.23.1", "1.24.0")),
+        spawn: makeSpawn({ exitCode: 7 }),
+        runClaude: claudeMissing,
+        exit: exitMock,
+      },
+      { install: true },
+    );
+
+    expect(report.install).toEqual({ kind: "failed", exitCode: 7 });
+    expect(report.plugins).toBeUndefined();
+    expect(report.exitCode).toBe(7);
+    expect(exitMock).not.toHaveBeenCalled();
   });
 });
