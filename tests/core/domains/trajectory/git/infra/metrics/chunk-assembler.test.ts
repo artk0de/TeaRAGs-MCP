@@ -222,7 +222,7 @@ describe("assembleChunkSignals", () => {
       commitAuthors: ["alice"],
       taskIds: new Set(),
     };
-    const result = assembleChunkSignals(acc, 1, undefined, 5, undefined, {
+    const result = assembleChunkSignals(acc, 1, undefined, 5, {
       blameDominantAuthor: "Carol",
       blameDominantAuthorPct: 80,
       blameAuthors: ["Carol", "Bob"],

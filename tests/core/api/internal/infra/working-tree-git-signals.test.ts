@@ -496,24 +496,24 @@ describe("createWorkingTreeGitSignalSource", () => {
 
   // Round-4 P1: the blocks are the ones a reindex of the tree would write WITH
   // THE INDEX'S OWN CONFIG — its project's registry env, not whatever env the
-  // serving process was started with. A server without the self-index's
-  // `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` recomputed `symbol.ts` at 20
-  // commits beside base rows counting 19 sessions: one answer, two units.
+  // serving process was started with. A server started with another git config
+  // than the self-index's once answered with two units in one reply.
   describe("the configuration of the index the tree is read against", () => {
-    const SQUASHED = { ...DEPS, squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 } };
+    // A chunk line limit below c.ts's length: that index declines c.ts's chunks.
+    const CAPPED = { ...DEPS, chunk: { ...DEPS.chunk, maxFileLines: 1 } };
+    const withChunk = () => target({ chunks: [{ key: "cFn", startLine: 1, endLine: 3 }] });
 
     it("computes a path with the git config of the index it serves, each index its own", async ({ tree }) => {
-      // c.ts: two commits by one author seconds apart — one session, two commits.
       const source = createWorkingTreeGitSignalSource({
         ...DEPS,
-        configFor: (indexRoot) => (indexRoot === "/index/squashed" ? SQUASHED : undefined),
+        configFor: (indexRoot) => (indexRoot === "/index/capped" ? CAPPED : undefined),
       });
 
-      const squashed = await source.signalsOf(tree, [target()], undefined, "/index/squashed");
-      const plain = await source.signalsOf(tree, [target()], undefined, "/index/plain");
+      const capped = await source.signalsOf(tree, [withChunk()], undefined, "/index/capped");
+      const plain = await source.signalsOf(tree, [withChunk()], undefined, "/index/plain");
 
-      expect(squashed.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 1 });
-      expect(plain.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 2 });
+      expect(capped.get("src/cyc/c.ts")?.chunks.get("cFn")).toBeUndefined();
+      expect(plain.get("src/cyc/c.ts")?.chunks.get("cFn")).toMatchObject({ commitCount: 2 });
     });
 
     it("keeps a stored record of one config from answering another", async ({ tree }) => {
@@ -524,13 +524,13 @@ describe("createWorkingTreeGitSignalSource", () => {
             ...DEPS,
             store: createWorkingTreeGitSignalStore({ rootDir: storeRoot }),
             builderVersion: "1.0.0",
-            configFor: (indexRoot) => (indexRoot === "/index/squashed" ? SQUASHED : undefined),
+            configFor: (indexRoot) => (indexRoot === "/index/capped" ? CAPPED : undefined),
           });
 
-        await persistent().signalsOf(tree, [target()], undefined, "/index/plain");
-        const squashed = await persistent().signalsOf(tree, [target()], undefined, "/index/squashed");
+        await persistent().signalsOf(tree, [withChunk()], undefined, "/index/plain");
+        const capped = await persistent().signalsOf(tree, [withChunk()], undefined, "/index/capped");
 
-        expect(squashed.get("src/cyc/c.ts")?.file).toMatchObject({ commitCount: 1 });
+        expect(capped.get("src/cyc/c.ts")?.chunks.get("cFn")).toBeUndefined();
       } finally {
         rmSync(storeRoot, { recursive: true, force: true });
       }

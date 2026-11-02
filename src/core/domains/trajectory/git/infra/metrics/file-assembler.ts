@@ -5,12 +5,11 @@
  * Replaces the monolithic computeFileSignals() function.
  */
 
-import type { BlameLine, CommitInfo } from "../../../../../adapters/vcs/index.js";
-import { EMPTY_TASK_ID_VOCABULARY, groupIntoSessions, type TaskIdVocabulary } from "../../history/index.js";
+import type { BlameLine } from "../../../../../adapters/vcs/index.js";
+import { EMPTY_TASK_ID_VOCABULARY, type TaskIdVocabulary } from "../../history/index.js";
 import type { GitFileSignals } from "../../types.js";
 import { computeBlameOwnership } from "../blame-ownership.js";
 import type { WindowedFileChurn } from "../file-lifetime.js";
-import type { SquashOptions } from "../metrics.js";
 import {
   ageDaysAt,
   computeBugFixRate,
@@ -26,7 +25,6 @@ import {
 export function assembleFileSignals(
   churnData: WindowedFileChurn,
   currentLineCount: number,
-  squashOpts?: SquashOptions,
   bugFixShas?: Set<string>,
   blameLines?: BlameLine[],
   taskIdVocabulary: TaskIdVocabulary = EMPTY_TASK_ID_VOCABULARY,
@@ -74,22 +72,6 @@ export function assembleFileSignals(
   const authorship = computeDominantAuthor(commits);
   const temporal = computeTemporalMetrics(commits, historyAnchorSec);
 
-  // Squash-aware: use session count for churn-dependent metrics
-  const useSquash = squashOpts?.squashAwareSessions === true;
-  const sessions = useSquash ? groupIntoSessions(commits, squashOpts?.sessionGapMinutes ?? 30) : null;
-
-  // Session-derived synthetic commits for count-dependent extractors
-  const countSource: CommitInfo[] | null = sessions
-    ? sessions.map((s) => ({
-        sha: "",
-        author: s.author,
-        authorEmail: "",
-        timestamp: s.timestamp,
-        body: s.isFix ? "fix: session" : "feat: session",
-        parents: [],
-      }))
-    : null;
-
   return {
     recentDominantAuthor: authorship.author,
     recentDominantAuthorEmail: authorship.email,
@@ -99,15 +81,15 @@ export function assembleFileSignals(
     firstCreatedAt: temporal.firstCreatedAt,
     lastCommitHash: temporal.lastCommitHash,
     ageDays: temporal.ageDays,
-    commitCount: countSource ? countSource.length : commits.length,
+    commitCount: commits.length,
     linesAdded: churnData.linesAdded,
     linesDeleted: churnData.linesDeleted,
     fileChurnCount: churnData.linesAdded + churnData.linesDeleted,
     relativeChurn: computeRelativeChurn(churnData.linesAdded, churnData.linesDeleted, currentLineCount),
-    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits, historyAnchorSec),
-    changeDensity: computeChangeDensity(countSource ?? commits),
-    churnVolatility: computeChurnVolatility(countSource ?? commits),
-    bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),
+    recencyWeightedFreq: computeRecencyWeightedFreq(commits, historyAnchorSec),
+    changeDensity: computeChangeDensity(commits),
+    churnVolatility: computeChurnVolatility(commits),
+    bugFixRate: computeBugFixRate(commits, bugFixShas),
     recentContributorCount: authorship.contributorCount,
     taskIds: extractAllTaskIds(commits, taskIdVocabulary),
     // Line-based ownership: from `git blame HEAD` if provided, otherwise unknown defaults.

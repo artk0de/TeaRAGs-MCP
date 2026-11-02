@@ -66,7 +66,7 @@ Tangent: the existing [`/optimize-skill` eval harness](/usage/skills/) in the pl
 
 ## Agent-authored commits — detection vs labelling
 
-[GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions) groups bursts of commits so raw `commitCount` doesn't misrepresent agent-heavy repos. It doesn't **label** which commits came from agents vs humans.
+Git signals count commits ([GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions), which grouped bursts into sessions, was removed for lack of measured benefit), and the co-change build counts an author's burst once. Neither **labels** which commits came from agents vs humans.
 
 Open question: is distinguishing human vs agent authorship worth the complexity?
 
@@ -77,7 +77,7 @@ Pros:
 
 Cons:
 - No reliable automatic detection (commit authorship is the human — the agent is a tool). Heuristics are error-prone (commit-message patterns, timing).
-- Adds a signal we don't need for the common case. GIT SESSIONS already de-noises the primary problem.
+- Adds a signal we don't need for the common case: a bug-fix-prediction backtest found burst de-noising of churn counts brought no consistent gain.
 - Privacy / attribution concerns if mislabelled.
 
 Current answer: **no**. Revisit when labelling becomes reliable (e.g. `Co-Authored-By: Claude …` becomes ubiquitous and parseable).

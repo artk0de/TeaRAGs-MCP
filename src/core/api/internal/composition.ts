@@ -41,10 +41,7 @@ import {
   type TemporalSymbolCommitBuffer,
   type WorkerEnrichmentDescriptor,
 } from "../../contracts/index.js";
-import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
-import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
-import type { RerankerPort } from "../../domains/explore/reranker-port.js";
-import { Reranker } from "../../domains/explore/reranker.js";
+import { OrderByFieldResolver, Reranker, resolvePresets, type RerankerPort } from "../../domains/explore/index.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/index.js";
 import {
   LanguageFactory,
@@ -74,7 +71,6 @@ import {
   gitPayloadSignalDescriptors,
   gitStatsAccumulators,
   type GitProviderConfig,
-  type SquashOptions,
 } from "../../domains/trajectory/git/index.js";
 import {
   ALL_COMPOSITE_FILTER_PRESETS,
@@ -170,7 +166,6 @@ export interface CompositionOptions {
    */
   git?: {
     config?: Partial<GitProviderConfig>;
-    squashOpts?: SquashOptions;
     /**
      * Worker-pool descriptor built by the bootstrap composition root (which
      * alone knows the absolute compiled-JS worker module path). When present,
@@ -366,12 +361,7 @@ export function createComposition(options: CompositionOptions = {}): Composition
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
   registry.register(
-    new GitTrajectory(
-      options.git?.config,
-      options.git?.squashOpts,
-      options.git?.workerDescriptor,
-      options.git?.temporalSymbolCommits,
-    ),
+    new GitTrajectory(options.git?.config, options.git?.workerDescriptor, options.git?.temporalSymbolCommits),
   );
   if (options.codegraph) {
     for (const trajectory of createCodegraphTrajectories({ ...options.codegraph, languageFactory })) {

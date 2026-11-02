@@ -8,24 +8,23 @@
 
 import type { BlameLine, FileChurnData } from "../../../../adapters/vcs/index.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import { authorIdentityKey, groupIntoSessions } from "../history/index.js";
+import { authorIdentityKey } from "../history/index.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { computeBlameOwnership } from "./blame-ownership.js";
-import type { ChunkAccumulator, SquashOptions } from "./metrics.js";
+import type { ChunkAccumulator } from "./metrics.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
 
 export interface AssembleOverlaysOptions {
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;
   accumulators: Map<string, ChunkAccumulator>;
   fileChurnDataMap?: Map<string, FileChurnData>;
-  squashOpts?: SquashOptions;
   blameByPath?: Map<string, BlameLine[]>;
   /** The run's history anchor (unix seconds) — see `history-anchor.ts`; absent ⇒ the wall clock. */
   historyAnchorSec?: number;
 }
 
 export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map<string, ChunkChurnOverlay>> {
-  const { relativeChunkMap, accumulators, fileChurnDataMap, squashOpts, blameByPath, historyAnchorSec } = opts;
+  const { relativeChunkMap, accumulators, fileChurnDataMap, blameByPath, historyAnchorSec } = opts;
 
   // Build result map
   const result = new Map<string, Map<string, ChunkChurnOverlay>>();
@@ -40,15 +39,7 @@ export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map
     let fileContributorCount: number | undefined;
 
     if (fileChurnData) {
-      // Under squash, the chunk denominator becomes a session count, so the
-      // file denominator must too — otherwise churnRatio mixes units (sessions
-      // over raw commits). Mirrors the chunk-level session normalization.
-      const rawFileCommitCount = fileChurnData.commits.length;
-      const squashedFileCommitCount =
-        squashOpts?.squashAwareSessions === true
-          ? groupIntoSessions(fileChurnData.commits, squashOpts.sessionGapMinutes ?? 30).length
-          : rawFileCommitCount;
-      fileCommitCount = Math.max(squashedFileCommitCount, 1);
+      fileCommitCount = Math.max(fileChurnData.commits.length, 1);
       const uniqueAuthors = new Set(fileChurnData.commits.map(authorIdentityKey));
       fileContributorCount = uniqueAuthors.size;
     } else {
@@ -87,7 +78,6 @@ export function assembleOverlays(opts: AssembleOverlaysOptions): Map<string, Map
           fileCommitCount,
           fileContributorCount,
           chunkLineCount,
-          squashOpts,
           chunkOwnerships?.get(entry.chunkId),
           historyAnchorSec,
         ),

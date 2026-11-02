@@ -67,14 +67,13 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       { chunkId: "c2", startLine: 51, endLine: 100 }, // maxLine 100 > maxFileLines 10
     ]);
 
-    // maxFileLines is the 9th positional arg (squashOpts, chunkTimeoutMs precede it).
+    // maxFileLines is the 8th positional arg (chunkTimeoutMs precedes it).
     const result = await chunkReader.buildChunkChurnMapUncached(
       new GitCliAdapter("/fake/repo"),
       chunkMap,
       {},
       10,
       6,
-      undefined,
       undefined,
       120000,
       10,
@@ -408,7 +407,6 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
       10,
       6,
       undefined,
-      undefined,
       120000,
       10000,
       undefined,
@@ -559,7 +557,6 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
       10,
       6,
       undefined,
-      undefined,
       120000,
       10000,
       externalSem,
@@ -578,7 +575,6 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
       {},
       10,
       6,
-      undefined,
       undefined,
       120000,
       10000,
@@ -672,7 +668,6 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
       {},
       10,
       6,
-      undefined,
       undefined,
       120000,
       10000,

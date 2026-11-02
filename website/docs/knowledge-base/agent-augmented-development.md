@@ -44,24 +44,15 @@ These aren't predictions — they're observed in empirical studies of GitHub act
 
 ---
 
-## Why GIT SESSIONS Exists
+## Why Git Signals Count Commits, Not Sessions
 
-The research above lines up into a single problem: **commit-level churn metrics systematically misrepresent agent-heavy codebases**.
+The research above suggests that **commit-level churn metrics could misrepresent agent-heavy codebases**: an agent's burst of micro-commits looks like a hotspot.
 
-TeaRAGs addresses this via the GIT SESSIONS mode (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`). It groups commits by `(author, time gap)` — any silence gap larger than `TRAJECTORY_GIT_SESSION_GAP_MINUTES` (default 30) starts a new session. Session count, not raw commit count, feeds churn signals.
+TeaRAGs once shipped a GIT SESSIONS mode that grouped commits by `(author, time gap)` and fed session counts into churn signals. Measurement did not back it. A backtest that predicted future bug fixes from these signals found no consistent gain on two corpora, and files averaged only 1.02–1.17 commits per session, so the mode barely moved the numbers while making percentiles incomparable across indexes. It was removed; git signals count commits.
 
-Effect on each compromised metric:
+Where bursts do distort an answer — co-change, where one micro-commit spray would otherwise count as many co-changes — the co-change build groups commits into author bursts with a window estimated from the history itself.
 
-| Signal | Raw problem | Session-aware fix |
-|--------|-------------|-------------------|
-| `commitCount` | 20 micro-commits = "hotspot"; false positive | 20 → 1 session |
-| `bugFixRate` | Agent fix-and-retry loop inflates rate | Counted once per session |
-| `churnVolatility` | Agent bursts produce extreme stddev | Sessions smooth the burstiness |
-| `relativeChurn` | Cumulative lines changed across retries inflate | Deduplicated at session boundaries |
-
-`recentDominantAuthor` / `blameDominantAuthor` and `taskIds` are **unaffected** by session-mode deduplication — they're inherently per-author-per-ticket (or per live-line) and stay meaningful.
-
-See [Git Enrichment Pipeline → GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions) for the implementation detail and default tuning.
+See [Git Enrichment Pipeline → GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions) for what changed for existing indexes.
 
 ---
 

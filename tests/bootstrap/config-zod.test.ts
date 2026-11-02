@@ -403,6 +403,43 @@ describe("parseAppConfigZod", () => {
     });
   });
 
+  describe("removed env vars", () => {
+    it("ignores TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS and TRAJECTORY_GIT_SESSION_GAP_MINUTES with one removal notice each", async () => {
+      process.env.TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS = "true";
+      process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES = "45";
+      const { parseAppConfigZod } = await freshImport();
+      const { trajectoryGit, deprecations, flags } = parseAppConfigZod();
+
+      expect(trajectoryGit).not.toHaveProperty("squashAwareSessions");
+      expect(trajectoryGit).not.toHaveProperty("sessionGapMinutes");
+      expect(deprecations.filter((d) => d.oldName.startsWith("TRAJECTORY_GIT_S"))).toEqual([
+        { oldName: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS" },
+        { oldName: "TRAJECTORY_GIT_SESSION_GAP_MINUTES" },
+      ]);
+      // An ignored variable is no operator decision — never pinned into a registry stamp.
+      expect(flags.explicitEnvKeys).not.toContain("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS");
+      expect(flags.explicitEnvKeys).not.toContain("TRAJECTORY_GIT_SESSION_GAP_MINUTES");
+    });
+
+    it("raises no removal notice when the removed variables are unset", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { deprecations } = parseAppConfigZod();
+
+      expect(deprecations.filter((d) => d.newName === undefined)).toEqual([]);
+    });
+
+    it("describes a removed variable as ignored and a renamed one by its replacement", async () => {
+      const { describeDeprecation } = await freshImport();
+
+      expect(describeDeprecation({ oldName: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS" })).toBe(
+        "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS was removed and is ignored",
+      );
+      expect(describeDeprecation({ oldName: "TRANSPORT_MODE", newName: "SERVER_TRANSPORT" })).toBe(
+        "TRANSPORT_MODE -> use SERVER_TRANSPORT",
+      );
+    });
+  });
+
   describe("fallback chains", () => {
     it("TRANSPORT_MODE (old name) falls back correctly", async () => {
       process.env.TRANSPORT_MODE = "http";
@@ -828,8 +865,6 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.chunkMaxAgeMonths).toBe(6);
     expect(trajectoryGit.chunkTimeoutMs).toBe(120000);
     expect(trajectoryGit.chunkMaxFileLines).toBe(5000);
-    expect(trajectoryGit.squashAwareSessions).toBe(false);
-    expect(trajectoryGit.sessionGapMinutes).toBe(30);
     // Config passes the unset value raw; the git provider owns the default (umixb).
     expect(trajectoryGit.blamePoolSize).toBeUndefined();
     expect(defaultBlamePoolSize()).toBeGreaterThanOrEqual(1);

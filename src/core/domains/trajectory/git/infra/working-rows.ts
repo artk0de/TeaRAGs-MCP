@@ -34,7 +34,6 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { assembleOverlays } from "./assemble-overlays.js";
 import { buildAccumulators } from "./build-accumulators.js";
-import type { SquashOptions } from "./metrics.js";
 import { headRowSpanOfWorkingRows } from "./offset-tracker.js";
 
 /** One file's rows in its WORKING lines, with the working content they address. */
@@ -185,7 +184,7 @@ export async function carryDirtyChunkMapOntoHead(
 export function zeroOverlaysOfUncommittedRows(
   repoRoot: string,
   uncommittedRows: ReadonlyMap<string, ChunkLookupEntry[]>,
-  options: { fileChurnDataMap?: Map<string, FileChurnData>; maxFileLines: number; squashOpts?: SquashOptions },
+  options: { fileChurnDataMap?: Map<string, FileChurnData>; maxFileLines: number },
 ): Map<string, Map<string, ChunkChurnOverlay>> {
   if (uncommittedRows.size === 0) return new Map();
   const { relativeChunkMap, accumulators } = buildAccumulators(
@@ -197,6 +196,5 @@ export function zeroOverlaysOfUncommittedRows(
     relativeChunkMap,
     accumulators,
     ...(options.fileChurnDataMap ? { fileChurnDataMap: options.fileChurnDataMap } : {}),
-    ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
   });
 }

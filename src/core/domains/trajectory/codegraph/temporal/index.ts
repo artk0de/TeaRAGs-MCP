@@ -29,8 +29,7 @@ export const CODEGRAPH_TEMPORAL_TRAJECTORY_KEY = "codegraph.temporal";
  * to the pinned worker, where `createTemporalCochangeHooks` rebuilds the hook.
  * Every field is the git trajectory's own setting, so both read one history.
  * Bundling is not among them: the build derives its burst window from the
- * history (bd tea-rags-mcp-3vg0x) and never reads the git trajectory's
- * squash-aware session settings.
+ * history (bd tea-rags-mcp-3vg0x).
  */
 export interface TemporalCochangeConfig {
   /** `chunkMaxAgeMonths` — the discovery window both trajectories share. */

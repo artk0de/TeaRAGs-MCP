@@ -66,7 +66,6 @@ async function walkOnce(
     10,
     6,
     undefined,
-    undefined,
     120000,
     10000,
     undefined,

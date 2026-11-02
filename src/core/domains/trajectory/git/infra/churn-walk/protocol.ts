@@ -19,7 +19,6 @@ import type {
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import type { TaskIdVocabulary } from "../../history/index.js";
 import type { ChunkChurnOverlay } from "../../types.js";
-import type { SquashOptions } from "../metrics.js";
 import type { ChunkChurnWalkStats } from "../walk-commits.js";
 
 /** `workerData` every churn-walk worker is started with. */
@@ -50,7 +49,6 @@ export interface ChunkChurnWalkJobInput {
   blameByPath: Map<string, BlameLine[]>;
   /** File-churn slice for this batch's files (churnRatio denominator). */
   fileChurnData?: Map<string, FileChurnData>;
-  squashOpts?: SquashOptions;
   concurrency: number;
   maxAgeMonths: number;
   chunkTimeoutMs: number;

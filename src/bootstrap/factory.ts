@@ -387,15 +387,6 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddingConfig, buildEmbeddingBinding: buildBinding, embeddedRelease };
 }
 
-/** Squash-aware session grouping for git `commitCount`, shared by ingest and the working tree's on-demand reads. */
-function gitSquashOptionsOf(
-  trajectoryConfig: Pick<AppConfig["trajectoryIngest"], "squashAwareSessions" | "sessionGapMinutes">,
-): { squashAwareSessions: boolean; sessionGapMinutes: number } | undefined {
-  return trajectoryConfig.squashAwareSessions
-    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
-    : undefined;
-}
-
 /**
  * The git config the working tree's on-demand git signals compute with — the
  * knobs ingest's git trajectory reads from the same parsed config, so a block
@@ -403,11 +394,9 @@ function gitSquashOptionsOf(
  */
 function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>): WorkingTreeGitSignalConfig {
   const { trajectoryGit } = zodConfig;
-  const squashOpts = gitSquashOptionsOf(trajectoryGit);
   return {
     vcsAdapter: zodConfig.vcs.adapter,
     timeoutMs: trajectoryGit.logTimeoutMs,
-    ...(squashOpts ? { squashOpts } : {}),
     file: { maxAgeMonths: trajectoryGit.logMaxAgeMonths },
     chunk: {
       maxAgeMonths: trajectoryGit.chunkMaxAgeMonths,
@@ -421,16 +410,11 @@ function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>
   };
 }
 
-function wireComposition(
-  zodConfig: ReturnType<typeof getZodConfig>,
-  trajectoryConfig: AppConfig["trajectoryIngest"],
-  codegraph?: CodegraphDeps,
-): CompositionContext {
+function wireComposition(zodConfig: ReturnType<typeof getZodConfig>, codegraph?: CodegraphDeps): CompositionContext {
   // Thread git provider config into composition so the registry surfaces a
   // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
   // IngestFacade no longer constructs git inline — single source of truth is
   // the registry.
-  const squashOpts = gitSquashOptionsOf(trajectoryConfig);
   // Git enrichment DISPATCH runs INLINE (no workerDescriptor) — WorkerPoolEnrichmentExecutor
   // detects the missing descriptor and falls through to InlineEnrichmentExecutor,
   // which calls provider.buildFileSignals/buildChunkSignals directly in-process on
@@ -467,7 +451,6 @@ function wireComposition(
     // completion hook drains.
     git: {
       config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter },
-      squashOpts,
       temporalSymbolCommits: codegraph?.temporalSymbolCommits,
     },
     codegraph,
@@ -1340,7 +1323,7 @@ function createIngestFacade(
   config: AppConfig,
   shared: IngestSliceDeps,
 ): IngestFacade {
-  const facadeComposition = wireComposition(zodConfig, config.trajectoryIngest, shared.codegraphDeps);
+  const facadeComposition = wireComposition(zodConfig, shared.codegraphDeps);
   const enrichmentProviders = activeEnrichmentProviders(facadeComposition.registry, config.trajectoryIngest);
 
   const pipelineTuning = {
@@ -1543,7 +1526,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // after `codegraphContext` exists: snapshot retention compares against the
   // live base graph.
   const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
-  const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
+  const composition = wireComposition(zodConfig, codegraphContext?.deps);
   manifestLanguages.factory = composition.languageFactory;
 
   const { tracePathOps, ontologyReportOps } = createCodegraphOpsSection({

@@ -145,7 +145,6 @@ describe("chunk walk credits only changed rows, like `git log -L` (bd tea-rags-m
       4,
       WINDOW_MONTHS,
       undefined,
-      undefined,
       30000,
       10000,
       undefined,

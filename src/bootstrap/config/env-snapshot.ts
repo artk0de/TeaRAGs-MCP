@@ -97,8 +97,10 @@ export function buildRegistryEnvSnapshot(
   put("TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", trajectoryGit.chunkMaxAgeMonths);
   put("TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", trajectoryGit.chunkTimeoutMs);
   put("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", trajectoryGit.chunkMaxFileLines);
-  put("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", trajectoryGit.squashAwareSessions);
-  put("TRAJECTORY_GIT_SESSION_GAP_MINUTES", trajectoryGit.sessionGapMinutes);
+  // Removed flag, pinned at the only value a build can still produce: a stamp
+  // recorded with it on then differs, and the env drift axis reports the
+  // session-unit git payload with its `enrichment:git` remedy.
+  put("TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", false);
   put("TRAJECTORY_GIT_ANCHOR", trajectoryGit.anchor);
 
   put("INGEST_ENABLE_AST", ingest.enableAST);

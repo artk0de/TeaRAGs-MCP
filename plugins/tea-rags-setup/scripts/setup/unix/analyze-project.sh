@@ -52,7 +52,6 @@ AUTHOR_COMMIT_COUNT="null"
 HAS_FREQUENT_COMMITS="false"
 AVG_GAP_MINUTES="null"
 GIT_ENABLED="false"
-SQUASH_AWARE="false"
 
 if git -C "$PROJECT_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   IS_GIT_REPO="true"
@@ -94,7 +93,6 @@ if git -C "$PROJECT_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 
         if [ "$MEDIAN_GAP" -lt 30 ] 2>/dev/null; then
           HAS_FREQUENT_COMMITS="true"
-          SQUASH_AWARE="true"
         fi
       fi
     fi
@@ -104,11 +102,7 @@ fi
 # ---------------------------------------------------------------------------
 # Build recommendedEnv
 # ---------------------------------------------------------------------------
-RECOMMENDED_ENV="{\"TRAJECTORY_GIT_ENABLED\":\"${GIT_ENABLED}\""
-if [ "$SQUASH_AWARE" = "true" ]; then
-  RECOMMENDED_ENV="${RECOMMENDED_ENV},\"TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS\":\"true\""
-fi
-RECOMMENDED_ENV="${RECOMMENDED_ENV}}"
+RECOMMENDED_ENV="{\"TRAJECTORY_GIT_ENABLED\":\"${GIT_ENABLED}\"}"
 
 # ---------------------------------------------------------------------------
 # Output JSON

@@ -8,12 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { VcsGitAdapter } from "../../../../../../src/core/adapters/vcs/git/adapter.js";
-import type {
-  BlameLine,
-  CommitFileNumstat,
-  CommitInfo,
-  FileChurnData,
-} from "../../../../../../src/core/adapters/vcs/types.js";
+import type { BlameLine, CommitFileNumstat, CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
 import {
   authorIdentityKey,
   buildAuthorNameDirectory,
@@ -161,22 +156,6 @@ describe("sessions key by identity", () => {
   it("keeps two emails under one name in separate sessions", () => {
     const rows = [commit("a", "Test", "a1@x", BASE_TS), commit("b", "Test", "a2@x", BASE_TS + 5 * MIN)];
     expect(partitionIntoAuthorSessions(rows, (c) => c, 30)).toHaveLength(2);
-  });
-
-  it("squash-aware file signals keep one author for one identity", () => {
-    const churn: FileChurnData = {
-      commits: [
-        commit("a", "artk0de", ART, BASE_TS),
-        commit("b", "Arthur Korochansky", ART, BASE_TS + 5 * MIN),
-        commit("c", "bob", "bob@example.com", BASE_TS + 6 * MIN),
-      ],
-      linesAdded: 3,
-      linesDeleted: 0,
-    };
-    const signals = assembleFileSignals(churn, 10, { squashAwareSessions: true, sessionGapMinutes: 30 });
-    expect(signals.commitCount).toBe(2); // one session per identity, not three
-    expect(signals.recentContributorCount).toBe(2);
-    expect(signals.recentDominantAuthorEmail).toBe(ART);
   });
 });
 

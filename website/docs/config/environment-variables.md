@@ -101,9 +101,13 @@ and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
 | `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS`  | Git log depth for chunk-level churn (months)         | `6`      |
 | `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS`      | Timeout for chunk churn CLI pathspec (ms)            | `120000` |
 | `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`  | Skip chunk churn for files > N lines                 | `5000`   |
-| `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false`  |
-| `TRAJECTORY_GIT_SESSION_GAP_MINUTES`   | Gap between commits to split sessions                | `30`     |
 | `TRAJECTORY_GIT_ANCHOR`                | Clock git windows and ages are measured from: `now` (wall clock) or `head` (the HEAD commit's committer time) | `now`    |
+
+`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` and `TRAJECTORY_GIT_SESSION_GAP_MINUTES`
+are removed. A process that still sets either logs one "removed and is
+ignored" line among its deprecated env vars and counts commits. An index built
+with squash-aware sessions on reports env drift until its git signals are
+rebuilt: `tea-rags index-codebase --project <alias> --force-enrichments git`.
 
 `TRAJECTORY_GIT_ANCHOR=head` is for indexing a historical snapshot (a pinned
 benchmark checkout, an archived repository): with `now`, a tree whose last

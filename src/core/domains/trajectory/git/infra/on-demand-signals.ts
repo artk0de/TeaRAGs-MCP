@@ -63,7 +63,6 @@ import {
   type WindowedFileChurn,
 } from "./file-lifetime.js";
 import { buildFileSignalsForPaths, buildWindowedFileSignalsForPaths } from "./file-reader.js";
-import type { SquashOptions } from "./metrics.js";
 import { assembleFileSignals } from "./metrics/file-assembler.js";
 import { createPathspecNumstatReads, type PathspecNumstatReads } from "./pathspec-numstat-reads.js";
 import { carryWorkingRowsOntoHead, zeroOverlaysOfUncommittedRows } from "./working-rows.js";
@@ -89,7 +88,6 @@ export interface OnDemandGitSignalTarget {
 
 export interface OnDemandGitSignalOptions {
   timeoutMs: number;
-  squashOpts?: SquashOptions;
   /**
    * The file walk's window (`TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`), as ingest
    * configures it. Absent → every path is read over its whole history, as the
@@ -204,7 +202,6 @@ export async function buildOnDemandGitSignals(
               file: assembleFileSignals(
                 data,
                 target.lineCount,
-                options.squashOpts,
                 buildBugFixShaSet(data.commits),
                 blameByPath.get(target.relPath),
                 taskIdVocabulary,
@@ -218,7 +215,6 @@ export async function buildOnDemandGitSignals(
     const zero = zeroOverlaysOfUncommittedRows(adapter.repoRoot, uncommittedRows, {
       fileChurnDataMap: churn,
       maxFileLines: options.chunk.maxFileLines,
-      ...(options.squashOpts ? { squashOpts: options.squashOpts } : {}),
     });
     const walked =
       chunkMap.size === 0
@@ -341,7 +337,6 @@ async function walkChunks(
     options.chunk.concurrency,
     options.chunk.maxAgeMonths,
     churn,
-    options.squashOpts,
     options.chunk.timeoutMs,
     options.chunk.maxFileLines,
     undefined,

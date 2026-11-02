@@ -259,7 +259,7 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
     expect(churn.get("Old/f.txt")?.linesAdded).toBe(1);
   });
 
-  it("file signals span the whole history, including the squash-aware session count", async () => {
+  it("file signals span the whole history", async () => {
     buildRenamedHistory();
 
     const churn = await new FileChurnDiscovery(adapter, {
@@ -274,10 +274,6 @@ describe("file-level git churn follows renames (bd tea-rags-mcp-aikfk)", () => {
     expect(perCommit.firstCreatedAt).toBe(renamed.commits.at(-1)?.timestamp);
     expect(renamed.commits.at(-1)?.sha).toBe(sha.c1);
     expect(perCommit.bugFixRate).toBe(Math.round((1 / 6) * 100));
-
-    // c2 + c3 (Alice, 5 minutes apart) collapse into one session.
-    const sessions = assembleFileSignals(renamed, 6, { squashAwareSessions: true, sessionGapMinutes: 30 });
-    expect(sessions.commitCount).toBe(5);
   });
 
   it("a warm top-up whose prior snapshot holds the pre-rename commits merges them into the HEAD path", async () => {

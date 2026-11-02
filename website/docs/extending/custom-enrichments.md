@@ -211,7 +211,7 @@ Edit `src/core/domains/ingest/pipeline/enrichment/trajectory/registry.ts` — or
 ```ts
 export function createEnrichmentProviders(config: AppConfig): EnrichmentProvider[] {
   return [
-    new GitEnrichmentProvider(config.trajectoryGit, squashOpts),
+    new GitEnrichmentProvider(config.trajectoryGit),
     new CoverageEnrichmentProvider(config.coverage), // ← new line
   ];
 }

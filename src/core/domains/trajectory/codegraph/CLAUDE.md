@@ -492,12 +492,10 @@
   supports and the significance gate's n_f / M / Qs — counts a file or a pair
   once per burst, a pair only when ONE commit held it (bd tea-rags-mcp-3vg0x). W
   comes from the history itself (`estimateBurstWindow`) and is recorded in
-  `cg_temporal_meta`; the build never reads the git trajectory's squash-aware
-  session settings, so flipping `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` moves git
-  signals only. Why: 30-minute session unions paired files no commit held and
-  chained concurrent agent commits into blobs, while plain per-commit counting
-  is overconfident on WIP sprays (burst-preserving null). Each bundle file also
-  carries its commit's numstat `+/-` line counts, keyed by HEAD path
+  `cg_temporal_meta`. Why: 30-minute session unions paired files no commit held
+  and chained concurrent agent commits into blobs, while plain per-commit
+  counting is overconfident on WIP sprays (burst-preserving null). Each bundle
+  file also carries its commit's numstat `+/-` line counts, keyed by HEAD path
   (`cg_temporal_bundle_files.lines_added/lines_deleted`, migration 046).
 
 - **A mechanical commit leaves the shotgun history whole, never weighted 0; an

@@ -83,8 +83,6 @@ export interface TrajectoryGitConfig {
    * tea-rags-mcp-umixb).
    */
   blamePoolSize?: number;
-  squashAwareSessions: boolean;
-  sessionGapMinutes: number;
   /**
    * The instant every git window and age is measured from: "now" = the wall
    * clock, "head" = the HEAD commit's committer time, resolved once per run

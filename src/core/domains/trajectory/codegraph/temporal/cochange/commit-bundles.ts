@@ -14,8 +14,7 @@
  * (author identity, gap) grouping rule, with the co-change build's own W. The
  * earlier rule — the members of a 30-minute session UNIONED into one bundle —
  * paired files no commit ever held together and chained concurrent agent
- * commits into blobs; it is gone, and the build no longer reads
- * `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS`.
+ * commits into blobs; it is gone.
  */
 
 import type { CommitInfo } from "../../../../../adapters/vcs/index.js";

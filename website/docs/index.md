@@ -149,13 +149,10 @@ Qdrant and DuckDB run embedded — no Docker, no servers to manage.
 
 - **Developers in large monorepos** — where "find similar code" returns a dozen
   near-duplicates and you need the _canonical_ one
-- **Solo devs doing agentic development** — agent-driven workflows produce
-  bursts of micro-commits that wreck churn metrics. TeaRAGs ships a
-  [**GIT SESSIONS**](/architecture/git-enrichment-pipeline#git-sessions) mode
-  (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`) that groups commits by
-  `(author, time gap)` so a 20-commit refactor session counts as **one**.
-  Churn, bug-fix rate, and ownership stay meaningful even with a single
-  human + an agent as the only contributors.
+- **Solo devs doing agentic development** — churn, bug-fix rate, and
+  ownership stay meaningful even with a single human + an agent as the only
+  contributors, and co-change counts an agent's burst of micro-commits as one
+  change.
 - **Tech leads worried about AI code quality** — who want their team's agents
   to learn from stable modules, not from last sprint's hotspot
 - **Privacy-sensitive teams** — finance, healthcare, defense, or anyone who

@@ -76,7 +76,6 @@ describe("REGISTRY_ENV_GROUPS", () => {
       "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
       "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
       "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
-      "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
       // ingest modes + tune + chunking
       "INGEST_ENABLE_AST",
       "INGEST_ENABLE_HYBRID",
@@ -231,7 +230,6 @@ describe("RegistryEnvGroup.consequence", () => {
       "enrichment:git TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
       "enrichment:git TRAJECTORY_GIT_ENABLED",
       "enrichment:git TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
-      "enrichment:git TRAJECTORY_GIT_SESSION_GAP_MINUTES",
       "enrichment:git TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
     ]);
   });

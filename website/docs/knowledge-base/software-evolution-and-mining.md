@@ -81,7 +81,7 @@ The mapping from the literature to what TeaRAGs stores:
 
 ## Commit-History Assumptions That Don't Always Hold
 
-The research above assumes **human-authored commits at logical granularity**. Agent-assisted development breaks this assumption — agents commit in micro-increments, inflating every commit-count-based metric. TeaRAGs addresses this with [GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions) (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`) which groups bursts of commits into sessions.
+The research above assumes **human-authored commits at logical granularity**. Agent-assisted development breaks this assumption — agents commit in micro-increments, inflating every commit-count-based metric. TeaRAGs tried grouping bursts into sessions ([GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions)) and removed it when a bug-fix-prediction backtest showed no consistent gain; the co-change build still counts an author's burst once.
 
 See [Agent-Augmented Development](/knowledge-base/agent-augmented-development) for the research on how AI assistance changes repository mining. The short version: the signals still work, but they need to be computed on sessions rather than raw commits.
 

@@ -32,7 +32,6 @@ export {
   type OnDemandGitSignalTarget,
 } from "./infra/on-demand-signals.js";
 export { OnDemandHeadGitReadMemo } from "./infra/on-demand-head-git-reads.js";
-export type { SquashOptions } from "./infra/metrics.js";
 export { defaultBlamePoolSize } from "./infra/churn-walk/blame-pool-defaults.js";
 // The query-time half of TRAJECTORY_GIT_ANCHOR (bd tea-rags-mcp-zwu7m): the
 // clock a read measures stored ages from, taken from the index's stamped mode.
