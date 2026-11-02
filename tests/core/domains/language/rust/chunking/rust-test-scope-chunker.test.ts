@@ -216,8 +216,9 @@ pub fn other_production_value(input: usize) -> usize {
     const docs = ["Documented test module.", "Documented fixture.", "Documented test impl.", "Documented test struct."];
 
     for (const chunk of chunks.filter((candidate) => !isTestChunk(candidate.metadata.chunkType))) {
-      for (const doc of docs)
+      for (const doc of docs) {
         expect(chunk.content, `${chunk.metadata.chunkType} ${chunk.startLine}`).not.toContain(doc);
+      }
     }
     // Rows of `/// Documented test module.`, `/** Documented fixture. */`,
     // `/// Documented test impl.` and `/// Documented test struct.`.
@@ -455,6 +456,63 @@ pub fn make_fixture() -> Vec<u8> {
     expect(typeOf("pub fn make_fixture")).toBe("function");
     expect(typeOf("fn new()")).not.toMatch(/^test/);
     expect(typeOf("fn uses_fixture()")).toBe("test");
+  });
+});
+
+// A claimed test item nested in a non-test module hangs under the module path
+// the engine composes for its relabelled leaves (`inner.accelerates_from_idle`,
+// `outer::deep.deep_test_runs_fine`), not under the file subject.
+describe("TreeSitterChunker — Rust test items nested in a non-test module", () => {
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  });
+
+  const ENGINE_RS = `pub mod inner {
+    pub struct Engine { pub speed: u64 }
+    impl Engine { pub fn accelerate(&mut self, delta: u64) -> u64 { self.speed += delta; self.speed } }
+    #[cfg(test)]
+    impl Engine { pub fn idle_for_tests() -> Self { Engine { speed: 0 } } }
+    #[cfg(test)]
+    fn engine_fixture_with_speed(speed: u64) -> Engine { Engine { speed } }
+    #[test]
+    fn accelerates_from_idle() { let mut e = engine_fixture_with_speed(0); assert_eq!(e.accelerate(3), 3); }
+    #[cfg(test)]
+    mod tests { #[test] fn it_works() { assert_eq!(super::engine_fixture_with_speed(1).speed, 1); } }
+}
+
+pub mod outer {
+    pub mod deep {
+        pub fn production_value(input: u64) -> u64 { input.saturating_mul(2).saturating_add(1) }
+        #[cfg(test)]
+        impl Probe { pub fn probe_for_tests() -> Self { Probe { speed: 0, label: String::new() } } }
+        #[test]
+        fn deep_test_runs_fine() { assert_eq!(super::deep::production_value(1), 3); }
+    }
+}
+`;
+
+  const byId = <T extends { metadata: { symbolId?: string } }>(chunks: T[], id: string): T | undefined =>
+    chunks.find((chunk) => chunk.metadata.symbolId === id);
+
+  it("ids a claimed test-only impl under its enclosing module, as the engine ids the module's test leaves", async () => {
+    const chunks = await chunker.chunk(ENGINE_RS, "src/engine.rs", "rust");
+
+    expect(byId(chunks, "inner.Engine")?.metadata.chunkType).toBe("test_setup");
+    expect(byId(chunks, "inner.Engine")?.metadata.parentSymbolId).toBe("inner");
+    expect(byId(chunks, "inner.engine_fixture_with_speed")?.metadata.chunkType).toBe("test_setup");
+    expect(byId(chunks, "inner.accelerates_from_idle")?.metadata.chunkType).toBe("test");
+    expect(byId(chunks, "inner::tests.it_works")?.metadata.chunkType).toBe("test");
+    expect(chunks.some((chunk) => chunk.metadata.symbolId?.startsWith("engine."))).toBe(false);
+  });
+
+  it("joins two enclosing modules with the engine's scope separator", async () => {
+    const chunks = await chunker.chunk(ENGINE_RS, "src/engine.rs", "rust");
+
+    expect(byId(chunks, "outer::deep.Probe")?.metadata.chunkType).toBe("test_setup");
+    expect(byId(chunks, "outer::deep.deep_test_runs_fine")?.metadata.chunkType).toBe("test");
   });
 });
 

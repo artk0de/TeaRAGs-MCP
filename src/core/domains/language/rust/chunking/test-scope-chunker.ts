@@ -23,6 +23,7 @@ import type {
 } from "../../../../contracts/types/chunker.js";
 import { produceTestScopeChunks, TEST_SCOPE_CHUNK_VOCABULARY, type ScopeChunkVocabulary } from "../../kernel/index.js";
 import { isInInlineTestOnlyFile, isInlineTestNode, isRustTestFunctionNode } from "../inline-tests.js";
+import { rustKernel } from "../kernel.js";
 
 /**
  * The item compiles only in the test build: it is test-only itself
@@ -219,9 +220,31 @@ export function buildRustTestScope(containerNode: AstNode, code: string): TestSc
   return buildRustScope(containerNode, code, "", testItemStart(containerNode));
 }
 
-/** The subject every Rust test id hangs under: the file's basename without `.rs`. */
+/** The subject a top-level Rust test id hangs under: the file's basename without `.rs`. */
 function rustFileSubject(filePath: string): string {
   return filePath.replace(/\\/g, "/").split("/").at(-1)?.replace(/\.rs$/, "") || "rust";
+}
+
+/**
+ * The path of the scope containers enclosing `node`, composed as the engine
+ * composes a module's leaves — the kernel's `scopeContainerTypes`, joined
+ * with its `scopeSeparator` (`inner`, `outer::deep`) — or `undefined` at file
+ * top level. A claimed test item inside a module hangs under it, so its id
+ * agrees with the engine's ids for the same module's relabelled test leaves
+ * (`inner.Engine` beside `inner.accelerates_from_idle`).
+ */
+function enclosingScopePath(node: AstNode): string | undefined {
+  const scopeTypes = rustKernel.scopeContainerTypes ?? [];
+  const names: string[] = [];
+  for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+    if (scopeTypes.includes(ancestor.type)) names.unshift(nodeName(ancestor));
+  }
+  return names.length > 0 ? names.join(rustKernel.scopeSeparator ?? ".") : undefined;
+}
+
+/** The subject a claimed test item's ids hang under: its enclosing module path, else the file subject. */
+function rustTestIdSubject(node: AstNode, filePath: string): string {
+  return enclosingScopePath(node) ?? rustFileSubject(filePath);
 }
 
 export function rustTestScopeChunks(
@@ -230,7 +253,11 @@ export function rustTestScopeChunks(
   filePath: string,
   config: HookChunkingConfig,
 ): BodyChunkResult[] {
-  return produceTestScopeChunks(buildRustTestScope(containerNode, code), rustFileSubject(filePath), config);
+  return produceTestScopeChunks(
+    buildRustTestScope(containerNode, code),
+    rustTestIdSubject(containerNode, filePath),
+    config,
+  );
 }
 
 /**
@@ -272,7 +299,7 @@ export function rustInlineItemChunks(
   filePath: string,
   config: HookChunkingConfig,
 ): BodyChunkResult[] {
-  const subject = rustFileSubject(filePath);
+  const subject = rustTestIdSubject(node, filePath);
   return produceTestScopeChunks(
     buildRustInlineItemScope(node, subject, itemSource),
     subject,

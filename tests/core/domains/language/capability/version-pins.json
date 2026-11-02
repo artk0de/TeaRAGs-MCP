@@ -70,7 +70,7 @@
   "rust": {
     "chunking": {
       "version": 5,
-      "digest": "sha256:6a00cf103c99fdc7801428dd96a64a4087c2bf53af5f90ed4a69a8c1291e87ff"
+      "digest": "sha256:320e742f2e877ac06200e4382b04f8c8313e0bf6c088111e10ee6ea552c5f484"
     },
     "walker": {
       "version": 12,
