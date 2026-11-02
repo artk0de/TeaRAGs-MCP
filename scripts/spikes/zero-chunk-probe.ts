@@ -82,7 +82,7 @@ async function main(): Promise<void> {
       if (code.trim() === "") reason = "emptyFile";
       else {
         // Report the gate under the name the skip record persists (`secretsGate`).
-        const gate = sourceContentSkipReason(filePath, relativePath, code, language);
+        const gate = sourceContentSkipReason(filePath, relativePath, code, language, root);
         reason = gate === "secrets" ? "secretsGate" : gate;
         if (!reason) {
           try {

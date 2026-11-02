@@ -177,7 +177,7 @@ export class SourceFileIngestor {
   ): PreParseSkipReason | undefined {
     const { coordinator } = this.deps.options;
     if (coordinator && !coordinator.canUpsertForFile(relativePath)) return "delete-failed";
-    return sourceContentSkipReason(filePath, relativePath, code, language);
+    return sourceContentSkipReason(filePath, relativePath, code, language, this.deps.basePath);
   }
 
   /**

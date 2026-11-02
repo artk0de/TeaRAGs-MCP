@@ -22,7 +22,12 @@ import { join } from "node:path";
 
 import { toQdrantPointId } from "../../../adapters/qdrant/point-id.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
-import { isCompiledJsContent, isJsFamilyPath, isTestPath } from "../../../primitives/paths/index.js";
+import {
+  isCompiledJsContent,
+  isDeclaredTestFile,
+  isJsFamilyPath,
+  isTestPath,
+} from "../../../primitives/paths/index.js";
 import { buildChunkPointPayload } from "./chunk-point-payload.js";
 import { assignNavigationAndDocSymbolId } from "./chunker/chunk-navigation.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
@@ -39,15 +44,19 @@ export type SourceContentSkipReason = "secrets" | "compiled";
  * The content gates ingest applies before parse, cheapest first:
  * credential-looking content outside tests, and a compiled JS bundle that
  * slipped past the scanner's path ignore (9oq5e Layer 2 — JS family only,
- * gated on extension so `.mjs`/`.cjs` are covered).
+ * gated on extension so `.mjs`/`.cjs` are covered). A test is a conventional
+ * test path or a file the run of `projectRoot` declared test code (bd
+ * tea-rags-mcp-52wk3.10) — test utilities routinely hold fake keys.
  */
 export function sourceContentSkipReason(
   filePath: string,
   relativePath: string,
   code: string,
   language: string,
+  projectRoot: string,
 ): SourceContentSkipReason | undefined {
-  if (!isTestPath(relativePath, language) && containsSecrets(code)) return "secrets";
+  const isTest = isTestPath(relativePath, language) || isDeclaredTestFile(relativePath, projectRoot);
+  if (!isTest && containsSecrets(code)) return "secrets";
   if (isJsFamilyPath(filePath) && isCompiledJsContent(code)) return "compiled";
   return undefined;
 }
@@ -77,7 +86,7 @@ export async function buildFileChunkPoints(
   const { root, relativePath, code } = file;
   const filePath = join(root, relativePath);
   const language = detectLanguage(filePath);
-  if (sourceContentSkipReason(filePath, relativePath, code, language)) return [];
+  if (sourceContentSkipReason(filePath, relativePath, code, language, root)) return [];
 
   const { chunks, imports: astImports } = await pool.processFile(filePath, code, language, false);
   const imports = astImports ?? extractImportsExports(code, language).imports;
