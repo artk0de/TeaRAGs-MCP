@@ -65,6 +65,14 @@ export interface EnrichmentRunSpec {
    * `outcome.degraded`; the pipeline log alone let such a recompute end clean.
    */
   readonly storeReadFailedProviderKeys?: ReadonlySet<string>;
+  /**
+   * Providers that already FAILED before the run opened, with the cause — only
+   * the recompute's forced repair reports them (bd tea-rags-mcp-xvik1). The run
+   * marks each failed at begin (`FilePhase#markProviderFailed`): it streams and
+   * finalizes nothing for them, and their terminal markers read `failed`,
+   * which is what reaches `outcome.failed`, while every other provider runs.
+   */
+  readonly failedProviderErrors?: ReadonlyMap<string, unknown>;
 }
 
 /** A run's coverage is its scope's kind — derived, never set beside it, so the two cannot disagree. */
@@ -108,6 +116,8 @@ export function recomputeRunSpec(input: {
   runRelPaths?: readonly string[];
   /** Providers the forced repair could not read — see `EnrichmentRunSpec.storeReadFailedProviderKeys`. */
   storeReadFailedProviderKeys?: ReadonlySet<string>;
+  /** Providers the forced repair failed — see `EnrichmentRunSpec.failedProviderErrors`. */
+  failedProviderErrors?: ReadonlyMap<string, unknown>;
 }): EnrichmentRunSpec {
   const { languages, ...rest } = input;
   return { ...rest, crossPass: false, scope: { kind: "wholeCorpus", languages } };
