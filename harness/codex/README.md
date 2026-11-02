@@ -60,6 +60,8 @@ commits it.
   mentions).
 - `dinopowers/skills/dino-<s>/` — the wrappers; `dinopowers/CHAINING.md`,
   `dinopowers/FRESHNESS.md` — files they link to.
+- `tea-rags-setup/` — the `$install` and `$tune` skills plus the Node helpers
+  they run (`scripts/*.mjs`); manifest `skills` only (no hooks, no MCP server).
 
 ## Install
 

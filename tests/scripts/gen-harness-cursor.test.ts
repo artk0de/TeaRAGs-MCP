@@ -488,12 +488,13 @@ describe("renderCursorHarness — dinopowers package", () => {
     expect(table).not.toContain("Skill(");
   });
 
-  it("lists both plugins in the root marketplace", async () => {
+  it("lists every plugin in the root marketplace", async () => {
     const { plugins } = JSON.parse(await renderCursorMarketplace(ROOT));
 
     expect(plugins).toEqual([
       { name: "tea-rags", source: "./harness/cursor/tea-rags" },
       { name: "dinopowers", source: "./harness/cursor/dinopowers" },
+      { name: "tea-rags-setup", source: "./harness/cursor/tea-rags-setup" },
     ]);
   });
 });

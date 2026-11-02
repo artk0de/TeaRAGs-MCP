@@ -912,12 +912,13 @@ describe("renderCodexHarness — dinopowers package", () => {
     }
   });
 
-  it("lists both plugins in the root marketplace", async () => {
+  it("lists every plugin in the root marketplace", async () => {
     const marketplace = JSON.parse(await renderCodexMarketplace(ROOT));
 
     expect(marketplace.plugins.map((plugin: { source: { path: string } }) => plugin.source.path)).toEqual([
       "./harness/codex/tea-rags",
       "./harness/codex/dinopowers",
+      "./harness/codex/tea-rags-setup",
     ]);
   });
 });
