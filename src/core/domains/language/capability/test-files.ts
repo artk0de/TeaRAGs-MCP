@@ -20,14 +20,12 @@ import type { LanguageCapability } from "../../../contracts/types/language.js";
  * case-insensitively; every other capitalised suffix here is PascalCase-only.
  */
 export const TEST_FILES_OF_LANGUAGES_WITHOUT_VERTICAL: Readonly<Record<string, TestFileConvention>> = {
-  php: { patterns: ["**/*Test.php"] },
   c_sharp: { patterns: ["**/*Test.cs", "**/*Tests.cs"] },
   cpp: {
     patterns: ["**/*Test.cpp", "**/*Tests.cpp", "**/*Test.cc", "**/*Tests.cc", "**/*Test.cxx", "**/*Tests.cxx"],
     mixedCaseSuffixes: true,
   },
   c: { patterns: ["**/*Test.c", "**/*Tests.c"], mixedCaseSuffixes: true },
-  kotlin: { patterns: ["**/*Test.kt"] },
   dart: { patterns: ["**/*_test.dart"] },
   scala: { patterns: ["**/*Spec.scala", "**/*Test.scala"] },
   clojure: { patterns: ["**/*_test.clj", "**/*_test.cljs"] },

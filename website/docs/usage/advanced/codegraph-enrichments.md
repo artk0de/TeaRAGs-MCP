@@ -81,7 +81,7 @@ index holds no codegraph data, so nothing is rebuilt and no drift asks for
 
 ## Supported Languages
 
-Graph extraction runs for **8 languages** across 15 extensions:
+Graph extraction runs for **11 languages** across 19 extensions:
 
 | Language   | Extensions                    |
 | ---------- | ----------------------------- |
@@ -93,9 +93,12 @@ Graph extraction runs for **8 languages** across 15 extensions:
 | Java       | `.java`                       |
 | Rust       | `.rs`                         |
 | Bash       | `.sh`, `.bash`                |
+| Objective-C | `.m`, `.mm`                  |
+| PHP        | `.php`                        |
+| Kotlin     | `.kt`                         |
 
 Files in other languages are still indexed and embedded by tea-rags — they just
-carry no codegraph signals.
+carry no codegraph signals. Objective-C headers (`.h`) stay classified as C.
 
 ### Rust compiler driver
 

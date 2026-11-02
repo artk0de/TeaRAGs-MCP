@@ -48,7 +48,7 @@ vi.mock("cli-progress", () => ({
 describe("formatProgressLine", () => {
   it("formats an embedding message", () => {
     const line = formatProgressLine({ type: "embedding", phase: "embedding", percentage: 45, current: 45, total: 100 });
-    expect(line).toContain("embedding");
+    expect(line?.startsWith("embed")).toBe(true);
     expect(line).toContain("45%");
   });
 
@@ -1588,5 +1588,41 @@ describe("TtyProgressRenderer — only the embedding phase drives the embeddings
     const st = barStates.get("embedding")!;
     expect(st.totalFinal).toBe(false);
     expect(st.value).toBe(0);
+  });
+});
+
+describe("the progress label names the real phase", () => {
+  const colors = createColorizer({ env: {}, isTTY: false });
+
+  beforeEach(() => {
+    mockMultibar.create.mockClear();
+    mockMultibar.stop.mockClear();
+    mockMultibar.log.mockClear();
+    mockSingleBar.update.mockClear();
+    mockSingleBar.setTotal.mockClear();
+    mockMultibar.create.mockReturnValue(mockSingleBar);
+  });
+
+  function barLabel(r: TtyProgressRenderer): string {
+    const { barStates } = r as unknown as { barStates: Map<string, { label: string }> };
+    return barStates.get("embedding")?.label ?? "";
+  }
+
+  it("shows scan, then chunk, then embed on the bar without DEBUG", () => {
+    delete process.env.DEBUG;
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding", phase: "scanning", percentage: 0, current: 0, total: 100 });
+    expect(barLabel(r).trim()).toBe("scan");
+    r.handle({ type: "embedding", phase: "chunking", percentage: 10, current: 1, total: 10 });
+    expect(barLabel(r).trim()).toBe("chunk");
+    r.handle({ type: "embedding", phase: "storing", percentage: 90, current: 9, total: 10 });
+    expect(barLabel(r).trim()).toBe("store");
+    r.handle({ type: "embedding", phase: "embedding", percentage: 20, current: 2, total: 10, totalFinal: true });
+    expect(barLabel(r).trim()).toBe("embed");
+  });
+
+  it("names the phase on the non-TTY line", () => {
+    const line = formatProgressLine({ type: "embedding", phase: "scanning", percentage: 0, current: 0, total: 100 });
+    expect(line?.startsWith("scan")).toBe(true);
   });
 });

@@ -11,7 +11,8 @@ import { languageIngestIgnoreContribution } from "../../src/core/domains/languag
 /**
  * The composition root hands the languages' ignore contributions to every
  * scanner it builds, so the working-tree admission rejects what an index run
- * never walks — here a crate vendored by `cargo vendor`.
+ * never walks — a `vendor/` tree by name, and a crate vendored by `cargo vendor`
+ * wherever it sits.
  */
 describe("language ignore contributions reach every composed scanner", () => {
   let root: string;
@@ -27,6 +28,8 @@ describe("language ignore contributions reach every composed scanner", () => {
     write("src/main.py", "print(1)\n");
     write("vendor/serde/.cargo-checksum.json", '{"files":{}}\n');
     write("vendor/serde/src/lib.rs");
+    write("third_party/serde/.cargo-checksum.json", '{"files":{}}\n');
+    write("third_party/serde/src/lib.rs");
   });
 
   afterEach(() => {
@@ -45,6 +48,7 @@ describe("language ignore contributions reach every composed scanner", () => {
     })(root);
     expect(accepts("src/main.py")).toBe(true);
     expect(accepts("vendor/serde/src/lib.rs")).toBe(false);
+    expect(accepts("third_party/serde/src/lib.rs")).toBe(false);
   });
 
   // bd tea-rags-mcp-d9w4o: the ignoredPath answer asks the same composed scanner why.
@@ -59,7 +63,8 @@ describe("language ignore contributions reach every composed scanner", () => {
       turboQuant: false,
     })(root);
     expect(exclusionOf("src/main.py", false)).toBeUndefined();
-    expect(exclusionOf("vendor/serde", true)).toEqual({});
+    expect(exclusionOf("vendor/serde", true)).toEqual({ ignoreRule: "vendor/" });
+    expect(exclusionOf("third_party/serde", true)).toEqual({});
     expect(exclusionOf("logs/run.log", false)).toEqual({ ignoreRule: "*.log" });
   });
 

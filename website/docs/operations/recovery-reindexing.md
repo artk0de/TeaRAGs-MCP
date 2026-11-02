@@ -114,6 +114,23 @@ When you run `index_codebase` with `forceReindex: true`:
 
 If the rebuild fails, the alias stays on the old collection and the new one is cleaned up. Your search never saw a broken index.
 
+## Interrupted first index
+
+A first index creates the collection alias only when the run finishes. Until
+then the points live in an unaliased physical collection (`<alias>_vN`). The
+next `tea-rags index-codebase` or `index_codebase` **without** `--force` adopts
+that collection and continues it: files already stored are kept, and the run
+ingests what is still missing or has changed. The alias is still created only
+when the run finishes.
+
+`--force` does not resume that collection. It starts a new generation.
+
+A generation whose heartbeat is still live is refused with
+`INGEST_INDEXING_IN_PROGRESS`. When two unfinished generations both have resume
+checkpoints, TeaRAGs does not pick one; that run allocates a new generation
+instead. The checkpoint directory is `snapshots/<alias>.resume/<physical>/`,
+beside the sharded snapshot, not inside it.
+
 ## Resuming Interrupted Indexing
 
 Indexing is **checkpoint-based**. If the process dies mid-run:

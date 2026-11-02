@@ -13,6 +13,9 @@ const DISPLAY: readonly (readonly [string, string])[] = [
   ["ruby", "Ruby"],
   ["bash", "Bash"],
   ["swift", "Swift"],
+  ["objc", "Objective-C"],
+  ["php", "PHP"],
+  ["kotlin", "Kotlin"],
   ["markdown", "Markdown"],
   ["yaml", "YAML"],
 ];

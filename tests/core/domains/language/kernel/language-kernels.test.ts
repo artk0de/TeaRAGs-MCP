@@ -24,7 +24,10 @@ import { bashKernel } from "../../../../../src/core/domains/language/bash/index.
 import { goKernel } from "../../../../../src/core/domains/language/go/index.js";
 import { javaKernel } from "../../../../../src/core/domains/language/java/index.js";
 import { javascriptKernel } from "../../../../../src/core/domains/language/javascript/index.js";
+import { kotlinKernel } from "../../../../../src/core/domains/language/kotlin/index.js";
 import { markdownKernel } from "../../../../../src/core/domains/language/markdown/index.js";
+import { objcKernel } from "../../../../../src/core/domains/language/objc/index.js";
+import { phpKernel } from "../../../../../src/core/domains/language/php/index.js";
 import { pythonKernel } from "../../../../../src/core/domains/language/python/index.js";
 import { rubyKernel } from "../../../../../src/core/domains/language/ruby/index.js";
 import { rustKernel } from "../../../../../src/core/domains/language/rust/index.js";
@@ -51,6 +54,9 @@ const sourceKernels = {
   rust: rustKernel,
   bash: bashKernel,
   swift: swiftKernel,
+  objc: objcKernel,
+  php: phpKernel,
+  kotlin: kotlinKernel,
 } as const;
 
 describe("LanguageKernel.isInstanceMethod", () => {

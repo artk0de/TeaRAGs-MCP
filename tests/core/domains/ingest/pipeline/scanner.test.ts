@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { promises as fsp, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-log/index.js";
 import { FileScanner } from "../../../../../src/core/domains/ingest/pipeline/scanner.js";
+import { setDebug } from "../../../../../src/core/primitives/diagnostics/debug-flag.js";
 import type { ScannerConfig } from "../../../../../src/core/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -141,6 +143,8 @@ describe("FileScanner", () => {
       writeFileSync(join(tmpDir, ".next", "app.js"), "export const x = 1;");
       mkdirSync(join(tmpDir, "target"), { recursive: true });
       writeFileSync(join(tmpDir, "target", "Main.java"), "class Main {}");
+      mkdirSync(join(tmpDir, "vendor", "example.com", "mod"), { recursive: true });
+      writeFileSync(join(tmpDir, "vendor", "example.com", "mod", "mod.go"), "package mod");
       // Language caches
       mkdirSync(join(tmpDir, "__pycache__"), { recursive: true });
       writeFileSync(join(tmpDir, "__pycache__", "module.cpython-311.pyc"), "compiled");
@@ -153,7 +157,7 @@ describe("FileScanner", () => {
       writeFileSync(join(tmpDir, "lib.py"), "def x(): pass");
 
       const localScanner = new FileScanner({
-        supportedExtensions: [".ts", ".js", ".py", ".pyc", ".java"],
+        supportedExtensions: [".ts", ".js", ".py", ".pyc", ".java", ".go"],
         ignorePatterns: [],
       });
       await localScanner.loadIgnorePatterns(tmpDir);
@@ -166,6 +170,7 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.includes("/_nuxt/"))).toBe(false);
       expect(files.some((f) => f.includes("/.next/"))).toBe(false);
       expect(files.some((f) => f.includes("/target/"))).toBe(false);
+      expect(files.some((f) => f.includes("/vendor/"))).toBe(false);
       // Language caches excluded
       expect(files.some((f) => f.includes("/__pycache__/"))).toBe(false);
       expect(files.some((f) => f.endsWith(".pyc"))).toBe(false);
@@ -353,23 +358,16 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.endsWith("package.json"))).toBe(false); // dropped
     });
 
-    // Compiled / vendored JS assets (Rails vendored libs, sprockets/webpacker
-    // output, JS build dirs) are NOT code a RAG wants and were the ~51s
-    // tree-sitter hotspot (huginn vendor/assets/javascripts/d3.js, 268KB
-    // compiled d3 v3). Drop those asset DIRS by path with a NARROW
-    // `vendor/assets` glob — NOT a bare `**/vendor/**` — so ordinary vendored
-    // sources elsewhere under vendor/ still descend (9oq5e Layer 1).
-    it("excludes compiled/vendored JS asset dirs (vendor/assets, public/packs, dist) while keeping sources and descending vendor/", async () => {
+    // Compiled JS assets and the whole vendor/ tree are not project source.
+    // vendor/ is a directory ignore, so the walker does not descend into it.
+    it("excludes vendor/, compiled asset dirs (public/packs, dist) and keeps project sources", async () => {
       const tmpDir = mkdtempSync(join(tmpdir(), "scanner-compiledjs-"));
-      // compiled / vendored JS asset locations — must be IGNORED
       mkdirSync(join(tmpDir, "vendor", "assets", "javascripts"), { recursive: true });
       writeFileSync(join(tmpDir, "vendor", "assets", "javascripts", "d3.js"), "var d3 = 1;");
       mkdirSync(join(tmpDir, "public", "packs"), { recursive: true });
       writeFileSync(join(tmpDir, "public", "packs", "app.js"), "var a = 1;");
       mkdirSync(join(tmpDir, "dist"), { recursive: true });
       writeFileSync(join(tmpDir, "dist", "bundle.js"), "var b = 1;");
-      // narrow-glob proof: vendor/ is NOT blanket-ignored — a source under
-      // vendor/ but OUTSIDE vendor/assets/ must survive (traversal descends).
       mkdirSync(join(tmpDir, "vendor", "lib"), { recursive: true });
       writeFileSync(join(tmpDir, "vendor", "lib", "helper.ts"), "export const h = 1;");
       // ordinary app sources — must be KEPT
@@ -392,8 +390,7 @@ describe("FileScanner", () => {
       // ordinary sources kept
       expect(files.some((f) => f.endsWith("src/app.js"))).toBe(true);
       expect(files.some((f) => f.endsWith("x.rb"))).toBe(true);
-      // narrow glob: vendor/ descends; only vendor/assets/ is dropped
-      expect(files.some((f) => f.endsWith("vendor/lib/helper.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("vendor/lib/helper.ts"))).toBe(false);
     });
 
     // YAML has NO manifest allowlist — every yaml/yml is ignored by default.
@@ -586,5 +583,118 @@ describe("FileScanner", () => {
       const files = await scanner.scanDirectory("/nonexistent/directory/path");
       expect(files).toEqual([]);
     });
+  });
+});
+
+describe("FileScanner DEBUG scan progress", () => {
+  const events: { message: string; data?: Record<string, unknown> }[] = [];
+  let step: { mockRestore: () => void } | undefined;
+
+  afterEach(() => {
+    step?.mockRestore();
+    setDebug(false);
+    vi.useRealTimers();
+  });
+
+  function arm(): void {
+    setDebug(true);
+    events.length = 0;
+    step = vi.spyOn(pipelineLog, "step").mockImplementation((_ctx, message, data) => {
+      events.push({ message, data });
+    });
+  }
+
+  it("logs the root readdir before and after, not once per file", async () => {
+    arm();
+    const tmp = mkdtempSync(join(tmpdir(), "scanner-debug-"));
+    try {
+      writeFileSync(join(tmp, "a.ts"), "export const a = 1;\n");
+      writeFileSync(join(tmp, "b.ts"), "export const b = 1;\n");
+      const local = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
+      const files = await local.scanDirectory(tmp);
+      expect(files).toHaveLength(2);
+      const started = events.filter((e) => e.message === "SCAN_READDIR");
+      const done = events.filter((e) => e.message === "SCAN_READDIR_DONE");
+      expect(started).toHaveLength(1);
+      expect(started[0]?.data).toMatchObject({ dir: tmp, files: 0, dirs: 1 });
+      expect(done).toHaveLength(1);
+      expect(done[0]?.data).toMatchObject({ dir: tmp, entries: 2 });
+      expect(events.some((e) => e.data?.dir === join(tmp, "a.ts"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("heartbeats while one readdir is still in flight, then logs the entry count", async () => {
+    arm();
+    vi.useFakeTimers();
+    const tmp = mkdtempSync(join(tmpdir(), "scanner-hang-"));
+    writeFileSync(join(tmp, "a.ts"), "export const a = 1;\n");
+    const real = fsp.readdir.bind(fsp);
+    const entries = await real(tmp, { withFileTypes: true });
+    let release: (value: typeof entries) => void = () => {};
+    const gate = new Promise<typeof entries>((resolve) => {
+      release = resolve;
+    });
+    const readdirSpy = vi.spyOn(fsp, "readdir").mockImplementation((async (path: string) => {
+      if (path === tmp) return gate;
+      return real(path, { withFileTypes: true });
+    }) as never);
+
+    try {
+      const local = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
+      const pending = local.scanDirectory(tmp);
+      expect(events.some((e) => e.message === "SCAN_READDIR" && e.data?.waiting === undefined)).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(events.some((e) => e.message === "SCAN_READDIR" && e.data?.waiting === "readdir")).toBe(true);
+      expect(events.some((e) => e.message === "SCAN_READDIR_DONE")).toBe(false);
+
+      release(entries);
+      await pending;
+      const done = events.find((e) => e.message === "SCAN_READDIR_DONE");
+      expect(done?.data).toMatchObject({ dir: tmp, entries: 1 });
+      expect(typeof done?.data?.readdirMs).toBe("number");
+    } finally {
+      readdirSpy.mockRestore();
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does not log the walk when debug is off", async () => {
+    setDebug(false);
+    events.length = 0;
+    step = vi.spyOn(pipelineLog, "step").mockImplementation((_ctx, message, data) => {
+      events.push({ message, data });
+    });
+    const tmp = mkdtempSync(join(tmpdir(), "scanner-quiet-"));
+    try {
+      writeFileSync(join(tmp, "a.ts"), "export const a = 1;\n");
+      const local = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
+      await local.scanDirectory(tmp);
+      expect(events).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("skips a directory listed only in .git/info/exclude", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "scanner-exclude-"));
+    try {
+      mkdirSync(join(tmp, ".git", "info"), { recursive: true });
+      writeFileSync(join(tmp, ".git", "info", "exclude"), "secret-tree/\n");
+      mkdirSync(join(tmp, "secret-tree"), { recursive: true });
+      writeFileSync(join(tmp, "secret-tree", "hidden.ts"), "export const hidden = 1;\n");
+      writeFileSync(join(tmp, "keep.ts"), "export const keep = 1;\n");
+
+      const local = new FileScanner({ supportedExtensions: [".ts"], ignorePatterns: [] });
+      await local.loadIgnorePatterns(tmp);
+      const files = await local.scanDirectory(tmp);
+
+      expect(files.some((file) => file.endsWith("keep.ts"))).toBe(true);
+      expect(files.some((file) => file.includes("secret-tree"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
