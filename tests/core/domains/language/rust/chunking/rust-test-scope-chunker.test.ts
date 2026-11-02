@@ -205,6 +205,104 @@ pub fn other_production_value(input: usize) -> usize {
   });
 });
 
+describe("TreeSitterChunker — Rust file made test-only by an inner #![cfg(test)]", () => {
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  });
+
+  const BODY = `use std::vec::Vec;
+
+pub fn make_fixture() -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&[1, 2, 3, 4]);
+    bytes
+}
+
+impl Fixture {
+    fn new() -> Self {
+        Fixture { bytes: make_fixture() }
+    }
+}
+
+#[test]
+fn uses_fixture() {
+    let fixture = Fixture::new();
+    assert_eq!(fixture.bytes.len(), 4);
+}
+`;
+
+  it("types every chunk of the file as a test chunk, the #[test] function as test", async () => {
+    const chunks = await chunker.chunk(`#![cfg(test)]\n\n${BODY}`, "src/foo/helpers.rs", "rust");
+
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(["test", "test_setup"], `${chunk.metadata.symbolId} ${chunk.startLine}`).toContain(
+        chunk.metadata.chunkType,
+      );
+    }
+    const usesFixture = chunks.find((chunk) => chunk.content.includes("fn uses_fixture()"));
+    expect(usesFixture?.metadata.chunkType).toBe("test");
+    expect(usesFixture?.metadata.symbolId).toBe("helpers.uses_fixture");
+    expect(chunks.find((chunk) => chunk.content.includes("pub fn make_fixture"))?.metadata.symbolId).toBe(
+      "helpers.make_fixture",
+    );
+    expect(chunks.find((chunk) => chunk.content.startsWith("impl Fixture"))?.metadata.symbolId).toBe("helpers.Fixture");
+  });
+
+  it("ids a module of a test-only file as a test scope, as an inline test module", async () => {
+    const code = `#![cfg(test)]
+
+mod nested {
+    #[test]
+    fn it_works() {
+        assert_eq!(super::make_fixture().len(), 4);
+    }
+}
+`;
+    const chunks = await chunker.chunk(code, "src/foo/helpers.rs", "rust");
+    const itWorks = chunks.find((chunk) => chunk.metadata.symbolId === "helpers.nested.it_works");
+
+    expect(itWorks?.metadata.chunkType).toBe("test");
+  });
+
+  // Pinned boundary: the module remainder (top-level rows no chunk carries —
+  // here a struct under the 50-char chunk floor) is emitted by the engine
+  // (`TreeSitterChunker#withModuleRemainder`) as `block`; no language hook or
+  // classifier types it, so a test-only file's remainder stays production-typed.
+  it("leaves the module remainder of a test-only file to the engine", async () => {
+    const code = `#![cfg(test)]
+
+pub struct Fixture {
+    bytes: Vec<u8>,
+}
+
+pub fn make_fixture() -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&[1, 2, 3, 4]);
+    bytes
+}
+`;
+    const chunks = await chunker.chunk(code, "src/foo/helpers.rs", "rust");
+
+    expect(chunks.find((chunk) => chunk.content.includes("pub struct Fixture"))?.metadata.chunkType).toBe("block");
+    expect(chunks.find((chunk) => chunk.content.includes("pub fn make_fixture"))?.metadata.chunkType).toBe(
+      "test_setup",
+    );
+  });
+
+  it("keeps production chunk types when the file has no inner test-only cfg", async () => {
+    const chunks = await chunker.chunk(BODY, "src/foo/helpers.rs", "rust");
+    const typeOf = (text: string) => chunks.find((chunk) => chunk.content.includes(text))?.metadata.chunkType;
+
+    expect(typeOf("pub fn make_fixture")).toBe("function");
+    expect(typeOf("fn new()")).not.toMatch(/^test/);
+    expect(typeOf("fn uses_fixture()")).toBe("test");
+  });
+});
+
 describe("Rust test files by path", () => {
   it("classifies tests.rs — the body of `#[cfg(test)] mod tests;` — as a test file", () => {
     expect(classify("src/foo/tests.rs").isTest).toBe(true);

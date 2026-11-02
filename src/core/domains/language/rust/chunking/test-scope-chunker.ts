@@ -22,7 +22,17 @@ import type {
   TestScopeLine,
 } from "../../../../contracts/types/chunker.js";
 import { produceTestScopeChunks, TEST_SCOPE_CHUNK_VOCABULARY, type ScopeChunkVocabulary } from "../../kernel/index.js";
-import { isInlineTestNode, isRustTestFunctionNode } from "../inline-tests.js";
+import { isInInlineTestOnlyFile, isInlineTestNode, isRustTestFunctionNode } from "../inline-tests.js";
+
+/**
+ * The item compiles only in the test build: it is test-only itself
+ * (`isInlineTestNode`), or its file opens with an inner `#![cfg(test)]`. Every
+ * item of such a file is chunked as a test-only item outside a test module — a
+ * `mod` as a test scope, anything else as one `test` / `test_setup` chunk.
+ */
+export function isRustTestOnlyItem(node: AstNode, code: string): boolean {
+  return isInlineTestNode(node, code) || isInInlineTestOnlyFile(node, code);
+}
 
 /**
  * Ids of a test-only item outside a test module hang under the file subject
@@ -214,7 +224,7 @@ export const rustTestScopeChunkerHook: ChunkingHook = {
 
   process(ctx: HookContext): void {
     const { containerNode, code } = ctx;
-    if (!isInlineTestNode(containerNode, code)) {
+    if (!isRustTestOnlyItem(containerNode, code)) {
       labelInlineTestMembers(ctx);
       return;
     }

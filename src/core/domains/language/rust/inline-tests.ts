@@ -95,6 +95,18 @@ export function fileIsInlineTestOnly(root: AstNode, _code: string): boolean {
   return innerAttributes(root).some(isTestOnlyCfgAttribute);
 }
 
+/** The root of the tree holding `node`. */
+function treeRoot(node: AstNode): AstNode {
+  let root = node;
+  while (root.parent) root = root.parent;
+  return root;
+}
+
+/** `node` sits in a file whose root carries an inner `#![cfg(test)]` — it compiles only in the test build. */
+export function isInInlineTestOnlyFile(node: AstNode, code: string): boolean {
+  return fileIsInlineTestOnly(treeRoot(node), code);
+}
+
 /**
  * Evaluate a `cfg(...)` predicate (the text inside the parentheses) for a
  * product build: `test` is false, `not` / `all` / `any` combine in three-valued
