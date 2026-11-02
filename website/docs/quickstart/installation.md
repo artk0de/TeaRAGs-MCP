@@ -7,18 +7,28 @@ TeaRAGs can be installed two ways: via the **setup plugin** (recommended for
 Claude Code users) or **manually** for CI, non-Claude MCP clients (Cursor, Roo
 Code, Continue, …), or air-gapped setups.
 
-:::tip Rust projects: install the compiler driver toolchain
+:::tip Rust projects: install the compiler driver
 Without it, Rust call-graph edges are static-only (resolution rate 0.54-0.71
-instead of 0.98-0.99 on tikv, servo, ripgrep). One command, about 1.5 GB:
-`rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src`. Details:
+instead of 0.98-0.99 on tikv, servo, ripgrep). One command:
+`tea-rags rustc-driver install` downloads the prebuilt driver from GitHub
+Releases and a managed toolchain. The setup plugin runs it when the project
+contains Rust. Installed after the project was indexed, the driver shows as
+`rustc driver: installed-pending` in `get_index_status` and the session digest:
+the existing Rust edges were built without it, and the line carries the
+recompute command
+(`tea-rags index-codebase --project <alias> --force-enrichments codegraph --languages rust`).
+Details:
 [Rust compiler driver](../usage/advanced/codegraph-enrichments.md#rust-compiler-driver).
 :::
 
-## Option A — via the Setup Plugin (Claude Code, recommended)
+## Option A — via the Setup Plugin (recommended)
 
-The `tea-rags-setup` plugin runs an interactive wizard that installs Node.js,
-the `tea-rags` binary, your chosen embedding provider, Qdrant, and writes the
-MCP entry into Claude Code.
+The `tea-rags-setup` plugin installs and configures everything in one confirmed
+plan. `/tea-rags-setup:install` does, in order: detect the environment, write
+`.contextignore`, profile the project's languages, choose the embedding model,
+start a local llama-server pool, install the Rust compiler driver when the
+project contains Rust, register the MCP server, and index the project in the
+foreground. It shows the whole plan and asks once before running it.
 
 **Step 1 — Add the TeaRAGs marketplace to Claude Code:**
 
@@ -32,19 +42,16 @@ MCP entry into Claude Code.
 /plugin install tea-rags-setup@tea-rags
 ```
 
-**Step 3 — Run the installation wizard:**
+**Step 3 — Run the installer:**
 
 ```
 /tea-rags-setup:install
 ```
 
-The wizard walks 9 steps: environment detection, Node.js, `tea-rags` binary,
-embedding provider choice (Ollama / ONNX / OpenAI / Cohere / Voyage), Qdrant
-(embedded by default), performance tuning, git analytics, MCP registration,
-verification.
-
-Progress is saved to `~/.tea-rags/setup-progress.json` — if any step fails,
-re-run `/tea-rags-setup:install` to resume from the last successful step.
+The model is picked from the project's language mix (see
+[Embedding model choice](../config/embedding-model-choice.md#choosing-by-language-mix)),
+and the llama-server binary and model files are downloaded and sha256-verified
+by the CLI (see [llama-server](../config/providers/llama-server.md#managed-local-pools)).
 
 **Step 4 — Install the skills plugin** (final step, Claude Code only):
 
@@ -144,6 +151,10 @@ export PATH=~/.npm-global/bin:$PATH
 :::
 
 ### B.3. Pick an Embedding Provider
+
+For a local setup without Ollama, `tea-rags llama-server install` and
+`tea-rags llama-server start --model <id> --instances auto` give you a managed
+pool; see [llama-server](../config/providers/llama-server.md#managed-local-pools).
 
 | Provider                  | When to use                                                              | Install                                                      |
 | ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -274,14 +285,22 @@ Once the MCP server is registered, install the skills plugin to get
 
 ## Keeping up to date
 
-When a newer version of tea-rags is published, run:
+Automatic client updates are on by default: `tea-rags prime` starts a
+background `tea-rags update` at most once a day, and it installs a release only
+after that release is 3 days old (7 days for a major version). Turn it off with:
+
+```bash
+tea-rags update --auto off
+```
+
+`TEA_RAGS_AUTO_UPDATE=0` overrides the setting. To update by hand, run:
 
 ```bash
 tea-rags update
 ```
 
-This pulls the latest version from npm. The `tea-rags prime` command also
-surfaces a notice when a new version is available — see [Keeping tea-rags
+Every `tea-rags update` also re-pins the Claude and Codex plugin marketplaces to
+the installed version and refreshes Cursor's plugin copy. See [Keeping tea-rags
 up to date](../usage/updating.md) for the full mechanics.
 
 ## Build from Source (contributors)

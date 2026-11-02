@@ -192,6 +192,24 @@ export EMBEDDING_MODEL=brokkai/Muninn-small
 "Not measured" rows follow the training lists on the model cards; we measured
 only TypeScript and Ruby.
 
+## Choosing by language mix
+
+`tea-rags llama-server choose-model --shares '<json>'` applies the same rules the
+setup plugin uses. `--shares` is a JSON object of language to fraction of code
+LOC, for example `'{"ruby":0.06,"typescript":0.94}'`. It prints
+`{ model, rule, window, dimensions }`. The first matching rule wins:
+
+| Rule | Model |
+| --- | --- |
+| Ruby is at least 5% of code | CodeRankEmbed |
+| Swift is at least 5% of code | CodeRankEmbed |
+| Languages Muninn-small was trained on cover at least 80% | Muninn-small, falling back to CodeRankEmbed until its GGUF is published |
+| Anything else | jina v2 code |
+
+The chosen model sets the context window per slot: 8192 for jina v2 code and
+2048 for CodeRankEmbed. `rule` in the output states which line fired, for
+example `ruby 6% ≥ 5%`.
+
 ## Switching models
 
 - **A model switch needs a full `--force` reindex** of the project. The vectors
