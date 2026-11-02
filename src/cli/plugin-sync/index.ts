@@ -33,6 +33,8 @@ export interface HarnessPluginSyncDeps {
   codexHome: string;
   packageRoot: string;
   fs?: CursorPluginFs;
+  /** false → the Claude adapter refuses a re-pin that would uninstall project/local-scope plugins. Default true. */
+  repinScopedClaudeInstalls?: boolean;
 }
 
 /**
@@ -43,7 +45,11 @@ export interface HarnessPluginSyncDeps {
 export async function syncHarnessPlugins(deps: HarnessPluginSyncDeps): Promise<HarnessPluginSyncReport> {
   const fsImpl = deps.fs ?? fs;
   const adapters: HarnessPluginSyncAdapter[] = [
-    new ClaudePluginSyncAdapter({ runClaude: deps.runClaude, clientVersion: deps.clientVersion }),
+    new ClaudePluginSyncAdapter({
+      runClaude: deps.runClaude,
+      clientVersion: deps.clientVersion,
+      ...(deps.repinScopedClaudeInstalls !== undefined ? { repinScopedInstalls: deps.repinScopedClaudeInstalls } : {}),
+    }),
     new CodexPluginSyncAdapter({
       runCodex: deps.runCodex,
       clientVersion: deps.clientVersion,

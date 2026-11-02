@@ -18,6 +18,10 @@ import {
   type CollectionEntry,
   type RegistryLookup,
 } from "../../core/api/public/index.js";
+import { readClientAutoUpdateSetting } from "../client-update/settings.js";
+import { spawnDetachedClientUpdate } from "../client-update/spawner.js";
+import { clientUpdateStatePath, ClientUpdateStateStore } from "../client-update/state-store.js";
+import { ClientUpdateTrigger } from "../client-update/trigger.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";
@@ -33,6 +37,17 @@ function buildUpdateService(): UpdateCheckService {
 
 export function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
+
+function buildClientUpdateTrigger(dataDir: string): ClientUpdateTrigger {
+  return new ClientUpdateTrigger({
+    setting: () => readClientAutoUpdateSetting(dataDir, process.env),
+    store: new ClientUpdateStateStore(clientUpdateStatePath(dataDir)),
+    spawn: () => {
+      spawnDetachedClientUpdate({ dataDir });
+    },
+    clock: () => Date.now(),
+  });
 }
 
 /**
@@ -192,6 +207,8 @@ export async function runPrime(input: {
   updateService?: Pick<UpdateCheckService, "checkForUpdate">;
   /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
   autoUpdateTrigger?: { maybeSpawn: (collectionName: string) => AutoUpdateTriggerOutcome };
+  /** Test seam — production builds the real client-update trigger via buildClientUpdateTrigger. */
+  clientUpdateTrigger?: Pick<ClientUpdateTrigger, "maybeSpawn" | "manualUpdateHint">;
 }): Promise<void> {
   // Path resolution priority: explicit --path, then --project alias (via
   // registry), then the current working directory. The cwd fallback covers
@@ -199,6 +216,11 @@ export async function runPrime(input: {
   // resolves the cwd's registered project instead of erroring "no path
   // provided". An explicit but unregistered --project keeps its own error —
   // cwd would mask the caller's stated intent.
+  // Client self-update (c2dr6): fired first, so every prime outcome — cold
+  // Qdrant, unregistered path — still gets the daily check; detached, never awaited.
+  const clientUpdate = input.clientUpdateTrigger ?? buildClientUpdateTrigger(resolveDataDir());
+  clientUpdate.maybeSpawn();
+
   const hasExplicitPath = typeof input.path === "string" && input.path.length > 0;
   const requestedPath = hasExplicitPath ? input.path : input.project ? undefined : process.cwd();
 
@@ -315,6 +337,7 @@ export async function runPrime(input: {
         update: await updateRequest,
         autoUpdateOutcome,
         autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
+        clientUpdateHint: clientUpdate.manualUpdateHint(),
         ...(input.agent === true ? { agent: true } : {}),
       }),
     );
