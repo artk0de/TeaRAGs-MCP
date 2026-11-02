@@ -257,7 +257,11 @@ carry their own navigators.
   the filter-preset compiler emit them; the compiler expands every `isTest`
   `must_not` condition, so a new test-excluding preset is covered with no extra
   wiring. Why: two classifiers answering "is this a test" disagreed, and every
-  churn-weighted preset ranked shared `__helpers__` fixtures as production.
+  churn-weighted preset ranked shared `__helpers__` fixtures as production. The
+  one other writer is the chunk's own type: a chunk whose `chunkType` is in
+  `TEST_CHUNK_TYPES` (`contracts/types/chunker.ts`) gets `isTest` too, so an
+  inline test block inside a production file is excluded by the same filter.
+  Never test `chunkType` literals beside it — read the set.
 
 ## See also
 

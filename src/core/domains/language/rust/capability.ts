@@ -22,8 +22,8 @@ export const capability: LanguageCapability = {
   },
   tests: {
     tier: "high",
-    detection: "*_test.rs + #[cfg(test)] modules",
-    tech: "attribute-based test scope chunking (#[cfg(test)] / #[test])",
+    detection: "*_test.rs, tests.rs + test-only cfg items / #![cfg(test)] files (inline tests)",
+    tech: "attribute-AST test scope chunking (#[cfg(test)] with all/any/not evaluation, #[test]-family attributes); inline tests marked isTest and pruned from the codegraph",
   },
   testFiles,
   ingestIgnore,

@@ -714,6 +714,18 @@
   worker's `import(languageModulePath)` and every harness script all load, and
   an uninstalled read THROWS instead of misclassifying. Why: a context that
   never loads the language domain fails loudly, not silently.
+- **Test-ness of a NODE is the vertical's `<lang>/inline-tests.ts`, and one
+  predicate answers all three consumers.** A language whose tests may live
+  inside a production file exports `isInlineTestNode(node, code)` (and, where a
+  whole file can be test-only by an inner attribute, `fileIsInlineTestOnly`).
+  The chunker's test-scope hook claims by it, the DSL filter admits by it, and
+  the facade hands both to `composeExtractionWalker` as `inlineTests`, where
+  `kernel/inline-test-pruning.ts` hides those subtrees from every collector and
+  pass. Read the AST, never source lines: a `cfg` predicate is evaluated
+  three-valued with `test = false`, so only a definitely-false condition is
+  test-only. Which verticals export the recognisers is read off their facades,
+  not listed here. Why: three separate test-ness readings let a chunk be `test`
+  while its symbols still entered the graph.
 - **`javascript/resolver/javascript-resolver.ts` staying a fall-through
   if-ladder is a blocked migration.** Only resolver not on `resolveViaChain`;
   its file-only import edge preempts the global short-name fallback through

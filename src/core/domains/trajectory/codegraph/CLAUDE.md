@@ -689,6 +689,16 @@
   marker is how to tell "never measured" from "measured zero".
   Codegraph-weighted presets still score such a chunk as having no graph
   presence — there is no fan number to weigh.
+- **The test exclusion also holds per NODE, for tests that live inside a
+  production file.** The walker never sees an inline test subtree: the
+  language's `inlineTests` recognisers prune it at `composeExtractionWalker`
+  (`../../language/CLAUDE.md`), so it contributes no symbol and no call. The
+  file stays in the graph; its test chunks (`chunkType` in `TEST_CHUNK_TYPES`)
+  are declined per chunk by `classifyPoint` (`enrichment/policy.ts`) and stamped
+  `codegraph.symbols.chunk.skippedAs = "test"` while the file's production
+  chunks are enriched as usual. Why: a file-level exclusion would drop the
+  production code beside the tests, and an unstamped test chunk reads as a
+  missing-enrichment bug.
 
 ## See also
 

@@ -140,7 +140,7 @@ export class RustLanguage implements LanguageProvider {
   readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromRustFile(input),
     nameOf: (node) => rustNameOf(node),
-    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    // Facet passes folded in after the monolith — see ./walker/passes.ts.
     passes: RUST_EXTRACTION_PASSES,
     // `#[cfg(test)]` items, `#[test]`-family fns and `#![cfg(test)]` files stay out of the graph.
     inlineTests: { isInlineTestNode, fileIsInlineTestOnly },

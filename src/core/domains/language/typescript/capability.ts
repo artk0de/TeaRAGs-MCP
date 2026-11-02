@@ -21,8 +21,8 @@ export const capability: LanguageCapability = {
   },
   tests: {
     tier: "high",
-    detection: "*.test.ts / *.spec.ts",
-    tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
+    detection: "*.test.ts / *.spec.ts + Vitest in-source (if (import.meta.vitest))",
+    tech: "testScopeChunker (describe/it scopes, one addressable chunk per example; in-source blocks marked isTest and pruned from the codegraph)",
   },
   testFiles,
   codegraph: {

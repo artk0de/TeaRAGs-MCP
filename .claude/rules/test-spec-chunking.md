@@ -209,6 +209,19 @@ Adapt extensions per language, keep both branches (extension + directory
 convention). False positives on helper files inside `tests/` are safe — filter's
 second pass (DSL-vocabulary check) rejects them.
 
+### Inline test blocks (production files)
+
+Tests declared INSIDE a production file — Rust `#[cfg(test)]` items and
+`#[test]`-family functions, Vitest in-source `if (import.meta.vitest) { … }` —
+are recognised by the AST, not the path: the vertical's `<lang>/inline-tests.ts`
+exports `isInlineTestNode`, and the scope chunker claims that node in ANY file,
+not only an `isTestFile` one. The block is read into the same `TestScope` and
+handed to `produceTestScopeChunks`, with the file's basename as `topLevelName`
+(`src/math.ts` → `math.vitest.it 'adds'`, `lib.rs` → `lib.tests.it_works`). Its
+chunks are `test` / `test_setup`, which sets `payload.isTest` and keeps them out
+of the codegraph (navigators: `src/core/domains/language/CLAUDE.md`,
+`src/core/domains/trajectory/codegraph/CLAUDE.md`).
+
 ## AST adaptation table (per language)
 
 | Concept               | Ruby AST                                                     | TypeScript AST                                                        | Add column when porting                 |
