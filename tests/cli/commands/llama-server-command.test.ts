@@ -72,6 +72,8 @@ describe("llama-server command", () => {
       "ROCm0",
       "--device",
       "ROCm1",
+      "--host",
+      "0.0.0.0",
       "--advertise",
       "192.168.1.71",
       "--api-key",
@@ -118,7 +120,7 @@ describe("llama-server command", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(printed).not.toContain("curl");
     expect(printed).toContain(
-      "/opt/llama/llama-server -m /data/models/jina.gguf --embedding -ngl 999 -fa on -np 2 -c 16384 -b 8192 -ub 8192 --host 0.0.0.0 --port 9000",
+      "/opt/llama/llama-server -m /data/models/jina.gguf --embedding -ngl 999 -fa on -np 2 -c 16384 -b 8192 -ub 8192 --host 127.0.0.1 --port 9000",
     );
     expect(printed).toContain("/opt/llama/llama-server --list-devices");
     expectNoChildProcess();

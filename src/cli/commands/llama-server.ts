@@ -36,6 +36,12 @@ import {
   productionLlamaServerInstallDeps,
   runLlamaServerInstall,
 } from "./llama-server-install.js";
+import {
+  productionLlamaServerPoolsCommandDeps,
+  runLlamaServerStart,
+  runLlamaServerStatus,
+  runLlamaServerStop,
+} from "./llama-server-pools.js";
 
 /** The model tea-rags embeds with when EMBEDDING_MODEL is unset. */
 const DEFAULT_GGUF_MODEL_REFERENCE = "unclemusclez/jina-embeddings-v2-base-code:latest";
@@ -138,6 +144,9 @@ export function runLlamaServerChooseModel(
 
 const LLAMA_SERVER_TARGET_OSES: readonly LlamaServerTargetOs[] = ["windows", "linux", "macos"];
 
+/** Loopback unless the operator opts into the LAN with `--host 0.0.0.0`. */
+const DEFAULT_LLAMA_SERVER_HOST = "127.0.0.1";
+
 export interface LlamaServerCommandArgs {
   bin: string;
   os?: LlamaServerTargetOs;
@@ -202,7 +211,7 @@ export async function runLlamaServerCommand(args: LlamaServerCommandArgs, deps: 
     os,
     bin: args.bin,
     devices: args.device ?? [],
-    host: args.host ?? "0.0.0.0",
+    host: args.host ?? DEFAULT_LLAMA_SERVER_HOST,
     port: args.port ?? 8081,
     slots: args.slots ?? 4,
     modelPath: gguf === undefined ? model : defaultRemoteModelPath(os, gguf.fileName),
@@ -227,10 +236,11 @@ function productionCommandDeps(): LlamaServerCommandDeps {
   };
 }
 
-/** `tea-rags llama-server <fetch-model|choose-model|command|install>` — helpers for the llama-server provider. */
+/** `tea-rags llama-server <fetch-model|choose-model|command|install|start|stop|status>` — helpers for the llama-server provider. */
 export const llamaServerCommand: CommandModule = {
   command: "llama-server",
-  describe: "Helpers for the llama-server embedding provider (fetch-model, choose-model, command, install)",
+  describe:
+    "Helpers for the llama-server embedding provider (fetch-model, choose-model, command, install, start, stop, status)",
   builder: (yargs: Argv) =>
     yargs
       .command(
@@ -284,7 +294,11 @@ export const llamaServerCommand: CommandModule = {
               array: true,
               describe: "Device id from `<bin> --list-devices`; repeat for each GPU, one port each",
             })
-            .option("host", { type: "string", default: "0.0.0.0", describe: "Bind address" })
+            .option("host", {
+              type: "string",
+              default: DEFAULT_LLAMA_SERVER_HOST,
+              describe: "Bind address (0.0.0.0 serves the LAN)",
+            })
             .option("port", { type: "number", default: 8081, describe: "Port of the first device" })
             .option("slots", { type: "number", default: 4, describe: "Parallel slots per server (-np)" })
             .option("model", {
@@ -328,6 +342,49 @@ export const llamaServerCommand: CommandModule = {
           }),
         async (argv) => {
           await runLlamaServerInstall({ backend: argv.backend }, productionLlamaServerInstallDeps());
+        },
+      )
+      .command(
+        "start",
+        "Start a pool of detached llama-server instances for a catalog model on random loopback ports; prints { model, endpoints, instances }",
+        (y) =>
+          y
+            .option("model", {
+              type: "string",
+              demandOption: true,
+              describe: "Catalog Hugging Face id, fetched first with fetch-model (e.g. nomic-ai/CodeRankEmbed)",
+            })
+            .option("instances", { type: "number", default: 2, describe: "llama-server processes in the pool (≥ 2)" })
+            .option("slots", { type: "number", default: 4, describe: "Parallel slots per instance (-np)" })
+            .option("gpu-layers", { type: "number", default: 999, describe: "Layers offloaded to the GPU (-ngl)" })
+            .option("flash-attention", { type: "boolean", default: true, describe: "Flash attention (-fa on|off)" }),
+        async (argv) => {
+          await runLlamaServerStart(
+            {
+              model: argv.model,
+              instances: argv.instances,
+              slots: argv.slots,
+              gpuLayers: argv.gpuLayers,
+              flashAttention: argv.flashAttention,
+            },
+            productionLlamaServerPoolsCommandDeps(),
+          );
+        },
+      )
+      .command(
+        "stop",
+        "Stop a managed llama-server pool, or every pool without --model",
+        (y) => y.option("model", { type: "string", describe: "Catalog id of the pool to stop (default: all)" }),
+        async (argv) => {
+          await runLlamaServerStop({ model: argv.model }, productionLlamaServerPoolsCommandDeps());
+        },
+      )
+      .command(
+        "status",
+        "Print the managed llama-server pools and whether each instance is alive, as JSON",
+        (y) => y,
+        async () => {
+          await runLlamaServerStatus(productionLlamaServerPoolsCommandDeps());
         },
       )
       .demandCommand(1)

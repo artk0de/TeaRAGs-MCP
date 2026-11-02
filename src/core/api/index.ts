@@ -142,8 +142,13 @@ export { InputValidationError, CollectionNotProvidedError } from "./public/error
 export {
   detectLlamaServerBackend,
   downloadLlamaServer,
+  LlamaServerPools,
+  productionLlamaServerPoolsDeps,
   resolveLlamaServerBinary,
   type LlamaServerBackend,
+  type LlamaServerPoolRecord,
+  type LlamaServerPoolsDeps,
+  type LlamaServerPoolStatus,
 } from "../adapters/llama-server/index.js";
 
 // ── Composition-root domain surface (bd tea-rags-mcp-k7kmu C5, h4a H2a) ──
