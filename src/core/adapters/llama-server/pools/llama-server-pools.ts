@@ -142,18 +142,7 @@ export class LlamaServerPools {
     });
     const ports =
       o.ports ?? (await pickFreePorts(o.instances, { isFree: this.deps.isPortFree, random: this.deps.random }));
-    const instances: LlamaServerPoolRecord["instances"] = [];
-    try {
-      for (const port of ports) {
-        const logPath = join(llamaServerPoolsDir(this.deps.dataDir), "logs", `${logFileSlug(o.model)}-${port}.log`);
-        const { pid } = this.deps.spawn(binary, [...args, "--port", String(port)], logPath);
-        instances.push({ pid, port, logPath });
-      }
-      await Promise.all(instances.map(async (instance) => this.waitUntilServing(instance, o.model)));
-    } catch (error) {
-      this.killInstances(instances);
-      throw error;
-    }
+    const instances = await this.launchInstances(o.model, binary, args, ports);
 
     const record: LlamaServerPoolRecord = {
       model: o.model,
@@ -163,9 +152,31 @@ export class LlamaServerPools {
       args,
       startedAt: new Date(this.deps.now()).toISOString(),
     };
-    const others = (await readLlamaServerPoolRecords(this.deps.dataDir)).filter((r) => r.model !== o.model);
-    await writeLlamaServerPoolRecords(this.deps.dataDir, [...others, record]);
+    await this.recordPool(record);
     return record;
+  }
+
+  /**
+   * Start a recorded pool again from its record — same binary, launch args and
+   * ports — once none of its instances answers (after a reboot). The recorded
+   * pids are never signalled: with nothing listening on the ports they may
+   * belong to unrelated processes. A port still held makes its instance fail,
+   * which stops what this call spawned and throws.
+   */
+  async restart(record: LlamaServerPoolRecord): Promise<LlamaServerPoolRecord> {
+    const instances = await this.launchInstances(
+      record.model,
+      record.binary,
+      record.args,
+      record.instances.map((instance) => instance.port),
+    );
+    const restarted: LlamaServerPoolRecord = {
+      ...record,
+      instances,
+      startedAt: new Date(this.deps.now()).toISOString(),
+    };
+    await this.recordPool(restarted);
+    return restarted;
   }
 
   /** Stop one model's pool, or every pool when `model` is omitted, and drop the records. */
@@ -218,6 +229,34 @@ export class LlamaServerPools {
       );
     }
     return path;
+  }
+
+  /** Spawn one instance per port and wait until each serves `model`; any failure stops every instance spawned here. */
+  private async launchInstances(
+    model: string,
+    binary: string,
+    args: readonly string[],
+    ports: readonly number[],
+  ): Promise<LlamaServerPoolRecord["instances"]> {
+    const instances: LlamaServerPoolRecord["instances"] = [];
+    try {
+      for (const port of ports) {
+        const logPath = join(llamaServerPoolsDir(this.deps.dataDir), "logs", `${logFileSlug(model)}-${port}.log`);
+        const { pid } = this.deps.spawn(binary, [...args, "--port", String(port)], logPath);
+        instances.push({ pid, port, logPath });
+      }
+      await Promise.all(instances.map(async (instance) => this.waitUntilServing(instance, model)));
+    } catch (error) {
+      this.killInstances(instances);
+      throw error;
+    }
+    return instances;
+  }
+
+  /** Write `record` into `pools.json`, replacing the pool of the same model. */
+  private async recordPool(record: LlamaServerPoolRecord): Promise<void> {
+    const others = (await readLlamaServerPoolRecords(this.deps.dataDir)).filter((r) => r.model !== record.model);
+    await writeLlamaServerPoolRecords(this.deps.dataDir, [...others, record]);
   }
 
   private killInstances(instances: readonly { pid: number }[]): void {

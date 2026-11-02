@@ -112,6 +112,13 @@ export interface LlamaServerEmbeddingsDeps {
   endpointDownVerdicts?: EmbeddingEndpointDownVerdictStore;
   /** Deadline signal of one embeddings request, armed once its slot lease is held. Default: `AbortSignal.timeout`. */
   requestTimeoutSignal?: (ms: number) => AbortSignal;
+  /**
+   * Bring the configured peer endpoints back when none answers (a managed pool
+   * after a reboot, bd hjbow.6). Called at most once per provider: `true` → the
+   * call re-probes and retries; `false` or a throw → the outage takes its usual
+   * course. Absent → no revive.
+   */
+  reviveEndpoints?: (endpoints: string[]) => Promise<boolean>;
 }
 
 interface LlamaServerEmbeddingsResponse {
@@ -263,6 +270,11 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   /** Slot leases per endpoint, shared by every concurrent call of this provider. */
   private readonly slotLimiter = new EmbeddingEndpointSlotLimiter();
   private readonly requestTimeoutSignal: (ms: number) => AbortSignal;
+  private readonly reviveEndpoints?: (endpoints: string[]) => Promise<boolean>;
+  /** The one revive this provider may run; every call that waits on the outage shares it. */
+  private reviveAttempt?: Promise<boolean>;
+  /** Set once that revive has settled: later outages never revive again. */
+  private reviveSettled = false;
 
   /** Connection-recovery wait visibility for the CLI (same contract as the Ollama provider's). */
   onRecoveryWait?: (event: LlamaServerRecoveryWaitEvent) => void;
@@ -309,6 +321,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       now: this.now,
     });
     this.downVerdicts = deps.endpointDownVerdicts;
+    this.reviveEndpoints = deps.reviveEndpoints;
     this.adoptDownVerdicts();
   }
 
@@ -689,6 +702,10 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
     }
     if (active.length > 0) return;
+    if (await this.revivePeers()) {
+      exclusions.clear();
+      return;
+    }
     const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;
@@ -714,6 +731,37 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     await this.sleep(delayMs);
     await this.reprobeAll();
     exclusions.clear();
+  }
+
+  /**
+   * Single-flight, once-per-provider revive of the configured peers. Calls
+   * blocked on the same outage share the one attempt; once it has settled,
+   * every later outage answers `false` at once, so a pool that dies again is
+   * never restarted in a loop. `true` only after the revive succeeded and a
+   * direct re-probe has run.
+   */
+  private async revivePeers(): Promise<boolean> {
+    if (this.reviveEndpoints === undefined || this.reviveSettled) return false;
+    if (this.reviveAttempt === undefined) {
+      const peers = this.pool
+        .snapshot()
+        .filter((e) => e.tier === "peer")
+        .map((e) => e.url);
+      this.log(`[llama-server] no endpoint answers at ${peers.join(",")}; restarting its managed pool`);
+      const revive = this.reviveEndpoints;
+      this.reviveAttempt = (async () => {
+        try {
+          return await revive(peers);
+        } catch {
+          return false;
+        } finally {
+          this.reviveSettled = true;
+        }
+      })();
+    }
+    if (!(await this.reviveAttempt)) return false;
+    await this.reprobeAll();
+    return true;
   }
 
   private async reprobeAll(): Promise<void> {
