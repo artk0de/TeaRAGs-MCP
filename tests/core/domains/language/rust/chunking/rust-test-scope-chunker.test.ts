@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
+import { classify } from "../../../../../../src/core/primitives/paths/file-classification/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 describe("TreeSitterChunker — Rust test scopes", () => {
@@ -84,5 +85,128 @@ mod tests {
     expect(setup?.metadata.parentSymbolId).toBe("lib");
     expect(setup?.content).toContain("fn fixture");
     expect(example?.content).not.toContain("fn fixture");
+  });
+});
+
+describe("TreeSitterChunker — Rust inline tests read from attribute AST", () => {
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  });
+
+  const LIB_RS = `pub fn add(left: usize, right: usize) -> usize {
+    let sum = left.saturating_add(right);
+    sum
+}
+
+#[cfg(test)]
+fn fixture() -> usize {
+    let seeded = add(20, 22);
+    seeded.saturating_mul(1)
+}
+
+#[test]
+fn smoke() {
+    let total = add(fixture(), 0);
+    assert_eq!(total, 42);
+}
+
+#[cfg(test)] mod tests { use super::*; #[test] fn it_works() { add(1, 2); } }
+
+#[cfg(any(test, feature = "x"))]
+mod testing {
+    pub fn h() -> usize {
+        let helper_value = super::add(3, 4);
+        helper_value
+    }
+}
+`;
+
+  const chunkHolding = <T extends { content: string }>(chunks: T[], text: string): T | undefined =>
+    chunks.find((chunk) => chunk.content.includes(text));
+
+  it("labels top-level test-only items and same-line attributes, leaving production and conditional cfg alone", async () => {
+    const chunks = await chunker.chunk(LIB_RS, "src/lib.rs", "rust");
+    const testTypes = new Set(["test", "test_setup"]);
+
+    expect(testTypes.has(chunkHolding(chunks, "pub fn add")?.metadata.chunkType ?? "")).toBe(false);
+    expect(testTypes.has(chunkHolding(chunks, "pub fn h")?.metadata.chunkType ?? "")).toBe(false);
+    expect(chunkHolding(chunks, "fn fixture()")?.metadata.chunkType).toBe("test_setup");
+    expect(chunkHolding(chunks, "fn smoke()")?.metadata.chunkType).toBe("test");
+    // The one-line module: `#[cfg(test)]` and `#[test]` share the item's row,
+    // which the retired line reader could not see. Every body chunk of the
+    // module opens with that row as its container header, so the example is
+    // found by id, not by text.
+    const itWorks = chunks.find((chunk) => chunk.metadata.symbolId === "lib.tests.it_works");
+    expect(itWorks?.metadata.chunkType).toBe("test");
+  });
+
+  it("ids a top-level test-only item under the file subject, as the kernel ids a test module", async () => {
+    const chunks = await chunker.chunk(LIB_RS, "src/lib.rs", "rust");
+
+    expect(chunkHolding(chunks, "fn fixture()")?.metadata.symbolId).toBe("lib.fixture");
+    expect(chunkHolding(chunks, "fn smoke()")?.metadata.symbolId).toBe("lib.smoke");
+    expect(chunkHolding(chunks, "pub fn add")?.metadata.symbolId).toBe("add");
+  });
+
+  it("keeps the attribute rows above a top-level test item inside its chunk", async () => {
+    const chunks = await chunker.chunk(LIB_RS, "src/lib.rs", "rust");
+    const smoke = chunkHolding(chunks, "fn smoke()");
+    const fixture = chunkHolding(chunks, "fn fixture()");
+
+    expect(smoke?.startLine).toBe(12);
+    expect(smoke?.content).toContain("#[test]");
+    expect(fixture?.startLine).toBe(6);
+    expect(fixture?.content).toContain("#[cfg(test)]");
+  });
+
+  it("labels only the test-family functions of a module without a test-only cfg", async () => {
+    const code = `mod checks {
+    pub fn production_helper(input: usize) -> usize {
+        input.saturating_mul(2).saturating_add(1)
+    }
+
+    #[test]
+    fn helper_doubles() {
+        assert_eq!(production_helper(2), 5);
+    }
+}
+`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    expect(chunkHolding(chunks, "fn helper_doubles()")?.metadata.chunkType).toBe("test");
+    expect(chunkHolding(chunks, "pub fn production_helper")?.metadata.chunkType).toBe("function");
+  });
+
+  // Pinned boundary: only chunkable containers (function / impl / trait /
+  // struct / enum / mod / macro) can be claimed. A top-level test-only `const`
+  // (or `use`, which never joins any chunk) is not one, so it stays in the
+  // module remainder with its generic label.
+  it("leaves a top-level test-only const in the module remainder", async () => {
+    const code = `#[cfg(test)]
+const FIXTURE_TABLE: [usize; 6] = [10, 20, 30, 40, 50, 60];
+
+pub fn production_value(input: usize) -> usize {
+    input.saturating_mul(2).saturating_add(1)
+}
+
+pub fn other_production_value(input: usize) -> usize {
+    input.saturating_mul(3).saturating_add(2)
+}
+`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+    const holder = chunkHolding(chunks, "const FIXTURE_TABLE");
+
+    expect(holder).toBeDefined();
+    expect(holder?.metadata.chunkType).not.toBe("test");
+    expect(holder?.metadata.chunkType).not.toBe("test_setup");
+  });
+});
+
+describe("Rust test files by path", () => {
+  it("classifies tests.rs — the body of `#[cfg(test)] mod tests;` — as a test file", () => {
+    expect(classify("src/foo/tests.rs").isTest).toBe(true);
   });
 });

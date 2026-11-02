@@ -25,7 +25,7 @@
  */
 
 import { readdirSync, readFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname, join, relative } from "node:path";
 
 import Parser from "tree-sitter";
 
@@ -46,6 +46,13 @@ const REPO_ROOT = join(import.meta.dirname, "../../../../../..");
 
 /** Every walker, resolver and kernel module whose field reads the guards must cover. */
 const LANGUAGE_SOURCE_ROOT = join(REPO_ROOT, "src/core/domains/language");
+
+/**
+ * Sources (relative to {@link LANGUAGE_SOURCE_ROOT}) whose only
+ * `childForFieldName(` call forwards the caller's field name to a wrapped node
+ * — they read no field of their own, so the survey skips them.
+ */
+const FIELD_NAME_FORWARDING_VIEWS = new Set(["kernel/inline-test-pruning.ts"]);
 
 /**
  * One synthetic source file, paired with the grammar it is parsed by.
@@ -676,6 +683,9 @@ export function surveyWalkerFieldReads(): WalkerFieldReadSurvey {
   let callSites = 0;
   let literalCallSites = 0;
   for (const file of listTypeScriptSources(LANGUAGE_SOURCE_ROOT)) {
+    // A tree VIEW forwards its caller's field name to the node it wraps; the
+    // name is read (and counted) at the caller's literal call site.
+    if (FIELD_NAME_FORWARDING_VIEWS.has(relative(LANGUAGE_SOURCE_ROOT, file))) continue;
     const text = readFileSync(file, "utf8");
     callSites += [...text.matchAll(/childForFieldName\(/g)].length;
     for (const match of text.matchAll(/childForFieldName\(\s*"([^"]+)"\s*\)/g)) {

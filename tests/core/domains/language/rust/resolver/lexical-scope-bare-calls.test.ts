@@ -144,11 +144,9 @@ pub fn sibling() {}
       {
         "src/main.rs": `
 fn helper() {}
-#[cfg(test)]
 mod tests {
   use super::*;
 
-  #[test]
   fn t() {
     helper();
   }

@@ -316,7 +316,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
     fn go() { let pool = Arc::new(Builder::new("cdc").thread_count(1).create()); }
 }
 `,

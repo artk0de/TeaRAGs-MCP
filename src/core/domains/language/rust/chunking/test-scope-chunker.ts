@@ -1,64 +1,86 @@
 /**
  * Rust attribute-based test scope chunking.
  *
- * Rust has no test DSL call to read. A `#[cfg(test)] mod` is the scope root,
- * `#[test]` (and the common attribute variants) marks an example function,
- * and the remaining direct items in the test module are setup/context. The
- * neutral kernel still owns chunk shape, ids, packing and line ranges.
+ * Rust has no test DSL call to read. Test-only code is recognised from the
+ * attribute AST (`isInlineTestNode`): a test-only module (`#[cfg(test)] mod`,
+ * `#![cfg(test)]` body) is the scope root, a test-family function
+ * (`#[test]`, `#[tokio::test]`, `#[rstest]`, …) is an example, and the
+ * remaining direct items in the test module are setup/context. A test-only
+ * item outside a test module is one chunk of its own: `test` for a test-family
+ * function, `test_setup` for anything else. The neutral kernel still owns chunk
+ * shape, ids, packing and line ranges.
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type {
   BodyChunkResult,
   ChunkingHook,
+  HookChunkingConfig,
   HookContext,
   TestExample,
   TestScope,
   TestScopeLine,
 } from "../../../../contracts/types/chunker.js";
-import { produceTestScopeChunks } from "../../kernel/index.js";
-import { hasCfgTestAttribute, isRustTestFunction, isRustTestModule, leadingRustAttributes } from "./test-dsl-filter.js";
+import { produceTestScopeChunks, TEST_SCOPE_CHUNK_VOCABULARY, type ScopeChunkVocabulary } from "../../kernel/index.js";
+import { isInlineTestNode, isRustTestFunctionNode } from "../inline-tests.js";
 
-function nodeName(node: AstNode, code: string): string {
+/**
+ * Ids of a test-only item outside a test module hang under the file subject
+ * as its full path: `lib.smoke` for a top-level `#[test] fn smoke` in
+ * `src/lib.rs`, `lib.fixture` for a top-level `#[cfg(test)] fn fixture`.
+ */
+const RUST_INLINE_ITEM_VOCABULARY: ScopeChunkVocabulary = { ...TEST_SCOPE_CHUNK_VOCABULARY, idPath: "namespace" };
+
+/** One item's source as a chunk carries it: rows, and the text of those rows. */
+export interface RustInlineItemSource {
+  text: string;
+  startLine: number;
+  endLine: number;
+}
+
+/** An item's name; an `impl` block is named by its type without generics (`Worker<'s>` → `Worker`). */
+function nodeName(node: AstNode): string {
   const identifier = node.childForFieldName("name") ?? node.namedChildren.find((child) => child.type === "identifier");
-  return identifier ? code.substring(identifier.startIndex, identifier.endIndex) : node.type;
+  if (identifier) return identifier.text;
+  const implementedType = node.type === "impl_item" ? node.childForFieldName("type") : null;
+  if (implementedType) return implementedType.text.split("<", 1)[0].trim();
+  return node.type;
 }
 
-function attributeStartLine(node: AstNode, code: string): number {
-  const lines = code.split("\n");
-  let start = node.startPosition.row + 1;
-  for (let row = node.startPosition.row - 1; row >= 0; row--) {
-    const text = lines[row]?.trim() ?? "";
-    if (text.startsWith("#[") && text.endsWith("]")) {
-      start = row + 1;
-      continue;
-    }
-    if (text.length > 0) break;
+/**
+ * The first of the outer attributes directly preceding `node`, else the node.
+ * Tree-sitter keeps `attribute_item` as a sibling of its item, so the item's
+ * own range starts after them; a comment between them ends the run.
+ */
+function attributedStart(node: AstNode): AstNode {
+  let first = node;
+  for (let sibling = node.previousNamedSibling; sibling?.type === "attribute_item"; ) {
+    first = sibling;
+    sibling = sibling.previousNamedSibling;
   }
-  return start;
+  return first;
 }
 
+function attributeStartLine(node: AstNode): number {
+  return attributedStart(node).startPosition.row + 1;
+}
+
+/** The item's source from its first outer attribute — never the rest of a row it shares. */
 function sourceText(node: AstNode, code: string): string {
-  const lines = code.split("\n");
-  const start = attributeStartLine(node, code);
-  const end = node.endPosition.row + 1;
-  return lines
-    .slice(start - 1, end)
-    .join("\n")
-    .trim();
+  return code.substring(attributedStart(node).startIndex, node.endIndex).trim();
 }
 
 function sourceLine(node: AstNode, code: string): TestScopeLine {
   return {
     text: sourceText(node, code),
-    sourceLine: attributeStartLine(node, code),
+    sourceLine: attributeStartLine(node),
   };
 }
 
 function exampleOf(node: AstNode, code: string): TestExample {
-  const startLine = attributeStartLine(node, code);
+  const startLine = attributeStartLine(node);
   return {
-    name: nodeName(node, code),
+    name: nodeName(node),
     text: sourceText(node, code),
     startLine,
     endLine: node.endPosition.row + 1,
@@ -73,14 +95,14 @@ function directDeclarations(node: AstNode): AstNode[] {
 }
 
 function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope {
-  const localName = nodeName(node, code);
+  const localName = nodeName(node);
   const name = pathPrefix ? `${pathPrefix}.${localName}` : localName;
   const otherLines: TestScopeLine[] = [];
   const examples: TestExample[] = [];
   const children: TestScope[] = [];
 
   for (const child of directDeclarations(node)) {
-    if (child.type === "attribute_item") continue;
+    if (child.type === "attribute_item" || child.type === "inner_attribute_item") continue;
 
     if (child.type === "mod_item") {
       children.push(buildRustScope(child, code, name));
@@ -88,7 +110,7 @@ function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope
     }
 
     if (child.type === "function_item") {
-      if (isRustTestFunction(child, code)) examples.push(exampleOf(child, code));
+      if (isRustTestFunctionNode(child, code)) examples.push(exampleOf(child, code));
       else otherLines.push(sourceLine(child, code));
       continue;
     }
@@ -113,33 +135,108 @@ export function buildRustTestScope(containerNode: AstNode, code: string): TestSc
   return buildRustScope(containerNode, code);
 }
 
+/** The subject every Rust test id hangs under: the file's basename without `.rs`. */
+function rustFileSubject(filePath: string): string {
+  return filePath.replace(/\\/g, "/").split("/").at(-1)?.replace(/\.rs$/, "") || "rust";
+}
+
 export function rustTestScopeChunks(
   containerNode: AstNode,
   code: string,
   filePath: string,
-  config: { maxChunkSize: number; bodyChunkPrefixLength?: number },
+  config: HookChunkingConfig,
 ): BodyChunkResult[] {
-  const topLevelName = filePath.replace(/\\/g, "/").split("/").at(-1)?.replace(/\.rs$/, "") || "rust";
-  return produceTestScopeChunks(buildRustTestScope(containerNode, code), topLevelName, config);
+  return produceTestScopeChunks(buildRustTestScope(containerNode, code), rustFileSubject(filePath), config);
+}
+
+/**
+ * A single-scope root for a test-only item outside a test module: the file
+ * subject is the root, a test-family function its one example, and any other
+ * item one child scope whose rows are its setup.
+ */
+export function buildRustInlineItemScope(node: AstNode, subject: string, itemSource: RustInlineItemSource): TestScope {
+  const root: TestScope = {
+    name: subject,
+    startLine: itemSource.startLine,
+    endLine: itemSource.endLine,
+    setupLines: [],
+    otherLines: [],
+    examples: [],
+    children: [],
+  };
+  const name = nodeName(node);
+  if (isRustTestFunctionNode(node, itemSource.text)) {
+    root.examples.push({ name, text: itemSource.text, startLine: itemSource.startLine, endLine: itemSource.endLine });
+    return root;
+  }
+  root.children.push({
+    name,
+    startLine: itemSource.startLine,
+    endLine: itemSource.endLine,
+    setupLines: [],
+    otherLines: itemSource.text.split("\n").map((text, row) => ({ text, sourceLine: itemSource.startLine + row })),
+    examples: [],
+    children: [],
+  });
+  return root;
+}
+
+/** The chunk of one test-only item outside a test module (none when the kernel drops it as noise). */
+export function rustInlineItemChunks(
+  node: AstNode,
+  itemSource: RustInlineItemSource,
+  filePath: string,
+  config: HookChunkingConfig,
+): BodyChunkResult[] {
+  const subject = rustFileSubject(filePath);
+  return produceTestScopeChunks(
+    buildRustInlineItemScope(node, subject, itemSource),
+    subject,
+    config,
+    RUST_INLINE_ITEM_VOCABULARY,
+  );
+}
+
+/**
+ * A container that is not test-only keeps generic chunking; only its test-only
+ * leaf members are relabelled — `test` for a test-family function, `test_setup`
+ * for any other test-only item.
+ */
+function labelInlineTestMembers(ctx: HookContext): void {
+  ctx.validChildren.forEach((child, index) => {
+    if (isRustTestFunctionNode(child, ctx.code)) ctx.methodChunkTypes.set(index, "test");
+    else if (isInlineTestNode(child, ctx.code)) ctx.methodChunkTypes.set(index, "test_setup");
+  });
 }
 
 export const rustTestScopeChunkerHook: ChunkingHook = {
   name: "rust-test-scope-chunker",
 
   process(ctx: HookContext): void {
-    if (ctx.containerNode.type !== "mod_item") return;
-    if (!hasCfgTestAttribute(ctx.containerNode, ctx.code) && !isRustTestModule(ctx.containerNode, ctx.code)) return;
+    const { containerNode, code } = ctx;
+    if (!isInlineTestNode(containerNode, code)) {
+      labelInlineTestMembers(ctx);
+      return;
+    }
 
-    const chunks = rustTestScopeChunks(ctx.containerNode, ctx.code, ctx.filePath, ctx.config);
+    const chunks =
+      containerNode.type === "mod_item"
+        ? rustTestScopeChunks(containerNode, code, ctx.filePath, ctx.config)
+        : rustInlineItemChunks(
+            containerNode,
+            {
+              text: sourceText(containerNode, code),
+              startLine: attributeStartLine(containerNode),
+              endLine: containerNode.endPosition.row + 1,
+            },
+            ctx.filePath,
+            ctx.config,
+          );
     if (chunks.length === 0) return;
     ctx.bodyChunks = chunks;
     ctx.skipChildren = true;
   },
 };
-
-export function rustTestFunctionAttributes(node: AstNode, code: string): string[] {
-  return leadingRustAttributes(node, code);
-}
 
 export function rustTestSourceText(node: AstNode, code: string): string {
   return sourceText(node, code);

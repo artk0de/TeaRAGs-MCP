@@ -129,6 +129,7 @@ const CHUNKING_IMPORTED_SOURCES: Readonly<Record<string, readonly string[]>> = {
     `${LANGUAGE_ROOT}/ruby/walker/shared/ast-utils.ts`,
     `${LANGUAGE_ROOT}/ruby/walker/shared/value-class-builder.ts`,
   ],
+  rust: [`${LANGUAGE_ROOT}/rust/inline-tests.ts`],
   typescript: [`${LANGUAGE_ROOT}/typescript/inline-tests.ts`],
   javascript: [`${LANGUAGE_ROOT}/javascript/inline-tests.ts`],
 };

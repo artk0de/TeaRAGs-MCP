@@ -22,6 +22,7 @@
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { FileExtraction } from "../../../contracts/types/codegraph.js";
 import type { ExtractionPass, LanguageWalker, WalkContext, WalkInput } from "../../../contracts/types/language.js";
+import { pruneInlineTestSubtrees, type InlineTestRecognizers } from "./inline-test-pruning.js";
 import { mergeExtraction } from "./merge-extraction.js";
 
 /**
@@ -90,6 +91,14 @@ export interface ExtractionWalkerParts {
    * extraction needs, which is how every consumer keeps walking its files.
    */
   extractionBearingNodeTypes?: readonly string[];
+  /**
+   * The language's inline-test recognisers (`<lang>/inline-tests.ts`), for a
+   * language whose tests live beside product code. Present, the walk and every
+   * pass read a tree with the test-only subtrees hidden and no symbol range
+   * inside one — tests stay out of the graph per node. Absent, the input is
+   * walked exactly as given.
+   */
+  inlineTests?: InlineTestRecognizers;
 }
 
 /**
@@ -99,7 +108,11 @@ export interface ExtractionWalkerParts {
  */
 export function composeExtractionWalker(parts: ExtractionWalkerParts): LanguageWalker {
   const walker: LanguageWalker = {
-    walk: (input) => {
+    walk: (given) => {
+      const input = parts.inlineTests === undefined ? given : pruneInlineTestSubtrees(given, parts.inlineTests);
+      if (input === null) {
+        return { relPath: given.relPath, language: given.language, imports: [], chunks: [], fileScope: [] };
+      }
       const native = parts.walk(input);
       if (parts.passes.length === 0) return native;
       return runExtractionPasses(native, parts.passes, input.tree.rootNode, toWalkContext(input));

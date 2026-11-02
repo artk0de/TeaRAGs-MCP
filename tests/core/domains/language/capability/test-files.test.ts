@@ -34,7 +34,8 @@ const INFRA_DIR = join(process.cwd(), "src/core/primitives");
 // which ingest and the codegraph index as TypeScript (bd tea-rags-mcp-1y13c),
 // carry TypeScript's own test suffixes. A second: the languages only the
 // retired static-trajectory basename regex knew (php … clojure), folded in when
-// `payload.isTest` moved onto this classifier (bd tea-rags-mcp-9ty5z).
+// `payload.isTest` moved onto this classifier (bd tea-rags-mcp-9ty5z). A third:
+// Rust's `tests.rs`, the body of `#[cfg(test)] mod tests;` (epic 52wk3).
 const CANONICAL_TEST_PATTERNS = [
   "**/tests/**",
   "**/test/**",
@@ -66,6 +67,7 @@ const CANONICAL_TEST_PATTERNS = [
   "**/*IT.java",
   "**/*_test.go",
   "**/*_test.rs",
+  "**/tests.rs",
   "**/*Test.php",
   "**/*Test.cs",
   "**/*Tests.cs",

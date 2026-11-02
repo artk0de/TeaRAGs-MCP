@@ -63,9 +63,11 @@ import type {
   RustExternalSignatureSources,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
+import { RustChunkClassifier } from "./chunking/classifier.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
 import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
 import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
+import { fileIsInlineTestOnly, isInlineTestNode } from "./inline-tests.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
 import { extractFromRustFile, RUST_EXTRACTION_PASSES, rustNameOf, type RustExtractInput } from "./walker/index.js";
@@ -106,6 +108,9 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   childChunkTypes: ["function_item", "function_signature_item", "macro_definition", "impl_item", "trait_item"],
   alwaysExtractChildren: true,
   hooks: [rustTestDslFilterHook, rustCommentCaptureHook, rustTestScopeChunkerHook],
+  // A top-level test-only item with no member to extract reaches no container
+  // hook; the classifier gives it its `test` / `test_setup` chunk.
+  classifier: new RustChunkClassifier(),
   // Rust function items are searchable symbols even when their bodies are
   // shorter than the generic 50-character noise floor.
   keepShortChildChunkTypes: ["function_item", "function_signature_item"],
@@ -137,6 +142,8 @@ export class RustLanguage implements LanguageProvider {
     nameOf: (node) => rustNameOf(node),
     // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
     passes: RUST_EXTRACTION_PASSES,
+    // `#[cfg(test)]` items, `#[test]`-family fns and `#![cfg(test)]` files stay out of the graph.
+    inlineTests: { isInlineTestNode, fileIsInlineTestOnly },
   });
   readonly resolver: LanguageSymbolResolver;
 

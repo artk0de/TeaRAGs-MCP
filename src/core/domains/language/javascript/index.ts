@@ -52,6 +52,7 @@ import type {
 import { composeExtractionWalker, readEcmascriptImportSpecifiers } from "../kernel/index.js";
 import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../typescript/package-manifest.js";
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
+import { isInlineTestNode } from "./inline-tests.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
 import {
@@ -147,6 +148,8 @@ export class JavaScriptLanguage implements LanguageProvider {
     nameOf: (node) => jsNameOf(node),
     // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
     passes: JAVASCRIPT_EXTRACTION_PASSES,
+    // Vitest in-source `if (import.meta.vitest)` blocks stay out of the graph.
+    inlineTests: { isInlineTestNode },
   });
   readonly resolver: LanguageSymbolResolver;
   /** Every `package.json`, split by section — the object TypeScript reads too (bd tea-rags-mcp-89k7k.35.3). */

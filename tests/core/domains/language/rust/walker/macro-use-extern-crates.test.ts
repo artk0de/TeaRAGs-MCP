@@ -32,7 +32,7 @@ describe("Rust walker — #[macro_use] extern crate (s3i8m.4 B2)", () => {
       "extern crate tikv_util;",
       "extern crate libc;",
       "#[macro_use]",
-      "#[cfg(test)]",
+      '#[cfg(feature = "slog")]',
       "extern crate slog;",
       "",
     ].join("\n");
