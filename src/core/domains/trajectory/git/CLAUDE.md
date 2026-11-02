@@ -227,21 +227,6 @@ than in their own navigators.
   counted as two contributors and split one burst into two sessions on this repo
   (bd tea-rags-mcp-nsxzh). New code that groups or counts authors must key by
   identity, never by `author`.
-- **With squash-aware sessions on, `commitCount` is a SESSION count and only
-  some signals follow.** `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true` groups
-  commits per author (gap ≥ `sessionGapMinutes`, default 30; merge commits
-  dropped — `groupIntoSessions` in `history/sessions.ts`) into a synthetic
-  one-commit-per-session `countSource` (`assembleFileSignals`). `commitCount`,
-  `recencyWeightedFreq`, `changeDensity`, `churnVolatility` and `bugFixRate`
-  then read sessions, while authorship, `linesAdded` / `linesDeleted` /
-  `fileChurnCount` / `relativeChurn` and `taskIds` stay per-COMMIT. The chunk
-  side mirrors it (`infra/metrics/chunk-assembler.ts`) and the file denominator
-  is session-normalized in `assembleOverlays` (`infra/assemble-overlays.ts`).
-  Why: the flag changes the unit of half the payload and leaves the other half
-  alone, so churn-per-commit ratios and every
-  `confidence.support: "commitCount"` threshold shift meaning — and percentiles
-  computed under one setting are not comparable to an index built under the
-  other.
 - **A file past `chunkMaxFileLines` is a POLICY decline, stamped
   `git.chunk.skippedAs: "oversized"` — never a walked zero.**
   `GitEnrichmentProvider#shouldEnrich` answers `"file-only"` when the

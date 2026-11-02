@@ -163,35 +163,24 @@ Chunk-level analysis is automatically skipped for:
 - **Binary files** — blob read fails gracefully.
 - **Root commits** — no parent to diff against.
 
-## GIT SESSIONS — Squash-Aware Grouping {#git-sessions}
+## GIT SESSIONS — removed {#git-sessions}
 
-**Why it exists.** Agent-driven development produces **bursts of micro-commits**:
-a single refactor session might land as 15–20 "fix typo", "adjust", "wip"
-commits within a few minutes. Treating each as an independent commit wrecks
-every churn-based signal — a 20-commit session looks identical to 20 separate
-production incidents.
+Squash-aware sessions (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS`, with
+`TRAJECTORY_GIT_SESSION_GAP_MINUTES`) grouped each author's commits into
+sessions and fed the session count into `commitCount`, `bugFixRate`,
+`changeDensity`, `churnVolatility` and `recencyWeightedFreq`. The mode is gone:
+a backtest that predicted future bug fixes from these signals showed no
+consistent gain on two corpora, files averaged only 1.02–1.17 commits per
+session, and percentiles computed in session units could not be compared with
+any index built in commit units. Git signals now always count commits.
 
-**What it does.** When `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`, the pipeline
-groups commits by `(author, time gap)`. Any silence gap larger than
-`TRAJECTORY_GIT_SESSION_GAP_MINUTES` (default 30 min) starts a new session.
-Session count — not raw commit count — then feeds churn-related signals.
+Setting either variable logs one "removed and is ignored" line. An index built
+with the mode on reports env drift with the remedy
+`tea-rags index-codebase --project <alias> --force-enrichments git`, which
+rebuilds the git payload without re-embedding.
 
-**Where it matters most:**
-
-- Solo devs pair-programming with an agent (single human + single agent author)
-- Teams adopting AI-assisted workflows where agents produce fine-grained commits
-- Any project where `git log --oneline | wc -l` is misleading because most
-  commits are agent checkpoints, not logical deliverables
-
-**Impact on signals.** `commitCount`, `chunkCommitCount`, `bugFixRate`,
-`churnVolatility`, and `relativeChurn` all use the deduplicated session count
-when this mode is on. `recentDominantAuthor`, `blameDominantAuthor`, and
-`taskIds` are unaffected — sessions affect counts, not who owns lines or who
-mentioned which ticket.
-
-**Default is `false`** — opt in per project. Enable via the environment variable
-or the setup wizard (`/tea-rags-setup:install` step 7 — "Configure git
-analytics").
+The co-change build was never affected: it groups commits into author bursts
+with a window it estimates from the history itself.
 
 ## Environment Variables
 
@@ -205,5 +194,3 @@ analytics").
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
 | `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS` | `120000` | Timeout for chunk churn CLI pathspec (ms) |
 | `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `5000` | Skip files larger than this for chunk analysis |
-| `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | `false` | Group commits into sessions (squash noise reduction) |
-| `TRAJECTORY_GIT_SESSION_GAP_MINUTES` | `30` | Gap between commits to split sessions |

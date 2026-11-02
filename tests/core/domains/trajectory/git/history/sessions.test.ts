@@ -1,18 +1,13 @@
 /**
- * Tests for squash-aware session grouping.
+ * Tests for author-session grouping.
  *
  * Groups commits into sessions by (author, time gap).
- * When enabled, session count replaces commit count for
- * churn-related signals.
  */
 
 import { describe, expect, it } from "vitest";
 
 import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
-import {
-  groupIntoSessions,
-  groupTimestampsIntoSessions,
-} from "../../../../../../src/core/domains/trajectory/git/history/sessions.js";
+import { groupIntoSessions } from "../../../../../../src/core/domains/trajectory/git/history/sessions.js";
 
 const BASE_TS = 1700000000; // arbitrary fixed timestamp
 const HOUR = 3600;
@@ -172,80 +167,5 @@ describe("groupIntoSessions", () => {
     const sessions = groupIntoSessions(commits, GAP);
     expect(sessions).toHaveLength(2);
     expect(sessions.map((s) => s.author).sort()).toEqual(["alice", "bob"]);
-  });
-});
-
-describe("groupTimestampsIntoSessions", () => {
-  const GAP = 30; // 30 minutes
-
-  it("returns empty array for empty input", () => {
-    expect(groupTimestampsIntoSessions([], [], GAP)).toEqual([]);
-  });
-
-  it("returns single timestamp for single entry", () => {
-    const result = groupTimestampsIntoSessions([BASE_TS], ["alice"], GAP);
-    expect(result).toEqual([BASE_TS]);
-  });
-
-  it("groups burst timestamps from same author into one session", () => {
-    const timestamps = [BASE_TS, BASE_TS + 5 * MIN, BASE_TS + 10 * MIN, BASE_TS + 15 * MIN];
-    const authors = ["alice", "alice", "alice", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBe(BASE_TS + 15 * MIN); // last timestamp
-  });
-
-  it("splits into sessions when gap exceeds threshold", () => {
-    const timestamps = [BASE_TS, BASE_TS + 5 * MIN, BASE_TS + 2 * HOUR, BASE_TS + 2 * HOUR + 5 * MIN];
-    const authors = ["alice", "alice", "alice", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    expect(result).toHaveLength(2);
-  });
-
-  it("separates sessions by author even with no time gap", () => {
-    const timestamps = [BASE_TS, BASE_TS + 1 * MIN, BASE_TS + 2 * MIN];
-    const authors = ["alice", "bob", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    // alice: 1 session (2 commits), bob: 1 session (1 commit)
-    expect(result).toHaveLength(2);
-  });
-
-  it("treats gap exactly at threshold as new session", () => {
-    const timestamps = [BASE_TS, BASE_TS + 30 * MIN];
-    const authors = ["alice", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    expect(result).toHaveLength(2);
-  });
-
-  it("handles unsorted timestamps correctly", () => {
-    const timestamps = [BASE_TS + 10 * MIN, BASE_TS, BASE_TS + 2 * HOUR];
-    const authors = ["alice", "alice", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    expect(result).toHaveLength(2);
-  });
-
-  it("handles multi-author interleaved timestamps", () => {
-    const timestamps = [BASE_TS, BASE_TS + 5 * MIN, BASE_TS + 2 * HOUR, BASE_TS + 2 * HOUR + 5 * MIN];
-    const authors = ["alice", "bob", "alice", "bob"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    // alice: 2 sessions (BASE, +2h), bob: 2 sessions (+5min, +2h+5min)
-    expect(result).toHaveLength(4);
-  });
-
-  it("falls back to 'unknown' for missing authors", () => {
-    const timestamps = [BASE_TS, BASE_TS + 5 * MIN];
-    const authors: string[] = []; // empty — shorter than timestamps
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    // Both get "unknown" author, within gap → 1 session
-    expect(result).toHaveLength(1);
-  });
-
-  it("returns sorted session timestamps", () => {
-    const timestamps = [BASE_TS + 2 * HOUR, BASE_TS, BASE_TS + 4 * HOUR];
-    const authors = ["alice", "alice", "alice"];
-    const result = groupTimestampsIntoSessions(timestamps, authors, GAP);
-    for (let i = 1; i < result.length; i++) {
-      expect(result[i]).toBeGreaterThanOrEqual(result[i - 1]);
-    }
   });
 });

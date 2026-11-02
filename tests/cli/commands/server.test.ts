@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getZodConfig, parseAppConfig } from "../../../src/bootstrap/config/index.js";
+import type * as ConfigUtils from "../../../src/bootstrap/config/utils.js";
 import { createAppContext, createConfiguredServer, loadPrompts } from "../../../src/bootstrap/factory.js";
 import { migrateHomeDir } from "../../../src/bootstrap/migrate.js";
 import { startHttpServer } from "../../../src/bootstrap/transport/http.js";
 import { startStdioServer } from "../../../src/bootstrap/transport/stdio.js";
 import { runServer } from "../../../src/cli/commands/server.js";
 
-vi.mock("../../../src/bootstrap/config/index.js", () => ({
+vi.mock("../../../src/bootstrap/config/index.js", async () => ({
+  describeDeprecation: (await vi.importActual<typeof ConfigUtils>("../../../src/bootstrap/config/utils.js"))
+    .describeDeprecation,
   parseAppConfig: vi.fn().mockReturnValue({ transportMode: "stdio" }),
   getZodConfig: vi.fn().mockReturnValue({ deprecations: [] }),
 }));

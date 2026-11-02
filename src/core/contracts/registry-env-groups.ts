@@ -64,8 +64,11 @@ const REGISTRY_ENV_GROUP_TABLE = [
     aliases: ["GIT_CHUNK_MAX_FILE_LINES"],
     consequence: "enrichment:git",
   },
+  // REMOVED flag — parse.ts no longer reads it and the snapshot always emits
+  // "false". The family stays so a stamp recorded with it on (session-unit
+  // `commitCount` / `bugFixRate` / …) surfaces as `enrichment:git` drift; its
+  // gap companion went with it, a gap without sessions shapes nothing.
   { canonical: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", aliases: [], consequence: "enrichment:git" },
-  { canonical: "TRAJECTORY_GIT_SESSION_GAP_MINUTES", aliases: [], consequence: "enrichment:git" },
   // The instant every window and age is measured from — a flip moves them all.
   { canonical: "TRAJECTORY_GIT_ANCHOR", aliases: [], consequence: "enrichment:git" },
   // ingest feature modes (parse.ts `ingest` section). AST on/off and the test

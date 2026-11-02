@@ -254,7 +254,7 @@ export type SilentCouplingStructuralVisibility = "both-walked" | "one-walked";
 
 /** Why a co-change pair is a silent-coupling violation (bd tea-rags-mcp-b4dcz). */
 export interface SilentCouplingViolationEvidence {
-  /** Change bundles (commits, or author sessions when squash-aware) touching both files. */
+  /** Change bundles (author bursts) touching both files. */
   support: number;
   /** P(target changes | source changes). */
   confidenceAB: number;

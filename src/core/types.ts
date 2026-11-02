@@ -27,8 +27,6 @@ export type { ProviderRunMetrics } from "./contracts/types/provider.js";
 /** Config for IngestFacade trajectory enrichment setup */
 export interface TrajectoryIngestConfig {
   enableGitMetadata?: boolean;
-  squashAwareSessions?: boolean;
-  sessionGapMinutes?: number;
   trajectoryGit?: {
     logMaxAgeMonths: number;
     logTimeoutMs: number;

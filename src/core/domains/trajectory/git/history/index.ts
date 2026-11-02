@@ -35,6 +35,6 @@ export {
   tallyAuthors,
   type AuthorNameDirectory,
 } from "./author-identity.js";
-export { groupIntoSessions, groupTimestampsIntoFixSessions, partitionIntoAuthorSessions } from "./sessions.js";
+export { groupIntoSessions, partitionIntoAuthorSessions } from "./sessions.js";
 export { EMPTY_TASK_ID_VOCABULARY, extractTaskIds, learnTaskIdVocabulary, type TaskIdVocabulary } from "./task-ids.js";
 export { isBugFixCommit, isBugFixCommitOrBranch, MERGE_SUBJECT } from "./utils.js";

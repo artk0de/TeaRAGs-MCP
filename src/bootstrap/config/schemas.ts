@@ -207,8 +207,6 @@ export const trajectoryGitSchema = z.object({
   // (bd tea-rags-mcp-2brzq). 5000: tea-rags has 2 code files above it,
   // taxdome 0 (max 4653); the walk cost it saves is ~0.2-0.7 s per file.
   chunkMaxFileLines: intWithDefault(5000),
-  squashAwareSessions: booleanFromEnv,
-  sessionGapMinutes: intWithDefault(30),
   // The instant every git window and age is measured from (bd
   // tea-rags-mcp-i6tkc): "now" = the wall clock; "head" = the HEAD commit's
   // committer time, for benchmarks over historical snapshots whose windows

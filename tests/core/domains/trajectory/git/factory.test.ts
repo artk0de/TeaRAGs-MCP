@@ -45,14 +45,4 @@ describe("createGitEnrichmentProvider", () => {
     expect(provider.workerDescriptor).toEqual(descriptor);
     expect(provider.workerDescriptor?.dispatch).toBe("collection-affinity");
   });
-
-  it("forwards squashOpts to the constructed provider", () => {
-    const provider = createGitEnrichmentProvider({
-      squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 },
-    });
-    // No public getter for squashOpts — assert it survives via descriptor
-    // serialization shape (covered above) and that provider was built
-    // (would throw otherwise).
-    expect(provider.key).toBe("git");
-  });
 });

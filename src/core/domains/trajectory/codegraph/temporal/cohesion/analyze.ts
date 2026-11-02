@@ -18,8 +18,7 @@
  * never a zero score.
  *
  * Stated limits, carried in the report: the window is the chunk walk's
- * `chunkMaxAgeMonths`, not full history; squash-aware session bundling shaped
- * the commit sets exactly as it shapes `git.chunk.*`.
+ * `chunkMaxAgeMonths`, not full history.
  */
 
 import type { TemporalSymbolCommitFileSnapshot } from "../../../../../contracts/types/codegraph.js";

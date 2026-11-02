@@ -1,6 +1,12 @@
 // src/bootstrap/transport/server-runtime.ts
 import type { PromptsConfig } from "../../mcp/prompts/index.js";
-import { getZodConfig, parseAppConfig, type AppConfig } from "../config/index.js";
+import {
+  describeDeprecation,
+  getZodConfig,
+  parseAppConfig,
+  type AppConfig,
+  type DeprecationNotice,
+} from "../config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, type AppContext } from "../factory.js";
 import { migrateHomeDir } from "../migrate.js";
 import { startHttpServer } from "./http.js";
@@ -12,7 +18,7 @@ export interface McpServerRuntime {
   ctx: AppContext;
   promptsConfig: PromptsConfig | null;
   /** Deprecated env vars in use, already reported on stderr. */
-  deprecations: readonly { oldName: string; newName: string }[];
+  deprecations: readonly DeprecationNotice[];
 }
 
 /** What an MCP server entry point declares about its own lifetime. */
@@ -47,7 +53,7 @@ export async function prepareMcpServerRuntime(options: McpServerRuntimeOptions =
   const promptsConfig = loadPrompts(config);
 
   if (deprecations.length > 0) {
-    const lines = deprecations.map((d) => `  ${d.oldName} -> use ${d.newName}`).join("\n");
+    const lines = deprecations.map((d) => `  ${describeDeprecation(d)}`).join("\n");
     console.error(`[tea-rags] Deprecated env vars:\n${lines}`);
   }
 
@@ -95,7 +101,7 @@ export async function runMcpServer(options: McpServerRunOptions = {}): Promise<v
 
     // Send deprecation warnings via MCP logging (visible to client)
     if (deprecations.length > 0) {
-      const lines = deprecations.map((d) => `${d.oldName} -> use ${d.newName}`).join(", ");
+      const lines = deprecations.map(describeDeprecation).join(", ");
       await server.sendLoggingMessage({ level: "warning", data: `Deprecated env vars: ${lines}` });
     }
   }

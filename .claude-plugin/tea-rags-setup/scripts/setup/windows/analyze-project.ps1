@@ -59,7 +59,6 @@ $authorCommitCount  = $null
 $hasFrequentCommits = $false
 $avgGapMinutes      = $null
 $gitEnabled         = $false
-$squashAware        = $false
 
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 if ($gitCmd) {
@@ -115,7 +114,6 @@ if ($gitCmd) {
 
                             if ($median -lt 30) {
                                 $hasFrequentCommits = $true
-                                $squashAware        = $true
                             }
                         }
                     }
@@ -129,9 +127,6 @@ if ($gitCmd) {
 
 $recommendedEnv = [ordered]@{
     TRAJECTORY_GIT_ENABLED = $gitEnabled.ToString().ToLower()
-}
-if ($squashAware) {
-    $recommendedEnv['TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS'] = 'true'
 }
 
 # ─── Output JSON ──────────────────────────────────────────────────────────────

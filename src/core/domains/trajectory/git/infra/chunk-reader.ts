@@ -12,7 +12,6 @@ import type { ChunkChurnOverlay } from "../types.js";
 import { assembleOverlays } from "./assemble-overlays.js";
 import { buildAccumulators } from "./build-accumulators.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import type { SquashOptions } from "./metrics.js";
 import { collectSymbolCommitSets } from "./symbol-commit-sets.js";
 import {
   walkCommits,
@@ -49,7 +48,6 @@ export async function buildChunkChurnMap(
   concurrency = 10,
   maxAgeMonths = 6,
   fileChurnDataMap?: Map<string, FileChurnData>,
-  squashOpts?: SquashOptions,
   chunkTimeoutMs = 120000,
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
@@ -82,7 +80,6 @@ export async function buildChunkChurnMap(
     concurrency,
     maxAgeMonths,
     fileChurnDataMap,
-    squashOpts,
     chunkTimeoutMs,
     maxFileLines,
     externalSemaphore,
@@ -110,7 +107,6 @@ export async function buildChunkChurnMapUncached(
   concurrency: number,
   maxAgeMonths: number,
   fileChurnDataMap?: Map<string, FileChurnData>,
-  squashOpts?: SquashOptions,
   chunkTimeoutMs = 120000,
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
@@ -155,7 +151,6 @@ export async function buildChunkChurnMapUncached(
     maxAgeMonths,
     chunkTimeoutMs,
     externalSemaphore,
-    squashOpts,
     fileChurnDataMap,
     blobReader,
     diffMemo,
@@ -169,7 +164,6 @@ export async function buildChunkChurnMapUncached(
     relativeChunkMap,
     accumulators,
     fileChurnDataMap,
-    squashOpts,
     blameByPath,
     historyAnchorSec,
   });

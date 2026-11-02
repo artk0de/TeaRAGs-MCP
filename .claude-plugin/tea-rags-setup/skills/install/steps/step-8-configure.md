@@ -57,7 +57,6 @@ Agent tool:
       QDRANT_URL=<value or omit if embedded>
       <all tuneValues keys>=<values>
       TRAJECTORY_GIT_ENABLED=<value>
-      TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=<value or omit>
       GIT_ADAPTER=<gitAdapter from progress — ALWAYS include, "git" too>
 
     Use `claude mcp add tea-rags -s <scope> ...` to configure.

@@ -35,10 +35,9 @@ vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
     GitTrajectory: class extends OrigGitTrajectory {
       constructor(
         config?: ConstructorParameters<typeof OrigGitTrajectory>[0],
-        squashOpts?: ConstructorParameters<typeof OrigGitTrajectory>[1],
         workerDescriptor?: WorkerEnrichmentDescriptor,
       ) {
-        super(config, squashOpts, workerDescriptor);
+        super(config, workerDescriptor);
         captured.gitWorkerDescriptor = workerDescriptor;
       }
     },
@@ -613,12 +612,9 @@ describe("wireCodegraph", () => {
         enabled: true,
         chunkMaxAgeMonths: 6,
         chunkTimeoutMs: 120_000,
-        squashAwareSessions: true,
-        sessionGapMinutes: 45,
       },
       vcs: { adapter: "git" },
     } as unknown as ReturnType<typeof getZodConfig>;
-    // Squash-aware sessions are on, yet the co-change config carries no session gap (bd tea-rags-mcp-3vg0x).
     const expected = { windowMonths: 6, vcsAdapter: "git", gitTimeoutMs: 120_000 };
 
     const ctx = wireCodegraph(makeConfig(), withGit, new CollectionRegistry("/tmp/factory-test-registry"));
