@@ -122,6 +122,22 @@ describe("runPrime — registry qdrant backend resolution", () => {
     expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
   });
 
+  it("pings the live daemon when both the registry and environment select embedded", async () => {
+    register({ qdrantUrl: "embedded", qdrantEmbedded: true, teaRagsVersion: "1.44.2" });
+    process.env.QDRANT_URL = "embedded";
+    parseAppConfigMock.mockReturnValue({ embedding: {}, qdrantUrl: "embedded" });
+
+    await runPrime({
+      registryRuntime: primeRegistryRuntime(),
+      project: "marketplace",
+      createPathCollectionResolver,
+      openSession,
+    });
+
+    expect(pingMock).toHaveBeenCalledTimes(1);
+    expect(pingMock).toHaveBeenCalledWith(LIVE_DAEMON_URL);
+  });
+
   it("pings the recorded address of an external Qdrant", async () => {
     register({ qdrantUrl: "http://qdrant.internal:6333", teaRagsVersion: "1.28.0" });
 

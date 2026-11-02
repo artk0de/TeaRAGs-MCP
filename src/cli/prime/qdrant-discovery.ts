@@ -17,8 +17,9 @@ interface ConfigShape {
  * per the layer-boundary contract.
  */
 export function discoverQdrantUrl(config: ConfigShape): string {
-  if (process.env.QDRANT_URL) return process.env.QDRANT_URL;
-  if (config.qdrantUrl) return config.qdrantUrl;
+  // The sentinel selects daemon discovery; it is not a network address.
+  if (process.env.QDRANT_URL && process.env.QDRANT_URL !== "embedded") return process.env.QDRANT_URL;
+  if (!process.env.QDRANT_URL && config.qdrantUrl && config.qdrantUrl !== "embedded") return config.qdrantUrl;
 
   const portFile = join(getStoragePath(), "daemon.port");
   if (!existsSync(portFile)) return FALLBACK_URL;

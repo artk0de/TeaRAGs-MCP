@@ -44,6 +44,36 @@ describe("discoverQdrantUrl", () => {
     expect(discoverQdrantUrl({ qdrantUrl: "http://config-url:6333" })).toBe("http://config-url:6333");
   });
 
+  it("resolves the live daemon when QDRANT_URL and config select embedded", () => {
+    process.env.QDRANT_URL = "embedded";
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("63995");
+
+    expect(discoverQdrantUrl({ qdrantUrl: "embedded" })).toBe("http://127.0.0.1:63995");
+  });
+
+  it("resolves the live daemon when config selects embedded without an environment override", () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("63995");
+
+    expect(discoverQdrantUrl({ qdrantUrl: "embedded" })).toBe("http://127.0.0.1:63995");
+  });
+
+  it("keeps an explicit embedded environment override ahead of an external config URL", () => {
+    process.env.QDRANT_URL = "embedded";
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("63995");
+
+    expect(discoverQdrantUrl({ qdrantUrl: "http://config-url:6333" })).toBe("http://127.0.0.1:63995");
+  });
+
+  it("uses the existing localhost fallback when embedded has no daemon port file", () => {
+    process.env.QDRANT_URL = "embedded";
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    expect(discoverQdrantUrl({ qdrantUrl: "embedded" })).toBe("http://localhost:6333");
+  });
+
   it("reads daemon.port from default storage path (~/.tea-rags/qdrant) when env+config are absent", () => {
     const expectedPortFile = join(homedir(), ".tea-rags", "qdrant", "daemon.port");
     vi.mocked(existsSync).mockImplementation((p) => p === expectedPortFile);
