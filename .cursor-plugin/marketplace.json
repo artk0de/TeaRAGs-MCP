@@ -11,6 +11,10 @@
     {
       "name": "dinopowers",
       "source": "./harness/cursor/dinopowers"
+    },
+    {
+      "name": "tea-rags-setup",
+      "source": "./harness/cursor/tea-rags-setup"
     }
   ]
 }

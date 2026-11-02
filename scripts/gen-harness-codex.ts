@@ -17,12 +17,15 @@ import {
   readManifest,
   readSkills,
   selectSkills,
+  SETUP_NAME,
+  SETUP_SRC,
   SHARED_HOOK_SCRIPTS,
   TURN_ROUTING_SOURCE,
   walk,
   writePackage,
   writeRootFile,
 } from "./harness/package.js";
+import { renderSetupPackage } from "./harness/setup.js";
 import {
   extractInjectionBlock,
   parseFrontmatter,
@@ -68,7 +71,8 @@ const CODEX_DIALECT: HarnessDialect = {
   codeReadTool: "shell sed -n '<start>,<end>p' <one file>",
 };
 
-const CODEX_ROUTE_SCOPE = "A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name.";
+const CODEX_ROUTE_SCOPE =
+  "A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name.";
 
 /**
  * Codex lists skills by description only — the body never enters context until
@@ -657,6 +661,8 @@ ${core}
   \`scripts/wrapper-routing.sh\`, both \`hookSpecificOutput.additionalContext\` with the routing table
   (\`scripts/*.txt\`, rendered from the Claude Code hook scripts in \`$dino-<s>\` mentions).
 - \`dinopowers/skills/dino-<s>/\` — the wrappers; \`dinopowers/CHAINING.md\`, \`dinopowers/FRESHNESS.md\` — files they link to.
+- \`tea-rags-setup/\` — the \`$install\` and \`$tune\` skills plus the Node helpers they run (\`scripts/*.mjs\`);
+  manifest \`skills\` only (no hooks, no MCP server).
 
 ## Install
 
@@ -786,6 +792,21 @@ function renderCodexDinopowers(root: string, teaRagsSkills: ReadonlySet<string>)
     json({ description: "Dinopowers workflow routing for sessions and subagents", hooks }),
   );
   return { version: manifest.version, files, skills };
+}
+
+/** `tea-rags-setup/**`: the install and tune skills as `$<s>`, helper scripts verbatim, no hooks or MCP. */
+function renderCodexSetup(root: string, teaRagsSkills: ReadonlySet<string>): Map<string, string> {
+  const manifest = readManifest(join(root, SETUP_SRC));
+  const files = renderSetupPackage(
+    root,
+    { skill: toCodexSkill, text: (md, names) => toHarnessText(md, CODEX_DIALECT, names) },
+    teaRagsSkills,
+  );
+  files.set(
+    `${SETUP_NAME}/.codex-plugin/plugin.json`,
+    json({ name: SETUP_NAME, version: manifest.version, description: manifest.description, skills: "./skills/" }),
+  );
+  return files;
 }
 
 /**
@@ -1035,6 +1056,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
   );
   const dinopowers = renderCodexDinopowers(root, skillNames);
   for (const [path, content] of dinopowers.files) files.set(path, content);
+  for (const [path, content] of renderCodexSetup(root, skillNames)) files.set(path, content);
   files.set("README.md", readme(manifest.version, shipped, hasCore, dinopowers));
 
   return formatPackage(root, CODEX_HARNESS_DIR, files);
@@ -1074,5 +1096,7 @@ export async function writeCodexHarness(root: string): Promise<number> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const count = await writeCodexHarness(root);
-  console.log(`✓ ${CODEX_HARNESS_DIR}: ${count} files regenerated from ${PLUGIN_SRC}, ${DINOPOWERS_SRC}.`);
+  console.log(
+    `✓ ${CODEX_HARNESS_DIR}: ${count} files regenerated from ${PLUGIN_SRC}, ${DINOPOWERS_SRC}, ${SETUP_SRC}.`,
+  );
 }

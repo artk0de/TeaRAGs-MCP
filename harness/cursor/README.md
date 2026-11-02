@@ -52,9 +52,11 @@ regenerates this package and commits it.
   `dinopowers:<s>`; `superpowers:<s>` → `/<s>`), `CHAINING.md` / `FRESHNESS.md`
   they link to, and a `sessionStart` hook (`scripts/session-start.sh`) answering
   with the main-session routing table (`scripts/main-session-routing.txt`). No
-  MCP server: the wrappers call tea-rags'. superpowers is not bundled — install
-  it per https://github.com/obra/superpowers; a wrapper without it stops and
-  asks.
+  MCP server: the wrappers call tea-rags'.
+- `tea-rags-setup/` — the `/install` and `/tune` skills plus the Node helpers
+  they run (`scripts/*.mjs`); no hooks, no MCP server. superpowers is not
+  bundled — install it per https://github.com/obra/superpowers; a wrapper
+  without it stops and asks.
 - `tea-rags/repair/`, `tea-rags/references/` — plugin files the skills link to.
   `rules/references/` moves to `references/` (links rewritten) so `rules/` holds
   rule files only.
