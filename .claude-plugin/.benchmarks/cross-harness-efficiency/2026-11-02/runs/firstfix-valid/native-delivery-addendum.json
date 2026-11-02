@@ -1,0 +1,15 @@
+{
+  "purpose": "Append native hook delivery check without rewriting earlier manifests/verdicts",
+  "prior_bundle_manifest_sha256": "78c88dce085e0238dfdd0c8ba464d8e63b9e7a769fc5e5ce50d8d0d5a79475cb",
+  "files": {
+    "public-prime-delivery.json": "2803cd15039bdc0270a79d2951955b8e023975579dd32b97c5da9dfdce61f56a",
+    "public-prime-delivery-manifest.json": "a15edabfe0fbbe2a75a6fe59863a58f661cf44b9112aa47c286fdd0cae6cc433"
+  },
+  "verdict": "PASS_NATIVE_DIGEST_DELIVERY",
+  "scope": "C02 four canonical digests with exact bindings; C01 both candidates canonical; both baselines pending. No new model actors.",
+  "limitations": [
+    "Codex numeric hook exit is unavailable/null; native status completed.",
+    "Candidate Claude source-age warnings retained separately; no timing inference.",
+    "Integration pending."
+  ]
+}

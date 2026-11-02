@@ -1,0 +1,1219 @@
+{
+  "status": "LOGICAL8_COMPLETED_ONCE_VALID_CONDITIONS; QUALITY_UNGRADED",
+  "cohort": [
+    "immutable05baselineCodexC01",
+    "corrected08selected7"
+  ],
+  "row_count": 8,
+  "rows": [
+    {
+      "key": "baseline-codex-C01",
+      "generation": "prepared-05",
+      "variant": "baseline",
+      "harness": "codex",
+      "case_id": "C01",
+      "model_responses": 1,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "ac064f4922be18a265ca4d55dc883d28e9465473883972770c749336dd353677",
+      "answer_accounting_sha256": "7a45bb95e369661bc2217c497dde6f16a8061dceb075f83c919085bf8ab3676c",
+      "session_times": {
+        "session_total_wall_seconds": 33.87725845898967,
+        "pre_user_wall_seconds": 17.927348833996803,
+        "user_request_wall_seconds": 14.229281750012888,
+        "post_user_wall_seconds": 1.7206278749799822,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 9.267000198364258,
+        "native_hook_intervals_epoch_seconds": [
+          [
+            1793630050.215,
+            1793630058.62
+          ],
+          [
+            1793630050.215,
+            1793630058.62
+          ],
+          [
+            1793630050.215,
+            1793630058.62
+          ],
+          [
+            1793630050.215,
+            1793630058.62
+          ],
+          [
+            1793630058.62,
+            1793630059.482
+          ],
+          [
+            1793630058.62,
+            1793630059.482
+          ],
+          [
+            1793630058.62,
+            1793630059.482
+          ]
+        ]
+      },
+      "final_visible_bytes": 193,
+      "public_tool_evidence_records": 0,
+      "model": "gpt-6.1-sol",
+      "native_usage": {
+        "inputTokens": 16657,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 39,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 16696
+      },
+      "input_tokens": 16657,
+      "cached_input_tokens": 0,
+      "fresh_input_tokens": 16657,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 39,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "nativeaccount.completed_usage.reasoningOutputTokens",
+      "native_cost_usd": null,
+      "cost_status": "unpriced",
+      "accounting_complete": true,
+      "usage_reconciles_native": true,
+      "controller_turn_seconds": 14.27170899999328
+    },
+    {
+      "key": "baseline-claude-C01",
+      "generation": "prepared-08",
+      "variant": "baseline",
+      "harness": "claude",
+      "case_id": "C01",
+      "model_responses": 1,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "8809c887e780fa8becadb5a2ca8c4233f58c73049082ed446f5033ce243c6a80",
+      "answer_accounting_sha256": "67c42fa5898e534635e2387bcf9ed84777e7b66297db609df3fa160f5ef101ec",
+      "session_times": {
+        "session_total_wall_seconds": 8.94493312499253,
+        "pre_user_wall_seconds": 4.138185291987611,
+        "user_request_wall_seconds": 4.19570283300709,
+        "post_user_wall_seconds": 0.61104499999783,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.4814481670036912,
+        "native_hook_intervals_monotonic": [
+          [
+            215384.76216375,
+            215384.910432583
+          ],
+          [
+            215384.76198575,
+            215384.943614416
+          ],
+          [
+            215384.762171791,
+            215385.207907791
+          ],
+          [
+            215384.7621475,
+            215386.082512583
+          ],
+          [
+            215387.267504458,
+            215387.351483666
+          ],
+          [
+            215387.267381416,
+            215387.428102458
+          ],
+          [
+            215387.26742,
+            215387.42830275
+          ]
+        ],
+        "hook_clock": "Client receipt notifications, not provider inference time"
+      },
+      "final_visible_bytes": 687,
+      "public_tool_evidence_records": 0,
+      "model": "claude-sonnet-5-5",
+      "native_usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 18312,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 383,
+        "output_tokens_details": {
+          "thinking_tokens": 149
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 18312,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 383,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 18312,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 18312
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "input_tokens": 18314,
+      "fresh_input_tokens": 18314,
+      "cached_input_tokens": 0,
+      "cache_creation_input_tokens": 18312,
+      "output_tokens": 383,
+      "reasoning_tokens_numeric": 149,
+      "reasoning_provenance": "native_result.usage.output_tokens_details.thinking_tokens",
+      "native_cost_usd": 0.077082,
+      "cost_status": "native_result_cost_list_basis",
+      "native_api_duration_ms": 3984,
+      "native_model_usage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 2,
+          "outputTokens": 383,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 18312,
+          "webSearchRequests": 0,
+          "costUSD": 0.077082,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 149,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "native_num_turns": 1,
+      "unique_provider_message_ids": [
+        "msg_011CgeU7eqsaAeEY71tFAzyr"
+      ],
+      "preuser_terminal": {
+        "status": "connected",
+        "session_id": "d7df2a8b-8c06-4505-aa36-3898c15ef928",
+        "native_connect_ms": 1680,
+        "native_log_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/baseline-claude-C01/os-home/Library/Caches/claude-cli-nodejs/-Users-Shared-nav-ab-p0-context-eval-ng1ni/mcp-logs-tea-rags/2026-11-02T17-07-23-482Z.jsonl",
+        "elapsed_seconds": 4.132213166973088,
+        "limitation": "Connect log precedes tool metadata; exactly one subsequent native mcp_status must be connected with17 tools, otherwise fail unserved."
+      },
+      "actual_native_init": {
+        "source": "ACTUAL_NATIVE_SYSTEM_INIT",
+        "mcp_tools": [
+          "mcp__tea-rags__find_co_changed",
+          "mcp__tea-rags__find_cycles",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol",
+          "mcp__tea-rags__get_architecture_report",
+          "mcp__tea-rags__get_callees",
+          "mcp__tea-rags__get_callers",
+          "mcp__tea-rags__get_index_metrics",
+          "mcp__tea-rags__get_index_status",
+          "mcp__tea-rags__get_naming_lexicon",
+          "mcp__tea-rags__get_ontology_report",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__list_projects",
+          "mcp__tea-rags__rank_chunks",
+          "mcp__tea-rags__search_code",
+          "mcp__tea-rags__semantic_search",
+          "mcp__tea-rags__trace_path"
+        ],
+        "mcp_servers": [
+          {
+            "name": "tea-rags",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "validated_before_accepting_output": true,
+        "provider_dispatch_limit": "Controller receipt cannot guarantee cancellation before provider dispatch; native init is yielded before main query body in source."
+      }
+    },
+    {
+      "key": "baseline-claude-C02",
+      "generation": "prepared-08",
+      "variant": "baseline",
+      "harness": "claude",
+      "case_id": "C02",
+      "model_responses": 2,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "b99f0de399ea7d113726f80661e531b929ed1920d2a8841b4f1f74f923c0eac7",
+      "answer_accounting_sha256": "e33080730600dd57271401710ab1dddfe5e283e9d7699b7730e50041c20f7f08",
+      "session_times": {
+        "session_total_wall_seconds": 11.192336750013055,
+        "pre_user_wall_seconds": 2.703769166022539,
+        "user_request_wall_seconds": 7.882545499975095,
+        "post_user_wall_seconds": 0.6060220840154216,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.747077415988315,
+        "native_hook_intervals_monotonic": [
+          [
+            215394.30572175,
+            215394.486775
+          ],
+          [
+            215394.3055965,
+            215394.505860666
+          ],
+          [
+            215394.305730916,
+            215394.515193625
+          ],
+          [
+            215394.305706541,
+            215395.566509625
+          ],
+          [
+            215395.693211916,
+            215395.746903708
+          ],
+          [
+            215395.693111625,
+            215396.084289125
+          ],
+          [
+            215395.693184791,
+            215396.084536541
+          ],
+          [
+            215398.259105416,
+            215398.313049916
+          ],
+          [
+            215398.325408833,
+            215398.366203708
+          ]
+        ],
+        "hook_clock": "Client receipt notifications, not provider inference time"
+      },
+      "final_visible_bytes": 1522,
+      "public_tool_evidence_records": 2,
+      "model": "claude-sonnet-5-5",
+      "native_usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 10352,
+        "cache_read_input_tokens": 26804,
+        "output_tokens": 738,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 10352,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 656,
+            "cache_read_input_tokens": 18370,
+            "cache_creation_input_tokens": 416,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 416
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "input_tokens": 37160,
+      "fresh_input_tokens": 10356,
+      "cached_input_tokens": 26804,
+      "cache_creation_input_tokens": 10352,
+      "output_tokens": 738,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "native_result.usage.output_tokens_details.thinking_tokens",
+      "native_cost_usd": 0.0514764,
+      "cost_status": "native_result_cost_list_basis",
+      "native_api_duration_ms": 7235,
+      "native_model_usage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 4,
+          "outputTokens": 738,
+          "cacheReadInputTokens": 26804,
+          "cacheCreationInputTokens": 10352,
+          "webSearchRequests": 0,
+          "costUSD": 0.0514764,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 0,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "native_num_turns": 2,
+      "unique_provider_message_ids": [
+        "msg_011CgeU8J8xfncN7g8rcq9nq",
+        "msg_011CgeU8T6DV1HHHcwNdephX"
+      ],
+      "preuser_terminal": {
+        "status": "connected",
+        "session_id": "6aff41f4-826e-4ec3-b1c9-b6edf25456d9",
+        "native_connect_ms": 1097,
+        "native_log_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/baseline-claude-C02/os-home/Library/Caches/claude-cli-nodejs/-Users-Shared-nav-ab-p0-context-eval-ng1ni/mcp-logs-tea-rags/2026-11-02T17-07-33-025Z.jsonl",
+        "elapsed_seconds": 2.7010128750116564,
+        "limitation": "Connect log precedes tool metadata; exactly one subsequent native mcp_status must be connected with17 tools, otherwise fail unserved."
+      },
+      "actual_native_init": {
+        "source": "ACTUAL_NATIVE_SYSTEM_INIT",
+        "mcp_tools": [
+          "mcp__tea-rags__find_co_changed",
+          "mcp__tea-rags__find_cycles",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol",
+          "mcp__tea-rags__get_architecture_report",
+          "mcp__tea-rags__get_callees",
+          "mcp__tea-rags__get_callers",
+          "mcp__tea-rags__get_index_metrics",
+          "mcp__tea-rags__get_index_status",
+          "mcp__tea-rags__get_naming_lexicon",
+          "mcp__tea-rags__get_ontology_report",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__list_projects",
+          "mcp__tea-rags__rank_chunks",
+          "mcp__tea-rags__search_code",
+          "mcp__tea-rags__semantic_search",
+          "mcp__tea-rags__trace_path"
+        ],
+        "mcp_servers": [
+          {
+            "name": "tea-rags",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "validated_before_accepting_output": true,
+        "provider_dispatch_limit": "Controller receipt cannot guarantee cancellation before provider dispatch; native init is yielded before main query body in source."
+      }
+    },
+    {
+      "key": "baseline-codex-C02",
+      "generation": "prepared-08",
+      "variant": "baseline",
+      "harness": "codex",
+      "case_id": "C02",
+      "model_responses": 2,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "3f50910b84ee7de0ac7499b4954013d6cf5886b5a3eb6c620219ab3307933a29",
+      "answer_accounting_sha256": "63ee008adb95243e49abf52f663bf37a91cae5f0c5bdcce787f466976ddb9968",
+      "session_times": {
+        "session_total_wall_seconds": 21.4742149579979,
+        "pre_user_wall_seconds": 4.474102832988137,
+        "user_request_wall_seconds": 16.930728209001245,
+        "post_user_wall_seconds": 0.06938391600851901,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.8840000629425049,
+        "native_hook_intervals_epoch_seconds": [
+          [
+            1793639271.529,
+            1793639272.784
+          ],
+          [
+            1793639271.529,
+            1793639272.784
+          ],
+          [
+            1793639271.529,
+            1793639272.784
+          ],
+          [
+            1793639271.529,
+            1793639272.784
+          ],
+          [
+            1793639272.784,
+            1793639273.028
+          ],
+          [
+            1793639272.784,
+            1793639273.028
+          ],
+          [
+            1793639272.784,
+            1793639273.028
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.418,
+            1793639279.758
+          ],
+          [
+            1793639279.832,
+            1793639279.877
+          ],
+          [
+            1793639279.832,
+            1793639279.877
+          ]
+        ]
+      },
+      "final_visible_bytes": 702,
+      "public_tool_evidence_records": 4,
+      "model": "gpt-6.1-sol",
+      "native_usage": {
+        "inputTokens": 35341,
+        "cachedInputTokens": 25728,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 384,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 35725
+      },
+      "input_tokens": 35341,
+      "cached_input_tokens": 25728,
+      "fresh_input_tokens": 9613,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 384,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "nativeaccount.completed_usage.reasoningOutputTokens",
+      "native_cost_usd": null,
+      "cost_status": "unpriced",
+      "accounting_complete": true,
+      "usage_reconciles_native": true,
+      "controller_turn_seconds": 16.935673750005662
+    },
+    {
+      "key": "candidate-codex-C01",
+      "generation": "prepared-08",
+      "variant": "candidate",
+      "harness": "codex",
+      "case_id": "C01",
+      "model_responses": 1,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "6005abf0c89e1d6676d866013107e539a0187540ff12f79565da903672b759b1",
+      "answer_accounting_sha256": "d5d7a980db74004df21bbce0adf09af64445fa6aa0347903e37ef2fdf4be3ed2",
+      "session_times": {
+        "session_total_wall_seconds": 11.817853999993531,
+        "pre_user_wall_seconds": 3.304717332997825,
+        "user_request_wall_seconds": 8.435492958000395,
+        "post_user_wall_seconds": 0.07764370899531059,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 2.4010000228881836,
+        "native_hook_intervals_epoch_seconds": [
+          [
+            1793639292.613,
+            1793639293.92
+          ],
+          [
+            1793639292.613,
+            1793639293.92
+          ],
+          [
+            1793639292.613,
+            1793639293.92
+          ],
+          [
+            1793639292.613,
+            1793639293.92
+          ],
+          [
+            1793639293.92,
+            1793639295.014
+          ],
+          [
+            1793639293.92,
+            1793639295.014
+          ],
+          [
+            1793639293.92,
+            1793639295.014
+          ]
+        ]
+      },
+      "final_visible_bytes": 118,
+      "public_tool_evidence_records": 0,
+      "model": "gpt-6.1-sol",
+      "native_usage": {
+        "inputTokens": 16677,
+        "cachedInputTokens": 8960,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 37,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 16714
+      },
+      "input_tokens": 16677,
+      "cached_input_tokens": 8960,
+      "fresh_input_tokens": 7717,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 37,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "nativeaccount.completed_usage.reasoningOutputTokens",
+      "native_cost_usd": null,
+      "cost_status": "unpriced",
+      "accounting_complete": true,
+      "usage_reconciles_native": true,
+      "controller_turn_seconds": 8.442991917021573
+    },
+    {
+      "key": "candidate-claude-C01",
+      "generation": "prepared-08",
+      "variant": "candidate",
+      "harness": "claude",
+      "case_id": "C01",
+      "model_responses": 1,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "8809c887e780fa8becadb5a2ca8c4233f58c73049082ed446f5033ce243c6a80",
+      "answer_accounting_sha256": "ae3c0b73a1cb1d04aa056fbcd448529648568e8e619f00a8afc474513b41a7b3",
+      "session_times": {
+        "session_total_wall_seconds": 6.865433416998712,
+        "pre_user_wall_seconds": 2.7628872089844663,
+        "user_request_wall_seconds": 2.9772489159950055,
+        "post_user_wall_seconds": 1.1252972920192406,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.37705058301799,
+        "native_hook_intervals_monotonic": [
+          [
+            215442.558541291,
+            215442.762294916
+          ],
+          [
+            215442.558516708,
+            215442.831795083
+          ],
+          [
+            215442.55839075,
+            215442.832436583
+          ],
+          [
+            215442.558472333,
+            215443.638017833
+          ],
+          [
+            215443.676513125,
+            215443.721141791
+          ],
+          [
+            215443.67650375,
+            215443.971101958
+          ],
+          [
+            215443.676436916,
+            215443.973860416
+          ]
+        ],
+        "hook_clock": "Client receipt notifications, not provider inference time"
+      },
+      "final_visible_bytes": 453,
+      "public_tool_evidence_records": 0,
+      "model": "claude-sonnet-5-5",
+      "native_usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 9716,
+        "cache_read_input_tokens": 8737,
+        "output_tokens": 162,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 9716,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 162,
+            "cache_read_input_tokens": 8737,
+            "cache_creation_input_tokens": 9716,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 9716
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "input_tokens": 18455,
+      "fresh_input_tokens": 9718,
+      "cached_input_tokens": 8737,
+      "cache_creation_input_tokens": 9716,
+      "output_tokens": 162,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "native_result.usage.output_tokens_details.thinking_tokens",
+      "native_cost_usd": 0.0413617,
+      "cost_status": "native_result_cost_list_basis",
+      "native_api_duration_ms": 2642,
+      "native_model_usage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 2,
+          "outputTokens": 162,
+          "cacheReadInputTokens": 8737,
+          "cacheCreationInputTokens": 9716,
+          "webSearchRequests": 0,
+          "costUSD": 0.0413617,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 0,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "native_num_turns": 1,
+      "unique_provider_message_ids": [
+        "msg_011CgeUBpnmhcozZGedgYH7R"
+      ],
+      "preuser_terminal": {
+        "status": "connected",
+        "session_id": "8e24af12-0990-4f3f-bae7-fdb225ed99b1",
+        "native_connect_ms": 1133,
+        "native_log_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-claude-C01/os-home/Library/Caches/claude-cli-nodejs/-Users-Shared-nav-ab-p0-context-eval-ng1ni/mcp-logs-tea-rags/2026-11-02T17-08-21-278Z.jsonl",
+        "elapsed_seconds": 2.760309541976312,
+        "limitation": "Connect log precedes tool metadata; exactly one subsequent native mcp_status must be connected with17 tools, otherwise fail unserved."
+      },
+      "actual_native_init": {
+        "source": "ACTUAL_NATIVE_SYSTEM_INIT",
+        "mcp_tools": [
+          "mcp__tea-rags__find_co_changed",
+          "mcp__tea-rags__find_cycles",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol",
+          "mcp__tea-rags__get_architecture_report",
+          "mcp__tea-rags__get_callees",
+          "mcp__tea-rags__get_callers",
+          "mcp__tea-rags__get_index_metrics",
+          "mcp__tea-rags__get_index_status",
+          "mcp__tea-rags__get_naming_lexicon",
+          "mcp__tea-rags__get_ontology_report",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__list_projects",
+          "mcp__tea-rags__rank_chunks",
+          "mcp__tea-rags__search_code",
+          "mcp__tea-rags__semantic_search",
+          "mcp__tea-rags__trace_path"
+        ],
+        "mcp_servers": [
+          {
+            "name": "tea-rags",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "validated_before_accepting_output": true,
+        "provider_dispatch_limit": "Controller receipt cannot guarantee cancellation before provider dispatch; native init is yielded before main query body in source."
+      }
+    },
+    {
+      "key": "candidate-claude-C02",
+      "generation": "prepared-08",
+      "variant": "candidate",
+      "harness": "claude",
+      "case_id": "C02",
+      "model_responses": 2,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "b99f0de399ea7d113726f80661e531b929ed1920d2a8841b4f1f74f923c0eac7",
+      "answer_accounting_sha256": "d8474f27986435624dd590218886374713fefe40b07d013e61c20573a57c1999",
+      "session_times": {
+        "session_total_wall_seconds": 14.260597291984595,
+        "pre_user_wall_seconds": 2.302205457992386,
+        "user_request_wall_seconds": 11.350013624993153,
+        "post_user_wall_seconds": 0.6083782089990564,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.456849417038029,
+        "native_hook_intervals_monotonic": [
+          [
+            215449.709293791,
+            215449.92231125
+          ],
+          [
+            215449.709129916,
+            215449.970281458
+          ],
+          [
+            215449.709266208,
+            215449.98552
+          ],
+          [
+            215449.709231125,
+            215450.783122916
+          ],
+          [
+            215450.822744666,
+            215450.868498375
+          ],
+          [
+            215450.822736291,
+            215451.091038041
+          ],
+          [
+            215450.822668291,
+            215451.094443583
+          ],
+          [
+            215455.549229125,
+            215455.615809083
+          ],
+          [
+            215455.627791708,
+            215455.672292875
+          ]
+        ],
+        "hook_clock": "Client receipt notifications, not provider inference time"
+      },
+      "final_visible_bytes": 1597,
+      "public_tool_evidence_records": 2,
+      "model": "claude-sonnet-5-5",
+      "native_usage": {
+        "input_tokens": 4,
+        "cache_creation_input_tokens": 10132,
+        "cache_read_input_tokens": 27264,
+        "output_tokens": 765,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 10132,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 683,
+            "cache_read_input_tokens": 18490,
+            "cache_creation_input_tokens": 416,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 416
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "input_tokens": 37400,
+      "fresh_input_tokens": 10136,
+      "cached_input_tokens": 27264,
+      "cache_creation_input_tokens": 10132,
+      "output_tokens": 765,
+      "reasoning_tokens_numeric": 0,
+      "reasoning_provenance": "native_result.usage.output_tokens_details.thinking_tokens",
+      "native_cost_usd": 0.050912400000000003,
+      "cost_status": "native_result_cost_list_basis",
+      "native_api_duration_ms": 10917,
+      "native_model_usage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 4,
+          "outputTokens": 765,
+          "cacheReadInputTokens": 27264,
+          "cacheCreationInputTokens": 10132,
+          "webSearchRequests": 0,
+          "costUSD": 0.050912400000000003,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 0,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "native_num_turns": 2,
+      "unique_provider_message_ids": [
+        "msg_011CgeUCMLJJMvg6oxm1LqcJ",
+        "msg_011CgeUCg1TAuFPMpHB2cq3o"
+      ],
+      "preuser_terminal": {
+        "status": "connected",
+        "session_id": "106819e1-0e5c-4307-a9ef-91532d8f07bd",
+        "native_connect_ms": 1134,
+        "native_log_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-claude-C02/os-home/Library/Caches/claude-cli-nodejs/-Users-Shared-nav-ab-p0-context-eval-ng1ni/mcp-logs-tea-rags/2026-11-02T17-08-28-429Z.jsonl",
+        "elapsed_seconds": 2.2994827079819515,
+        "limitation": "Connect log precedes tool metadata; exactly one subsequent native mcp_status must be connected with17 tools, otherwise fail unserved."
+      },
+      "actual_native_init": {
+        "source": "ACTUAL_NATIVE_SYSTEM_INIT",
+        "mcp_tools": [
+          "mcp__tea-rags__find_co_changed",
+          "mcp__tea-rags__find_cycles",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol",
+          "mcp__tea-rags__get_architecture_report",
+          "mcp__tea-rags__get_callees",
+          "mcp__tea-rags__get_callers",
+          "mcp__tea-rags__get_index_metrics",
+          "mcp__tea-rags__get_index_status",
+          "mcp__tea-rags__get_naming_lexicon",
+          "mcp__tea-rags__get_ontology_report",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__list_projects",
+          "mcp__tea-rags__rank_chunks",
+          "mcp__tea-rags__search_code",
+          "mcp__tea-rags__semantic_search",
+          "mcp__tea-rags__trace_path"
+        ],
+        "mcp_servers": [
+          {
+            "name": "tea-rags",
+            "status": "connected",
+            "source": "dynamic"
+          }
+        ],
+        "validated_before_accepting_output": true,
+        "provider_dispatch_limit": "Controller receipt cannot guarantee cancellation before provider dispatch; native init is yielded before main query body in source."
+      }
+    },
+    {
+      "key": "candidate-codex-C02",
+      "generation": "prepared-08",
+      "variant": "candidate",
+      "harness": "codex",
+      "case_id": "C02",
+      "model_responses": 2,
+      "quality": "UNGRADED_ROOT_ONLY",
+      "actor_result_sha256": "3f50910b84ee7de0ac7499b4954013d6cf5886b5a3eb6c620219ab3307933a29",
+      "answer_accounting_sha256": "a8343ca98d8f7f5bb548dde78e001134f90e8b2e825e4ff5f593c9bbb64e23dd",
+      "session_times": {
+        "session_total_wall_seconds": 21.03956708399346,
+        "pre_user_wall_seconds": 4.937978792004287,
+        "user_request_wall_seconds": 16.027081707987236,
+        "post_user_wall_seconds": 0.07450658400193788,
+        "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+        "native_hook_union_observed_seconds": 1.9779999256134033,
+        "native_hook_intervals_epoch_seconds": [
+          [
+            1793639328.946,
+            1793639330.189
+          ],
+          [
+            1793639328.946,
+            1793639330.189
+          ],
+          [
+            1793639328.946,
+            1793639330.189
+          ],
+          [
+            1793639328.946,
+            1793639330.189
+          ],
+          [
+            1793639330.189,
+            1793639330.451
+          ],
+          [
+            1793639330.189,
+            1793639330.451
+          ],
+          [
+            1793639330.189,
+            1793639330.451
+          ],
+          [
+            1793639336.034,
+            1793639336.459
+          ],
+          [
+            1793639336.034,
+            1793639336.459
+          ],
+          [
+            1793639336.034,
+            1793639336.459
+          ],
+          [
+            1793639336.034,
+            1793639336.463
+          ],
+          [
+            1793639336.034,
+            1793639336.463
+          ],
+          [
+            1793639336.034,
+            1793639336.463
+          ],
+          [
+            1793639336.512,
+            1793639336.556
+          ],
+          [
+            1793639336.512,
+            1793639336.556
+          ]
+        ]
+      },
+      "final_visible_bytes": 783,
+      "public_tool_evidence_records": 4,
+      "model": "gpt-6.1-sol",
+      "native_usage": {
+        "inputTokens": 36772,
+        "cachedInputTokens": 25728,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 453,
+        "reasoningOutputTokens": 27,
+        "totalTokens": 37225
+      },
+      "input_tokens": 36772,
+      "cached_input_tokens": 25728,
+      "fresh_input_tokens": 11044,
+      "cache_creation_input_tokens": 0,
+      "output_tokens": 453,
+      "reasoning_tokens_numeric": 27,
+      "reasoning_provenance": "nativeaccount.completed_usage.reasoningOutputTokens",
+      "native_cost_usd": null,
+      "cost_status": "unpriced",
+      "accounting_complete": true,
+      "usage_reconciles_native": true,
+      "controller_turn_seconds": 16.03159491700353
+    }
+  ],
+  "totals": {
+    "model_responses": 12,
+    "input_tokens": 216776,
+    "fresh_input_tokens": 93555,
+    "cached_input_tokens": 123221,
+    "cache_creation_input_tokens": 48512,
+    "output_tokens": 2961,
+    "reasoning_tokens_numeric": 176,
+    "claude_native_cost_usd": 0.2208325,
+    "codex_cost": "UNPRICED_NATIVE; notzero; APIequivalent requires rootpricingbasis"
+  },
+  "prior07_invalid_separate": {
+    "status": "STOPPED_ACTUAL_INIT_MCP_FAILED; SERVED_MODEL_ATTEMPT_INVALID_CONDITION",
+    "failed_key": "baseline-claude-C01",
+    "accepted_completed_actors_this_generation": 0,
+    "actual_served_model_responses": 1,
+    "actual_served_model": "claude-sonnet-5-5",
+    "model_response_ids": [
+      "msg_011CgeLzsi1kXBbnTHdTuWe4"
+    ],
+    "native_num_turns": 1,
+    "native_usage": {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 12480,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 338,
+      "output_tokens_details": {
+        "thinking_tokens": 84
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 12480,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 338,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 12480,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 12480
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    },
+    "native_model_usage": {
+      "claude-sonnet-5-5": {
+        "inputTokens": 2,
+        "outputTokens": 338,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 12480,
+        "webSearchRequests": 0,
+        "costUSD": 0.053304,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000,
+        "thinkingTokens": 84,
+        "canonicalModel": "claude-sonnet-5-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "native_cost_usd": 0.053304,
+    "native_api_duration_ms": 4489,
+    "actual_init": {
+      "tools": [
+        "Glob",
+        "Grep",
+        "Read",
+        "Skill",
+        "ToolSearch"
+      ],
+      "mcp_servers": [
+        {
+          "name": "tea-rags",
+          "status": "failed",
+          "source": "dynamic"
+        }
+      ],
+      "model": "claude-sonnet-5-5",
+      "plugins": [
+        {
+          "name": "tea-rags",
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/baseline-claude-C01/active-plugin",
+          "source": "tea-rags@inline",
+          "version": "0.55.1"
+        },
+        {
+          "name": "cc-plugin-agents-md",
+          "path": "builtin",
+          "source": "cc-plugin-agents-md@builtin"
+        },
+        {
+          "name": "cc-plugin-telemetry",
+          "path": "builtin",
+          "source": "cc-plugin-telemetry@builtin"
+        },
+        {
+          "name": "cc-plugin-plugin-authoring",
+          "path": "builtin",
+          "source": "cc-plugin-plugin-authoring@builtin"
+        }
+      ]
+    },
+    "native_builtin_plugin_classification": "cc-plugin-agents-md/telemetry/plugin-authoring have pathbuiltin and source@builtin; not evidence of hostglobal userplugin leakage.",
+    "remaining_unlaunched": [
+      "baseline-claude-C02",
+      "baseline-codex-C02",
+      "candidate-codex-C01",
+      "candidate-claude-C01",
+      "candidate-claude-C02",
+      "candidate-codex-C02"
+    ],
+    "prior05_completed": {
+      "key": "baseline-codex-C01",
+      "generation": "prepared05",
+      "result_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-05/actors/baseline-codex-C01/result.json",
+      "result_sha256": "ac064f4922be18a265ca4d55dc883d28e9465473883972770c749336dd353677",
+      "answer_accounting_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-05/actors/baseline-codex-C01/answer-and-accounting.json",
+      "answer_accounting_sha256": "7a45bb95e369661bc2217c497dde6f16a8061dceb075f83c919085bf8ab3676c",
+      "rootgo_sha256": "3b6fe53e55fd877a3d0c35600b20f4be8810b25535d61545aabc2bf1bef34b5b",
+      "model_responses": 1,
+      "rerun_forbidden": true
+    },
+    "excluded07_actor_absent": true,
+    "prior05_hashes_unchanged": true,
+    "rootgo_sha256": "40a6f3f207e37d3fa1fc649d7ddb15dc63398c8db4255e853363468e6be6d36f",
+    "source_sha256": "9903bf971d3bf0f7284e9deb968dc2cc7b954fc20770f24efb3078c277e78f47",
+    "adapter_sha256": "d89cb2dd80640d842f5d5bf9a17eb4e584754a1d62f6c3faa9be685b7aa7e8d6",
+    "session_times": {
+      "session_total_wall_seconds": 47.30655591600225,
+      "pre_user_wall_seconds": 27.795083416014677,
+      "user_request_wall_seconds": null,
+      "post_user_wall_seconds": null,
+      "limitation": "Session total includes native startup/hooks/control/verification and shutdown. User-only spans are not comparable as complete cross-harness costs.",
+      "native_hook_union_observed_seconds": 17.5755897500203,
+      "native_hook_intervals_monotonic": [
+        [
+          209756.412168083,
+          209756.663527583
+        ],
+        [
+          209756.408127791,
+          209756.872319375
+        ],
+        [
+          209756.412514791,
+          209757.8776495
+        ],
+        [
+          209756.412058166,
+          209772.105754083
+        ],
+        [
+          209785.688986166,
+          209786.836918166
+        ],
+        [
+          209785.668934208,
+          209786.886317791
+        ],
+        [
+          209785.689033041,
+          209787.546897666
+        ]
+      ],
+      "hook_clock": "Client receipt notifications, not provider inference time"
+    },
+    "transport_clue": "Existing proxy audit repeatedly blocks native server/discover as Protocol methoddisabled. Blocked also during earlier successfulmetadata proofs, so clue/not sufficient causalproof. Nativequery actualstatusfailed; need readonlyprotocol compatibility diagnosis.",
+    "limits": [
+      "Inference wasUNKNOWN at initguard failure but finalnativeusage proves one served model response; never reportzero.",
+      "Controlleraccepted no modeloutput, but nativequery continued during close and finished; allrawframes retained.",
+      "Failedcondition uncomparable/notqualitypass; rootgradingpending.",
+      "No retries/resume/native probes/sourcechanges afterstop; n1 budget now includes failed servedClaudeC01 attempt.",
+      "No private thinking contents/token values exported; thinking countnumeric only."
+    ]
+  },
+  "postrun_fidelity": {
+    "status": "POSTRUN_EXACT7_AND_PRIOR_FIDELITY_PASS",
+    "completed_this_generation": [
+      "baseline-claude-C01",
+      "baseline-claude-C02",
+      "baseline-codex-C02",
+      "candidate-claude-C01",
+      "candidate-claude-C02",
+      "candidate-codex-C01",
+      "candidate-codex-C02"
+    ],
+    "actual_count_this_generation": 7,
+    "prior05result_answer_unchanged": true,
+    "prior07invalid_summary_answer_unchanged": true,
+    "excluded08_actor_absent": true,
+    "source_runtime_files_unchanged": true,
+    "all_claude_preuser_and_actualinit_gates_passed": true,
+    "quality": "UNGRADED; root grader only",
+    "retry": false
+  },
+  "limitations": [
+    "Root grading not performed here.",
+    "07invalidservedresponse cost.053304 excluded from validcohort butretained separately.",
+    "No n1 speed/providercausality claim; controller/source generations differ by documentedauth/protocol/startup fixes.",
+    "Startup/session totals charged; modelturn/preuser/hook windows separate.",
+    "Prefix cache is observed, notmanuallycleared/zeropromised.",
+    "Claude cachecreation counts asfreshinput; Codex input includescached subset; originalnativeusage preserved.",
+    "Allreasoning counts numericnativefields only; no privatecontent read/exported."
+  ]
+}

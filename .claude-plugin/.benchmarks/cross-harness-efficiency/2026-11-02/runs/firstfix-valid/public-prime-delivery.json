@@ -1,0 +1,308 @@
+{
+  "status": "PUBLIC_NATIVE_PRIME_DELIVERY_AUDIT",
+  "rows": [
+    {
+      "key": "baseline-codex-C01",
+      "generation": "prepared-05",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-05/actors/baseline-codex-C01/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "placeholder",
+      "canonical_digest_delivered": false,
+      "exact_project_alias": null,
+      "exact_collection": null,
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags prime \u2014 /Users/Shared/nav-ab/p0-context-eval-ng1ni\n\nQdrant warm-up pending \u2014 index queries will be available after MCP server attaches.",
+          "payload_source": "hook/completed.params.run.entries[kind=context].text (delivered additionalContext)",
+          "native_status": "completed",
+          "native_status_message": "TeaRAGs: load project digest",
+          "exit_code": null,
+          "exit_code_capture": "Not exposed by native HookRun; no inferred zero",
+          "hook_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-05/profiles/baseline-codex-C01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "native_event_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-05/profiles/baseline-codex-C01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "event_index": 27,
+          "jsonl_line_number": 28,
+          "classification": "placeholder",
+          "payload_utf8_bytes": 150,
+          "payload_sha256": "ec27a0739d9142347139539995090f8ce9eafb9f5a6de72c5845ebcdac161cd3"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false
+    },
+    {
+      "key": "baseline-claude-C01",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/baseline-claude-C01/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "placeholder",
+      "canonical_digest_delivered": false,
+      "exact_project_alias": null,
+      "exact_collection": null,
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags prime \u2014 /Users/Shared/nav-ab/p0-context-eval-ng1ni\nQdrant warm-up pending \u2014 index queries will be available after MCP server attaches.\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "c360fa70-392f-4e37-ba05-5b28cdce9c8f",
+          "native_event_id": "7f45c68b-56c8-4126-9330-59401ccc991e",
+          "event_index": 7,
+          "jsonl_line_number": 8,
+          "classification": "placeholder",
+          "payload_utf8_bytes": 150,
+          "payload_sha256": "800fe9808df84a56dcce3a1219edef4e1dd6a3acee47c5a410caa33edf7fffac"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false
+    },
+    {
+      "key": "baseline-claude-C02",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/baseline-claude-C02/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "f4e1f269-f505-498e-9168-38d7b88c1b6d",
+          "native_event_id": "d3a3234a-6c96-43d7-8e6a-7f312baeae31",
+          "event_index": 7,
+          "jsonl_line_number": 8,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "ed961b95bf0f4a5955061fd01f7611c27286c51b97872ea931bdcce320bccee0"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false,
+      "frozen_C02_delivery_gate": "PASS",
+      "delivery_requirement": "Actual native canonical digest, exact alias+collection; final config answer cannot substitute"
+    },
+    {
+      "key": "baseline-codex-C02",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/baseline-codex-C02/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\n\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls",
+          "payload_source": "hook/completed.params.run.entries[kind=context].text (delivered additionalContext)",
+          "native_status": "completed",
+          "native_status_message": "TeaRAGs: load project digest",
+          "exit_code": null,
+          "exit_code_capture": "Not exposed by native HookRun; no inferred zero",
+          "hook_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/baseline-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "native_event_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/baseline-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "event_index": 27,
+          "jsonl_line_number": 28,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "027629c24abfd1b606a3d48e23b9fed5154db2bcccb1e0d84e486780843b91ff"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false,
+      "frozen_C02_delivery_gate": "PASS",
+      "delivery_requirement": "Actual native canonical digest, exact alias+collection; final config answer cannot substitute"
+    },
+    {
+      "key": "candidate-codex-C01",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C01/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\n\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls",
+          "payload_source": "hook/completed.params.run.entries[kind=context].text (delivered additionalContext)",
+          "native_status": "completed",
+          "native_status_message": "TeaRAGs: load project digest",
+          "exit_code": null,
+          "exit_code_capture": "Not exposed by native HookRun; no inferred zero",
+          "hook_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-codex-C01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "native_event_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-codex-C01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "event_index": 27,
+          "jsonl_line_number": 28,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "027629c24abfd1b606a3d48e23b9fed5154db2bcccb1e0d84e486780843b91ff"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false
+    },
+    {
+      "key": "candidate-claude-C01",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C01/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "183f31fd-094c-417e-8f32-65a7c68b07eb",
+          "native_event_id": "55188358-294d-4c5e-9fe1-d37ea0166465",
+          "event_index": 7,
+          "jsonl_line_number": 8,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "ed961b95bf0f4a5955061fd01f7611c27286c51b97872ea931bdcce320bccee0"
+        }
+      ],
+      "source_age_warning_delivered": true,
+      "source_age_warnings": [
+        {
+          "payload": "\u26a0 tea-rags build is older than its source (build 2026-11-02T13:08:14Z, last src commit 2026-11-02T15:48:07Z) \u2014 run `npm run build` in /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "8ed089c3-e5ed-48a8-bf96-7b720963261a",
+          "native_event_id": "fa78f5f7-da5c-4976-af1f-857bb8172008",
+          "event_index": 5,
+          "jsonl_line_number": 6,
+          "classification": "source-age-warning",
+          "payload_utf8_bytes": 211,
+          "payload_sha256": "a6d03db2b425c7396708e4cae9dbc62ac6bada7386732f6a038fc177a5a801ea"
+        }
+      ],
+      "inference_from_final_answer": false
+    },
+    {
+      "key": "candidate-claude-C02",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C02/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "48e47ddb-2f99-4fde-a9d8-4d722ea331a1",
+          "native_event_id": "ca80ba2c-8485-4c26-bf4c-a069ea04c4ab",
+          "event_index": 7,
+          "jsonl_line_number": 8,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "ed961b95bf0f4a5955061fd01f7611c27286c51b97872ea931bdcce320bccee0"
+        }
+      ],
+      "source_age_warning_delivered": true,
+      "source_age_warnings": [
+        {
+          "payload": "\u26a0 tea-rags build is older than its source (build 2026-11-02T13:08:14Z, last src commit 2026-11-02T15:48:07Z) \u2014 run `npm run build` in /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness\n",
+          "payload_source": "system/hook_response.stdout",
+          "exit_code": 0,
+          "exit_code_capture": "Actual native exit_code",
+          "native_status": null,
+          "hook_id": "b205e40f-00b0-47f9-bb61-5cdd3ba06f87",
+          "native_event_id": "3f73966f-4338-472d-80bf-41083edcc9d1",
+          "event_index": 6,
+          "jsonl_line_number": 7,
+          "classification": "source-age-warning",
+          "payload_utf8_bytes": 211,
+          "payload_sha256": "a6d03db2b425c7396708e4cae9dbc62ac6bada7386732f6a038fc177a5a801ea"
+        }
+      ],
+      "inference_from_final_answer": false,
+      "frozen_C02_delivery_gate": "PASS",
+      "delivery_requirement": "Actual native canonical digest, exact alias+collection; final config answer cannot substitute"
+    },
+    {
+      "key": "candidate-codex-C02",
+      "generation": "prepared-08",
+      "journal_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C02/native/events.jsonl",
+      "sessionstart_hook_result_count": 4,
+      "identified_prime_payload_count": 1,
+      "prime_classification": "digest",
+      "canonical_digest_delivered": true,
+      "exact_project_alias": "p0-context-eval-ng1ni",
+      "exact_collection": "code_540fd38f",
+      "prime_payloads": [
+        {
+          "payload": "# tea-rags digest \u2014 p0-context-eval-ng1ni\n\nproject `p0-context-eval-ng1ni` \u00b7 collection `code_540fd38f` \u2014 pass `project: \"p0-context-eval-ng1ni\"` + `path` on tea-rags calls",
+          "payload_source": "hook/completed.params.run.entries[kind=context].text (delivered additionalContext)",
+          "native_status": "completed",
+          "native_status_message": "TeaRAGs: load project digest",
+          "exit_code": null,
+          "exit_code_capture": "Not exposed by native HookRun; no inferred zero",
+          "hook_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "native_event_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-06/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+          "event_index": 27,
+          "jsonl_line_number": 28,
+          "classification": "digest",
+          "payload_utf8_bytes": 177,
+          "payload_sha256": "027629c24abfd1b606a3d48e23b9fed5154db2bcccb1e0d84e486780843b91ff"
+        }
+      ],
+      "source_age_warning_delivered": false,
+      "source_age_warnings": [],
+      "inference_from_final_answer": false,
+      "frozen_C02_delivery_gate": "PASS",
+      "delivery_requirement": "Actual native canonical digest, exact alias+collection; final config answer cannot substitute"
+    }
+  ],
+  "delivery_checks": {
+    "C02_four_actual_canonical_digests": "PASS",
+    "C01_candidate_two_actual_canonical_digests": "PASS",
+    "C01_baseline_two_placeholders_observed": true
+  },
+  "expected_fixture_metadata": {
+    "project_alias": "p0-context-eval-ng1ni",
+    "collection": "code_540fd38f"
+  },
+  "source_age_warning_conditions": [
+    "candidate-claude-C01",
+    "candidate-claude-C02"
+  ],
+  "limitations": [
+    "Native Codex exposes completed HookRun plus delivered context, not numeric command exit code; unknown stays null.",
+    "Claude exit_code is native captured.",
+    "Payload hashes cover exact decoded public stdout/context UTF8, with no stripping/redaction/normalization.",
+    "Only public hook payloads/status were inspected; no final answers/private reasoning or grading contents read.",
+    "Source-age warnings are separately retained, not removed or used to infer digest presence.",
+    "Answer quality remains root graded; this audit checks explicit native delivery requirement only."
+  ]
+}

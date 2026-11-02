@@ -1,0 +1,7 @@
+{
+  "key": "baseline-codex-C01",
+  "generation": "prepared-05",
+  "public_tool_calls_results_only": [],
+  "public_final_answer": "Project alias: unavailable in the provided context.\nCollection: unavailable in the provided context.\n\nThe prime message only identifies the working directory and says Qdrant warm-up is pending.",
+  "private_reasoning_extracted": false
+}

@@ -1,0 +1,58 @@
+{
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/baseline-codex-C01-public-evidence.json": {
+    "sha256": "590baec8b067efb3ca9c6d1d39f47e676cd64c1b2b44fef5639a3b3bc166a5f6",
+    "bytes": 369
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/baseline-claude-C01-public-evidence.json": {
+    "sha256": "57f73bb14eb277149cfe1c624f73897cb0898776e47af2e81cfc86e6ad065392",
+    "bytes": 873
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/baseline-claude-C02-public-evidence.json": {
+    "sha256": "318b35e721596724969d3dcad8f4559d1f94544e4b4c7b475368480fba0b9814",
+    "bytes": 2646
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/baseline-codex-C02-public-evidence.json": {
+    "sha256": "1b6ee463a51d9b24f55df4a590022d44ccd88f7bad17278f6dbbfb2d1646928e",
+    "bytes": 22151
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/candidate-codex-C01-public-evidence.json": {
+    "sha256": "10bcd7ab9838f7e057974745cd01e98ee6996e782fbb177c0d5e0f58aaace726",
+    "bytes": 295
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/candidate-claude-C01-public-evidence.json": {
+    "sha256": "e4b43b34ebab9c10f10aaca8f74ba71478bdfa90975e853e23b229f1d8ec8e61",
+    "bytes": 633
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/candidate-claude-C02-public-evidence.json": {
+    "sha256": "191776b7ec10d70ff849632e420d2e993b75403a8382701a6b77b2eb3aa99693",
+    "bytes": 2730
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/candidate-codex-C02-public-evidence.json": {
+    "sha256": "e2820c4acd9f9a913765908bd618d7a684096b6949d6a6c0506e2ca471c758ae",
+    "bytes": 27643
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/summary.json": {
+    "sha256": "1c66d74b1b0e359705480e789e78d65972eb3a1a92d3ef136af3e51479bd67f6",
+    "bytes": 42288
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/public-final-answers.json": {
+    "sha256": "a85fc5eb5413ceb9518af01b208b90f61afb1b83d23d5d2206ce146aaeb17b6e",
+    "bytes": 7287
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared08-postrun-audit.json": {
+    "sha256": "bb6781aa9a8a6494a90d9c755eb176ea0970c91d4af5e0aa478f2cf5d30f7618",
+    "bytes": 610
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/ROOTGO-selected7.json": {
+    "sha256": "67976589bc5eebdffcada5446ac7acec50d838aaaf38243884a728a65cb3749c",
+    "bytes": 2314
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/selected7-binding.json": {
+    "sha256": "aa1ed10b4c0606bdc5cf1eda518dea21bbca17bad49d950dd91d996f6c3d9008",
+    "bytes": 2816
+  },
+  "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/SELECTED7-RUN-COMPLETED.json": {
+    "sha256": "c41fb391c74f76b6c7142d26d351520990f5f7c7bf1743049dab92ff414b98ac",
+    "bytes": 397
+  }
+}

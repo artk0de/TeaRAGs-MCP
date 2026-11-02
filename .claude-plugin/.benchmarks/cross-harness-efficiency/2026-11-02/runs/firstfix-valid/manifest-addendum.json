@@ -1,0 +1,10 @@
+{
+  ".tmp/p0-targeted-controller/firstfix-valid-cohort/README.md": {
+    "sha256": "f8ae0ddb34ac5f4d6a9e9505f7200a4a7517c6814f8bc719c2f0338a4ea8f65a",
+    "bytes": 2212
+  },
+  ".tmp/p0-targeted-controller/extract_firstfix_cohort.py": {
+    "sha256": "de12f47609e0d0698e4ecfa0e532cde608bb2faaa3f156bdb31c80db9d4840d3",
+    "bytes": 7010
+  }
+}

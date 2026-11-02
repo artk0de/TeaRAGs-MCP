@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "actor_visibility": "NEVER_INJECT_OR_ALLOW_READ",
+  "cases": {
+    "C01": {
+      "expected_project": "p0-context-eval-ng1ni",
+      "expected_collection": "code_540fd38f",
+      "candidate_delivery": "Actual native startup hook must deliver the canonical project digest containing both alias and collection, not a fabricated controller context or warm-up placeholder.",
+      "quality": "Final answer must identify both values accurately; honest baseline unavailability is retained separately from candidate correctness.",
+      "efficiency": "Record discovery/confirmation tool use and native model responses. Zero extra discovery is desirable with a delivered digest, but do not conflate restored delivery with proven speedup.",
+      "baseline": "The unchanged baseline embedded sentinel is expected to fail startup delivery. Its final answer may still recover facts through permitted tools."
+    },
+    "C02": {
+      "quality": "Identify vendor_exports as independently configured S3 bucket and credentials; documents inherits default. Do not invent runtime environment values.",
+      "required_source": "config/storage.yml",
+      "candidate_delivery": "External Qdrant URL control must retain a usable canonical digest in both runtime variants.",
+      "control": "Normal config reading and factual completeness must remain available in both Codex and Claude. Count source/instruction/tool use without prescribing Codex steps to Claude."
+    }
+  },
+  "shared": [
+    "No writes, mutators, foreign plugin skills, prior answers or private grading access.",
+    "Native shipped plugin and real CLI/MCP path required; no fake prime or preloaded Explore.",
+    "Exactly one independent actor per case/harness/runtime variant; no silent retries.",
+    "Failed, invalid or unrun cases stay open with transcripts and limitations.",
+    "Cursor has static contract evidence only, not live behavioral validation."
+  ]
+}

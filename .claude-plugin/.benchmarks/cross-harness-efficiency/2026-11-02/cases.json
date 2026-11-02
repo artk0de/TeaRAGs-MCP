@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "C01",
+      "prompt": "What project alias and collection does the current code index use? Answer from the available context and say if either is unavailable. Do not edit files."
+    },
+    {
+      "id": "C02",
+      "prompt": "Is there a purpose-scoped storage service with a separate bucket and credentials in config/storage.yml that a dedicated vendor-facing bucket could copy? Explain its relationship to the default storage configuration. Do not edit files."
+    }
+  ]
+}
