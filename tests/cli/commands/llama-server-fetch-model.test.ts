@@ -12,6 +12,10 @@ import {
   type LlamaServerFetchModelDeps,
 } from "../../../src/cli/commands/llama-server.js";
 import { createCli } from "../../../src/cli/create-cli.js";
+import {
+  EMBEDDING_MODEL_CATALOG,
+  type EmbeddingModelCatalogEntry,
+} from "../../../src/core/adapters/embeddings/model-catalog.js";
 
 const BLOB = Buffer.from("GGUF fake jina weights");
 const BLOB_SHA = createHash("sha256").update(BLOB).digest("hex");
@@ -145,5 +149,72 @@ describe("llama-server fetch-model", () => {
     logSpy.mockRestore();
 
     expect(help).toContain("llama-server");
+  });
+});
+
+describe("llama-server fetch-model — catalog ids", () => {
+  let dataDir: string;
+  let out: string[];
+
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), "llama-fetch-catalog-"));
+    out = [];
+  });
+
+  afterEach(() => {
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const CODERANK_RESOLVE_URL =
+    "https://huggingface.co/brandtcormorant/CodeRankEmbed-Q8_0-GGUF/resolve/33bd774d16ed49b07e79e89c192751d11f47fec0/coderankembed-q8_0.gguf";
+
+  /** The CodeRankEmbed entry pinned to BLOB, so a fake download verifies. */
+  const catalogPinnedToBlob: readonly EmbeddingModelCatalogEntry[] = EMBEDDING_MODEL_CATALOG.map((entry) =>
+    entry.id === "nomic-ai/CodeRankEmbed" && entry.gguf !== null
+      ? { ...entry, gguf: { ...entry.gguf, sha256: BLOB_SHA, bytes: BLOB.length } }
+      : entry,
+  );
+
+  function catalogDeps(
+    fetchImpl: ReturnType<typeof vi.fn>,
+    catalog?: readonly EmbeddingModelCatalogEntry[],
+  ): LlamaServerFetchModelDeps {
+    return {
+      fetch: fetchImpl as unknown as typeof fetch,
+      out: (line) => out.push(line),
+      env: { TEA_RAGS_DATA_DIR: dataDir },
+      home: "/home/nobody",
+      ...(catalog ? { catalog } : {}),
+    };
+  }
+
+  it("downloads a catalog id from its pinned Hugging Face resolve URL into <dataDir>/models/", async () => {
+    const fetchImpl = vi.fn(async (_url: string) => new Response(BLOB, { status: 200 }));
+
+    await runLlamaServerFetchModel({ model: "nomic-ai/CodeRankEmbed" }, catalogDeps(fetchImpl, catalogPinnedToBlob));
+
+    const expected = join(dataDir, "models", "coderankembed-q8_0.gguf");
+    expect(fetchImpl.mock.calls[0][0]).toBe(CODERANK_RESOLVE_URL);
+    expect(readFileSync(expected)).toEqual(BLOB);
+    expect(out.at(-1)).toBe(expected);
+  });
+
+  it("verifies a catalog download against the shipped sha256", async () => {
+    const fetchImpl = vi.fn(async (_url: string) => new Response(BLOB, { status: 200 }));
+
+    await expect(runLlamaServerFetchModel({ model: "nomic-ai/CodeRankEmbed" }, catalogDeps(fetchImpl))).rejects.toThrow(
+      /sha256 mismatch/,
+    );
+    expect(fetchImpl.mock.calls[0][0]).toBe(CODERANK_RESOLVE_URL);
+    expect(existsSync(join(dataDir, "models", "coderankembed-q8_0.gguf"))).toBe(false);
+  });
+
+  it("refuses a catalog model whose GGUF is not published, without touching the network", async () => {
+    const fetchImpl = vi.fn(async (_url: string) => new Response(BLOB, { status: 200 }));
+
+    await expect(runLlamaServerFetchModel({ model: "brokkai/Muninn-small" }, catalogDeps(fetchImpl))).rejects.toThrow(
+      /not published/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
