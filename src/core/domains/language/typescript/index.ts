@@ -77,6 +77,7 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
     "type_alias_declaration",
     "enum_declaration",
     "call_expression", // Filtered by testDslFilterHook to DSL calls in test files
+    "if_statement", // Filtered by testDslFilterHook to Vitest in-source test blocks
     // bd tea-rags-mcp-grz07 — kept ONLY when the declaration binds a
     // MODULE-LEVEL function expression (`export const fn = () => {}`), the
     // dominant declaration shape in React code, which produced no chunk at all

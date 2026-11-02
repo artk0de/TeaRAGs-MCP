@@ -99,6 +99,7 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
     "lexical_declaration",
     "variable_declaration",
     "call_expression", // Filtered by jsTestDslFilterHook to DSL calls in test files
+    "if_statement", // Filtered by jsTestDslFilterHook to Vitest in-source test blocks
   ],
   // `method_definition` is a chunkable type above, but `findChunkableNodes`
   // stops descending the moment it claims a node — so a method nested in a

@@ -32,6 +32,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext, TestScope } from "../../../../contracts/types/chunker.js";
 import { produceTestScopeChunks } from "../../kernel/index.js";
+import { isInlineTestNode } from "../inline-tests.js";
 import { getCallDisplayName, getCallName, isTestFile } from "./test-dsl-filter.js";
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -157,8 +158,6 @@ export function isDslContainerCall(node: AstNode, code: string): boolean {
  * delegation.
  */
 export function buildScopeTree(containerNode: AstNode, code: string): TestScope {
-  const codeLines = code.split("\n");
-
   const scope: TestScope = {
     name: extractScopeName(containerNode, code),
     startLine: containerNode.startPosition.row + 1,
@@ -170,8 +169,17 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
   };
 
   const blockBody = findCallbackBody(containerNode);
-  if (!blockBody) return scope;
+  if (blockBody) readScopeBody(scope, blockBody, code);
+  return scope;
+}
 
+/**
+ * Fill `scope` from the statements of its body block: nested containers become
+ * children, example-shaped calls examples, setup hooks setup lines, and every
+ * other non-blank row of the block an `otherLines` entry.
+ */
+function readScopeBody(scope: TestScope, blockBody: AstNode, code: string): void {
+  const codeLines = code.split("\n");
   const claimedRows = new Set<number>();
   const claim = (node: AstNode): string => {
     for (let { row } = node.startPosition; row <= node.endPosition.row; row++) claimedRows.add(row);
@@ -219,7 +227,42 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
       scope.otherLines.push({ text: lineText, sourceLine: row + 1 });
     }
   }
+}
 
+// ── Core: Vitest in-source test blocks ───────────────────────────────
+
+/** Root scope name of a Vitest in-source test block (`if (import.meta.vitest) { … }`). */
+const INLINE_TEST_SCOPE_NAME = "vitest";
+
+/**
+ * The subject an in-source block's ids hang under: the file's basename without
+ * its extension (`src/math.ts` → `math.vitest.it "adds"`), as Rust's inline
+ * test module hangs under its file's name.
+ */
+function inlineTestSubjectName(filePath: string): string {
+  const basename = filePath.replace(/\\/g, "/").split("/").at(-1) ?? "";
+  return basename.replace(/\.[^.]+$/, "") || INLINE_TEST_SCOPE_NAME;
+}
+
+/**
+ * Read a Vitest in-source test block into the neutral scope tree. The `if`
+ * block is the root scope: its `const { it, expect } = import.meta.vitest`
+ * destructuring is an `otherLines` row (the scope's setup chunk), and its
+ * `describe` / `it` / `test` calls are scopes and examples read exactly as a
+ * container callback's body.
+ */
+export function buildInlineTestScopeTree(ifNode: AstNode, code: string): TestScope {
+  const scope: TestScope = {
+    name: INLINE_TEST_SCOPE_NAME,
+    startLine: ifNode.startPosition.row + 1,
+    endLine: ifNode.endPosition.row + 1,
+    setupLines: [],
+    otherLines: [],
+    examples: [],
+    children: [],
+  };
+  const blockBody = ifNode.childForFieldName("consequence");
+  if (blockBody?.type === "statement_block") readScopeBody(scope, blockBody, code);
   return scope;
 }
 
@@ -234,17 +277,26 @@ export function produceScopeChunks(
   return produceTestScopeChunks(buildScopeTree(containerNode, code), extractTopLevelName(containerNode, code), config);
 }
 
+/** The chunks of a top-level DSL container call in a test file, or none for any other container. */
+function produceDslContainerChunks(ctx: HookContext): BodyChunkResult[] {
+  if (!isTestFile(ctx.filePath)) return [];
+  if (!isDslContainerCall(ctx.containerNode, ctx.code)) return [];
+  return produceScopeChunks(ctx.containerNode, ctx.code, ctx.config);
+}
+
 // ── Hook export ──────────────────────────────────────────────────────
 
 export const testScopeChunkerHook: ChunkingHook = {
   name: "test-scope-chunker",
 
   process(ctx: HookContext): void {
-    if (!isTestFile(ctx.filePath)) return;
-    if (ctx.containerNode.type !== "call_expression") return;
-    if (!isDslContainerCall(ctx.containerNode, ctx.code)) return;
-
-    const chunks = produceScopeChunks(ctx.containerNode, ctx.code, ctx.config);
+    const chunks = isInlineTestNode(ctx.containerNode, ctx.code)
+      ? produceTestScopeChunks(
+          buildInlineTestScopeTree(ctx.containerNode, ctx.code),
+          inlineTestSubjectName(ctx.filePath),
+          ctx.config,
+        )
+      : produceDslContainerChunks(ctx);
 
     if (chunks.length > 0) {
       ctx.bodyChunks = chunks;

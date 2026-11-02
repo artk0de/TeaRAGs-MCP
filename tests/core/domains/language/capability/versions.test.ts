@@ -546,9 +546,12 @@ describe("seeded support versions", () => {
       // all-column site moves to noInProjectDef (`schemaAttribute`).
       // ruby 11: bd tea-rags-mcp-q1g6s.10 — `method(:x)` edges to `#x`, framework verbs on self
       // skip unrelated namesakes, `perform_async_<x>` wrappers dispatch to the worker's run.
+      // typescript 17 / javascript 6 / rust 12: bd tea-rags-mcp-52wk3 — the walker
+      // prunes inline test subtrees (Vitest in-source, Rust test-only items), so
+      // an index built by the previous walker holds their symbols and edges.
       const WALKER_BUMPED = new Map([
-        ["typescript", 16],
-        ["javascript", 5],
+        ["typescript", 17],
+        ["javascript", 6],
         ["python", 12],
         ["ruby", 11],
         ["java", 4],
@@ -556,7 +559,7 @@ describe("seeded support versions", () => {
         // (tuple and nested-arg struct fields recorded) + s3i8m.3 (primitive /
         // str / slice annotations bind) + sjego (workspace crate names, imported
         // type aliases) — one bump for the release.
-        ["rust", 11],
+        ["rust", 12],
         // go 6: bd tea-rags-mcp-uqkn5 — the module map no longer reads a
         // nested-checkout or gitignored go.mod.
         ["go", 6],
@@ -594,13 +597,17 @@ describe("seeded support versions", () => {
       // typescript chunking 3: bd tea-rags-mcp-xiki8 — a sub-floor class-body
       // group folds into a neighbour body chunk instead of being dropped, and a
       // short method is declared by the body chunk holding it.
+      // typescript chunking 4 / javascript chunking 4 / rust chunking 5: bd
+      // tea-rags-mcp-52wk3 — Vitest in-source blocks and Rust test-only items in
+      // production files are chunked as `test` / `test_setup`, so the chunk set of
+      // those files moves.
       const CHUNKING_BUMPED = new Map([
-        ["typescript", 3],
-        ["javascript", 3],
+        ["typescript", 4],
+        ["javascript", 4],
         ["swift", 4],
         ["bash", 2],
         ["ruby", 3],
-        ["rust", 4],
+        ["rust", 5],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

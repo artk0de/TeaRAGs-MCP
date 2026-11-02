@@ -203,7 +203,7 @@ export const capability: LanguageCapability = {
   // ancestor is a project interface carries its `ancestorSymbolId` instead of
   // null (tea-rags self-index: 0 → 502 of 526). Recompute:
   // `--force-enrichments codegraph --languages typescript`.
-  versions: { chunking: 3, walker: 16, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 17, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or

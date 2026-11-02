@@ -13,6 +13,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
+import { isInlineTestNode } from "../inline-tests.js";
 
 /** Methods that create describe/context containers. */
 const CONTAINER_METHODS = new Set(["describe", "context", "suite"]);
@@ -212,12 +213,28 @@ export function isInsideHelperDefinition(node: AstNode): boolean {
   return false;
 }
 
+/**
+ * True when a call sits inside a Vitest in-source test block
+ * (`if (import.meta.vitest) { … }`), whatever file holds it — the block makes
+ * its DSL calls test scopes and examples the way a test file does.
+ */
+function isInsideInlineTestBlock(node: AstNode, code: string): boolean {
+  for (let cursor = node.parent; cursor; cursor = cursor.parent) {
+    if (isInlineTestNode(cursor, code)) return true;
+  }
+  return false;
+}
+
 export const testDslFilterHook: ChunkingHook = {
   name: "test-dsl-filter",
 
   filterNode(node: AstNode, code: string, filePath: string): boolean | undefined {
+    // `if_statement` is chunkable only as a Vitest in-source test block, in any
+    // file; every other `if` is rejected, so the chunker descends through it
+    // exactly as when `if_statement` was not a chunkable type.
+    if (node.type === "if_statement") return isInlineTestNode(node, code);
     if (node.type !== "call_expression") return undefined;
-    if (!isTestFile(filePath)) return false;
+    if (!isTestFile(filePath) && !isInsideInlineTestBlock(node, code)) return false;
 
     const callName = getCallName(node, code);
     if (!callName) return false;

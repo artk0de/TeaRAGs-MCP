@@ -202,7 +202,7 @@ export const capability: LanguageCapability = {
   //   constructor arms agree, and `*self` in an impl, and keeps the head of a
   //   declared return whose arguments it cannot spell or are the fn's own
   //   generics (`-> Res<(u8, u8)>`, `fn map<U>(..) -> Res<U>`).
-  versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
+  versions: { chunking: 5, walker: 12, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.
