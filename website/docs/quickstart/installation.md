@@ -25,9 +25,10 @@ Details:
 
 The `tea-rags-setup` plugin installs and configures everything in one confirmed
 plan. `/tea-rags-setup:install` does, in order: detect the environment, write
-`.contextignore`, profile the project's languages, choose the embedding model,
+`.contextignore.local`, profile the project's languages, choose the embedding model,
 start a local llama-server pool, install the Rust compiler driver when the
-project contains Rust, register the MCP server, and index the project in the
+project contains Rust, register the project, install the TeaRAGs plugin and MCP
+server for your harness (Claude Code, Codex or Cursor), and index the project in the
 foreground. It shows the whole plan and asks once before running it.
 
 **Step 1 — Add the TeaRAGs marketplace to Claude Code:**

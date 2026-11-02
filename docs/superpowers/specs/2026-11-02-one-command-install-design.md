@@ -198,8 +198,8 @@ follow the same roots.
 ## Install skill
 
 One skill, one step, the same flow for Claude Code, Cursor and Codex. Helper
-scripts are Node (`.mjs`), since Node ≥ 24 is a prerequisite anyway; the bash
-and PowerShell twins go away.
+scripts are Node (`.mjs`), since Node ≥ 22 (the package `engines` floor) is a
+prerequisite anyway; the bash and PowerShell twins go away.
 
 1. **Detect** (`detect.mjs`, JSON out): OS, arch, RAM, GPU backend, Node
    version, harness, installed `tea-rags` version, existing registry entry for
