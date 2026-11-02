@@ -718,8 +718,10 @@
   shape: a vertical answers it through the optional
   `LanguageProvider.declaredTestFiles` (`DeclaredTestFileSource`), reading only
   through the `readFile` the query hands it. The run reads it once on the main
-  thread and installs the set beside the conventions
-  (`primitives/paths/file-classification/declared-test-files.ts`); the
+  thread and installs the set beside the conventions, keyed by the project root
+  (`primitives/paths/file-classification/declared-test-files.ts`): a reader
+  answers only for the root it names, and no root means conventions only, so a
+  process indexing two projects never classifies one with the other's set. The
   incremental coherence is `../ingest/operations/CLAUDE.md`'s.
 - **Test-ness of a NODE is the vertical's `<lang>/inline-tests.ts`, and one
   predicate answers all three consumers.** A language whose tests may live

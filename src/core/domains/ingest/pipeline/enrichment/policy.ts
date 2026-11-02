@@ -52,6 +52,12 @@ export interface EnrichmentFileFacts {
    * path says (bd tea-rags-mcp-52wk3.7); it never decides the file level.
    */
   chunkType?: string;
+  /**
+   * The root the path is relative to. Only with it does classification admit
+   * that project's declared test files (bd tea-rags-mcp-52wk3.10) — another
+   * project's set never answers for this one.
+   */
+  projectRoot?: string;
 }
 
 /**
@@ -69,8 +75,9 @@ export function fileLinesOf(
   return lines;
 }
 
-function classifyPath(relPath: string, contentHead?: string) {
-  return classify(relPath, { isDocumentation: isDocumentationPath(relPath), contentHead });
+function classifyPath(relPath: string, facts: EnrichmentFileFacts) {
+  const { contentHead, projectRoot } = facts;
+  return classify(relPath, { isDocumentation: isDocumentationPath(relPath), contentHead, projectRoot });
 }
 
 /**
@@ -80,7 +87,7 @@ function classifyPath(relPath: string, contentHead?: string) {
  * decides whether test code is owed, exactly as it does for a test file.
  */
 function classifyPoint(relPath: string, facts: EnrichmentFileFacts) {
-  const classification = classifyPath(relPath, facts.contentHead);
+  const classification = classifyPath(relPath, facts);
   if (facts.chunkType === undefined || !TEST_CHUNK_TYPES.has(facts.chunkType)) return classification;
   return { ...classification, isTest: true };
 }
@@ -133,7 +140,7 @@ export function enrichmentSkipReason(
 ): EnrichmentSkipReason | null {
   if (!provider.shouldEnrich) return null;
   // A chunk's type speaks for that chunk only, never for the file around it.
-  const classification = level === "chunk" ? classifyPoint(relPath, facts) : classifyPath(relPath, facts.contentHead);
+  const classification = level === "chunk" ? classifyPoint(relPath, facts) : classifyPath(relPath, facts);
   const { fileLines } = facts;
   const scope = provider.shouldEnrich({
     relPath,
@@ -159,21 +166,23 @@ export function enrichmentSkipReason(
  * codegraph walker prunes those subtrees — must never see it, or its owner rule
  * hands the chunk the enclosing production symbol's signals (bd
  * tea-rags-mcp-52wk3.7). Providers without `shouldEnrich` owe every entry.
+ * `projectRoot` is the root `relPath` is relative to ({@link EnrichmentFileFacts}).
  */
 export function partitionChunkEntries<E extends { endLine: number; moduleLines?: number; chunkType?: string }>(
   provider: Pick<EnrichmentProvider, "shouldEnrich">,
   relPath: string,
   entries: readonly E[],
+  projectRoot?: string,
 ): { owed: E[]; declined: { entry: E; skippedAs: EnrichmentSkipReason }[] } {
   const fileLines = fileLinesOf(entries);
-  const fileReason = enrichmentSkipReason(provider, relPath, "chunk", { fileLines });
+  const fileReason = enrichmentSkipReason(provider, relPath, "chunk", { fileLines, projectRoot });
   if (fileReason !== null) return { owed: [], declined: entries.map((entry) => ({ entry, skippedAs: fileReason })) };
   const owed: E[] = [];
   const declined: { entry: E; skippedAs: EnrichmentSkipReason }[] = [];
   for (const entry of entries) {
     const skippedAs =
       entry.chunkType !== undefined && TEST_CHUNK_TYPES.has(entry.chunkType)
-        ? enrichmentSkipReason(provider, relPath, "chunk", { fileLines, chunkType: entry.chunkType })
+        ? enrichmentSkipReason(provider, relPath, "chunk", { fileLines, chunkType: entry.chunkType, projectRoot })
         : null;
     if (skippedAs === null) owed.push(entry);
     else declined.push({ entry, skippedAs });
@@ -185,11 +194,16 @@ export function partitionChunkEntries<E extends { endLine: number; moduleLines?:
  * Drop repo-relative paths the provider declines entirely (`"none"`). Used by
  * every FILE-level dispatch site (file-phase, backfiller, recovery) so a
  * generated file is never file-enriched, no matter which path reaches it.
- * Providers without `shouldEnrich` get the list unchanged.
+ * Providers without `shouldEnrich` get the list unchanged. `projectRoot` is the
+ * root the paths are relative to ({@link EnrichmentFileFacts}).
  */
-export function filterFileEnrichPaths(provider: EnrichmentProvider, paths: readonly string[]): string[] {
+export function filterFileEnrichPaths(
+  provider: EnrichmentProvider,
+  paths: readonly string[],
+  projectRoot?: string,
+): string[] {
   if (!provider.shouldEnrich) return [...paths];
-  return paths.filter((p) => enrichmentScope(provider, p) !== "none");
+  return paths.filter((p) => enrichmentScope(provider, p, { projectRoot }) !== "none");
 }
 
 /**
@@ -198,17 +212,21 @@ export function filterFileEnrichPaths(provider: EnrichmentProvider, paths: reado
  * Used by every CHUNK-level dispatch site (chunk-phase, backfiller, recovery).
  * `fileLinesFor` reads the file's line count off a map value (for chunk
  * entries, {@link fileLinesOf}); without it a size-driven decline is invisible.
- * Providers without `shouldEnrich` get the map unchanged.
+ * Providers without `shouldEnrich` get the map unchanged. `projectRoot` as in
+ * {@link filterFileEnrichPaths}.
  */
 export function filterChunkEnrichMap<T>(
   provider: EnrichmentProvider,
   map: Map<string, T>,
   fileLinesFor?: (value: T) => number | undefined,
+  projectRoot?: string,
 ): Map<string, T> {
   if (!provider.shouldEnrich) return map;
   const filtered = new Map<string, T>();
   for (const [rel, value] of map) {
-    if (enrichmentScope(provider, rel, { fileLines: fileLinesFor?.(value) }) === "full") filtered.set(rel, value);
+    if (enrichmentScope(provider, rel, { fileLines: fileLinesFor?.(value), projectRoot }) === "full") {
+      filtered.set(rel, value);
+    }
   }
   return filtered;
 }

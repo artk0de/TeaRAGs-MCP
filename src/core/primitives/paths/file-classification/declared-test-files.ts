@@ -9,29 +9,48 @@
  * carries. `classify().isTest` and the codegraph exclusion read it at call
  * time, so a filter built once sees each run's set.
  *
- * ONE set per isolate — the latest run's, tagged with its project root — and
- * an install replaces it wholesale. A reader has no root, so a set kept per
- * project would answer for every project ever indexed in a long-lived process:
- * `src/test_utils.rs` declared in one crate would classify the same path of
- * the next crate as a test. Two runs of one process on two projects at the
- * SAME time share the slot, and the later install wins. Nothing installed →
- * nothing declared, so a context that never runs an index classifies exactly
- * as before.
+ * A REGISTRY keyed by the project root (normalized absolute path). One process
+ * serves many projects — the MCP server, an enrichment worker taking calls for
+ * several roots — and two runs of different projects may interleave, so a
+ * single slot let project A's declared paths classify project B's files
+ * (`src/test_utils.rs` is a common path). Every reader therefore names ITS OWN
+ * root, and an install replaces only that root's entry. A reader without a
+ * root sees no declared file at all — conventions only. Nothing installed for
+ * a root → nothing declared, so a context that never runs an index classifies
+ * exactly as before.
  */
+import { resolve } from "node:path";
 
-let installed: { readonly projectRoot: string; readonly declared: ReadonlySet<string> } | undefined;
+const declaredByRoot = new Map<string, ReadonlySet<string>>();
 
-/** Install `relativePaths` as the declared test files of `projectRoot`'s run, replacing any earlier set. */
+/** An empty root names no project — `resolve("")` would silently mean the cwd. */
+function rootKey(projectRoot: string): string | undefined {
+  return projectRoot === "" ? undefined : resolve(projectRoot);
+}
+
+/**
+ * Install `relativePaths` as the declared test files of `projectRoot`,
+ * replacing that root's earlier set and no other. An empty set drops the entry.
+ */
 export function installDeclaredTestFiles(projectRoot: string, relativePaths: Iterable<string>): void {
-  installed = { projectRoot, declared: new Set(relativePaths) };
+  const key = rootKey(projectRoot);
+  if (key === undefined) return;
+  const declared = new Set(relativePaths);
+  if (declared.size === 0) declaredByRoot.delete(key);
+  else declaredByRoot.set(key, declared);
 }
 
-/** `projectRoot`'s installed set, sorted — what a call envelope carries to a worker isolate. Empty for any other root. */
+function declaredFor(projectRoot: string): ReadonlySet<string> | undefined {
+  const key = rootKey(projectRoot);
+  return key === undefined ? undefined : declaredByRoot.get(key);
+}
+
+/** `projectRoot`'s installed set, sorted — what a call envelope carries to a worker isolate. */
 export function installedDeclaredTestFiles(projectRoot: string): string[] {
-  return installed?.projectRoot === projectRoot ? [...installed.declared].sort() : [];
+  return [...(declaredFor(projectRoot) ?? [])].sort();
 }
 
-/** Whether the installed run declared `relPath` as test code. */
-export function isDeclaredTestFile(relPath: string): boolean {
-  return installed?.declared.has(relPath) ?? false;
+/** Whether the run of `projectRoot` declared `relPath` (relative to that root) as test code. */
+export function isDeclaredTestFile(relPath: string, projectRoot: string): boolean {
+  return declaredFor(projectRoot)?.has(relPath) ?? false;
 }

@@ -126,7 +126,16 @@ const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 /** Payload keys recovery actually reads — everything else stays server-side. */
 // `moduleLines` feeds the policy's size-driven chunk decline (bd tea-rags-mcp-2brzq).
 // `chunkType` feeds the test-chunk decline (bd tea-rags-mcp-52wk3.7).
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId", "moduleLines", "chunkType"];
+// `codebasePath` names the root whose declared test files apply (bd tea-rags-mcp-52wk3.10).
+const RECOVERY_PAYLOAD_KEYS = [
+  "relativePath",
+  "startLine",
+  "endLine",
+  "symbolId",
+  "moduleLines",
+  "chunkType",
+  "codebasePath",
+];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -263,7 +272,7 @@ export class EnrichmentRecovery {
         let handedOff = 0;
         if (provider.defersChunkEnrichment) {
           const paths = [...chunkMap.keys()];
-          for (const relPath of provider.filterExtractablePaths?.(paths) ?? paths) {
+          for (const relPath of provider.filterExtractablePaths?.(paths, root) ?? paths) {
             const entries = chunkMap.get(relPath) ?? [];
             deferredChunks.set(relPath, entries);
             handedOff += entries.length;
@@ -617,7 +626,10 @@ export class EnrichmentRecovery {
       // The point's chunk type decides only its CHUNK level: a test chunk
       // inside a production file (bd tea-rags-mcp-52wk3.7).
       const chunkType = typeof point.payload?.chunkType === "string" ? point.payload.chunkType : undefined;
-      const skippedAs = enrichmentSkipReason(provider, relativePath, level, { fileLines, chunkType });
+      // The point's own root — what its `relativePath` is relative to — names
+      // whose declared test files apply (bd tea-rags-mcp-52wk3.10).
+      const projectRoot = typeof point.payload?.codebasePath === "string" ? point.payload.codebasePath : undefined;
+      const skippedAs = enrichmentSkipReason(provider, relativePath, level, { fileLines, chunkType, projectRoot });
       if (skippedAs !== null) {
         declined.push({ id: point.id, skippedAs });
         continue;

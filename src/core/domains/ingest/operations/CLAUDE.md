@@ -40,11 +40,16 @@
   `ParallelFileSynchronizer#invalidateEntries`, beside the scoped force;
   `invalidateEntries` keeps the LOADED set, so a run that dies after the mark
   repeats the same diff. A snapshot without the field reads as an empty set. The
-  enrichment worker pool forwards the installed set in every call envelope
-  (`EnrichmentCallRequest.declaredTestFiles`), and the worker installs it before
-  the call. Why: `payload.isTest` and `skippedAs` are per point, so when
-  `lib.rs` gains or loses `#[cfg(test)] mod testutil;` the unchanged
-  `testutil.rs` would keep its old classification forever.
+  set is installed under the project ROOT and every consumer asks with its own
+  root — the payload builder with `codebasePath`, the enrichment policy with the
+  provider context's root, recovery with each point's `codebasePath`, the
+  codegraph exclusion with the call's root — so two projects indexed in one
+  process never share a set. The enrichment worker pool forwards the root's set
+  in every call envelope (`EnrichmentCallRequest.declaredTestFiles`), and the
+  worker installs it under `request.root` before the call. Why: `payload.isTest`
+  and `skippedAs` are per point, so when `lib.rs` gains or loses
+  `#[cfg(test)] mod testutil;` the unchanged `testutil.rs` would keep its old
+  classification forever.
 - **Every early return of `ReindexPipeline#reindexChanges` owes the providers'
   whole-collection work its finalize would have done.** The no-change and
   deletion-only returns open no enrichment run, so no `finalizeSignals` fires;

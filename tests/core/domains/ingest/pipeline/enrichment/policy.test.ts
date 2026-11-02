@@ -231,16 +231,32 @@ describe("filterChunkEnrichMap", () => {
   });
 });
 
-describe("enrichmentSkipReason — declared test files (bd tea-rags-mcp-52wk3.10)", () => {
-  it("stamps a file a project declared as test code with skippedAs test", () => {
-    const declinesTests = providerWith((ctx) => (ctx.classification.isTest ? "none" : "full"));
-    expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file")).toBeNull();
+describe("enrichment policy — declared test files (bd tea-rags-mcp-52wk3.10)", () => {
+  const declinesTests = providerWith((ctx) => (ctx.classification.isTest ? "none" : "full"));
+
+  it("stamps a file the caller's project declared as test code with skippedAs test", () => {
+    expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file", { projectRoot: "/repo" })).toBeNull();
     installDeclaredTestFiles("/repo", ["src/testutil.rs"]);
     try {
-      expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file")).toBe("test");
-      expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "file")).toBeNull();
+      expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file", { projectRoot: "/repo" })).toBe("test");
+      expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "file", { projectRoot: "/repo" })).toBeNull();
     } finally {
       installDeclaredTestFiles("/repo", []);
+    }
+  });
+
+  it("answers with the caller's own root: another project's declaration never declines this one", () => {
+    installDeclaredTestFiles("/repo/a", ["src/test_utils.rs"]);
+    try {
+      expect(enrichmentSkipReason(declinesTests, "src/test_utils.rs", "file", { projectRoot: "/repo/b" })).toBeNull();
+      expect(enrichmentSkipReason(declinesTests, "src/test_utils.rs", "file")).toBeNull();
+      expect(filterFileEnrichPaths(declinesTests, ["src/test_utils.rs"], "/repo/a")).toEqual([]);
+      expect(filterFileEnrichPaths(declinesTests, ["src/test_utils.rs"], "/repo/b")).toEqual(["src/test_utils.rs"]);
+      const entries = [{ endLine: 3, chunkType: "function" }];
+      expect(partitionChunkEntries(declinesTests, "src/test_utils.rs", entries, "/repo/a").owed).toEqual([]);
+      expect(partitionChunkEntries(declinesTests, "src/test_utils.rs", entries, "/repo/b").owed).toEqual(entries);
+    } finally {
+      installDeclaredTestFiles("/repo/a", []);
     }
   });
 });

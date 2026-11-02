@@ -23,7 +23,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import type { PathFilter } from "../../../../primitives/paths/index.js";
+import type { CodegraphExclusionFilter } from "../exclusion/index.js";
 import { extractCodeFileFromText } from "./code-file-extraction.js";
 import type { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CodegraphRunState } from "./run-state.js";
@@ -253,7 +253,7 @@ export interface CodegraphFileExtractorDeps {
   /** Shared with the pass-2 finalizer so both halves land in one summary. */
   phaseTimings: CodegraphPhaseTimings;
   /** The provider's codegraph-layer ignore filter — the same instance its policy reads. */
-  exclusionFilter: PathFilter;
+  exclusionFilter: CodegraphExclusionFilter;
 }
 
 /**
@@ -279,10 +279,15 @@ export class CodegraphFileExtractor {
    * pass-1 entry point applies before parsing (bd tea-rags-mcp-65bkl). Beyond
    * `shouldEnrich`, it requires a {@link CODEGRAPH_LANGUAGES} row: a `tsconfig.json`
    * still gets its all-zero payload block but never a `cg_symbols_files` row, and
-   * the repair diff has to know that.
+   * the repair diff has to know that. `projectRoot` is the root `relPath` is
+   * relative to; it admits that project's declared test files (bd
+   * tea-rags-mcp-52wk3.10).
    */
-  isExtractable(relPath: string): boolean {
-    return CODEGRAPH_SUPPORTED_EXTENSIONS.has(extensionOf(relPath)) && !this.deps.exclusionFilter.ignores(relPath);
+  isExtractable(relPath: string, projectRoot?: string): boolean {
+    return (
+      CODEGRAPH_SUPPORTED_EXTENSIONS.has(extensionOf(relPath)) &&
+      !this.deps.exclusionFilter.ignores(relPath, projectRoot)
+    );
   }
 
   /**
@@ -328,7 +333,7 @@ export class CodegraphFileExtractor {
         if (!entry.isFile()) continue;
         if (!CODEGRAPH_SUPPORTED_EXTENSIONS.has(extensionOf(entry.name))) continue;
         if (scannerIgnoreFilter?.ignores(relPath)) continue;
-        if (this.deps.exclusionFilter.ignores(relPath)) continue;
+        if (this.deps.exclusionFilter.ignores(relPath, root)) continue;
         out.push(relPath);
       }
     };

@@ -259,11 +259,12 @@ export abstract class BaseIndexingPipeline {
 
   /**
    * Read the run's declared test files (bd tea-rags-mcp-52wk3.10) and install
-   * them into this isolate's test classification — once per run, on the main
-   * thread, before change detection, so the payload builder, the enrichment
-   * policy and the scoped-force selector all classify with the same set. The
-   * worker-pool executor forwards the installed set to every call it
-   * dispatches. No finder wired → nothing declared.
+   * them under this project's root — once per run, on the main thread, before
+   * change detection, so the payload builder, the enrichment policy and the
+   * scoped-force selector, each asking with its own root, classify with the
+   * same set. The install replaces only this root's entry, never another
+   * project's. The worker-pool executor forwards the root's set to every call
+   * it dispatches. No finder wired → nothing declared.
    */
   protected async installRunDeclaredTestFiles(absolutePath: string, files: readonly string[]): Promise<string[]> {
     const finder = this.deps.findDeclaredTestFiles;

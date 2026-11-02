@@ -139,6 +139,33 @@ describe("declared test files through the ingest pipeline", () => {
     expect(byPath.get("src/testutil.ts")?.every(Boolean)).toBe(true);
   });
 
+  it("keeps two projects indexed in one process apart, sequentially and interleaved", async () => {
+    const other = await createTempTestDir();
+    try {
+      // Project B holds the same relative path, but nothing in B declares it.
+      await createTestFile(other.codebaseDir, "src/lib.ts", NOT_DECLARING);
+      await createTestFile(other.codebaseDir, "src/testutil.ts", `export const helperB = 1;\n${PAD}`);
+
+      await Promise.all([ingest.indexCodebase(codebaseDir), ingest.indexCodebase(other.codebaseDir)]);
+
+      const status = await ingest.getIndexStatus(other.codebaseDir);
+      const otherPoints = await qdrant.scrollFiltered(status.collectionName!, {}, 10_000);
+      const otherTestutil = otherPoints.filter((point) => point.payload.relativePath === "src/testutil.ts");
+      expect(otherTestutil.length).toBeGreaterThan(0);
+      expect(otherTestutil.some((point) => point.payload.isTest === true)).toBe(false);
+      expect((await isTestByPath()).get("src/testutil.ts")?.every(Boolean)).toBe(true);
+
+      // A later run of B alone must not clear A's set either.
+      await createTestFile(other.codebaseDir, "src/parser.ts", `export const parserB = 1;\n${PAD}`);
+      await ingest.indexCodebase(other.codebaseDir);
+      await createTestFile(codebaseDir, "src/parser.ts", `export const parserChanged = 2;\n${PAD}`);
+      await ingest.indexCodebase(codebaseDir);
+      expect((await isTestByPath()).get("src/testutil.ts")?.every(Boolean)).toBe(true);
+    } finally {
+      await cleanupTempDir(other.tempDir);
+    }
+  });
+
   it("re-chunks nothing extra when the declared set did not move", async () => {
     await ingest.indexCodebase(codebaseDir);
     const deleteSpy = vi.spyOn(qdrant, "deletePointsByPathsBatched");

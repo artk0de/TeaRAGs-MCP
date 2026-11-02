@@ -71,7 +71,7 @@ export class EnrichmentBackfiller {
     // the streaming phase intentionally skipped it. Re-enriching it here would
     // resurrect the very git signals the policy suppresses. Drop scope-"none"
     // paths before backfill so the skip holds across this path too.
-    const missedPaths = filterFileEnrichPaths(ctx.provider, Array.from(missed.keys()));
+    const missedPaths = filterFileEnrichPaths(ctx.provider, Array.from(missed.keys()), root);
     if (missedPaths.length === 0) return;
     pipelineLog.enrichmentPhase("BACKFILL_START", {
       provider: ctx.key,
@@ -161,7 +161,7 @@ export class EnrichmentBackfiller {
     // Per-file policy: only "full"-scope files get the chunk-churn walk. Drops
     // "file-only" (docs, oversized files) so chunk backfill never resurrects
     // the chunk signals the streaming chunk phase deliberately skipped.
-    const scoped = filterChunkEnrichMap(ctx.provider, map, fileLinesOf);
+    const scoped = filterChunkEnrichMap(ctx.provider, map, fileLinesOf, root);
     if (scoped.size === 0) return;
 
     const start = Date.now();

@@ -255,7 +255,7 @@ export class ChunkPhase {
     // filters them out silently. Both do, so without this the run ends with
     // those points carrying neither terminal marker and the NEXT run's recovery
     // scan is what settles them (bd tea-rags-mcp-okra9).
-    this.stampDeclinedChunks(physicalCollectionName, ctx, state, map);
+    this.stampDeclinedChunks(physicalCollectionName, ctx, state, map, root);
     if (ctx.provider.defersChunkEnrichment) {
       // Fully-deferred provider (codegraph): accumulate the batch's chunkMap
       // once the provider's file work settles (parity with the pre-7gnre
@@ -710,13 +710,14 @@ export class ChunkPhase {
     ctx: ProviderContext,
     state: ChunkPhaseState,
     map: ReadonlyMap<string, ChunkLookupEntry[]>,
+    root: string,
   ): void {
     if (!ctx.provider.shouldEnrich) return;
     const stamps: { id: string; skippedAs: EnrichmentSkipReason }[] = [];
     for (const [rel, entries] of map) {
       // Per entry, not per file: a test chunk inside a file the provider
       // enriches is declined on its own (bd tea-rags-mcp-52wk3.7).
-      for (const { entry, skippedAs } of partitionChunkEntries(ctx.provider, rel, entries).declined) {
+      for (const { entry, skippedAs } of partitionChunkEntries(ctx.provider, rel, entries, root).declined) {
         stamps.push({ id: entry.chunkId, skippedAs });
       }
     }
@@ -783,7 +784,7 @@ export class ChunkPhase {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
       // Declined entries — the whole file, or a test chunk inside it (bd
       // tea-rags-mcp-52wk3.7) — are stamped by stampDeclinedChunks, never walked.
-      const { owed } = partitionChunkEntries(provider, rel, entries);
+      const { owed } = partitionChunkEntries(provider, rel, entries, root);
       if (owed.length > 0) filtered.set(filePath, owed);
     }
     return filtered;

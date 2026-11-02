@@ -60,13 +60,13 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import type { PathFilter } from "../../../../primitives/paths/index.js";
 import {
   buildCodegraphExclusionFilter,
   collectInstantiationSiteResolvers,
   collectKnownTargetCalleeLocators,
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
+  type CodegraphExclusionFilter,
   type CodegraphExclusionOptions,
 } from "../exclusion/index.js";
 import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
@@ -293,7 +293,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `db/migrate/**`). Never empty: the generated + test patterns are
    * unconditional. The extractor and the chunk pass hold this same instance.
    */
-  private readonly codegraphExclusionFilter: PathFilter;
+  private readonly codegraphExclusionFilter: CodegraphExclusionFilter;
   /**
    * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq). Owned
    * here, not by the finalizer, because pass-1 runs on this side and both halves
@@ -398,8 +398,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * /YAML file the index carries, on every run, forever — they can never acquire
    * the row it looks for (bd tea-rags-mcp-65bkl).
    */
-  filterExtractablePaths(paths: readonly string[]): string[] {
-    return paths.filter((p) => this.fileExtractor.isExtractable(p));
+  filterExtractablePaths(paths: readonly string[], projectRoot?: string): string[] {
+    return paths.filter((p) => this.fileExtractor.isExtractable(p, projectRoot));
   }
 
   /**
@@ -650,7 +650,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const root = this.runState.projectRoot;
     if (root === undefined) return [];
     const extractions: FileExtraction[] = [];
-    for (const relPath of this.filterExtractablePaths(relPaths)) {
+    for (const relPath of this.filterExtractablePaths(relPaths, root)) {
       try {
         extractions.push(await this.extractOneFile(root, relPath));
       } catch (err) {
@@ -767,7 +767,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // filter here — otherwise excluded test files would enter the graph.
     const targetRelPaths =
       options?.paths && options.paths.length > 0
-        ? this.filterExtractablePaths(options.paths)
+        ? this.filterExtractablePaths(options.paths, root)
         : this.discoverSupportedFiles(root, options?.ignoreFilter);
 
     // Resolve the per-collection store ONCE for the whole pass.
@@ -831,7 +831,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // boundary; `reindex_changes` never sets it.
     if (options?.crossPass) return new Map();
     const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
-    const targets = this.filterExtractablePaths(batchPaths);
+    const targets = this.filterExtractablePaths(batchPaths, root);
     for (const relPath of targets) {
       // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run: a file
       // whose chunks span several batches would otherwise be re-spilled and its
@@ -891,7 +891,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extractions: FileExtraction[] = [];
     const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
     for (const relPath of paths) {
-      if (!this.fileExtractor.isExtractable(relPath)) continue;
+      if (!this.fileExtractor.isExtractable(relPath, root)) continue;
       const startedAtMs = Date.now();
       try {
         const extraction = await this.fileExtractor.parse(root, relPath);
@@ -998,11 +998,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * per collection. The append is synchronous so the bytes are on disk before
    * finalize opens the file; IO errors are swallowed (debug-logged).
    */
-  acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: PhysicalCollectionName }): void => {
+  acceptExtraction = (
+    extraction: FileExtraction,
+    options?: { collectionName?: PhysicalCollectionName; projectRoot?: string },
+  ): void => {
     // G3a (bd tea-rags-mcp-lx8sb): the cross-pass tee receives EVERY chunked file,
     // so it must apply the exclusion filter the batch path and buildFileSignals
     // apply, or excluded (test) files re-enter the graph.
-    if (this.codegraphExclusionFilter.ignores(extraction.relPath)) return;
+    if (this.codegraphExclusionFilter.ignores(extraction.relPath, options?.projectRoot)) return;
     const key = this.collectionKey(options?.collectionName);
     let written = this.xpassWritten.get(key);
     if (!written) {
@@ -1345,12 +1348,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   async buildChunkSignals(
-    _root: string,
+    root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const { graphDb } = await this.getStore(options?.collectionName);
-    return this.chunkSignalPass.build(graphDb, chunkMap, this.collectionKey(options?.collectionName));
+    return this.chunkSignalPass.build(graphDb, chunkMap, this.collectionKey(options?.collectionName), root);
   }
 }
 

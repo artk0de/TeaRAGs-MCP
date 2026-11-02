@@ -58,6 +58,15 @@ export interface CodegraphExclusionOptions {
 }
 
 /**
+ * The codegraph exclusion. `projectRoot` — the root `relPath` is relative to —
+ * admits that project's declared test files (bd tea-rags-mcp-52wk3.10); a call
+ * without it answers from the patterns alone.
+ */
+export interface CodegraphExclusionFilter extends PathFilter {
+  ignores: (relPath: string, projectRoot?: string) => boolean;
+}
+
+/**
  * Build a fully-loaded `Ignore` instance for the codegraph-specific layer.
  * Caller invokes `.ignores(relPath)` per file; the underlying `ignore`
  * package supports `.gitignore` glob semantics so directory-trailing-slash
@@ -89,7 +98,7 @@ export interface CodegraphExclusionOptions {
 export function buildCodegraphExclusionFilter(
   options: CodegraphExclusionOptions,
   languageFactory?: LanguageFactoryDescriptor,
-): PathFilter {
+): CodegraphExclusionFilter {
   const ig = ignore();
   const testFilter = buildTestPathFilter();
   // Generated and test files are always excluded — invariants, not configurable.
@@ -107,9 +116,13 @@ export function buildCodegraphExclusionFilter(
   if (options.customPatterns.length > 0) {
     ig.add(options.customPatterns);
   }
-  // Declared test files are read per call: the filter outlives a run, the set does not.
+  // Declared test files are read per call: the filter outlives a run, the set
+  // does not — and one filter serves every project the process indexes.
   return {
-    ignores: (relPath) => testFilter.ignores(relPath) || isDeclaredTestFile(relPath) || ig.ignores(relPath),
+    ignores: (relPath, projectRoot) =>
+      testFilter.ignores(relPath) ||
+      (projectRoot !== undefined && isDeclaredTestFile(relPath, projectRoot)) ||
+      ig.ignores(relPath),
   };
 }
 

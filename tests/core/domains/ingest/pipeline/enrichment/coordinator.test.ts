@@ -3267,8 +3267,11 @@ describe("EnrichmentCoordinator — onFileExtraction / acceptsExtractions (yl9tv
     coord.onFileExtraction(run, extraction);
 
     expect(acceptExtraction).toHaveBeenCalledTimes(1);
+    // The run's root rides along: it names whose declared test files the
+    // provider's exclusion applies (bd tea-rags-mcp-52wk3.10).
     expect(acceptExtraction).toHaveBeenCalledWith(extraction, {
       collectionName: fixturePhysicalCollectionName("coll-y"),
+      projectRoot: "/repo",
     });
   });
 

@@ -16,8 +16,12 @@ import { classify } from "../../../primitives/paths/index.js";
  * A path the classifier cannot take (absolute, `..`-relative, empty; the
  * `ignore` matcher throws on those) answers false rather than failing the
  * payload build.
+ *
+ * `projectRoot` — the root `relativePath` is relative to — admits that
+ * project's declared test files (bd tea-rags-mcp-52wk3.10); without it the
+ * answer is the path conventions alone.
  */
-export function detectTestFile(relativePath: string, _language?: string): boolean {
+export function detectTestFile(relativePath: string, _language?: string, projectRoot?: string): boolean {
   if (relativePath === "" || isAbsolute(relativePath) || relativePath.startsWith("..")) return false;
-  return classify(relativePath).isTest;
+  return classify(relativePath, projectRoot === undefined ? undefined : { projectRoot }).isTest;
 }

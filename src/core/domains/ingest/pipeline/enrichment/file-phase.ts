@@ -248,7 +248,9 @@ export class FilePhase {
    * shouldEnrich get "full" (no-op filter).
    */
   private enrichablePaths(ctx: ProviderContext, items: ChunkItem[], root: string): string[] {
-    return this.uniqueRelPaths(items, root).filter((rel) => enrichmentScope(ctx.provider, rel) !== "none");
+    return this.uniqueRelPaths(items, root).filter(
+      (rel) => enrichmentScope(ctx.provider, rel, { projectRoot: root }) !== "none",
+    );
   }
 
   /**
@@ -330,7 +332,9 @@ export class FilePhase {
           // count must reach the chunk-level question, or an oversized file
           // outside the git window gets a bare chunk `enrichedAt` beside the
           // chunk phase's `skippedAs: "oversized"` (bd tea-rags-mcp-2brzq).
-          (rel, level) => enrichmentSkipReason(ctx.provider, rel, level, { fileLines: linesByRel.get(rel) }) !== null,
+          (rel, level) =>
+            enrichmentSkipReason(ctx.provider, rel, level, { fileLines: linesByRel.get(rel), projectRoot: root }) !==
+            null,
         );
         state.streamingApplies++;
         pipelineLog.enrichmentPhase("STREAMING_APPLY", {
@@ -370,7 +374,8 @@ export class FilePhase {
       // overlay presence: a file the provider declined at this level is
       // ignored, not a silent bare-stamp. Mirrors the streaming applyFileSignals
       // call above so both apply paths agree on ignored vs missed.
-      (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
+      (rel, level) =>
+        enrichmentSkipReason(ctx.provider, rel, level, { projectRoot: ctx.effectiveRoot ?? undefined }) !== null,
     );
     state.streamingApplies++;
     state.prefetchEndTime = Date.now();
@@ -518,7 +523,7 @@ export class FilePhase {
       const rel = relative(root, item.chunk.metadata.filePath);
       let reason = reasonByRel.get(rel);
       if (reason === undefined) {
-        reason = enrichmentSkipReason(ctx.provider, rel, "file");
+        reason = enrichmentSkipReason(ctx.provider, rel, "file", { projectRoot: root });
         reasonByRel.set(rel, reason);
       }
       if (reason !== null) stamps.push({ id: item.chunkId, skippedAs: reason });

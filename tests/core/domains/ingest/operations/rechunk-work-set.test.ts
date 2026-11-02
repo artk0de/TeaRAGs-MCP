@@ -11,6 +11,7 @@ import {
   compileRechunkFileSelector,
   selectRechunkWorkSet,
 } from "../../../../../src/core/domains/ingest/operations/rechunk-work-set.js";
+import { installDeclaredTestFiles } from "../../../../../src/core/primitives/paths/file-classification/index.js";
 
 const FILES = [
   "src/app/user.rb",
@@ -36,6 +37,19 @@ describe("compileRechunkFileSelector", () => {
       "src/web/app.test.ts",
       "tests/core/foo.test.ts",
     ]);
+  });
+
+  it("testFile reads the declared test files of the selector's own project root only (bd tea-rags-mcp-52wk3.10)", () => {
+    installDeclaredTestFiles("/repo/a", ["src/app/user.rb"]);
+    try {
+      expect(FILES.filter(compileRechunkFileSelector({ testFile: "only" }, "/repo/a"))).toContain("src/app/user.rb");
+      expect(FILES.filter(compileRechunkFileSelector({ testFile: "only" }, "/repo/b"))).not.toContain(
+        "src/app/user.rb",
+      );
+      expect(select({ testFile: "only" })).not.toContain("src/app/user.rb");
+    } finally {
+      installDeclaredTestFiles("/repo/a", []);
+    }
   });
 
   it("testFile exclude selects the complement", () => {

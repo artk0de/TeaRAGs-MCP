@@ -38,7 +38,7 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     // A test chunk inside a production file (Rust #[cfg(test)], Vitest
     // in-source) is test code even though its file is not a test file.
     const isTestChunk = typeof m.chunkType === "string" && TEST_CHUNK_TYPES.has(m.chunkType);
-    if (detectTestFile(relativePath, language) || isTestChunk) payload.isTest = true;
+    if (detectTestFile(relativePath, language, codebasePath) || isTestChunk) payload.isTest = true;
     const imports = m.imports as string[] | undefined;
     if (imports?.length) payload.imports = imports;
     const headingPath = m.headingPath as { depth: number; text: string }[] | undefined;

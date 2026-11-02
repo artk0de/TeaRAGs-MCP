@@ -354,6 +354,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       selector,
       scannedFiles,
       indexedFiles: ctx.synchronizer.getSnapshotPaths(),
+      projectRoot: base,
     });
     await ctx.synchronizer.invalidateEntries(workSet);
     pipelineLog.reindexPhase("RECHUNK_SCOPED", { files: workSet.length, selector });
@@ -496,11 +497,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // deferred pass through the pipeline anyway. A seeded chunk whose file is
     // never walked would be stamped `enrichedAt` over an empty overlay.
     const scannedHashes = ctx.synchronizer.getCurrentFileHashes();
-    const deferredChunkHandoff = this.narrowDeferredChunkHandoff(recoveryHandoff, scannedHashes, [
-      ...changes.added,
-      ...changes.modified,
-      ...retryPaths,
-    ]);
+    const deferredChunkHandoff = this.narrowDeferredChunkHandoff(
+      recoveryHandoff,
+      scannedHashes,
+      [...changes.added, ...changes.modified, ...retryPaths],
+      ctx.absolutePath,
+    );
     const repaired = await this.enrichment.runRepairPass(
       ctx.targetCollection,
       ctx.absolutePath,
@@ -948,6 +950,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     handoff: DeferredChunkRecoveryHandoff | undefined,
     scanned: ReadonlyMap<string, string>,
     rechunkedPaths: readonly string[],
+    root: string,
   ): DeferredChunkRecoveryHandoff {
     if (!handoff || handoff.size === 0) return new Map();
     const rechunked = new Set(rechunkedPaths);
@@ -956,7 +959,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const kept = new Map([...entriesByPath].filter(([relPath]) => !rechunked.has(relPath)));
       if (kept.size > 0) untouched.set(providerKey, kept);
     }
-    return this.enrichment.narrowDeferredChunkHandoff(untouched, scanned);
+    return this.enrichment.narrowDeferredChunkHandoff(untouched, scanned, root);
   }
 }
 

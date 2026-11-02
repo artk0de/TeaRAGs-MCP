@@ -414,7 +414,7 @@ export class EnrichmentCoordinator {
         const readPersisted = provider.readPersistedFileHashes;
         if (!readPersisted) continue;
 
-        const providerEligible = this.repairEligibleFiles(provider, scanned);
+        const providerEligible = this.repairEligibleFiles(provider, scanned, root);
         const forced = [...(forcedPaths?.get(provider.key) ?? [])].filter((path) => providerEligible.has(path));
         const forcedBySelector = forceProviders?.has(provider.key) ?? false;
 
@@ -703,12 +703,13 @@ export class EnrichmentCoordinator {
   narrowDeferredChunkHandoff(
     handoff: DeferredChunkRecoveryHandoff,
     scanned: ReadonlyMap<string, string>,
+    root: string,
   ): DeferredChunkRecoveryHandoff {
     const narrowed = new Map<string, ReadonlyMap<string, ChunkLookupEntry[]>>();
     for (const provider of this.providers) {
       const entriesByPath = handoff.get(provider.key);
       if (!entriesByPath || !provider.defersChunkEnrichment || !provider.readPersistedFileHashes) continue;
-      const eligible = this.repairEligibleFiles(provider, scanned);
+      const eligible = this.repairEligibleFiles(provider, scanned, root);
       const kept = new Map([...entriesByPath].filter(([relPath]) => eligible.has(relPath)));
       if (kept.size > 0) narrowed.set(provider.key, kept);
     }
@@ -741,12 +742,17 @@ export class EnrichmentCoordinator {
    * provider's STORE can ever hold a row for the file. Without the second, every
    * JSON/Markdown/YAML file codegraph answers "full" for is re-listed forever (bd
    * tea-rags-mcp-65bkl). A provider that persists whatever it is asked for omits
-   * the hook and keeps the wider set.
+   * the hook and keeps the wider set. `root` is the root `scanned`'s paths are
+   * relative to: it names whose declared test files apply (bd tea-rags-mcp-52wk3.10).
    */
-  private repairEligibleFiles(provider: EnrichmentProvider, scanned: ReadonlyMap<string, string>): Map<string, string> {
+  private repairEligibleFiles(
+    provider: EnrichmentProvider,
+    scanned: ReadonlyMap<string, string>,
+    root: string,
+  ): Map<string, string> {
     const eligible = new Map<string, string>();
-    const enrichable = filterFileEnrichPaths(provider, [...scanned.keys()]);
-    for (const path of provider.filterExtractablePaths?.(enrichable) ?? enrichable) {
+    const enrichable = filterFileEnrichPaths(provider, [...scanned.keys()], root);
+    for (const path of provider.filterExtractablePaths?.(enrichable, root) ?? enrichable) {
       eligible.set(path, scanned.get(path) as string);
     }
     return eligible;
@@ -1303,7 +1309,10 @@ export class EnrichmentCoordinator {
     if (!run) return;
     const physicalCollectionName = handle.collection;
     for (const ctx of run.contexts.values()) {
-      ctx.provider.acceptExtraction?.(extraction, { collectionName: physicalCollectionName });
+      ctx.provider.acceptExtraction?.(extraction, {
+        collectionName: physicalCollectionName,
+        projectRoot: ctx.effectiveRoot ?? undefined,
+      });
     }
     if (run.crossPass && this.progressCb && this.acceptsExtractions()) {
       run.codegraphSymbolsApplied += 1;

@@ -246,16 +246,19 @@ describe("buildCodegraphExclusionFilter", () => {
 });
 
 describe("buildCodegraphExclusionFilter — declared test files (bd tea-rags-mcp-52wk3.10)", () => {
-  it("skips a file a project declared as test code, read at call time", () => {
+  it("skips a file the caller's project declared as test code, read at call time", () => {
     const filter = buildCodegraphExclusionFilter({ customPatterns: [] });
-    expect(filter.ignores("crates/searcher/src/testutil.rs")).toBe(false);
+    expect(filter.ignores("crates/searcher/src/testutil.rs", "/repo/searcher")).toBe(false);
     installDeclaredTestFiles("/repo/searcher", ["crates/searcher/src/testutil.rs"]);
     try {
-      expect(filter.ignores("crates/searcher/src/testutil.rs")).toBe(true);
-      expect(filter.ignores("crates/searcher/src/searcher.rs")).toBe(false);
+      expect(filter.ignores("crates/searcher/src/testutil.rs", "/repo/searcher")).toBe(true);
+      expect(filter.ignores("crates/searcher/src/searcher.rs", "/repo/searcher")).toBe(false);
+      // Another project's root, or none at all, sees the conventions only.
+      expect(filter.ignores("crates/searcher/src/testutil.rs", "/repo/other")).toBe(false);
+      expect(filter.ignores("crates/searcher/src/testutil.rs")).toBe(false);
     } finally {
       installDeclaredTestFiles("/repo/searcher", []);
     }
-    expect(filter.ignores("crates/searcher/src/testutil.rs")).toBe(false);
+    expect(filter.ignores("crates/searcher/src/testutil.rs", "/repo/searcher")).toBe(false);
   });
 });

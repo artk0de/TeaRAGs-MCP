@@ -24,7 +24,12 @@ import { extensionsForLanguages } from "../pipeline/chunker/language-config/inde
 /** True iff a project-relative path is selected. */
 export type RechunkFileMatcher = (relativePath: string) => boolean;
 
-export function compileRechunkFileSelector(selector: RechunkFileSelector): RechunkFileMatcher {
+/**
+ * `projectRoot` is the root the matched paths are relative to; `testFile` then
+ * counts that project's declared test files (bd tea-rags-mcp-52wk3.10), as
+ * `payload.isTest` does.
+ */
+export function compileRechunkFileSelector(selector: RechunkFileSelector, projectRoot?: string): RechunkFileMatcher {
   const predicates: RechunkFileMatcher[] = [];
 
   if (selector.languages && selector.languages.length > 0) {
@@ -37,7 +42,7 @@ export function compileRechunkFileSelector(selector: RechunkFileSelector): Rechu
   }
   if (selector.testFile !== undefined) {
     const wantTests = selector.testFile === "only";
-    predicates.push((path) => isTestPath(path) === wantTests);
+    predicates.push((path) => isTestPath(path, projectRoot) === wantTests);
   }
   const pathMatcher = compilePathPatternMatcher(selector.pathPattern);
   if (pathMatcher) predicates.push(pathMatcher);
@@ -58,8 +63,10 @@ export function selectRechunkWorkSet(input: {
   selector: RechunkFileSelector;
   scannedFiles: readonly string[];
   indexedFiles: ReadonlySet<string>;
+  /** The root `scannedFiles` are relative to. */
+  projectRoot?: string;
 }): string[] {
-  const matches = compileRechunkFileSelector(input.selector);
+  const matches = compileRechunkFileSelector(input.selector, input.projectRoot);
   return input.scannedFiles.filter((path) => input.indexedFiles.has(path) && matches(path));
 }
 
@@ -73,7 +80,7 @@ function normalizeRelativePath(path: string): string {
 }
 
 /** Same guard `detectTestFile` applies: the classifier throws on non-relative paths. */
-function isTestPath(path: string): boolean {
+function isTestPath(path: string, projectRoot: string | undefined): boolean {
   if (path === "" || path.startsWith("/") || path.startsWith("..")) return false;
-  return classify(path).isTest;
+  return classify(path, projectRoot === undefined ? undefined : { projectRoot }).isTest;
 }

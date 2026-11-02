@@ -14,6 +14,12 @@ export interface ClassifyOptions {
   contentHead?: string;
   /** Documentation flag, derived by the caller from the file's language. */
   isDocumentation?: boolean;
+  /**
+   * The project root `relPath` is relative to. Only with it does `isTest`
+   * consult that project's declared test files (`./declared-test-files.ts`);
+   * without it the answer is the path conventions alone.
+   */
+  projectRoot?: string;
 }
 
 /**
@@ -64,13 +70,15 @@ function hasGeneratedMarker(head: string): boolean {
  * ingest/pipeline/chunker/language-config/config.ts). The test shapes are the
  * INSTALLED test-file conventions
  * (`./test-file-conventions.ts`); classifying before a composition root
- * installed them throws. A path a run declared test code
- * (`./declared-test-files.ts`) is a test too.
+ * installed them throws. A path the run of `opts.projectRoot` declared test
+ * code (`./declared-test-files.ts`) is a test too; no root, no declared files.
  */
 export function classify(relPath: string, opts?: ClassifyOptions): FileClassification {
   const isGenerated =
     getGeneratedFilter().ignores(relPath) || (opts?.contentHead ? hasGeneratedMarker(opts.contentHead) : false);
-  const isTest = matchesTestFileConventions(relPath) || isDeclaredTestFile(relPath);
+  const projectRoot = opts?.projectRoot;
+  const isTest =
+    matchesTestFileConventions(relPath) || (projectRoot !== undefined && isDeclaredTestFile(relPath, projectRoot));
   const isDocumentation = opts?.isDocumentation === true;
   // A generated or documentation file is not "source". A test IS source.
   const isSource = !isGenerated && !isDocumentation;

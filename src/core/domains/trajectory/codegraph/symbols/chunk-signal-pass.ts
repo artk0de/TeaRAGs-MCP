@@ -17,7 +17,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { ChunkLookupEntry, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import type { PathFilter } from "../../../../primitives/paths/index.js";
+import type { CodegraphExclusionFilter } from "../exclusion/index.js";
 import {
   CodegraphChunkSettlementTally,
   settleCodegraphChunkSignals,
@@ -39,7 +39,7 @@ export class CodegraphChunkSignalPass {
      */
     private readonly walkRangesByCollection: Map<string, Map<string, SymbolLineRange[]>>,
     /** The provider's codegraph-layer ignore filter — the same instance its policy reads. */
-    private readonly exclusionFilter: PathFilter,
+    private readonly exclusionFilter: CodegraphExclusionFilter,
   ) {}
 
   /**
@@ -67,11 +67,13 @@ export class CodegraphChunkSignalPass {
    * Overlays for every chunk in `chunkMap` this pass can settle, read from the
    * finished graph behind `graphDb`, plus the symbol→chunk join for every file
    * this run walked. Unsettled chunks are omitted, so no caller stamps them.
+   * `projectRoot` is the root the map's paths are relative to.
    */
   async build(
     graphDb: GraphDbClient,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     collectionKey: string,
+    projectRoot?: string,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     // One set-based fetch of every symbol's {fanIn, fanOut, pageRank}, then an
     // in-memory lookup per chunk; values equal the point getters (absent ⇒ {0,0,0}).
@@ -104,7 +106,7 @@ export class CodegraphChunkSignalPass {
       // once, which is how three unrelated `main`s came to share one fanOut.
       const settlement = settleCodegraphChunkSignals(
         relPath,
-        this.chunkRangeSourceFor(relPath, ranges),
+        this.chunkRangeSourceFor(relPath, ranges, projectRoot),
         entries,
         chunkSignals,
       );
@@ -148,12 +150,13 @@ export class CodegraphChunkSignalPass {
   private chunkRangeSourceFor(
     relPath: string,
     walkRanges: readonly SymbolLineRange[] | undefined,
+    projectRoot: string | undefined,
   ): CodegraphChunkRangeSource {
     if (walkRanges !== undefined) return { kind: "walk", ranges: walkRanges };
     if (!CODEGRAPH_SUPPORTED_EXTENSIONS.has(extensionOf(relPath))) {
       return { kind: "none", reason: "non-extractable-language" };
     }
-    if (this.exclusionFilter.ignores(relPath)) return { kind: "none", reason: "excluded-from-graph" };
+    if (this.exclusionFilter.ignores(relPath, projectRoot)) return { kind: "none", reason: "excluded-from-graph" };
     return { kind: "walk", ranges: undefined };
   }
 }

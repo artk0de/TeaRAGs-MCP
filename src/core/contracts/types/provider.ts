@@ -670,9 +670,11 @@ export interface EnrichmentProvider {
    *
    * Absent ⇒ the provider persists whatever it is asked for and the repair set
    * is the `shouldEnrich`-eligible set unchanged. Must be a pure filter: same
-   * order, same strings, subset only.
+   * order, same strings, subset only. `projectRoot` — the root the paths are
+   * relative to — admits that project's declared test files into the
+   * provider's exclusion (bd tea-rags-mcp-52wk3.10); absent ⇒ conventions only.
    */
-  filterExtractablePaths?: (paths: readonly string[]) => string[];
+  filterExtractablePaths?: (paths: readonly string[], projectRoot?: string) => string[];
   /**
    * Factory for the run-scoped commit discovery (bd tea-rags-mcp-82va1) —
    * the provider owns the window config (chunkMaxAgeMonths / timeout),
@@ -792,8 +794,13 @@ export interface EnrichmentProvider {
    * design (`appendFileSync`) — the bytes must be flushed before the worker's
    * finalize reads them, and the call is made directly on the main-thread
    * instance (never dispatched through the worker executor), so it returns void.
+   * `projectRoot` is the root `extraction.relPath` is relative to, as in
+   * `filterExtractablePaths`.
    */
-  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: PhysicalCollectionName }) => void;
+  acceptExtraction?: (
+    extraction: FileExtraction,
+    options?: { collectionName?: PhysicalCollectionName; projectRoot?: string },
+  ) => void;
   /**
    * yl9tv Task 5b — truncate the per-collection input spill + reset the
    * main-side dedup set at run start. Called by `coordinator.beginRun` on the

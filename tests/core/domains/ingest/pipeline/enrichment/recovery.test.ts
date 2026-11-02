@@ -575,7 +575,17 @@ describe("EnrichmentRecovery", () => {
       // `moduleLines` joined with bd tea-rags-mcp-2brzq: the policy's
       // size-driven chunk decline reads the file's line count. `chunkType`
       // joined with bd tea-rags-mcp-52wk3.7: the test-chunk decline reads it.
-      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId", "moduleLines", "chunkType"]);
+      // `codebasePath` joined with bd tea-rags-mcp-52wk3.10: the point's root
+      // names whose declared test files apply.
+      expect(call[4]).toEqual([
+        "relativePath",
+        "startLine",
+        "endLine",
+        "symbolId",
+        "moduleLines",
+        "chunkType",
+        "codebasePath",
+      ]);
     });
   });
 });

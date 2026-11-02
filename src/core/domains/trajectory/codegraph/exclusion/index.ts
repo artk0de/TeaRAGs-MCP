@@ -16,4 +16,4 @@ export {
   collectSchemaColumnSources,
   collectStructuralConformanceDerivers,
 } from "./exclusion.js";
-export type { CodegraphExclusionOptions } from "./exclusion.js";
+export type { CodegraphExclusionFilter, CodegraphExclusionOptions } from "./exclusion.js";
