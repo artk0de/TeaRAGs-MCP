@@ -8,18 +8,20 @@ foreground.
 
 ## Files
 
-- `prompts.json` — what the actor sees (21 cases; script outputs inlined as
+- `prompts.json` — what the actor sees (22 cases; script outputs inlined as
   fixtures).
 - `grading.json` — expected output, `not_expected`, assertions. Grader only;
   never shown to the actor.
 
-Cases: 12 findings (changed behaviour) · 7 edges · 1 subagent · 1 control
+Cases: 13 findings (changed behaviour) · 7 edges · 1 subagent · 1 control
 (re-tune routes to `tune`). Changed behaviour covered: no question before the
 plan, ignore before profile, model taken verbatim from `choose-model`, no
 Ollama, no squash question, `Change model` pick is the confirmation, plugin
 pinned `v<ver>` per harness, MCP without `env`, foreground indexing, `set-env`
-for an existing alias, Node floor 22, rustc driver step, PowerShell 5.1 quoting,
-project-level MCP duplicate, client upgrade + auto-update notice.
+for an existing alias without `EMBEDDING_MODEL`, first index exports
+`EMBEDDING_MODEL` (tea-rags-setup 0.8.2, bd tea-rags-mcp-hjbow.13), Node floor
+22, rustc driver step, PowerShell 5.1 quoting, project-level MCP duplicate,
+client upgrade + auto-update notice.
 
 ## Protocol
 
