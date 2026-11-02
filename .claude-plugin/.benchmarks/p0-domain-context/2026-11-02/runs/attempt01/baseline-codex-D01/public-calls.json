@@ -1,0 +1,61 @@
+[
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0335a77b7a86fdea016ae8d3c65b24819190b74f21fb677c1e",
+    "name": "exec",
+    "input": "const r = await tools.exec_command({cmd:\"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-D01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\",max_output_tokens:6500});text(r.output);\ntext(ALL_TOOLS.filter(t=> /tea_rags.*(semantic_search|find_symbol|get_callees)/.test(t.name)).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\n"
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0335a77b7a86fdea016ae8d3cca3e481918b67fcacc38b7c59",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__semantic_search({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",query:\"refund settlement processing state changes dashboard event frame\",metaOnly:true,limit:5}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-7db1de5a-f82f-4fd2-8296-130da92f98c0",
+    "tool": "semantic_search",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "query": "refund settlement processing state changes dashboard event frame",
+      "metaOnly": true,
+      "limit": 5
+    },
+    "error": null
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0335a77b7a86fdea016ae8d3d35a208191b131adf84d16108d",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\ntext(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-a0ce09b0-2226-425b-b4fa-25c9d034684b",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-fc6410a9-e103-4b59-b3c3-ad8ae0d62100",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement"
+    },
+    "error": null
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0335a77b7a86fdea016ae8d3dd218c8191bff481d11a0c2f2e",
+    "name": "exec",
+    "input": "const t=ALL_TOOLS.find(t=>t.name===\"mcp__tea_rags__get_callers\");text(t?.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\n"
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "key": "candidate-claude-F01",
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/candidate-claude-F01/native/public-hook-events.jsonl",
+  "input_sha256": "556ccc73afda05f39dd0bdd9bdc9f7cc435aed3f8e500505e9c2a83f7d646a35",
+  "prime_payloads": [
+    {
+      "line_index": 7,
+      "hook_id": "1cf71cd9-1e71-4a05-a7fb-2179a7f8bd58",
+      "native_status": "hook_response",
+      "exit_code": 0,
+      "payload": "# tea-rags prime — /Users/Shared/nav-ab/p0-domain-context-ng1ni\nQdrant warm-up pending — index queries will be available after MCP server attaches.\n",
+      "payload_sha256": "6ca84c4a427db6dc78f58d4e10873a386c723adbe6e639c3a829474cd95edf6b",
+      "payload_bytes": 152,
+      "actual_project": null,
+      "actual_collection": null,
+      "classification": "PLACEHOLDER_OR_OTHER"
+    }
+  ],
+  "source_age_warnings": [
+    {
+      "line_index": 5,
+      "hook_id": "f435a00a-6535-4d99-aec9-a74a11c17324",
+      "native_status": "hook_response",
+      "exit_code": 0,
+      "payload": "⚠ tea-rags build is older than its source (build 2026-11-02T13:08:14Z, last src commit 2026-11-02T15:48:07Z) — run `npm run build` in /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness\n",
+      "payload_sha256": "a6d03db2b425c7396708e4cae9dbc62ac6bada7386732f6a038fc177a5a801ea",
+      "payload_bytes": 211
+    }
+  ],
+  "exact_expected_delivery": false,
+  "limits": "Codex numeric exit code not exposed; native completed status only. No final-answer inference."
+}

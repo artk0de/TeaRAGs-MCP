@@ -1,0 +1,48 @@
+[
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0543c5f05a4aae9a016ae8d65e234081919e6e5ddefd3eff3a",
+    "name": "exec",
+    "input": "const t = ALL_TOOLS.find(t=>t.name.includes(\"tea_rags\") && t.name.endsWith(\"find_symbol\")); text(t?.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\ntext(await tools.exec_command({cmd:\"sed -n '1,180p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-F02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\",max_output_tokens:6000}));\n"
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0543c5f05a4aae9a016ae8d66581888191b4729df5798a1f69",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-63aa3d83-dc08-4f80-b997-8dcd6ac85333",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0543c5f05a4aae9a016ae8d66dc868819193d6cf772d5fe210",
+    "name": "exec",
+    "input": "const t=ALL_TOOLS.find(t=>t.name.includes(\"tea_rags\")&&t.name.endsWith(\"index_codebase\"));text(t?.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]);\n"
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0543c5f05a4aae9a016ae8d67108d481919d8df52f6f49f37b",
+    "name": "exec",
+    "input": "text(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&t.name.includes(\"index\")).map(t=>({name:t.name,description:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\ntext(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-ba824264-497f-4b7a-a4b9-25273e8f5283",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  }
+]

@@ -102,13 +102,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
 - `empty.reason: unknownPath` with suggestions →
   `find_symbol(relativePath: <dir they share>)`, never one suggestion.
-- No `treeState` row, no `degraded` → index IS current code (overlay serves
-  uncommitted edits; no `workingTree` = current): trust it. Lag
-  (`changedFiles`>0, `pendingFiles`, drift) → stay in tea-rags. `treeState` row
-  = pre-edit copy (say why, e.g. `denseUnavailable`): dependents' fanIn/churn
-  valid, not proof of the edit → `find_symbol`; `pendingFiles` > 0 (a count; may
-  be yours) → plan both lines: `find_symbol(<same params>)` and
-  `still in pendingFiles → find_symbol(<same params>) again`.
+- A requested row without `treeState` / `degraded` is current, overlay too;
+  global `changedFiles` / `pendingFiles` alone never require a reread. A
+  `treeState` row is pre-edit (say why): fanIn/churn are usable, its body is not
+  proof of the edit. Refresh only that requested stale/missing body once in
+  tea-rags; if still unavailable, name the gap. No `workingTree` → current.
 - Freshness (subagent: keep reading, never `index_codebase`/ask the user,
   drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠
   alias's path → print `linked worktree (<test>) — no reindex`; own checkout
@@ -116,8 +114,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `index_codebase(project=)` first, no consent. Drift `Run:` `--force*`
   (status/prime/index only, not a read answer) → own-checkout incremental first
   if behind, plus ONE line ask the user: run <Run: line>? — --force not run;
-  reads continue meanwhile`, never awaited, never "won't proceed"; next = the
-  task's read call.
+  reads continue
+  meanwhile`, never awaited, never "won't proceed"; next = the task's read call. No available `index_codebase`→ needed stale bodies via`find_symbol`;
+  never look up indexing/mutator schemas.
 - Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none
   dropped (a `--force` ask rides beside, never a slot):
   `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)

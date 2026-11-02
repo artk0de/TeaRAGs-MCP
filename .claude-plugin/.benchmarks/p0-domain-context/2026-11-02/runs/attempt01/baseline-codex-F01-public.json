@@ -1,0 +1,176 @@
+{
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/baseline-codex-F01/native/events.jsonl",
+  "input_sha256": "cfe467cdff267985f14cb44964e370acd99596c21c7a349753eb8284a1706217",
+  "public_outer_calls": [
+    {
+      "event_index": 63,
+      "id": "ctc_08dea9d3da86f202016ae8d4ac588c8191b2d5326cd3812b6d",
+      "call_id": "call_d13b528ae2e24dc3bc01643d59670037",
+      "name": "exec",
+      "input": "const r = await tools.exec_command({cmd:\"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\",max_output_tokens:6500});text(r.output);\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&t.name.includes(\"find_symbol\")).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\n"
+    },
+    {
+      "event_index": 79,
+      "id": "ctc_08dea9d3da86f202016ae8d4b1bd8081918bd417513ecb2c84",
+      "call_id": "call_d89739811d7848adadba1a517cdd764d",
+      "name": "exec",
+      "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+    },
+    {
+      "event_index": 95,
+      "id": "ctc_08dea9d3da86f202016ae8d4b478a88191b4307a124778329f",
+      "call_id": "call_ef4d5cea86b7482ba16240471c7b8c55",
+      "name": "exec",
+      "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+    }
+  ],
+  "public_outer_outputs": [
+    {
+      "event_index": 76,
+      "id": "ctco_01a19d7e-cea6-7cf3-b19f-360c2031304e",
+      "call_id": "call_d13b528ae2e24dc3bc01643d59670037",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 1.2 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "---\nname: explore\ndescription:\n  \"Use for questions about existing code behavior, usages, structure, examples,\n  or explicit pre-change context that need investigation. Not bug symptoms,\n  implementation-plan authoring, or broad code-health audits.\"\n---\n\n# Explore\n\nAnswer the literal question with the smallest sufficient source investigation.\nReuse code, outlines, edges, skills and guides already retained in context.\nReload only changed material or instructions missing after compaction; a new\nquestion does not itself require rereading this skill.\n\n## Choose the needed evidence\n\nStart from what is known. If retained evidence answers the question, answer\nwithout tools. Otherwise select one route below, not a sequence of all routes.\nCore rules own project/path addressing, freshness, exact-text exceptions and\nresult contracts; do not fetch their guides again when those rules are known.\n\nKeep context small: discovery starts `metaOnly:true` with a small set (e.g.\n`limit:5`, adjusted to scope). Choose anchors before bodies. Batch only methods\nneeded now, not containing classes/trees; headers/shared declarations need their\nown evidence gap. Every read closes a missing fact in this question, never\nprefetches for a future one.\n\nSearch/outline already supplies the needed method ids → read those methods\ndirectly in ONE `find_symbol(symbols:[…])`. Do not first list their directory,\noutline their file, or fetch their containing class. A known filename alone may\nstill need its outline to identify a method; retain that outline for follow-ups.\nFor known independent config/spec/migration reads, dispatch a single batch: one\nbounded default code read command per file, concurrently in one code-mode\nwrapper where available. Do not insert model turns between independent reads.\n\n| Need                                                                | Route                                                                                                                                                                |\n| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                                                   |\n| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                                             |\n| Exact-name occurrences or complete inventory/absence in known paths | Shell rg -l --hidden --glob '!.git', filenames (`-l`) first; fetch enclosing bodies only for requested behavior/context. Ranked search is not proof of completeness. |\n| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.                                  |\n| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.                            |\n| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:\"only\", metaOnly:true`; a missing hit is not proof of no tests.                                            |\n\nA factual question about an existing integration is not automatically template\nmining or preparation to implement it. Neither future implementation context nor\nwords inside symbol names change the current question's intent. \"Lessons from\nthe existing integration\" stays factual unless an implementation template is\nrequested. An explicitly requested body remains a direct read.\n\n## Load only the selected detail\n\nUse a reference only when that branch is needed and its instructions are not\nalready held. Recipes are not minimum call counts: continue only to close an\nidentified evidence gap.\n\n- Explicit cycles → [cycle-pattern](./references/cycle-pattern.md).\n- Explicit architecture diagnosis/audit, explicit `architecture-diagnostics`\n  invocation, or structural refactoring → `architecture-diagnostics`. Never use\n  it or `get_architecture_report` to gather context, explain contracts or give a\n  code overview; read the relevant implementations instead.\n- Explicit structure/architecture →\n  [architecture-pattern](./references/architecture-pattern.md); entry points →\n  [entry-point-pattern](./references/entry-point-pattern.md).\n- Usage/impact needing more detail →\n  [usage-pattern](./references/usage-pattern.md); graph unavailable →\n  [trace-pattern](./references/trace-pattern.md).\n- Explicit pre-change investigation →\n  [pre-gen-pattern](./references/pre-gen-pattern.md): discover only missing\n  targets, then ONE needed-symbol overlay batch for DDG. Do not automatically\n  start implementation or a broad risk scan.\n- Explicit example/template/reuse or pattern collection →\n  [exemplar-pattern](./references/exemplar-pattern.md). One fitting example does\n  not require collecting all variants or similarity expansion.\n- Broad introduction needing several axes →\n  [explore-flow](./references/explore-flow.md). Do not search\n  tests/specifications merely because the source question is broad.\n- A name's fit → `get_naming_lexicon`; names introduced by a diff →\n  `review_changes(sections:[\"naming\"])`. Detailed naming interpretation →\n  [naming-pattern](./references/naming-pattern.md).\n- Ownership/recent activity →\n  [explain-pattern](./references/explain-pattern.md). History, risk scans,\n  planning and failures follow core's dedicated routes.\n\nUse an explicit current codegraph setting, otherwise availability in the tool\nlist; no probe call. Without graph evidence, label inferred calls/dependencies\nand never claim a proven absence of cycles or paths.\n\n## Evidence and stopping\n\nSource establishes behavior; tests establish expectations; docs describe intent.\nAdd tests or specifications only when requested or needed to resolve\nuncertainty. Verify a behavioral doc claim against source already held, or fetch\nits known symbol; discovery search is needed only when the location is unknown.\n\nA complete fresh body from ANY tea-rags tool, including `semantic_search`, is\nalready read authoritative code. Answer from it; no `find_symbol`, Read or shell\nconfirmation of the same body. Metadata/signatures/outlines/container headers\nare not method bodies. Refresh only affected edited/stale or missing evidence. A\nheld full body can answer a point question with zero further reads. An outline\nis an address map, not evidence of method behavior; fetch only the relevant\nmissing bodies in ONE batch. Reassemble `#partN` before reasoning about its\nwhole method. If needed content is truncated, follow the relevant continuation;\nunneeded pages are not required. Known paths and returned ids replace\nrediscovery.\n\nStop when the requested facts have evidence. State unresolved limits rather than\nexpanding into neighboring patterns, ownership, tests or design work. Answer\ndirectly with relevant `file:line` citations and a concise explanation; report\nan explicit inventory's coverage limit. No mandatory strategy preamble, workflow\nrecital or extra output format for a simple question.\n"
+        },
+        {
+          "type": "input_text",
+          "text": "[{\"name\":\"mcp__tea_rags__find_symbol\",\"schema\":\"\\n```ts\\ndeclare const tools: { mcp__tea_rags__find_symbol(args: {\\n  // Raw collection; prefer project + path.\\n  collection?: string;\\n  // Payload dot-paths (relativePath kept); omitted → lean per mode; tea-rags://guide/signals.\\n  fields?: Array<string>;\\n  // true → full import lists.\\n  includeImports?: boolean;\\n  // Language.\\n  language?: string;\\n  // Default 50.\\n  limit?: number;\\n  // Existence check. Locator rows, no content.\\n  metaOnly?: boolean;\\n  // Pagination offset.\\n  offset?: number;\\n  // Your working tree (cwd / worktree); pass WITH project.\\n  path?: string;\\n  // Glob; ignored with relativePath.\\n  pathPattern?: string;\\n  // Alias from list_projects/prime; pass every call.\\n  project?: string;\\n  // File ≤150 lines or ≤9000 chars → full text, else outline; dir → listing. Excludes symbol.\\n  relativePath?: string;\\n  // Preset or {custom: {<signal>: weight}} (tea-rags://guide/signals) → rankingOverlay.\\n  rerank?: \\\"relevance\\\" | \\\"decomposition\\\" | \\\"documentationRelevance\\\" | \\\"godModule\\\" | \\\"bugHunt\\\" | \\\"techDebt\\\" | \\\"hotspots\\\" | \\\"codeReview\\\" | \\\"dangerous\\\" | \\\"onboarding\\\" | \\\"securityAudit\\\" | \\\"refactoring\\\" | \\\"ownership\\\" | \\\"recent\\\" | \\\"stable\\\" | \\\"proven\\\" | \\\"criticalMethod\\\" | \\\"hotMethod\\\" | \\\"godMethod\\\" | \\\"blastRadius\\\" | \\\"architecturalHub\\\" | \\\"entryPoint\\\" | \\\"criticalPath\\\" | { custom: { [key: string]: number; }; };\\n  // Class#method, Class.method, fn; partial ok. Excludes relativePath.\\n  symbol?: string;\\n  // 1-20 symbol ids / file paths; ≤150 lines or ≤9000 chars → full text, else outline. Excludes symbol, relativePath.\\n  symbols?: Array<string>;\\n}): \"}]"
+        }
+      ]
+    },
+    {
+      "event_index": 88,
+      "id": "ctco_01a19d7e-d9d6-7650-b976-470c221c35f7",
+      "call_id": "call_d89739811d7848adadba1a517cdd764d",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 0.4 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "{\"content\":[],\"structuredContent\":{\"results\":[{\"id\":\"169c24a5-75f7-a39d-d09a-1824becf1cc1\",\"payload\":{\"relativePath\":\"src/refund-settlement/status.ts\",\"startLine\":1,\"endLine\":21,\"language\":\"typescript\",\"content\":\"export type ProcessingState = \\\"queued\\\" | \\\"processing\\\" | \\\"settled\\\" | \\\"rejected\\\";\\n\\nexport interface RecordState {\\n  refundId: string;\\n  processingState: ProcessingState;\\n}\\n\\n/** Refund settlement processing updates published to the operations dashboard. */\\nexport function applyProcessingState(\\n  record: RecordState,\\n  state: ProcessingState,\\n  publish: (frame: object) => void,\\n): void {\\n  record.processingState = state;\\n  publish({\\n    resource: { id: record.refundId, processing_status: record.processingState },\\n    type: \\\"refund_settlement\\\",\\n    event: \\\"status_changed\\\",\\n  });\\n}\\n\\n\",\"kind\":\"file\"}}],\"workingTree\":{\"tree\":\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",\"project\":\"p0-domain-context-ng1ni-external\",\"pendingFiles\":3}}}"
+        }
+      ]
+    },
+    {
+      "event_index": 104,
+      "id": "ctco_01a19d7e-e408-7301-af98-17337edabe16",
+      "call_id": "call_ef4d5cea86b7482ba16240471c7b8c55",
+      "output": [
+        {
+          "type": "input_text",
+          "text": "Script completed\nWall time 0.2 seconds\nOutput:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "{\"content\":[],\"structuredContent\":{\"results\":[{\"id\":\"169c24a5-75f7-a39d-d09a-1824becf1cc1\",\"payload\":{\"relativePath\":\"src/refund-settlement/status.ts\",\"startLine\":1,\"endLine\":21,\"language\":\"typescript\",\"content\":\"export type ProcessingState = \\\"queued\\\" | \\\"processing\\\" | \\\"settled\\\" | \\\"rejected\\\";\\n\\nexport interface RecordState {\\n  refundId: string;\\n  processingState: ProcessingState;\\n}\\n\\n/** Refund settlement processing updates published to the operations dashboard. */\\nexport function applyProcessingState(\\n  record: RecordState,\\n  state: ProcessingState,\\n  publish: (frame: object) => void,\\n): void {\\n  record.processingState = state;\\n  publish({\\n    resource: { id: record.refundId, processing_status: record.processingState },\\n    type: \\\"refund_settlement\\\",\\n    event: \\\"status_changed\\\",\\n  });\\n}\\n\\n\",\"kind\":\"file\"}}],\"workingTree\":{\"tree\":\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",\"project\":\"p0-domain-context-ng1ni-external\",\"pendingFiles\":3}}}"
+        }
+      ]
+    }
+  ],
+  "public_native_calls": [
+    {
+      "event_index": 73,
+      "id": "exec-5d98ee4d-11d6-4bde-983c-eef7ae74066e",
+      "type": "commandExecution",
+      "status": "completed",
+      "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\"",
+      "cwd": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "aggregatedOutput": "---\nname: explore\ndescription:\n  \"Use for questions about existing code behavior, usages, structure, examples,\n  or explicit pre-change context that need investigation. Not bug symptoms,\n  implementation-plan authoring, or broad code-health audits.\"\n---\n\n# Explore\n\nAnswer the literal question with the smallest sufficient source investigation.\nReuse code, outlines, edges, skills and guides already retained in context.\nReload only changed material or instructions missing after compaction; a new\nquestion does not itself require rereading this skill.\n\n## Choose the needed evidence\n\nStart from what is known. If retained evidence answers the question, answer\nwithout tools. Otherwise select one route below, not a sequence of all routes.\nCore rules own project/path addressing, freshness, exact-text exceptions and\nresult contracts; do not fetch their guides again when those rules are known.\n\nKeep context small: discovery starts `metaOnly:true` with a small set (e.g.\n`limit:5`, adjusted to scope). Choose anchors before bodies. Batch only methods\nneeded now, not containing classes/trees; headers/shared declarations need their\nown evidence gap. Every read closes a missing fact in this question, never\nprefetches for a future one.\n\nSearch/outline already supplies the needed method ids → read those methods\ndirectly in ONE `find_symbol(symbols:[…])`. Do not first list their directory,\noutline their file, or fetch their containing class. A known filename alone may\nstill need its outline to identify a method; retain that outline for follow-ups.\nFor known independent config/spec/migration reads, dispatch a single batch: one\nbounded default code read command per file, concurrently in one code-mode\nwrapper where available. Do not insert model turns between independent reads.\n\n| Need                                                                | Route                                                                                                                                                                |\n| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Known symbol's definition                                           | `find_symbol(symbol:)`; reuse a held real id/body.                                                                                                                   |\n| Known file/directory or several files                               | `find_symbol(relativePath:)`, or ONE `find_symbol(symbols:[<file paths>])`. Read only needed member ids from an outline.                                             |\n| Exact-name occurrences or complete inventory/absence in known paths | Shell rg -l --hidden --glob '!.git', filenames (`-l`) first; fetch enclosing bodies only for requested behavior/context. Ranked search is not proof of completeness. |\n| Behavior without a known location                                   | `semantic_search`; exact symbol plus intent → `hybrid_search`. Scope to the supplied path; use hits to fetch only missing evidence.                                  |\n| Callers, callees, flow or change impact                             | Known id → `get_callers`/`get_callees` (`depth: 2`); resolve missing ids once. A→B chain → `trace_path`. Batch only needed unread bodies.                            |\n| Test coverage                                                       | One `hybrid_search` with module/exported names, `testFile:\"only\", metaOnly:true`; a missing hit is not proof of no tests.                                            |\n\nA factual question about an existing integration is not automatically template\nmining or preparation to implement it. Neither future implementation context nor\nwords inside symbol names change the current question's intent. \"Lessons from\nthe existing integration\" stays factual unless an implementation template is\nrequested. An explicitly requested body remains a direct read.\n\n## Load only the selected detail\n\nUse a reference only when that branch is needed and its instructions are not\nalready held. Recipes are not minimum call counts: continue only to close an\nidentified evidence gap.\n\n- Explicit cycles → [cycle-pattern](./references/cycle-pattern.md).\n- Explicit architecture diagnosis/audit, explicit `architecture-diagnostics`\n  invocation, or structural refactoring → `architecture-diagnostics`. Never use\n  it or `get_architecture_report` to gather context, explain contracts or give a\n  code overview; read the relevant implementations instead.\n- Explicit structure/architecture →\n  [architecture-pattern](./references/architecture-pattern.md); entry points →\n  [entry-point-pattern](./references/entry-point-pattern.md).\n- Usage/impact needing more detail →\n  [usage-pattern](./references/usage-pattern.md); graph unavailable →\n  [trace-pattern](./references/trace-pattern.md).\n- Explicit pre-change investigation →\n  [pre-gen-pattern](./references/pre-gen-pattern.md): discover only missing\n  targets, then ONE needed-symbol overlay batch for DDG. Do not automatically\n  start implementation or a broad risk scan.\n- Explicit example/template/reuse or pattern collection →\n  [exemplar-pattern](./references/exemplar-pattern.md). One fitting example does\n  not require collecting all variants or similarity expansion.\n- Broad introduction needing several axes →\n  [explore-flow](./references/explore-flow.md). Do not search\n  tests/specifications merely because the source question is broad.\n- A name's fit → `get_naming_lexicon`; names introduced by a diff →\n  `review_changes(sections:[\"naming\"])`. Detailed naming interpretation →\n  [naming-pattern](./references/naming-pattern.md).\n- Ownership/recent activity →\n  [explain-pattern](./references/explain-pattern.md). History, risk scans,\n  planning and failures follow core's dedicated routes.\n\nUse an explicit current codegraph setting, otherwise availability in the tool\nlist; no probe call. Without graph evidence, label inferred calls/dependencies\nand never claim a proven absence of cycles or paths.\n\n## Evidence and stopping\n\nSource establishes behavior; tests establish expectations; docs describe intent.\nAdd tests or specifications only when requested or needed to resolve\nuncertainty. Verify a behavioral doc claim against source already held, or fetch\nits known symbol; discovery search is needed only when the location is unknown.\n\nA complete fresh body from ANY tea-rags tool, including `semantic_search`, is\nalready read authoritative code. Answer from it; no `find_symbol`, Read or shell\nconfirmation of the same body. Metadata/signatures/outlines/container headers\nare not method bodies. Refresh only affected edited/stale or missing evidence. A\nheld full body can answer a point question with zero further reads. An outline\nis an address map, not evidence of method behavior; fetch only the relevant\nmissing bodies in ONE batch. Reassemble `#partN` before reasoning about its\nwhole method. If needed content is truncated, follow the relevant continuation;\nunneeded pages are not required. Known paths and returned ids replace\nrediscovery.\n\nStop when the requested facts have evidence. State unresolved limits rather than\nexpanding into neighboring patterns, ownership, tests or design work. Answer\ndirectly with relevant `file:line` citations and a concise explanation; report\nan explicit inventory's coverage limit. No mandatory strategy preamble, workflow\nrecital or extra output format for a simple question.\n",
+      "exitCode": 0,
+      "durationMs": 0,
+      "startedAtMs": 1793643695673,
+      "completedAtMs": 1793643695673
+    },
+    {
+      "event_index": 83,
+      "id": "exec-0b8e7c15-21f2-4db6-aab9-78b182fe27b3",
+      "type": "mcpToolCall",
+      "server": "tea-rags",
+      "tool": "find_symbol",
+      "arguments": {
+        "project": "p0-domain-context-ng1ni-external",
+        "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+        "relativePath": "src/refund-settlement/status.ts"
+      },
+      "result": {
+        "content": [],
+        "structuredContent": {
+          "results": [
+            {
+              "id": "169c24a5-75f7-a39d-d09a-1824becf1cc1",
+              "payload": {
+                "relativePath": "src/refund-settlement/status.ts",
+                "startLine": 1,
+                "endLine": 21,
+                "language": "typescript",
+                "content": "export type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n\nexport interface RecordState {\n  refundId: string;\n  processingState: ProcessingState;\n}\n\n/** Refund settlement processing updates published to the operations dashboard. */\nexport function applyProcessingState(\n  record: RecordState,\n  state: ProcessingState,\n  publish: (frame: object) => void,\n): void {\n  record.processingState = state;\n  publish({\n    resource: { id: record.refundId, processing_status: record.processingState },\n    type: \"refund_settlement\",\n    event: \"status_changed\",\n  });\n}\n\n",
+                "kind": "file"
+              }
+            }
+          ],
+          "workingTree": {
+            "tree": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "project": "p0-domain-context-ng1ni-external",
+            "pendingFiles": 3
+          }
+        },
+        "_meta": null
+      },
+      "error": null,
+      "status": "completed",
+      "durationMs": 234,
+      "startedAtMs": 1793643698278,
+      "completedAtMs": 1793643698513
+    },
+    {
+      "event_index": 98,
+      "id": "exec-056d075f-2f4e-475d-89c8-cbe56d7cb039",
+      "type": "mcpToolCall",
+      "server": "tea-rags",
+      "tool": "find_symbol",
+      "arguments": {
+        "project": "p0-domain-context-ng1ni-external",
+        "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+        "relativePath": "src/refund-settlement/status.ts"
+      },
+      "result": {
+        "content": [],
+        "structuredContent": {
+          "results": [
+            {
+              "id": "169c24a5-75f7-a39d-d09a-1824becf1cc1",
+              "payload": {
+                "relativePath": "src/refund-settlement/status.ts",
+                "startLine": 1,
+                "endLine": 21,
+                "language": "typescript",
+                "content": "export type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n\nexport interface RecordState {\n  refundId: string;\n  processingState: ProcessingState;\n}\n\n/** Refund settlement processing updates published to the operations dashboard. */\nexport function applyProcessingState(\n  record: RecordState,\n  state: ProcessingState,\n  publish: (frame: object) => void,\n): void {\n  record.processingState = state;\n  publish({\n    resource: { id: record.refundId, processing_status: record.processingState },\n    type: \"refund_settlement\",\n    event: \"status_changed\",\n  });\n}\n\n",
+                "kind": "file"
+              }
+            }
+          ],
+          "workingTree": {
+            "tree": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "project": "p0-domain-context-ng1ni-external",
+            "pendingFiles": 3
+          }
+        },
+        "_meta": null
+      },
+      "error": null,
+      "status": "completed",
+      "durationMs": 31,
+      "startedAtMs": 1793643701102,
+      "completedAtMs": 1793643701134
+    }
+  ],
+  "privacy": "Reasoning/encrypted/summary/message content never selected. Native body not automatically assumed visible: outer outputs retained separately."
+}

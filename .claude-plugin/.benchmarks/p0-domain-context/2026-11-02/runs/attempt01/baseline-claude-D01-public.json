@@ -1,0 +1,175 @@
+{
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/baseline-claude-D01/native/events.jsonl",
+  "input_sha256": "b3b304906a9f26fb8054309421fa5d08c27255f9907f4c9117226bbe8202e179",
+  "event_count": 252,
+  "public_calls": [
+    {
+      "event_index": 38,
+      "response_id": "msg_011CgeZYMXcKUsHfVYRVXypr",
+      "id": "toolu_014yR3RAEZm5DcTgdaLPuySh",
+      "name": "ToolSearch",
+      "input": {
+        "query": "select:mcp__tea-rags__semantic_search,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers",
+        "max_results": 3
+      }
+    },
+    {
+      "event_index": 66,
+      "response_id": "msg_011CgeZYZ3toZJoVmNMn3Y6z",
+      "id": "toolu_01HqGj4asmqHvt3mPJFFrCB9",
+      "name": "mcp__tea-rags__semantic_search",
+      "input": {
+        "query": "refund settlement processing state change ||| publish dashboard event frame refund ||| apply refund status transition",
+        "metaOnly": true,
+        "limit": 5,
+        "project": "p0-domain-context-ng1ni-external",
+        "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+      }
+    },
+    {
+      "event_index": 96,
+      "response_id": "msg_011CgeZYmo6na8WFo5B6JKEk",
+      "id": "toolu_01PKToGtRs88AVDE35zuZB4p",
+      "name": "Grep",
+      "input": {
+        "pattern": "refund",
+        "-i": true,
+        "output_mode": "files_with_matches",
+        "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+        "head_limit": 50
+      }
+    },
+    {
+      "event_index": 117,
+      "response_id": "msg_011CgeZZM7a4HZoKU1ZhcbTt",
+      "id": "toolu_01BrWJLfGJZVirSednwBxYhW",
+      "name": "Read",
+      "input": {
+        "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+      }
+    }
+  ],
+  "public_results": [
+    {
+      "event_index": 41,
+      "tool_use_id": "toolu_014yR3RAEZm5DcTgdaLPuySh",
+      "is_error": null,
+      "content": [
+        {
+          "type": "tool_reference",
+          "tool_name": "mcp__tea-rags__semantic_search"
+        },
+        {
+          "type": "tool_reference",
+          "tool_name": "mcp__tea-rags__get_callees"
+        },
+        {
+          "type": "tool_reference",
+          "tool_name": "mcp__tea-rags__get_callers"
+        }
+      ]
+    },
+    {
+      "event_index": 70,
+      "tool_use_id": "toolu_01HqGj4asmqHvt3mPJFFrCB9",
+      "is_error": true,
+      "content": "Permission to use mcp__tea-rags__semantic_search has been denied because Claude Code is running in don't ask mode. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed."
+    },
+    {
+      "event_index": 105,
+      "tool_use_id": "toolu_01PKToGtRs88AVDE35zuZB4p",
+      "is_error": null,
+      "content": "Found 1 file\nsrc/refund-settlement/status.ts"
+    },
+    {
+      "event_index": 126,
+      "tool_use_id": "toolu_01BrWJLfGJZVirSednwBxYhW",
+      "is_error": null,
+      "content": "1\texport type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n2\t\n3\texport interface RecordState {\n4\t  refundId: string;\n5\t  processingState: ProcessingState;\n6\t}\n7\t\n8\t/** Refund settlement processing updates published to the operations dashboard. */\n9\texport function applyProcessingState(\n10\t  record: RecordState,\n11\t  state: ProcessingState,\n12\t  publish: (frame: object) => void,\n13\t): void {\n14\t  record.processingState = state;\n15\t  publish({\n16\t    resource: { id: record.refundId, processing_status: record.processingState },\n17\t    type: \"refund_settlement\",\n18\t    event: \"status_changed\",\n19\t  });\n20\t}\n21\t\n22\t"
+    }
+  ],
+  "native_permission_denials": [
+    {
+      "event_index": 69,
+      "tool_name": "mcp__tea-rags__semantic_search",
+      "tool_use_id": "toolu_01HqGj4asmqHvt3mPJFFrCB9",
+      "decision_reason_type": "mode",
+      "message": "Permission to use mcp__tea-rags__semantic_search has been denied because Claude Code is running in don't ask mode. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed."
+    }
+  ],
+  "native_numeric_results": [
+    {
+      "event_index": 248,
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 5,
+      "duration_ms": 25694,
+      "duration_api_ms": 16894,
+      "total_cost_usd": 0.12164660000000002,
+      "usage": {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 24499,
+        "cache_read_input_tokens": 89706,
+        "output_tokens": 1466,
+        "output_tokens_details": {
+          "thinking_tokens": 257
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 24499,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 608,
+            "cache_read_input_tokens": 24133,
+            "cache_creation_input_tokens": 366,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 366
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 10,
+          "outputTokens": 1466,
+          "cacheReadInputTokens": 89706,
+          "cacheCreationInputTokens": 24499,
+          "webSearchRequests": 0,
+          "costUSD": 0.12164660000000002,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 257,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "permission_denials": [
+        {
+          "tool_name": "mcp__tea-rags__semantic_search",
+          "tool_use_id": "toolu_01HqGj4asmqHvt3mPJFFrCB9",
+          "tool_input": {
+            "query": "refund settlement processing state change ||| publish dashboard event frame refund ||| apply refund status transition",
+            "metaOnly": true,
+            "limit": 5,
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        }
+      ]
+    }
+  ],
+  "privacy": "No private thinking/reasoning/summary/encrypted content selected or exported."
+}

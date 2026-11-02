@@ -1,0 +1,181 @@
+EEFEEFFFFFFF
+======================================================================
+ERROR: test_actor_counters_are_independent_and_audit_has_no_source (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 105, in test_actor_counters_are_independent_and_audit_has_no_source
+    self.assertEqual(audit["target_read_ordinal"],1)
+KeyError: 'target_read_ordinal'
+
+======================================================================
+ERROR: test_f01_preserves_body_nontarget_and_input_while_injecting_pending (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 37, in test_f01_preserves_body_nontarget_and_input_while_injecting_pending
+    self.assertEqual(result["workingTree"]["pendingFiles"], 3)
+KeyError: 'pendingFiles'
+
+======================================================================
+ERROR: test_mcp_json_text_and_structured_mirrors_both_change_once (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 74, in test_mcp_json_text_and_structured_mirrors_both_change_once
+    self.assertEqual(audit["target_read_ordinal"], 1)
+KeyError: 'target_read_ordinal'
+
+======================================================================
+ERROR: test_nonmatching_tool_case_and_path_are_passthrough_without_consuming (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 83, in test_nonmatching_tool_case_and_path_are_passthrough_without_consuming
+    out,audit = apply(s, listed()); self.assertEqual(audit["target_read_ordinal"], 1)
+KeyError: 'target_read_ordinal'
+
+======================================================================
+FAIL: test_f02_first_old_then_actual_current_even_with_pending (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 48, in test_f02_first_old_then_actual_current_even_with_pending
+    self.assertEqual(old["payload"]["content"], 'function applyProcessingState() {\n  return {type: "refund_processing"};\n}\n')
+AssertionError: 'function applyProcessingState() {\n  return {type: "refund_settlement"};\n}\n' != 'function applyProcessingState() {\n  return {type: "refund_processing"};\n}\n'
+  function applyProcessingState() {
+-   return {type: "refund_settlement"};
+?                          ^^^^^^^ ^
++   return {type: "refund_processing"};
+?                         +++++ ^^ ^
+  }
+
+
+======================================================================
+FAIL: test_single_row_table_without_marker_column_can_add_target_marker (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 66, in test_single_row_table_without_marker_column_can_add_target_marker
+    self.assertEqual(out["results"]["columns"][-1], "treeState")
+AssertionError: 'payload.content' != 'treeState'
+- payload.content
++ treeState
+
+
+======================================================================
+FAIL: test_table_target_marker_leaves_existing_nontarget_cells_unchanged (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 59, in test_table_target_marker_leaves_existing_nontarget_cells_unchanged
+    self.assertEqual(result["results"]["rows"][0][2], "modified")
+AssertionError: None != 'modified'
+
+======================================================================
+FAIL: test_unauthorized_project_is_not_transformed_or_counted (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 88, in test_unauthorized_project_is_not_transformed_or_counted
+    self.assertEqual(out, src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased (test_replay_transform.ReplayTests) (mutate=<function ReplayTests.test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased.<locals>.<lambda> at 0x10760eb80>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 99, in test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased
+    self.assertEqual(out,src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased (test_replay_transform.ReplayTests) (mutate=<function ReplayTests.test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased.<locals>.<lambda> at 0x10760ec10>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 99, in test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased
+    self.assertEqual(out,src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased (test_replay_transform.ReplayTests) (mutate=<function ReplayTests.test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased.<locals>.<lambda> at 0x10760eca0>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 99, in test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased
+    self.assertEqual(out,src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased (test_replay_transform.ReplayTests) (mutate=<function ReplayTests.test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased.<locals>.<lambda> at 0x10760ed30>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 99, in test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased
+    self.assertEqual(out,src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased (test_replay_transform.ReplayTests) (mutate=<function ReplayTests.test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased.<locals>.<lambda> at 0x10760edc0>)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 99, in test_upstream_stale_degraded_or_wrong_needle_cannot_be_erased
+    self.assertEqual(out,src); self.assertEqual(audit["status"], "unexercised")
+AssertionError: 'passthrough' != 'unexercised'
+- passthrough
++ unexercised
+
+
+======================================================================
+FAIL: test_entry_version_is_checked_against_actual_claude_metadata (test_variant_plugins.VariantPluginTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_variant_plugins.py", line 26, in test_entry_version_is_checked_against_actual_claude_metadata
+    self.assertEqual(select_plugin(spec,"candidate","claude")["version"],"0.55.2")
+AssertionError: None != '0.55.2'
+
+======================================================================
+FAIL: test_missing_declared_version_rejected_instead_of_hardcoding (test_variant_plugins.VariantPluginTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_variant_plugins.py", line 35, in test_missing_declared_version_rejected_instead_of_hardcoding
+    with self.assertRaisesRegex(ValueError,"version"): select_plugin({"plugin_roots":{"codex":str(self.root/"base")}},"baseline","codex")
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_missing_variant_harness_does_not_silently_fallback (test_variant_plugins.VariantPluginTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_variant_plugins.py", line 32, in test_missing_variant_harness_does_not_silently_fallback
+    with self.assertRaises(ValueError): select_plugin(spec,"candidate","codex")
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_selects_variant_specific_package_and_declared_version (test_variant_plugins.VariantPluginTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_variant_plugins.py", line 21, in test_selects_variant_specific_package_and_declared_version
+    self.assertEqual(select_plugin(spec,"candidate","codex"), {"root":str(self.root/"next"),"version":"0.55.2"})
+AssertionError: {'roo[30 chars]z374lpzn9c8l88c0000gn/T/tmply9g4cie/base', 'version': '0.55.1'} != {'roo[30 chars]z374lpzn9c8l88c0000gn/T/tmply9g4cie/next', 'version': '0.55.2'}
+- {'root': '/var/folders/4p/pvskkvc96z374lpzn9c8l88c0000gn/T/tmply9g4cie/base',
+?                                                                        ^^^
+
++ {'root': '/var/folders/4p/pvskkvc96z374lpzn9c8l88c0000gn/T/tmply9g4cie/next',
+?                                                                        ^ ++
+
+-  'version': '0.55.1'}
+?                   ^
+
++  'version': '0.55.2'}
+?                   ^
+
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.043s
+
+FAILED (failures=13, errors=4)

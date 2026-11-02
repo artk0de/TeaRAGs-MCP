@@ -1,0 +1,252 @@
+{
+  "status": "ALL8_CLAUDE_PERMISSION_PATH_CONFOUNDED_INVALID_FOR_PLUGIN_ATTRIBUTION",
+  "rows": [
+    {
+      "actor": "baseline-claude-D01",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__semantic_search"
+      ],
+      "calls": [
+        [
+          "ToolSearch",
+          {
+            "query": "select:mcp__tea-rags__semantic_search,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers",
+            "max_results": 3
+          }
+        ],
+        [
+          "mcp__tea-rags__semantic_search",
+          {
+            "query": "refund settlement processing state change ||| publish dashboard event frame refund ||| apply refund status transition",
+            "metaOnly": true,
+            "limit": 5,
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Grep",
+          {
+            "pattern": "refund",
+            "-i": true,
+            "output_mode": "files_with_matches",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "head_limit": 50
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.12164660000000002
+    },
+    {
+      "actor": "baseline-claude-D02",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/marketing/status.ts",
+            "project": "p0-domain-context-ng1ni",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/marketing/status.ts",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/marketing/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.06128000000000001
+    },
+    {
+      "actor": "baseline-claude-F01",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.055097499999999994
+    },
+    {
+      "actor": "baseline-claude-F02",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.05217889999999999
+    },
+    {
+      "actor": "candidate-claude-D01",
+      "native_denials": 2,
+      "denied_tools": [
+        "mcp__tea-rags__semantic_search",
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "ToolSearch",
+          {
+            "query": "select:mcp__tea-rags__semantic_search,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers",
+            "max_results": 5
+          }
+        ],
+        [
+          "mcp__tea-rags__semantic_search",
+          {
+            "query": "refund settlement processing state change ||| publish dashboard event frame refund status ||| refund settle workflow entry point",
+            "metaOnly": true,
+            "limit": 5,
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Grep",
+          {
+            "pattern": "refund",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "-i": true,
+            "output_mode": "files_with_matches",
+            "head_limit": 50
+          }
+        ],
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.09440489999999999
+    },
+    {
+      "actor": "candidate-claude-D02",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/marketing/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/marketing/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.055110599999999996
+    },
+    {
+      "actor": "candidate-claude-F01",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/refund-settlement/status.ts",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.05424849999999999
+    },
+    {
+      "actor": "candidate-claude-F02",
+      "native_denials": 1,
+      "denied_tools": [
+        "mcp__tea-rags__find_symbol"
+      ],
+      "calls": [
+        [
+          "mcp__tea-rags__find_symbol",
+          {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        ],
+        [
+          "Read",
+          {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        ]
+      ],
+      "cost": 0.052284800000000006
+    }
+  ],
+  "billable_usd": 0.5462518,
+  "correction": "Native explicit scopedallowrules required; no prompt revision/retry authorized here."
+}

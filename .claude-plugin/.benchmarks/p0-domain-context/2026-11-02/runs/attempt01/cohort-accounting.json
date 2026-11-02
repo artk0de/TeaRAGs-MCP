@@ -1,0 +1,880 @@
+{
+  "rows": [
+    {
+      "case_id": "D01",
+      "variant": "baseline",
+      "harness": "codex",
+      "key": "baseline-codex-D01",
+      "responses": 5,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "f43d9d6a3182fd67d01d2a2dc9303325742eed1745655ae5e02eec9f6b1b54a6",
+      "answer_bytes": 737,
+      "input_tokens": 99046,
+      "cached_input_tokens": 77696,
+      "fresh_input_tokens": 21350,
+      "output_tokens": 675,
+      "reasoning_tokens": 51,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 82,
+          "id": "exec-f74339a5-e366-4364-9317-631094682e39",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-D01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 92,
+          "id": "exec-7db1de5a-f82f-4fd2-8296-130da92f98c0",
+          "type": "mcpToolCall",
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "query": "refund settlement processing state changes dashboard event frame",
+            "metaOnly": true,
+            "limit": 5
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 104,
+          "id": "exec-a0ce09b0-2226-425b-b4fa-25c9d034684b",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 110,
+          "id": "exec-fc6410a9-e103-4b59-b3c3-ad8ae0d62100",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "D01",
+      "variant": "baseline",
+      "harness": "claude",
+      "key": "baseline-claude-D01",
+      "responses": 5,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "8fc0e413e311e398d6e34937ac81e8873b6d78bfe1738d7ddc7258f69ccfe38b",
+      "answer_bytes": 1768,
+      "input_tokens": 114215,
+      "cached_input_tokens": 89706,
+      "fresh_input_tokens": 24509,
+      "output_tokens": 1466,
+      "reasoning_tokens": 257,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.12164660000000002,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 38,
+          "response_id": "msg_011CgeZYMXcKUsHfVYRVXypr",
+          "id": "toolu_014yR3RAEZm5DcTgdaLPuySh",
+          "name": "ToolSearch",
+          "input": {
+            "query": "select:mcp__tea-rags__semantic_search,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers",
+            "max_results": 3
+          }
+        },
+        {
+          "event_index": 66,
+          "response_id": "msg_011CgeZYZ3toZJoVmNMn3Y6z",
+          "id": "toolu_01HqGj4asmqHvt3mPJFFrCB9",
+          "name": "mcp__tea-rags__semantic_search",
+          "input": {
+            "query": "refund settlement processing state change ||| publish dashboard event frame refund ||| apply refund status transition",
+            "metaOnly": true,
+            "limit": 5,
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 96,
+          "response_id": "msg_011CgeZYmo6na8WFo5B6JKEk",
+          "id": "toolu_01PKToGtRs88AVDE35zuZB4p",
+          "name": "Grep",
+          "input": {
+            "pattern": "refund",
+            "-i": true,
+            "output_mode": "files_with_matches",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "head_limit": 50
+          }
+        },
+        {
+          "event_index": 117,
+          "response_id": "msg_011CgeZZM7a4HZoKU1ZhcbTt",
+          "id": "toolu_01BrWJLfGJZVirSednwBxYhW",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "D02",
+      "variant": "baseline",
+      "harness": "claude",
+      "key": "baseline-claude-D02",
+      "responses": 4,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "93a7d1593c30f1a0c0c5556d3856b8df3ed3dcfc102cfb1a91a30203bb61f2cd",
+      "answer_bytes": 1561,
+      "input_tokens": 75706,
+      "cached_input_tokens": 64620,
+      "fresh_input_tokens": 11086,
+      "output_tokens": 1049,
+      "reasoning_tokens": 66,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.06128000000000001,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 35,
+          "response_id": "msg_011CgeZcheSLQsd9rFsM1XYF",
+          "id": "toolu_01VPwnb9XtpVJmREhTUG9Tdt",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/marketing/status.ts",
+            "project": "p0-domain-context-ng1ni",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 65,
+          "response_id": "msg_011CgeZcwB2PFz9Ax7GUHvgY",
+          "id": "toolu_017sX8BgAGYQ1QGv1cTvz7fR",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/marketing/status.ts",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 96,
+          "response_id": "msg_011CgeZdC7hrPicu8dVpdhmr",
+          "id": "toolu_01BtJtQv5RNKvmWyaRVUAik2",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/marketing/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "D02",
+      "variant": "baseline",
+      "harness": "codex",
+      "key": "baseline-codex-D02",
+      "responses": 3,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "6e376048da60520f1354b480367b94086d701cb4a83f1cfcaefdc2ba12eb8065",
+      "answer_bytes": 559,
+      "input_tokens": 55549,
+      "cached_input_tokens": 35968,
+      "fresh_input_tokens": 19581,
+      "output_tokens": 422,
+      "reasoning_tokens": 0,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 78,
+          "id": "exec-621d56f2-b404-4694-b62f-22ec1cabe775",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-D02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 88,
+          "id": "exec-4c7df4ef-99e1-4a26-91fb-abd89ab9e5a3",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/marketing/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "F01",
+      "variant": "baseline",
+      "harness": "codex",
+      "key": "baseline-codex-F01",
+      "responses": 4,
+      "replay": "EXERCISED_UNGRADED",
+      "answer_sha256": "02c3dc9a128fc844a109f54234ea76eb33e2563993706a67581c12ca6d3fb429",
+      "answer_bytes": 481,
+      "input_tokens": 74259,
+      "cached_input_tokens": 54528,
+      "fresh_input_tokens": 19731,
+      "output_tokens": 461,
+      "reasoning_tokens": 12,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 73,
+          "id": "exec-5d98ee4d-11d6-4bde-983c-eef7ae74066e",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 83,
+          "id": "exec-0b8e7c15-21f2-4db6-aab9-78b182fe27b3",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 98,
+          "id": "exec-056d075f-2f4e-475d-89c8-cbe56d7cb039",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "F01",
+      "variant": "baseline",
+      "harness": "claude",
+      "key": "baseline-claude-F01",
+      "responses": 3,
+      "replay": "FAIL_NOT_EXERCISED",
+      "answer_sha256": "8edf5c69217613cda0ead3ff69314c134089c9128841ca190975b31278a65f35",
+      "answer_bytes": 1112,
+      "input_tokens": 56670,
+      "cached_input_tokens": 45795,
+      "fresh_input_tokens": 10875,
+      "output_tokens": 703,
+      "reasoning_tokens": 31,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.055097499999999994,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 36,
+          "response_id": "msg_011CgeZnz1DeBdj8Q6Q9v35k",
+          "id": "toolu_01HgZj3TsMMWBdx7vJsqTiSU",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 68,
+          "response_id": "msg_011CgeZoHZtvD4znNd4Z5pB7",
+          "id": "toolu_011V6tFPAwX1mVZWR946CFrz",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "F02",
+      "variant": "baseline",
+      "harness": "claude",
+      "key": "baseline-claude-F02",
+      "responses": 3,
+      "replay": "FAIL_NOT_EXERCISED",
+      "answer_sha256": "5ae7cb276897ccf41e06ed0358667f295d6876c5e88a65383f43a8fb00ddd0a4",
+      "answer_bytes": 474,
+      "input_tokens": 56573,
+      "cached_input_tokens": 45749,
+      "fresh_input_tokens": 10824,
+      "output_tokens": 432,
+      "reasoning_tokens": 0,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.05217889999999999,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 32,
+          "response_id": "msg_011CgeZpi4p9bkdC2FTiwj5R",
+          "id": "toolu_01SFYZHUqccRzobeGtgnUCD1",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 59,
+          "response_id": "msg_011CgeZpqQbURdv76EEiYrLB",
+          "id": "toolu_01W2QKb1dx3XRqChG5PuiwAy",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "F02",
+      "variant": "baseline",
+      "harness": "codex",
+      "key": "baseline-codex-F02",
+      "responses": 5,
+      "replay": "EXERCISED_UNGRADED",
+      "answer_sha256": "f87951b5934fa6731d0efa37704b54ec7b08a29de17df2e7882418ab07c33ee6",
+      "answer_bytes": 183,
+      "input_tokens": 94156,
+      "cached_input_tokens": 82944,
+      "fresh_input_tokens": 11212,
+      "output_tokens": 461,
+      "reasoning_tokens": 23,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 73,
+          "id": "exec-5d75edaa-ff65-4244-b372-da32e7a8773d",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 83,
+          "id": "exec-f0c5c003-98df-4893-8446-d2a58c3ec3e1",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 98,
+          "id": "exec-827c91d6-78fc-4334-baf7-504ecae7ddad",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 113,
+          "id": "exec-950a0028-5049-4cc5-80cb-d208cc7b3bfe",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "D01",
+      "variant": "candidate",
+      "harness": "codex",
+      "key": "candidate-codex-D01",
+      "responses": 7,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "3b1126cc42d36251bf54797d8a8ef1d9b4c85fb4d1463aabe2acd539274388a2",
+      "answer_bytes": 838,
+      "input_tokens": 188988,
+      "cached_input_tokens": 159232,
+      "fresh_input_tokens": 29756,
+      "output_tokens": 963,
+      "reasoning_tokens": 102,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 81,
+          "id": "exec-5dd4eaee-ce2a-4d9c-a9a0-30ad9e850433",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-D01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 91,
+          "id": "exec-f1c7ebf3-f0e0-4ff6-a39b-118af22a2239",
+          "type": "mcpToolCall",
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "query": "refund settlement processing state changes dashboard event frame",
+            "metaOnly": true,
+            "limit": 5
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 105,
+          "id": "exec-331e0598-9618-45e8-a9de-936e261657a4",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,180p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-D01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/references/entry-point-pattern.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 117,
+          "id": "exec-fc81af62-7518-40f1-a79a-45844439b4c7",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "symbol": "applyProcessingState",
+            "pathPattern": "src/refund-settlement/**"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 130,
+          "id": "exec-9b32935a-1360-4c1e-8650-b9225f247f66",
+          "type": "mcpToolCall",
+          "tool": "get_callers",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts",
+            "depth": 2
+          },
+          "status": "failed"
+        },
+        {
+          "event_index": 149,
+          "id": "exec-07879e91-b092-48a0-bb4d-2894b34f25d6",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'applyProcessingState' src/refund-settlement\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 162,
+          "id": "exec-785705a4-fbb7-4666-bffd-f49c4b5f894f",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "D01",
+      "variant": "candidate",
+      "harness": "claude",
+      "key": "candidate-claude-D01",
+      "responses": 6,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "2feb53659415f018328f6c7224b78b5c89a8f028dc0eb5e2ff74b01a166c2563",
+      "answer_bytes": 2095,
+      "input_tokens": 138917,
+      "cached_input_tokens": 122769,
+      "fresh_input_tokens": 16148,
+      "output_tokens": 1756,
+      "reasoning_tokens": 231,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.09440489999999999,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 2,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 38,
+          "response_id": "msg_011CgeZzQQUHaGQzoJC5Zzxx",
+          "id": "toolu_01TkBh1Uui7BnGzXAWBerEL3",
+          "name": "ToolSearch",
+          "input": {
+            "query": "select:mcp__tea-rags__semantic_search,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers",
+            "max_results": 5
+          }
+        },
+        {
+          "event_index": 68,
+          "response_id": "msg_011CgeZzot64iBRVB2c59v7Y",
+          "id": "toolu_018bg66b5Rdy5BwbebxTaSeU",
+          "name": "mcp__tea-rags__semantic_search",
+          "input": {
+            "query": "refund settlement processing state change ||| publish dashboard event frame refund status ||| refund settle workflow entry point",
+            "metaOnly": true,
+            "limit": 5,
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 99,
+          "response_id": "msg_011Cgea1DQCjc5QGYQCsVkQC",
+          "id": "toolu_01THBXgGkWnKjakxxpPG54QN",
+          "name": "Grep",
+          "input": {
+            "pattern": "refund",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "-i": true,
+            "output_mode": "files_with_matches",
+            "head_limit": 50
+          }
+        },
+        {
+          "event_index": 124,
+          "response_id": "msg_011Cgea1WEEgFL8e8fjnRt9U",
+          "id": "toolu_01UDgTgFsTYJZghJY3yJ6WnN",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 153,
+          "response_id": "msg_011Cgea1i7rdr2nii2QSm7ti",
+          "id": "toolu_01FBCKMnoujZqpk5i63sYfgz",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "D02",
+      "variant": "candidate",
+      "harness": "claude",
+      "key": "candidate-claude-D02",
+      "responses": 3,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "4bd01740d99b5b988c7274dfd5d222a6b62d6bf9676bfe38b8fa6f76401e5b0b",
+      "answer_bytes": 1506,
+      "input_tokens": 56544,
+      "cached_input_tokens": 46006,
+      "fresh_input_tokens": 10538,
+      "output_tokens": 837,
+      "reasoning_tokens": 37,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.055110599999999996,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 37,
+          "response_id": "msg_011Cgea39qT3SuW5d19RpNdN",
+          "id": "toolu_018d5JaTrE5MZfxb5u5xud1H",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/marketing/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 67,
+          "response_id": "msg_011Cgea3T71gjNDyUK9KFuWY",
+          "id": "toolu_017t4BZ4mXjqzxpSq8B2wPoG",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/marketing/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "D02",
+      "variant": "candidate",
+      "harness": "codex",
+      "key": "candidate-codex-D02",
+      "responses": 3,
+      "replay": "NOT_APPLICABLE",
+      "answer_sha256": "f43fbc2545c553231e532f1f4b588f8bb082db2fb0a74a5e4d07df99010b1123",
+      "answer_bytes": 588,
+      "input_tokens": 55208,
+      "cached_input_tokens": 35712,
+      "fresh_input_tokens": 19496,
+      "output_tokens": 410,
+      "reasoning_tokens": 0,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 79,
+          "id": "exec-1f261279-2342-4dc7-a39a-5eaaa99d5cb3",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-D02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 89,
+          "id": "exec-a32fdbf2-a454-477c-bf18-05ec11bda94a",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/marketing/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "F01",
+      "variant": "candidate",
+      "harness": "codex",
+      "key": "candidate-codex-F01",
+      "responses": 3,
+      "replay": "EXERCISED_UNGRADED",
+      "answer_sha256": "dbed960caaeb09568cab03d5143651ad0b00454b55a3ec2033001c1cb77506f9",
+      "answer_bytes": 519,
+      "input_tokens": 54977,
+      "cached_input_tokens": 35584,
+      "fresh_input_tokens": 19393,
+      "output_tokens": 397,
+      "reasoning_tokens": 0,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 75,
+          "id": "exec-16ae9cc8-7b3d-4786-a8a4-621a7ba5995e",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-F01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 85,
+          "id": "exec-5eacc44b-b8c8-4d4c-ae81-5625b40d2d08",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "case_id": "F01",
+      "variant": "candidate",
+      "harness": "claude",
+      "key": "candidate-claude-F01",
+      "responses": 3,
+      "replay": "FAIL_NOT_EXERCISED",
+      "answer_sha256": "9795b2c5c17b50166502685efcfeca3bff271fd58a54eff1a913220cd13f0ff5",
+      "answer_bytes": 1223,
+      "input_tokens": 56459,
+      "cached_input_tokens": 45945,
+      "fresh_input_tokens": 10514,
+      "output_tokens": 761,
+      "reasoning_tokens": 100,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.05424849999999999,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 37,
+          "response_id": "msg_011CgeaDu31oCbA6PA3svWrn",
+          "id": "toolu_01NRJdrsjAR7tDJoAM1gSQor",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 63,
+          "response_id": "msg_011CgeaEAecuaTBTw56xapw5",
+          "id": "toolu_01Bttyaag4orLsxW4m6yFyhp",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "F02",
+      "variant": "candidate",
+      "harness": "claude",
+      "key": "candidate-claude-F02",
+      "responses": 3,
+      "replay": "FAIL_NOT_EXERCISED",
+      "answer_sha256": "586ae3c5b66610e8cf82a03fc00472b8b7332281ecbe3b4b123b98c0977d9815",
+      "answer_bytes": 545,
+      "input_tokens": 56577,
+      "cached_input_tokens": 46008,
+      "fresh_input_tokens": 10569,
+      "output_tokens": 542,
+      "reasoning_tokens": 91,
+      "reasoning_field": "native_usage.output_tokens_details.thinking_tokens",
+      "cost_usd": 0.052284800000000006,
+      "cost_status": "NATIVE_REPORTED",
+      "native_permission_denials": 1,
+      "attribution": "INVALID_FOR_PLUGIN_ATTRIBUTION_NATIVE_PERMISSION_PATH",
+      "native_calls": [
+        {
+          "event_index": 39,
+          "response_id": "msg_011CgeaH4imHYhx83noU1QQR",
+          "id": "toolu_01YZfxYvyFQ99CxYEgRwxKCE",
+          "name": "mcp__tea-rags__find_symbol",
+          "input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        },
+        {
+          "event_index": 65,
+          "response_id": "msg_011CgeaHS9Muse89JJMv68tL",
+          "id": "toolu_01Siknq7jWS3CSSDFvpqPrhC",
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "F02",
+      "variant": "candidate",
+      "harness": "codex",
+      "key": "candidate-codex-F02",
+      "responses": 5,
+      "replay": "EXERCISED_UNGRADED",
+      "answer_sha256": "f87951b5934fa6731d0efa37704b54ec7b08a29de17df2e7882418ab07c33ee6",
+      "answer_bytes": 183,
+      "input_tokens": 94265,
+      "cached_input_tokens": 73984,
+      "fresh_input_tokens": 20281,
+      "output_tokens": 571,
+      "reasoning_tokens": 82,
+      "reasoning_field": "accounting.completed_usage.reasoningOutputTokens",
+      "cost_usd": null,
+      "cost_status": "unpriced",
+      "native_permission_denials": 0,
+      "attribution": "VALID_NATIVE_CODEX",
+      "native_calls": [
+        {
+          "event_index": 68,
+          "id": "exec-752b38d6-ecf1-4a3c-a4a5-08ed33dcaab5",
+          "type": "commandExecution",
+          "status": "completed",
+          "command": "/bin/zsh -c \"sed -n '1,180p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-F02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\"",
+          "exitCode": 0
+        },
+        {
+          "event_index": 98,
+          "id": "exec-63aa3d83-dc08-4f80-b997-8dcd6ac85333",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        },
+        {
+          "event_index": 122,
+          "id": "exec-ba824264-497f-4b7a-a4b9-25273e8f5283",
+          "type": "mcpToolCall",
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "claude_invalid_native_cost_usd": 0.5462518,
+  "codex_cost": "UNPRICED_UNKNOWN_NOT_ZERO",
+  "model_responses": 65,
+  "quality": "PENDING_FROZEN_RUBRIC_REVIEW; all8Claude notattributable"
+}

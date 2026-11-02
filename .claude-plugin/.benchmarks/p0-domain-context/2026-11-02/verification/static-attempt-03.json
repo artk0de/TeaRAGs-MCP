@@ -1,0 +1,11 @@
+{
+  "kind": "generator_static_only",
+  "status": "PASS",
+  "command": "npx vitest run tests/scripts/gen-harness-codex.test.ts --maxWorkers=1 -t 'keeps each SessionStart hook within|keeps every hook text payload'",
+  "tests": {"passed": 2, "skipped": 58},
+  "duration_seconds": 12.88,
+  "codex_core_chars": 9680,
+  "codex_core_cap": 9686,
+  "log": ".tmp/p0-domain-context/verification-static03.log",
+  "limits": ["Final compact candidate preserves original say-why requirement.", "No behavioral actor executed. Previous failed124-test attempt retained, including timeout."]
+}

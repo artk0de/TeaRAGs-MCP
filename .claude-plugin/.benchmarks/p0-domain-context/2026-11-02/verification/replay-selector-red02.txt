@@ -1,0 +1,49 @@
+...E.FF......E...
+======================================================================
+ERROR: test_malformed_table_is_unexercised_not_an_exception (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 121, in test_malformed_table_is_unexercised_not_an_exception
+    out,audit=apply(session(),src)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 30, in apply
+    return s.apply(response, tool="find_symbol", arguments=args)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/replay_transform.py", line 142, in apply
+    matches = _rows(view)
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/replay_transform.py", line 54, in _rows
+    if not isinstance(columns, list) or not isinstance(rows, list) or len(set(columns)) != len(columns):
+TypeError: unhashable type: 'list'
+
+======================================================================
+ERROR: test_legacy_no_declared_version_reads_actual_manifest_and_records_its_hash (test_variant_plugins.VariantPluginTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_variant_plugins.py", line 37, in test_legacy_no_declared_version_reads_actual_manifest_and_records_its_hash
+    picked=select_plugin({"plugin_roots":{"codex":str(self.root/"next")}},"baseline","codex")
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/variant_plugins.py", line 29, in select_plugin
+    raise ValueError("missing declared plugin version")
+ValueError: missing declared plugin version
+
+======================================================================
+FAIL: test_mcp_wrapper_degraded_or_wrong_tree_blocks_transformation (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 116, in test_mcp_wrapper_degraded_or_wrong_tree_blocks_transformation
+    self.assertEqual(out,src); self.assertEqual(audit["status"],"unexercised")
+AssertionError: {'deg[178 chars]fund_processing"};\n}\n'}, 'score': 0.9, 'tree[262 chars]ce'}} != {'deg[178 chars]fund_settlement"};\n}\n'}, 'score': 0.9}, {'pa[218 chars]ce'}}
+Diff is 1603 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_mixed_table_adds_marker_column_without_changing_any_original_cell (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 74, in test_mixed_table_adds_marker_column_without_changing_any_original_cell
+    self.assertEqual(audit["status"], "applied")
+AssertionError: 'unexercised' != 'applied'
+- unexercised
++ applied
+
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.482s
+
+FAILED (failures=2, errors=2)

@@ -1,0 +1,22 @@
+{
+  "status": "completed",
+  "before": {
+    "enabled": 18,
+    "foreign": 0,
+    "runtime_body_hashes": true
+  },
+  "after": {
+    "enabled": 18,
+    "foreign": 0,
+    "runtime_body_hashes": true
+  },
+  "quality": "UNGRADED",
+  "replay_delivery": {
+    "status": "EXERCISED_UNGRADED",
+    "audit_count": 2,
+    "audit_sha256": "bcb698f8b20655eafe95c81e065a4bebf731e0a3f3399889ec4862e82f0a7b78",
+    "limits": "Eligibility only; answer quality requires separate controller grading. Unexercised attempts remain failures."
+  },
+  "model_response_count": 4,
+  "rootgo_sha256": "414cf4e6f51ef469556eb3f1009506d523fc47b74c1f0abd525872876d4581cc"
+}

@@ -1,0 +1,28 @@
+{
+  "unchanged_cases_and_grading": true,
+  "source_root": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner",
+  "source_files_sha256": {
+    "README.md": "f299b90a5259a400ec3a793dfdd23db744081b675f2c1cec61d2f85206101936",
+    "auth_transport.py": "7f62207fa77bf1a3171c3f02ccdd56035df29e36f48fa9a94a7fbc8af6adfcfd",
+    "claude_native.py": "541ec329115fb53721699cb5b98cb09fa234ef524f56b64c887b657e66a2d60c",
+    "codex_native.py": "67471dacd469052b35d8c30986376aa65966d3e5b6f52c4a5eeaa789d3e99b79",
+    "diagnostic_fetch.cjs": "bd0e8cff5540eefbadec7d7bd8d072d9dec416e19076259549f8542c9e3426d8",
+    "import-provenance.json": "98d5d232ee9b0c6958c3c932b0a7bbcc6febc056b00cf4bb4c8488f811afeec1",
+    "native_mcp_wait.py": "da9c4b2b0f90abde7954f9766b38529d19901c795ef811287dadde037888c4a3",
+    "policy.py": "aa167c0faab037a13fc83d473f2df909e8832d4cf700a183958d7d35ca5b1f47",
+    "run.py": "cad4c2ec0eb0ea2e52784e71f4e20bd9a9fcef13b90e64f7ee86a5f9ba9b3276",
+    "runtime_cli.py": "7c72a8ce06f0c9114779337f350272501b9b92c35f9686deaf8c01e7d25e0278",
+    "scoped_proxy.py": "f4dff96efc9d09a0067811a099a439498b5a2d6048bcb3eccd94ed6795e17627",
+    "test_controller.py": "7d68523dbc99fe25de7083f581a1f0c5eca2ef89c02e813fd3f5b9ff8664ab5f",
+    "test_domain_runner.py": "094f0e9995bc638139d80c86b0c1b43c371f5a5e4f50ff227f2ba3d44e82d93f",
+    "test_native_mcp_wait.py": "9e34a434ad40553ab7fc5d7fe47a9b29162bfb9dd2883465c8930450892443b5",
+    "validated/codex61/metadata-table-schemas.json": "2e5a807adfa93434bdb83a07533b5d1ef2e61c2d45436130e9765746215e15a2",
+    "validated/codex61_app_rpc.py": "68a050f68a13ad02c30ce205fb1670ccc77030a8d3173407a21734254e35d6c7",
+    "validated/codex61_mcp_proxy.py": "39da656b9a6470381f1551c3f5a56792b47a3cc95d147aed8cfb14aca87d808b",
+    "validated/controller_io.py": "ff03f80534343293db1b15849ec56c025f182c0f3ccbde1d596b0f7a4eb90224",
+    "validated/mcp_readiness.py": "929833469693368e7be3515f73b71cf3906a0ebb5ba72b8a485168ab6fe9a7fc",
+    "validated/protocol.py": "91290df7f60603c6e42ebeb1d7e41222a976042d3615e2ee374b009c72725407"
+  },
+  "reason": "All8 original Claude native MCP permission-path failures; allow exact17 readonly MCP names without bypass. Original Codex8 not repeated.",
+  "original_claude_invalid_cost_usd": 0.5462518
+}

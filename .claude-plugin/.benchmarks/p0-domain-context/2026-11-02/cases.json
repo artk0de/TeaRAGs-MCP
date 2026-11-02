@@ -1,0 +1,50 @@
+{
+  "suite": "p0-domain-context",
+  "date": "2026-11-02",
+  "models": {
+    "codex": {
+      "model": "gpt-6.1-sol",
+      "effort": "medium"
+    },
+    "claude": {
+      "model": "claude-sonnet-5-5",
+      "effort": "medium"
+    }
+  },
+  "repetitions": 1,
+  "variant_count": 1,
+  "cases": [
+    {
+      "id": "D01",
+      "kind": "real_indexed_retrieval",
+      "fixture": "fixtures/domain",
+      "prompt": "We are reviewing the refund settlement workflow. Where are processing-state changes applied, and what event/frame is published for the dashboard? Explain the entry point and payload from source."
+    },
+    {
+      "id": "D02",
+      "kind": "real_indexed_control",
+      "fixture": "fixtures/domain",
+      "prompt": "Show how src/marketing/status.ts accepts processing-state changes and which event/frame it publishes."
+    },
+    {
+      "id": "F01",
+      "kind": "controlled_tool_response_replay",
+      "fixture": "fixtures/domain",
+      "replay": "fixtures/replay/fresh-unrelated-pending.json",
+      "prompt": "What processing states does src/refund-settlement/status.ts accept, and what resource/event frame does it publish?"
+    },
+    {
+      "id": "F02",
+      "kind": "controlled_tool_response_replay_control",
+      "fixture": "fixtures/domain",
+      "replay": "fixtures/replay/requested-stale.json",
+      "prompt": "What does the current src/refund-settlement/status.ts publish as its resource type and event?"
+    },
+    {
+      "id": "B01",
+      "kind": "real_indexed_control",
+      "fixture": "fixtures/domain",
+      "prompt": "Compare the processing states and emitted resource types in src/refund-settlement/status.ts and src/marketing/status.ts. Read only what is needed to answer."
+    }
+  ]
+}

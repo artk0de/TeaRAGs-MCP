@@ -1,0 +1,98 @@
+{
+  "answer": "I read the file directly with Read. The tea-rags `find_symbol` call was denied because the session is in don't-ask mode.\n\n**Accepted processing states** (`ProcessingState`, `src/refund-settlement/status.ts:1`):\n- `\"queued\"`\n- `\"processing\"`\n- `\"settled\"`\n- `\"rejected\"`\n\n`applyProcessingState` (`status.ts:9-20`) does not validate the transition. It sets `record.processingState = state` for any of the four values, in any order.\n\n**Published frame:** after the update, it calls `publish` with this object:\n```ts\n{\n  resource: { id: record.refundId, processing_status: record.processingState },\n  type: \"refund_settlement\",\n  event: \"status_changed\",\n}\n```\n- **Resource:** `resource` holds `id`, which is the refund ID, and `processing_status`, which is the new state. The field is named `processing_status` in the frame but `processingState` on the record.\n- **Type and event:** `type` is `\"refund_settlement\"` and `event` is `\"status_changed\"`.\n- **Destination:** the doc comment says these updates go to the operations dashboard. The function doesn't say how that works, because the caller supplies `publish`.",
+  "unique_model_responses": [
+    {
+      "id": "msg_011CgeZnz1DeBdj8Q6Q9v35k",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 10020,
+        "cache_read_input_tokens": 8434,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 10020
+        },
+        "output_tokens": 3,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZoHZtvD4znNd4Z5pB7",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 453,
+        "cache_read_input_tokens": 18454,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 453
+        },
+        "output_tokens": 50,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZoTyDJfpe5xCaQ9GhB",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 396,
+        "cache_read_input_tokens": 18907,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 396
+        },
+        "output_tokens": 397,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    }
+  ],
+  "model_response_count": 3,
+  "native_usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 10869,
+    "cache_read_input_tokens": 45795,
+    "output_tokens": 703,
+    "output_tokens_details": {
+      "thinking_tokens": 31
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 10869,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 397,
+        "cache_read_input_tokens": 18907,
+        "cache_creation_input_tokens": 396,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 396
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "first_observed_output_delay_seconds": 3.182029,
+  "visible_delta_bytes": 1199,
+  "first_visible_text_TTFT_seconds": 6.421799041010672,
+  "observed_text_stream_seconds": 5.669984167005168,
+  "timing_limit": "Text-delta client receipt intervals, not provider decode time; all startup hooks remain in sessiontotal.",
+  "quality": "UNGRADED; controller-only grading",
+  "native_result_type": "success"
+}

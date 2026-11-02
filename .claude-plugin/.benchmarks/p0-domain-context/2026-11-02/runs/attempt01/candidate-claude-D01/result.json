@@ -1,0 +1,45 @@
+{
+  "status": "completed",
+  "before": {
+    "builtin_count": 53,
+    "plugin_commands": [
+      "tea-rags:architecture-diagnostics",
+      "tea-rags:bug-hunt",
+      "tea-rags:data-driven-generation",
+      "tea-rags:explore",
+      "tea-rags:force-reindex",
+      "tea-rags:index",
+      "tea-rags:mr-review",
+      "tea-rags:prime",
+      "tea-rags:refactoring-planning",
+      "tea-rags:report-issue",
+      "tea-rags:risk-assessment"
+    ],
+    "foreign_nonbuiltin": [],
+    "hidden_runtime_hashproof": "UNEXPOSED"
+  },
+  "after": {
+    "builtin_count": 53,
+    "plugin_commands": [
+      "tea-rags:architecture-diagnostics",
+      "tea-rags:bug-hunt",
+      "tea-rags:data-driven-generation",
+      "tea-rags:explore",
+      "tea-rags:force-reindex",
+      "tea-rags:index",
+      "tea-rags:mr-review",
+      "tea-rags:prime",
+      "tea-rags:refactoring-planning",
+      "tea-rags:report-issue",
+      "tea-rags:risk-assessment"
+    ],
+    "foreign_nonbuiltin": [],
+    "hidden_runtime_hashproof": "UNEXPOSED"
+  },
+  "quality": "UNGRADED",
+  "replay_delivery": {
+    "status": "NOT_APPLICABLE"
+  },
+  "model_response_count": 6,
+  "rootgo_sha256": "414cf4e6f51ef469556eb3f1009506d523fc47b74c1f0abd525872876d4581cc"
+}

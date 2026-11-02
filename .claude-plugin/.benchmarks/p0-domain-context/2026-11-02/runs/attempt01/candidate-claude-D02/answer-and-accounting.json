@@ -1,0 +1,98 @@
+{
+  "answer": "`src/marketing/status.ts` is a single small function, `applyProcessingState`, at lines 9–20. I read the file directly because the `find_symbol` call was denied in this session's permission mode.\n\n**What it accepts** (`status.ts:9-13`)\n- `record: RecordState`, which holds `campaignId` and `processingState`. The function mutates this record.\n- `state: ProcessingState`, one of `\"draft\" | \"scheduled\" | \"sending\" | \"complete\"` (line 1).\n- `publish: (frame: object) => void`, a callback the caller supplies to receive the frame.\n\n**What it does**\n1. It sets `record.processingState = state` (line 14). Any of the four values is accepted. There is no transition validation, so `complete` → `draft` is allowed.\n2. It then calls `publish(...)` once, unconditionally, even if the state didn't change (lines 15–19).\n\n**What it publishes**\n- **Event:** `\"status_changed\"`.\n- **Frame type:** `\"marketing_campaign\"`.\n- **Resource:** `{ id: record.campaignId, processing_status: record.processingState }`.\n\nThe full frame is:\n```ts\n{\n  resource: { id: record.campaignId, processing_status: record.processingState },\n  type: \"marketing_campaign\",\n  event: \"status_changed\",\n}\n```\n\nThe internal field is `processingState` (camelCase), but the published field is `processing_status` (snake_case). The name changes in both words, so anyone searching for consumers should look for `processing_status`, not `processingState`.\n\nI didn't look for callers or for subscribers of this frame. I can trace those if you want.",
+  "unique_model_responses": [
+    {
+      "id": "msg_011Cgea39qT3SuW5d19RpNdN",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 9683,
+        "cache_read_input_tokens": 8728,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 9683
+        },
+        "output_tokens": 2,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea3T71gjNDyUK9KFuWY",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 456,
+        "cache_read_input_tokens": 18411,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 456
+        },
+        "output_tokens": 40,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea3cJuxum1dvTNZL2Tx",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 393,
+        "cache_read_input_tokens": 18867,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 393
+        },
+        "output_tokens": 536,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    }
+  ],
+  "model_response_count": 3,
+  "native_usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 10532,
+    "cache_read_input_tokens": 46006,
+    "output_tokens": 837,
+    "output_tokens_details": {
+      "thinking_tokens": 37
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 10532,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 536,
+        "cache_read_input_tokens": 18867,
+        "cache_creation_input_tokens": 393,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 393
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "first_observed_output_delay_seconds": 3.404891,
+  "visible_delta_bytes": 1575,
+  "first_visible_text_TTFT_seconds": 6.4873364999948535,
+  "observed_text_stream_seconds": 5.305942874983884,
+  "timing_limit": "Text-delta client receipt intervals, not provider decode time; all startup hooks remain in sessiontotal.",
+  "quality": "UNGRADED; controller-only grading",
+  "native_result_type": "success"
+}

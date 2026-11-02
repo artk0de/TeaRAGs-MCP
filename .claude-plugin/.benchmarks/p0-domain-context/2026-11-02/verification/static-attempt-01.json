@@ -1,0 +1,14 @@
+{
+  "kind": "generator_static_only",
+  "command": "npx vitest run tests/scripts/gen-harness-codex.test.ts tests/scripts/gen-harness-claude.test.ts tests/scripts/gen-harness-cursor.test.ts",
+  "status": "FAILED_RETAINED",
+  "test_files": {"passed": 2, "failed": 1},
+  "tests": {"passed": 121, "failed": 3, "total": 124},
+  "duration_seconds": 321.33,
+  "failures": [
+    {"test": "keeps each SessionStart hook within Codex per-hook cap", "observed_chars": 10010, "cap_chars": 9686},
+    {"test": "keeps every hook text payload within Codex hook-output cap", "observed_chars": 10011, "cap_chars": 9686},
+    {"test": "one-file-read deny names find_symbol", "status": "TIMEOUT", "timeout_ms": 30000}
+  ],
+  "limits": ["Static/generator tests are not behavioral actor evals.", "Concurrent controller06 metadata/model startup overlapped these tests; timeout/resource confound reported to root.", "No full suite repeat authorized; future checks target changed contracts with maxWorkers1."]
+}

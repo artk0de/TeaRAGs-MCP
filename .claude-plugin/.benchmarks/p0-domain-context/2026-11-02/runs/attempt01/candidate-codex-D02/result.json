@@ -1,0 +1,19 @@
+{
+  "status": "completed",
+  "before": {
+    "enabled": 18,
+    "foreign": 0,
+    "runtime_body_hashes": true
+  },
+  "after": {
+    "enabled": 18,
+    "foreign": 0,
+    "runtime_body_hashes": true
+  },
+  "quality": "UNGRADED",
+  "replay_delivery": {
+    "status": "NOT_APPLICABLE"
+  },
+  "model_response_count": 3,
+  "rootgo_sha256": "414cf4e6f51ef469556eb3f1009506d523fc47b74c1f0abd525872876d4581cc"
+}
