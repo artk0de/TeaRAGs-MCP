@@ -173,7 +173,7 @@ export async function runBackgroundUpdateCommand(depsOverride: Partial<RunUpdate
     releaseTimeline: async () => new NpmRegistryClient().fetchReleaseTimeline("tea-rags", { timeoutMs: 30_000 }),
     isDevInstall: async () => isLinkedGlobalInstall(npmGlobalRoot),
     liveWorkers: () => liveIndexWorkers(registry, isPidAlive),
-    install: async (version) => runNpmGlobalInstall(deps.spawn, version, version),
+    install: async (version) => runNpmGlobalInstall(deps.spawn, version, version, { captureOutput: true }),
     syncPlugins: async (version) => syncPlugins(deps, version, { repinScopedClaudeInstalls: false }),
     store: new ClientUpdateStateStore(clientUpdateStatePath(deps.dataDir)),
     clock: () => Date.now(),

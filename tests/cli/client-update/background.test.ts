@@ -138,6 +138,34 @@ describe("runBackgroundClientUpdate", () => {
     await runBackgroundClientUpdate(d);
     expect(store.read().manualUpdateHint).toBeUndefined();
   });
+
+  it("logs a bounded tail of the captured npm output when the install fails (5o5af)", async () => {
+    const output = Array.from({ length: 40 }, (_, i) => `npm warn ERESOLVE line ${i + 1}`).join("\n");
+    const { d, lines } = deps({ install: async () => ({ kind: "failed", exitCode: 1, output }) });
+    await runBackgroundClientUpdate(d);
+    const log = lines.join("\n");
+    expect(log).toContain("npm warn ERESOLVE line 40");
+    expect(lines.some((l) => l.endsWith("npm warn ERESOLVE line 1"))).toBe(false);
+    expect(lines.filter((l) => l.includes("npm warn ERESOLVE")).length).toBeLessThanOrEqual(20);
+    expect(lines.every((l) => l.startsWith("[client-update"))).toBe(true);
+  });
+
+  it("logs one line per skipped harness with its reason (5o5af)", async () => {
+    const empty = { updated: [], failed: [], needsConfirmation: [] };
+    const { d, lines } = deps({
+      syncPlugins: async () => ({
+        harnesses: [
+          { harness: "claude", report: { ...empty } },
+          { harness: "codex", report: { ...empty, skipped: "cli-missing" } },
+          { harness: "cursor", report: { ...empty, skipped: "none-installed" } },
+        ],
+      }),
+    });
+    await runBackgroundClientUpdate(d);
+    expect(lines.filter((l) => l.includes(" codex: skipped (cli-missing)"))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes(" cursor: skipped (none-installed)"))).toHaveLength(1);
+    expect(lines.some((l) => l.includes(" claude: skipped"))).toBe(false);
+  });
 });
 
 describe("background guards", () => {

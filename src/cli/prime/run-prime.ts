@@ -29,7 +29,7 @@ import { PackageJsonVersionSource } from "../update-check/version-source.js";
 import { formatPrime } from "./format.js";
 import { discoverQdrantUrl } from "./qdrant-discovery.js";
 import { pingQdrant } from "./qdrant-ping.js";
-import type { PrimeFailureReason } from "./types.js";
+import type { PrimeFailureReason, PrimeOutput } from "./types.js";
 
 function buildUpdateService(): UpdateCheckService {
   return new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
@@ -220,6 +220,10 @@ export async function runPrime(input: {
   // Qdrant, unregistered path — still gets the daily check; detached, never awaited.
   const clientUpdate = input.clientUpdateTrigger ?? buildClientUpdateTrigger(resolveDataDir());
   clientUpdate.maybeSpawn();
+  // Every output path — digest or early-exit placeholder — carries the refused-step hint (5o5af).
+  const writePrime = (output: PrimeOutput): void => {
+    process.stdout.write(formatPrime({ ...output, clientUpdateHint: clientUpdate.manualUpdateHint() }));
+  };
 
   const hasExplicitPath = typeof input.path === "string" && input.path.length > 0;
   const requestedPath = hasExplicitPath ? input.path : input.project ? undefined : process.cwd();
@@ -235,12 +239,12 @@ export async function runPrime(input: {
   if (!path) {
     // Only reachable when --project was given but is absent from the registry;
     // a missing path with no project resolved to cwd above.
-    process.stdout.write(formatPrime({ kind: "path-not-found", path: `(project '${input.project}' not registered)` }));
+    writePrime({ kind: "path-not-found", path: `(project '${input.project}' not registered)` });
     return;
   }
 
   if (!existsSync(path)) {
-    process.stdout.write(formatPrime({ kind: "path-not-found", path }));
+    writePrime({ kind: "path-not-found", path });
     return;
   }
 
@@ -292,12 +296,12 @@ export async function runPrime(input: {
     registryExternalQdrantUrl(registryEntry, input.registryRuntime.externalQdrantUrlOf) ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
-    process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));
+    writePrime({ kind: "qdrant-cold", path });
     return;
   }
 
   if (!registryEntry) {
-    process.stdout.write(formatPrime({ kind: "not-registered", path }));
+    writePrime({ kind: "not-registered", path });
     return;
   }
   const alias = registryEntry.name ?? registryEntry.collectionName;
@@ -314,7 +318,7 @@ export async function runPrime(input: {
   try {
     session = await input.openSession();
   } catch (error) {
-    process.stdout.write(formatPrime(statusFailure(path, error)));
+    writePrime(statusFailure(path, error));
     return;
   }
 
@@ -329,20 +333,17 @@ export async function runPrime(input: {
       input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir(), input.registryRuntime)
     ).maybeSpawn(registryEntry.collectionName);
 
-    process.stdout.write(
-      formatPrime({
-        digest,
-        ...(metrics !== undefined ? { metrics } : {}),
-        registry: registryEntry,
-        update: await updateRequest,
-        autoUpdateOutcome,
-        autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
-        clientUpdateHint: clientUpdate.manualUpdateHint(),
-        ...(input.agent === true ? { agent: true } : {}),
-      }),
-    );
+    writePrime({
+      digest,
+      ...(metrics !== undefined ? { metrics } : {}),
+      registry: registryEntry,
+      update: await updateRequest,
+      autoUpdateOutcome,
+      autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), alias),
+      ...(input.agent === true ? { agent: true } : {}),
+    });
   } catch (error) {
-    process.stdout.write(formatPrime(statusFailure(path, error)));
+    writePrime(statusFailure(path, error));
   } finally {
     // Best-effort teardown, not awaited: the guaranteed reap is process.exit(0)
     // in the prime command handler, which releases the DuckDB file lock and
