@@ -7,24 +7,27 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  * Use when: assessing code health, planning modernization, prioritizing cleanup,
  *   or identifying areas that slow down development.
  * Query examples: "core business logic", "data processing pipeline".
- * Key signals: age (old code), churn (frequently patched), bugFix (error-prone),
- *   knowledgeSilo (single contributor), volatility (erratic changes).
+ * Key signals: age (old code, held at 15%), chunkChurn (~30%) + burstActivity
+ *   (~20%) — old code that keeps attracting changes — plus bugFix,
+ *   chunkRelativeChurn and relativeChurnNorm (5% each). Calibrated by a
+ *   chunk-level backtest against future bug-fix commits (90/180-day splits)
+ *   with age constrained to keep the legacy lens: age alone predicts fewer
+ *   future fixes, and knowledgeSilo, volatility and density carried no signal.
  * Works well with rank_chunks for project-wide tech debt inventory without a query.
  */
 export class TechDebtPreset implements RerankPreset {
   readonly name = "techDebt";
   readonly filter = { presets: "production" } as const;
-  readonly description = "Find legacy code with high churn, old age, and frequent bug fixes";
+  readonly description = "Find legacy code that keeps attracting changes: old, churning chunks with recent bursts";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.15,
     age: 0.15,
-    churn: 0.1,
-    chunkChurn: 0.1,
-    bugFix: 0.15,
-    volatility: 0.1,
-    knowledgeSilo: 0.1,
-    density: 0.1,
+    chunkChurn: 0.3,
+    burstActivity: 0.2,
+    bugFix: 0.05,
+    chunkRelativeChurn: 0.05,
+    relativeChurnNorm: 0.05,
     blockPenalty: -0.05,
   };
   readonly overlayMask: OverlayMask = {
@@ -32,11 +35,10 @@ export class TechDebtPreset implements RerankPreset {
       "ageDays",
       "commitCount",
       "bugFixRate",
-      "churnVolatility",
-      "changeDensity",
+      "recencyWeightedFreq",
+      "relativeChurn",
       "imports",
       "blameDominantAuthorPct",
-      "blameContributorCount",
       "recentDominantAuthorPct",
       "recentContributorCount",
     ],

@@ -516,7 +516,7 @@ describe("reranker", () => {
           git: { file: { commitCount: 51, ageDays: 100 } },
         },
       };
-      const results = await reranker.rerank([moderateChurn, highChurn], "techDebt", "semantic_search");
+      const results = await reranker.rerank([moderateChurn, highChurn], "bugHunt", "semantic_search");
       expect(results[0].payload?.git?.file?.commitCount).toBe(300);
     });
 
@@ -575,7 +575,7 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = await reranker.rerank(results, "techDebt", "semantic_search");
+      const reranked = await reranker.rerank(results, "bugHunt", "semantic_search");
       expect(reranked[0].payload?.git?.file?.commitCount).toBe(500);
       expect(reranked[1].payload?.git?.file?.commitCount).toBe(200);
     });
@@ -973,9 +973,48 @@ describe("reranker", () => {
     });
   });
 
-  describe("redesigned techDebt preset", () => {
-    it("should include knowledgeSilo signal", async () => {
-      const silo: FixtureResult = {
+  describe("calibrated techDebt preset", () => {
+    it("ranks old code with a recent commit burst above the same code without one", async () => {
+      const burst: FixtureResult = {
+        score: 0.5,
+        payload: {
+          relativePath: "burst.ts",
+          startLine: 1,
+          endLine: 50,
+          git: {
+            file: {
+              commitCount: 20,
+              ageDays: 200,
+              bugFixRate: 10,
+              churnVolatility: 5,
+              recencyWeightedFreq: 6,
+            },
+          },
+        },
+      };
+      const quiet: FixtureResult = {
+        score: 0.5,
+        payload: {
+          relativePath: "quiet.ts",
+          startLine: 1,
+          endLine: 50,
+          git: {
+            file: {
+              commitCount: 20,
+              ageDays: 200,
+              bugFixRate: 10,
+              churnVolatility: 5,
+              recencyWeightedFreq: 0,
+            },
+          },
+        },
+      };
+      const results = await reranker.rerank([quiet, burst], "techDebt", "semantic_search");
+      expect(results[0].payload?.git?.file?.recencyWeightedFreq).toBe(6);
+    });
+
+    it("scores single-owner and dense code like shared, sparse code", async () => {
+      const siloDense: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "silo.ts",
@@ -986,16 +1025,14 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
-              blameContributorCount: 1,
-              blameAuthors: ["solo"],
-              blameDominantAuthorPct: 100,
               churnVolatility: 5,
-              changeDensity: 3,
+              blameContributorCount: 1,
+              changeDensity: 15,
             },
           },
         },
       };
-      const shared: FixtureResult = {
+      const sharedSparse: FixtureResult = {
         score: 0.5,
         payload: {
           relativePath: "shared.ts",
@@ -1006,60 +1043,15 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
+              churnVolatility: 5,
               blameContributorCount: 5,
-              blameAuthors: ["a", "b", "c", "d", "e"],
-              blameDominantAuthorPct: 30,
-              churnVolatility: 5,
-              changeDensity: 3,
-            },
-          },
-        },
-      };
-      const results = await reranker.rerank([shared, silo], "techDebt", "semantic_search");
-      // Single live-line author code should rank higher in techDebt (knowledge silo risk)
-      expect(results[0].payload?.git?.file?.blameContributorCount).toBe(1);
-    });
-
-    it("should include density signal", async () => {
-      const highDensity: FixtureResult = {
-        score: 0.5,
-        payload: {
-          relativePath: "dense.ts",
-          startLine: 1,
-          endLine: 50,
-          git: {
-            file: {
-              commitCount: 20,
-              ageDays: 200,
-              bugFixRate: 10,
-              changeDensity: 15,
-              churnVolatility: 5,
-              recentContributorCount: 3,
-            },
-          },
-        },
-      };
-      const lowDensity: FixtureResult = {
-        score: 0.5,
-        payload: {
-          relativePath: "sparse.ts",
-          startLine: 1,
-          endLine: 50,
-          git: {
-            file: {
-              commitCount: 20,
-              ageDays: 200,
-              bugFixRate: 10,
               changeDensity: 1,
-              churnVolatility: 5,
-              recentContributorCount: 3,
             },
           },
         },
       };
-      const results = await reranker.rerank([lowDensity, highDensity], "techDebt", "semantic_search");
-      // High density (sustained change pressure) should rank higher
-      expect(results[0].payload?.git?.file?.changeDensity).toBe(15);
+      const [a, b] = await reranker.rerank([siloDense, sharedSparse], "techDebt", "semantic_search");
+      expect(a.score).toBeCloseTo(b.score, 10);
     });
   });
 

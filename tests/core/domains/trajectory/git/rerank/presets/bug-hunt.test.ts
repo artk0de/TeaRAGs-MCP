@@ -15,20 +15,32 @@ describe("BugHuntPreset", () => {
     expect(preset.tools).toContain("search_code");
   });
 
-  it("uses all 6 expected signals", () => {
-    const keys = Object.keys(preset.weights);
-    expect(keys).toContain("similarity");
-    expect(keys).toContain("burstActivity");
-    expect(keys).toContain("volatility");
-    expect(keys).toContain("relativeChurnNorm");
-    expect(keys).toContain("bugFix");
-    expect(keys).toContain("recency");
+  it("pins the backtest-calibrated weights exactly", () => {
+    expect(preset.weights).toEqual({
+      similarity: 0.25,
+      churn: 0.25,
+      bugFix: 0.2,
+      density: 0.15,
+      recency: 0.1,
+      burstActivity: 0.05,
+      blockPenalty: -0.05,
+    });
   });
 
-  it("weights burstActivity and volatility as strongest non-similarity signals", () => {
+  it("weights churn and bugFix as the strongest git signals (backtest-calibrated)", () => {
     const w = preset.weights;
-    expect(w.burstActivity).toBeGreaterThanOrEqual(w.relativeChurnNorm!);
-    expect(w.volatility).toBeGreaterThanOrEqual(w.relativeChurnNorm!);
+    expect(w.churn).toBeGreaterThanOrEqual(w.bugFix!);
+    expect(w.churn).toBeGreaterThanOrEqual(w.density!);
+    expect(w.churn).toBeGreaterThanOrEqual(w.recency!);
+    expect(w.churn).toBeGreaterThanOrEqual(w.burstActivity!);
+    expect(w.bugFix).toBeGreaterThanOrEqual(w.density!);
+    expect(w.bugFix).toBeGreaterThanOrEqual(w.recency!);
+    expect(w.bugFix).toBeGreaterThanOrEqual(w.burstActivity!);
+  });
+
+  it("drops volatility and relativeChurnNorm, redundant with churn in the backtest", () => {
+    expect(preset.weights.volatility).toBeUndefined();
+    expect(preset.weights.relativeChurnNorm).toBeUndefined();
   });
 
   it("includes blockPenalty as negative weight", () => {
@@ -40,6 +52,8 @@ describe("BugHuntPreset", () => {
     expect(preset.overlayMask.file).toContain("bugFixRate");
     expect(preset.overlayMask.file).toContain("churnVolatility");
     expect(preset.overlayMask.file).toContain("recencyWeightedFreq");
+    expect(preset.overlayMask.file).toContain("commitCount");
+    expect(preset.overlayMask.file).toContain("changeDensity");
   });
 
   it("surfaces pair-diagnostic disambiguators for architectural interpretation", () => {
