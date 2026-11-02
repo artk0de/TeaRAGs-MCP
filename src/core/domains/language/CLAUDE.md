@@ -713,7 +713,14 @@
   install is a side effect of `native.ts`, which the factory, the barrel, a
   worker's `import(languageModulePath)` and every harness script all load, and
   an uninstalled read THROWS instead of misclassifying. Why: a context that
-  never loads the language domain fails loudly, not silently.
+  never loads the language domain fails loudly, not silently. A test fact that
+  lives in ANOTHER file (a `#[cfg(test)] mod x;` declaration) is not a path
+  shape: a vertical answers it through the optional
+  `LanguageProvider.declaredTestFiles` (`DeclaredTestFileSource`), reading only
+  through the `readFile` the query hands it. The run reads it once on the main
+  thread and installs the set beside the conventions
+  (`primitives/paths/file-classification/declared-test-files.ts`); the
+  incremental coherence is `../ingest/operations/CLAUDE.md`'s.
 - **Test-ness of a NODE is the vertical's `<lang>/inline-tests.ts`, and one
   predicate answers all three consumers.** A language whose tests may live
   inside a production file exports `isInlineTestNode(node, code)` (and, where a

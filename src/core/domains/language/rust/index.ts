@@ -54,6 +54,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
+  DeclaredTestFileSource,
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
@@ -68,6 +69,7 @@ import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
 import { isRustModuleImport } from "./chunking/module-import.js";
 import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
 import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
+import { RUST_DECLARED_TEST_FILES } from "./declared-test-files.js";
 import { fileIsInlineTestOnly, isInlineTestNode } from "./inline-tests.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
@@ -162,6 +164,8 @@ export class RustLanguage implements LanguageProvider {
     inlineTests: { isInlineTestNode, fileIsInlineTestOnly },
   });
   readonly resolver: LanguageSymbolResolver;
+  /** `#[cfg(test)] mod x;` makes `x.rs` test code — a fact no path shape carries. */
+  readonly declaredTestFiles: DeclaredTestFileSource = RUST_DECLARED_TEST_FILES;
 
   /**
    * `manifestFilesReader` reads the project's Cargo.toml files for the

@@ -71,6 +71,8 @@ interface IndexLegContext {
   ctx: ProcessingContext;
   quarantineStore: QuarantineStore;
   skippedFileStore: SkippedFileStore;
+  /** Installed before ingest; persisted with the snapshot for the next run's flip check. */
+  declaredTestFiles: readonly string[];
   modelInfo?: { model: string; contextLength: number; dimensions: number };
 }
 
@@ -138,6 +140,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const quarantineStore = await this.openRunQuarantineStore(aliasCollectionName, options?.forceReindex === true);
       const skippedFileStore = await this.openRunSkippedFileStore(aliasCollectionName, options?.forceReindex === true);
       const { synchronizer, contentHashes } = await this.hashRunCorpus(absolutePath, aliasCollectionName, files);
+      const declaredTestFiles = await this.installRunDeclaredTestFiles(absolutePath, files);
 
       const ctx = this.initProcessing(
         setup.targetCollection,
@@ -163,6 +166,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
           ctx,
           quarantineStore,
           skippedFileStore,
+          declaredTestFiles,
           modelInfo: overrides?.modelInfo,
         },
         stats,
@@ -330,7 +334,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
             absolutePath,
             modelInfo: leg.modelInfo,
             promote: async () => this.finalizeAlias(aliasCollectionName, setup),
-            persist: async () => this.saveSnapshot(synchronizer, files, stats, skippedFileStore, setup.aliasVersion),
+            persist: async () =>
+              this.saveSnapshot(synchronizer, files, stats, skippedFileStore, {
+                aliasVersion: setup.aliasVersion,
+                declaredTestFiles: leg.declaredTestFiles,
+              }),
           },
           () => {
             this.logPipelineCompletion(ctx);
@@ -721,13 +729,14 @@ export class IndexPipeline extends BaseIndexingPipeline {
     files: string[],
     stats: IndexStats,
     skippedFileStore: SkippedFileStore,
-    aliasVersion?: number,
+    { aliasVersion, declaredTestFiles }: { aliasVersion?: number; declaredTestFiles: readonly string[] },
   ): Promise<void> {
     try {
       const runtimeSkipped = await skippedFileStore.retryablePaths();
       if (runtimeSkipped.size > 0) stats.runtimeSkippedFiles = runtimeSkipped.size;
       await synchronizer.updateSnapshot(files, undefined, {
         ...(aliasVersion ? { aliasVersion } : {}),
+        declaredTestFiles,
         ...(runtimeSkipped.size > 0 ? { retainPrevious: runtimeSkipped } : {}),
       });
     } catch (error) {

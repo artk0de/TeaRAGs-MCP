@@ -30,6 +30,21 @@
   included) re-chunks them; a work set held only in memory would lose them, and
   a separate delete/upsert path would duplicate the ordering the modified path
   already gets right.
+- **A file whose DECLARED test-ness moved re-enters the work set the same way,
+  although its content did not change** (bd tea-rags-mcp-52wk3.10). Both
+  pipelines read the run's declared test files once, before change detection
+  (`BaseIndexingPipeline#installRunDeclaredTestFiles`), and persist them in the
+  snapshot's `meta.json` with the seal.
+  `ReindexPipeline#invalidateDeclaredTestFileFlips` marks the symmetric
+  difference against the set the loaded snapshot recorded stale through
+  `ParallelFileSynchronizer#invalidateEntries`, beside the scoped force;
+  `invalidateEntries` keeps the LOADED set, so a run that dies after the mark
+  repeats the same diff. A snapshot without the field reads as an empty set. The
+  enrichment worker pool forwards the installed set in every call envelope
+  (`EnrichmentCallRequest.declaredTestFiles`), and the worker installs it before
+  the call. Why: `payload.isTest` and `skippedAs` are per point, so when
+  `lib.rs` gains or loses `#[cfg(test)] mod testutil;` the unchanged
+  `testutil.rs` would keep its old classification forever.
 - **Every early return of `ReindexPipeline#reindexChanges` owes the providers'
   whole-collection work its finalize would have done.** The no-change and
   deletion-only returns open no enrichment run, so no `finalizeSignals` fires;

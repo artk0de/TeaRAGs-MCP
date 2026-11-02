@@ -1,6 +1,7 @@
 import ignore, { type Ignore } from "ignore";
 
 import type { FileClassification, TestFileConventions } from "../../../contracts/types/file-classification.js";
+import { isDeclaredTestFile } from "./declared-test-files.js";
 import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS } from "./patterns.js";
 import { installedFileClassificationSettings, type FileClassificationSettings } from "./settings.js";
 import { installedTestFileConventions } from "./test-file-conventions.js";
@@ -41,10 +42,12 @@ function getTestFilter(): PathFilter {
 }
 
 /**
- * Whether a repo-relative path has a conventional test-file shape — exactly
- * `classify(relPath).isTest`, without the generated/documentation half. The one
- * answer every "is this a test file?" consumer reads (scope detection included,
- * bd tea-rags-mcp-jl3ff), from the INSTALLED conventions.
+ * Whether a repo-relative path has a conventional test-file shape —
+ * `classify(relPath).isTest` without the generated/documentation half and
+ * without the declared test files (`./declared-test-files.ts`), which only a
+ * run installs. The answer the path-only "is this a test file?" consumers read
+ * (scope detection included, bd tea-rags-mcp-jl3ff), from the INSTALLED
+ * conventions.
  */
 export function matchesTestFileConventions(relPath: string): boolean {
   return getTestFilter().ignores(relPath);
@@ -61,12 +64,13 @@ function hasGeneratedMarker(head: string): boolean {
  * ingest/pipeline/chunker/language-config/config.ts). The test shapes are the
  * INSTALLED test-file conventions
  * (`./test-file-conventions.ts`); classifying before a composition root
- * installed them throws.
+ * installed them throws. A path a run declared test code
+ * (`./declared-test-files.ts`) is a test too.
  */
 export function classify(relPath: string, opts?: ClassifyOptions): FileClassification {
   const isGenerated =
     getGeneratedFilter().ignores(relPath) || (opts?.contentHead ? hasGeneratedMarker(opts.contentHead) : false);
-  const isTest = matchesTestFileConventions(relPath);
+  const isTest = matchesTestFileConventions(relPath) || isDeclaredTestFile(relPath);
   const isDocumentation = opts?.isDocumentation === true;
   // A generated or documentation file is not "source". A test IS source.
   const isSource = !isGenerated && !isDocumentation;

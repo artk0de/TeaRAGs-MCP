@@ -58,6 +58,12 @@ interface ReindexContext {
   scanner: FileScanner;
   currentFiles: string[];
   /**
+   * The files this run classifies as test code by a cross-file declaration
+   * (bd tea-rags-mcp-52wk3.10), already installed into classification; the
+   * seal persists them with the snapshot for the next run's flip check.
+   */
+  declaredTestFiles: readonly string[];
+  /**
    * The providers this run enriches and completes, set once the deferral is
    * settled (`ReindexPipeline#settleRecomputeDeferral`). Undefined — every
    * provider — unless a `--force-enrichments` sync leg left some to the
@@ -125,6 +131,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         scanner: ctx.scanner,
         synchronizer: this.deps.createSynchronizer(absolutePath, migrationCollectionName(aliasCollectionName)),
       });
+      await this.invalidateDeclaredTestFileFlips(ctx);
       if (overrides?.rechunk) {
         stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
       }
@@ -241,6 +248,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     const scanner = this.createScanner();
     const currentFiles = await this.scanFiles(absolutePath, scanner);
+    const declaredTestFiles = await this.installRunDeclaredTestFiles(absolutePath, currentFiles);
 
     const targetPhysicalCollectionName = resolvePhysicalCollection(
       collectionName,
@@ -254,6 +262,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       synchronizer,
       scanner,
       currentFiles,
+      declaredTestFiles,
     };
   }
 
@@ -349,6 +358,29 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     await ctx.synchronizer.invalidateEntries(workSet);
     pipelineLog.reindexPhase("RECHUNK_SCOPED", { files: workSet.length, selector });
     return workSet.length;
+  }
+
+  /**
+   * Re-chunk every file whose declared-test classification moved since the
+   * last run (bd tea-rags-mcp-52wk3.10). `payload.isTest` and `skippedAs` are
+   * stamped per point, and an unchanged file is never re-chunked — so when
+   * `lib.rs` gains or loses `#[cfg(test)] mod testutil;`, `testutil.rs` itself
+   * did not change and would keep its old classification forever. The
+   * symmetric difference against the set the previous snapshot recorded is
+   * marked stale exactly as a scoped force marks its selection, and comes out
+   * of change detection as MODIFIED. A snapshot that recorded no set reads as
+   * empty: the first run after the upgrade re-chunks the files now declared.
+   */
+  private async invalidateDeclaredTestFileFlips(ctx: ReindexContext): Promise<void> {
+    const previous = new Set(ctx.synchronizer.previousDeclaredTestFiles());
+    const current = new Set(ctx.declaredTestFiles);
+    const flipped = [
+      ...ctx.declaredTestFiles.filter((path) => !previous.has(path)),
+      ...[...previous].filter((path) => !current.has(path)),
+    ];
+    if (flipped.length === 0) return;
+    const marked = await ctx.synchronizer.invalidateEntries(flipped);
+    pipelineLog.reindexPhase("DECLARED_TEST_FILES_FLIPPED", { files: flipped.length, marked });
   }
 
   // ── Change detection ─────────────────────────────────────
@@ -685,8 +717,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       absolutePath: ctx.absolutePath,
       persist: async () => {
         if (snapshot) {
-          const options = retainPrevious && retainPrevious.size > 0 ? { retainPrevious } : undefined;
-          await ctx.synchronizer.updateSnapshot(ctx.currentFiles, undefined, options);
+          await ctx.synchronizer.updateSnapshot(ctx.currentFiles, undefined, {
+            ...(retainPrevious && retainPrevious.size > 0 ? { retainPrevious } : {}),
+            declaredTestFiles: ctx.declaredTestFiles,
+          });
         }
         await ctx.synchronizer.deleteCheckpoint();
       },

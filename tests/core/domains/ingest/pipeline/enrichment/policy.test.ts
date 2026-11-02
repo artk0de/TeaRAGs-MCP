@@ -9,6 +9,7 @@ import {
   filterFileEnrichPaths,
   partitionChunkEntries,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/policy.js";
+import { installDeclaredTestFiles } from "../../../../../../src/core/primitives/paths/file-classification/index.js";
 
 function providerWith(shouldEnrich?: EnrichmentProvider["shouldEnrich"]): EnrichmentProvider {
   return { key: "x", shouldEnrich } as unknown as EnrichmentProvider;
@@ -227,5 +228,19 @@ describe("filterChunkEnrichMap", () => {
     const result = filterChunkEnrichMap(p, map, fileLinesOf);
     expect(result.has("src/big.ts")).toBe(false);
     expect(result.has("src/small.ts")).toBe(true);
+  });
+});
+
+describe("enrichmentSkipReason — declared test files (bd tea-rags-mcp-52wk3.10)", () => {
+  it("stamps a file a project declared as test code with skippedAs test", () => {
+    const declinesTests = providerWith((ctx) => (ctx.classification.isTest ? "none" : "full"));
+    expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file")).toBeNull();
+    installDeclaredTestFiles("/repo", ["src/testutil.rs"]);
+    try {
+      expect(enrichmentSkipReason(declinesTests, "src/testutil.rs", "file")).toBe("test");
+      expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "file")).toBeNull();
+    } finally {
+      installDeclaredTestFiles("/repo", []);
+    }
   });
 });

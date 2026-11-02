@@ -36,6 +36,7 @@ import { getHeapStatistics } from "node:v8";
 import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
 import type { EnrichmentProvider } from "../../../../../contracts/types/provider.js";
+import { installDeclaredTestFiles } from "../../../../../primitives/paths/index.js";
 import { applyWorkerDebug } from "../../infra/worker-dispatch/index.js";
 import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "../executor/index.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
@@ -166,6 +167,8 @@ async function handle(request: EnrichmentWorkerRequest): Promise<EnrichmentWorke
   if (request.type === "shutdown") return "exit";
   if (request.type === "release") return releaseEntry(request);
   // request.type === "call"
+  // The main thread's declared test files for this root, before any classify().
+  installDeclaredTestFiles(request.root, request.declaredTestFiles ?? []);
   const provider = await getProvider(
     request.providerModulePath,
     request.providerFactoryExport,

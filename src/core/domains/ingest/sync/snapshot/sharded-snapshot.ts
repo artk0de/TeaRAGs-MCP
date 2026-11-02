@@ -33,6 +33,12 @@ interface SnapshotMeta {
   codebasePath: string;
   timestamp: number;
   aliasVersion?: number;
+  /**
+   * The files the run that wrote this snapshot classified as test code by
+   * declaration (bd tea-rags-mcp-52wk3.10). Written only when non-empty, so a
+   * project with none keeps a byte-identical meta.json.
+   */
+  declaredTestFiles?: string[];
   hashRing: {
     algorithm: "consistent";
     virtualNodesPerShard: number;
@@ -64,6 +70,8 @@ interface ShardData {
  */
 export interface SnapshotSaveOptions {
   aliasVersion?: number;
+  /** The run's declared test files — what the next run diffs its own set against. */
+  declaredTestFiles?: Iterable<string>;
 }
 
 /**
@@ -73,6 +81,8 @@ export interface LoadedSnapshot {
   codebasePath: string;
   timestamp: number;
   aliasVersion: number;
+  /** Empty for a snapshot written before declared test files existed, or by a run that found none. */
+  declaredTestFiles: readonly string[];
   files: Map<string, FileMetadata>;
   shardMerkleRoots: string[];
   metaRootHash: string;
@@ -95,6 +105,7 @@ export class ShardedSnapshotManager {
   async save(codebasePath: string, files: Map<string, FileMetadata>, options?: SnapshotSaveOptions): Promise<void> {
     const timestamp = Date.now();
     const tempDir = `${this.snapshotDir}.tmp.${timestamp}`;
+    const declaredTestFiles = [...new Set(options?.declaredTestFiles ?? [])].sort();
 
     try {
       // Cleanup stale temp directories first
@@ -175,6 +186,7 @@ export class ShardedSnapshotManager {
         codebasePath,
         timestamp,
         ...(options?.aliasVersion !== undefined && { aliasVersion: options.aliasVersion }),
+        ...(declaredTestFiles.length > 0 && { declaredTestFiles }),
         hashRing: {
           algorithm: "consistent",
           virtualNodesPerShard: this.virtualNodesPerShard,
@@ -266,6 +278,7 @@ export class ShardedSnapshotManager {
       codebasePath: meta.codebasePath,
       timestamp: meta.timestamp,
       aliasVersion: meta.aliasVersion ?? 0,
+      declaredTestFiles: meta.declaredTestFiles ?? [],
       files,
       shardMerkleRoots,
       metaRootHash: meta.metaRootHash,
@@ -313,6 +326,7 @@ export class ShardedSnapshotManager {
     );
     await target.save(newCodebasePath, loaded.files, {
       aliasVersion: loaded.aliasVersion !== 0 ? loaded.aliasVersion : undefined,
+      declaredTestFiles: loaded.declaredTestFiles,
     });
   }
 

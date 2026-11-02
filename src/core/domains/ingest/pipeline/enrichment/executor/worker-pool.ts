@@ -57,6 +57,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../../contracts/index.js";
 import { isDebug } from "../../../../../primitives/diagnostics/index.js";
+import { installedDeclaredTestFiles } from "../../../../../primitives/paths/index.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { pipelineLog } from "../../infra/debug-log/index.js";
 import {
@@ -142,6 +143,8 @@ function buildCallRequest(
     root,
   };
   if (collectionName !== undefined) base.collectionName = collectionName;
+  const declaredTestFiles = installedDeclaredTestFiles(root);
+  if (declaredTestFiles.length > 0) base.declaredTestFiles = declaredTestFiles;
   if (payload.paths !== undefined) base.paths = payload.paths;
   if (payload.chunkMap !== undefined) base.chunkMap = payload.chunkMap;
   if (payload.options !== undefined) base.options = payload.options;

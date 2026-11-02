@@ -951,6 +951,15 @@ export interface LanguageProvider {
    */
   testDependencyManifest?: TestDependencyManifestSource;
   /**
+   * Optional cross-file test declaration (bd tea-rags-mcp-52wk3.10) — which of
+   * the run's files are test code because ANOTHER file declares them so (Rust's
+   * `#[cfg(test)] mod x;`). Read once per indexing run on the main thread
+   * (`adapters/filesystem/declared-test-files.ts`) and installed into test
+   * classification beside the path conventions. Absent → this language declares
+   * none.
+   */
+  declaredTestFiles?: DeclaredTestFileSource;
+  /**
    * Optional finder vocabulary for the naming lexicon (bd tea-rags-mcp-4p3sb.9) —
    * member names that, called on a CONSTANT receiver, return an instance of that
    * constant (Rails `Doc.find(id)`, `Doc.find_by!(…)`). The codegraph row builder
@@ -1069,6 +1078,39 @@ export interface DeclaredDependencyScopes {
   readonly developmentOnly: readonly string[];
   readonly runtime: readonly string[];
 }
+
+/**
+ * What a language reads to name the files that are test code by DECLARATION
+ * (bd tea-rags-mcp-52wk3.10): the run's current file list, repo-relative, and a
+ * reader for any of them. The reader is the caller's — a language never walks
+ * the disk itself. It resolves `undefined` for a file it cannot read.
+ */
+export interface DeclaredTestFileQuery {
+  readonly relativePaths: readonly string[];
+  readonly readFile: (relativePath: string) => Promise<string | undefined>;
+}
+
+/**
+ * Names the project files that are test code because ANOTHER file says so —
+ * Rust's `#[cfg(test)] mod testutil;` makes `testutil.rs` compile only in the
+ * test build while nothing inside it carries the fact. The answer is an
+ * additive input to test classification: a path is a test path when the
+ * installed conventions match it OR a source declared it. Total and silent: an
+ * unreadable or unparsable file declares nothing.
+ */
+export interface DeclaredTestFileSource {
+  readonly findDeclaredTestFiles: (query: DeclaredTestFileQuery) => Promise<ReadonlySet<string>>;
+}
+
+/**
+ * Every language's declared test files of one project, given its root and the
+ * run's repo-relative file list — what the composition root hands the ingest
+ * pipeline, built over the factory's `DeclaredTestFileSource`s.
+ */
+export type DeclaredTestFileFinder = (
+  projectRoot: string,
+  relativePaths: readonly string[],
+) => Promise<ReadonlySet<string>>;
 
 export interface DependencyManifestSource {
   readonly matchesManifestFile: (fileName: string) => boolean;

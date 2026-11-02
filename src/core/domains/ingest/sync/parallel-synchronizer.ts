@@ -239,6 +239,15 @@ export class ParallelFileSynchronizer {
   }
 
   /**
+   * The declared test files the loaded snapshot's run classified with (bd
+   * tea-rags-mcp-52wk3.10) — what the points of unchanged files still carry.
+   * Empty with no snapshot, or one written before the set existed.
+   */
+  previousDeclaredTestFiles(): readonly string[] {
+    return this.previousSnapshot?.declaredTestFiles ?? [];
+  }
+
+  /**
    * Mark snapshot entries stale ON DISK so every later `detectChanges` reports
    * them as modified until a run re-ingests them (bd tea-rags-mcp-j4oww).
    *
@@ -250,7 +259,9 @@ export class ParallelFileSynchronizer {
    * change. Zeroing the hash alone would do nothing — the fast path reuses the
    * cached hash (`.claude/rules/migrations.md`). The in-memory snapshot is
    * updated too, so this run's own `detectChanges` and `retainPrevious` see the
-   * stale entries. Returns how many entries were marked.
+   * stale entries. Returns how many entries were marked. The saved snapshot
+   * keeps the declared test files it was loaded with: the points still carry
+   * them until this run's seal writes its own set.
    */
   async invalidateEntries(paths: Iterable<string>): Promise<number> {
     if (!this.previousSnapshot) return 0;
@@ -263,8 +274,11 @@ export class ParallelFileSynchronizer {
       marked++;
     }
     if (marked === 0) return 0;
-    const { aliasVersion } = this.previousSnapshot;
-    await this.shardedSnapshotManager.save(this.codebasePath, files, aliasVersion !== 0 ? { aliasVersion } : undefined);
+    const { aliasVersion, declaredTestFiles } = this.previousSnapshot;
+    await this.shardedSnapshotManager.save(this.codebasePath, files, {
+      ...(aliasVersion !== 0 ? { aliasVersion } : {}),
+      declaredTestFiles,
+    });
     this.previousSnapshot = { ...this.previousSnapshot, files };
     return marked;
   }

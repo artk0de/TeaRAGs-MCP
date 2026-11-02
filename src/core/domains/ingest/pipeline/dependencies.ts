@@ -16,6 +16,7 @@
  */
 
 import type { SchemaManager } from "../../../adapters/qdrant/schema-manager.js";
+import type { DeclaredTestFileFinder } from "../../../contracts/types/language.js";
 import type { MigratorPort } from "../../../contracts/types/migration.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import type { ParallelFileSynchronizer } from "../sync/index.js";
@@ -35,6 +36,12 @@ export interface IngestDependencies {
    * inject a factory that leases warm pools (bd tea-rags-mcp-bbo1h.1).
    */
   createChunkerPool?: ChunkerPoolFactory;
+  /**
+   * Names the run's files that are test code by a cross-file declaration
+   * (bd tea-rags-mcp-52wk3.10). Optional: absent → nothing declared, every
+   * file classified by its path alone.
+   */
+  findDeclaredTestFiles?: DeclaredTestFileFinder;
   payloadBuilder: PayloadBuilder;
   snapshotDir: string;
 }

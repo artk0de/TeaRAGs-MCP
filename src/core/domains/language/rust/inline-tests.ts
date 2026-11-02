@@ -30,7 +30,7 @@ const COMMENT_NODE_TYPES = new Set(["line_comment", "block_comment"]);
 type RustCfgTruth = boolean | undefined;
 
 /** The `attribute` body of each outer attribute preceding `node`, nearest last. */
-function outerAttributes(node: AstNode): AstNode[] {
+export function outerAttributes(node: AstNode): AstNode[] {
   const attributes: AstNode[] = [];
   for (let sibling = node.previousNamedSibling; sibling; sibling = sibling.previousNamedSibling) {
     if (COMMENT_NODE_TYPES.has(sibling.type)) continue;

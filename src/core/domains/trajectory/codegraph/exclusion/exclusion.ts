@@ -29,7 +29,12 @@ import type {
   SchemaColumnAccessorSource,
   StructuralConformanceDeriver,
 } from "../../../../contracts/types/language.js";
-import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../../primitives/paths/index.js";
+import {
+  buildTestPathFilter,
+  GENERATED_PATTERNS,
+  isDeclaredTestFile,
+  type PathFilter,
+} from "../../../../primitives/paths/index.js";
 
 /**
  * Generated / machine-authored files that look like source but never participate
@@ -102,7 +107,10 @@ export function buildCodegraphExclusionFilter(
   if (options.customPatterns.length > 0) {
     ig.add(options.customPatterns);
   }
-  return { ignores: (relPath) => testFilter.ignores(relPath) || ig.ignores(relPath) };
+  // Declared test files are read per call: the filter outlives a run, the set does not.
+  return {
+    ignores: (relPath) => testFilter.ignores(relPath) || isDeclaredTestFile(relPath) || ig.ignores(relPath),
+  };
 }
 
 /**

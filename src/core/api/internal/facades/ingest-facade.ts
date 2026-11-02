@@ -19,7 +19,7 @@ import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { RustcDriverPresenceProbe } from "../../../contracts/rustc-driver-status.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
-import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
+import type { DeclaredTestFileFinder, LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
@@ -138,6 +138,11 @@ export interface IngestFacadeDeps {
    * transparently.
    */
   enrichmentExecutor?: EnrichmentExecutor;
+  /**
+   * Every language's cross-file test declarations, read once per run (bd
+   * tea-rags-mcp-52wk3.10). Omitted → nothing declared (tests, fixtures).
+   */
+  declaredTestFileFinder?: DeclaredTestFileFinder;
   /**
    * Keep-alive guard for the codegraph daemon. Passed to the
    * EnrichmentCoordinator, which holds the daemon alive across chunk-write +
@@ -373,6 +378,7 @@ export class IngestFacade {
         gitTimePeriods,
       ),
       createChunkerPool: deps.createChunkerPool,
+      findDeclaredTestFiles: deps.declaredTestFileFinder,
     };
 
     // Single shared executor — Coordinator and Recovery dispatch through the

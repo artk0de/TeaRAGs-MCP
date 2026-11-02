@@ -71,6 +71,14 @@ export interface EnrichmentCallRequest {
   affinityPartition?: string;
   method: EnrichmentMethod;
   root: string;
+  /**
+   * The run's declared test files for `root`, as the main thread installed
+   * them (bd tea-rags-mcp-52wk3.10). The worker installs them before every
+   * call, so its test classification — the codegraph exclusion, the
+   * `skippedAs: "test"` stamp — matches the main thread's without re-deriving
+   * the set. Absent → none.
+   */
+  declaredTestFiles?: string[];
   /** runFileBatch / runFileSignalsRecovery payload. */
   paths?: string[];
   /** runChunkBatch payload. Nested Map is structured-clone-safe. */

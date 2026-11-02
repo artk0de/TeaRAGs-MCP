@@ -70,11 +70,11 @@
   "rust": {
     "chunking": {
       "version": 5,
-      "digest": "sha256:eff314bca2e32cf5f8d3d74a522f5390d48ef254ec94ca12ef7a0df8ee34480b"
+      "digest": "sha256:2cdf92630f44187b24ce717dc65909b87d98379cdd5a9ab2a8ae16904ba21ccb"
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:28a93dda66e12d4cce8f68308786e52deb6b889886f11d9e0219cb9acf840c9e"
+      "digest": "sha256:0fb2e3fd7059dc18cd3055a683b843bba19f22c9031ae67065145ff24a07d833"
     }
   },
   "swift": {

@@ -30,6 +30,7 @@ import {
   type RegistryGitState,
 } from "../../../contracts/types/registry.js";
 import { TeaRagsError } from "../../../primitives/errors/index.js";
+import { installDeclaredTestFiles } from "../../../primitives/paths/index.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS } from "../infra/index.js";
@@ -254,6 +255,27 @@ export abstract class BaseIndexingPipeline {
     const files = await scanner.scanDirectory(absolutePath);
     pipelineLog.stageEnd("scan");
     return files;
+  }
+
+  /**
+   * Read the run's declared test files (bd tea-rags-mcp-52wk3.10) and install
+   * them into this isolate's test classification — once per run, on the main
+   * thread, before change detection, so the payload builder, the enrichment
+   * policy and the scoped-force selector all classify with the same set. The
+   * worker-pool executor forwards the installed set to every call it
+   * dispatches. No finder wired → nothing declared.
+   */
+  protected async installRunDeclaredTestFiles(absolutePath: string, files: readonly string[]): Promise<string[]> {
+    const finder = this.deps.findDeclaredTestFiles;
+    const relativePaths = files.map((file) =>
+      file.startsWith(absolutePath) ? file.slice(absolutePath.length + 1) : file,
+    );
+    const declared = finder ? [...(await finder(absolutePath, relativePaths))].sort() : [];
+    installDeclaredTestFiles(absolutePath, declared);
+    if (declared.length > 0) {
+      pipelineLog.step({ component: "IndexRun" }, "DECLARED_TEST_FILES", { files: declared.length });
+    }
+    return declared;
   }
 
   // ── Processing lifecycle ─────────────────────────────────

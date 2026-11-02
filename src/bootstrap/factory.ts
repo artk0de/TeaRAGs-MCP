@@ -19,6 +19,7 @@ import {
 import { GraphDbClientPool, ResidualVerdictStore } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import type { OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
+import { createDeclaredTestFileFinder } from "../core/adapters/filesystem/declared-test-files.js";
 import {
   collectTestDependencyManifestSources,
   readDeclaredTestDependencies,
@@ -1401,6 +1402,7 @@ function createIngestFacade(
         : undefined,
     indexRunDaemonGuard: shared.indexRunDaemonGuard,
     enrichmentExecutor: shared.enrichmentExecutor,
+    declaredTestFileFinder: createDeclaredTestFileFinder(facadeComposition.languageFactory),
     footprintFactory: shared.footprintFactory,
     healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
     healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
