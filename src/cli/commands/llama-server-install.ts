@@ -48,7 +48,7 @@ export async function runLlamaServerInstall(args: LlamaServerInstallArgs, deps: 
 }
 
 /** PATH lookup without spawning; PATHEXT extensions on Windows. */
-function whichOnPath(cmd: string): string | null {
+export function whichOnPath(cmd: string): string | null {
   const extensions = process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
     if (dir === "") continue;

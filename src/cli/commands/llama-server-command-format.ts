@@ -22,7 +22,7 @@ export interface LlamaServerCommandOptions {
   bin: string;
   /** `--device` ids from `<bin> --list-devices`; empty prints one default line plus that hint. */
   devices: string[];
-  /** Bind address; `0.0.0.0` exposes the server on the LAN. */
+  /** Bind address; the CLI defaults to `127.0.0.1`, `0.0.0.0` exposes the server on the LAN. */
   host: string;
   /** Port of the first launch line; each further device takes the next port. */
   port: number;

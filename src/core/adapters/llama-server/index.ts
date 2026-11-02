@@ -13,3 +13,24 @@ export {
   type LlamaCppReleaseAsset,
   type LlamaServerBackend,
 } from "./install/llama-cpp-assets.js";
+export { LlamaServerPoolRegistryCorruptedError, LlamaServerPoolStartError } from "./pools/errors.js";
+export {
+  buildPoolLaunchArgs,
+  LlamaServerPools,
+  type LlamaServerPoolStartOptions,
+  type LlamaServerPoolStatus,
+  type LlamaServerPoolsDeps,
+} from "./pools/llama-server-pools.js";
+export {
+  llamaServerPoolsPath,
+  readLlamaServerPoolRecords,
+  writeLlamaServerPoolRecords,
+  type LlamaServerPoolRecord,
+} from "./pools/pool-registry.js";
+export { productionLlamaServerPoolsDeps } from "./pools/production-deps.js";
+export {
+  isLoopbackPortFree,
+  LLAMA_SERVER_POOL_PORT_MAX,
+  LLAMA_SERVER_POOL_PORT_MIN,
+  pickFreePorts,
+} from "./pools/ports.js";
