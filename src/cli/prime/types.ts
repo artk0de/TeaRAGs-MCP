@@ -40,3 +40,9 @@ export type PrimeFailureReason =
   | { kind: "not-registered"; path: string }
   /** Opening the in-process server failed for a reason other than a cold Qdrant — shown as-is. */
   | { kind: "status-failed"; path: string; message: string; code?: string; hint?: string };
+
+/**
+ * Every prime output, digest or degraded placeholder, with the client-update
+ * hint attached in one place (bd tea-rags-mcp-5o5af) — an early exit keeps it.
+ */
+export type PrimeOutput = PrimeData | (PrimeFailureReason & Pick<PrimeData, "clientUpdateHint">);

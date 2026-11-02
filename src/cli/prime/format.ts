@@ -1,5 +1,5 @@
 import { formatForPrime } from "../update-check/format.js";
-import type { PrimeData, PrimeFailureReason } from "./types.js";
+import type { PrimeData, PrimeFailureReason, PrimeOutput } from "./types.js";
 
 const REFRESH_LINE = '→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing';
 
@@ -8,9 +8,9 @@ const REFRESH_LINE = '→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh 
  * lines, the metrics resource text under `--full`, and the refresh line.
  * `--agent` prints the agent digest alone (bd tea-rags-mcp-nknkg.1).
  */
-export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
+export function formatPrime(input: PrimeOutput, now: Date = new Date()): string {
   if ("kind" in input) {
-    return formatFailure(input);
+    return `${formatFailure(input)}${input.clientUpdateHint ? `${clientUpdateHintLine(input.clientUpdateHint)}\n` : ""}`;
   }
   const blocks: string[] = [input.digest.trimEnd()];
   if (input.agent === true) {
@@ -20,14 +20,14 @@ export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = n
       if (autoUpdateLine !== null) blocks.push(autoUpdateLine);
     }
     // A refused client-update step names an action too.
-    if (input.clientUpdateHint) blocks.push(`tea-rags client: ${input.clientUpdateHint}`);
+    if (input.clientUpdateHint) blocks.push(clientUpdateHintLine(input.clientUpdateHint));
     if (input.metrics !== undefined) blocks.push(input.metrics.trimEnd());
     return `${blocks.join("\n")}\n`;
   }
 
   const autoUpdateLine = formatAutoUpdateLine(input, now);
   if (autoUpdateLine !== null) blocks.push(autoUpdateLine);
-  if (input.clientUpdateHint) blocks.push(`tea-rags client: ${input.clientUpdateHint}`);
+  if (input.clientUpdateHint) blocks.push(clientUpdateHintLine(input.clientUpdateHint));
 
   const updateLines = input.update !== null ? formatForPrime(input.update) : [];
   if (updateLines.length > 0) blocks.push(updateLines.join("\n"));
@@ -36,6 +36,11 @@ export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = n
 
   blocks.push(REFRESH_LINE);
   return `${blocks.join("\n\n")}\n`;
+}
+
+/** The step a refused background client update left for the operator (c2dr6). */
+function clientUpdateHintLine(hint: string): string {
+  return `tea-rags client: ${hint}`;
 }
 
 function formatFailure(reason: PrimeFailureReason): string {

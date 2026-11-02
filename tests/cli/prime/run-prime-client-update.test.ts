@@ -130,3 +130,69 @@ describe("runPrime — client auto-update", () => {
     expect(output()).not.toContain("tea-rags client:");
   });
 });
+
+describe("runPrime — the client-update hint on every output path (5o5af)", () => {
+  const withHint = () => ({ maybeSpawn: () => "throttled" as const, manualUpdateHint: () => HINT });
+
+  it("prints the hint when Qdrant is cold", async () => {
+    pingMock.mockResolvedValue(false);
+    await runPrime({
+      path: "/repo/proj",
+      createPathCollectionResolver: resolver,
+      registryRuntime: registryRuntime(entry),
+      openSession: async () => fakeSession(),
+      updateService,
+      autoUpdateTrigger: { maybeSpawn: () => "disabled" },
+      clientUpdateTrigger: withHint(),
+    });
+    expect(output()).toContain("Qdrant warm-up pending");
+    expect(output()).toContain(`tea-rags client: ${HINT}`);
+  });
+
+  it("prints the hint when the path is not registered", async () => {
+    pingMock.mockResolvedValue(true);
+    await runPrime({
+      path: "/repo/proj",
+      createPathCollectionResolver: resolver,
+      registryRuntime: registryRuntime(null),
+      openSession: async () => fakeSession(),
+      updateService,
+      autoUpdateTrigger: { maybeSpawn: () => "disabled" },
+      clientUpdateTrigger: withHint(),
+    });
+    expect(output()).toContain("not indexed");
+    expect(output()).toContain(`tea-rags client: ${HINT}`);
+  });
+
+  it("prints the hint when opening the session fails", async () => {
+    pingMock.mockResolvedValue(true);
+    await runPrime({
+      path: "/repo/proj",
+      createPathCollectionResolver: resolver,
+      registryRuntime: registryRuntime(entry),
+      openSession: async () => {
+        throw new Error("boom");
+      },
+      updateService,
+      autoUpdateTrigger: { maybeSpawn: () => "disabled" },
+      clientUpdateTrigger: withHint(),
+    });
+    expect(output()).toContain("Index status unavailable: boom");
+    expect(output()).toContain(`tea-rags client: ${HINT}`);
+  });
+
+  it("prints the hint when the path does not exist", async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    await runPrime({
+      path: "/repo/missing",
+      createPathCollectionResolver: resolver,
+      registryRuntime: registryRuntime(null),
+      openSession: async () => fakeSession(),
+      updateService,
+      autoUpdateTrigger: { maybeSpawn: () => "disabled" },
+      clientUpdateTrigger: withHint(),
+    });
+    expect(output()).toContain("Path not found");
+    expect(output()).toContain(`tea-rags client: ${HINT}`);
+  });
+});
