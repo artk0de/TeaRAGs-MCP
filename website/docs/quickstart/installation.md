@@ -12,7 +12,12 @@ Without it, Rust call-graph edges are static-only (resolution rate 0.54-0.71
 instead of 0.98-0.99 on tikv, servo, ripgrep). One command:
 `tea-rags rustc-driver install` downloads the prebuilt driver from GitHub
 Releases and a managed toolchain. The setup plugin runs it when the project
-contains Rust. Details:
+contains Rust. Installed after the project was indexed, the driver shows as
+`rustc driver: installed-pending` in `get_index_status` and the session digest:
+the existing Rust edges were built without it, and the line carries the
+recompute command
+(`tea-rags index-codebase --project <alias> --force-enrichments codegraph --languages rust`).
+Details:
 [Rust compiler driver](../usage/advanced/codegraph-enrichments.md#rust-compiler-driver).
 :::
 
