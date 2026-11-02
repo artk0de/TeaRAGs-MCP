@@ -119,6 +119,25 @@ describe("TracePathOps.tracePath", () => {
     expect(await ops.tracePath({ collection: "c", from: "A", to: "C" })).toEqual({ paths: [], truncated: false });
   });
 
+  it.each(["bugHunt", "proven", "ownership"])(
+    "scores every path step at chunk level, whatever the %s preset's own signalLevel (9z8ae)",
+    async (preset) => {
+      const reranker = {
+        rerank: vi.fn(async (r: unknown[]) =>
+          r.map((x) => ({ ...(x as object), score: 0, rankingOverlay: { preset } })),
+        ),
+      };
+      const ops = makeOps({ reranker });
+      await ops.tracePath({ collection: "c", from: "A", to: "C", rerank: preset });
+      expect(reranker.rerank).toHaveBeenCalledWith(
+        expect.anything(),
+        preset,
+        "trace_path",
+        expect.objectContaining({ signalLevel: "chunk" }),
+      );
+    },
+  );
+
   it("passes reorder:false to the reranker (annotate-only)", async () => {
     const reranker = {
       rerank: vi.fn(async (r: unknown[]) =>

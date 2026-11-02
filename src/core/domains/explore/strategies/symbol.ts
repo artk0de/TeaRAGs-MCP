@@ -444,11 +444,12 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {
-      const clock = historyClockRerankOption(originalCtx);
-      processed =
-        clock.now === undefined
-          ? await this.reranker.rerank(processed, rerank, "semantic_search")
-          : await this.reranker.rerank(processed, rerank, "semantic_search", clock);
+      // A symbol lookup is per-symbol: chunk-level scoring whatever the preset's
+      // own `signalLevel` (the default of the list-ranking tools, 9z8ae).
+      processed = await this.reranker.rerank(processed, rerank, "semantic_search", {
+        signalLevel: "chunk",
+        ...historyClockRerankOption(originalCtx),
+      });
     }
 
     const offset = originalCtx.offset ?? 0;
