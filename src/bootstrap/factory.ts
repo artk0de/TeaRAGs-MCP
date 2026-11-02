@@ -29,6 +29,7 @@ import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import type { EmbeddingModelGuardPort } from "../core/adapters/qdrant/ports.js";
+import { createRustcDriverPresenceProbe } from "../core/adapters/rustc-driver/presence-probe.js";
 import { reapGitChildProcesses, VcsAdapterFactory } from "../core/adapters/vcs/index.js";
 import {
   buildFileChunkPoints,
@@ -503,6 +504,13 @@ interface CodegraphContext {
 
 const codegraphDaemonLock = new DaemonLock();
 
+/**
+ * One host probe for every read that reports the rustc driver status — status,
+ * prime and the graph lower-bound notices (bd tea-rags-mcp-hjbow.9). Lazy: the
+ * driver crate is hashed on the first probe, not at startup.
+ */
+const rustcDriverPresence = createRustcDriverPresenceProbe();
+
 /** Cheap pid-liveness probe over the daemon's pid file (no Qdrant coupling). */
 function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
   if (!existsSync(paths.pidFile)) return false;
@@ -964,6 +972,7 @@ export function wireCodegraph(
     pool,
     collectionRegistry,
     resolveActiveCollection,
+    rustcDriverPresence,
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
     ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
     ...(readFileMaintenanceSignals ? { readFileMaintenanceSignals } : {}),
@@ -1379,6 +1388,7 @@ function createIngestFacade(
     snapshotDir: shared.snapshotDir,
     modelGuard: shared.modelGuard,
     collectionRegistry: shared.collectionRegistry,
+    rustcDriverPresence,
     driftReporter: shared.driftReporter,
     teaRagsVersion: pkg.version,
     // Per-language code versions of THIS build, stamped onto the registry entry
@@ -1984,6 +1994,7 @@ function createCodegraphOpsSection(deps: {
         workingTreeOverlay,
         indexExists,
         historyAnchor,
+        rustcDriverPresence,
       })
     : undefined;
 

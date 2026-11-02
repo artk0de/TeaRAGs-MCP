@@ -229,6 +229,37 @@ describe("StatusModule", () => {
         expect(status.rustcDriver).toEqual({ outcome: "latched", reason: "allUnitsFailed", detail: "E0463" });
       });
 
+      // bd tea-rags-mcp-hjbow.9 — a driver installed after the last codegraph
+      // run is reported at read time, without an index run.
+      it("reports installed-pending with the recompute hint when the driver appeared after the run", async () => {
+        await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return 1;\n}\n");
+        await ingest.indexCodebase(codebaseDir);
+        const statusModule = (ingest as any).indexingOps.status;
+        statusModule.codegraphPool = {
+          listCollectionDbNames: () => ["code_cg_v1"],
+          acquireReader: async () => ({
+            graphDb: {
+              getRunStats: async () => [],
+              getEdgeKindDistribution: async () => [],
+              getRustcDriverStatus: async () => ({
+                status: { outcome: "unavailable", hint: "install it" },
+                recordedAtMs: 5,
+              }),
+              close: async () => undefined,
+            },
+          }),
+        };
+        statusModule.rustcDriverPresence = () => true;
+        statusModule.projectAliasForPath = () => "repo";
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.rustcDriver).toEqual({
+          outcome: "installed-pending",
+          hint: "tea-rags index-codebase --project repo --force-enrichments codegraph --languages rust",
+        });
+      });
+
       it("omits rustcDriver when no Rust resolve pass recorded one", async () => {
         await createTestFile(codebaseDir, "calc.ts", "export function run(): number {\n  return 1;\n}\n");
         await ingest.indexCodebase(codebaseDir);

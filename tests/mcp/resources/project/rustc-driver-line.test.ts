@@ -41,6 +41,14 @@ describe("formatFullDigest — rustc driver line", () => {
     expect(formatFullDigest(data({ outcome: "off" }), NOW)).toContain("rustc driver: off (CODEGRAPH_RUST_DRIVER=off)");
   });
 
+  // bd tea-rags-mcp-hjbow.9 — a driver installed since the last run: recompute, not install.
+  it("renders installed-pending with the recompute command", () => {
+    const hint = "tea-rags index-codebase --project repo --force-enrichments codegraph --languages rust";
+    expect(formatFullDigest(data({ outcome: "installed-pending", hint }), NOW)).toContain(
+      `rustc driver: installed-pending — driver installed since the last codegraph run, Rust call edges are still static-only (lower bound); recompute: ${hint}`,
+    );
+  });
+
   it("renders nothing when the status is absent", () => {
     expect(formatFullDigest(data(), NOW)).not.toContain("rustc driver");
   });
