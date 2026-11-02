@@ -1,0 +1,175 @@
+{
+  "status": "ORIGINAL16_CLOSED_PRESERVED; CLAUDE8_INVALID_BILLABLE; CODEX8_VALID",
+  "files": {
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-D01-prime.json": {
+      "sha256": "971c998db45ab743bff8c91816a6b438273fa7f62d3677659a1934ad3463a9cb",
+      "bytes": 1601
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-D01-public.json": {
+      "sha256": "03f7f844de21c19132ae9929e8f2493307b3a7f4d86db8a53d299a0a8dff7f0a",
+      "bytes": 7535
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-D02-prime.json": {
+      "sha256": "8ad20f2676cbcd8d38a24502077626df488104c4f794aab854ef0ff0f80fd81d",
+      "bytes": 1505
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-D02-public.json": {
+      "sha256": "13f0787797deac02ae86c165595b4c69c02b7f62a21aa4d376a7647c06b167ca",
+      "bytes": 6682
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-F01-prime.json": {
+      "sha256": "8ebbf835265be3eda80bc44c8b088f9a242eeda3aa0c3db0d209dce414b984fd",
+      "bytes": 1601
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-F01-public.json": {
+      "sha256": "de5635faffbf75ffaa2b4129bddd7f995fa2bc6d176eb8d3a87f61079beb22a2",
+      "bytes": 5900
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-F02-prime.json": {
+      "sha256": "2052c57b3b219ac57515aaa22f8a8a4c7d549ba0552d16374de9ca839afc7859",
+      "bytes": 1601
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-claude-F02-public.json": {
+      "sha256": "456b54004ecc36742613d75818d933f045e499a6e94ea7577485547ae7b8b2d4",
+      "bytes": 5894
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-D01-prime.json": {
+      "sha256": "0b28e74ce4c9c06f5694824ddfc5cb91a5ba51b6bf778e0888f8c22a478bc082",
+      "bytes": 1280
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-D01-public.json": {
+      "sha256": "13b69538565fc4976a1c07f77d9b5b31c2d54c1bd2a20d1ac54a5f91311e144f",
+      "bytes": 34812
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-D02-prime.json": {
+      "sha256": "9ac8f605386df709d0f8a787dfcf2b77388580f36a20e0ea447375a65658f4e1",
+      "bytes": 1280
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-D02-public.json": {
+      "sha256": "4e683b78955d8554dd2f23458a238a8cb1e6c371383dac628430c6f18ddc3d45",
+      "bytes": 24331
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-F01-prime.json": {
+      "sha256": "b6f0e677eb783c277caec2d759668875099dbe5cf0f594d565a00a2e5acc75ec",
+      "bytes": 1280
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-F01-public.json": {
+      "sha256": "722f43d6e82b9ce5a3e39b89eac79d6b18b90fa2418f93a13019d82f77bbe14a",
+      "bytes": 27029
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-F02-prime.json": {
+      "sha256": "42cfbcb5093b47877e5842fe47d026de819130d191dc5bd8d1e5ab9791aba126",
+      "bytes": 1280
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/baseline-codex-F02-public.json": {
+      "sha256": "770f0223abd2b35040d214cb7df8b04ec70691291195aa00e734ea2b27c3733a",
+      "bytes": 30817
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-D01-prime.json": {
+      "sha256": "a89e4768bda32a7c113cb494d4fe13372a3151d9a00425aabc2f4e6857692a10",
+      "bytes": 1603
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-D01-public.json": {
+      "sha256": "37680c396c34688a0bdd6fbc9f60926f63be01577dc48a622309e3c2f0366de7",
+      "bytes": 10141
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-D02-prime.json": {
+      "sha256": "2aa168d0e5b585e6aff8cf37fd5e69d5be6195bdb21c11816cb509e67926c1cb",
+      "bytes": 1603
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-D02-public.json": {
+      "sha256": "2214e0ae04ff8d7c9c83db8f7d08fb87af8ba6fc38dbcee1665bd754d8253380",
+      "bytes": 5881
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-F01-prime.json": {
+      "sha256": "a0168ba65615a83028871a69df612e0d3a19d5bf7ed7110f70c1350630620970",
+      "bytes": 1507
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-F01-public.json": {
+      "sha256": "d845eedd4e3000f73d44e8d16e64af6ac5a6459ea10511cc127514b50dbd5d47",
+      "bytes": 5787
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-F02-prime.json": {
+      "sha256": "df53c534ad16a1d4d601cd784e12b1d54741a792781927342c971501b4f08c5a",
+      "bytes": 1603
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-claude-F02-public.json": {
+      "sha256": "e91c69629761819bf92c91567ff8311c371ef16724e9d788542b6b1c74faa5ce",
+      "bytes": 5901
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-D01-prime.json": {
+      "sha256": "56cff211cc873aca4ddd2aa8d2d256b40613fbd91d4d4e8c3449a2691e737ffe",
+      "bytes": 1283
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-D01-public.json": {
+      "sha256": "4f1dd9d42edaea6d5256af6df2560ec4c7f17428ce172eb8acfa6d72ac9fd228",
+      "bytes": 72592
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-D02-prime.json": {
+      "sha256": "be09f91617a0c86415458161af7398b199328f4c1d15459cacb1abbf977313d1",
+      "bytes": 1283
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-D02-public.json": {
+      "sha256": "0487a3b3237f3fbe6465c6e47cdd09df98ff9be83daf934d4c35543a752b91a8",
+      "bytes": 24298
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-F01-prime.json": {
+      "sha256": "e7b4e32dfe339b1e5957369b3c3611dab327b8d7f8bc7499b36425ae0fcc4d53",
+      "bytes": 1283
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-F01-public.json": {
+      "sha256": "e75e33866dab3fc73c551888fbbf6087ad405ca3fa9b68368f300ed72ed79a48",
+      "bytes": 24063
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-F02-prime.json": {
+      "sha256": "8b935c9d4225747ed732caa5394038923f89dca6f04966eef523f434f64c287a",
+      "bytes": 1283
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/candidate-codex-F02-public.json": {
+      "sha256": "3a987a44d15e2f08895647f68cb4708bf2acda0e6ff7528ee612bdf51f7d62f4",
+      "bytes": 29223
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/claude-native-permission-failure.json": {
+      "sha256": "fd69d8bc92b066468ce2fa905ca4e5d5b8e9ec391fc02d5956dc6640f828b875",
+      "bytes": 7100
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/cohort-accounting.json": {
+      "sha256": "579d23243380ce0f482464da42619e1563dd8fe35d2729ad9b0f8ee5feea3efa",
+      "bytes": 32855
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/extract_codex_one.py": {
+      "sha256": "3990d10c72d42e0a8d0ce972cb801bd2e94f2450a06d40b77c367f4719312b67",
+      "bytes": 1683
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/extract_hook_one.py": {
+      "sha256": "0688893cbb31664b28d1f5c82c945e4dd72bc68395789f81b8a0b6c9ff6a236a",
+      "bytes": 2475
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/extract_one.py": {
+      "sha256": "9de0102206d6d4863d8c2bea75cb0d7c895c2d49e6b8a9d9c9f660ebb7b5cc5a",
+      "bytes": 2132
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/finish_original16.py": {
+      "sha256": "4ef4eaeed542db79684602375bd017e4971b5e25feb4fb0d11dd111e4d1c9ba9",
+      "bytes": 8050
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/native-allowedtools-source.json": {
+      "sha256": "2e1d4920a6f7cb254ba3e70ac51fca3ea265300768b008fe50bd495ff356ffe4",
+      "bytes": 5430
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/original16-verdicts.json": {
+      "sha256": "a67e97f8ea87e2c04e2c7eb8a78919bbf22071438363e3e410fe68bc19d96abb",
+      "bytes": 42924
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/original16-verdicts.md": {
+      "sha256": "f734c44f6fc82fe7fe2bde70c840d511fad9c70f308faecfc52e60efb55a82f2",
+      "bytes": 4137
+    },
+    ".tmp/p0-domain-behavior-runner/analysis/public-final-answers.json": {
+      "sha256": "dc6dbcd7b427994a8a05af4a7571dbbe95c8a92d425c4c7a4e4a9257c025bed1",
+      "bytes": 15808
+    }
+  },
+  "raw_actors_unchanged": true,
+  "prior_baseline_codex_reference_files_verified": 8
+}

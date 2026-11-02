@@ -1,0 +1,132 @@
+{
+  "answer": "Processing-state changes are applied in one function, `applyProcessingState` in `src/refund-settlement/status.ts:9-20`. It's the only file in the repo that mentions \"refund\" (case-insensitive grep). The semantic search I tried first was denied by the permission mode, so I used Grep and Read instead.\n\n**Entry point**\n```ts\napplyProcessingState(record: RecordState, state: ProcessingState, publish: (frame: object) => void): void\n```\n- `record` is `{ refundId: string; processingState: ProcessingState }`.\n- `state` is the new value, one of `\"queued\" | \"processing\" | \"settled\" | \"rejected\"`.\n- `publish` is a callback the caller passes in. The function doesn't know how the frame reaches the dashboard.\n\n**What it does**\n1. It mutates the record in place with `record.processingState = state` (line 14).\n2. It immediately calls `publish(...)` with a single frame (lines 15-19).\n\nIt does no validation. Any state can follow any other, and an unchanged state still publishes an event. It has no return value, no error handling and no persistence beyond mutating the object it was given.\n\n**Published frame**\n```json\n{\n  \"resource\": { \"id\": \"<refundId>\", \"processing_status\": \"<new processingState>\" },\n  \"type\": \"refund_settlement\",\n  \"event\": \"status_changed\"\n}\n```\n- `type` is always `\"refund_settlement\"`, and `event` is always `\"status_changed\"`.\n- The `resource` object carries the refund's id and the new state. Its key is `processing_status`, while the record field is `processingState`.\n\n**Callers**\nNothing else in the repo references this function. The index and graph tools weren't available to me, so that comes from the one-file grep only. How `publish` is wired to the dashboard transport, and who calls `applyProcessingState`, isn't visible in this repo.",
+  "unique_model_responses": [
+    {
+      "id": "msg_011CgeZYMXcKUsHfVYRVXypr",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 18476,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 18476
+        },
+        "output_tokens": 8,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZYZ3toZJoVmNMn3Y6z",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 4830,
+        "cache_read_input_tokens": 18476,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4830
+        },
+        "output_tokens": 28,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZYmo6na8WFo5B6JKEk",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 485,
+        "cache_read_input_tokens": 23306,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 485
+        },
+        "output_tokens": 3,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZZM7a4HZoKU1ZhcbTt",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 342,
+        "cache_read_input_tokens": 23791,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 342
+        },
+        "output_tokens": 16,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZZiukVuMCWWEajCR2C",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 366,
+        "cache_read_input_tokens": 24133,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 366
+        },
+        "output_tokens": 608,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    }
+  ],
+  "model_response_count": 5,
+  "native_usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 24499,
+    "cache_read_input_tokens": 89706,
+    "output_tokens": 1466,
+    "output_tokens_details": {
+      "thinking_tokens": 257
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 24499,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 608,
+        "cache_read_input_tokens": 24133,
+        "cache_creation_input_tokens": 366,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 366
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "first_observed_output_delay_seconds": 2.653307,
+  "visible_delta_bytes": 1768,
+  "first_visible_text_TTFT_seconds": 25.22882537500118,
+  "observed_text_stream_seconds": 0.1380559999961406,
+  "timing_limit": "Text-delta client receipt intervals, not provider decode time; all startup hooks remain in sessiontotal.",
+  "quality": "UNGRADED; controller-only grading",
+  "native_result_type": "success"
+}

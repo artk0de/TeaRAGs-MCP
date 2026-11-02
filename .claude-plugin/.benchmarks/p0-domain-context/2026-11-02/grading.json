@@ -1,0 +1,93 @@
+{
+  "suite": "p0-domain-context",
+  "actor_read_forbidden": true,
+  "case_ids": [
+    "D01",
+    "D02",
+    "F01",
+    "F02",
+    "B01"
+  ],
+  "general": [
+    "Grade observed native tool calls and final answers; count outer/native model waves separately from child calls.",
+    "Shipped plugin/injection path is mandatory; no grader text or expected answer reaches actor.",
+    "Record all n1 outcomes, including successful baseline, failures and unrun cases. No silent retry.",
+    "No case requires graph/architecture calls; body code explicitly establishes publication."
+  ],
+  "cases": {
+    "D01": {
+      "quality": {
+        "path": "src/refund-settlement/status.ts",
+        "entry": "applyProcessingState",
+        "states": [
+          "queued",
+          "processing",
+          "settled",
+          "rejected"
+        ],
+        "resource_id": "record.refundId",
+        "resource_processing_status": "record.processingState",
+        "type": "refund_settlement",
+        "event": "status_changed"
+      },
+      "observe": [
+        "First behavior discovery query/path filter includes user-provided refund settlement domain, or records its absence; no invented target IDs.",
+        "Record actual first-query target rank/top-k, selected hit, body reads, answer correctness and model response waves.",
+        "Rank gain is measured, never assumed from fixture comments or query construction."
+      ],
+      "adoption": "If baseline already anchors domain and succeeds efficiently, this n1 does not establish a need for added guidance; do not claim a fix."
+    },
+    "D02": {
+      "quality": {
+        "path": "src/marketing/status.ts",
+        "states": [
+          "draft",
+          "scheduled",
+          "sending",
+          "complete"
+        ],
+        "type": "marketing_campaign",
+        "event": "status_changed"
+      },
+      "control": "Known file routes to direct lookup; no new broad semantic search or forced refund-domain prefix."
+    },
+    "F01": {
+      "eligibility": "The staged find_symbol response for the target file must actually be delivered and logged. A bypassing Read or other route does not exercise this freshness hypothesis; record it separately, never as a replay pass.",
+      "quality": {
+        "states": [
+          "queued",
+          "processing",
+          "settled",
+          "rejected"
+        ],
+        "type": "refund_settlement",
+        "event": "status_changed"
+      },
+      "pass": "After first delivered full current target body, answer without a confirming read triggered only by global pending count.",
+      "forbidden": [
+        "repeat same file/body via find_symbol, Read or shell after authoritative current delivery",
+        "treat unrelated global pending count as proof requested row is stale"
+      ]
+    },
+    "F02": {
+      "eligibility": "The first marked pre-edit target response must actually be delivered and logged. Answering from it without the requested refresh is a failure; a route that bypasses the replay is not an exercised replay pass.",
+      "quality": {
+        "type": "refund_settlement",
+        "event": "status_changed"
+      },
+      "pass": "First marked pre-edit target body is not treated as current; refresh that requested body once, then use fresh body despite unchanged unrelated global pending count.",
+      "forbidden": [
+        "answer obsolete refund_processing type as current",
+        "fixed second confirmation after fresh response",
+        "unbounded stale retries"
+      ]
+    },
+    "B01": {
+      "quality": {
+        "refund_type": "refund_settlement",
+        "marketing_type": "marketing_campaign"
+      },
+      "control": "Already-known independent required source files are fetched in one symbols batch or native parallel assistant wave. Codex uses executor grouping; Claude its native parallel tool API. Do not impose Promise syntax on Claude."
+    }
+  }
+}

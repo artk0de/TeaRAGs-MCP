@@ -1,0 +1,59 @@
+[
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0eff88368c02076e016ae8d4f2635c81918ec79e0125346ef0",
+    "name": "exec",
+    "input": "const out = await tools.exec_command({cmd:\"sed -n '1,200p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/skills/explore/SKILL.md\",max_output_tokens:6000});text(out.output);\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&t.name.includes(\"find_symbol\")).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\n"
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0eff88368c02076e016ae8d4fa3d3c8191b15a32dfb0c98ff2",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-f0c5c003-98df-4893-8446-d2a58c3ec3e1",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0eff88368c02076e016ae8d50096b88191ae2b8170d520933b",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-827c91d6-78fc-4334-baf7-504ecae7ddad",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_0eff88368c02076e016ae8d5067ddc819181a38deb0bcdc778",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/refund-settlement/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-950a0028-5049-4cc5-80cb-d208cc7b3bfe",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/refund-settlement/status.ts"
+    },
+    "error": null
+  }
+]

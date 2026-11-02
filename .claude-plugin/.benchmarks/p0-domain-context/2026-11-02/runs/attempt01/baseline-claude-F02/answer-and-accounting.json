@@ -1,0 +1,98 @@
+{
+  "answer": "`src/refund-settlement/status.ts` publishes these values in `applyProcessingState` (lines 15–19):\n\n- **Resource type:** `type: \"refund_settlement\"`\n- **Event:** `event: \"status_changed\"`\n\nThe `resource` field is `{ id: record.refundId, processing_status: record.processingState }`, so it carries the refund ID and its new processing state.\n\nThe tea-rags `find_symbol` call was denied because the session is in don't-ask mode, so I read the file directly with Read instead.",
+  "unique_model_responses": [
+    {
+      "id": "msg_011CgeZpi4p9bkdC2FTiwj5R",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 10013,
+        "cache_read_input_tokens": 8434,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 10013
+        },
+        "output_tokens": 28,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZpqQbURdv76EEiYrLB",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 421,
+        "cache_read_input_tokens": 18447,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 421
+        },
+        "output_tokens": 38,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZpy8w7oLFetykoQV75",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 384,
+        "cache_read_input_tokens": 18868,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "output_tokens": 170,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    }
+  ],
+  "model_response_count": 3,
+  "native_usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 10818,
+    "cache_read_input_tokens": 45749,
+    "output_tokens": 432,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 10818,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 170,
+        "cache_read_input_tokens": 18868,
+        "cache_creation_input_tokens": 384,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 384
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "first_observed_output_delay_seconds": 1.640484,
+  "visible_delta_bytes": 528,
+  "first_visible_text_TTFT_seconds": 3.6369785419956315,
+  "observed_text_stream_seconds": 2.415207999991253,
+  "timing_limit": "Text-delta client receipt intervals, not provider decode time; all startup hooks remain in sessiontotal.",
+  "quality": "UNGRADED; controller-only grading",
+  "native_result_type": "success"
+}

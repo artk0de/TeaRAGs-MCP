@@ -1,0 +1,128 @@
+{
+  "answer": "The entry point is [`applyProcessingState(record, state, publish)` in `src/refund-settlement/status.ts:9`](/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts:9).\n\nIt assigns `record.processingState = state`, then immediately calls the supplied `publish` callback with this dashboard frame:\n\n```ts\n{\n  resource: {\n    id: record.refundId,\n    processing_status: record.processingState\n  },\n  type: \"refund_settlement\",\n  event: \"status_changed\"\n}\n```\n\nThe accepted states are `queued`, `processing`, `settled`, and `rejected`. The function directly applies the supplied state; it contains no transition validation or persistence call.\n\nThe upstream caller lookup failed, so I can establish this function’s contract and payload from source, but cannot identify a higher-level trigger from the available evidence.",
+  "model_response_count": 7,
+  "accounting": {
+    "completed_responses": 7,
+    "responses": {
+      "resp_01f5ed142f6d7d1f016ae8d527f24c81918ad84b35888082db": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 16883,
+          "inputTokens": 16701,
+          "cachedInputTokens": 0,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 182,
+          "reasoningOutputTokens": 0
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d53068608191aaad8b1fb6d51af2": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 27369,
+          "inputTokens": 27195,
+          "cachedInputTokens": 16768,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 174,
+          "reasoningOutputTokens": 0
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d53916e88191a2d50154fdf504c6": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 28459,
+          "inputTokens": 28304,
+          "cachedInputTokens": 27136,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 155,
+          "reasoningOutputTokens": 20
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d53f03ac8191ae2a90abdb47e27b": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 29046,
+          "inputTokens": 28918,
+          "cachedInputTokens": 28288,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 128,
+          "reasoningOutputTokens": 59
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d54533208191a9e9b3e845f64d17": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 29157,
+          "inputTokens": 29097,
+          "cachedInputTokens": 28928,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 60,
+          "reasoningOutputTokens": 11
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d54941c08191a48f2b89277c8ff6": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 29299,
+          "inputTokens": 29222,
+          "cachedInputTokens": 28928,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 77,
+          "reasoningOutputTokens": 12
+        }
+      },
+      "resp_01f5ed142f6d7d1f016ae8d54e9cf08191bab8c9f993a82c66": {
+        "turn_id": "01a19d80-80ab-74c2-b346-bda874c5fd81",
+        "usage": {
+          "totalTokens": 29738,
+          "inputTokens": 29551,
+          "cachedInputTokens": 29184,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 187,
+          "reasoningOutputTokens": 0
+        }
+      }
+    },
+    "completed_usage": {
+      "inputTokens": 188988,
+      "cachedInputTokens": 159232,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 963,
+      "reasoningOutputTokens": 102,
+      "totalTokens": 189951
+    },
+    "invalid_usage_response_ids": [],
+    "unfinished_generations_minimum": 0,
+    "unfinished_generations": [],
+    "unresolved_turns": [],
+    "accounting_complete": true,
+    "native_cumulative_usage": {
+      "totalTokens": 189951,
+      "inputTokens": 188988,
+      "cachedInputTokens": 159232,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 963,
+      "reasoningOutputTokens": 102
+    },
+    "completed_usage_equals_native": true,
+    "completed_response_cost_usd": null,
+    "total_cost_usd": null,
+    "cost_status": "unpriced",
+    "cache_limitation": "Service prefix cache cannot be manually cleared; observe cached input per response; no all-turn zero-cache claim"
+  },
+  "controller_turn_seconds": 53.133629124989966,
+  "persistence_observation": {
+    "event_count": 355,
+    "journal_bytes": 353680,
+    "snapshot_count": 1,
+    "snapshot_bytes": 444703,
+    "append_wall_seconds": 0.02677151100942865,
+    "append_thread_cpu_seconds": 0.016857379999994038,
+    "snapshot_wall_seconds": 0.004088582994882017,
+    "snapshot_thread_cpu_seconds": 0.0038307499999987726,
+    "wall_seconds": 0.030860094004310668,
+    "thread_cpu_seconds": 0.02068812999999281,
+    "measurement": "OBSERVATION",
+    "limitation": "Persistence callback/snapshot timings overlap RPC/service activity; never subtract as pure model time. No fsync; RPC events.jsonl remains authoritative."
+  },
+  "quality": "UNGRADED; no reasoning bodies extracted"
+}

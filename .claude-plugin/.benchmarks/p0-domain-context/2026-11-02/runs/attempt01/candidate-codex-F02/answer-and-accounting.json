@@ -1,0 +1,106 @@
+{
+  "answer": "The current [status.ts](/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts:17) publishes:\n\n- Resource type: `\"refund_settlement\"`\n- Event: `\"status_changed\"`",
+  "model_response_count": 5,
+  "accounting": {
+    "completed_responses": 5,
+    "responses": {
+      "resp_0543c5f05a4aae9a016ae8d65c52408191930fd86df9cb47f8": {
+        "turn_id": "01a19d85-4595-7500-a13f-7fdd2a954cfc",
+        "usage": {
+          "totalTokens": 16865,
+          "inputTokens": 16688,
+          "cachedInputTokens": 0,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 177,
+          "reasoningOutputTokens": 0
+        }
+      },
+      "resp_0543c5f05a4aae9a016ae8d663ded88191a138a13bd088c77e": {
+        "turn_id": "01a19d85-4595-7500-a13f-7fdd2a954cfc",
+        "usage": {
+          "totalTokens": 18977,
+          "inputTokens": 18883,
+          "cachedInputTokens": 16640,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 94,
+          "reasoningOutputTokens": 8
+        }
+      },
+      "resp_0543c5f05a4aae9a016ae8d66a6be0819194edc79552a15bc2": {
+        "turn_id": "01a19d85-4595-7500-a13f-7fdd2a954cfc",
+        "usage": {
+          "totalTokens": 19393,
+          "inputTokens": 19270,
+          "cachedInputTokens": 18816,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 123,
+          "reasoningOutputTokens": 64
+        }
+      },
+      "resp_0543c5f05a4aae9a016ae8d66ed7088191b3267464c62f41ee": {
+        "turn_id": "01a19d85-4595-7500-a13f-7fdd2a954cfc",
+        "usage": {
+          "totalTokens": 19543,
+          "inputTokens": 19417,
+          "cachedInputTokens": 19200,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 126,
+          "reasoningOutputTokens": 10
+        }
+      },
+      "resp_0543c5f05a4aae9a016ae8d672c100819189c2daf9b5684c02": {
+        "turn_id": "01a19d85-4595-7500-a13f-7fdd2a954cfc",
+        "usage": {
+          "totalTokens": 20058,
+          "inputTokens": 20007,
+          "cachedInputTokens": 19328,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 51,
+          "reasoningOutputTokens": 0
+        }
+      }
+    },
+    "completed_usage": {
+      "inputTokens": 94265,
+      "cachedInputTokens": 73984,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 571,
+      "reasoningOutputTokens": 82,
+      "totalTokens": 94836
+    },
+    "invalid_usage_response_ids": [],
+    "unfinished_generations_minimum": 0,
+    "unfinished_generations": [],
+    "unresolved_turns": [],
+    "accounting_complete": true,
+    "native_cumulative_usage": {
+      "totalTokens": 94836,
+      "inputTokens": 94265,
+      "cachedInputTokens": 73984,
+      "cacheWriteInputTokens": 0,
+      "outputTokens": 571,
+      "reasoningOutputTokens": 82
+    },
+    "completed_usage_equals_native": true,
+    "completed_response_cost_usd": null,
+    "total_cost_usd": null,
+    "cost_status": "unpriced",
+    "cache_limitation": "Service prefix cache cannot be manually cleared; observe cached input per response; no all-turn zero-cache claim"
+  },
+  "controller_turn_seconds": 28.93070595798781,
+  "persistence_observation": {
+    "event_count": 179,
+    "journal_bytes": 230770,
+    "snapshot_count": 1,
+    "snapshot_bytes": 291669,
+    "append_wall_seconds": 0.01683266495820135,
+    "append_thread_cpu_seconds": 0.009281621000063467,
+    "snapshot_wall_seconds": 0.0050713749951682985,
+    "snapshot_thread_cpu_seconds": 0.0048407080000032465,
+    "wall_seconds": 0.021904039953369647,
+    "thread_cpu_seconds": 0.014122329000066713,
+    "measurement": "OBSERVATION",
+    "limitation": "Persistence callback/snapshot timings overlap RPC/service activity; never subtract as pure model time. No fsync; RPC events.jsonl remains authoritative."
+  },
+  "quality": "UNGRADED; no reasoning bodies extracted"
+}

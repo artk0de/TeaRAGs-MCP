@@ -1,0 +1,25 @@
+[
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_07f60347eb62d0f5016ae8d5a01690819190bc45bee731b849",
+    "name": "exec",
+    "input": "const r = await tools.exec_command({cmd:\"sed -n '1,220p' /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/candidate-codex-D02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.2/skills/explore/SKILL.md\",max_output_tokens:6000});text(r.output);\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")&&/find_symbol|get_callees/.test(t.name)).map(t=>({name:t.name,schema:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})));\n"
+  },
+  {
+    "method": "rawResponseItem/completed",
+    "id": "ctc_07f60347eb62d0f5016ae8d5aba0d08191b9639892237b673b",
+    "name": "exec",
+    "input": "text(await tools.mcp__tea_rags__find_symbol({project:\"p0-domain-context-ng1ni-external\",path:\"/Users/Shared/nav-ab/p0-domain-context-ng1ni\",relativePath:\"src/marketing/status.ts\"}));\n"
+  },
+  {
+    "method": "item/completed",
+    "id": "exec-a32fdbf2-a454-477c-bf18-05ec11bda94a",
+    "tool": "find_symbol",
+    "arguments": {
+      "project": "p0-domain-context-ng1ni-external",
+      "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "relativePath": "src/marketing/status.ts"
+    },
+    "error": null
+  }
+]

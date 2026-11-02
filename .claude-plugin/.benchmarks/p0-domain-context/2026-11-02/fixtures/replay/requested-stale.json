@@ -1,0 +1,83 @@
+{
+  "kind": "controlled_tool_response_replay",
+  "scope": "Reference payload examples for an actual upstream find_symbol response transform; never inject these as USER text or replace the provider wholesale.",
+  "intercept": {
+    "tool": "find_symbol",
+    "requested_file": "src/refund-settlement/status.ts"
+  },
+  "responses": [
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "↳ 3 files not re-read yet → repeat this same call; it serves them once warm."
+        }
+      ],
+      "structuredContent": {
+        "results": {
+          "columns": [
+            "payload.relativePath",
+            "payload.startLine",
+            "payload.endLine",
+            "payload.content",
+            "treeState"
+          ],
+          "rows": [
+            [
+              "src/refund-settlement/status.ts",
+              1,
+              20,
+              "export type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n\nexport interface RecordState {\n  refundId: string;\n  processingState: ProcessingState;\n}\n\n/** Refund settlement processing updates published to the operations dashboard. */\nexport function applyProcessingState(\n  record: RecordState,\n  state: ProcessingState,\n  publish: (frame: object) => void,\n): void {\n  record.processingState = state;\n  publish({\n    resource: { id: record.refundId, processing_status: record.processingState },\n    type: \"refund_processing\",\n    event: \"status_changed\",\n  });\n}\n",
+              "modified"
+            ]
+          ]
+        },
+        "workingTree": {
+          "tree": "${FIXTURE_ROOT}",
+          "project": "${FIXTURE_PROJECT}",
+          "changedFiles": 0,
+          "pendingFiles": 3
+        },
+        "banner": "↳ 3 files not re-read yet → repeat this same call; it serves them once warm."
+      }
+    },
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "↳ 3 files not re-read yet → repeat this same call; it serves them once warm."
+        }
+      ],
+      "structuredContent": {
+        "results": {
+          "columns": [
+            "payload.relativePath",
+            "payload.startLine",
+            "payload.endLine",
+            "payload.content"
+          ],
+          "rows": [
+            [
+              "src/refund-settlement/status.ts",
+              1,
+              20,
+              "export type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n\nexport interface RecordState {\n  refundId: string;\n  processingState: ProcessingState;\n}\n\n/** Refund settlement processing updates published to the operations dashboard. */\nexport function applyProcessingState(\n  record: RecordState,\n  state: ProcessingState,\n  publish: (frame: object) => void,\n): void {\n  record.processingState = state;\n  publish({\n    resource: { id: record.refundId, processing_status: record.processingState },\n    type: \"refund_settlement\",\n    event: \"status_changed\",\n  });\n}\n"
+            ]
+          ]
+        },
+        "workingTree": {
+          "tree": "${FIXTURE_ROOT}",
+          "project": "${FIXTURE_PROJECT}",
+          "changedFiles": 0,
+          "pendingFiles": 3
+        },
+        "banner": "↳ 3 files not re-read yet → repeat this same call; it serves them once warm."
+      }
+    }
+  ],
+  "driver_only": {
+    "pending_owner": "src/marketing/status.ts",
+    "repeat_policy": "For calls beyond the supplied sequence, repeat the last response and log the request unchanged.",
+    "application": "Use actual provider response/schema. F01 modifies global pending metadata only; F02 first target body gets the frozen literal delta and row.treeState=modified, next target body remains actual/current with row.treeState removed."
+  }
+}
