@@ -18,7 +18,12 @@ import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metada
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
-import type { RustcDriverStatus, RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
+import {
+  liveRustcDriverStatus,
+  type RustcDriverPresenceProbe,
+  type RustcDriverStatus,
+  type RustcDriverStatusRecord,
+} from "../../../contracts/rustc-driver-status.js";
 import type { GraphDbClientPoolPort } from "../../../contracts/types/codegraph-pool.js";
 import type {
   EdgeKindCount,
@@ -550,6 +555,14 @@ export class StatusModule {
      * its site only at `p` at or above it. Empty → every stored model edge counts.
      */
     private readonly residualThresholds: Readonly<Record<string, number>> = {},
+    /**
+     * Whether a rustc driver is on disk NOW (bd tea-rags-mcp-hjbow.9): a
+     * persisted `unavailable` it contradicts reads as `installed-pending`
+     * (`liveRustcDriverStatus`). Absent → the persisted status as recorded.
+     */
+    private readonly rustcDriverPresence?: RustcDriverPresenceProbe,
+    /** The registered project alias of an indexed path, for the recompute command. Absent → the path. */
+    private readonly projectAliasForPath?: (absolutePath: string) => string | undefined,
   ) {}
 
   /**
@@ -562,10 +575,12 @@ export class StatusModule {
    * phantom codegraph DB for non-codegraph collections.
    *
    * The same reader answers the rustc driver status the last Rust resolve pass
-   * persisted (bd s3i8m); each field is omitted when absent.
+   * persisted (bd s3i8m), as it reads now (`liveRustcDriverStatus`, bd
+   * tea-rags-mcp-hjbow.9); each field is omitted when absent.
    */
   private async readCodegraphReport(
     collection: string,
+    indexedPath?: string,
   ): Promise<{ codegraphResolve?: CodegraphResolveSummary; rustcDriver?: RustcDriverStatus }> {
     const report = await this.withCodegraphReader(collection, async (graphDb) => {
       const [runStatsRows, edgeCounts, modelCounts, rustcDriver] = await Promise.all([
@@ -580,10 +595,19 @@ export class StatusModule {
       });
       return {
         ...(codegraphResolve === undefined ? {} : { codegraphResolve }),
-        ...(rustcDriver === undefined ? {} : { rustcDriver: rustcDriver.status }),
+        ...(rustcDriver === undefined
+          ? {}
+          : { rustcDriver: this.liveRustcDriverStatus(rustcDriver.status, indexedPath) }),
       };
     });
     return report ?? {};
+  }
+
+  /** The persisted driver status against the driver on disk now; unchanged without a probe. */
+  private liveRustcDriverStatus(persisted: RustcDriverStatus, indexedPath: string | undefined): RustcDriverStatus {
+    if (!this.rustcDriverPresence) return persisted;
+    const project = indexedPath === undefined ? undefined : this.projectAliasForPath?.(indexedPath);
+    return liveRustcDriverStatus(persisted, this.rustcDriverPresence, { project, path: indexedPath });
   }
 
   /**
@@ -672,20 +696,20 @@ export class StatusModule {
           // No alias/real collection at all — latestVersioned is the only source
           // (first index in progress, or first index that completed but alias was
           // never created).
-          return this.getStatusFromCollection(latestVersioned, aliasCollectionName);
+          return this.getStatusFromCollection(latestVersioned, aliasCollectionName, absolutePath);
         }
         const rawPoint = await this.qdrant.getPoint(latestVersioned, INDEXING_METADATA_ID).catch(() => null);
         const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
         if (!marker?.indexingComplete) {
           // In-progress or crashed mid-index — report from this collection
-          return this.getStatusFromCollection(latestVersioned, aliasCollectionName);
+          return this.getStatusFromCollection(latestVersioned, aliasCollectionName, absolutePath);
         }
         // Otherwise it's a completed orphan; fall through to read from alias.
       }
     }
 
     // Alias points to latest version (or legacy real collection) — read from alias
-    return this.getStatusFromCollection(aliasCollectionName, aliasCollectionName);
+    return this.getStatusFromCollection(aliasCollectionName, aliasCollectionName, absolutePath);
   }
 
   /**
@@ -851,7 +875,11 @@ export class StatusModule {
    * @param sourceCollection - collection to read markers from (e.g. "code_abc_v1")
    * @param reportedName - collection name to report in the response (always the base alias name)
    */
-  private async getStatusFromCollection(sourceCollection: string, reportedName: string): Promise<IndexStatus> {
+  private async getStatusFromCollection(
+    sourceCollection: string,
+    reportedName: string,
+    indexedPath?: string,
+  ): Promise<IndexStatus> {
     const rawPoint = await this.qdrant.getPoint(sourceCollection, INDEXING_METADATA_ID);
     const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
 
@@ -884,7 +912,7 @@ export class StatusModule {
         if (resolved.collection !== sourceCollection) {
           // Bounded: resolved collection is always base name or alias target (never versioned),
           // so the stale check `sourceCollection !== reportedName` won't match on the second call.
-          return this.getStatusFromCollection(resolved.collection, reportedName);
+          return this.getStatusFromCollection(resolved.collection, reportedName, indexedPath);
         }
         // No fallback found but collection has data — fall through to report stale_indexing.
       }
@@ -915,7 +943,7 @@ export class StatusModule {
         sparseVersion,
         lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
-        ...(await this.readCodegraphReport(sourceCollection)),
+        ...(await this.readCodegraphReport(sourceCollection, indexedPath)),
         quarantine,
         skippedFiles: await this.loadSkippedFilesSummary(reportedName),
         indexHoles: await this.probeIndexHoles(reportedName, filesCount ?? 0, quarantine?.count ?? 0),
@@ -932,7 +960,7 @@ export class StatusModule {
         filesCount: this.readFileCount(reportedName),
         qdrantUrl: this.qdrant.url,
         sparseVersion,
-        ...(await this.readCodegraphReport(sourceCollection)),
+        ...(await this.readCodegraphReport(sourceCollection, indexedPath)),
       };
     }
 

@@ -17,13 +17,14 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
+import type { RustcDriverPresenceProbe } from "../../../contracts/rustc-driver-status.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
+import type { RerankerPort } from "../../../domains/explore/index.js";
 import type { SynchronizerTuning } from "../../../domains/ingest/index.js";
 import { CollectionIndexingLock } from "../../../domains/ingest/infra/index.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
@@ -81,6 +82,8 @@ export interface IngestFacadeDeps {
   snapshotDir?: string;
   modelGuard?: EmbeddingModelGuardPort;
   collectionRegistry?: CollectionRegistry;
+  /** Whether a rustc driver is on disk now (bd tea-rags-mcp-hjbow.9). Absent → status reports the persisted driver status. */
+  rustcDriverPresence?: RustcDriverPresenceProbe;
   teaRagsVersion?: string;
   /**
    * Per-language code versions of this build (bd tea-rags-mcp-frwka), from
@@ -194,6 +197,7 @@ export class IngestFacade {
     // built rules would be two chances to disagree (bd tea-rags-mcp-dxa9w).
     // Built here because this is where the full registry is in scope; without a
     // registry both sides fall back to the path hash.
+    const registry = deps.collectionRegistry;
     const resolveCollectionForPath = deps.collectionRegistry
       ? createPathCollectionResolver(deps.collectionRegistry)
       : undefined;
@@ -251,6 +255,10 @@ export class IngestFacade {
             }),
           }
         : {}),
+      // Status reads the persisted rustc driver status against the driver on
+      // disk now, naming the recompute by the path's alias (bd tea-rags-mcp-hjbow.9).
+      ...(deps.rustcDriverPresence ? { rustcDriverPresence: deps.rustcDriverPresence } : {}),
+      ...(registry ? { projectAliasForPath: (path: string) => registry.findByPath(path)?.name ?? undefined } : {}),
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

@@ -28,6 +28,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { RustcDriverPresenceProbe } from "../../../contracts/rustc-driver-status.js";
 import type {
   CalleeEdge,
   InheritanceEdge,
@@ -104,7 +105,7 @@ import {
 } from "../ops/container-member-rollup.js";
 import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
-import { rustCycleScopeNotices } from "../ops/rustc-driver-notice.js";
+import { rustcDriverStatusReconcilerFor, rustCycleScopeNotices } from "../ops/rustc-driver-notice.js";
 import { readSymbolEdgesExplained, type SymbolEdgeRead, type TestChunkProbe } from "../ops/symbol-edge-explanation.js";
 
 export interface GraphFacadeDeps {
@@ -198,6 +199,12 @@ export interface GraphFacadeDeps {
    * Absent (unit wiring): not checked.
    */
   indexExists?: IndexExistenceCheck;
+  /**
+   * Whether a rustc driver is on disk now (bd tea-rags-mcp-hjbow.9): a
+   * lower-bound notice over a persisted `unavailable` it contradicts names the
+   * recompute instead of the install. Absent (unit wiring): the persisted status.
+   */
+  rustcDriverPresence?: RustcDriverPresenceProbe;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -535,6 +542,7 @@ export class GraphFacade {
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallers(target)),
           "callers",
           this.testChunkProbe(req),
+          rustcDriverStatusReconcilerFor(this.deps.rustcDriverPresence, req),
         );
         const read = await rollUpContainerCallers(handle.graphDb, own, isNavigationVisibleEdge);
         const resolved = {
@@ -605,6 +613,7 @@ export class GraphFacade {
           async (id) => readSymbolEdges(handle.graphDb, id, async (target) => handle.graphDb.getCallees(target)),
           "callees",
           this.testChunkProbe(req),
+          rustcDriverStatusReconcilerFor(this.deps.rustcDriverPresence, req),
         );
         const read = await rollUpContainerCallees(handle.graphDb, own, isNavigationVisibleEdge);
         if (depth > 1) {
@@ -879,7 +888,13 @@ export class GraphFacade {
             length: e.members.length,
             ...(e.hasModelEdge ? { hasModelEdge: true, modelEdgeCount: e.modelEdgeCount ?? 0 } : {}),
           })),
-          ...(entries.length === 0 ? await rustCycleScopeNotices(handle.graphDb, req.pathPattern) : {}),
+          ...(entries.length === 0
+            ? await rustCycleScopeNotices(
+                handle.graphDb,
+                req.pathPattern,
+                rustcDriverStatusReconcilerFor(this.deps.rustcDriverPresence, req),
+              )
+            : {}),
         };
       },
       { cycles: [] },

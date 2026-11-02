@@ -316,6 +316,16 @@ describe("get_index_status — rustc driver line (s3i8m T9)", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-hjbow.9 — the driver appeared after the run: the line names the recompute.
+  it("appends the installed-pending line with the recompute command", async () => {
+    const hint = "tea-rags index-codebase --project repo --force-enrichments codegraph --languages rust";
+    const handler = harness({ outcome: "installed-pending", hint });
+    const { text } = (await handler({ path: "/repo" }, {})).content[0];
+    expect(text.split("\n").filter((l) => l.startsWith("rustc driver:"))).toEqual([
+      `rustc driver: installed-pending — driver installed since the last codegraph run, Rust call edges are still static-only (lower bound); recompute: ${hint}`,
+    ]);
+  });
+
   it("appends nothing without a driver status", async () => {
     const { text } = (await harness()({ path: "/repo" }, {})).content[0];
     expect(text).not.toContain("rustc driver");

@@ -29,6 +29,7 @@ import {
   rustcDriverLowerBoundLine,
   rustcDriverLowerBoundStatus,
   rustSymbolEdgeNotices,
+  type RustcDriverStatusReconciler,
 } from "./rustc-driver-notice.js";
 
 /** Edges read for a symbol target, and the definer id they were read under when it was aliased. */
@@ -67,9 +68,10 @@ export async function readSymbolEdgesExplained<E>(
   readEdges: (targetSymbolId: SymbolId) => Promise<SymbolEdgeRead<E>>,
   edgeNoun: "callers" | "callees",
   isTestChunk?: TestChunkProbe,
+  reconcile?: RustcDriverStatusReconciler,
 ): Promise<SymbolEdgeRead<E> & GraphNoticesField & { empty?: EmptyAnswerExplanation }> {
   const read = await readEdges(symbolId);
-  if (read.edges.length > 0) return withRustNotices(graph, read, edgeNoun);
+  if (read.edges.length > 0) return withRustNotices(graph, read, edgeNoun, reconcile);
   const swapped = swapMemberSeparator(symbolId);
   const queried = read.queriedSymbolId;
   const definitions = await attempt(
@@ -82,15 +84,15 @@ export async function readSymbolEdgesExplained<E>(
   if (swapped && swappedDefinition) {
     const swappedRead = await readEdges(swapped);
     const answered = { ...swappedRead, resolvedSymbolId: swappedRead.resolvedSymbolId ?? swapped };
-    if (answered.edges.length > 0) return withRustNotices(graph, answered, edgeNoun);
+    if (answered.edges.length > 0) return withRustNotices(graph, answered, edgeNoun, reconcile);
     if (!own) {
       return {
         ...answered,
-        empty: await noEdges(graph, answered.queriedSymbolId, swappedDefinition.relPath, edgeNoun),
+        empty: await noEdges(graph, answered.queriedSymbolId, swappedDefinition.relPath, edgeNoun, reconcile),
       };
     }
   }
-  if (own) return { ...read, empty: await noEdges(graph, queried, own.relPath, edgeNoun) };
+  if (own) return { ...read, empty: await noEdges(graph, queried, own.relPath, edgeNoun, reconcile) };
   return { ...read, empty: await unknownOrTestChunk(graph, symbolId, swapped, isTestChunk) };
 }
 
@@ -99,8 +101,9 @@ async function withRustNotices<E>(
   graph: SymbolEdgeExplanationGraph,
   read: SymbolEdgeRead<E>,
   edgeNoun: "callers" | "callees",
+  reconcile?: RustcDriverStatusReconciler,
 ): Promise<SymbolEdgeRead<E> & GraphNoticesField> {
-  return { ...read, ...(await rustSymbolEdgeNotices(graph, read.queriedSymbolId, edgeNoun)) };
+  return { ...read, ...(await rustSymbolEdgeNotices(graph, read.queriedSymbolId, edgeNoun, reconcile)) };
 }
 
 /** `unknownSymbol`, or `testChunk` when the probe says the id is an indexed test chunk. */
@@ -145,10 +148,11 @@ async function noEdges(
   symbolId: SymbolId,
   relPath: string,
   edgeNoun: string,
+  reconcile?: RustcDriverStatusReconciler,
 ): Promise<EmptyAnswerExplanation> {
   const message = `${symbolId} is in the codegraph with no ${edgeNoun}.`;
   const language = detectLanguage(relPath);
-  const driverNote = language === "rust" ? await attempt(async () => rustcDriverNote(graph), null) : null;
+  const driverNote = language === "rust" ? await attempt(async () => rustcDriverNote(graph, reconcile), null) : null;
   if (driverNote !== null) return { reason: "noEdges", message: `${message} ${driverNote}` };
   const rate = await attempt(async () => languageResolveRate(graph, language), null);
   if (rate === null || rate >= LOW_RESOLVE_RATE) return { reason: "noEdges", message };
@@ -164,8 +168,11 @@ async function noEdges(
  * The rustc-driver note (bd tea-rags-mcp-nknkg.1): a driver that did not index
  * leaves Rust edges static-only. Null when the driver indexed or reported nothing.
  */
-async function rustcDriverNote(graph: SymbolEdgeExplanationGraph): Promise<string | null> {
-  const status = await rustcDriverLowerBoundStatus(graph);
+async function rustcDriverNote(
+  graph: SymbolEdgeExplanationGraph,
+  reconcile?: RustcDriverStatusReconciler,
+): Promise<string | null> {
+  const status = await rustcDriverLowerBoundStatus(graph, reconcile);
   return status === null ? null : rustcDriverLowerBoundLine(status, LOWER_BOUND_NEXT);
 }
 

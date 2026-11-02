@@ -19,7 +19,7 @@ import type { EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js"
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
-import type { RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
+import type { RustcDriverPresenceProbe, RustcDriverStatusRecord } from "../../../contracts/rustc-driver-status.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { ChunkSetBumpScopes, RechunkFileSelector } from "../../../contracts/types/rechunk.js";
@@ -27,7 +27,7 @@ import type { CollectionRegistryPort } from "../../../contracts/types/registry.j
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
-import type { RerankerPort } from "../../../domains/explore/reranker-port.js";
+import type { RerankerPort } from "../../../domains/explore/index.js";
 import {
   IndexingAlreadyInProgressError,
   IndexingProcessBuildStaleError,
@@ -233,6 +233,14 @@ export interface IndexingOpsDeps {
    * the worker pools derive their daemon key from.
    */
   processBuildFingerprint?: ProcessBuildFingerprintSource;
+  /**
+   * Whether a rustc driver is on disk now (bd tea-rags-mcp-hjbow.9): status
+   * reports a persisted `unavailable` it contradicts as `installed-pending`.
+   * Omitted → the persisted status as recorded.
+   */
+  rustcDriverPresence?: RustcDriverPresenceProbe;
+  /** The registered alias of an indexed path, which the recompute command names. Omitted → the path. */
+  projectAliasForPath?: (absolutePath: string) => string | undefined;
 }
 
 /**
@@ -376,6 +384,8 @@ export class IndexingOps {
       deps.indexingLock,
       // The thresholds a residual pass applies model edges at (2m83f.38).
       deps.residualResolution?.thresholds,
+      deps.rustcDriverPresence,
+      deps.projectAliasForPath,
     );
     this.languageVersionStamper = deps.languageVersionStamper;
     this.codegraphEnabledStamper = deps.codegraphEnabledStamper;
