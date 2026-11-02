@@ -106,6 +106,9 @@ export const INFRA_ERROR_CODES = [
   // rustc call-site driver release
   "INFRA_RUSTC_DRIVER_RELEASE_UNAVAILABLE",
   "INFRA_RUSTC_DRIVER_RELEASE_STALE",
+  // native-asset (binary / model weights) verified download
+  "INFRA_NATIVE_ASSET_DOWNLOAD_FAILED",
+  "INFRA_NATIVE_ASSET_INTEGRITY_MISMATCH",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */

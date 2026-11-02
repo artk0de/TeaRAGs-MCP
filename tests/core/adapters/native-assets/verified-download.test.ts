@@ -7,7 +7,12 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { downloadVerifiedFile, type NativeAssetDeps } from "../../../../src/core/adapters/native-assets/index.js";
+import {
+  downloadVerifiedFile,
+  NativeAssetDownloadError,
+  NativeAssetIntegrityError,
+  type NativeAssetDeps,
+} from "../../../../src/core/adapters/native-assets/index.js";
 
 const PAYLOAD = Buffer.from("native asset bytes");
 const PAYLOAD_SHA = createHash("sha256").update(PAYLOAD).digest("hex");
@@ -94,5 +99,58 @@ describe("downloadVerifiedFile", () => {
       url,
     );
     expect(readdirSync(dir)).toEqual([]);
+  });
+
+  describe("typed failures (CLI handlers print message + hint for a TeaRagsError)", () => {
+    it("an HTTP failure is a NativeAssetDownloadError naming the URL and status", async () => {
+      const url = `${baseUrl}/nope.bin`;
+
+      const error = await downloadVerifiedFile({ url, sha256: PAYLOAD_SHA, fileName: "nope.bin" }, dir, deps).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(NativeAssetDownloadError);
+      expect(error).toMatchObject({ code: "INFRA_NATIVE_ASSET_DOWNLOAD_FAILED" });
+      expect((error as Error).message).toContain(url);
+      expect((error as Error).message).toContain("404");
+      expect((error as NativeAssetDownloadError).hint).toContain("HTTPS_PROXY");
+    });
+
+    it("a rejected fetch is a NativeAssetDownloadError carrying the raw error as cause", async () => {
+      const raw = new TypeError("fetch failed");
+      const url = `${baseUrl}/asset.bin`;
+      const rejecting: NativeAssetDeps = {
+        fetch: async () => {
+          throw raw;
+        },
+      };
+
+      const error = await downloadVerifiedFile(
+        { url, sha256: PAYLOAD_SHA, fileName: "asset.bin" },
+        dir,
+        rejecting,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NativeAssetDownloadError);
+      expect((error as Error).message).toContain(url);
+      expect((error as Error).cause).toBe(raw);
+      expect(readdirSync(dir)).toEqual([]);
+    });
+
+    it("a digest mismatch is a NativeAssetIntegrityError naming both digests, with a re-run hint", async () => {
+      const wrongSha = createHash("sha256").update("other bytes").digest("hex");
+
+      const error = await downloadVerifiedFile(
+        { url: `${baseUrl}/asset.bin`, sha256: wrongSha, fileName: "asset.bin" },
+        dir,
+        deps,
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NativeAssetIntegrityError);
+      expect(error).toMatchObject({ code: "INFRA_NATIVE_ASSET_INTEGRITY_MISMATCH" });
+      expect((error as Error).message).toContain(wrongSha);
+      expect((error as Error).message).toContain(PAYLOAD_SHA);
+      expect((error as NativeAssetIntegrityError).hint).toMatch(/re-run/i);
+    });
   });
 });

@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { NativeAssetDownloadError, NativeAssetIntegrityError } from "./errors.js";
+
 export interface VerifiedFileSource {
   url: string;
   /** Lowercase hex. */
@@ -38,9 +40,10 @@ async function fileSha256(path: string): Promise<string | undefined> {
 }
 
 /**
- * Download `src.url` into `destDir/<fileName>`. A mismatch deletes the partial
- * and throws `sha256 mismatch`. A present file with the matching digest is
- * returned without touching the network.
+ * Download `src.url` into `destDir/<fileName>`. A failed request or transfer
+ * throws {@link NativeAssetDownloadError}; a mismatch deletes the partial and
+ * throws {@link NativeAssetIntegrityError}. A present file with the matching
+ * digest is returned without touching the network.
  */
 export async function downloadVerifiedFile(
   src: VerifiedFileSource,
@@ -51,9 +54,14 @@ export async function downloadVerifiedFile(
   if ((await fileSha256(finalPath)) === src.sha256) return finalPath;
 
   await mkdir(destDir, { recursive: true });
-  const response = await deps.fetch(src.url, { redirect: "follow" });
+  let response: Response;
+  try {
+    response = await deps.fetch(src.url, { redirect: "follow" });
+  } catch (error) {
+    throw new NativeAssetDownloadError(src.url, "request failed", error as Error);
+  }
   if (!response.ok || !response.body) {
-    throw new Error(`Downloading ${src.url} failed (status ${response.status})`);
+    throw new NativeAssetDownloadError(src.url, `status ${response.status}`);
   }
 
   const partialPath = `${finalPath}.partial`;
@@ -64,13 +72,13 @@ export async function downloadVerifiedFile(
     await pipeline(body, createWriteStream(partialPath));
   } catch (error) {
     await rm(partialPath, { force: true });
-    throw error;
+    throw new NativeAssetDownloadError(src.url, "transfer interrupted", error as Error);
   }
 
   const actual = hash.digest("hex");
   if (actual !== src.sha256) {
     await rm(partialPath, { force: true });
-    throw new Error(`sha256 mismatch for ${src.fileName} from ${src.url}: expected ${src.sha256}, got ${actual}`);
+    throw new NativeAssetIntegrityError({ fileName: src.fileName, url: src.url, expected: src.sha256, actual });
   }
   await rename(partialPath, finalPath);
   return finalPath;
