@@ -1,0 +1,8 @@
+**Code-question answer contract.** Give (1) the requested conclusion or complete
+mapping, (2) the file/symbol evidence supporting it, and (3) any remaining unknowns.
+Use only the sections needed by this question. Preserve requested branches, rows
+and caveats; a compact answer must still be complete. Workflow restatement and
+tool inventories are not standalone task results. Required skill announcements
+can accompany actual work. Continue from discovery into ready evidence calls
+without an extra planning response when their prerequisites are already known.
+Stop reading once every requested claim is supported.
