@@ -33,6 +33,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
+import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-log/index.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -41,6 +42,7 @@ import type { ChunkPhase, ChunkPhaseMetrics } from "./chunk-phase.js";
 import type { CodegraphPayloadHealRunner } from "./codegraph-payload-heal.js";
 import type { FilePhase } from "./file-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
+import { isRunFatalEnrichmentError } from "./provider-failure.js";
 import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface CompletionRunnerDeps {
@@ -480,12 +482,15 @@ export class CompletionRunner {
     contexts: ReadonlyMap<string, ProviderContext>,
     backfillInFlight: OutOfWindowBackfillInFlight,
   ): Promise<void> {
-    const { filePhase, chunkPhase, executor } = this.deps;
+    const { filePhase, chunkPhase } = this.deps;
     const { settledByProvider } = backfillInFlight;
     // Stable sort: registration order holds within each group.
     const finalizeOrder = [...contexts.values()].sort(
       (a, b) => Number(settledByProvider.has(a.key)) - Number(settledByProvider.has(b.key)),
     );
+    // The first provider finalize this pass isolated — rethrown only when no
+    // provider of the run is left standing (bd tea-rags-mcp-xvik1).
+    let isolatedFinalizeError: { readonly error: unknown } | undefined;
     for (const ctx of finalizeOrder) {
       // Method-existence is no longer guarded here: runFinalize returns an
       // empty map when the provider has no finalizeSignals (executor smooths
@@ -493,62 +498,18 @@ export class CompletionRunner {
       // apply step — equivalent to the old `if (!finalizeSignals) continue`.
       if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       await settledByProvider.get(ctx.key);
-      const root = ctx.effectiveRoot ?? "";
-      // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
-      // buffered node defs via `acceptExtraction` and flushed only complete
-      // cadence batches during embedding — its `N mod cadence` remainder is still
-      // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
-      // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
-      // main instance) and await it BEFORE the worker resolves + upserts edges —
-      // nodes-before-edges across the instance boundary. Mirrors the cross-pass
-      // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
-      // (incremental finalize runs on this same instance and owns its own flush)
-      // and for providers without the seam (git omits it).
-      if (filePhase.crossPassEnabled) {
-        await this.timedFinalizeSubstep(
-          "endExtractionRun",
-          async () => ctx.provider.endExtractionRun?.(physicalCollectionName || undefined),
-          ctx.key,
-        );
+      let fileOverlays: Map<string, FileSignalOverlay>;
+      try {
+        fileOverlays = await this.finalizeProvider(physicalCollectionName, ctx);
+      } catch (error) {
+        // A provider's finalize failing is that provider's outcome: a codegraph
+        // daemon that cannot start must not cost git, which never touches it,
+        // its finalize and its `completed` markers (bd tea-rags-mcp-xvik1).
+        if (isRunFatalEnrichmentError(error)) throw error;
+        isolatedFinalizeError ??= { error };
+        await filePhase.markProviderFailed(ctx.key, error);
+        continue;
       }
-      // bd tea-rags-mcp-weno4 — read the persisted pass-1 aggregate slices HERE,
-      // on the MAIN instance, and inject them into the finalize below. This
-      // instance's pool replaces a daemon from another build or one lacking a
-      // required op; the worker `runFinalize` dispatches to cannot respawn and,
-      // since 39xca.4, refuses such a daemon with `CodegraphDaemonBuildSkewError`
-      // rather than silently degrading the znxg8 repair. Providers with no
-      // pass-1 store (git) omit the method.
-      const pass1Aggregates = await this.timedFinalizeSubstep(
-        "readPass1Aggregates",
-        async () => this.readPass1Aggregates(physicalCollectionName, ctx),
-        ctx.key,
-      );
-      // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
-      // drains the main-written input spill (pass-1) before resolving (pass-2),
-      // instead of relying on a streamFileBatch that no-opped. Other providers
-      // (git) ignore the flag.
-      const fileOverlays = await this.timedFinalizeSubstep(
-        "runFinalize",
-        async () =>
-          this.keptAlive(physicalCollectionName, async () =>
-            executor.runFinalize(ctx.provider, root, {
-              collectionName: physicalCollectionName || undefined,
-              crossPass: filePhase.crossPassEnabled,
-              // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
-              // run can never fall back to the provider's direct-caller default.
-              runCoverage: filePhase.runCoverage,
-              // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
-              // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
-              // makes, and pass-2 — the only writer of those rows — runs inside it, so
-              // this is what keeps a first index / `--force` from persisting NULL and
-              // making the next run repair the whole corpus. Providers that keep no
-              // per-file store (git) ignore it.
-              contentHashes: filePhase.runContentHashes,
-              ...(pass1Aggregates ? { pass1Aggregates } : {}),
-            }),
-          ),
-        ctx.key,
-      );
       // Apply whenever there is something to settle, not only when the graph
       // returned overlays: the apply is also what bare-stamps (and miss-tracks)
       // a file the graph holds nothing for. An incremental run that touched only
@@ -565,7 +526,80 @@ export class CompletionRunner {
         );
       }
     }
+    // Nothing survived: the run as a whole failed, and says so the way every
+    // completion failure does (`settleUnwrittenTerminalsAsFailed`).
+    if (isolatedFinalizeError && [...contexts.keys()].every((key) => filePhase.hasPrefetchFailed(key))) {
+      throw isolatedFinalizeError.error;
+    }
     await this.timedFinalizeSubstep("drain", async () => filePhase.drain());
+  }
+
+  /**
+   * One provider's finalize proper — the main-instance flush, the pass-1
+   * aggregate read and the executor's `runFinalize` — returning its deferred
+   * FILE overlays. Its throw is the caller's to isolate (see `applyFileFinalize`).
+   */
+  private async finalizeProvider(
+    physicalCollectionName: PhysicalCollectionName,
+    ctx: ProviderContext,
+  ): Promise<Map<string, FileSignalOverlay>> {
+    const { filePhase, executor } = this.deps;
+    const root = ctx.effectiveRoot ?? "";
+    // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
+    // buffered node defs via `acceptExtraction` and flushed only complete
+    // cadence batches during embedding — its `N mod cadence` remainder is still
+    // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
+    // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
+    // main instance) and await it BEFORE the worker resolves + upserts edges —
+    // nodes-before-edges across the instance boundary. Mirrors the cross-pass
+    // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
+    // (incremental finalize runs on this same instance and owns its own flush)
+    // and for providers without the seam (git omits it).
+    if (filePhase.crossPassEnabled) {
+      await this.timedFinalizeSubstep(
+        "endExtractionRun",
+        async () => ctx.provider.endExtractionRun?.(physicalCollectionName || undefined),
+        ctx.key,
+      );
+    }
+    // bd tea-rags-mcp-weno4 — read the persisted pass-1 aggregate slices HERE,
+    // on the MAIN instance, and inject them into the finalize below. This
+    // instance's pool replaces a daemon from another build or one lacking a
+    // required op; the worker `runFinalize` dispatches to cannot respawn and,
+    // since 39xca.4, refuses such a daemon with `CodegraphDaemonBuildSkewError`
+    // rather than silently degrading the znxg8 repair. Providers with no
+    // pass-1 store (git) omit the method.
+    const pass1Aggregates = await this.timedFinalizeSubstep(
+      "readPass1Aggregates",
+      async () => this.readPass1Aggregates(physicalCollectionName, ctx),
+      ctx.key,
+    );
+    // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
+    // drains the main-written input spill (pass-1) before resolving (pass-2),
+    // instead of relying on a streamFileBatch that no-opped. Other providers
+    // (git) ignore the flag.
+    return this.timedFinalizeSubstep(
+      "runFinalize",
+      async () =>
+        this.keptAlive(physicalCollectionName, async () =>
+          executor.runFinalize(ctx.provider, root, {
+            collectionName: physicalCollectionName || undefined,
+            crossPass: filePhase.crossPassEnabled,
+            // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
+            // run can never fall back to the provider's direct-caller default.
+            runCoverage: filePhase.runCoverage,
+            // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
+            // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
+            // makes, and pass-2 — the only writer of those rows — runs inside it, so
+            // this is what keeps a first index / `--force` from persisting NULL and
+            // making the next run repair the whole corpus. Providers that keep no
+            // per-file store (git) ignore it.
+            contentHashes: filePhase.runContentHashes,
+            ...(pass1Aggregates ? { pass1Aggregates } : {}),
+          }),
+        ),
+      ctx.key,
+    );
   }
 
   /** Run `work` with {@link finalizeKeepalive} ticking until it settles. */
