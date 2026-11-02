@@ -28,7 +28,7 @@ import {
   ProjectNotRegisteredError,
   StaleProjectAliasError,
   SubmoduleNotIndexedError,
-} from "../public/errors.js";
+} from "../public/index.js";
 
 /** Declared in `contracts/types/registry.ts`; re-exported for this file's callers. */
 export type { ResolveInput };
