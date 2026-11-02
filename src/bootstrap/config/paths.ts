@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { boundedUnixSocketPath } from "../../core/adapters/filesystem/unix-socket-path.js";
+
 const APP_DIR_NAME = ".tea-rags";
 
 export function appDataDir(): string {
@@ -19,8 +21,14 @@ export function modelsDir(): string {
   return join(appDataDir(), "models");
 }
 
+/**
+ * The ONNX daemon socket. Kept within the platform's unix socket path bound by
+ * the guard the codegraph daemon uses (bd tea-rags-mcp-64j9p): a long
+ * TEA_RAGS_DATA_DIR moves it under a short per-user tmp alias of the app-data
+ * dir, which the daemon creates before `listen` (`OnnxDaemon` `socketHomeDir`).
+ */
 export function daemonSocketPath(): string {
-  return join(appDataDir(), "onnx.sock");
+  return boundedUnixSocketPath(appDataDir(), "onnx.sock");
 }
 
 export function daemonPidFile(): string {

@@ -10,7 +10,7 @@ import { TeaRagsError } from "../primitives/errors/index.js";
 /**
  * Every infrastructure error code, at runtime — `InfraErrorCode` is derived
  * from it. Concrete InfraError subclasses live in
- * adapters/{qdrant,embeddings,vcs,duckdb}/errors.ts and
+ * adapters/{qdrant,embeddings,vcs,duckdb,filesystem}/errors.ts and
  * domains/maintenance/registry/errors.ts. `InfraError`'s constructor takes only
  * these, and `tests/core/adapters/infra-error-codes.test.ts` holds the list to
  * the codes those classes declare in both directions — a code added to a class
@@ -109,6 +109,8 @@ export const INFRA_ERROR_CODES = [
   // native-asset (binary / model weights) verified download
   "INFRA_NATIVE_ASSET_DOWNLOAD_FAILED",
   "INFRA_NATIVE_ASSET_INTEGRITY_MISMATCH",
+  // local filesystem (unix socket alias dirs)
+  "INFRA_UNIX_SOCKET_DIR_FOREIGN_OWNER",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */

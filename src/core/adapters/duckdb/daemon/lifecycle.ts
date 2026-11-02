@@ -1,18 +1,14 @@
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  unlinkSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  boundedUnixSocketPath,
+  ensureUnixSocketDir,
+  removeUnixSocketAlias,
+  type UnixSocketHost,
+} from "../../filesystem/unix-socket-path.js";
 import { isPidAlive } from "../../process-tree/pid-liveness.js";
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
 import { attachDaemonRef, countLiveDaemonRefs, detachDaemonRef } from "../../qdrant/embedded/daemon-refs.js";
@@ -79,72 +75,34 @@ export function getBuildKey(fingerprint: string = getBuildFingerprint()): string
 const DAEMON_SOCKET_FILE = "codegraph-daemon.sock";
 
 /**
- * Usable bytes of a unix socket path (bd tea-rags-mcp-js1ie): `sun_path` is
- * 108 bytes on Linux and 104 on macOS / the BSDs, both including the
- * terminating NUL. Unknown POSIX platforms take the stricter BSD bound.
- */
-export function socketPathMaxBytes(platform: NodeJS.Platform): number {
-  return platform === "linux" || platform === "android" ? 107 : 103;
-}
-
-/**
  * The daemon socket for the key dir `keyDir` (bd tea-rags-mcp-js1ie) — the one
  * derivation the listening daemon and every connecting client share, through
- * `daemonPathsForKeyDir`. Normally `<keyDir>/codegraph-daemon.sock`. When that
- * exceeds the platform's `sun_path` bound (a long HOME / TEA_RAGS_DATA_DIR —
- * `listen` then fails with EINVAL), the socket moves under a short ALIAS
- * directory `<tmp>/tea-rags-<hash of keyDir>/`, falling back to `/tmp` when
- * the tmp dir itself is too deep (macOS `/var/folders/...`). The alias is a
- * symlink to `keyDir` that `ensureDaemonSocketDir` creates before `listen`, so
- * `daemonPathsForKeyDir(dirname(socketPath))` — how clients map a socket back
- * onto its daemon's pid and log — keeps addressing the key dir's files.
- * Windows is exempt: there is no `sun_path` to bound.
+ * `daemonPathsForKeyDir`. Normally `<keyDir>/codegraph-daemon.sock`; past the
+ * platform's `sun_path` bound it moves under the shared per-user tmp alias of
+ * `boundedUnixSocketPath`, a symlink to `keyDir` that `ensureDaemonSocketDir`
+ * creates before `listen`, so `daemonPathsForKeyDir(dirname(socketPath))` —
+ * how clients map a socket back onto its daemon's pid and log — keeps
+ * addressing the key dir's files.
  */
-export function daemonSocketPathForKeyDir(
-  keyDir: string,
-  host: { platform?: NodeJS.Platform; tmpDir?: string } = {},
-): string {
-  const platform = host.platform ?? process.platform;
-  const inKeyDir = join(keyDir, DAEMON_SOCKET_FILE);
-  if (platform === "win32") return inKeyDir;
-  const maxBytes = socketPathMaxBytes(platform);
-  if (Buffer.byteLength(inKeyDir) <= maxBytes) return inKeyDir;
-  const alias = `tea-rags-${createHash("sha256").update(keyDir).digest("hex").slice(0, 12)}`;
-  const underTmp = join(host.tmpDir ?? tmpdir(), alias, DAEMON_SOCKET_FILE);
-  if (Buffer.byteLength(underTmp) <= maxBytes) return underTmp;
-  return join("/tmp", alias, DAEMON_SOCKET_FILE);
-}
-
-/** The key dir an alias socket dir stands in for, or undefined when `paths` uses none. */
-function daemonSocketAliasTarget(paths: CodegraphDaemonPaths): string | undefined {
-  const socketDir = dirname(paths.socketPath);
-  if (socketDir === paths.buildDir) return undefined;
-  return paths.socketPath === daemonSocketPathForKeyDir(paths.buildDir) ? paths.buildDir : undefined;
+export function daemonSocketPathForKeyDir(keyDir: string, host: UnixSocketHost = {}): string {
+  return boundedUnixSocketPath(keyDir, DAEMON_SOCKET_FILE, host);
 }
 
 /**
  * Make the socket's parent directory exist before `listen` (bd
- * tea-rags-mcp-js1ie). An in-key-dir socket needs only the dir; an alias
- * socket dir (see `daemonSocketPathForKeyDir`) is (re)pointed at the key dir —
- * a stale alias left by a swept key dir is replaced, a matching one kept.
+ * tea-rags-mcp-js1ie): the key dir, or its tmp alias (re)pointed at the key
+ * dir. An alias another user owns is refused with a typed error (8tbaa).
  */
 export function ensureDaemonSocketDir(paths: CodegraphDaemonPaths): void {
-  const socketDir = dirname(paths.socketPath);
-  const keyDir = daemonSocketAliasTarget(paths);
-  if (keyDir === undefined) {
-    mkdirSync(socketDir, { recursive: true });
-    return;
-  }
-  mkdirSync(keyDir, { recursive: true });
-  let linkedKeyDir: string | undefined;
-  try {
-    linkedKeyDir = readlinkSync(socketDir);
-  } catch {
-    linkedKeyDir = undefined;
-  }
-  if (linkedKeyDir === keyDir) return;
-  rmSync(socketDir, { force: true });
-  symlinkSync(keyDir, socketDir, "dir");
+  ensureUnixSocketDir(paths.buildDir, paths.socketPath);
+}
+
+/**
+ * Drop the key dir's tmp alias, if `paths` uses one — so it never dangles
+ * once the daemon is gone (5yhxq) or its key dir is swept.
+ */
+export function removeDaemonSocketAlias(paths: CodegraphDaemonPaths): void {
+  removeUnixSocketAlias(paths.buildDir, paths.socketPath);
 }
 
 /**
@@ -445,7 +403,7 @@ function removeDeadKeyDir(status: DaemonKeyDirStatus): boolean {
   try {
     rmSync(status.keyDir, { recursive: true, force: true });
     // An alias socket dir under tmp (js1ie) would dangle once its key dir is gone.
-    if (daemonSocketAliasTarget(status.paths) !== undefined) rmSync(dirname(status.paths.socketPath), { force: true });
+    removeDaemonSocketAlias(status.paths);
     return true;
   } catch {
     return false;

@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../../primitives/errors/index.js";
+import { boundedUnixSocketPath } from "../filesystem/unix-socket-path.js";
 import { LlamaServerPools } from "../llama-server/pools/llama-server-pools.js";
 import { reviveManagedLlamaServerPool } from "../llama-server/pools/pool-revive.js";
 import { productionLlamaServerPoolsDeps } from "../llama-server/pools/production-deps.js";
@@ -35,9 +36,10 @@ function fallbackPaths(): EmbeddingPaths {
   const appData = process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
   return {
     models: join(appData, "models"),
-    daemonSocket: join(appData, "onnx.sock"),
+    daemonSocket: boundedUnixSocketPath(appData, "onnx.sock"),
     daemonPid: join(appData, "onnx-daemon.pid"),
     endpointDownVerdicts: join(appData, "embedding-endpoint-health.json"),
+    dataDir: appData,
   };
 }
 /* v8 ignore stop */
@@ -157,6 +159,8 @@ export class EmbeddingProviderFactory {
           config.device,
           resolved.daemonSocket,
           resolved.daemonPid,
+          undefined,
+          resolved.dataDir,
         );
       }
 

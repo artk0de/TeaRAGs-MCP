@@ -48,6 +48,7 @@ import {
   getDaemonPaths,
   getStorageDir,
   incrementRefs,
+  removeDaemonSocketAlias,
   scheduleIdleWatcher,
   unlinkDaemonFiles,
   type CodegraphDaemonPaths,
@@ -513,6 +514,10 @@ async function startOwnedDaemon(
  */
 function cleanupDaemonFiles(paths: CodegraphDaemonPaths): void {
   unlinkDaemonFiles(paths);
+  // The tmp alias this daemon pointed at its key dir (js1ie) goes with it
+  // (5yhxq): the key dir can be deleted after a clean shutdown, and the next
+  // start recreates the alias anyway.
+  removeDaemonSocketAlias(paths);
 }
 
 /**
