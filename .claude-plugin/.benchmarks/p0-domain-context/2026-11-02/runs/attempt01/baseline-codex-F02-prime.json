@@ -1,0 +1,22 @@
+{
+  "key": "baseline-codex-F02",
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/baseline-codex-F02/native/public-hook-context.json",
+  "input_sha256": "499916434b7ce46ebb13eb4db8d687baaad66fc003fbd4d821dc08cd988d1441",
+  "prime_payloads": [
+    {
+      "event_index": 20,
+      "hook_id": "session-start:8:/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-behavior-runner/prepared01/profiles/baseline-codex-F02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.1/hooks/hooks.json",
+      "native_status": "completed",
+      "exit_code": null,
+      "payload": "# tea-rags digest — p0-domain-context-ng1ni-external\n\nproject `p0-domain-context-ng1ni-external` · collection `code_81a5e5c5` — pass `project: \"p0-domain-context-ng1ni-external\"` + `path` on tea-rags calls",
+      "payload_sha256": "5d967e253542da5f9ef2a9a6867282eaa0cc0b0de6d749505f82af16de600a86",
+      "payload_bytes": 210,
+      "actual_project": "p0-domain-context-ng1ni-external",
+      "actual_collection": "code_81a5e5c5",
+      "classification": "CANONICAL_DIGEST"
+    }
+  ],
+  "source_age_warnings": [],
+  "exact_expected_delivery": true,
+  "limits": "Codex numeric exit code not exposed; native completed status only. No final-answer inference."
+}

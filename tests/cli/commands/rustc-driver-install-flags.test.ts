@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
 import { rustcDriverCommand } from "../../../src/cli/commands/rustc-driver.js";
+import { NativeAssetDownloadError } from "../../../src/core/adapters/native-assets/index.js";
 import { RustcDriverReleaseUnavailableError } from "../../../src/core/adapters/rustc-driver/errors.js";
 import type * as PublicApi from "../../../src/core/api/public/index.js";
 
@@ -45,6 +46,24 @@ describe("tea-rags rustc-driver install", () => {
     );
     expect(printed).not.toContain("    at ");
     expect(errorLog).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints a failed archive download as message + hint and exits 1, without a stack", async () => {
+    download.mockRejectedValueOnce(
+      new NativeAssetDownloadError("https://github.com/x/releases/download/v9.9.9/driver.tar.gz", "status 404"),
+    );
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    await runCommand("rustc-driver", "install", "--release", "9.9.9", "--skip-toolchain");
+
+    const printed = stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+    expect(printed).toContain(
+      "rustc-driver install: Downloading https://github.com/x/releases/download/v9.9.9/driver.tar.gz failed (status 404)",
+    );
+    expect(printed).toContain("HTTPS_PROXY");
+    expect(printed).not.toContain("    at ");
     expect(process.exitCode).toBe(1);
   });
 });

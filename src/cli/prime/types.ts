@@ -30,13 +30,20 @@ export interface PrimeData {
 }
 
 /**
- * Degraded outputs that exit the runPrime pipeline early without a digest.
- * Each variant produces a short markdown placeholder via formatPrime.
+ * Degraded outputs that exit the runPrime pipeline early.
+ * Known registry addressing remains available when readiness is unconfirmed.
  */
-export type PrimeFailureReason =
+export type PrimeFailureReason = (
   | { kind: "path-not-found"; path: string }
   | { kind: "qdrant-cold"; path: string }
   /** No registry entry claims the path — there is no project alias to read a digest for. */
   | { kind: "not-registered"; path: string }
   /** Opening the in-process server failed for a reason other than a cold Qdrant — shown as-is. */
-  | { kind: "status-failed"; path: string; message: string; code?: string; hint?: string };
+  | { kind: "status-failed"; path: string; message: string; code?: string; hint?: string }
+) & { registry?: CollectionEntry | null };
+
+/**
+ * Every prime output, digest or degraded placeholder, with the client-update
+ * hint attached in one place (bd tea-rags-mcp-5o5af) — an early exit keeps it.
+ */
+export type PrimeOutput = PrimeData | (PrimeFailureReason & Pick<PrimeData, "clientUpdateHint">);

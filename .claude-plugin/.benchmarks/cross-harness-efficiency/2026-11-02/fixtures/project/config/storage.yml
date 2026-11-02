@@ -1,0 +1,14 @@
+default: &default
+  service: S3
+  bucket: <%= ENV.fetch('APP_STORAGE_BUCKET') %>
+  access_key_id: <%= ENV.fetch('APP_STORAGE_ACCESS_KEY') %>
+  secret_access_key: <%= ENV.fetch('APP_STORAGE_SECRET_KEY') %>
+
+documents:
+  <<: *default
+
+vendor_exports:
+  service: S3
+  bucket: <%= ENV.fetch('VENDOR_EXPORT_BUCKET') %>
+  access_key_id: <%= ENV.fetch('VENDOR_EXPORT_ACCESS_KEY') %>
+  secret_access_key: <%= ENV.fetch('VENDOR_EXPORT_SECRET_KEY') %>

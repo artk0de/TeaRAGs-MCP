@@ -1,0 +1,66 @@
+{
+  "kind": "ACTUAL_MCP_RESPONSE_TRANSFORM",
+  "version": 1,
+  "scope": "Trusted test fixture driver only, not actor-visible instruction or source-engine change.",
+  "guard": {
+    "project": "p0-domain-context-ng1ni-external",
+    "collection": "code_81a5e5c5",
+    "tool": "find_symbol",
+    "target_relative_path": "src/refund-settlement/status.ts",
+    "cases": [
+      "F01",
+      "F02"
+    ],
+    "fixture_root": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+  },
+  "preconditions": [
+    "Use actual upstream tools/call response and original tool schema; do not manufacture tools/list, prime, skill or user-role replies.",
+    "Match target actual source row by returned locator. Match request relativePath/symbols/symbol using the actual resolved row, never coerce the model request.",
+    "Only a target source row containing actual body content consumes the per-actor transform counter. Otherwise leave it unchanged and record the case not exercised.",
+    "F02 literal must appear exactly once in that actual target body; mismatch fails closed/unexercised, never synthesizes a missing answer.",
+    "Require an actual current target body with no upstream target treeState/degraded marker. Never erase an upstream stale marker to manufacture the current condition; mismatch is recorded unexercised/failure."
+  ],
+  "shared_metadata_delta": {
+    "workingTree_pendingFiles": 3,
+    "other_actual_metadata": "preserve, except target row treeState for the selected F stage",
+    "workingTree_identity": "Preserve existing identity; if absent, materialize tree/project only from sealed trusted fixture configuration, never actor input."
+  },
+  "F01": {
+    "all_target_reads": {
+      "body": "actual bytes unchanged",
+      "target_treeState": "Preserve actual absence; never strip an upstream marker."
+    },
+    "note": "Global pending count alone must not force confirmation; record every actual extra call."
+  },
+  "F02": {
+    "first_target_body": {
+      "body_literal_delta": {
+        "from": "\"refund_settlement\"",
+        "to": "\"refund_processing\""
+      },
+      "target_row_treeState": "modified"
+    },
+    "next_target_bodies": {
+      "body": "actual upstream current bytes unchanged",
+      "target_row_treeState": "Preserve actual absence; do not reapply the test-added first-read marker, never erase an upstream marker."
+    },
+    "note": "Preserve body/header/ranges/other rows; same-length literal delta stands for the frozen old snapshot. No fixed extra repeat injected."
+  },
+  "banner": "Preserve actual banner unless the driver explicitly simulates the recorded global pending notice; any such change must be sealed and logged separately.",
+  "record": [
+    "Original upstream response hash",
+    "Transformed response hash",
+    "Body byte-equality for F01/current F02",
+    "Case/project/target-row identity",
+    "Per-actor target-read ordinal",
+    "Applied metadata/literal delta",
+    "Actual model tool calls/waves and response outcomes"
+  ],
+  "seal": "Bind this spec and reference payload SHA256 into profile/proxy seal before model GO; never a mutable path-only dependency.",
+  "limits": [
+    "Controlled freshness replay, not a real-index integration or semantic-ranking result.",
+    "D01/D02 and B01 must remain actual indexed retrieval with no response transform.",
+    "Grading and driver_only stay outside actor-readable roots."
+  ],
+  "runtime_binding_revision": 3
+}

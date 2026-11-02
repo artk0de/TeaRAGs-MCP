@@ -1,0 +1,16 @@
+{
+  "status": "FINISHED",
+  "exit_code": 0,
+  "wall_seconds": 0.836596709,
+  "command": [
+    "/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin/node",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".tmp/p0-sentinel-integration/vitest.ping.config.ts",
+    "--maxWorkers=1"
+  ],
+  "only_missing_controls": true,
+  "expected_tests": 4,
+  "no_repeated17": true
+}

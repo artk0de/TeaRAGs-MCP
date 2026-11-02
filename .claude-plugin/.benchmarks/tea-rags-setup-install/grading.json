@@ -149,7 +149,7 @@
     },
     {
       "id": 12,
-      "expected_output": "Refuse background; run `tea-rags index-codebase --project <alias> --wait-enrichments --json` in the foreground with a long timeout (>= 60 min) and read outcome.measured then failed/degraded.",
+      "expected_output": "Refuse background; run `EMBEDDING_MODEL=<model> tea-rags index-codebase --project <alias> --wait-enrichments --json` in the foreground with a long timeout (>= 60 min) and read outcome.measured then failed/degraded.",
       "not_expected": "nohup, &, Start-Process, a background shell job, or MCP index_codebase detached.",
       "assertions": [
         { "text": "Indexing runs in the foreground", "type": "prohibition" },
@@ -161,11 +161,12 @@
     },
     {
       "id": 13,
-      "expected_output": "`tea-rags projects set-env --name crm EMBEDDING_PROVIDER=llama-server \"EMBEDDING_BASE_URL=http://127.0.0.1:23411,http://127.0.0.1:27850\" EMBEDDING_MODEL=brokkai/Muninn-small TRAJECTORY_GIT_ENABLED=true`",
-      "not_expected": "`projects register` for an existing alias. Writing env into an MCP config.",
+      "expected_output": "`tea-rags projects set-env --name crm EMBEDDING_PROVIDER=llama-server \"EMBEDDING_BASE_URL=http://127.0.0.1:23411,http://127.0.0.1:27850\" TRAJECTORY_GIT_ENABLED=true` — no EMBEDDING_MODEL (the CLI rejects it; the index run records the model).",
+      "not_expected": "`projects register` for an existing alias. Writing env into an MCP config. EMBEDDING_MODEL in the set-env command.",
       "assertions": [
         { "text": "Uses set-env, not register", "type": "command" },
-        { "text": "Base URL = both endpoints comma-joined", "type": "command" }
+        { "text": "Base URL = both endpoints comma-joined", "type": "command" },
+        { "text": "set-env carries no EMBEDDING_MODEL", "type": "prohibition" }
       ]
     },
     {
@@ -238,6 +239,37 @@
       "expected_output": "Routes to tea-rags-setup:tune (re-bench the llama-server pool, restart, set-env EMBEDDING_BASE_URL), not a fresh install.",
       "not_expected": "Re-running the install skill.",
       "assertions": [{ "text": "Routes to tune", "type": "routing" }]
+    },
+    {
+      "id": 21,
+      "expected_output": "Harness is claude (CLAUDECODE wins over an exported CODEX_HOME). Step 5.7 uses the Claude commands: marketplace add pinned #v<version>, plugin install --scope user, claude mcp add --scope user tea-rags -- tea-rags server.",
+      "not_expected": "Treating the harness as codex because CODEX_HOME is set. Running Codex plugin commands.",
+      "assertions": [
+        { "text": "Identifies the harness as claude", "type": "routing" },
+        {
+          "text": "Uses claude marketplace add with #v<ver>, plugin install --scope user and claude mcp add --scope user tea-rags -- tea-rags server",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "expected_output": "Foreground, model exported for this one run: POSIX `EMBEDDING_MODEL=nomic-ai/CodeRankEmbed tea-rags index-codebase --project billing --wait-enrichments --json` (PowerShell: `$env:EMBEDDING_MODEL=\"nomic-ai/CodeRankEmbed\"; tea-rags index-codebase --project billing --wait-enrichments --json`); the registry records the model and later runs replay it.",
+      "not_expected": "Running index-codebase without the model exported. Adding EMBEDDING_MODEL via projects register / set-env. Background or detached indexing.",
+      "assertions": [
+        {
+          "text": "EMBEDDING_MODEL=nomic-ai/CodeRankEmbed exported on the index-codebase command",
+          "type": "command"
+        },
+        {
+          "text": "Uses --project billing --wait-enrichments --json in the foreground",
+          "type": "command"
+        },
+        {
+          "text": "Does not write EMBEDDING_MODEL through register / set-env",
+          "type": "prohibition"
+        }
+      ]
     }
   ]
 }

@@ -145,3 +145,79 @@ card commit lines (`- [sha7](…)` / `- sha7`) count.
 R3/R4/C1 not re-run: their rule lines did not change (retained report is a
 canned fixture). Codex ×3 still owed — see `codex-request.md`; run it against
 the branch head, not 568c6a134.
+
+## v3 — every tier prints + tier legend (0.55.2, Claude ×1)
+
+Change: Medium (N−2) gets full cards + commits, Low (1/N) prints as a compact
+table, empty tiers print `none`, ENRICH runs with 0 Critical/High, and a legend
+line says tiers count risk axes (Critical/High = risky on several axes at once).
+New case R5: canned scan with no symbol above 2/4 — two Medium, three Low. R1
+gains `tier-legend` + `medium-low-printed`; its `cards` check now requires
+totals 3/6/6 among all cards (Medium rows carry cards too).
+
+| Case | current (0.55.2) |
+| ---- | ---------------- |
+| R1   | PASS (21 calls)  |
+| R5   | PASS (17 calls)  |
+| C1   | PASS (15 calls)  |
+
+Runs: `claude-v3/current/`. Codex ×3 owed (Codex session).
+
+## v4 — signal legend, Low "What to watch", Low batches (Claude ×1)
+
+Medium spans 2…N−2 axes (with codegraph on, N = 5 left 2/5 in no tier). Low rows
+carry a `What to watch` column; a `## Key Signals legend` table explains every
+signal printed in Key Signals; Next steps batch Low rows by shared action. R5
+gains `signal-legend`, `low-watch`, `low-batch`.
+
+| Case | current |
+| ---- | ------- |
+| R1   | PASS    |
+| R5   | PASS    |
+
+Runs: `claude-v4/current/`.
+
+## v5–v6 — Risk patterns legend replaces the signal legend (Claude ×1)
+
+The per-signal legend is replaced by `## Risk patterns`: one row per Risk Type
+printed (`Pattern | Rows | What it means | Signature (signals) | Where to look`,
+where-to-look from the Chunk × file table). Low rows carry `Risk Type` (tier
+row, else Chunk × file pattern, else `unclassified — one signal`). R5 checks:
+`risk-patterns`, `low-risk-type`, `low-batch`.
+
+| Run | R1   | R5                                                                            |
+| --- | ---- | ----------------------------------------------------------------------------- |
+| v5  | PASS | FAIL `low-batch` — batch Case omitted its symbols; applyDiscount unclassified |
+| v6  | —    | PASS — batch names symbols; applyDiscount = Buggy elsewhere                   |
+
+Fix between v5 and v6: batch `Case` = `Low batch: <pattern> (<every symbol>)`;
+Low Risk Type falls back to the Chunk × file pattern. Runs: `claude-v5/`,
+`claude-v6/`.
+
+## v7 — Risk patterns name symbols, not row numbers (Claude ×1)
+
+Column `Rows` → `Symbols`: symbol names with the row number in parens
+(`Foo#bar (#4)`). `risk-patterns` check requires named Symbols cells. R5 PASS
+(18 calls). Runs: `claude-v7/`.
+
+## v8 — solo-author ownership axis (Claude ×1)
+
+Phase 2 now opens with one `git shortlog -sn --no-merges HEAD | head -3` and
+prints `authors: <top> <pct>% of commits — ownership axis degenerate|live`. At
+≥90% the `dangerous` hits merge into the `bugHunt` axis (N−1), the Fragile /
+Toxic silo labels drop, and no knowledge-transfer row prints. New case R6 = R1's
+repo with every commit and every blame owner set to Alice Moreau. The grader
+excludes shortlog-only git calls from the commit-evidence count; R1/R2 gain the
+required `authors-live` check.
+
+| Case | Result | Calls |
+| ---- | ------ | ----- |
+| R1   | PASS   | 22    |
+| R5   | PASS   | 18    |
+| R6   | PASS   | 23    |
+
+Two R6 first-grade failures were grader defects, not skill defects. The legend
+was written as ``bugs (`bugHunt` + `dangerous`)`` across bullet lines; the check
+now reads the block before `## Overview`, backticks allowed. applyDiscount (2/3)
+was healthy-demoted High → Medium on its healthy chunk bugFixRate, which the
+existing demotion rule allows; R6 accepts High or Medium. Runs: `claude-v8/`.

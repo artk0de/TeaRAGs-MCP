@@ -1,0 +1,15 @@
+{
+  "old_gate": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-prime-startup/.tmp/startup-round2-gate",
+  "old_seal_sha256": "050e52cb6bad7915d41cc9aa75d681ccd1e9c172977917c0934169e890b01b22",
+  "old_metadata_proofs_retained": 4,
+  "old_models_served": 0,
+  "actual_correction": "ONLY add native --allowedTools with exact17 readonly names; permissionMode dontAsk/controller guards unchanged",
+  "claude_native_sha256": "86d28c050d38e72ed082376ebd281b8d6c48a400b86969acd5b435dd0a1e617a",
+  "matches_early_reviewed_file": true,
+  "source_commit": "cafc52ecc7503b60871cd57a7a48ae49852f0455",
+  "build_reused_no_rebuild": true,
+  "cases_sha256": "e9365953518b3137c4895b6443d6b3f0e4925ff79665cc712d642349c5003afe",
+  "grading_sha256": "dd52b2dd3fe2a133bec6e9852c689e8d3f78c516e786a6fe935b542866df7a01",
+  "historical_sha256": "60c4b2b68882563b43bfdea0388cb4f8934aa93ab2343de896929c4d4b2f99b4",
+  "live_hold": "Main build done; await early corrected cohort full quiet release and independent minimal-diff review before active4readiness/models. Root changed early target8\u219212; follow final release, never infer from time."
+}

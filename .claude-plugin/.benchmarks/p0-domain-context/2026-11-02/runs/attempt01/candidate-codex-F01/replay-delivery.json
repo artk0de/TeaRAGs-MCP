@@ -1,0 +1,6 @@
+{
+  "status": "EXERCISED_UNGRADED",
+  "audit_count": 1,
+  "audit_sha256": "791a1a52f656876b51f3e4ec292b120589062a136f743edd19cdece28154ec30",
+  "limits": "Eligibility only; answer quality requires separate controller grading. Unexercised attempts remain failures."
+}

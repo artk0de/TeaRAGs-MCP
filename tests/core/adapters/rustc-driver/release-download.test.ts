@@ -133,6 +133,29 @@ describe("downloadRustcDriverRelease", () => {
     expect(discovery).toMatchObject({ kind: "binary", tier: "cache", path: binary });
   });
 
+  it("removes the downloaded archive when it verifies but lacks a binary, so the next run re-downloads", async () => {
+    const partial = join(dir, "partial");
+    mkdirSync(partial, { recursive: true });
+    writeFileSync(join(partial, "tea-rags-rustc-driver"), "driver bytes");
+    const partialPath = join(dir, `partial-${ASSET}`);
+    execFileSync("tar", ["-czf", partialPath, "-C", partial, "tea-rags-rustc-driver"]);
+    const incomplete = readFileSync(partialPath);
+    const body: RustcDriverReleaseManifest = {
+      pin: RUSTC_DRIVER_TOOLCHAIN_PIN,
+      sourceHash: SOURCE_HASH,
+      assets: { "linux-x64": { asset: ASSET, sha256: createHash("sha256").update(incomplete).digest("hex") } },
+    };
+    const fetch = fakeFetch({
+      [`${base}/rustc-driver-manifest.json`]: JSON.stringify(body),
+      [`${base}/${ASSET}`]: incomplete,
+    });
+
+    await expect(
+      downloadRustcDriverRelease({ version: "1.2.3", dataDir, platform: "linux", arch: "x64" }, { fetch, run }),
+    ).rejects.toThrow(/lacks/);
+    expect(existsSync(join(dataDir, "rustc-driver", "downloads", ASSET))).toBe(false);
+  });
+
   it("refuses a platform the release does not build", async () => {
     await expect(
       downloadRustcDriverRelease(

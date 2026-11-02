@@ -1,0 +1,50 @@
+[
+  {
+    "key": "baseline-codex-C01",
+    "generation": "prepared-05",
+    "public_final_answer": "Project alias: unavailable in the provided context.\nCollection: unavailable in the provided context.\n\nThe prime message only identifies the working directory and says Qdrant warm-up is pending.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "baseline-claude-C01",
+    "generation": "prepared-08",
+    "public_final_answer": "Neither is available in the context I have.\n\n- **Project alias:** The tea-rags prime for `/Users/Shared/nav-ab/p0-context-eval-ng1ni` has no digest and no `workingTree.project` row, so there's no alias. It only says \"Qdrant warm-up pending \u2014 index queries will be available after MCP server attaches.\"\n- **Collection:** No collection name appears anywhere in the session context.\n\nThe git status shows branch `main`, clean, with the latest commit `acdcb95`. That doesn't identify an index.\n\nI didn't call `list_projects` or `get_index_status`, because you asked me to answer from the available context. If you want me to query them once the MCP server has attached, tell me and I will.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "baseline-claude-C02",
+    "generation": "prepared-08",
+    "public_final_answer": "Yes. `vendor_exports` in `config/storage.yml:10-14` is the one to copy.\n\n**`vendor_exports` (lines 10-14)**\n- It is a standalone S3 service. It doesn't inherit from anything.\n- It has its own bucket, `VENDOR_EXPORT_BUCKET`.\n- It has its own credentials, `VENDOR_EXPORT_ACCESS_KEY` and `VENDOR_EXPORT_SECRET_KEY`.\n- None of those values come from the `APP_STORAGE_*` variables. The bucket and credentials are fully separate.\n\n**Relationship to the default configuration**\n- `default` (lines 1-5) is a YAML anchor (`&default`). It holds the S3 service, bucket and keys from `APP_STORAGE_BUCKET`, `APP_STORAGE_ACCESS_KEY` and `APP_STORAGE_SECRET_KEY`.\n- `documents` (lines 7-8) is not purpose-scoped. It merges the anchor with `<<: *default`, so it uses the same bucket and credentials as `default`. It is a second name for the same storage, not a separate bucket.\n- `vendor_exports` doesn't use `<<: *default`. Because of that, the vendor-facing bucket and its keys are isolated from the app's main storage. A credential scoped to the vendor bucket can't reach internal documents.\n\n**Copying it for a new vendor-facing bucket**\n- Add a new top-level entry with `service: S3` and the same four keys.\n- Give it new env vars, such as `VENDOR_<NAME>_BUCKET`, `_ACCESS_KEY` and `_SECRET_KEY`.\n- Don't merge `*default`.\n\nI only read `config/storage.yml`. I didn't check where `vendor_exports` is referenced, such as `config.active_storage.service` or `has_one_attached ... service:`. Those references would show how it's wired up.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "baseline-codex-C02",
+    "generation": "prepared-08",
+    "public_final_answer": "Yes. [`vendor_exports` in config/storage.yml](/Users/Shared/nav-ab/p0-context-eval-ng1ni/config/storage.yml:10) is a purpose-scoped S3 service with its own bucket and credentials:\n\n- `VENDOR_EXPORT_BUCKET`\n- `VENDOR_EXPORT_ACCESS_KEY`\n- `VENDOR_EXPORT_SECRET_KEY`\n\nIt\u2019s a suitable pattern for a dedicated vendor-facing bucket.\n\nThe [`default` configuration](/Users/Shared/nav-ab/p0-context-eval-ng1ni/config/storage.yml:1) uses `APP_STORAGE_*` variables and defines the YAML anchor `&default`. `documents` inherits that configuration through `<<: *default`. By contrast, `vendor_exports` defines its settings independently, without inheriting the default bucket or credentials.\n\nNo files were edited.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "candidate-codex-C01",
+    "generation": "prepared-08",
+    "public_final_answer": "Project alias: `p0-context-eval-ng1ni`  \nCollection: `code_540fd38f`\n\nBoth are available in the provided index digest.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "candidate-claude-C01",
+    "generation": "prepared-08",
+    "public_final_answer": "Project alias: `p0-context-eval-ng1ni`\nCollection: `code_540fd38f`\n\nBoth come from the tea-rags digest in the session-start context. I didn't call any tools to check them against the live index, and I edited no files.\n\nThe startup hook also warned that the tea-rags build is older than its source. The build is dated 2026-11-02T13:08:14Z and the last source commit 2026-11-02T15:48:07Z. That warning is about the tool build, not the alias or collection.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "candidate-claude-C02",
+    "generation": "prepared-08",
+    "public_final_answer": "Yes. `vendor_exports` in `config/storage.yml:10-14` is the one to copy.\n\n**`vendor_exports` (lines 10\u201314)**\n- It sets `service: S3` directly. It doesn't inherit from `default`.\n- Its bucket is `VENDOR_EXPORT_BUCKET`.\n- Its credentials are `VENDOR_EXPORT_ACCESS_KEY` and `VENDOR_EXPORT_SECRET_KEY`.\n- Every value is its own env var, so it shares no bucket or credentials with the default. That is the isolation a vendor-facing bucket needs.\n\n**Relationship to the default config**\n- `default` (lines 1\u20135) is a YAML anchor, `&default`. It defines the S3 service, with `APP_STORAGE_BUCKET`, `APP_STORAGE_ACCESS_KEY` and `APP_STORAGE_SECRET_KEY`.\n- `documents` (lines 7\u20138) is not separate. It merges `*default` and adds nothing, so it uses the same bucket and credentials as the default.\n- `vendor_exports` doesn't reference the anchor at all. It only repeats the same shape: `service`, `bucket`, `access_key_id` and `secret_access_key`.\n\n**Copying it for a new vendor bucket**\n- Copy the `vendor_exports` block, not `documents`. Merging `*default` would put the new service in the app's main bucket and credentials.\n- Give the copy its own env var names, for example `VENDOR_X_BUCKET`, `VENDOR_X_ACCESS_KEY` and `VENDOR_X_SECRET_KEY`.\n- Use `ENV.fetch` for each, as the existing blocks do. A missing variable then fails at boot instead of silently pointing somewhere else.\n- I only read `storage.yml`, so I haven't checked where `vendor_exports` is selected, for example in `config.active_storage.service` or a model's `service:` option. I also haven't checked how the env vars are provisioned.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  },
+  {
+    "key": "candidate-codex-C02",
+    "generation": "prepared-08",
+    "public_final_answer": "Yes. [`vendor_exports` in config/storage.yml](/Users/Shared/nav-ab/p0-context-eval-ng1ni/config/storage.yml:10) provides the pattern: an S3 service with its own bucket and credentials, supplied through `VENDOR_EXPORT_BUCKET`, `VENDOR_EXPORT_ACCESS_KEY`, and `VENDOR_EXPORT_SECRET_KEY`.\n\nThe [`default` configuration](/Users/Shared/nav-ab/p0-context-eval-ng1ni/config/storage.yml:1) uses the `APP_STORAGE_*` variables and defines the YAML anchor `&default`. `documents` inherits that configuration through `<<: *default`.\n\n`vendor_exports` declares its settings independently, so it shares the S3 service type but does not inherit the default bucket or credentials. A dedicated vendor-facing service could copy this structure with its own environment variables.\n\nNo files were edited.",
+    "quality": "UNGRADED_ROOT_ONLY"
+  }
+]

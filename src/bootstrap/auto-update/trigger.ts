@@ -17,7 +17,7 @@ import {
   type CollectionEntry,
   type IndexFreshnessCheck,
   type IndexFreshnessVerdict,
-} from "../../core/api/entry-points/auto-update/index.js";
+} from "../../core/api/entry-points/auto-update/trigger.js";
 
 export interface AutoUpdateTriggerDeps {
   registry: { get: (collectionName: string) => CollectionEntry | null };

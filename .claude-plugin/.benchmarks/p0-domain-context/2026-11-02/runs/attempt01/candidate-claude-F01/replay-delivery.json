@@ -1,0 +1,6 @@
+{
+  "status": "FAIL_NOT_EXERCISED",
+  "audit_count": 0,
+  "audit_sha256": null,
+  "limits": "Eligibility only; answer quality requires separate controller grading. Unexercised attempts remain failures."
+}

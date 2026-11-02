@@ -1,0 +1,4 @@
+
+ RUN  v5.0.3 /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration
+
+ ✓ |isolated| tests/cli/prime/run-prime-registry-qdrant.test.ts (5 tests) 125ms

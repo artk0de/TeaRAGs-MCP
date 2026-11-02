@@ -1,0 +1,51 @@
+{
+  "status": "VERIFIED_INTEGRATION_TREE",
+  "source_commit": "db0f4a72dc5c866451279aa9a5e26f7b75d3e7d4",
+  "cherry_pick": "99cfc134f",
+  "main_base": "953177d213ead17a7cce850ab65e69663e4e4462",
+  "source_file_sha256": {
+    "src/cli/prime/qdrant-discovery.ts": "c91ab843ef4879bfbfafd5a00c49126de9b104b89aba2b245c5bccc1e3982ec8",
+    "tests/cli/prime/qdrant-discovery.test.ts": "b5ae9c20bc65447998b236dbbcbaa4fa861193bf4df2b092ac1e9ed7cc1fbeb2",
+    "tests/cli/prime/run-prime-registry-qdrant.test.ts": "1e3e96b930da5e46b33708c02b4ace3ea19f144dc5237a9dfcf34c5a2993a1dc"
+  },
+  "three_patch_files_exact_original": true,
+  "excluded_startup_commit": "cafc52ecc",
+  "excluded_startup_is_ancestor": false,
+  "historical_public_evidence_unchanged": true,
+  "new_model_runs_for_integration": 0,
+  "limits": [
+    "Existing firstfix n1 both-harness proof is narrow sentinel addressing, not a speed/global-plugin claim.",
+    "No full GruntWorx run.",
+    "No mutation of other worktrees or user .tool-versions / TeaRAGs.code-workspace."
+  ],
+  "affected_checks": {
+    "passed": 21,
+    "files": 3,
+    "execution_groups": [
+      17,
+      4
+    ],
+    "maxWorkers": 1,
+    "retry": 0,
+    "fresh_standard_config_attempt": "interrupted incomplete beyond60s; no test verdict",
+    "scoped_config": "same setup, HEAD guard, globals, clearMocksfalse, forks/isolation/30s; no full-corpus module classification/projects; fsModuleCachefalse",
+    "limits": "Not full suite. No diagnosed cause for incomplete default run. Only missing ping4 after17, no repeated17."
+  },
+  "review_changes": {
+    "scope": "three direct patch files; imported benchmark bundle separately root-reviewed",
+    "sections": [
+      "naming",
+      "incompleteChange",
+      "cohesion",
+      "architecture",
+      "norms"
+    ],
+    "introduced": 0,
+    "partial": false,
+    "detectors_built": true
+  },
+  "pending_operations": [
+    "Safe main fast-forward; actual merged commit recorded by git history/final proof.",
+    "Main build/incremental index deferred until active domain actors inactive."
+  ]
+}

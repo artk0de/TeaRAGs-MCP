@@ -1,0 +1,70 @@
+{
+  "alias": "p0-domain-context-ng1ni",
+  "fixture": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-context/fixture",
+  "git_commit": "a7d19a8d29743aec4ab19169417d5271136da421",
+  "wall_seconds": 32.907998791,
+  "cli_reported_seconds": 24.6,
+  "index_attempts": 1,
+  "force": false,
+  "worktree_seeded": false,
+  "status": {
+    "isIndexed": true,
+    "status": "indexed",
+    "collectionName": "code_b9a700fb",
+    "chunksCount": 6,
+    "filesCount": 3,
+    "embeddingModel": "nomic-ai/CodeRankEmbed",
+    "qdrantUrl": "http://127.0.0.1:50531",
+    "sparseVersion": 1,
+    "lastUpdated": "2026-11-02T15:22:11.622Z",
+    "codegraphResolve": {
+      "inProjectEdgeRecall": null,
+      "coveredRecall": null,
+      "callsAttempted": 3,
+      "callsResolved": 0,
+      "callsExternalSkipped": 0,
+      "callsUnresolvable": 0,
+      "callsNoInProjectDef": 3,
+      "callsCoreAmbiguous": 0,
+      "ambiguousFanout": 0,
+      "callsUnnarrowedTemplate": 0
+    },
+    "enrichment": {
+      "git": {
+        "file": {
+          "completedAt": "2026-11-02T15:22:15.349Z",
+          "durationMs": 0,
+          "matchedFiles": 3,
+          "missedFiles": 0,
+          "ignoredFiles": 0,
+          "status": "healthy"
+        },
+        "chunk": {
+          "completedAt": "2026-11-02T15:22:15.730Z",
+          "durationMs": 436,
+          "status": "healthy"
+        }
+      },
+      "codegraph.symbols": {
+        "file": {
+          "completedAt": "2026-11-02T15:22:15.418Z",
+          "durationMs": 120,
+          "matchedFiles": 3,
+          "missedFiles": 0,
+          "ignoredFiles": 0,
+          "status": "healthy"
+        },
+        "chunk": {
+          "completedAt": "2026-11-02T15:22:15.789Z",
+          "durationMs": 64,
+          "status": "healthy"
+        }
+      }
+    }
+  },
+  "limits": [
+    "This is index/preparation metadata, not a behavioral baseline/candidate result.",
+    "Allocator/index-size reporting differed between CLI and later status; 3 files/6 chunks define the scoped corpus.",
+    "All four git/codegraph enrichments were healthy before quiet-window release."
+  ]
+}

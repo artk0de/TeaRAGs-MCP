@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/reranker.js";
+import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../contracts/types/reranker.js";
 
 /**
  * Surface code areas where bugs are likely hiding.
@@ -8,8 +8,10 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  * the files that receive a bug-fix commit in (T-90d, T]. Two corpora (a
  * 205-author Rails monolith and this repo), label windows of 90 and 180 days.
  * Commit churn and bug-fix history carry most of the signal; volatility and
- * relative churn were redundant with churn and were dropped. Limit: the
- * backtest is file-level while the preset runs at chunk level (alpha-blend).
+ * relative churn were redundant with churn and were dropped. The backtest is
+ * file-level, so the preset ranks at file level by default
+ * (`signalLevel: "file"`, bd tea-rags-mcp-9z8ae); an explicit `level: "chunk"`
+ * still overrides.
  *
  * Best used with queries describing symptoms or problem areas:
  *   "error handling in payment flow", "race condition", "null pointer".
@@ -21,6 +23,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
 export class BugHuntPreset implements RerankPreset {
   readonly name = "bugHunt";
   readonly filter = { presets: "production" } as const;
+  readonly signalLevel: SignalLevel = "file";
   readonly description =
     "Find potential bug hiding spots: commit churn, bug fix history, change density, recency and burst activity";
   readonly tools = ["semantic_search", "hybrid_search", "search_code", "find_similar", "rank_chunks", "trace_path"];

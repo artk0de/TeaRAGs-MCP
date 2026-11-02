@@ -1,0 +1,7 @@
+{
+  "key": "candidate-claude-C01",
+  "generation": "prepared-08",
+  "public_tool_calls_results_only": [],
+  "public_final_answer": "Project alias: `p0-context-eval-ng1ni`\nCollection: `code_540fd38f`\n\nBoth come from the tea-rags digest in the session-start context. I didn't call any tools to check them against the live index, and I edited no files.\n\nThe startup hook also warned that the tea-rags build is older than its source. The build is dated 2026-11-02T13:08:14Z and the last source commit 2026-11-02T15:48:07Z. That warning is about the tool build, not the alias or collection.",
+  "private_reasoning_extracted": false
+}

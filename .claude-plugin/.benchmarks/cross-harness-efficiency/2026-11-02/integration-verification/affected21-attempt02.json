@@ -1,0 +1,29 @@
+{
+  "status": "FINISHED",
+  "exit_code": 0,
+  "wall_seconds": 11.16139975,
+  "command": [
+    "/Users/artk0re/.asdf/installs/nodejs/24.15.0/bin/node",
+    "/Users/artk0re/Dev/Tools/tea-rags-mcp/node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    ".tmp/p0-sentinel-integration/vitest.affected.config.ts",
+    "--maxWorkers=1"
+  ],
+  "preserves": [
+    "same tests/source",
+    "vitest.setup",
+    "HEADguard",
+    "globals",
+    "clearMocksfalse",
+    "forks",
+    "isolate",
+    "30s budgets",
+    "retry0"
+  ],
+  "changes_from_standard_config": [
+    "exact2fileinclude,no fullcorpusmoduleclassification/projects",
+    "fsModuleCachefalse"
+  ],
+  "reason": "Prior defaultconfig run remained at RUN header beyond60s; cause unknown, failedattempt retained."
+}

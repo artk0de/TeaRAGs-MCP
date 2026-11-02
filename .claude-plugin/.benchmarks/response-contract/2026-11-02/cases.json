@@ -1,0 +1,12 @@
+{
+  "cases": [
+    {
+      "id": "C01",
+      "prompt": "Explain submitExport for an archived request, a missing document, a disconnected destination, a partner request above its item limit, a repeated replay key, and a valid new partner export. Which checks take priority, which storage is selected, and when is a new queue record inserted? Cite the relevant code. Do not edit files."
+    },
+    {
+      "id": "C02",
+      "prompt": "Give the complete source-to-remote field mapping exposed by buildCustomerPayload, including transformations and unsupported fields. State information that the included code does not establish, without guessing remote schema details. Cite the relevant code. Do not edit files."
+    }
+  ]
+}

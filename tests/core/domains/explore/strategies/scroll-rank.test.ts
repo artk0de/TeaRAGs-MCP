@@ -331,6 +331,33 @@ describe("ScrollRankStrategy", () => {
     expect(callCount).toBeGreaterThan(1);
   });
 
+  // bd tea-rags-mcp-xiogj: file-level scores tie inside a file and the ordered
+  // scroll returns a file's chunks side by side, so a chunk-sized window of big
+  // files deduped to a handful of files — live: dangerous limit 10 → 5 rows.
+  it("returns `limit` distinct files when every file holds far more chunks than the chunk window", async () => {
+    const files = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"];
+    const ordered = files.flatMap((relativePath, f) =>
+      Array.from({ length: 50 }, (_, i) => ({
+        id: `${f}-${i}`,
+        payload: { methodLines: 1000 - f * 100, relativePath },
+      })),
+    );
+    const qdrant = {
+      scrollOrdered: vi.fn(async (_c: string, _o: unknown, lim: number) => ordered.slice(0, lim)),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+
+    const results = await createStrategy(qdrant, undefined).execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "file",
+      limit: 3,
+      metaOnly: false,
+    });
+
+    expect(results.map((r) => r.payload?.relativePath)).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+  });
+
   it("preserves rankingOverlay from reranker in results", async () => {
     const mockOverlay = {
       preset: "decomposition",

@@ -1,0 +1,20 @@
+{
+  "helpers": {
+    "files": {
+      "repro/README.md": "34e49767d55eafcaccecec25e968a9ed72330e3f40df63244d2bd2f3ebbd829d",
+      "repro/replay_transform.py": "b1e98afc615e59e01ef7a0874ad56bca5fc7afd6e4e143e48732c9fc03b21854",
+      "repro/test_replay_transform.py": "e9daf778b1f20b4c2bd63636806f38152b662753960895cd37f07c88420ca0ff",
+      "repro/test_variant_plugins.py": "66edffdd505a62225f5f21336aecd420068c03f78c2410ba72f42fe6e54b0ba1",
+      "repro/variant_plugins.py": "6a8e2e518f7fbc577dea36b6a5ac775bde5246a82818643fb81d6e7cd53e4001"
+    },
+    "scope": "pure driver modules only, not injected actor context; bind these hashes into new-copy profile/proxy before GO",
+    "replay_api": "one ReplayTransform per actor; apply(actual_result, tool=actual_name, arguments=actual_arguments) returns result,audit",
+    "selector_api": "select_plugin(spec_dict, variant, harness); version+manifestSHA returned; explicit variants declared, legacy version read if absent",
+    "verification": "19 unit controls passed; RED01/RED02 retained; no live protocol/model/integration proof",
+    "behavior_gate": "OPEN"
+  },
+  "manifest_sha256": "130769be7467574a6ffab45962e3b020c70e5cb8c176efc36bfe3bc85f33df0b",
+  "candidate_version": "0.55.2",
+  "cases_grading_replay_and_packages_unchanged": true,
+  "tests_output": "...................\n----------------------------------------------------------------------\nRan 19 tests in 0.034s\n\nOK"
+}

@@ -3,6 +3,12 @@ import { mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlin
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  boundedUnixSocketPath,
+  ensureUnixSocketDir,
+  removeUnixSocketAlias,
+  type UnixSocketHost,
+} from "../../filesystem/unix-socket-path.js";
 import { isPidAlive } from "../../process-tree/pid-liveness.js";
 import { DaemonLock } from "../../qdrant/embedded/daemon-lock.js";
 import { attachDaemonRef, countLiveDaemonRefs, detachDaemonRef } from "../../qdrant/embedded/daemon-refs.js";
@@ -66,6 +72,39 @@ export function getBuildKey(fingerprint: string = getBuildFingerprint()): string
   return `b-${createHash("sha256").update(fingerprint).digest("hex").slice(0, 8)}`;
 }
 
+const DAEMON_SOCKET_FILE = "codegraph-daemon.sock";
+
+/**
+ * The daemon socket for the key dir `keyDir` (bd tea-rags-mcp-js1ie) — the one
+ * derivation the listening daemon and every connecting client share, through
+ * `daemonPathsForKeyDir`. Normally `<keyDir>/codegraph-daemon.sock`; past the
+ * platform's `sun_path` bound it moves under the shared per-user tmp alias of
+ * `boundedUnixSocketPath`, a symlink to `keyDir` that `ensureDaemonSocketDir`
+ * creates before `listen`, so `daemonPathsForKeyDir(dirname(socketPath))` —
+ * how clients map a socket back onto its daemon's pid and log — keeps
+ * addressing the key dir's files.
+ */
+export function daemonSocketPathForKeyDir(keyDir: string, host: UnixSocketHost = {}): string {
+  return boundedUnixSocketPath(keyDir, DAEMON_SOCKET_FILE, host);
+}
+
+/**
+ * Make the socket's parent directory exist before `listen` (bd
+ * tea-rags-mcp-js1ie): the key dir, or its tmp alias (re)pointed at the key
+ * dir. An alias another user owns is refused with a typed error (8tbaa).
+ */
+export function ensureDaemonSocketDir(paths: CodegraphDaemonPaths): void {
+  ensureUnixSocketDir(paths.buildDir, paths.socketPath);
+}
+
+/**
+ * Drop the key dir's tmp alias, if `paths` uses one — so it never dangles
+ * once the daemon is gone (5yhxq) or its key dir is swept.
+ */
+export function removeDaemonSocketAlias(paths: CodegraphDaemonPaths): void {
+  removeUnixSocketAlias(paths.buildDir, paths.socketPath);
+}
+
 /**
  * The lifecycle-file layout for ONE daemon whose files sit in `keyDir` — the
  * single place that knows the layout. `getDaemonPaths` (own build),
@@ -76,7 +115,7 @@ export function daemonPathsForKeyDir(keyDir: string): CodegraphDaemonPaths {
   return {
     storageDir: keyDir,
     buildDir: keyDir,
-    socketPath: join(keyDir, "codegraph-daemon.sock"),
+    socketPath: daemonSocketPathForKeyDir(keyDir),
     pidFile: join(keyDir, "codegraph-daemon.pid"),
     portFile: join(keyDir, "codegraph-daemon.port"),
     refsFile: join(keyDir, "codegraph-daemon.refs"),
@@ -363,6 +402,8 @@ function removeDeadKeyDir(status: DaemonKeyDirStatus): boolean {
   if (!lock) return false;
   try {
     rmSync(status.keyDir, { recursive: true, force: true });
+    // An alias socket dir under tmp (js1ie) would dangle once its key dir is gone.
+    removeDaemonSocketAlias(status.paths);
     return true;
   } catch {
     return false;

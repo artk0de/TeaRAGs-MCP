@@ -1,0 +1,88 @@
+{
+ "case": "R5",
+ "pass": false,
+ "checks": [
+  {
+   "check": "tier-legend",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "empty-tiers-printed",
+   "required": true,
+   "pass": true,
+   "detail": "crit='## Critical\\nnone\\n\\n' high='## High\\nnone\\n\\n'"
+  },
+  {
+   "check": "medium-cards",
+   "required": true,
+   "pass": true,
+   "detail": "totals={6: 2}"
+  },
+  {
+   "check": "medium-bodies-git",
+   "required": true,
+   "pass": true,
+   "detail": "fetched=['InvoiceCalculator#computeTotal', 'RetryQueue#constructor', 'RetryQueue#enqueue', 'RetryQueue#processBatch'] gits=1"
+  },
+  {
+   "check": "low-table",
+   "required": true,
+   "pass": true,
+   "detail": "low=601"
+  },
+  {
+   "check": "risk-patterns",
+   "required": true,
+   "pass": true,
+   "detail": "rows=4"
+  },
+  {
+   "check": "low-risk-type",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "low-batch",
+   "required": true,
+   "pass": false,
+   "detail": []
+  },
+  {
+   "check": "no-healthy-claim",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "next-steps",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  }
+ ],
+ "tool_calls": 19,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "Read",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "find_symbol",
+  "hybrid_search",
+  "hybrid_search",
+  "find_symbol",
+  "Bash",
+  "find_symbol"
+ ]
+}

@@ -1,0 +1,18 @@
+{
+  "summary.json": "1c66d74b1b0e359705480e789e78d65972eb3a1a92d3ef136af3e51479bd67f6",
+  "public-final-answers.json": "a85fc5eb5413ceb9518af01b208b90f61afb1b83d23d5d2206ce146aaeb17b6e",
+  "baseline-codex-C02-public-evidence.json": "1b6ee463a51d9b24f55df4a590022d44ccd88f7bad17278f6dbbfb2d1646928e",
+  "candidate-codex-C01-public-evidence.json": "10bcd7ab9838f7e057974745cd01e98ee6996e782fbb177c0d5e0f58aaace726",
+  "provenance.json": "1ecc8fe1478e1b4e6b7803f5b6bec1313b842c16c825cf4be23f93e35cabe5e7",
+  "candidate-claude-C01-public-evidence.json": "e4b43b34ebab9c10f10aaca8f74ba71478bdfa90975e853e23b229f1d8ec8e61",
+  "baseline-claude-C01-public-evidence.json": "57f73bb14eb277149cfe1c624f73897cb0898776e47af2e81cfc86e6ad065392",
+  "README.md": "f8ae0ddb34ac5f4d6a9e9505f7200a4a7517c6814f8bc719c2f0338a4ea8f65a",
+  "verdicts.json": "7c80de8e24f082a12ce5330b0935bf4657170a8f2bef35ea3e8a901b3c7293a8",
+  "baseline-claude-C02-public-evidence.json": "318b35e721596724969d3dcad8f4559d1f94544e4b4c7b475368480fba0b9814",
+  "manifest.json": "3fac8a342cd3cd247beb1ce50b3c8a6a38a6e7fb94e970a59014f9da9d0f2e62",
+  "candidate-claude-C02-public-evidence.json": "191776b7ec10d70ff849632e420d2e993b75403a8382701a6b77b2eb3aa99693",
+  "manifest-addendum.json": "0e5648137338af7589f0b3d7a3ddb24d1935a3b29a516c6123feaf404c6c1d9d",
+  "candidate-codex-C02-public-evidence.json": "e2820c4acd9f9a913765908bd618d7a684096b6949d6a6c0506e2ca471c758ae",
+  "provenance-manifest.json": "8139186dd8dffd27688ab78bdf7383b3930aaa38c45374c8efc8434d42492474",
+  "baseline-codex-C01-public-evidence.json": "590baec8b067efb3ca9c6d1d39f47e676cd64c1b2b44fef5639a3b3bc166a5f6"
+}

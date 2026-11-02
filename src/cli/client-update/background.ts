@@ -14,7 +14,7 @@
  */
 
 import type { IndexWorkerRecord } from "../index-progress/worker-registry.js";
-import type { HarnessPluginSyncReport } from "../plugin-sync/index.js";
+import type { HarnessPluginSyncReport, PluginSyncReport } from "../plugin-sync/index.js";
 import type { NpmReleaseTimeline } from "../update-check/registry-client.js";
 import { selectCanaryRelease } from "./canary.js";
 import { installExitCode, type UpdateInstallOutcome } from "./npm-install.js";
@@ -78,6 +78,7 @@ export async function runBackgroundClientUpdate(deps: BackgroundClientUpdateDeps
     log(`installing tea-rags ${current} → ${target}`);
     const install = await deps.install(target);
     if (install.kind !== "installed") {
+      if (install.kind === "failed" && install.output !== undefined) logInstallOutputTail(install.output, log);
       return failed(`npm install: ${describeInstallFailure(install)}`, Math.max(installExitCode(install), 1));
     }
 
@@ -92,9 +93,33 @@ export async function runBackgroundClientUpdate(deps: BackgroundClientUpdateDeps
   }
 }
 
+/** npm output tail kept in the log on a failed install — enough for the error, not the ERESOLVE flood. */
+const INSTALL_OUTPUT_TAIL_LINES = 20;
+
+function logInstallOutputTail(output: string, log: (message: string) => void): void {
+  const lines = output.split("\n").filter((line) => line.trim().length > 0);
+  const tail = lines.slice(-INSTALL_OUTPUT_TAIL_LINES);
+  log(`npm output (last ${tail.length} of ${lines.length} lines):`);
+  for (const line of tail) log(`  | ${line}`);
+}
+
+function describeSkippedHarness(reason: NonNullable<PluginSyncReport["skipped"]>): string {
+  switch (reason) {
+    case "cli-missing":
+      return "harness CLI not on PATH";
+    case "none-installed":
+      return "no tea-rags plugins installed";
+    case "dev-marketplace":
+      return "plugins come from a local dev marketplace";
+  }
+}
+
 function logPluginSync(report: HarnessPluginSyncReport, log: (message: string) => void): void {
   for (const { harness, report: r } of report.harnesses) {
-    if (r.skipped !== undefined) continue;
+    if (r.skipped !== undefined) {
+      log(`${harness}: skipped (${r.skipped}) — ${describeSkippedHarness(r.skipped)}`);
+      continue;
+    }
     if (r.repinned) log(`${harness}: marketplace pinned to ${r.repinned.to} (was ${r.repinned.from})`);
     if (r.repinDeferred) {
       log(

@@ -1,0 +1,329 @@
+{
+  "scope": "Existing three-file sentinel patch; imported benchmark assets are unchanged source, new/unindexed under main and are not assigned invented signals.",
+  "status": "PRE_EDIT_SIGNALS_ONLY_NOT_POST_EDIT_CORRECTNESS",
+  "results": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "bugHunt",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [],
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "hotspots",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [],
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "techDebt",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [],
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "dangerous",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [],
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "criticalPath",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [],
+            "level": "chunk",
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "decomposition",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+            },
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.\n↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": {
+              "columns": [
+                "id",
+                "score",
+                "payload.relativePath",
+                "payload.symbolId",
+                "payload.imports",
+                "payload.git.file.commitCount",
+                "payload.git.file.ageDays",
+                "payload.git.file.taskIds",
+                "payload.git.file.blameDominantAuthor",
+                "payload.git.file.blameDominantAuthorPct",
+                "payload.git.file.blameContributorCount",
+                "payload.git.chunk.commitCount",
+                "payload.git.chunk.ageDays",
+                "payload.git.chunk.taskIds",
+                "payload.git.chunk.blameDominantAuthor",
+                "payload.git.chunk.blameDominantAuthorPct",
+                "payload.git.chunk.blameContributorCount",
+                "rankingOverlay.preset",
+                "rankingOverlay.file.transitiveImpact.value",
+                "rankingOverlay.file.transitiveImpact.label",
+                "rankingOverlay.chunk.methodLines.value",
+                "rankingOverlay.chunk.methodLines.label",
+                "rankingOverlay.chunk.fanOut.value",
+                "rankingOverlay.chunk.fanOut.label",
+                "rankingOverlay.chunk.fanIn.value",
+                "rankingOverlay.chunk.fanIn.label",
+                "rankingOverlay.chunk.pageRank.value",
+                "rankingOverlay.chunk.pageRank.label",
+                "treeState"
+              ],
+              "rows": [
+                [
+                  "3ad07360-8fae-0fc0-fa9a-2a23cd67aa76",
+                  0.11,
+                  "src/cli/prime/qdrant-discovery.ts",
+                  "discoverQdrantUrl",
+                  3,
+                  1,
+                  174,
+                  [],
+                  "artk0de",
+                  100,
+                  1,
+                  1,
+                  174,
+                  [],
+                  "artk0de",
+                  100,
+                  1,
+                  "decomposition",
+                  5,
+                  "local",
+                  14,
+                  "small",
+                  1,
+                  "leaf",
+                  1,
+                  "typical",
+                  0.000041,
+                  "peripheral",
+                  "modified"
+                ],
+                [
+                  "e2de043f-01c8-73fb-9684-96af0e2683a8",
+                  0.037,
+                  "src/cli/prime/qdrant-discovery.ts",
+                  "getStoragePath",
+                  3,
+                  1,
+                  174,
+                  [],
+                  "artk0de",
+                  100,
+                  1,
+                  1,
+                  174,
+                  [],
+                  "artk0de",
+                  100,
+                  1,
+                  "decomposition",
+                  5,
+                  "local",
+                  6,
+                  "small",
+                  0,
+                  "leaf",
+                  1,
+                  "typical",
+                  0.000075,
+                  "peripheral",
+                  "modified"
+                ]
+              ]
+            },
+            "level": "chunk",
+            "presetFilterNotice": {
+              "preset": "decomposition",
+              "by": "coreLogic (chunkType, isTest, codegraph.symbols.file.skippedAs)",
+              "clearWith": "filter: {}"
+            },
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "preset": "godModule",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ 48 files not re-read yet → repeat this same call; it serves them once warm.",
+            "results": [
+              {
+                "id": "e598db84-af9d-643a-e13b-0b48f0b4d025",
+                "score": 0.063,
+                "payload": {
+                  "relativePath": "src/cli/prime/qdrant-discovery.ts",
+                  "imports": 3,
+                  "git": {
+                    "file": {
+                      "commitCount": 1,
+                      "ageDays": 174,
+                      "taskIds": [],
+                      "blameDominantAuthor": "artk0de",
+                      "blameDominantAuthorPct": 100,
+                      "blameContributorCount": 1
+                    }
+                  }
+                },
+                "rankingOverlay": {
+                  "preset": "godModule",
+                  "file": {
+                    "moduleLines": {
+                      "value": 42,
+                      "label": "small"
+                    },
+                    "moduleMethodCount": {
+                      "value": 2,
+                      "label": "typical"
+                    },
+                    "fanIn": {
+                      "value": 1,
+                      "label": "typical"
+                    },
+                    "fanOut": {
+                      "value": 0,
+                      "label": "minimal"
+                    },
+                    "transitiveImpact": {
+                      "value": 5,
+                      "label": "local"
+                    },
+                    "isHub": false
+                  }
+                },
+                "treeState": "modified"
+              }
+            ],
+            "level": "file",
+            "fieldsWarning": "fields: no result carried \"symbolId\"",
+            "workingTree": {
+              "tree": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration",
+              "project": "tea-rags",
+              "changedFiles": 48,
+              "pendingFiles": 48
+            }
+          }
+        }
+      }
+    }
+  ]
+}

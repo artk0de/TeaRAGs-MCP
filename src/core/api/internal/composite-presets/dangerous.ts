@@ -3,6 +3,7 @@ import {
   type CompositeRerankPreset,
   type OverlayMask,
   type ScoringWeights,
+  type SignalLevel,
 } from "../../../contracts/index.js";
 
 /**
@@ -19,6 +20,7 @@ import {
 export class DangerousCompositePreset implements CompositeRerankPreset {
   readonly name = "dangerous";
   readonly filter = { presets: "production" } as const;
+  readonly signalLevel: SignalLevel = "file";
   readonly description = "High-risk code: bug-prone, churning, recently active, single-owner, heavily depended on";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks", "trace_path"];
   readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;

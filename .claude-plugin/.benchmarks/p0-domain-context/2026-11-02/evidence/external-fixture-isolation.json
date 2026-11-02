@@ -1,0 +1,105 @@
+{
+  "prepared": {
+    "status": "PREPARED_UNINDEXED_NO_ACTORS",
+    "external_fixture": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+    "source_fixture": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-context/fixture",
+    "source_fixture_commit": "a7d19a8d29743aec4ab19169417d5271136da421",
+    "git_commit": "9baf43e3547260c94e0bd1b17cd093f03f479dc3",
+    "git_tree": "3faeea9004a7ebfcd8044b995bff3c7ce1bd3ca6",
+    "tracked_paths": [
+      "src/document-ingestion/status.ts",
+      "src/marketing/status.ts",
+      "src/refund-settlement/status.ts"
+    ],
+    "raw_source_hashes": {
+      "src/document-ingestion/status.ts": "01851ccc8df63c9eddbc3faefba506626c4f7cb551f9e7dcbd43fe27ee275db9",
+      "src/marketing/status.ts": "9834a88abb68b488c3f517246eab3e3d93562a12288279beb8dc316348df79c1",
+      "src/refund-settlement/status.ts": "7b2561154fb7283bdcdd8f407976f76b2dde10aa4b7abd15b0d1e1c580e4af34"
+    },
+    "raw_bytes_identical": true,
+    "external_ancestor_instruction_files": [],
+    "git_clean": true,
+    "old_setup_retained": "nested fixture/index remain unchanged and are no longer eligible for future actors",
+    "limitations": [
+      "Filesystem ancestor candidate scan, not live harness instruction-discovery proof.",
+      "Fresh actor HOME/config plus scoped roots remain runner controls.",
+      "External fixture has not been indexed yet."
+    ]
+  },
+  "ancestor_scan_before": [
+    {
+      "target": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-context/fixture",
+      "exists": true,
+      "ancestor_instruction_candidates": [
+        {
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/AGENTS.md",
+          "bytes": 1175,
+          "sha256": "a8cf408f1161bf97b3324d3e8dcdf1a1e11021ecff879a6557468f3da0fd8171"
+        },
+        {
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude/CLAUDE.md",
+          "bytes": 36406,
+          "sha256": "a7dd842d4950660ebbf785aa9abededd984402b297a768a99f1719e601b5be59"
+        },
+        {
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/CLAUDE.md",
+          "bytes": 36406,
+          "sha256": "a7dd842d4950660ebbf785aa9abededd984402b297a768a99f1719e601b5be59"
+        },
+        {
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/AGENTS.md",
+          "bytes": 1175,
+          "sha256": "a8cf408f1161bf97b3324d3e8dcdf1a1e11021ecff879a6557468f3da0fd8171"
+        },
+        {
+          "path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/CLAUDE.md",
+          "bytes": 36406,
+          "sha256": "a7dd842d4950660ebbf785aa9abededd984402b297a768a99f1719e601b5be59"
+        },
+        {
+          "path": "/Users/artk0re/.claude/CLAUDE.md",
+          "bytes": 21319,
+          "sha256": "aa241eb5606163e3a660dff87590f9a3e5329749896848b489097eda3199e5a2"
+        }
+      ],
+      "top_level_names": [
+        ".git",
+        "src"
+      ]
+    },
+    {
+      "target": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+      "exists": false,
+      "ancestor_instruction_candidates": []
+    }
+  ],
+  "new_index": {
+    "alias": "p0-domain-context-ng1ni-external",
+    "collection": "code_81a5e5c5",
+    "status": "indexed",
+    "files": 3,
+    "chunks": 6,
+    "exit_code": 0,
+    "wrapper_wall_seconds": 9.67135825,
+    "cli_reported_seconds": 8.1,
+    "embedding_model": "nomic-ai/CodeRankEmbed",
+    "git_enrichment": "healthy: file/chunk",
+    "codegraph_symbol_enrichment": "healthy: file/chunk",
+    "missed_files": 0,
+    "force": false,
+    "attempts": 1,
+    "evidence": "evidence/index-status-external.json",
+    "limitations": "Setup metadata only; no performance/semantic ranking or behavioral claim."
+  },
+  "history": {
+    "fixture": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.tmp/p0-domain-context/fixture",
+    "fixture_git_commit": "a7d19a8d29743aec4ab19169417d5271136da421",
+    "project": "p0-domain-context-ng1ni",
+    "collection": "code_b9a700fb",
+    "status": "UNUSED_ANCESTOR_INSTRUCTION_CANDIDATES",
+    "historical_index_retained": true,
+    "manifest_sha256": "130769be7467574a6ffab45962e3b020c70e5cb8c176efc36bfe3bc85f33df0b"
+  },
+  "current_manifest_sha256": "6050a621bf797e442ad761ee8117ec9a64ee76ab7e2b36fa38caa20490db66a7",
+  "no_actor_ran": true
+}

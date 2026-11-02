@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { LlamaServerBinaryMissingError } from "../../../../../src/core/adapters/llama-server/install/errors.js";
 import { downloadLlamaServer } from "../../../../../src/core/adapters/llama-server/install/install.js";
 
 const execFileAsync = promisify(execFile);
@@ -116,5 +117,21 @@ describe("downloadLlamaServer", () => {
       downloadLlamaServer({ dataDir, platform: "darwin", arch: "arm64", backend: "metal" }, { fetch, run: emptyRun }),
     ).rejects.toThrow(/llama-server/);
     expect(existsSync(join(dataDir, "llama.cpp", "b12032-metal"))).toBe(false);
+  });
+
+  it("an archive without llama-server fails as a typed error carrying a hint", async () => {
+    const emptyRun = async (cmd: string, args: string[]): Promise<void> => {
+      await run(cmd, args);
+      rmSync(join(args[args.indexOf("-C") + 1], "llama-b12032", "llama-server"), { force: true });
+    };
+
+    const failure = await downloadLlamaServer(
+      { dataDir, platform: "darwin", arch: "arm64", backend: "metal" },
+      { fetch, run: emptyRun },
+    ).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(LlamaServerBinaryMissingError);
+    expect((failure as LlamaServerBinaryMissingError).code).toBe("INFRA_LLAMA_SERVER_BINARY_MISSING");
+    expect((failure as LlamaServerBinaryMissingError).hint).not.toBe("");
   });
 });

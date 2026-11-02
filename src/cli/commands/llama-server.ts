@@ -23,6 +23,7 @@ import {
   readGgufContextLength,
   resolveOllamaRegistryGguf,
   selectEmbeddingModelForLanguages,
+  TeaRagsError,
   type EmbeddingModelCatalogEntry,
   type OllamaRegistryGgufSource,
 } from "../../core/api/public/index.js";
@@ -261,7 +262,13 @@ export const llamaServerCommand: CommandModule = {
                 "Destination directory (default: ~/.tea-rags/models for catalog ids, ~/.tea-rags/models/gguf for Ollama references; honours TEA_RAGS_DATA_DIR)",
             }),
         async (argv) => {
-          await runLlamaServerFetchModel({ model: argv.model, dir: argv.dir }, productionFetchModelDeps());
+          try {
+            await runLlamaServerFetchModel({ model: argv.model, dir: argv.dir }, productionFetchModelDeps());
+          } catch (err) {
+            if (!(err instanceof TeaRagsError)) throw err;
+            process.stderr.write(`llama-server fetch-model: ${err.message}\n${err.hint}\n`);
+            process.exitCode = 1;
+          }
         },
       )
       .command(
@@ -316,21 +323,27 @@ export const llamaServerCommand: CommandModule = {
               describe: "Also print start-at-boot registration",
             }),
         async (argv) => {
-          await runLlamaServerCommand(
-            {
-              bin: argv.bin,
-              os: argv.os,
-              device: argv.device,
-              host: argv.host,
-              port: argv.port,
-              slots: argv.slots,
-              model: argv.model,
-              advertise: argv.advertise,
-              apiKey: argv.apiKey,
-              autostart: argv.autostart,
-            },
-            productionCommandDeps(),
-          );
+          try {
+            await runLlamaServerCommand(
+              {
+                bin: argv.bin,
+                os: argv.os,
+                device: argv.device,
+                host: argv.host,
+                port: argv.port,
+                slots: argv.slots,
+                model: argv.model,
+                advertise: argv.advertise,
+                apiKey: argv.apiKey,
+                autostart: argv.autostart,
+              },
+              productionCommandDeps(),
+            );
+          } catch (err) {
+            if (!(err instanceof TeaRagsError)) throw err;
+            process.stderr.write(`llama-server command: ${err.message}\n${err.hint}\n`);
+            process.exitCode = 1;
+          }
         },
       )
       .command(
@@ -343,7 +356,13 @@ export const llamaServerCommand: CommandModule = {
             describe: "GPU build: auto probes nvidia-smi, rocminfo, vulkaninfo; macOS arm64 is always metal",
           }),
         async (argv) => {
-          await runLlamaServerInstall({ backend: argv.backend }, productionLlamaServerInstallDeps());
+          try {
+            await runLlamaServerInstall({ backend: argv.backend }, productionLlamaServerInstallDeps());
+          } catch (err) {
+            if (!(err instanceof TeaRagsError)) throw err;
+            process.stderr.write(`llama-server install: ${err.message}\n${err.hint}\n`);
+            process.exitCode = 1;
+          }
         },
       )
       .command(

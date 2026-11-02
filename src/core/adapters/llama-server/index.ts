@@ -5,6 +5,7 @@
 
 export { llamaCppInstallRoot, resolveLlamaServerBinary } from "./binary.js";
 export { detectLlamaServerBackend } from "./install/gpu-backend.js";
+export { LlamaServerBinaryMissingError } from "./install/errors.js";
 export { downloadLlamaServer, type LlamaServerInstallOptions } from "./install/install.js";
 export {
   LLAMA_CPP_BUILD,

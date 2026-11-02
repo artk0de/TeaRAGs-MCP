@@ -69,7 +69,8 @@ Inline param hints short; full semantics here.
 - 'file' = rank files as units — tech debt, ownership. Result carries file-level payload only
   (relativePath, language, imports, git.file, codegraph.symbols.file, …): no chunk fields, no content.
   Outline a file via find_symbol(relativePath).
-- Unset → preset signalLevel. Explicit value overrides preset.
+- Unset → preset signalLevel (`bugHunt`, `dangerous`, `ownership`, `proven`… = file, so rows are files).
+  Explicit value overrides preset: `level: "chunk"` for per-method rows.
 - Also sets payload scope of level-aware filters. Unset → each filter's own default:
   minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/author/minFanIn/minFanOut: file.
   modifiedAfter/modifiedBefore/recentAuthor/contributor file-level regardless.

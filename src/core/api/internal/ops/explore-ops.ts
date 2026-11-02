@@ -382,15 +382,21 @@ export class ExploreOps {
       { failOnProviderOutage: true, ...READ_PATH_EMBED },
     );
     const { embedding } = await embeddings.embed(request.query, READ_PATH_EMBED);
-    const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
+    // search_code returns chunk rows and has no `level` param: it SCORES at chunk
+    // level, never at the preset's `signalLevel` (the default of the list-ranking
+    // tools). Typed filters keep their own default scope (no level override).
+    const scoringLevel: SignalLevel = "chunk";
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const { filter, presetFilterNotice } = this.buildFilter(request, level, "search_code", historyAnchorSec);
+    const { filter, presetFilterNotice } = this.buildFilter(request, undefined, "search_code", historyAnchorSec);
     return this.executeExplore(
       this.vectorStrategy,
-      withHistoryClock(buildSearchCodeContext(request, collectionName, embedding, filter), historyAnchorSec),
+      withHistoryClock(
+        buildSearchCodeContext(request, collectionName, embedding, filter, scoringLevel),
+        historyAnchorSec,
+      ),
       { presetFilterNotice, workingTreeView },
     );
   }
@@ -1399,7 +1405,7 @@ function resolveEffectiveLevel(
   userLevel: SignalLevel | undefined,
   rerank: string | { custom: Record<string, number> } | undefined,
   reranker: RerankerPort,
-  tool: "semantic_search" | "search_code" | "rank_chunks",
+  tool: "semantic_search" | "rank_chunks",
 ): SignalLevel | undefined {
   if (userLevel) return userLevel;
   if (typeof rerank === "string") {
@@ -1475,6 +1481,7 @@ function buildSearchCodeContext(
   collectionName: string,
   embedding: number[],
   filter: Record<string, unknown> | undefined,
+  signalLevel: SignalLevel,
 ): ExploreContext {
   return {
     collectionName,
@@ -1485,6 +1492,7 @@ function buildSearchCodeContext(
     filter,
     pathPattern: request.pathPattern,
     rerank: request.rerank,
+    level: signalLevel,
   };
 }
 

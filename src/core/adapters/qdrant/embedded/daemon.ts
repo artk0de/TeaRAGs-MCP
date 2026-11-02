@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { EMBEDDED_MARKER } from "../../../contracts/types/registry.js";
 import { isPidAlive, isSignalDenied } from "../../process-tree/pid-liveness.js";
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { compareSemver, isSemver } from "../required-version.js";
@@ -30,13 +31,12 @@ import type { DaemonHandle, DaemonPaths, QdrantResolution, StartupPhase } from "
 
 const daemonLock = new DaemonLock();
 
-export const EMBEDDED_MARKER = "embedded";
 const READINESS_TIMEOUT_MS = 300_000;
 const READINESS_POLL_INTERVAL_MS = 200;
 const IDLE_SHUTDOWN_MS = 30_000;
 const SPAWN_GRACE_MS = 500;
 
-export { isPidAlive };
+export { EMBEDDED_MARKER, isPidAlive };
 
 /**
  * Wait for the daemon to become ready OR die.

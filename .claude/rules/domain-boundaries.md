@@ -63,6 +63,35 @@ defect this split removed — it put the stable contract layer in a dependency
 cycle with the unstable api component (delta 0.87). Pin:
 `tests/core/api/public/sdp-runtime-import-direction.test.ts`.
 
+**Lean startup assembly entries.** Bootstrap startup composition may use these
+explicit assembly surfaces without importing the eager `core/api/index.ts`
+barrel:
+
+- `core/api/entry-points/prime/index.ts`: registry identity, working-tree
+  binding and index-update eligibility policy. It must not load App/MCP,
+  configuration schemas or engine/daemon bootstrap to emit known addresses.
+- `core/api/entry-points/auto-update/trigger.ts`: update-trigger policy values
+  and port types; no server or backend assembly.
+
+These are public **assembly** entries for `bootstrap/` consumers only. `cli/`
+gets their composed behavior and required port types through bootstrap; `mcp/`
+continues to use `core/api/public/` contracts, never these assembly entries.
+This does not permit other internal API imports from CLI or MCP.
+
+`bootstrap/config/paths.ts` is the explicit pure path-policy entry for bootstrap
+composition. It must remain independent of schema/engine bootstrap. CLI obtains
+startup path policy through `bootstrap/prime-agent.ts`, rather than reaching
+into the config component.
+
+`core/domains/explore/errors/index.ts` is the explicit public domain-error
+surface for `core/api/` callers. It preserves the constructors also exported by
+`core/domains/explore/index.ts`, including their superclass identity, codes and
+messages, without loading the eager explore assembly. This is not an
+API-public-to-domain runtime edge: CLI/MCP still reach errors through their
+allowed consumer surfaces, and other explore internals remain private, including
+the vocabulary's implementation file. Domain error unions and bases stay in the
+domain; the contract layer must not import them.
+
 **Composition roots.**
 
 - **`api/`** = **core composition root** — assembles deps from every layer

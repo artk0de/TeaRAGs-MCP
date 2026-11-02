@@ -45,6 +45,7 @@ import { computeExtractionRepair, type ExtractionRepair } from "./extraction-rep
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import { filterFileEnrichPaths } from "./policy.js";
+import { isRunFatalEnrichmentError } from "./provider-failure.js";
 import {
   handOverUncoveredPaths,
   recomputeScopeCoversPath,
@@ -404,6 +405,15 @@ export class EnrichmentCoordinator {
      * Omitted on every other path.
      */
     recomputeDeferral?: RepairPassRecomputeDeferral,
+    /**
+     * Told each provider whose repair dispatch threw (bd tea-rags-mcp-xvik1).
+     * Given, the failure is that provider's: it is logged, reported here, and
+     * the pass goes on to the next provider — the recompute marks it failed in
+     * the run it opens next, so git still writes when the codegraph daemon
+     * cannot start. Omitted, the throw propagates as before. A run-fatal error
+     * (`isRunFatalEnrichmentError`) propagates either way.
+     */
+    onProviderFailure?: (providerKey: string, error: unknown) => void,
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
@@ -511,10 +521,22 @@ export class EnrichmentCoordinator {
           // file that also reaches the run another way is deduped, not resolved
           // twice. The recovery path is isolated by design (enrichment-executor.ts)
           // and would pay a whole-graph overlay read per file this caller discards.
-          await this.executor.runFileBatch(provider, root, repair, {
-            collectionName: physicalCollectionName,
-            contentHashes: scanned,
-          });
+          try {
+            await this.executor.runFileBatch(provider, root, repair, {
+              collectionName: physicalCollectionName,
+              contentHashes: scanned,
+            });
+          } catch (error) {
+            if (!onProviderFailure || isRunFatalEnrichmentError(error)) throw error;
+            pipelineLog.enrichmentPhase("REPAIR_PROVIDER_FAILED", {
+              provider: provider.key,
+              collection: physicalCollectionName,
+              files: repair.length,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            onProviderFailure(provider.key, error);
+            continue;
+          }
           repaired += repair.length;
         }
       }
@@ -909,6 +931,9 @@ export class EnrichmentCoordinator {
     // terminal FILE marker must say so, not the pipeline log alone (bd
     // tea-rags-mcp-hw27k).
     const storeReadFailedProviderKeys = new Set<string>();
+    // A store provider whose forced repair dispatch threw is FAILED in the run
+    // below, not the cause of an aborted recompute (bd tea-rags-mcp-xvik1).
+    const failedProviderErrors = new Map<string, unknown>();
     if (forceProviderSet.size > 0) {
       // Membership drives the forced repair set; hash values keep the drift
       // check sound for any store provider the selectors did not force, using
@@ -941,6 +966,8 @@ export class EnrichmentCoordinator {
         undefined,
         forceProviderSet,
         (providerKey) => storeReadFailedProviderKeys.add(providerKey),
+        undefined,
+        (providerKey, error) => failedProviderErrors.set(providerKey, error),
       );
       // The synthetic eligibility map must not DISPLACE the run's hash stamp:
       // `runRepairPass` captures its `scanned` as `runContentHashes`, and this
@@ -960,7 +987,13 @@ export class EnrichmentCoordinator {
     // Nothing stored and nothing re-extracted: no run to open. A forced repair
     // that walked chunkless files still needs the run below — its finalize
     // is where pass-2 resolves the re-extracted rows and `cg_run_stats` lands.
-    if (stored.items.length === 0 && forcedRepaired === 0) return EMPTY_METRICS;
+    // A provider whose forced repair threw still owes its `failed` verdict,
+    // and only a run's terminal markers carry it to enrichmentHealth and the
+    // CLI `outcome.failed` (bd tea-rags-mcp-63bdw) — so that case opens a run
+    // over the failed providers alone; the rest keep the no-run path.
+    const nothingToRun = stored.items.length === 0 && forcedRepaired === 0;
+    if (nothingToRun && failedProviderErrors.size === 0) return EMPTY_METRICS;
+    const runProviderKeys = nothingToRun ? [...failedProviderErrors.keys()] : matched;
 
     // `languages` reaches the run itself, not just the scroll: the terminal
     // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s). Every
@@ -971,12 +1004,13 @@ export class EnrichmentCoordinator {
         absolutePath,
         collection: physicalCollectionName,
         fileCount: stored.fileCount,
-        onlyProviderKeys: matched,
+        onlyProviderKeys: runProviderKeys,
         languages: languages ?? ALL_LANGUAGES,
         // Known before the first batch — the one run that can say so, which is
         // what lets the executor split it by language (bd tea-rags-mcp-sgo8v).
         runRelPaths: [...stored.chunkMap.keys()],
         storeReadFailedProviderKeys,
+        failedProviderErrors,
       }),
     );
     // File phase, in the same bounded batches the live pipeline uses, so a
@@ -1213,12 +1247,20 @@ export class EnrichmentCoordinator {
     // holds no keep-alive: `awaitCompletion` closes it without a completion, so
     // nothing would ever write its terminals or release the daemon.
     const runHasProviders = runState.contexts.size > 0;
-    runState.markRunStartPromise =
+    const runStartMarker =
       physicalCollectionName && runHasProviders
         ? this.markerStore
             .markRunStart(physicalCollectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
             .catch(() => undefined)
         : Promise.resolve();
+    // Providers that failed before the run opened (bd tea-rags-mcp-xvik1). The
+    // verdict is in memory before the first batch arrives; the marker writes
+    // join the run-start gate, so `completeRun` cannot write a terminal marker
+    // that one of them then overwrites.
+    const preRunFailureMarkers = [...(spec.failedProviderErrors ?? [])].map(async ([providerKey, error]) =>
+      runState.filePhase.markProviderFailed(providerKey, error).catch(() => undefined),
+    );
+    runState.markRunStartPromise = Promise.all([runStartMarker, ...preRunFailureMarkers]).then(() => undefined);
 
     // Hold the codegraph daemon alive for the whole run. Fire-and-forget here
     // (non-blocking begin); `awaitCompletion` awaits the release and calls it

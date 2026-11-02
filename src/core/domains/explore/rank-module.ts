@@ -9,7 +9,7 @@ import type { DerivedSignalDescriptor, RerankableResult } from "../../contracts/
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { historyClockRerankOption } from "./history-clock.js";
 import type { RerankerPort } from "./reranker-port.js";
-import { buildSignalKeyMap } from "./reranker.js";
+import { buildSignalKeyMap, groupByTop } from "./reranker.js";
 
 interface OrderByField {
   key: string;
@@ -35,8 +35,9 @@ export interface RankOptions {
   /** Original preset name — passed to reranker for overlay mask resolution. */
   presetName?: string;
   /**
-   * Payload field the preset collapses results on after rerank (its
-   * `groupBy`). The pool is then sized in distinct groups, not points.
+   * Payload field results collapse on after rerank — the preset's `groupBy`,
+   * or `relativePath` at file level. The pool is then sized in distinct
+   * groups, not points, and `limit` counts groups.
    */
   groupBy?: string;
   /**
@@ -275,7 +276,10 @@ export class RankModule {
       ...historyClockRerankOption(options),
     });
 
-    return reranked.slice(0, limit);
+    // `limit` counts groups when the pool was sized in groups. The reranker
+    // collapses only on the preset's own groupBy; a caller's (file level's
+    // relativePath) is collapsed here, idempotent over the preset's.
+    return (groupBy ? groupByTop(reranked, groupBy) : reranked).slice(0, limit);
   }
 
   // -- Private --

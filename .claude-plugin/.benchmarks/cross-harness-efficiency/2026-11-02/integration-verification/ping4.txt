@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-sentinel-integration
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  21:24:30
+   Duration  321ms (transform 76%, setup 17%, worker 3%, tests 2%, import 1%)
+

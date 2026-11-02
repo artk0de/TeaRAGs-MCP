@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/reranker.js";
+import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../contracts/types/reranker.js";
 
 /**
  * Surface high-risk code: bug-prone, churning, recently active, single-owner.
@@ -11,8 +11,9 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  * redundant with churn and dropped. knowledgeSilo stays at 0.1 as a DESIGN
  * term: bus-factor risk is part of what "dangerous" means, although the
  * backtest shows it does not predict fixes consistently (opposite sign on the
- * two corpora). Limit: the backtest is file-level while the preset runs at
- * chunk level (alpha-blend).
+ * two corpora). The backtest is file-level, so the preset ranks at
+ * file level by default (`signalLevel: "file"`, bd tea-rags-mcp-9z8ae); an
+ * explicit `level: "chunk"` still overrides.
  *
  * Use when: assessing dangerous zones, finding bus-factor risks,
  *   identifying code that combines multiple failure signals.
@@ -27,6 +28,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
 export class DangerousPreset implements RerankPreset {
   readonly name = "dangerous";
   readonly filter = { presets: "production" } as const;
+  readonly signalLevel: SignalLevel = "file";
   readonly description = "Surface high-risk code: bug-prone, churning, recently active, single-owner";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks"];
   readonly weights: ScoringWeights = {

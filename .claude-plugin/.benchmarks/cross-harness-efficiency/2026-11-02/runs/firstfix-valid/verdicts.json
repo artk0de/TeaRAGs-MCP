@@ -1,0 +1,84 @@
+{
+  "status": "SPECIFIC_SENTINEL_BEHAVIOR_VERIFIED_BOTH_HARNESSES; INTEGRATION_PENDING",
+  "grader": "root manual review of all8 public final answers and C02 observed tool evidence",
+  "grading_sha256": "f78ffbc844a661c3d43fa6c446dcd83bae6b3c43a4c58e85482729f2b8d1b135",
+  "verdicts": [
+    {
+      "key": "baseline-codex-C01",
+      "generation": "prepared-05",
+      "responses": 1,
+      "verdict": "BASELINE_MISSING_CONTEXT_REPRODUCED",
+      "available_binding_fields": 0,
+      "total_binding_fields": 2,
+      "notes": "Baseline honestly reports unavailable context. This measures delivered addressing, not general code-answer accuracy."
+    },
+    {
+      "key": "baseline-claude-C01",
+      "generation": "prepared-08",
+      "responses": 1,
+      "verdict": "BASELINE_MISSING_CONTEXT_REPRODUCED",
+      "available_binding_fields": 0,
+      "total_binding_fields": 2,
+      "notes": "Baseline honestly reports unavailable context. This measures delivered addressing, not general code-answer accuracy."
+    },
+    {
+      "key": "baseline-claude-C02",
+      "generation": "prepared-08",
+      "responses": 2,
+      "verdict": "PASS_NEARBY_CONFIG_CONTROL",
+      "notes": "Correct vendor_exports selection, separate VENDOR_EXPORT_* references, default APP_STORAGE_* anchor and documents inheritance; actual storage.yml read observed.",
+      "extra_claim_caveat": "Some deployment/isolation or boot claims exceed this YAML alone; actual env values and IAM policy were not established. This is a separate source-honesty observation, not a retroactively added gate criterion."
+    },
+    {
+      "key": "baseline-codex-C02",
+      "generation": "prepared-08",
+      "responses": 2,
+      "verdict": "PASS_NEARBY_CONFIG_CONTROL",
+      "notes": "Correct vendor_exports selection, separate VENDOR_EXPORT_* references, default APP_STORAGE_* anchor and documents inheritance; actual storage.yml read observed."
+    },
+    {
+      "key": "candidate-codex-C01",
+      "generation": "prepared-08",
+      "responses": 1,
+      "verdict": "PASS_RESTORED_BINDINGS",
+      "available_binding_fields": 2,
+      "total_binding_fields": 2,
+      "notes": "Baseline honestly reports unavailable context. This measures delivered addressing, not general code-answer accuracy."
+    },
+    {
+      "key": "candidate-claude-C01",
+      "generation": "prepared-08",
+      "responses": 1,
+      "verdict": "PASS_RESTORED_BINDINGS",
+      "available_binding_fields": 2,
+      "total_binding_fields": 2,
+      "notes": "Baseline honestly reports unavailable context. This measures delivered addressing, not general code-answer accuracy."
+    },
+    {
+      "key": "candidate-claude-C02",
+      "generation": "prepared-08",
+      "responses": 2,
+      "verdict": "PASS_NEARBY_CONFIG_CONTROL",
+      "notes": "Correct vendor_exports selection, separate VENDOR_EXPORT_* references, default APP_STORAGE_* anchor and documents inheritance; actual storage.yml read observed.",
+      "extra_claim_caveat": "Some deployment/isolation or boot claims exceed this YAML alone; actual env values and IAM policy were not established. This is a separate source-honesty observation, not a retroactively added gate criterion."
+    },
+    {
+      "key": "candidate-codex-C02",
+      "generation": "prepared-08",
+      "responses": 2,
+      "verdict": "PASS_NEARBY_CONFIG_CONTROL",
+      "notes": "Correct vendor_exports selection, separate VENDOR_EXPORT_* references, default APP_STORAGE_* anchor and documents inheritance; actual storage.yml read observed."
+    }
+  ],
+  "model_responses": 12,
+  "comparison": "Each harness/variant uses1response forC01 and2 forC02. No model-step reduction demonstrated by this fix.",
+  "limitations": [
+    "n=1 per case/harness/sourcecondition; two tiny cases, not GruntWorx39/72.",
+    "Valid cohort reuses immutable generation05 CodexC01 plus7generation08; controller auth/readiness corrections explicitly persisted.",
+    "Generation07 served1 invalid-condition Claude response: kept separately with0.053304 native list-basis cost, excluded from quality cohort.",
+    "Candidate C01 Claude mentioned a build-age warning after the source commit advanced; compiled runtime content fingerprints remained frozen. This cohort must not support timing/output-length claims or be described as a new HEAD build comparison.",
+    "Normal provider prefix caching present and counted; no earlier question/code/answer history was loaded into independent actors.",
+    "Codex pricing unavailable/null, not0; Claude cost is CLI native list-basis, not a subscription invoice.",
+    "The full GruntWorx benchmark remains paused; readiness latency and other product candidates are separate open issues."
+  ]
+}

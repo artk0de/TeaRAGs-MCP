@@ -1,0 +1,16 @@
+{
+  "status": "INTERRUPTED_INCOMPLETE_NO_TEST_RESULTS",
+  "reason": "Single-worker standard config remained at RUN header beyond60s; stopped under authorized bound. Cold transform or host load are hypotheses, not diagnosed causes.",
+  "pid": 5749,
+  "descendant_pids": [
+    13517
+  ],
+  "command_files": [
+    "tests/cli/prime/qdrant-discovery.test.ts",
+    "tests/cli/prime/run-prime-registry-qdrant.test.ts"
+  ],
+  "maxWorkers": 1,
+  "tests_passed": null,
+  "retry": false,
+  "integration": "NOT_MERGED"
+}

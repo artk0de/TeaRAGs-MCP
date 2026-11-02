@@ -35,12 +35,14 @@ block. `Output:` = last line, verbatim:
 1. SCAN — primary + stratified presets, both MUST run; each call pathPattern=<resolved>
    stop per preset: gradient drop > 2× avg gap | < 3 new files | page 3 (offset 20)
 1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
-2. MERGE — negativeIds dedup, never manual filtering
+2. MERGE — author check first (ONE Bash `git shortlog -sn --no-merges HEAD | head -3`), negativeIds dedup, never manual filtering
+   print: authors: <top author> <pct>% of commits — ownership axis degenerate|live
 3. EXPAND — healthy-demoted candidates
-4. ENRICH — bodies of every Critical/High row, tiers, fix cost, signal pairs
-4b. COMMITS — ONE Bash (enrich.md step 7): `git remote get-url origin; git status --porcelain -- <files>;` + per Critical/High row `echo "== <#>"; git log -L<start>,<end>:<file> -s --no-merges -n 20 --format='%H %as %s'` (file row → `git log --follow … -- <file>`); ≤3 per row, bug-fix first, cosmetic never
+4. ENRICH — bodies of every Critical/High/Medium row (cap 10), tiers, fix cost, signal pairs; runs even with 0 Critical/High
+4b. COMMITS — ONE Bash (enrich.md step 7): `git remote get-url origin; git status --porcelain -- <files>;` + per Critical/High/Medium row `echo "== <#>"; git log -L<start>,<end>:<file> -s --no-merges -n 20 --format='%H %as %s'` (file row → `git log --follow … -- <file>`); ≤3 per row, bug-fix first, cosmetic never
     print: commits: <rows> rows, remote <host|none>
 5. OUTPUT:
+Tiers = how many risk axes flag the same code at once (axes: <the N presets run>): Critical = all N, High = N−1, Medium = 2…N−2, Low = one axis. Critical/High = risky on several axes simultaneously; Medium/Low are real risks with less convergence.
 ## Overview
 - <module/dir> — <what goes wrong there, 1 sentence>
 ## Critical
@@ -51,13 +53,20 @@ block. `Output:` = last line, verbatim:
 ## High
 | # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
   (same three card lines per row)
+## Medium
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+  (same three card lines per row)
+## Low (one axis)
+| # | Symbol | File:Line | Axis (preset) | Risk Type | Key Signals |
+## Risk patterns
+| Pattern | Symbols | What it means | Signature (signals) | Where to look |
 ## Structural risks   (codegraph active)
 ## Summary
 ## Next steps
 | # | Case | Action | Call |
 → Work through the cases here and now (starting with #1), or file a task per case?
 Hand-off: pathPattern + per-symbol File:Line + labels
-Output: Overview + Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) | Commits + cards (Problem / What's wrong / Commits) + Structural + Summary + Next steps
+Output: Tier legend + Overview + Critical/High/Medium | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) | Commits + cards (Problem / What's wrong / Commits) + Low (Risk Type) + Risk patterns + Structural + Summary + Next steps
 ```
 
 Card lines, `## Overview` and the `→` offer line print in the user's language;
@@ -113,9 +122,10 @@ subagent / linked worktree → never reindex. Protocol:
 
 1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
 2. **Signals from overlay only — never `git log`, `git diff`, `git blame` for
-   them.** Sole git read: Phase 4 step 7 commit evidence (index stores no commit
-   list) — Critical/High rows only, one Bash call, line-scoped `-L`, never a
-   repo-wide log.
+   them.** Git reads, two only: Phase 2 author check (one
+   `git shortlog -sn --no-merges HEAD | head -3`) and Phase 4 step 7 commit
+   evidence (index stores no commit list) — Critical/High/Medium rows only, one
+   Bash call, line-scoped `-L`, never a repo-wide log.
 3. **No built-in Search/Grep for code discovery** — tea-rags tools only.
 4. **Risk scans return signals only (`metaOnly: true`).** MERGE and EXPAND use
    metadata, overlay labels and chunk UUIDs. Reuse bodies already in context;
@@ -321,26 +331,57 @@ Degradation:
 
 ## Phase 2: MERGE
 
+**Author check first — one Bash:**
+`git shortlog -sn --no-merges HEAD | head -3`. Top author share = their count /
+sum of all counts (`git rev-list --count --no-merges HEAD` when only 3 lines
+shown). Print the line verbatim:
+
+```
+authors: <top author> <pct>% of commits — ownership axis degenerate|live
+```
+
+≥90% → `degenerate` (solo project: every file is single-owner, bus factor is
+project-wide, so the silo signal tells nothing about one file):
+
+- `dangerous` is NOT its own axis — its hits merge into the `bugHunt` axis (a
+  row found by either counts once). N = presets with results − 1. Legend lists
+  `bugs (bugHunt+dangerous)` as one axis.
+- No `Fragile silo` / `Toxic silo` Risk Type: classify by the remaining signal
+  pair (classification-tiers.md without the owner signal), else the Chunk × file
+  pattern, else `unclassified — one signal`. Never relabel it `Fragile`.
+- No knowledge-transfer Next steps row. Summary carries
+  `- Bus factor: project-wide (single author) — not a per-file risk`.
+
+<90% → `live`: rules below unchanged, `dangerous` stays an axis. A multi-author
+repo with per-file single owners is `live` — silos there are real.
+
 Cross-reference by `relativePath` (primary key). Within same file, chunks
 overlap if `[startLine, endLine]` ranges intersect >50%.
 
-| Overlap | Tier     | Meaning                             |
-| ------- | -------- | ----------------------------------- |
-| N/N     | Critical | All active dimensions converge      |
-| N-1/N   | High     | Strong multi-signal risk            |
-| N-2/N   | Medium   | Two signals, may be expected        |
-| 1/N     | —        | Single signal — exclude from output |
+| Overlap | Tier     | Meaning                        |
+| ------- | -------- | ------------------------------ |
+| N/N     | Critical | All active dimensions converge |
+| N-1/N   | High     | Strong multi-signal risk       |
+| 2…N-2   | Medium   | ≥2 signals, below High         |
+| 1/N     | Low      | One axis only — compact table  |
+
+1/N is always Low, even when N is small (N=3: 1/3 Low, not Medium).
+
+**Every tier always prints.** Empty tier → its heading + `none`. Never print "no
+risks" / "codebase healthy" while Medium or Low hold rows — a reader of only
+Critical/High concludes the code is clean.
 
 **Sorting within tier:** Label severity scores: `critical/extreme` = 4,
 `concerning/erratic/high` = 3, `typical` = 1, `healthy/low/stable` = 0. Sum
-across all overlay signals. Sort descending.
+across all overlay signals. Sort descending. Low: top 10 by sum, `+N more` when
+cut.
 
 **Healthy demotion:** candidate's bugFixRate `healthy` across ALL presets that
-found it → demote one tier (Critical → High, High → Medium). High overlap +
-healthy bugFixRate = active development churn, not risk.
+found it → demote one tier (Critical → High, High → Medium, Medium → Low). High
+overlap + healthy bugFixRate = active development churn, not risk.
 
-**Zero Critical/High:** Skip EXPAND + ENRICH. Output Medium candidates + "No
-critical risks found. Codebase appears healthy by multi-signal analysis."
+**Zero Critical/High:** skip EXPAND only. ENRICH runs on Medium rows (bodies,
+tests, commits, cards).
 
 ## Phase 3: EXPAND
 
@@ -391,11 +432,12 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 ## Phase 4: ENRICH
 
 **MANDATORY: read [references/enrich.md](./references/enrich.md) before Phase
-4** — Critical + High candidates (5–10 chunks), seven steps in order:
+4** — Critical + High + Medium candidates (cap 10 chunks, tier order), seven
+steps in order; runs also when Critical/High are empty:
 
-1. Code review — every Critical/High row needs its body (`What's wrong:` line
-   reads it). Reuse bodies in context; fetch the rest in ONE
-   `find_symbol(symbols: [...])` batch, never Read.
+1. Code review — every Critical/High/Medium row needs its body (`What's wrong:`
+   line reads it). Reuse bodies in context; fetch the rest in ONE
+   `find_symbol(symbols: [...])` batch, never Read. Low rows: signals only.
 2. Test coverage — **stratified, one `hybrid_search` per domain cluster, NEVER
    one batched call** (batched BM25 fabricates "untested"); exact mirrored-path
    `find_symbol` preferred.
@@ -404,17 +446,20 @@ Add qualifying results as "Related risk" under parent Critical candidate.
    hubLike violation → open `../../repair/<family>.md` of that family only and
    print
    `structural-violation <candidate> — <component> <family>: escalated, Risk Type tagged, top of its tier; fix cost per repair/<family>.md`.
-4. Fix-cost classifier. 5. God-class attribution. 6. Risk classification.
-5. Commit evidence — ONE Bash call, Critical/High rows only (literal script:
-   enrich.md step 7). Print `commits: <rows> rows, remote <host|none>`.
+4. Fix-cost classifier.
+5. God-class attribution.
+6. Risk classification.
+7. Commit evidence — ONE Bash call, Critical/High/Medium rows only (literal
+   script: enrich.md step 7). Print `commits: <rows> rows, remote <host|none>`.
 
 ## Phase 5: OUTPUT
 
-Top-10 risk map, sorted by tier → severity sum.
+Risk map, every tier printed, sorted by tier → severity sum.
 
 ```
 Risk Assessment: [scope]
 Scanned: [N chunks across M presets], [K unique files]
+Tiers = how many risk axes flag the same code at once (axes: [the N presets run, e.g. bugs, churn, tech debt, bus factor, centrality]): Critical = all N, High = N−1, Medium = 2…N−2, Low = one axis. Critical/High = risky on several axes simultaneously; Medium/Low are real risks with less convergence.
 
 ## Overview
 
@@ -443,9 +488,27 @@ Scanned: [N chunks across M presets], [K unique files]
 
   Problem: … / What's wrong: … / Commits (…): … — same card as Critical
 
-## Medium (N-2/N) — [count] candidates
+## Medium (2…N-2 / N) — [count] candidates
 
-Count only. "Show medium risks" to expand.
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+|---|--------|-----------|-----------|-------------|-------|---------|
+| 3 | symbol() | file.ts:88 | Hotspot | churn:high burst:high | none | [1a2b3c4](<url>) |
+
+  Problem: … / What's wrong: … / Commits (…): … — same card as Critical
+
+## Low (1/N — one axis) — [count] candidates
+
+| # | Symbol | File:Line | Axis (preset) | Risk Type | Key Signals |
+|---|--------|-----------|---------------|-----------|-------------|
+| 4 | symbol() | file.ts:12 | techDebt | Fragile legacy | ageDays:legacy bugFix:concerning |
+
+[+N more — top 10 by severity sum shown]
+
+## Risk patterns
+
+| Pattern | Symbols | What it means | Signature (signals) | Where to look |
+|---------|---------|---------------|---------------------|---------------|
+| Fragile legacy | symbol() (#4) | old code that still breaks: changes rarely, but most changes are fixes | ageDays legacy + bugFixRate concerning+ | the method with the highest chunk bugFixRate in the file |
 
 ## Structural risks (codegraph axis)
 
@@ -470,7 +533,9 @@ not assessed — codegraph off") when codegraph is off by that test.
 
 - Critical zones: [count] — require immediate attention
 - High zones: [count] — schedule for review
-- Test gaps: [count] confirmed-untested among Critical/High ([count] unverified)
+- Medium zones: [count] · Low zones: [count] — single/dual-axis risks
+- Bus factor: project-wide (single author) — not a per-file risk   ← ownership `degenerate` only
+- Test gaps: [count] confirmed-untested among Critical/High/Medium ([count] unverified)
 - Structural debt: [count] — [count] cheap, [count] also in a risk tier
 - Dominant risk type: [most common classification]
 - Recommendation: [one-sentence next step]
@@ -481,16 +546,32 @@ not assessed — codegraph off") when codegraph is off by that test.
 |---|------|--------|------|
 | 1 | symbol() file.ts:42 | root-cause the repeated fixes | $bug-hunt on symbol() |
 | 1 | symbol() file.ts:42 | cover with tests before any change | Skill(test-driven-development) |
+| 4, 7 | Low batch: <pattern> (symbolA, symbolB) | <one action for the batch> | <Call once, all batch symbols> |
 
 → Work through the cases here and now (starting with #1), or file a task per case?
 ```
 
-**Card rules.** Every Critical/High row gets all three card lines; evidence
-only, no claim without it. `Problem:` — consequence for the system or its users,
-from signal pair + commit subjects. `What's wrong:` — the code defect seen in
-the body (mixed responsibilities, nested branches on error type, duplicated
-parsing…). Body not fetched → `What's wrong: [not reviewed]`, never a guess.
-`## Overview` groups rows by module/dir, one line each.
+**Card rules.** Every Critical/High/Medium row gets all three card lines;
+evidence only, no claim without it. `Problem:` — consequence for the system or
+its users, from signal pair + commit subjects. `What's wrong:` — the code defect
+seen in the body (mixed responsibilities, nested branches on error type,
+duplicated parsing…). Body not fetched → `What's wrong: [not reviewed]`, never a
+guess. `## Overview` groups rows by module/dir, one line each.
+
+**Low `Risk Type`.** Classified like the other tiers
+(`references/classification-tiers.md`); no tier row matches → the matching
+"Chunk × file combinations" pattern (`Buggy elsewhere`, `Local bug nest`,
+`Hotspot method`…); neither → `unclassified — one signal`.
+
+**Risk patterns.** One row per Risk Type printed in ANY table (Critical → Low),
+none skipped, none extra. `Symbols` = its symbols by name, row number in parens
+(`Foo#bar (#4)`), never bare numbers. `What it means` = one plain sentence: what
+goes wrong in such code. `Signature` = the pair from `classification-tiers.md`
+that matched. `Where to look` = the matching row of
+`../../rules/references/signal-interpretation.md` § "Chunk × file combinations"
+(chunk vs file signal of these rows: this method, its siblings, one hotspot
+method…), else that pattern's line in § "Method-level classification
+refinements".
 
 **Commits column + card.** From step 7. Column = up to 3 linked short SHAs.
 `remote none` → bare SHAs, card says `no web remote — links omitted`; never
@@ -507,7 +588,16 @@ row number in the risk tables, never renumbered — "start with #1" means risk r
 | `Tests` = `none`                                                                           | cover with tests before any change      | `Skill(test-driven-development)` on the symbol        |
 | Oversized, god-method / god-class, Coupling point, Emerging coupling, structural-violation | plan decomposition / boundary fix       | `$refactoring-planning` with `pathPattern` of the row |
 | blast-radius hub                                                                           | map dependents before touching          | `get_callers(symbolId, depth: 2)`                     |
-| Toxic silo, Fragile silo                                                                   | knowledge transfer — owner reviews next | name `blameDominantAuthor` from the overlay           |
+| Toxic silo, Fragile silo (`live` ownership only — `degenerate` prints no such row)         | knowledge transfer — owner reviews next | name `blameDominantAuthor` from the overlay           |
+
+**Low rows → batches, after Critical–Medium rows.** Every printed Low row lands
+in exactly one batch row; group by the action the table above gives its Risk
+Type (same action → one batch). `#` = comma list of the Low row numbers, `Case`
+= `Low batch: <pattern> (<every symbol of the batch>)`, `Call` = one call over
+all the batch's symbols (`get_callers` on each id in one message; bug-hunt / TDD
+/ refactoring-planning with the shared `pathPattern`). Low row whose Risk Type
+maps to no action → batch `watch only — re-run on next change`. `+N more` rows
+unprinted → not batched.
 
 The `→` line is the answer's offer; the user picks. Both branches follow
 [../../rules/references/report-follow-up.md](../../rules/references/report-follow-up.md):

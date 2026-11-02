@@ -1,0 +1,15 @@
+..........E.........
+======================================================================
+ERROR: test_sealed_external_project_binding_is_enforced_without_old_alias_reuse (test_replay_transform.ReplayTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/test_replay_transform.py", line 36, in test_sealed_external_project_binding_is_enforced_without_old_alias_reuse
+    s=ReplayTransform(actor_id="external-actor",case_id="F01",project="p0-domain-context-ng1ni-external",fixture_root="/fixture")
+  File "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-context-rules/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/replay_transform.py", line 120, in __init__
+    raise ValueError("invalid trusted replay scope")
+ValueError: invalid trusted replay scope
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.023s
+
+FAILED (errors=1)

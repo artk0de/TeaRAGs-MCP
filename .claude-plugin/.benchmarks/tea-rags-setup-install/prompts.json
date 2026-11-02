@@ -121,6 +121,18 @@
       "name": "control-retune-routes-to-tune",
       "category": "control",
       "prompt": "TeaRAGs is already installed for /Users/me/Dev/shop, but indexing feels slow. Can you re-run the install to fix performance?"
+    },
+    {
+      "id": 21,
+      "name": "claude-code-with-codex-home-exported",
+      "category": "edge",
+      "prompt": "Install confirmed for /Users/me/Dev/api inside a Claude Code session. The shell also exports CODEX_HOME=/Users/me/.codex from an earlier Codex setup. detect.mjs printed the JSON facts for this host. How do you do the plugin and MCP registration step?"
+    },
+    {
+      "id": 22,
+      "name": "first-index-exports-model",
+      "category": "finding",
+      "prompt": "Install confirmed for /Users/me/Dev/billing on macOS (zsh). New alias billing was just registered; choose-model picked nomic-ai/CodeRankEmbed and the plugin + MCP step is done. What exact command runs the indexing step?"
     }
   ]
 }

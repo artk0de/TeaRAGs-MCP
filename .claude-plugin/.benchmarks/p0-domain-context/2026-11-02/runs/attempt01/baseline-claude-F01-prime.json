@@ -1,0 +1,32 @@
+{
+  "key": "baseline-claude-F01",
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/baseline-claude-F01/native/public-hook-events.jsonl",
+  "input_sha256": "2d46043a58d79b6de2f8ca1e5fc27ecf9e525a6ad5d474ce414de16cdc2dc3ea",
+  "prime_payloads": [
+    {
+      "line_index": 7,
+      "hook_id": "4a36de47-9b0b-4950-9eac-47e350c92b32",
+      "native_status": "hook_response",
+      "exit_code": 0,
+      "payload": "# tea-rags digest — p0-domain-context-ng1ni-external\nproject `p0-domain-context-ng1ni-external` · collection `code_81a5e5c5` — pass `project: \"p0-domain-context-ng1ni-external\"` + `path` on tea-rags calls\n",
+      "payload_sha256": "b74044e1d51e892a988293245d7e73d1268d5f42aa9b47c72792fc61069bb7cd",
+      "payload_bytes": 210,
+      "actual_project": "p0-domain-context-ng1ni-external",
+      "actual_collection": "code_81a5e5c5",
+      "classification": "CANONICAL_DIGEST"
+    }
+  ],
+  "source_age_warnings": [
+    {
+      "line_index": 6,
+      "hook_id": "5a631217-a3e9-4104-a3b4-5ad304273102",
+      "native_status": "hook_response",
+      "exit_code": 0,
+      "payload": "⚠ tea-rags build is older than its source (build 2026-11-02T13:08:14Z, last src commit 2026-11-02T15:48:07Z) — run `npm run build` in /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness\n",
+      "payload_sha256": "a6d03db2b425c7396708e4cae9dbc62ac6bada7386732f6a038fc177a5a801ea",
+      "payload_bytes": 211
+    }
+  ],
+  "exact_expected_delivery": true,
+  "limits": "Codex numeric exit code not exposed; native completed status only. No final-answer inference."
+}

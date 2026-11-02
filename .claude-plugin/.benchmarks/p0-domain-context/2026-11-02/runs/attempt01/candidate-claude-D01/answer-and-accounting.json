@@ -1,0 +1,149 @@
+{
+  "answer": "Processing-state changes are applied in one function, `applyProcessingState` in `src/refund-settlement/status.ts:9-20`. That file is the only one in the repo that mentions \"refund\". I read it directly with Read because the tea-rags tools (`semantic_search`, `find_symbol`) were denied in this session's permission mode. I didn't check for callers, so I can't say what invokes it.\n\n**Entry point**\n\n```ts\napplyProcessingState(record: RecordState, state: ProcessingState, publish: (frame: object) => void): void\n```\n\n- `record` is `{ refundId: string; processingState: ProcessingState }`.\n- `state` is the new state. `ProcessingState` is `\"queued\" | \"processing\" | \"settled\" | \"rejected\"`.\n- `publish` is a callback the caller supplies. The function doesn't know how the frame reaches the dashboard.\n\n**What it does**\n\n1. It mutates the record in place: `record.processingState = state` (line 14).\n2. It immediately calls `publish(...)` with one frame (lines 15-19).\n\nIt doesn't validate transitions. Any state can follow any other, including `settled` back to `queued`. It also publishes on every call, even when the state hasn't changed.\n\n**Published frame**\n\n```ts\n{\n  resource: { id: record.refundId, processing_status: record.processingState },\n  type: \"refund_settlement\",\n  event: \"status_changed\",\n}\n```\n\n- `type` is `\"refund_settlement\"`, which identifies the stream.\n- `event` is `\"status_changed\"`.\n- `resource.id` is the refund ID.\n- `resource.processing_status` is the new state. The payload key is snake_case, while the record field is camelCase `processingState`.\n\nThe doc comment on the function says these are \"Refund settlement processing updates published to the operations dashboard.\"\n\n**Gaps**\n\n- Nothing in this repo shows what `publish` is wired to (a websocket, a bus or something else), and nothing calls `applyProcessingState`. The upstream settlement flow that decides when to move from `queued` to `settled` or `rejected` isn't in this checkout.\n- If you want the callers traced, I'll need the tea-rags permission, or I can try a text search for `applyProcessingState`.",
+  "unique_model_responses": [
+    {
+      "id": "msg_011CgeZzQQUHaGQzoJC5Zzxx",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 9683,
+        "cache_read_input_tokens": 8751,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 9683
+        },
+        "output_tokens": 8,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011CgeZzot64iBRVB2c59v7Y",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 4834,
+        "cache_read_input_tokens": 18434,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4834
+        },
+        "output_tokens": 32,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea1DQCjc5QGYQCsVkQC",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 489,
+        "cache_read_input_tokens": 23268,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 489
+        },
+        "output_tokens": 5,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea1WEEgFL8e8fjnRt9U",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 312,
+        "cache_read_input_tokens": 23757,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 312
+        },
+        "output_tokens": 32,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea1i7rdr2nii2QSm7ti",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 421,
+        "cache_read_input_tokens": 24069,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 421
+        },
+        "output_tokens": 52,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    },
+    {
+      "id": "msg_011Cgea1yfUt537JQSWbv7mq",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 397,
+        "cache_read_input_tokens": 24490,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 397
+        },
+        "output_tokens": 704,
+        "service_tier": "standard",
+        "inference_geo": "global",
+        "speed": "standard"
+      }
+    }
+  ],
+  "model_response_count": 6,
+  "native_usage": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 16136,
+    "cache_read_input_tokens": 122769,
+    "output_tokens": 1756,
+    "output_tokens_details": {
+      "thinking_tokens": 231
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 16136,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 733,
+        "cache_read_input_tokens": 24490,
+        "cache_creation_input_tokens": 397,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 397
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "first_observed_output_delay_seconds": 3.830731,
+  "visible_delta_bytes": 2184,
+  "first_visible_text_TTFT_seconds": 21.144009917014046,
+  "observed_text_stream_seconds": 6.568619332974777,
+  "timing_limit": "Text-delta client receipt intervals, not provider decode time; all startup hooks remain in sessiontotal.",
+  "quality": "UNGRADED; controller-only grading",
+  "native_result_type": "success"
+}

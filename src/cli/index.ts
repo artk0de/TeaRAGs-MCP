@@ -8,8 +8,19 @@ const argv = process.argv.slice(2);
  */
 const isLeanProjectIndexed =
   argv[0] === "project" && argv[1] === "indexed" && !argv.includes("--help") && !argv.includes("-h");
+const isLeanPrimeAgent =
+  argv[0] === "prime" &&
+  argv.includes("--agent") &&
+  !argv.includes("--full") &&
+  !argv.includes("--help") &&
+  !argv.includes("-h");
 
 async function main(): Promise<void> {
+  if (isLeanPrimeAgent) {
+    const { runPrimeAgentArgv } = await import("./commands/prime-agent.js");
+    process.exitCode = await runPrimeAgentArgv(argv.slice(1));
+    return;
+  }
   if (isLeanProjectIndexed) {
     const { runProjectIndexedArgv } = await import("./commands/project-indexed.js");
     process.exitCode = await runProjectIndexedArgv(argv.slice(2));

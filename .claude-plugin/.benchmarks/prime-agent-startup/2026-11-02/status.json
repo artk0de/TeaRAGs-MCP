@@ -1,0 +1,11 @@
+{
+  "status": "ENGINE_IMPLEMENTED_BEHAVIORAL_GATE_OPEN",
+  "models_started": 0,
+  "old_catalog_only_proofs": 4,
+  "native_mcp_execution_permission": "UNPROVEN; exact17 corrected CLI flags source-tested only",
+  "models": "gpt-6.1-sol/medium + claude-sonnet-5-5/medium, n1",
+  "historical_comparison": "Only previous sentinel-only candidate4; no repeat authorized",
+  "cleanup": "Old worktree-based paths and GO seals are archival, not runnable authorization. Rebind main/archived runtime before continuing.",
+  "archive": "/Users/Shared/nav-ab/archives/p0-session-2026-11-02-before-cleanup",
+  "full_benchmark": "PAUSED"
+}

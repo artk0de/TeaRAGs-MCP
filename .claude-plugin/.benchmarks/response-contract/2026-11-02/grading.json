@@ -1,0 +1,31 @@
+{
+  "status": "OPEN; no model actors executed",
+  "model_policy": {"codex":"gpt-6.1-sol","claude":"claude-sonnet-5-5","effort":"medium","n":1},
+  "C01": {
+    "required": [
+      "Validation precedes replay lookup; priority archived, missing document, disconnected destination, partner limit.",
+      "A matching replay record returns its existing state and reused=true, without insertion; its state need not be queued.",
+      "A valid new partner export selects partner-export; a non-partner selects documents.",
+      "Insertion occurs only after successful validation and absent/unmatched replay; result uses returned record.state, without assuming the queue contract forces queued."
+    ],
+    "evidence": ["src/submit-export.ts", "src/export-policy.ts"],
+    "failures": ["Omitted requested branch", "Invented queue guarantee", "Replay bypasses validation", "Unsupported answer or premature stopping"]
+  },
+  "C02": {
+    "required": [
+      "displayName maps to displayName with trim; email to contactEmail with trim and lowercasing; locale to locale with underscores replaced by hyphens.",
+      "interval maps monthly->M and yearly->Y; trial omits billingCycle.",
+      "vatId and timezone have null target declarations and are absent from the constructed payload.",
+      "No external remote schema validation/acceptance requirements are established by this code; mark this limit rather than inventing mappings."
+    ],
+    "evidence": ["src/customer-mapping.ts"],
+    "failures": ["Only a subset of mappings", "Invented targets for null declarations", "Clarification replaces the supported mapping", "Overstated absence outside the included code"]
+  },
+  "hypothesis_gate": {
+    "quality": "All required facts and source support retained on both cases.",
+    "efficiency": "Evaluate model responses, fresh/cached input, output, reasoning-token counts separately. Fewer final words alone does not support a thinking reduction claim.",
+    "adoption": "Do not ship an answer contract unless the paired observed evidence supports its claimed benefit without a quality regression. n=1 supports a narrow hypothesis only.",
+    "claude": "Codex-only candidate: one unchanged Claude control per case, not two repeated byte-identical conditions.",
+    "privacy": "No expected answers, grading, prior transcripts or private reasoning exposed to actors."
+  }
+}

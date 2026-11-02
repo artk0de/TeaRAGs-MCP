@@ -422,6 +422,21 @@ export class FilePhase {
     for (const s of this.states.values()) s.fileWork.length = 0;
   }
 
+  /**
+   * Fail ONE provider of this run, from outside its file stream — a finalize or
+   * a pre-run repair dispatch that threw (bd tea-rags-mcp-xvik1). Same verdict
+   * as a failed stream: every later step skips the provider and its terminal
+   * markers read `failed` with this cause; the other providers carry on. The
+   * in-memory verdict is set before the first await, so a caller that does not
+   * await still sees `hasPrefetchFailed`. A provider outside the run is a no-op.
+   */
+  async markProviderFailed(providerKey: string, error: unknown): Promise<void> {
+    const ctx = this.contexts.get(providerKey);
+    const state = this.states.get(providerKey);
+    if (!ctx || !state) return;
+    await this.recordPrefetchFailure(ctx, state, error);
+  }
+
   hasPrefetchFailed(providerKey: string): boolean {
     return this.states.get(providerKey)?.prefetchFailed ?? false;
   }

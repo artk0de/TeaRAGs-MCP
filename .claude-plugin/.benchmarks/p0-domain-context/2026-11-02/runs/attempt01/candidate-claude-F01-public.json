@@ -1,0 +1,121 @@
+{
+  "input": ".tmp/p0-domain-behavior-runner/prepared01/actors/candidate-claude-F01/native/events.jsonl",
+  "input_sha256": "c899ed4c00dfe7a97757fc0b8aeb9f8c6bd04a89333c771df005639c34a87a50",
+  "event_count": 166,
+  "public_calls": [
+    {
+      "event_index": 37,
+      "response_id": "msg_011CgeaDu31oCbA6PA3svWrn",
+      "id": "toolu_01NRJdrsjAR7tDJoAM1gSQor",
+      "name": "mcp__tea-rags__find_symbol",
+      "input": {
+        "relativePath": "src/refund-settlement/status.ts",
+        "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+      }
+    },
+    {
+      "event_index": 63,
+      "response_id": "msg_011CgeaEAecuaTBTw56xapw5",
+      "id": "toolu_01Bttyaag4orLsxW4m6yFyhp",
+      "name": "Read",
+      "input": {
+        "file_path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni/src/refund-settlement/status.ts"
+      }
+    }
+  ],
+  "public_results": [
+    {
+      "event_index": 46,
+      "tool_use_id": "toolu_01NRJdrsjAR7tDJoAM1gSQor",
+      "is_error": true,
+      "content": "Permission to use mcp__tea-rags__find_symbol has been denied because Claude Code is running in don't ask mode. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed."
+    },
+    {
+      "event_index": 72,
+      "tool_use_id": "toolu_01Bttyaag4orLsxW4m6yFyhp",
+      "is_error": null,
+      "content": "1\texport type ProcessingState = \"queued\" | \"processing\" | \"settled\" | \"rejected\";\n2\t\n3\texport interface RecordState {\n4\t  refundId: string;\n5\t  processingState: ProcessingState;\n6\t}\n7\t\n8\t/** Refund settlement processing updates published to the operations dashboard. */\n9\texport function applyProcessingState(\n10\t  record: RecordState,\n11\t  state: ProcessingState,\n12\t  publish: (frame: object) => void,\n13\t): void {\n14\t  record.processingState = state;\n15\t  publish({\n16\t    resource: { id: record.refundId, processing_status: record.processingState },\n17\t    type: \"refund_settlement\",\n18\t    event: \"status_changed\",\n19\t  });\n20\t}\n21\t\n22\t"
+    }
+  ],
+  "native_permission_denials": [
+    {
+      "event_index": 45,
+      "tool_name": "mcp__tea-rags__find_symbol",
+      "tool_use_id": "toolu_01NRJdrsjAR7tDJoAM1gSQor",
+      "decision_reason_type": "mode",
+      "message": "Permission to use mcp__tea-rags__find_symbol has been denied because Claude Code is running in don't ask mode. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed."
+    }
+  ],
+  "native_numeric_results": [
+    {
+      "event_index": 162,
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 3,
+      "duration_ms": 21468,
+      "duration_api_ms": 19271,
+      "total_cost_usd": 0.05424849999999999,
+      "usage": {
+        "input_tokens": 6,
+        "cache_creation_input_tokens": 10508,
+        "cache_read_input_tokens": 45945,
+        "output_tokens": 761,
+        "output_tokens_details": {
+          "thinking_tokens": 100
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 10508,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 450,
+            "cache_read_input_tokens": 18833,
+            "cache_creation_input_tokens": 404,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 404
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 6,
+          "outputTokens": 761,
+          "cacheReadInputTokens": 45945,
+          "cacheCreationInputTokens": 10508,
+          "webSearchRequests": 0,
+          "costUSD": 0.05424849999999999,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 100,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "permission_denials": [
+        {
+          "tool_name": "mcp__tea-rags__find_symbol",
+          "tool_use_id": "toolu_01NRJdrsjAR7tDJoAM1gSQor",
+          "tool_input": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          }
+        }
+      ]
+    }
+  ],
+  "privacy": "No private thinking/reasoning/summary/encrypted content selected or exported."
+}
