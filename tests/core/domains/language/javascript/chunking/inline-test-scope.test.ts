@@ -189,6 +189,13 @@ describe("TreeSitterChunker — an in-source block never becomes production code
     const holders = chunks.filter((c) => c.content.includes("import.meta.vitest.it"));
     expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId])).toEqual([["test", "math.vitest"]]);
   });
+
+  it("parents that block as a claimed block's scope chunk: under the file subject, by its `if`", async () => {
+    const chunks = await chunker.chunk(topLevel(UNRECOGNISED_CALL), "src/math.js", "javascript");
+
+    const block = chunks.find((c) => c.metadata.symbolId === "math.vitest");
+    expect([block?.metadata.parentSymbolId, block?.metadata.parentType]).toEqual(["math", "if_statement"]);
+  });
 });
 
 describe("TreeSitterChunker — residual in-source leaks into production chunks (52wk3.9)", () => {

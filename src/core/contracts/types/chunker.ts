@@ -277,6 +277,14 @@ export interface EmittedChunk {
   symbolId: string;
   /** The chunk's type label. */
   chunkType: ChunkType;
+  /**
+   * The chunk's parent, for a classifier emitting an item a hook would
+   * otherwise claim (an inline test leaf, bd tea-rags-mcp-52wk3.9), so it
+   * carries the parent fields the kernel gives that item. Absent → no parent.
+   */
+  parentSymbolId?: string;
+  /** The parent's type (`"test_scope"`, or the item's AST type). Absent → none. */
+  parentType?: string;
 }
 
 /**

@@ -609,6 +609,19 @@ pub fn other_production_value(input: usize) -> usize {
     expect(productionHolding(chunks, "#[test]")).toEqual([]);
   });
 
+  it("parents each classifier-emitted test leaf as the kernel parents the same item when a hook claims it", async () => {
+    const code = `#[cfg(test)]\nfn fixture() -> usize { 7 }\n\n#[test]\nfn t() {}\n\n#[cfg(test)]\nmod tests { const X: u8 = 1; }\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    const parentsOf = (symbolId: string): unknown[] => {
+      const chunk = chunks.find((c) => c.metadata.symbolId === symbolId);
+      return [chunk?.metadata.parentSymbolId, chunk?.metadata.parentType];
+    };
+    expect(parentsOf("lib.fixture")).toEqual(["lib", "function_item"]);
+    expect(parentsOf("lib.t")).toEqual(["lib", "test_scope"]);
+    expect(parentsOf("lib.tests")).toEqual(["lib", "mod_item"]);
+  });
+
   it("chunks a short #[cfg(test)] module with no test as one test setup chunk under its module id", async () => {
     const code = `#[cfg(test)]\nmod tests { const X: u8 = 1; }\n\n${PRODUCTION}`;
     const chunks = await chunker.chunk(code, "src/lib.rs", "rust");

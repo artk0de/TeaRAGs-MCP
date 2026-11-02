@@ -1039,6 +1039,8 @@ export class TreeSitterChunker implements CodeChunker {
             chunkIndex: index + i,
             chunkType: c.chunkType,
             name: c.name,
+            ...(c.parentSymbolId === undefined ? {} : { parentSymbolId: c.parentSymbolId }),
+            ...(c.parentType === undefined ? {} : { parentType: c.parentType }),
             symbolId: c.symbolId,
             claimed: true,
             methodLines: this.methodLinesOf(node),

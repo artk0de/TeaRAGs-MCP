@@ -324,8 +324,11 @@ export const inlineTestBlockClassifier: LanguageChunkClassifier = {
   classifyNode(node: AstNode, filePath?: string): ChunkDecision {
     if (filePath === undefined || node.type !== "if_statement") return { kind: "passthrough" };
     if (!isInlineTestNode(node, " ".repeat(node.startIndex) + node.text)) return { kind: "passthrough" };
-    const symbolId = `${inlineTestSubjectName(filePath)}${TEST_SCOPE_CHUNK_VOCABULARY.idSeparator}${INLINE_TEST_SCOPE_NAME}`;
-    return { kind: "emit", chunks: [{ name: INLINE_TEST_SCOPE_NAME, symbolId, chunkType: "test" }] };
+    const subject = inlineTestSubjectName(filePath);
+    const symbolId = `${subject}${TEST_SCOPE_CHUNK_VOCABULARY.idSeparator}${INLINE_TEST_SCOPE_NAME}`;
+    // Parented as a claimed block's scope chunk: under the subject, by the `if`.
+    const chunk = { name: INLINE_TEST_SCOPE_NAME, symbolId, chunkType: "test" as const };
+    return { kind: "emit", chunks: [{ ...chunk, parentSymbolId: subject, parentType: node.type }] };
   },
 };
 

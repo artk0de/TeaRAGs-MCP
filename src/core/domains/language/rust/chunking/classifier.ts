@@ -30,8 +30,16 @@ export class RustChunkClassifier implements LanguageChunkClassifier {
       // An outer doc comment above a test-only item opens its chunk, so the
       // doc row does not stay behind in the production module remainder.
       leadingNode: rustTestItemLeadingNode(node),
+      // Parented as the kernel parents the item when a hook claims it: an
+      // example under its scope, setup under the subject by the item's type.
       chunks: [
-        { name: chunk.name, symbolId: chunk.symbolId, chunkType: chunk.chunkType === "test" ? "test" : "test_setup" },
+        {
+          name: chunk.name,
+          symbolId: chunk.symbolId,
+          chunkType: chunk.chunkType === "test" ? "test" : "test_setup",
+          ...(chunk.parentSymbolId === undefined ? {} : { parentSymbolId: chunk.parentSymbolId }),
+          parentType: chunk.parentType ?? node.type,
+        },
       ],
     };
   }
