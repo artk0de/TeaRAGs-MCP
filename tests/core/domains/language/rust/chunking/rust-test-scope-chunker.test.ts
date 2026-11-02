@@ -162,6 +162,46 @@ mod testing {
     expect(fixture?.content).toContain("#[cfg(test)]");
   });
 
+  it("keeps the attribute rows above a test-only module inside its test scope, out of the production remainder", async () => {
+    const code = `pub fn production_value(input: usize) -> usize {
+    input.saturating_mul(2).saturating_add(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
+    }
+}
+
+#[allow(dead_code)]
+#[cfg(all(test, feature = "slow"))]
+mod slow {
+    #[test]
+    fn slow_add() {
+        assert_eq!(40 + 2, 42);
+    }
+}
+`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+    const isTestChunk = (chunkType: string | undefined) => chunkType === "test" || chunkType === "test_setup";
+
+    for (const chunk of chunks.filter((candidate) => !isTestChunk(candidate.metadata.chunkType))) {
+      expect(chunk.content, `${chunk.metadata.chunkType} ${chunk.startLine}`).not.toContain("#[cfg(test)]");
+      expect(chunk.content, `${chunk.metadata.chunkType} ${chunk.startLine}`).not.toContain("cfg(all(test");
+    }
+    // Rows 5 (`#[cfg(test)]`), 15 (`#[allow(dead_code)]`) and 16 (`#[cfg(all(test, …))]`).
+    for (const row of [5, 15, 16]) {
+      const owner = chunks.find(
+        (chunk) => chunk.metadata.chunkType === "test_setup" && chunk.startLine <= row && row <= chunk.endLine,
+      );
+      expect(owner, `attribute row ${row}`).toBeDefined();
+    }
+  });
+
   it("labels only the test-family functions of a module without a test-only cfg", async () => {
     const code = `mod checks {
     pub fn production_helper(input: usize) -> usize {
@@ -268,11 +308,11 @@ mod nested {
     expect(itWorks?.metadata.chunkType).toBe("test");
   });
 
-  // Pinned boundary: the module remainder (top-level rows no chunk carries —
-  // here a struct under the 50-char chunk floor) is emitted by the engine
-  // (`TreeSitterChunker#withModuleRemainder`) as `block`; no language hook or
-  // classifier types it, so a test-only file's remainder stays production-typed.
-  it("leaves the module remainder of a test-only file to the engine", async () => {
+  // The module remainder (top-level rows no chunk carries — here a struct under
+  // the 50-char chunk floor) is emitted by the engine
+  // (`TreeSitterChunker#withModuleRemainder`); the Rust
+  // `moduleRemainderChunkType` hook types it `test_setup` in a test-only file.
+  it("types the module remainder of a test-only file as test setup", async () => {
     const code = `#![cfg(test)]
 
 pub struct Fixture {
@@ -287,10 +327,53 @@ pub fn make_fixture() -> Vec<u8> {
 `;
     const chunks = await chunker.chunk(code, "src/foo/helpers.rs", "rust");
 
-    expect(chunks.find((chunk) => chunk.content.includes("pub struct Fixture"))?.metadata.chunkType).toBe("block");
+    expect(chunks.find((chunk) => chunk.content.includes("pub struct Fixture"))?.metadata.chunkType).toBe("test_setup");
     expect(chunks.find((chunk) => chunk.content.includes("pub fn make_fixture"))?.metadata.chunkType).toBe(
       "test_setup",
     );
+  });
+
+  it("types the remainder holding a fixture under the chunk floor as test setup", async () => {
+    const code = `#![cfg(test)]
+
+use super::*;
+
+fn base() -> u64 {
+    3
+}
+
+fn shared() -> u64 {
+    sq(3)
+}
+
+#[test]
+fn squares_three() {
+    assert_eq!(shared(), sq(base()));
+}
+`;
+    const chunks = await chunker.chunk(code, "src/foo/helpers.rs", "rust");
+
+    expect(chunks.find((chunk) => chunk.content.includes("fn shared()"))?.metadata.chunkType).toBe("test_setup");
+    expect(chunks.find((chunk) => chunk.content.includes("fn base()"))?.metadata.chunkType).toBe("test_setup");
+  });
+
+  it("keeps the module remainder of a file without a test-only cfg a production block", async () => {
+    const code = `#![allow(dead_code)]
+use std::vec::Vec;
+
+pub struct Fixture {
+    bytes: Vec<u8>,
+}
+
+pub fn make_fixture() -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(16);
+    bytes.extend_from_slice(&[1, 2, 3, 4]);
+    bytes
+}
+`;
+    const chunks = await chunker.chunk(code, "src/foo/helpers.rs", "rust");
+
+    expect(chunks.find((chunk) => chunk.content.includes("pub struct Fixture"))?.metadata.chunkType).toBe("block");
   });
 
   it("keeps production chunk types when the file has no inner test-only cfg", async () => {

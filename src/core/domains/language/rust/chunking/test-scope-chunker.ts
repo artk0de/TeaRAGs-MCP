@@ -104,10 +104,29 @@ function directDeclarations(node: AstNode): AstNode[] {
   return declarationList ? [...declarationList.namedChildren] : [];
 }
 
+/**
+ * The outer attribute rows above a module's `mod` row — `#[cfg(test)]`,
+ * `#[allow(dead_code)]` — as setup lines of its scope, one per row, else none.
+ * Tree-sitter keeps them as siblings before the `mod_item`, so without this no
+ * chunk claims them and the module remainder carries them as production code.
+ * An attribute sharing the `mod` row is already inside the scope's rows.
+ */
+function moduleAttributeLines(node: AstNode, code: string): TestScopeLine[] {
+  const first = attributedStart(node);
+  if (first.startPosition.row === node.startPosition.row) return [];
+  const modRowStart = node.startIndex - node.startPosition.column;
+  const startLine = attributeStartLine(node);
+  return code
+    .substring(first.startIndex, modRowStart)
+    .trimEnd()
+    .split("\n")
+    .map((text, row) => ({ text, sourceLine: startLine + row }));
+}
+
 function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope {
   const localName = nodeName(node);
   const name = pathPrefix ? `${pathPrefix}.${localName}` : localName;
-  const otherLines: TestScopeLine[] = [];
+  const otherLines: TestScopeLine[] = moduleAttributeLines(node, code);
   const examples: TestExample[] = [];
   const children: TestScope[] = [];
 
@@ -132,7 +151,7 @@ function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope
 
   return {
     name,
-    startLine: node.startPosition.row + 1,
+    startLine: attributeStartLine(node),
     endLine: node.endPosition.row + 1,
     setupLines: [],
     otherLines,

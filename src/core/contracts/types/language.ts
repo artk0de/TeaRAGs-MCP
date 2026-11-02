@@ -12,7 +12,7 @@
  */
 
 import type { AstNode, MaterializedTree } from "./ast.js";
-import type { ChunkingHook, DocumentSectionSplitter, LanguageChunkClassifier } from "./chunker.js";
+import type { ChunkingHook, ChunkType, DocumentSectionSplitter, LanguageChunkClassifier } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
@@ -571,6 +571,15 @@ export interface LanguageChunkerHooks {
    * recognized by the engine without it.
    */
   isModuleImport?: (node: AstNode) => boolean;
+  /**
+   * The chunk type of the module remainder (the top-level code no chunk
+   * carries) for this file, read off the file's root. `undefined` keeps the
+   * engine's `"block"`. Exists for a file the language declares test-only as a
+   * whole — Rust's inner `#![cfg(test)]` — whose remainder (a fixture under the
+   * chunk floor, `use super::*;`) would otherwise be typed production code and
+   * miss `payload.isTest`.
+   */
+  moduleRemainderChunkType?: (root: AstNode, code: string) => ChunkType | undefined;
   /**
    * The header row naming a container, for a container whose node does not
    * start where its declaration does — Ruby's `Row = Struct.new(…) do` is a

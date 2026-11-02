@@ -26,6 +26,9 @@ describe("isInlineTestNode (JavaScript, Vitest in-source tests)", () => {
     ["if (import.meta.vitest && flag) {}", false],
     ["if (import.meta.vitest == null) {}", false],
     ["if (typeof import.meta.vitest === 'undefined') {}", false],
+    // An else branch is production code, so the if as a whole is not test-only.
+    ["if (import.meta.vitest) {} else { run(); }", false],
+    ["if (import.meta.vitest != null) {} else if (flag) {}", false],
   ];
 
   it.each(cases)("%s → %s", (code, expected) => {

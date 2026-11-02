@@ -73,10 +73,12 @@ function isVitestCondition(condition: AstNode, code: string): boolean {
 
 /**
  * True when `node` and its whole subtree exist only in the test build: an
- * `if_statement` whose condition is a Vitest in-source test guard.
+ * `if_statement` whose condition is a Vitest in-source test guard and that has
+ * no `else`. An `else` branch runs in the production build, so an if carrying
+ * one is not test-only as a whole.
  */
 export function isInlineTestNode(node: AstNode, code: string): boolean {
-  if (node.type !== "if_statement") return false;
+  if (node.type !== "if_statement" || node.childForFieldName("alternative") !== null) return false;
   const condition = node.childForFieldName("condition");
   return condition !== null && isVitestCondition(condition, code);
 }

@@ -111,6 +111,9 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   // A top-level test-only item with no member to extract reaches no container
   // hook; the classifier gives it its `test` / `test_setup` chunk.
   classifier: new RustChunkClassifier(),
+  // A file made test-only by an inner `#![cfg(test)]` has test-only top-level
+  // code no chunk carries (a fixture under the chunk floor, `use super::*;`).
+  moduleRemainderChunkType: (root, code) => (fileIsInlineTestOnly(root, code) ? "test_setup" : undefined),
   // Rust function items are searchable symbols even when their bodies are
   // shorter than the generic 50-character noise floor.
   keepShortChildChunkTypes: ["function_item", "function_signature_item"],

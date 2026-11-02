@@ -474,6 +474,7 @@ export class TreeSitterChunker implements CodeChunker {
         classifier: hooks.classifier,
         readImportSpecifiers: hooks.readImportSpecifiers,
         isModuleImport: hooks.isModuleImport,
+        moduleRemainderChunkType: hooks.moduleRemainderChunkType,
         containerHeader: hooks.containerHeader,
         leadingCommentRows: hooks.leadingCommentRows,
       };
@@ -2310,7 +2311,12 @@ export class TreeSitterChunker implements CodeChunker {
     const name = statements.length === 1 ? this.moduleDeclarationName(statements[0]) : undefined;
     const remainder = this.remainderChunks(
       parts,
-      { symbolId: this.buildSymbolId(name), name, parentSymbolId: undefined, chunkType: "block" },
+      {
+        symbolId: this.buildSymbolId(name),
+        name,
+        parentSymbolId: undefined,
+        chunkType: langConfig.moduleRemainderChunkType?.(root, code) ?? "block",
+      },
       filePath,
       language,
       0,

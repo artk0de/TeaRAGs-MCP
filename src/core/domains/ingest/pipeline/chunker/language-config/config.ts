@@ -1,7 +1,7 @@
 import type Parser from "tree-sitter";
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type { ChunkingHook, LanguageChunkClassifier } from "../../../../../contracts/types/chunker.js";
+import type { ChunkingHook, ChunkType, LanguageChunkClassifier } from "../../../../../contracts/types/chunker.js";
 
 // Type for tree-sitter language modules
 interface TreeSitterLanguageModule {
@@ -105,6 +105,8 @@ export interface LanguageConfig {
   readImportSpecifiers?: (root: AstNode) => string[];
   /** `LanguageChunkerHooks.isModuleImport`, threaded the same way. */
   isModuleImport?: (node: AstNode) => boolean;
+  /** `LanguageChunkerHooks.moduleRemainderChunkType`, threaded the same way. */
+  moduleRemainderChunkType?: (root: AstNode, code: string) => ChunkType | undefined;
   /** `LanguageChunkerHooks.containerHeader`, threaded the same way. */
   containerHeader?: (node: AstNode, code: string) => string | undefined;
   /** `LanguageChunkerHooks.leadingCommentRows`, threaded the same way. */
