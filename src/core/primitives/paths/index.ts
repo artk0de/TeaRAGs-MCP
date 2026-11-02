@@ -9,6 +9,8 @@
 
 export { compilePathPatternMatcher, pathPatternLiteralPrefix, type PathPatternMatcher } from "./path-pattern.js";
 
+export { compiledModuleDir } from "./compiled-module-dir.js";
+
 export { detectScope, isTestPath, type ChunkScope, type ScopeDetectionConfig } from "./scope-detection.js";
 
 export {

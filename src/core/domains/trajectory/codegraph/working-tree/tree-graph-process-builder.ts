@@ -27,9 +27,11 @@
  * throws.
  */
 import { fork, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
+import { compiledModuleDir } from "../../../../primitives/paths/index.js";
 import type { WorkingTreeGraphBuildInput, WorkingTreeGraphBuilt } from "./tree-graph-build.js";
 import {
   isWorkingTreeGraphEntryReply,
@@ -44,10 +46,7 @@ import {
  * vitest and `build/…/tree-graph-process-builder.js` in production, and node
  * cannot fork a `.ts` file, so the `src/` segment is remapped to `build/`.
  */
-const TREE_GRAPH_ENTRY_PATH = fileURLToPath(new URL("./tree-graph-entry.js", import.meta.url)).replace(
-  "/src/",
-  "/build/",
-);
+const TREE_GRAPH_ENTRY_PATH = join(compiledModuleDir(fileURLToPath(import.meta.url)), "tree-graph-entry.js");
 
 /** How long a warm child may sit without a build before it is retired. */
 export const WORKING_TREE_GRAPH_CHILD_IDLE_MS = 5 * 60_000;
