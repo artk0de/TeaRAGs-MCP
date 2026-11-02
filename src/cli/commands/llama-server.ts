@@ -323,21 +323,27 @@ export const llamaServerCommand: CommandModule = {
               describe: "Also print start-at-boot registration",
             }),
         async (argv) => {
-          await runLlamaServerCommand(
-            {
-              bin: argv.bin,
-              os: argv.os,
-              device: argv.device,
-              host: argv.host,
-              port: argv.port,
-              slots: argv.slots,
-              model: argv.model,
-              advertise: argv.advertise,
-              apiKey: argv.apiKey,
-              autostart: argv.autostart,
-            },
-            productionCommandDeps(),
-          );
+          try {
+            await runLlamaServerCommand(
+              {
+                bin: argv.bin,
+                os: argv.os,
+                device: argv.device,
+                host: argv.host,
+                port: argv.port,
+                slots: argv.slots,
+                model: argv.model,
+                advertise: argv.advertise,
+                apiKey: argv.apiKey,
+                autostart: argv.autostart,
+              },
+              productionCommandDeps(),
+            );
+          } catch (err) {
+            if (!(err instanceof TeaRagsError)) throw err;
+            process.stderr.write(`llama-server command: ${err.message}\n${err.hint}\n`);
+            process.exitCode = 1;
+          }
         },
       )
       .command(

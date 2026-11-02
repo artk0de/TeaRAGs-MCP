@@ -12,6 +12,11 @@
  */
 
 import { downloadVerifiedFile } from "../../native-assets/index.js";
+import {
+  OllamaModelReferenceEmptyError,
+  OllamaRegistryManifestMissingError,
+  OllamaRegistryModelLayerMissingError,
+} from "./errors.js";
 
 const OLLAMA_REGISTRY = "https://registry.ollama.ai/v2";
 const MANIFEST_MEDIA_TYPE = "application/vnd.docker.distribution.manifest.v2+json";
@@ -38,7 +43,7 @@ export interface OllamaRegistryDeps {
  */
 export function parseOllamaModelReference(ref: string): { namespace: string; name: string; tag: string } {
   const trimmed = ref.trim();
-  if (trimmed === "") throw new Error("Empty Ollama model reference");
+  if (trimmed === "") throw new OllamaModelReferenceEmptyError();
   const lastSlash = trimmed.lastIndexOf("/");
   const lastColon = trimmed.lastIndexOf(":");
   const hasTag = lastColon > lastSlash;
@@ -64,12 +69,12 @@ export async function resolveOllamaRegistryGguf(
     headers: { Accept: MANIFEST_MEDIA_TYPE },
   });
   if (!response.ok) {
-    throw new Error(`Ollama registry has no manifest for ${ref} (status ${response.status})`);
+    throw new OllamaRegistryManifestMissingError(ref, response.status);
   }
   const manifest = (await response.json()) as RegistryManifest;
   const layer = manifest.layers?.find((l) => l.mediaType === MODEL_LAYER_MEDIA_TYPE);
   if (!layer?.digest?.startsWith("sha256:") || typeof layer.size !== "number") {
-    throw new Error(`Ollama manifest for ${ref} has no ${MODEL_LAYER_MEDIA_TYPE} layer`);
+    throw new OllamaRegistryModelLayerMissingError(ref, MODEL_LAYER_MEDIA_TYPE);
   }
   const sha256 = layer.digest.slice("sha256:".length);
   return {

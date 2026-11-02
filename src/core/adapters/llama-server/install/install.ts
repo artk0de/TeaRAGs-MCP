@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import { downloadVerifiedFile, publishArchive, type NativeAssetDeps } from "../../native-assets/index.js";
 import { findLlamaServerInInstall, llamaCppInstallRoot, type LlamaServerFsProbe } from "../binary.js";
+import { LlamaServerBinaryMissingError } from "./errors.js";
 import type { LlamaServerBackend } from "./gpu-backend.js";
 import { LLAMA_CPP_BUILD, llamaCppAssetsFor, type LlamaCppReleaseAsset } from "./llama-cpp-assets.js";
 
@@ -31,7 +32,7 @@ export interface LlamaServerInstallOptions {
 function requireLlamaServer(installDir: string): string {
   const binary = findLlamaServerInInstall(installDir, LOCAL_FS);
   if (binary === undefined) {
-    throw new Error(`llama.cpp ${LLAMA_CPP_BUILD} archive extracted to ${installDir} holds no llama-server binary`);
+    throw new LlamaServerBinaryMissingError(LLAMA_CPP_BUILD, installDir);
   }
   return binary;
 }

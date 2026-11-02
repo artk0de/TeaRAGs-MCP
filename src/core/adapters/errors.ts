@@ -109,6 +109,12 @@ export const INFRA_ERROR_CODES = [
   // native-asset (binary / model weights) verified download
   "INFRA_NATIVE_ASSET_DOWNLOAD_FAILED",
   "INFRA_NATIVE_ASSET_INTEGRITY_MISMATCH",
+  // llama-server install
+  "INFRA_LLAMA_SERVER_BINARY_MISSING",
+  // Ollama registry GGUF source
+  "INFRA_OLLAMA_MODEL_REFERENCE_EMPTY",
+  "INFRA_OLLAMA_REGISTRY_MANIFEST_MISSING",
+  "INFRA_OLLAMA_REGISTRY_MODEL_LAYER_MISSING",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */
