@@ -410,3 +410,6 @@ export interface DocumentSection {
 export interface DocumentSectionSplitter {
   split: (code: string, options: { maxChunkSize: number }) => DocumentSection[];
 }
+
+/** Chunk types the test chunker emits; a chunk of either type is test code wherever its file lives. */
+export const TEST_CHUNK_TYPES: ReadonlySet<string> = new Set(["test", "test_setup"]);

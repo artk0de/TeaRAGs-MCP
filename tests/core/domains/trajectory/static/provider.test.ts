@@ -238,6 +238,25 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.isTest).toBe(true);
   });
 
+  it.each([
+    ["test", "src/lib.rs", "rust", true],
+    ["test_setup", "src/lib.rs", "rust", true],
+    ["function", "src/lib.rs", "rust", false],
+    ["function", "tests/a.test.ts", "typescript", true],
+  ])("chunkType %s at %s -> isTest %s", (chunkType, relPath, language, expected) => {
+    const payload = builder.buildPayload(
+      {
+        content: "code",
+        startLine: 1,
+        endLine: 5,
+        metadata: { filePath: `/project/${relPath}`, language, chunkIndex: 0, chunkType },
+      },
+      "/project",
+    );
+    if (expected) expect(payload.isTest).toBe(true);
+    else expect("isTest" in payload).toBe(false);
+  });
+
   it("omits isTest for non-test files", () => {
     const payload = builder.buildPayload(chunk, "/project");
     expect(payload.isTest).toBeUndefined();

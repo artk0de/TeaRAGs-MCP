@@ -25,6 +25,7 @@ import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { EmbeddingModelGuardCallOptions, EmbeddingModelGuardPort } from "../../../adapters/qdrant/ports.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { TEST_CHUNK_TYPES } from "../../../contracts/types/chunker.js";
 import type {
   ContainerAncestorResolver,
   SymbolChunkResolver,
@@ -1194,11 +1195,10 @@ function isPresetsSpec(spec: FilterSpec): spec is { presets: string } {
   return typeof (spec as { presets?: unknown }).presets === "string";
 }
 
-/**
- * Chunk types the DSL test chunker emits — they live in test files, so
- * selecting one selects `isTest: true` as well.
- */
-const TEST_CHUNK_TYPES: ReadonlySet<unknown> = new Set(["test", "test_setup"]);
+/** A test chunk type selected by a typed filter also selects `isTest: true`. */
+function isTestChunkType(value: unknown): boolean {
+  return typeof value === "string" && TEST_CHUNK_TYPES.has(value);
+}
 
 /**
  * Does a compiled preset DEFAULT filter exclude the population the caller's
@@ -1236,7 +1236,7 @@ export function presetDefaultExcludesCallerScope(
     const exact = exactMatchCondition(condition);
     if (exact) selections.set(exact.key, exact.value);
   }
-  if (TEST_CHUNK_TYPES.has(selections.get("chunkType"))) selections.set("isTest", true);
+  if (isTestChunkType(selections.get("chunkType"))) selections.set("isTest", true);
   if (callerParams.testFile === "include") selections.set("isTest", true);
   if (callerParams.documentation === "include") selections.set("isDocumentation", true);
   if (typeof callerParams.language === "string" && DOCUMENTATION_LANGUAGES.has(callerParams.language)) {

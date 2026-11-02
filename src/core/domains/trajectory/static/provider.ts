@@ -1,6 +1,7 @@
 import { extname, relative } from "node:path";
 
 import { RELATIVE_PATH_EXACT_KEY } from "../../../contracts/relative-path-exact.js";
+import { TEST_CHUNK_TYPES } from "../../../contracts/types/chunker.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { detectTestFile } from "./test-detection.js";
 
@@ -34,7 +35,10 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (m.isDocumentation) payload.isDocumentation = m.isDocumentation;
     const relativePath = payload.relativePath as string;
     const language = m.language as string;
-    if (detectTestFile(relativePath, language)) payload.isTest = true;
+    // A test chunk inside a production file (Rust #[cfg(test)], Vitest
+    // in-source) is test code even though its file is not a test file.
+    const isTestChunk = typeof m.chunkType === "string" && TEST_CHUNK_TYPES.has(m.chunkType);
+    if (detectTestFile(relativePath, language) || isTestChunk) payload.isTest = true;
     const imports = m.imports as string[] | undefined;
     if (imports?.length) payload.imports = imports;
     const headingPath = m.headingPath as { depth: number; text: string }[] | undefined;
