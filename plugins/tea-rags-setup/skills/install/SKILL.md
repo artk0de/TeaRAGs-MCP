@@ -81,7 +81,9 @@ Windows PowerShell 5.1 strips inner quotes → escape them:
 shells take the plain form). Output `{ model, rule, window, dimensions }`.
 
 Alias = `registered.name` when present, else project folder name lowercased, non
-`[a-z0-9_-]` → `-`, matching `^[a-z0-9][a-z0-9_-]{0,63}$`.
+`[a-z0-9_-]` → `-`, matching `^[a-z0-9][a-z0-9_-]{0,63}$`. Existing alias →
+`tea-rags projects info --name <alias>`; `embeddingModel` set and ≠ `<model>` →
+`Index:` line carries `--force` (Step 5.8).
 
 Print this block, slots filled, then ask:
 
@@ -96,7 +98,7 @@ Embeddings:  llama-server pool, instances by bench (≥ 2), loopback ports 20000
 Rust:        rustc driver install | not needed (no Rust)
 Register:    alias <alias> (<new | existing — env updated>), git analytics on
 Plugin+MCP:  <harness>: tea-rags plugin pinned v<latest> + MCP `tea-rags server`, no env
-Index:       tea-rags index-codebase --project <alias> --wait-enrichments --json (foreground)
+Index:       EMBEDDING_MODEL=<model> tea-rags index-codebase --project <alias> [--force if model changed] --wait-enrichments --json (foreground)
 Thresholds:  Ruby ≥ 5% or Swift ≥ 5% → CodeRankEmbed; Muninn languages ≥ 80% → Muninn-small; else jina
 ```
 
@@ -125,9 +127,13 @@ Each command foreground, waited on (long ones: timeout ≥ 10 min).
    `tea-rags rustc-driver status`.
 6. Register (registry = env source of truth):
    - new:
-     `tea-rags projects register --path "<project>" --name <alias> --env EMBEDDING_PROVIDER=llama-server --env "EMBEDDING_BASE_URL=<endpoints>" --env EMBEDDING_MODEL=<model> --env TRAJECTORY_GIT_ENABLED=true`
+     `tea-rags projects register --path "<project>" --name <alias> --env EMBEDDING_PROVIDER=llama-server --env "EMBEDDING_BASE_URL=<endpoints>" --env TRAJECTORY_GIT_ENABLED=true`
    - existing alias:
-     `tea-rags projects set-env --name <alias> EMBEDDING_PROVIDER=llama-server "EMBEDDING_BASE_URL=<endpoints>" EMBEDDING_MODEL=<model> TRAJECTORY_GIT_ENABLED=true`
+     `tea-rags projects set-env --name <alias> EMBEDDING_PROVIDER=llama-server "EMBEDDING_BASE_URL=<endpoints>" TRAJECTORY_GIT_ENABLED=true`
+
+   Never `EMBEDDING_MODEL` in register / set-env: CLI rejects it (index run
+   alone records the model). Step 8 exports it.
+
 7. Plugin + MCP, block for `harness` (pin = `v<ver>`, never a branch):
    - Claude Code — three commands, in order:
      `claude plugin marketplace add https://github.com/artk0de/TeaRAGs-MCP.git#v<ver>`
@@ -148,9 +154,21 @@ Each command foreground, waited on (long ones: timeout ≥ 10 min).
    project-level MCP entry for tea-rags (`<project>/.mcp.json`,
    `.cursor/mcp.json`) → report it as duplicate, never write one.
 
-8. `tea-rags index-codebase --project <alias> --wait-enrichments --json` —
-   foreground, timeout ≥ 60 min on large repos. Read `outcome.measured`, then
+8. Index, model exported for this run — registry records it, later runs,
+   `tea-rags server`, `tea-rags call` and auto-update replay it unexported.
+   POSIX:
+   `EMBEDDING_MODEL=<model> tea-rags index-codebase --project <alias> --wait-enrichments --json`
+   · PowerShell:
+   `$env:EMBEDDING_MODEL="<model>"; tea-rags index-codebase --project <alias> --wait-enrichments --json`.
+   Foreground, timeout ≥ 60 min on large repos. Read `outcome.measured`, then
    `outcome.failed` / `outcome.degraded`.
+
+   Existing alias, index built with another model
+   (`tea-rags projects info --name <alias>` → `embeddingModel` ≠ `<model>`):
+   plain run stops with `Embedding model mismatch` (model guard). Add `--force`
+   to the same command — full re-embed into a new collection, alias swaps at the
+   end, search stays up. Step 4 put it on the `Index:` line; the one
+   confirmation covers it.
 
 ## Step 6 — Verify
 
