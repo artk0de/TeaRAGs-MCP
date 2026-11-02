@@ -2,9 +2,10 @@
  * `tea-rags llama-server <subcommand>` — operator helpers for the llama-server
  * embedding provider.
  *
- * `fetch-model` downloads a model's GGUF weights from the Ollama registry into
- * the local data dir, sha256-verified, for a local llama-server (the fallback
- * tier). `command` prints — never runs — the launch, model-download,
+ * `fetch-model` downloads a model's GGUF weights into the local data dir,
+ * sha256-verified, for a local llama-server: a catalog Hugging Face id from its
+ * pinned repo, any other reference from the Ollama registry. `choose-model`
+ * maps a project's language shares to a catalog model. `command` prints — never runs — the launch, model-download,
  * firewall, keep-awake and autostart lines for a remote GPU host. Work runs
  * over injected deps so tests use object literals.
  */
@@ -15,9 +16,14 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import {
+  downloadEmbeddingModelGguf,
   downloadVerifiedGguf,
+  EMBEDDING_MODEL_CATALOG,
+  InvalidParameterError,
   readGgufContextLength,
   resolveOllamaRegistryGguf,
+  selectEmbeddingModelForLanguages,
+  type EmbeddingModelCatalogEntry,
   type OllamaRegistryGgufSource,
 } from "../../core/api/public/index.js";
 import {
@@ -41,19 +47,39 @@ export interface LlamaServerFetchModelDeps {
   out: (line: string) => void;
   env: NodeJS.ProcessEnv;
   home: string;
+  /** Models resolved by Hugging Face id before the Ollama registry; defaults to the shipped catalog. */
+  catalog?: readonly EmbeddingModelCatalogEntry[];
+}
+
+function dataDirOf(env: NodeJS.ProcessEnv, home: string): string {
+  return env.TEA_RAGS_DATA_DIR ?? join(home, ".tea-rags");
 }
 
 /** `<TEA_RAGS_DATA_DIR | ~/.tea-rags>/models/gguf`. */
 function defaultGgufDir(env: NodeJS.ProcessEnv, home: string): string {
-  return join(env.TEA_RAGS_DATA_DIR ?? join(home, ".tea-rags"), "models", "gguf");
+  return join(dataDirOf(env, home), "models", "gguf");
 }
 
-/** Resolve, download and verify; the LAST printed line is the GGUF path. */
+/**
+ * Resolve, download and verify; the LAST printed line is the GGUF path. A
+ * catalog id downloads its pinned Hugging Face GGUF into `<data dir>/models/`;
+ * any other reference goes to the Ollama registry.
+ */
 export async function runLlamaServerFetchModel(
   args: LlamaServerFetchModelArgs,
   deps: LlamaServerFetchModelDeps,
 ): Promise<void> {
   const reference = args.model ?? deps.env.EMBEDDING_MODEL ?? DEFAULT_GGUF_MODEL_REFERENCE;
+  const catalogEntry = (deps.catalog ?? EMBEDDING_MODEL_CATALOG).find((entry) => entry.id === reference);
+  if (catalogEntry !== undefined) {
+    const { gguf } = catalogEntry;
+    if (gguf !== null) {
+      deps.out(`fetch-model: ${reference} — ${gguf.repo}, ${Math.round(gguf.bytes / (1024 * 1024))} MiB`);
+    }
+    const dir = args.dir ?? join(dataDirOf(deps.env, deps.home), "models");
+    deps.out(await downloadEmbeddingModelGguf(catalogEntry, dir, { fetch: deps.fetch }));
+    return;
+  }
   const dir = args.dir ?? defaultGgufDir(deps.env, deps.home);
   const source = await resolveOllamaRegistryGguf(reference, { fetch: deps.fetch });
   deps.out(
@@ -70,6 +96,39 @@ function productionFetchModelDeps(): LlamaServerFetchModelDeps {
     env: process.env,
     home: homedir(),
   };
+}
+
+export interface LlamaServerChooseModelArgs {
+  /** JSON object: language → fraction of code LOC. */
+  shares: string;
+}
+
+function parseLanguageShares(shares: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(shares);
+  } catch {
+    throw new InvalidParameterError("shares", "--shares must be a JSON object of language → fraction");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new InvalidParameterError("shares", "--shares must be a JSON object of language → fraction");
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  for (const [language, share] of entries) {
+    if (typeof share !== "number" || !Number.isFinite(share)) {
+      throw new InvalidParameterError("shares", `--shares: "${language}" must map to a number`);
+    }
+  }
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+/** Print `{ model, rule, window, dimensions }` for the project's language shares — one JSON line. */
+export function runLlamaServerChooseModel(
+  args: LlamaServerChooseModelArgs,
+  deps: { out: (line: string) => void },
+): void {
+  const { model, rule } = selectEmbeddingModelForLanguages(parseLanguageShares(args.shares));
+  deps.out(JSON.stringify({ model: model.id, rule, window: model.window, dimensions: model.dimensions }));
 }
 
 const LLAMA_SERVER_TARGET_OSES: readonly LlamaServerTargetOs[] = ["windows", "linux", "macos"];
@@ -163,27 +222,42 @@ function productionCommandDeps(): LlamaServerCommandDeps {
   };
 }
 
-/** `tea-rags llama-server <fetch-model|command>` — helpers for the llama-server provider. */
+/** `tea-rags llama-server <fetch-model|choose-model|command>` — helpers for the llama-server provider. */
 export const llamaServerCommand: CommandModule = {
   command: "llama-server",
-  describe: "Helpers for the llama-server embedding provider (fetch-model, command)",
+  describe: "Helpers for the llama-server embedding provider (fetch-model, choose-model, command)",
   builder: (yargs: Argv) =>
     yargs
       .command(
         "fetch-model [model]",
-        "Download a model's GGUF from the Ollama registry (sha256-verified) and print its path",
+        "Download a model's GGUF (sha256-verified) — a catalog Hugging Face id first, else the Ollama registry — and print its path",
         (y) =>
           y
             .positional("model", {
               type: "string",
-              describe: "Ollama model reference (default: EMBEDDING_MODEL, else the jina default)",
+              describe:
+                "Catalog Hugging Face id (e.g. nomic-ai/CodeRankEmbed) or Ollama model reference (default: EMBEDDING_MODEL, else the jina default)",
             })
             .option("dir", {
               type: "string",
-              describe: "Destination directory (default: ~/.tea-rags/models/gguf, honours TEA_RAGS_DATA_DIR)",
+              describe:
+                "Destination directory (default: ~/.tea-rags/models for catalog ids, ~/.tea-rags/models/gguf for Ollama references; honours TEA_RAGS_DATA_DIR)",
             }),
         async (argv) => {
           await runLlamaServerFetchModel({ model: argv.model, dir: argv.dir }, productionFetchModelDeps());
+        },
+      )
+      .command(
+        "choose-model",
+        "Print the embedding model for a project's language shares as JSON { model, rule, window, dimensions }",
+        (y) =>
+          y.option("shares", {
+            type: "string",
+            demandOption: true,
+            describe: 'JSON object language → fraction of code LOC, e.g. \'{"ruby":0.06,"typescript":0.94}\'',
+          }),
+        (argv) => {
+          runLlamaServerChooseModel({ shares: argv.shares }, { out: (line) => process.stdout.write(`${line}\n`) });
         },
       )
       .command(

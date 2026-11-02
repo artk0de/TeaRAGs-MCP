@@ -48,6 +48,18 @@ export class EmbeddingModelMismatchError extends EmbeddingError {
   }
 }
 
+/** A catalog embedding model has no published GGUF, so there is nothing to download. */
+export class EmbeddingModelNotPublishedError extends EmbeddingError {
+  constructor(modelId: string) {
+    super({
+      code: "INFRA_EMBEDDING_MODEL_NOT_PUBLISHED",
+      message: `Embedding model "${modelId}" is not published as a GGUF yet`,
+      hint: "Choose another model (tea-rags llama-server choose-model), or wait until its GGUF is published",
+      httpStatus: 404,
+    });
+  }
+}
+
 /**
  * Carried by a provider-unavailable error whose provider can wait for its host
  * to come back (EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS) before giving up.
