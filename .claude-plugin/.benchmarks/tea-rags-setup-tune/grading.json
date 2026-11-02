@@ -1,0 +1,111 @@
+{
+  "skill_name": "tea-rags-setup:tune",
+  "skill_source": "plugins/tea-rags-setup/skills/tune/SKILL.md (tea-rags-setup 0.8.0)",
+  "description": "Grader-only expectations for prompts.json. A case passes only when every assertion holds and no not_expected behaviour appears in the observed transcript (tool calls + answer).",
+  "cases": [
+    {
+      "id": 1,
+      "expected_output": "Section A: `tea-rags llama-server bench --model nomic-ai/CodeRankEmbed` -> `stop` -> `start --instances <best>` -> `tea-rags projects set-env --name shop \"EMBEDDING_BASE_URL=<endpoints joined with ,>\"`; summary block.",
+      "not_expected": "Running `tea-rags tune`. Skipping set-env after the restart. Writing env into an MCP config.",
+      "assertions": [
+        {
+          "text": "bench, then stop/start with the best instance count",
+          "type": "command"
+        },
+        {
+          "text": "set-env EMBEDDING_BASE_URL after the restart (ports change)",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "expected_output": "Bench with --slots 2, 4, 8 in turn; stop when gain < 5% or a launch fails / OOMs and keep the previous value; restart with --slots <best>; set-env the base URL.",
+      "not_expected": "Hand-editing -np / -c. An unbounded slot sweep.",
+      "assertions": [
+        {
+          "text": "Sweeps --slots 2/4/8 with the < 5% stop rule",
+          "type": "procedure"
+        },
+        {
+          "text": "Restarts the pool and updates EMBEDDING_BASE_URL",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "expected_output": "Refuses the pins: batch size and concurrency belong to the runtime tuner (hill-climb per endpoint) and a pin caps it. Runs section A only.",
+      "not_expected": "set-env EMBEDDING_BATCH_SIZE / EMBEDDING_CONCURRENCY / EMBEDDING_TUNE_MIN_BATCH_SIZE.",
+      "assertions": [
+        { "text": "Writes no batch / concurrency pins", "type": "prohibition" },
+        {
+          "text": "Explains that the runtime tuner owns them",
+          "type": "rationale"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "expected_output": "Section B: `tea-rags tune --project legacy --provider ollama` (quick, or --full), no --qdrant-url; reads tuned_environment_variables.env, writes each KEY=VALUE via `tea-rags projects set-env --name legacy`, deletes the file, reports the rates.",
+      "not_expected": "Putting the values into an MCP env block. Keeping the env file.",
+      "assertions": [
+        {
+          "text": "tea-rags tune --provider ollama without --qdrant-url",
+          "type": "command"
+        },
+        {
+          "text": "Values go to the registry via set-env and the file is deleted",
+          "type": "artifact"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "expected_output": "Does not offer switching to Ollama; tunes the llama-server pool (section A).",
+      "not_expected": "Recommending or performing a switch to Ollama.",
+      "assertions": [
+        { "text": "No Ollama switch offered", "type": "prohibition" }
+      ]
+    },
+    {
+      "id": 6,
+      "expected_output": "`tea-rags tune` accepts only ollama|onnx; for the llama pool it uses `tea-rags llama-server bench --model <model>` (section A).",
+      "not_expected": "Running tea-rags tune with --provider llama-server.",
+      "assertions": [
+        {
+          "text": "Rejects --provider llama-server for tea-rags tune",
+          "type": "prohibition"
+        },
+        { "text": "Uses llama-server bench instead", "type": "command" }
+      ]
+    },
+    {
+      "id": 7,
+      "expected_output": "`tea-rags llama-server stop --model nomic-ai/CodeRankEmbed` -> `start --model nomic-ai/CodeRankEmbed --instances <count>` -> set-env EMBEDDING_BASE_URL with the new endpoints.",
+      "not_expected": "Restarting without updating EMBEDDING_BASE_URL.",
+      "assertions": [
+        { "text": "stop + start", "type": "command" },
+        { "text": "set-env with the new endpoints", "type": "command" }
+      ]
+    },
+    {
+      "id": 8,
+      "expected_output": "Refuses the hand edit: the CLI derives -c = slots x window and -b = -ub = window from the model catalog; a window change is a chunk-size change and needs a --force reindex.",
+      "not_expected": "Launching llama-server by hand with custom -c / -b.",
+      "assertions": [
+        { "text": "No hand edit of -c / -b", "type": "prohibition" },
+        {
+          "text": "States that a window change means a --force reindex",
+          "type": "rationale"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "expected_output": "Routes to tea-rags-setup:install (tune serves existing installs only).",
+      "not_expected": "Running tune steps on a missing install.",
+      "assertions": [{ "text": "Routes to install", "type": "routing" }]
+    }
+  ]
+}

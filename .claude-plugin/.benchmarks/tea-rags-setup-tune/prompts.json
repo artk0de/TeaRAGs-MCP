@@ -1,0 +1,60 @@
+{
+  "skill_name": "tea-rags-setup:tune",
+  "description": "Actor-facing prompts for the re-tune skill (tea-rags-setup 0.8.0, bd tea-rags-mcp-hjbow.11). Expected answers live in grading.json and are never shown to the actor.",
+  "cases": [
+    {
+      "id": 1,
+      "name": "slow-indexing-llama-pool",
+      "category": "finding",
+      "prompt": "Indexing of my project 'shop' got slow. `tea-rags projects info --name shop` shows EMBEDDING_PROVIDER=llama-server, EMBEDDING_MODEL=nomic-ai/CodeRankEmbed. Tune it."
+    },
+    {
+      "id": 2,
+      "name": "tune-slots",
+      "category": "finding",
+      "prompt": "/tea-rags-setup:tune shop --slots — the pool is llama-server with jinaai/jina-embeddings-v2-base-code. What exactly do you run?"
+    },
+    {
+      "id": 3,
+      "name": "no-batch-pin",
+      "category": "finding",
+      "prompt": "Tune 'shop' (llama-server). Also set EMBEDDING_BATCH_SIZE=128 and EMBEDDING_CONCURRENCY=8 in the registry, that should speed it up."
+    },
+    {
+      "id": 4,
+      "name": "ollama-user-chosen",
+      "category": "finding",
+      "prompt": "I switched project 'legacy' to EMBEDDING_PROVIDER=ollama myself. Benchmark my hardware and apply the best settings."
+    },
+    {
+      "id": 5,
+      "name": "no-switch-to-ollama",
+      "category": "finding",
+      "prompt": "Tune 'shop' (llama-server). Would Ollama be faster? Switch me if so."
+    },
+    {
+      "id": 6,
+      "name": "tune-cli-provider",
+      "category": "edge",
+      "prompt": "Run `tea-rags tune --project shop --provider llama-server` to benchmark the llama pool."
+    },
+    {
+      "id": 7,
+      "name": "dead-instance",
+      "category": "edge",
+      "prompt": "`tea-rags llama-server status` shows one of two instances of nomic-ai/CodeRankEmbed dead for project 'shop'. Fix it."
+    },
+    {
+      "id": 8,
+      "name": "window-hand-edit",
+      "category": "edge",
+      "prompt": "Tune 'shop': raise llama-server -c to 16384 and -b to 4096 by hand for CodeRankEmbed."
+    },
+    {
+      "id": 9,
+      "name": "control-fresh-install",
+      "category": "control",
+      "prompt": "Tune tea-rags for /Users/me/Dev/newproj — tea-rags is not installed on this machine yet."
+    }
+  ]
+}

@@ -1,126 +1,48 @@
-# Benchmark — `tea-rags-setup:install`
+# Benchmark — `tea-rags-setup:install` (one-step install)
 
-Feature-driven eval added alongside the new **Step 9 (Register Project Alias)**
-in the install wizard (`steps/step-9-register.md`, verify renumbered to Step
-10). Tests instruction quality: does the skill text guide an agent to register
-the project _before_ the first indexing, derive the alias by the documented
-convention, respect the "don't index during setup" boundary, export `QDRANT_URL`
-so the registry captures the right backend, and keep step order 8 → 9 → 10.
+Behavioural eval for the one-step install skill that replaced the multi-step
+wizard in tea-rags-setup 0.8.0 (bd tea-rags-mcp-hjbow.11). The skill now runs
+detect → `.contextignore.local` → profile → `choose-model` → ONE plan → ONE
+confirmation → apply → verify, always on a llama-server pool, and indexes in the
+foreground.
 
-## Summary
+## Files
 
-| Config        | Pass rate        |
-| ------------- | ---------------- |
-| **With-rule** | **11/11 (100%)** |
-| Without-rule  | 9/11 (82%)       |
-| **Delta**     | **+18pp**        |
+- `prompts.json` — what the actor sees (20 cases; script outputs inlined as
+  fixtures).
+- `grading.json` — expected output, `not_expected`, assertions. Grader only;
+  never shown to the actor.
 
-Method: one with-rule subagent (full skill text injected) and one without-rule
-subagent (only the available MCP/CLI tools listed), each given all 11 cases,
-describing tool-selection plans without executing. Phase 2 lightweight
-tool-selection eval per `optimize-skill`.
+Cases: 12 findings (changed behaviour) · 6 edges · 1 subagent · 1 control
+(re-tune routes to `tune`). Changed behaviour covered: no question before the
+plan, ignore before profile, model taken verbatim from `choose-model`, no
+Ollama, no squash question, `Change model` pick is the confirmation, plugin
+pinned `v<ver>` per harness, MCP without `env`, foreground indexing, `set-env`
+for an existing alias, Node floor 22, rustc driver step, PowerShell 5.1 quoting,
+project-level MCP duplicate, client upgrade + auto-update notice.
 
-## Eval cases (11)
+## Protocol
 
-5 findings (A1–A5) · 2 controls · 2 edges · 2 subagent-routing.
+- Actor: an independent agent with the shipped plugin installed through its
+  harness path (Claude Code marketplace pin, Codex `harness/codex`, Cursor
+  `harness/cursor`), plan-only: describe the commands, do not execute them.
+- Runs: ×3 per harness, executed by Codex (never by Claude). Record plugin
+  version / commit, model, transcripts and per-case verdicts below.
+- A failed case stays open; re-run it after a correction and keep the failed
+  attempt.
 
-| #   | Name                         | Tests                                                   | With | Without  |
-| --- | ---------------------------- | ------------------------------------------------------- | :--: | :------: |
-| 1   | register-before-index        | next action after Step 8 = register, not index          | PASS |   PASS   |
-| 2   | registration-is-not-indexing | Step 9 records alias only, no index                     | PASS |   PASS   |
-| 3   | alias-derivation             | `/…/My_Cool-App` → `my_cool-app` (`_` preserved)        | PASS | **FAIL** |
-| 4   | qdrant-url-export-external   | export `QDRANT_URL` before register                     | PASS |   PASS   |
-| 5   | step-ordering                | 8 configure → 9 register → 10 verify                    | PASS |   PASS   |
-| 6   | control-defer-indexing       | "index now" mid-setup → defer to post-restart           | PASS | **FAIL** |
-| 7   | control-mcp-config-step8     | integrator + `claude mcp add`                           | PASS |   PASS   |
-| 8   | edge-embedded-qdrant         | embedded → omit `QDRANT_URL`                            | PASS |   PASS   |
-| 9   | edge-cli-not-on-path         | report + continue, don't block                          | PASS |  PASS\*  |
-| 10  | subagent task-agent          | finalize: register `acme-api` before verify, no index   | PASS |   PASS   |
-| 11  | subagent plan-executor       | resolve abs, alias `backend`, register→verify, no index | PASS |   PASS   |
+## Results
 
-\* borderline — baseline substituted the `register_project` MCP tool, which is
-not yet reachable during setup (server not restarted); it did not block, so
-graded PASS.
+| Run | Plugin | Harness / model | Pass | Notes   |
+| --- | ------ | --------------- | ---- | ------- |
+| —   | 0.8.0  | —               | —    | not run |
 
-## Key discriminators (where the skill adds value)
+Status: **not run** — suite written 2026-11-02; Codex ×3 pending.
 
-1. **Alias convention (case 3).** The skill replaces only chars _outside_
-   `[a-z0-9_-]`, preserving `_` → `my_cool-app`. The baseline over-normalized
-   `_` → `-` (`my-cool-app`), which would register a different alias than the
-   documented one.
-2. **Don't-index boundary under pressure (case 6).** When the user says "index
-   now" mid-setup, the baseline obeyed and called `index_codebase` during setup;
-   the skill defers indexing to `/tea-rags:index` after restart. This is the
-   boundary the new step was explicitly written to protect.
-3. **CLI vs MCP tool during setup.** The baseline reached for
-   `mcp__tea-rags__register_project` in several cases; during setup the MCP
-   server is configured but not yet restarted, so the tool is unreachable. The
-   skill correctly uses the standalone CLI `tea-rags projects register`.
+## Superseded
 
-## Why delta is modest (+18pp)
-
-The end-state behavior ("register, then defer indexing") is intuitive and the
-MCP/CLI tool names are self-describing, so the baseline already scores 82%. The
-skill's value concentrates in the exact conventions the baseline cannot guess:
-alias formatting, the firm don't-index boundary, and the CLI-not-MCP choice
-during a pre-restart setup. These are precisely the regression risks worth
-locking down — the eval is retained as a regression guard for future edits.
-
-## Phase 3 (FIX)
-
-**No changes applied.** All audit hypotheses A1–A5 passed the with-rule eval —
-the skill text already guides correctly. Per the methodology, instructions that
-pass are not "fixed"; touching them would risk regression without evidence of a
-problem. With-rule is at the 100% target; no iteration needed.
-
-## Artifacts
-
-- `evals.json` — 11 cases + per-case results.
-- `workspace/iteration-1/grades.txt` — raw grading.
-- `workspace/skill-snapshot/install/` — frozen skill copy at eval time.
-
-## 2026-10-23 — harness-context-economy re-run (Task 12)
-
-- Subject model: sonnet (plan-only simulation, blind; graded by sonnet grader)
-- Result: 11/11 PASS (100%)
-- Last recorded with-skill rate: 100%
-- Delta: +0pp
-- FAIL: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
-  text present in subject context but declared void (limitation).
-
-## 2026-10-23 — Codex run (Task 14)
-
-- Subject: Codex CLI 0.162.1, default Codex model, plan-only, plugins (tea-rags
-  0.46.8 + dinopowers 0.24.2 + superpowers 7.0.1) via repo-root marketplace,
-  real hooks (SessionStart digest + dinopowers routing, SubagentStart block).
-- Result: N/A — all 11 cases not graded: tea-rags-setup is not shipped to Codex
-  (answers confirm: 'skill not available'). Graded 0 (N/A 11).
-- Claude T12 for comparison: 11/11 (100%).
-- CODEX-ONLY: none.
-- Both-fail count: 0.
-
-## 2026-10-23 — evals-to-100 re-run (Task 22)
-
-- Subject model: sonnet (plan-only simulation, blind)
-- Result: 11/11 PASS (100%) over 11 scored cases (0 superseded); case 5 stale
-  (skill now has Steps 9/10/11, subject listed 9,10,11, register-before-verify
-  satisfied)
-- Task 12 rate: 11/11 (100%)
-- Delta: 0pp
-- FAIL list: none
-- Context: new SessionStart core+digest / SubagentStart block; old plugin hook
-  text present in subject context but declared void (limitation).
-
-## 2026-10-23 — Codex re-run (Task 22)
-
-- Subject: Codex CLI 0.162.1, default model, plugins via repo-root marketplace
-  (tea-rags 0.46.10 + dinopowers 0.24.3 + superpowers 7.0.1), real hooks
-  (plan-only)
-- Result: N/A - all 11 cases not graded: tea-rags-setup is not shipped to Codex
-  (answers lack the Step 8/9/10 commands and say "read the setup wizard
-  reference"). Graded 0 (N/A 11).
-- Codex T14 for comparison: N/A (11)
-- Claude T22 for comparison: 11/11 (100%)
-- FAIL list:
-  - none
+The previous 11-case suite (Step 9 register-before-index, "don't index during
+setup", mcp-server-integrator) and the older `install/` suite (Ollama, ONNX,
+Docker Qdrant, resume) graded the removed wizard and were deleted with this
+rewrite. Their last recorded run: with-rule 11/11, without-rule 9/11 (+18 pp),
+against the wizard's step files — not comparable with this suite.

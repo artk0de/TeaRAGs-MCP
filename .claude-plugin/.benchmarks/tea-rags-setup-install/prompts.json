@@ -1,0 +1,126 @@
+{
+  "skill_name": "tea-rags-setup:install",
+  "description": "Actor-facing prompts for the one-step install skill (tea-rags-setup 0.8.0, bd tea-rags-mcp-hjbow.11). Prompts only: expected answers and grading rules live in grading.json and are never shown to the actor. Script outputs the actor would observe are given inline as fixtures.",
+  "cases": [
+    {
+      "id": 1,
+      "name": "one-plan-no-early-questions",
+      "category": "finding",
+      "prompt": "Install tea-rags for the project at /Users/me/Dev/shop. Walk me through exactly what you will run and when you will ask me anything."
+    },
+    {
+      "id": 2,
+      "name": "ignore-before-profile",
+      "category": "finding",
+      "prompt": "Install tea-rags in /Users/me/Dev/monorepo. It has a huge dist/ folder and vendored node_modules checked in. In which order do you run the helper scripts, and why?"
+    },
+    {
+      "id": 3,
+      "name": "model-from-choose-model-ruby",
+      "category": "finding",
+      "prompt": "Installing tea-rags for /Users/me/Dev/billing. profile.mjs returned languages { ruby: { share: 0.06 }, typescript: { share: 0.94 } }. `tea-rags llama-server choose-model` printed {\"model\":\"nomic-ai/CodeRankEmbed\",\"rule\":\"ruby share 6% >= 5% -> CodeRankEmbed\",\"window\":8192,\"dimensions\":768}. Show the Model line of your plan."
+    },
+    {
+      "id": 4,
+      "name": "model-not-derived-by-agent",
+      "category": "finding",
+      "prompt": "Installing tea-rags for a project that is 85% Python and 15% Go. Which embedding model will you use? Answer before running anything."
+    },
+    {
+      "id": 5,
+      "name": "ollama-never-offered",
+      "category": "finding",
+      "prompt": "Install tea-rags for /Users/me/Dev/api. I already have Ollama running with nomic-embed-text — just use that for embeddings."
+    },
+    {
+      "id": 6,
+      "name": "no-squash-question",
+      "category": "finding",
+      "prompt": "Install tea-rags in /Users/me/Dev/app. Our team squash-merges every PR. Do you need to ask me anything about that during the install?"
+    },
+    {
+      "id": 7,
+      "name": "change-model-is-the-confirmation",
+      "category": "finding",
+      "prompt": "You showed the tea-rags install plan and asked Install / Change model / Cancel. I picked Change model and then chose jinaai/jina-embeddings-v2-base-code. What happens next?"
+    },
+    {
+      "id": 8,
+      "name": "cancel-keeps-contextignore",
+      "category": "edge",
+      "prompt": "You showed the tea-rags install plan for /Users/me/Dev/site and I chose Cancel. What do you do, and what happens to the files you already wrote?"
+    },
+    {
+      "id": 9,
+      "name": "claude-plugin-pinned-mcp-no-env",
+      "category": "finding",
+      "prompt": "Install confirmed. detect.mjs reported harness \"claude\"; tea-rags --version prints 1.52.0. Give the exact commands you run for the plugin and MCP server step."
+    },
+    {
+      "id": 10,
+      "name": "codex-plugin-ships-mcp",
+      "category": "finding",
+      "prompt": "Install confirmed. detect.mjs reported harness \"codex\"; tea-rags --version prints 1.52.0. Give the exact commands for the plugin and MCP server step."
+    },
+    {
+      "id": 11,
+      "name": "cursor-windows-copy",
+      "category": "edge",
+      "prompt": "Install confirmed on Windows (PowerShell). detect.mjs reported harness \"cursor\". How do you install the TeaRAGs plugin and MCP server?"
+    },
+    {
+      "id": 12,
+      "name": "index-in-foreground",
+      "category": "finding",
+      "prompt": "Install is at the indexing step. The repo is big and indexing will take ~40 minutes — just start it in the background with nohup so we can keep talking."
+    },
+    {
+      "id": 13,
+      "name": "existing-alias-set-env",
+      "category": "edge",
+      "prompt": "Installing tea-rags for /Users/me/Dev/crm. detect.mjs returned registered: { name: \"crm\" }. The pool started on endpoints http://127.0.0.1:23411,http://127.0.0.1:27850 with model brokkai/Muninn-small. What register command do you run?"
+    },
+    {
+      "id": 14,
+      "name": "node-too-old-stops",
+      "category": "edge",
+      "prompt": "Install tea-rags on my Ubuntu box. `node --version` prints v18.19.0."
+    },
+    {
+      "id": 15,
+      "name": "rust-driver-when-rust-present",
+      "category": "finding",
+      "prompt": "Install confirmed for a project whose profile shows rust share 0.4. Which Rust-related commands run during apply, and where in the order?"
+    },
+    {
+      "id": 16,
+      "name": "powershell51-shares-escaping",
+      "category": "edge",
+      "prompt": "On Windows PowerShell 5.1, run choose-model for shares { ruby: 0.06, typescript: 0.94 }. Give the exact command line."
+    },
+    {
+      "id": 17,
+      "name": "project-mcp-duplicate",
+      "category": "edge",
+      "prompt": "Installing tea-rags for /Users/me/Dev/web. The project already has a .mcp.json that declares a tea-rags server with an env block. What do you do with it?"
+    },
+    {
+      "id": 18,
+      "name": "client-upgrade-and-auto-update",
+      "category": "finding",
+      "prompt": "detect.mjs shows teaRags.version 1.40.0, `npm view tea-rags version` prints 1.52.0. Install confirmed. What is the first apply command and what do you tell the user about updates?"
+    },
+    {
+      "id": 19,
+      "name": "subagent-task-agent-install",
+      "category": "subagent",
+      "prompt": "[subagent: task-agent] Task: set up TeaRAGs for the repository at /home/u/payments (Python + TypeScript). Do the full install."
+    },
+    {
+      "id": 20,
+      "name": "control-retune-routes-to-tune",
+      "category": "control",
+      "prompt": "TeaRAGs is already installed for /Users/me/Dev/shop, but indexing feels slow. Can you re-run the install to fix performance?"
+    }
+  ]
+}

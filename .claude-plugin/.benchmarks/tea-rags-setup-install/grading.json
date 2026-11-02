@@ -1,0 +1,243 @@
+{
+  "skill_name": "tea-rags-setup:install",
+  "skill_source": "plugins/tea-rags-setup/skills/install/SKILL.md (tea-rags-setup 0.8.0)",
+  "description": "Grader-only expectations for prompts.json. A case passes only when every assertion holds and no not_expected behaviour appears in the observed transcript (tool calls + answer).",
+  "cases": [
+    {
+      "id": 1,
+      "expected_output": "Order detect.mjs -> contextignore.mjs -> profile.mjs -> choose-model -> print ONE plan block -> ONE question with options Install / Change model / Cancel -> apply -> verify. No question before the plan, none after confirmation.",
+      "not_expected": "Asking about provider, model, Qdrant mode, squash or alias before the plan. A second confirmation during apply.",
+      "assertions": [
+        {
+          "text": "Runs detect, contextignore, profile and choose-model before asking anything",
+          "type": "ordering"
+        },
+        {
+          "text": "Exactly one confirmation, with options Install / Change model / Cancel",
+          "type": "interaction"
+        },
+        { "text": "No question after the confirmation", "type": "interaction" }
+      ]
+    },
+    {
+      "id": 2,
+      "expected_output": "contextignore.mjs runs BEFORE profile.mjs: it merges build outputs and vendored dirs into .contextignore.local so the LOC/language shares exclude generated code.",
+      "not_expected": "Profiling first. Writing .contextignore (not .local) or removing user lines.",
+      "assertions": [
+        {
+          "text": "contextignore.mjs precedes profile.mjs",
+          "type": "ordering"
+        },
+        { "text": "Target file is .contextignore.local", "type": "artifact" },
+        {
+          "text": "Reason given: shares must exclude generated / vendored code",
+          "type": "rationale"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "expected_output": "Model line: nomic-ai/CodeRankEmbed (768d, window 8192) — ruby share 6% >= 5% -> CodeRankEmbed, rule string copied verbatim.",
+      "not_expected": "Paraphrasing or rewriting the rule string. Picking a different model.",
+      "assertions": [
+        { "text": "Model is nomic-ai/CodeRankEmbed", "type": "decision" },
+        {
+          "text": "Rule string reproduced verbatim from choose-model",
+          "type": "fidelity"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "expected_output": "Does not name a model from its own reasoning; states the model comes from `tea-rags llama-server choose-model --shares '<json>'` after profile.mjs, and shows its rule.",
+      "not_expected": "Announcing jina / Muninn-small / CodeRankEmbed before running choose-model. Re-deriving the threshold rule itself.",
+      "assertions": [
+        {
+          "text": "Defers the model to choose-model output",
+          "type": "delegation"
+        },
+        {
+          "text": "Does not commit to a model before profile + choose-model",
+          "type": "fidelity"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "expected_output": "Install configures a llama-server pool (>= 2 instances, loopback ports 20000-29999) regardless; Ollama is not offered or configured by install.",
+      "not_expected": "Setting EMBEDDING_PROVIDER=ollama. Offering Ollama as an option in the plan.",
+      "assertions": [
+        { "text": "Embedding provider stays llama-server", "type": "decision" },
+        { "text": "Ollama not configured or offered", "type": "prohibition" }
+      ]
+    },
+    {
+      "id": 6,
+      "expected_output": "No. There is no squash question; git analytics are on.",
+      "not_expected": "Asking about squash merges or configuring squash-aware sessions.",
+      "assertions": [
+        { "text": "No squash question", "type": "prohibition" },
+        {
+          "text": "Git analytics on (TRAJECTORY_GIT_ENABLED=true)",
+          "type": "decision"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "expected_output": "The pick is the confirmation: proceed straight to apply (Step 5) with jinaai/jina-embeddings-v2-base-code, no further question.",
+      "not_expected": "Re-printing the plan and asking Install again.",
+      "assertions": [
+        {
+          "text": "Proceeds to apply without another question",
+          "type": "interaction"
+        },
+        {
+          "text": "Uses the picked model in fetch-model / start / register",
+          "type": "decision"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "expected_output": "Stop. Nothing installed. .contextignore.local stays (harmless, user-editable).",
+      "not_expected": "Deleting .contextignore.local. Continuing any install step.",
+      "assertions": [
+        {
+          "text": "Stops without running apply commands",
+          "type": "interaction"
+        },
+        { "text": ".contextignore.local is kept", "type": "artifact" }
+      ]
+    },
+    {
+      "id": 9,
+      "expected_output": "`claude plugin marketplace add https://github.com/artk0de/TeaRAGs-MCP.git#v1.52.0` -> `claude plugin install tea-rags@tea-rags --scope user` -> `claude mcp add --scope user tea-rags -- tea-rags server`. No env block.",
+      "not_expected": "Pinning to a branch (main) or no pin. `npx` in the MCP command. Any --env / env block. Writing a project .mcp.json.",
+      "assertions": [
+        { "text": "Marketplace pinned to v1.52.0", "type": "command" },
+        {
+          "text": "MCP server = global `tea-rags server`, user scope, no env",
+          "type": "command"
+        },
+        { "text": "Three commands in the stated order", "type": "ordering" }
+      ]
+    },
+    {
+      "id": 10,
+      "expected_output": "`codex plugin marketplace add artk0de/TeaRAGs-MCP --ref v1.52.0 --sparse .agents --sparse harness/codex` -> `codex plugin add tea-rags@tea-rags`. The plugin ships the MCP server; no separate MCP add.",
+      "not_expected": "Adding a separate codex MCP entry with env. Unpinned ref.",
+      "assertions": [
+        { "text": "--ref v1.52.0 with both --sparse paths", "type": "command" },
+        { "text": "No separate MCP config step", "type": "prohibition" }
+      ]
+    },
+    {
+      "id": 11,
+      "expected_output": "Copy `<npm root -g>\\tea-rags\\harness\\cursor\\tea-rags` into `$HOME\\.cursor\\plugins\\local\\` with Copy-Item -Recurse; the plugin ships the MCP server.",
+      "not_expected": "A POSIX cp on PowerShell. Hand-writing .cursor/mcp.json.",
+      "assertions": [
+        {
+          "text": "Uses the PowerShell Copy-Item -Recurse form",
+          "type": "command"
+        },
+        {
+          "text": "Source is the global npm package harness/cursor/tea-rags",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "expected_output": "Refuse background; run `tea-rags index-codebase --project <alias> --wait-enrichments --json` in the foreground with a long timeout (>= 60 min) and read outcome.measured then failed/degraded.",
+      "not_expected": "nohup, &, Start-Process, a background shell job, or MCP index_codebase detached.",
+      "assertions": [
+        { "text": "Indexing runs in the foreground", "type": "prohibition" },
+        {
+          "text": "Uses --wait-enrichments --json and reads outcome.measured first",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "expected_output": "`tea-rags projects set-env --name crm EMBEDDING_PROVIDER=llama-server \"EMBEDDING_BASE_URL=http://127.0.0.1:23411,http://127.0.0.1:27850\" EMBEDDING_MODEL=brokkai/Muninn-small TRAJECTORY_GIT_ENABLED=true`",
+      "not_expected": "`projects register` for an existing alias. Writing env into an MCP config.",
+      "assertions": [
+        { "text": "Uses set-env, not register", "type": "command" },
+        { "text": "Base URL = both endpoints comma-joined", "type": "command" }
+      ]
+    },
+    {
+      "id": 14,
+      "expected_output": "Stop before detect; print the Debian/Ubuntu Node 24 install line (nodesource setup_24.x + apt-get install nodejs) and ask to re-run in a new terminal.",
+      "not_expected": "Continuing the install on Node 18. Suggesting sudo npm.",
+      "assertions": [
+        { "text": "Stops because major < 22", "type": "gate" },
+        {
+          "text": "Prints the Linux Node 24 install command",
+          "type": "command"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "expected_output": "After the pool starts and before register: `tea-rags rustc-driver install` then `tea-rags rustc-driver status`.",
+      "not_expected": "rustup toolchain install as the default path. Skipping the driver for a Rust project.",
+      "assertions": [
+        { "text": "rustc-driver install then status", "type": "command" },
+        {
+          "text": "Placed after llama-server start, before register",
+          "type": "ordering"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "expected_output": "`tea-rags llama-server choose-model --shares '{\\\"ruby\\\":0.06,\\\"typescript\\\":0.94}'` (inner quotes escaped for PowerShell 5.1).",
+      "not_expected": "Plain unescaped JSON on PowerShell 5.1.",
+      "assertions": [
+        { "text": "Inner quotes escaped with backslashes", "type": "command" }
+      ]
+    },
+    {
+      "id": 17,
+      "expected_output": "Report the project-level tea-rags entry as a duplicate of the user-scope server; do not write or edit one; registry holds the env.",
+      "not_expected": "Updating the project .mcp.json, adding env to it, or creating another.",
+      "assertions": [
+        { "text": "Reports the duplicate", "type": "reporting" },
+        { "text": "Writes no project-level MCP config", "type": "prohibition" }
+      ]
+    },
+    {
+      "id": 18,
+      "expected_output": "`npm i -g tea-rags@latest`, then `tea-rags --version` = 1.52.0; say once that client auto-update is ON and `tea-rags update --auto off` turns it off.",
+      "not_expected": "Skipping the upgrade. Suggesting a self-update command. sudo npm.",
+      "assertions": [
+        { "text": "Upgrades the client first", "type": "command" },
+        {
+          "text": "Mentions auto-update ON + the off command",
+          "type": "reporting"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "expected_output": "Same one-step flow: detect -> ignore -> profile -> choose-model -> one plan + one confirmation (ask the parent/user) -> apply -> verify.",
+      "not_expected": "Skipping the confirmation because it is a subagent. Falling back to a multi-step wizard.",
+      "assertions": [
+        { "text": "Follows the install skill flow", "type": "routing" },
+        {
+          "text": "Still presents one plan and one confirmation",
+          "type": "interaction"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "expected_output": "Routes to tea-rags-setup:tune (re-bench the llama-server pool, restart, set-env EMBEDDING_BASE_URL), not a fresh install.",
+      "not_expected": "Re-running the install skill.",
+      "assertions": [{ "text": "Routes to tune", "type": "routing" }]
+    }
+  ]
+}
