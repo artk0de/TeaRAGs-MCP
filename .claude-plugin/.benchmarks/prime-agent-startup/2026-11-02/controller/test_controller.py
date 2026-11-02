@@ -248,7 +248,7 @@ class ProtocolErrorCodeTests(unittest.TestCase):
   proxy=codex_native.module('protocol_code_proxy',P/'validated/codex61_mcp_proxy.py')
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);cfg={'upstream_env':{},'audit_log':str(root/'audit.jsonl'),'forensic_dir':str(root/'private'),'upstream_stderr_log':str(root/'stderr'),'upstream_command':['not-executed']};m.publish(root/'cfg.json',cfg);child=MagicMock();child.stdout=[];child.stdin=io.StringIO();requests=[{'jsonrpc':'2.0','id':1,'method':'server/discover','params':{}},{'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'index_codebase','arguments':{}}},{'jsonrpc':'2.0','id':3,'method':'resources/read','params':{'uri':'file:///outside'}}];output=io.StringIO()
-   with patch.dict(os.environ,{'BENCH_MCP_PROXY_CONFIG':str(root/'cfg.json')}),patch.object(proxy.subprocess,'Popen',return_value=child),patch.object(proxy.sys,'stdin',io.StringIO(''.join(json.dumps(q)+'\n' for q in requests))),patch.object(proxy.sys,'stdout',output):proxy.main()
+   with patch.dict(os.environ,{'BENCH_MCP_PROXY_CONFIG':str(root/'cfg.json')}),patch.object(proxy.subprocess,'Popen',return_value=child),patch.object(proxy.threading,'Thread'),patch.object(proxy.sys,'stdin',io.StringIO(''.join(json.dumps(q)+'\n' for q in requests))),patch.object(proxy.sys,'stdout',output):proxy.main()
    replies={r['id']:r for line in output.getvalue().splitlines() if (r:=json.loads(line)).get('id')};self.assertEqual(replies[1]['error']['code'],-32601);self.assertEqual(replies[2]['error']['code'],-32001);self.assertEqual(replies[3]['error']['code'],-32001);self.assertEqual(child.stdin.getvalue(),'')
 
 class SessionTimingTests(unittest.TestCase):

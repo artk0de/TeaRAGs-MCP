@@ -145,7 +145,8 @@ describe("runPrime — the client-update hint on every output path (5o5af)", () 
       autoUpdateTrigger: { maybeSpawn: () => "disabled" },
       clientUpdateTrigger: withHint(),
     });
-    expect(output()).toContain("Qdrant warm-up pending");
+    expect(output()).toContain("index readiness and freshness unconfirmed");
+    expect(output()).toContain("project `proj` · collection `code_proj`");
     expect(output()).toContain(`tea-rags client: ${HINT}`);
   });
 
