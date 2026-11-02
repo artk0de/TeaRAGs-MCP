@@ -53,8 +53,10 @@ configuration we measured, with GPU utilization and the traps we hit, is on
 
 ## Setup
 
-TeaRAGs never starts, installs or supervises llama-server. It prints the
-commands, and you run them on the GPU host. The GPU host needs neither Node nor
+For a GPU host in your network, TeaRAGs prints the commands and you run them on
+that host; it does not supervise a remote llama-server. To run llama-server on
+this machine, TeaRAGs can install and manage a local pool instead, see
+[Managed local pools](#managed-local-pools). The GPU host needs neither Node nor
 TeaRAGs — only a llama-server build for its GPU (ROCm or Vulkan for AMD, Vulkan
 for Intel, CUDA for NVIDIA, Metal on macOS) from the
 [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases).
@@ -79,7 +81,7 @@ tea-rags llama-server command \
 | `--bin`       | Path of the llama-server binary **on the GPU host**. One build per run                                               | required                                      |
 | `--os`        | `windows`, `linux` or `macos` — the GPU host's OS                                                                    | this machine's OS                             |
 | `--device`    | Device id from `<bin> --list-devices`. Repeat it per GPU; each device gets its own port                              | none: one line without `--device`, plus a hint |
-| `--host`      | Bind address                                                                                                         | `0.0.0.0`                                     |
+| `--host`      | Bind address. Pass `0.0.0.0` to serve a LAN                                                                          | `127.0.0.1`                                   |
 | `--port`      | Port of the first device; the next device gets the next port                                                         | `8081`                                        |
 | `--slots`     | Parallel slots per server (`-np`)                                                                                    | `4`                                           |
 | `--model`     | GGUF path on the GPU host, or an Ollama model reference to download there                                            | `EMBEDDING_MODEL`, else the jina default      |
@@ -157,6 +159,74 @@ Put the printed URL into `EMBEDDING_FALLBACK_URL`, not `EMBEDDING_BASE_URL`.
 (or `TEA_RAGS_DATA_DIR/models/gguf`; `--dir` overrides). The download is
 verified against the registry digest before it is moved into place, and a file
 already present with the right digest is not downloaded again.
+
+## Managed local pools
+
+On the machine that runs TeaRAGs, the CLI installs llama-server, downloads a
+model and manages a pool of instances. No GPU host or manual launch line is
+needed.
+
+```bash
+tea-rags llama-server install
+tea-rags llama-server fetch-model nomic-ai/CodeRankEmbed
+tea-rags llama-server start --model nomic-ai/CodeRankEmbed --instances auto
+tea-rags llama-server status
+tea-rags llama-server stop --model nomic-ai/CodeRankEmbed
+```
+
+`/tea-rags-setup:install` runs this for you.
+
+**`install`** downloads the pinned llama.cpp release binary (build `b12032`) for
+this platform and GPU backend, verifies its sha256, and stores it in the
+TeaRAGs data dir. It prints the binary path. `--backend` takes `auto` (default;
+probes `nvidia-smi`, `rocminfo`, `vulkaninfo`; macOS arm64 is always `metal`),
+`metal`, `cpu`, `cuda`, `vulkan` or `rocm`. `LLAMA_SERVER_PATH` overrides binary
+discovery.
+
+**`fetch-model [model]`** downloads a catalog model's Q8_0 GGUF from Hugging
+Face, pinned to a revision and verified against a sha256. Catalog ids:
+
+- `jinaai/jina-embeddings-v2-base-code`
+- `nomic-ai/CodeRankEmbed`
+
+Muninn-small is in the catalog but its GGUF is not published yet. Which model to
+use is covered in
+[Embedding model choice](../embedding-model-choice.md#choosing-by-language-mix).
+An id that is not in the catalog is looked up in the Ollama registry, as
+described under [Optional: a local fallback](#3-optional-a-local-fallback-llama-server).
+`--dir` overrides the destination (default `~/.tea-rags/models`, honouring
+`TEA_RAGS_DATA_DIR`).
+
+**`start --model <id> --instances <n|auto>`** fetches the model if needed and
+starts a pool of detached llama-server processes that outlive the CLI. The pool
+needs at least 2 instances (default `2`). Each instance listens on a random port
+in 20000-29999, bound to `127.0.0.1` only. Pool state is written to
+`<data dir>/llama-server/pools.json`. Other options: `--max-instances`,
+`--slots` (default 4), `--gpu-layers` (default 999), `--flash-attention`
+(default true). The command prints `{ model, endpoints, instances }`.
+
+**`status`** prints the managed pools and whether each instance is alive, as
+JSON. **`stop`** stops the pool of `--model`, or every pool without it.
+
+**`bench --model <id>`** embeds a fixed synthetic corpus on pools of 1 to K
+instances and prints texts per second for each count (`--max-instances` sets K:
+4 on Apple Silicon, else 3). `--instances auto` runs the same bench and takes
+the smallest count whose throughput is within 5% of the best, never below 2.
+
+:::note One GPU, flat scaling
+On a single Apple-silicon GPU, throughput is flat across instance counts: the
+instances share one GPU. Measured on an M3 Pro, jina Q8_0 embeds about 96
+texts/s on Metal against about 29 texts/s on CPU. More instances pay off only
+across several GPUs, see
+[llama-server on several GPUs](./llama-server-multi-gpu).
+:::
+
+### Automatic pool restart
+
+If every endpoint of a managed pool is down, the embedding provider restarts the
+pool once on its recorded ports and retries the request. It restarts again only
+10 minutes after a successful restart, and never after a failed one; after that
+the usual [unavailable-retry wait](#configuration) applies.
 
 ## Configuration
 

@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { formatRustcDriverLine, rustcDriverStatusOf } from "../../../src/core/contracts/rustc-driver-status.js";
+import {
+  formatRustcDriverLine,
+  liveRustcDriverStatus,
+  rustcDriverRecomputeCommand,
+  rustcDriverStatusOf,
+} from "../../../src/core/contracts/rustc-driver-status.js";
 
 const INSTALL_HINT =
   "rustc call-site driver unavailable — install with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH";
@@ -131,5 +136,61 @@ describe("rustcDriverStatusOf", () => {
 
   it("is absent for an outcome it does not know", () => {
     expect(rustcDriverStatusOf({ rust: { rustcCallSites: { outcome: "exploded" } } })).toBeUndefined();
+  });
+});
+
+// bd tea-rags-mcp-hjbow.9 — the persisted status is the LAST run's; a driver
+// installed since then is reported at read time, with the recompute remedy.
+describe("liveRustcDriverStatus", () => {
+  const RECOMPUTE = "tea-rags index-codebase --project repo --force-enrichments codegraph --languages rust";
+  const found = () => true;
+  const absent = () => false;
+
+  it("turns a persisted unavailable into installed-pending with the recompute hint when the probe finds a driver", () => {
+    expect(liveRustcDriverStatus({ outcome: "unavailable", hint: INSTALL_HINT }, found, { project: "repo" })).toEqual({
+      outcome: "installed-pending",
+      hint: RECOMPUTE,
+    });
+  });
+
+  it("keeps unavailable when the probe still finds nothing", () => {
+    const persisted = { outcome: "unavailable", hint: INSTALL_HINT } as const;
+    expect(liveRustcDriverStatus(persisted, absent, { project: "repo" })).toBe(persisted);
+  });
+
+  it("keeps unavailable when the probe throws", () => {
+    const persisted = { outcome: "unavailable" } as const;
+    const throwing = () => {
+      throw new Error("probe failed");
+    };
+    expect(liveRustcDriverStatus(persisted, throwing, { project: "repo" })).toBe(persisted);
+  });
+
+  it("passes indexed, off and latched through untouched without probing", () => {
+    const probe = vi.fn(() => true);
+    for (const persisted of [
+      { outcome: "indexed", units: 3 },
+      { outcome: "off" },
+      { outcome: "latched", reason: "allUnitsFailed" },
+    ] as const) {
+      expect(liveRustcDriverStatus(persisted, probe, { project: "repo" })).toBe(persisted);
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("names the path when no project alias is known", () => {
+    expect(rustcDriverRecomputeCommand({ path: "/repo" })).toBe(
+      "tea-rags index-codebase /repo --force-enrichments codegraph --languages rust",
+    );
+    expect(rustcDriverRecomputeCommand({ path: "/my repo" })).toBe(
+      'tea-rags index-codebase "/my repo" --force-enrichments codegraph --languages rust',
+    );
+    expect(rustcDriverRecomputeCommand({ project: "repo", path: "/repo" })).toBe(RECOMPUTE);
+  });
+
+  it("renders installed-pending as a static-only lower bound with the recompute command", () => {
+    expect(formatRustcDriverLine({ outcome: "installed-pending", hint: RECOMPUTE })).toBe(
+      `rustc driver: installed-pending — driver installed since the last codegraph run, Rust call edges are still static-only (lower bound); recompute: ${RECOMPUTE}`,
+    );
   });
 });

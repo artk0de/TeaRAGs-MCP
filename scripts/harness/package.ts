@@ -19,8 +19,11 @@ export const PLUGIN_NAME = "tea-rags";
 /** The wrapper plugin, shipped as its own package next to tea-rags in every harness marketplace. */
 export const DINOPOWERS_NAME = "dinopowers";
 export const DINOPOWERS_SRC = `${PLUGINS_DIR}/${DINOPOWERS_NAME}`;
+/** The install / re-tune plugin: skills plus the Node helper scripts they run. */
+export const SETUP_NAME = "tea-rags-setup";
+export const SETUP_SRC = `${PLUGINS_DIR}/${SETUP_NAME}`;
 /** Package folders every harness renders, in marketplace order. */
-export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME];
+export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME, SETUP_NAME];
 
 /**
  * Hook scripts every harness ships verbatim from `plugins/tea-rags/scripts/` (bd tea-rags-mcp-nknkg.2):

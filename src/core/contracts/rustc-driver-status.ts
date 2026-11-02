@@ -10,14 +10,22 @@
  * optional — the line renders what the run reported and omits the rest.
  */
 
-/** How the driver settled; `unavailable` and `off` are the two "never ran" verdicts. */
+/**
+ * How the driver settled; `unavailable` and `off` are the two "never ran"
+ * verdicts. `installed-pending` is never persisted: a read reports it when the
+ * run recorded `unavailable` and a driver is on disk now (`liveRustcDriverStatus`)
+ * — the edges are still static-only until a codegraph recompute.
+ */
 export interface RustcDriverStatus {
-  outcome: "indexed" | "latched" | "skipped" | "unavailable" | "off";
+  outcome: "indexed" | "latched" | "skipped" | "unavailable" | "off" | "installed-pending";
   /** `latched` / `skipped`: why. */
   reason?: string;
   /** `latched`: what failed. */
   detail?: string;
-  /** What the user can do: the install hint for `unavailable`, a fetch hint for a latch. */
+  /**
+   * What the user can do: the install hint for `unavailable`, a fetch hint for
+   * a latch, the recompute command for `installed-pending`.
+   */
   hint?: string;
   /** `indexed`: the index was reused from the per-envKey cache, so no `cargo check` ran. */
   cacheHit?: boolean;
@@ -36,6 +44,57 @@ export interface RustcDriverStatus {
 export interface RustcDriverStatusRecord {
   status: RustcDriverStatus;
   recordedAtMs: number;
+}
+
+/**
+ * Whether a rustc driver can be found on this host NOW — a prebuilt binary or a
+ * toolchain that builds one (bd tea-rags-mcp-hjbow.9). Touches the filesystem:
+ * one call per status / prime / notice read.
+ */
+export type RustcDriverPresenceProbe = () => boolean;
+
+/** Who the recompute command addresses: the project alias when known, else the path. */
+export interface RustcDriverRemedyTarget {
+  project?: string;
+  path?: string;
+}
+
+/** The command that rebuilds an index's Rust edges with the driver, and nothing else. */
+export function rustcDriverRecomputeCommand(target: RustcDriverRemedyTarget): string {
+  const address =
+    target.project !== undefined
+      ? `--project ${target.project}`
+      : target.path !== undefined
+        ? /\s/.test(target.path)
+          ? JSON.stringify(target.path)
+          : target.path
+        : "--project <alias>";
+  return `tea-rags index-codebase ${address} --force-enrichments codegraph --languages rust`;
+}
+
+/**
+ * The persisted status as it reads NOW (bd tea-rags-mcp-hjbow.9). The record is
+ * the last codegraph run's, so a driver installed since then left every surface
+ * saying `unavailable` until a forced recompute. A persisted `unavailable` whose
+ * probe now finds a driver becomes `installed-pending` with the recompute
+ * command; a probe that throws counts as not found; every other outcome passes
+ * through without probing.
+ */
+export function liveRustcDriverStatus(
+  persisted: RustcDriverStatus,
+  presence: RustcDriverPresenceProbe,
+  target: RustcDriverRemedyTarget,
+): RustcDriverStatus {
+  if (persisted.outcome !== "unavailable" || !probeSafely(presence)) return persisted;
+  return { outcome: "installed-pending", hint: rustcDriverRecomputeCommand(target) };
+}
+
+function probeSafely(presence: RustcDriverPresenceProbe): boolean {
+  try {
+    return presence();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -105,6 +164,11 @@ export function formatRustcDriverLine(status: RustcDriverStatus): string {
       return `${SUBJECT} unavailable — Rust call edges are static-only (lower bound); ${installAdvice(status.hint)}`;
     case "off":
       return `${SUBJECT} off (CODEGRAPH_RUST_DRIVER=off)`;
+    case "installed-pending":
+      return (
+        `${SUBJECT} installed-pending — driver installed since the last codegraph run, ` +
+        `Rust call edges are still static-only (lower bound); recompute: ${status.hint ?? rustcDriverRecomputeCommand({})}`
+      );
   }
 }
 

@@ -317,6 +317,12 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
    `-V` (prints `<version> <pin>`), rejected when the pin differs.
 2. `tea-rags-rustc-driver` on `PATH`, same probe.
 3. The data-dir build cache `~/.tea-rags/rustc-driver/bin/<pin>-<sourceHash>/`.
+   `tea-rags rustc-driver install` (and the npm postinstall) publish the
+   GitHub-Release archive here too. When `~/.tea-rags/rust/` exists — the
+   `--profile minimal` pinned toolchain that `install` puts there — every probe
+   and driver spawn runs with `RUSTUP_HOME`/`CARGO_HOME` under it and the loader
+   path at its `lib/` (`managedRustToolchainEnv`), since a CI-built driver's
+   rpath points at the build machine.
 4. Build from the bundled source when the pinned toolchain is available with
    `rustc-dev`. Locate it with `rustup which --toolchain <pin> rustc`, then
    `${RUSTUP_HOME:-~/.rustup}/toolchains/<pin>-<host>/`, then asdf
@@ -326,7 +332,7 @@ driver line in `[startLine, startLine+15]`, `source` origin preferred.
    `rustc_middle-*.rlib`.
 5. Nothing found → slot absent, one install-hint line (as
    `RUST_ANALYZER_INSTALL_HINT`):
-   `rustc call-site driver unavailable — install with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH`.
+   `rustc call-site driver unavailable — install with 'tea-rags rustc-driver install', build it with 'rustup toolchain install nightly-2026-05-01 -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH`.
 
 ### 8.3 Safety and budgets
 

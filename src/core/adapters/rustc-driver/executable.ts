@@ -77,6 +77,8 @@ export interface RustcDriverDiscoveryDeps {
     exists: (path: string) => boolean;
     listDir: (path: string) => readonly string[];
   };
+  /** Host platform; win32 looks for the `.exe` binary. Defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /** Parse a `-V` banner; null for anything that is not one. */
@@ -89,7 +91,7 @@ export function parseRustcDriverVersion(stdout: string): RustcDriverVersion | nu
 
 /** The one install-hint line shown when the driver is neither found nor buildable. */
 export function rustcDriverInstallHint(pin: string): string {
-  return `rustc call-site driver unavailable — install with 'rustup toolchain install ${pin} -c rustc-dev,rust-src' (≈1.5 GB), or set ${RUSTC_DRIVER_PATH_ENV}`;
+  return `rustc call-site driver unavailable — install with 'tea-rags rustc-driver install', build it with 'rustup toolchain install ${pin} -c rustc-dev,rust-src' (≈1.5 GB), or set ${RUSTC_DRIVER_PATH_ENV}`;
 }
 
 /** First usable driver in the mandated tier order, or null. Never throws. */
@@ -131,13 +133,17 @@ function envCandidates(deps: RustcDriverDiscoveryDeps): string[] {
 function* pathCandidates(deps: RustcDriverDiscoveryDeps): Iterable<string> {
   for (const dir of (deps.env.PATH ?? "").split(delimiter)) {
     if (!dir) continue;
-    const candidate = join(dir, BINARY);
+    const candidate = join(dir, driverBinaryName(deps));
     if (deps.fs.exists(candidate)) yield candidate;
   }
 }
 
+function driverBinaryName(deps: RustcDriverDiscoveryDeps): string {
+  return (deps.platform ?? process.platform) === "win32" ? `${BINARY}.exe` : BINARY;
+}
+
 function* cacheCandidates(deps: RustcDriverDiscoveryDeps): Iterable<string> {
-  const candidate = join(deps.dataDir, "rustc-driver", "bin", `${deps.pin}-${deps.sourceHash}`, BINARY);
+  const candidate = join(deps.dataDir, "rustc-driver", "bin", `${deps.pin}-${deps.sourceHash}`, driverBinaryName(deps));
   if (deps.fs.exists(candidate)) yield candidate;
 }
 
@@ -215,13 +221,16 @@ export function defaultRustcDriverDiscoveryDeps(
   };
 }
 
+/** Runs a host command; `env` replaces the inherited environment when given. */
 export function runRustcDriverHostCommand(
   command: string,
   args: readonly string[],
   timeoutMs: number,
+  env?: Readonly<Record<string, string | undefined>>,
 ): RustcDriverCommandOutcome {
   try {
     const result = spawnSync(command, args, {
+      ...(env ? { env } : {}),
       timeout: timeoutMs,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],

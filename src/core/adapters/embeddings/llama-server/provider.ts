@@ -70,6 +70,13 @@ import { fetchLlamaServerProps, type LlamaServerProps } from "./props.js";
 export const LLAMA_SERVER_DEFAULT_URL = "http://localhost:8080";
 
 /**
+ * How long after a SUCCESSFUL managed-pool revive the next outage may revive
+ * again. A long-lived server outlives more than one pool crash; the window
+ * keeps a pool that dies on start from being restarted on every batch.
+ */
+export const LLAMA_SERVER_REVIVE_REARM_MS = 10 * 60_000;
+
+/**
  * Failback probe cadence. Same value as the Ollama provider's primary probe
  * (`PRIMARY_PROBE_INTERVAL_MS` in ollama.ts, kept private there).
  */
@@ -112,6 +119,13 @@ export interface LlamaServerEmbeddingsDeps {
   endpointDownVerdicts?: EmbeddingEndpointDownVerdictStore;
   /** Deadline signal of one embeddings request, armed once its slot lease is held. Default: `AbortSignal.timeout`. */
   requestTimeoutSignal?: (ms: number) => AbortSignal;
+  /**
+   * Bring the configured peer endpoints back when none answers (a managed pool
+   * after a reboot, bd hjbow.6). Called at most once per provider: `true` → the
+   * call re-probes and retries; `false` or a throw → the outage takes its usual
+   * course. Absent → no revive.
+   */
+  reviveEndpoints?: (endpoints: string[]) => Promise<boolean>;
 }
 
 interface LlamaServerEmbeddingsResponse {
@@ -263,6 +277,14 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
   /** Slot leases per endpoint, shared by every concurrent call of this provider. */
   private readonly slotLimiter = new EmbeddingEndpointSlotLimiter();
   private readonly requestTimeoutSignal: (ms: number) => AbortSignal;
+  private readonly reviveEndpoints?: (endpoints: string[]) => Promise<boolean>;
+  /** The revive in flight; every call blocked on the outage shares it. Cleared once it settles. */
+  private reviveInFlight?: Promise<boolean>;
+  /**
+   * No revive starts before this instant: a successful one blocks for
+   * {@link LLAMA_SERVER_REVIVE_REARM_MS}, a failed one for good.
+   */
+  private reviveBlockedUntil = Number.NEGATIVE_INFINITY;
 
   /** Connection-recovery wait visibility for the CLI (same contract as the Ollama provider's). */
   onRecoveryWait?: (event: LlamaServerRecoveryWaitEvent) => void;
@@ -309,6 +331,7 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       now: this.now,
     });
     this.downVerdicts = deps.endpointDownVerdicts;
+    this.reviveEndpoints = deps.reviveEndpoints;
     this.adoptDownVerdicts();
   }
 
@@ -689,6 +712,10 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
       active.push(...this.pool.activeFallbackEndpoints(exclusions.urls));
     }
     if (active.length > 0) return;
+    if (await this.revivePeers()) {
+      exclusions.clear();
+      return;
+    }
     const remainingMs = wait.start + wait.budgetMs - this.now();
     if (remainingMs <= 0) {
       const recoveryWaitMs = wait.attempt > 0 ? this.now() - wait.start : 0;
@@ -714,6 +741,41 @@ export class LlamaServerEmbeddings implements EmbeddingProvider {
     await this.sleep(delayMs);
     await this.reprobeAll();
     exclusions.clear();
+  }
+
+  /**
+   * Single-flight revive of the configured peers. Calls blocked on the same
+   * outage share the attempt in flight; once it settles, a new outage may
+   * revive again only after {@link LLAMA_SERVER_REVIVE_REARM_MS} (success) or
+   * never (failure), so a pool that keeps dying is not restarted on every
+   * batch. `true` only after the revive succeeded and a direct re-probe ran.
+   */
+  private async revivePeers(): Promise<boolean> {
+    if (this.reviveEndpoints === undefined) return false;
+    if (this.reviveInFlight === undefined) {
+      if (this.now() < this.reviveBlockedUntil) return false;
+      const peers = this.pool
+        .snapshot()
+        .filter((e) => e.tier === "peer")
+        .map((e) => e.url);
+      this.log(`[llama-server] no endpoint answers at ${peers.join(",")}; restarting its managed pool`);
+      const revive = this.reviveEndpoints;
+      this.reviveInFlight = (async () => {
+        let revived = false;
+        try {
+          revived = await revive(peers);
+          return revived;
+        } catch {
+          return false;
+        } finally {
+          this.reviveBlockedUntil = revived ? this.now() + LLAMA_SERVER_REVIVE_REARM_MS : Number.POSITIVE_INFINITY;
+          this.reviveInFlight = undefined;
+        }
+      })();
+    }
+    if (!(await this.reviveInFlight)) return false;
+    await this.reprobeAll();
+    return true;
   }
 
   private async reprobeAll(): Promise<void> {

@@ -30,6 +30,7 @@
 
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantPointReader } from "../../../adapters/qdrant/ports.js";
+import type { RustcDriverPresenceProbe } from "../../../contracts/rustc-driver-status.js";
 import {
   fileScopedSymbolKey,
   parseFileScopedSymbolKey,
@@ -63,7 +64,7 @@ import { readPayloadSymbolIsTest } from "../infra/payload-symbol-is-test-reader.
 import { markIndexGraphAnswer } from "../infra/working-tree-graph-marks.js";
 import { selectWorkingTreeGraphHandle } from "../infra/working-tree-graph-read.js";
 import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
-import { rustTracePathNotices } from "./rustc-driver-notice.js";
+import { rustcDriverStatusReconcilerFor, rustTracePathNotices } from "./rustc-driver-notice.js";
 import { swapMemberSeparator, unknownOrTestChunk } from "./symbol-edge-explanation.js";
 
 const DEFAULT_MAX_DEPTH = 8;
@@ -100,6 +101,8 @@ export interface TracePathOpsDeps {
    * Absent (unit wiring) → the wall clock.
    */
   historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
+  /** Whether a rustc driver is on disk now (bd tea-rags-mcp-hjbow.9). Absent (unit wiring): the persisted status. */
+  rustcDriverPresence?: RustcDriverPresenceProbe;
 }
 
 /** Suggestions an empty trace answer carries — the same cap the edge tools use. */
@@ -224,7 +227,11 @@ export class TracePathOps {
         // No path between two known endpoints: a lower bound when a Rust
         // endpoint's edges are static-only (bd tea-rags-mcp-nknkg.1).
         const endpointRelPaths = [...from.refs, ...to.refs].map((ref) => ref.relPath);
-        const notices = await rustTracePathNotices(handle.graphDb, endpointRelPaths);
+        const notices = await rustTracePathNotices(
+          handle.graphDb,
+          endpointRelPaths,
+          rustcDriverStatusReconcilerFor(this.deps.rustcDriverPresence, req),
+        );
         return this.withEndpointFacts({ paths: [], truncated, ...notices }, from, to);
       }
       // Declared visibility of the path nodes (bd tea-rags-mcp-sqqkz) — one

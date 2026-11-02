@@ -17,12 +17,15 @@ import {
   readManifest,
   readSkills,
   selectSkills,
+  SETUP_NAME,
+  SETUP_SRC,
   SHARED_HOOK_SCRIPTS,
   TURN_ROUTING_SOURCE,
   walk,
   writePackage,
   writeRootFile,
 } from "./harness/package.js";
+import { renderSetupPackage } from "./harness/setup.js";
 import {
   extractInjectionBlock,
   parseFrontmatter,
@@ -306,6 +309,23 @@ function renderCursorDinopowers(root: string, teaRagsSkills: ReadonlySet<string>
   return files;
 }
 
+/** `tea-rags-setup/**`: the install and tune skills as `/<s>`, helper scripts verbatim, no hooks or MCP. */
+function renderCursorSetup(root: string, teaRagsSkills: ReadonlySet<string>): Map<string, string> {
+  const manifest = readManifest(join(root, SETUP_SRC));
+  const files = renderSetupPackage(root, { skill: toCursorSkill, text: cursorText }, teaRagsSkills);
+  files.set(
+    `${SETUP_NAME}/.cursor-plugin/plugin.json`,
+    json({
+      name: SETUP_NAME,
+      version: manifest.version,
+      description: manifest.description,
+      ...(manifest.author ? { author: manifest.author } : {}),
+      ...(manifest.keywords ? { keywords: manifest.keywords } : {}),
+    }),
+  );
+  return files;
+}
+
 function readme(version: string, skills: string[], hasCore: boolean): string {
   const core = hasCore
     ? "- `tea-rags/rules/tea-rags-core.mdc` — `rules/core.md` as an `alwaysApply: true` rule, with the terminal fallback for resource reads.\n- `tea-rags/rules/tea-rags-tools.mdc` — tool execution and waiting as a separate `alwaysApply: true` rule (Codex ships the same behaviour as `codex-rules.txt`)."
@@ -351,6 +371,8 @@ Try an edit locally with \`npm run gen:plugins\`; the release regenerates this p
 - \`dinopowers/\` — the wrappers as \`skills/dino-<s>/\` (Claude Code \`dinopowers:<s>\`; \`superpowers:<s>\` → \`/<s>\`),
   \`CHAINING.md\` / \`FRESHNESS.md\` they link to, and a \`sessionStart\` hook (\`scripts/session-start.sh\`) answering with
   the main-session routing table (\`scripts/main-session-routing.txt\`). No MCP server: the wrappers call tea-rags'.
+- \`tea-rags-setup/\` — the \`/install\` and \`/tune\` skills plus the Node helpers they run (\`scripts/*.mjs\`); no hooks,
+  no MCP server.
   superpowers is not bundled — install it per https://github.com/obra/superpowers; a wrapper without it stops and asks.
 - \`tea-rags/repair/\`, \`tea-rags/references/\` — plugin files the skills link to. \`rules/references/\` moves to
   \`references/\` (links rewritten) so \`rules/\` holds rule files only.
@@ -646,6 +668,7 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
   files.set("MANUAL-TEST.md", MANUAL_TEST);
   files.set("LIVE-TEST.md", LIVE_TEST);
   for (const [path, content] of renderCursorDinopowers(root, skillNames)) files.set(path, content);
+  for (const [path, content] of renderCursorSetup(root, skillNames)) files.set(path, content);
 
   return formatPackage(root, CURSOR_HARNESS_DIR, files);
 }
@@ -677,5 +700,7 @@ export async function writeCursorHarness(root: string): Promise<number> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const count = await writeCursorHarness(root);
-  console.log(`✓ ${CURSOR_HARNESS_DIR}: ${count} files regenerated from ${PLUGIN_SRC}, ${DINOPOWERS_SRC}.`);
+  console.log(
+    `✓ ${CURSOR_HARNESS_DIR}: ${count} files regenerated from ${PLUGIN_SRC}, ${DINOPOWERS_SRC}, ${SETUP_SRC}.`,
+  );
 }

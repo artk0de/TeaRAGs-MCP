@@ -137,6 +137,24 @@ export {
   scheduleWorkingTreeGitSignalSweep,
 } from "./internal/infra/working-tree-git-signal-store.js";
 export { InputValidationError, CollectionNotProvidedError } from "./public/errors.js";
+// llama.cpp binary install + discovery — `tea-rags llama-server install` and
+// every llama-server consumer that needs the binary path.
+export {
+  benchPoolThroughput,
+  chooseInstanceCount,
+  createLlamaServerPoolBenchEmbed,
+  defaultPoolBenchMaxInstances,
+  detectLlamaServerBackend,
+  downloadLlamaServer,
+  LlamaServerPools,
+  type LlamaServerPoolThroughputSample,
+  productionLlamaServerPoolsDeps,
+  resolveLlamaServerBinary,
+  type LlamaServerBackend,
+  type LlamaServerPoolRecord,
+  type LlamaServerPoolsDeps,
+  type LlamaServerPoolStatus,
+} from "../adapters/llama-server/index.js";
 
 // ── Composition-root domain surface (bd tea-rags-mcp-k7kmu C5, h4a H2a) ──
 // `domain-boundaries.md`: bootstrap reaches domain modules only through this
