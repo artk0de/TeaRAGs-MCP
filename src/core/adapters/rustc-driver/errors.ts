@@ -1,6 +1,7 @@
 /** rustc call-site driver release errors (GitHub Release download). */
 
 import { InfraError } from "../errors.js";
+import { RUSTC_DRIVER_TOOLCHAIN_PIN } from "./pin.js";
 
 /** The release carries no driver for this platform, or its manifest could not be fetched. */
 export class RustcDriverReleaseUnavailableError extends InfraError {
@@ -8,7 +9,7 @@ export class RustcDriverReleaseUnavailableError extends InfraError {
     super({
       code: "INFRA_RUSTC_DRIVER_RELEASE_UNAVAILABLE",
       message: `No prebuilt rustc call-site driver: ${detail}`,
-      hint: "Build it locally instead: rustup toolchain install <pin> -c rustc-dev,rust-src, then reindex — the driver is built on first use",
+      hint: `Build it locally instead: rustup toolchain install ${RUSTC_DRIVER_TOOLCHAIN_PIN} -c rustc-dev,rust-src, then reindex — the driver is built on first use`,
       cause,
     });
   }
@@ -22,7 +23,7 @@ export class RustcDriverReleaseStaleError extends InfraError {
       message:
         `Stale rustc driver release: built for ${released.pin} ${released.sourceHash.slice(0, 12)}, ` +
         `this tea-rags expects ${expected.pin} ${expected.sourceHash.slice(0, 12)}`,
-      hint: "Install the driver from the release matching this tea-rags version (tea-rags rustc-driver install --version <x.y.z>)",
+      hint: "Install the driver from the release matching this tea-rags version (tea-rags rustc-driver install --release <x.y.z>)",
     });
   }
 }

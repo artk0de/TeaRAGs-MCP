@@ -22,6 +22,7 @@ import {
   installRustcDriverToolchain,
   RUSTC_DRIVER_TOOLCHAIN_PIN,
   rustcDriverInstallStatus,
+  TeaRagsError,
   type RustcDriverInstallStatus,
 } from "../../core/api/public/index.js";
 import { PackageJsonVersionSource } from "../update-check/version-source.js";
@@ -128,9 +129,9 @@ export const rustcDriverCommand: CommandModule = {
         "Download the prebuilt driver from the GitHub Release and install its pinned nightly under the data dir",
         (y) =>
           y
-            .option("version", {
+            .option("release", {
               type: "string",
-              describe: "tea-rags release to install from (default: this version)",
+              describe: "tea-rags release to install from, e.g. 1.49.0 (default: this version)",
             })
             .option("skip-toolchain", {
               type: "boolean",
@@ -138,10 +139,16 @@ export const rustcDriverCommand: CommandModule = {
               describe: "Download the driver only, without the pinned toolchain",
             }),
         async (argv) => {
-          await runRustcDriverInstall(
-            { version: argv.version, skipToolchain: argv.skipToolchain },
-            productionInstallDeps(),
-          );
+          try {
+            await runRustcDriverInstall(
+              { version: argv.release, skipToolchain: argv.skipToolchain },
+              productionInstallDeps(),
+            );
+          } catch (err) {
+            if (!(err instanceof TeaRagsError)) throw err;
+            process.stderr.write(`rustc-driver install: ${err.message}\n${err.hint}\n`);
+            process.exitCode = 1;
+          }
         },
       )
       .command(
