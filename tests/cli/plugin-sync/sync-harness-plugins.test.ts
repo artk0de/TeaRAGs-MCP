@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { syncHarnessPlugins } from "../../../src/cli/plugin-sync/index.js";
+import { spawnHarnessCli, syncHarnessPlugins } from "../../../src/cli/plugin-sync/index.js";
+
+describe("spawnHarnessCli", () => {
+  it("runs the CLI in the requested working directory", async () => {
+    const spawn = vi.fn(() => ({
+      stdout: null,
+      stderr: null,
+      on: (event: string, cb: (code: number) => void) => {
+        if (event === "close") cb(0);
+      },
+    }));
+
+    await spawnHarnessCli(spawn as never, "claude")(["plugin", "list"], { cwd: "/abs/proj" });
+
+    expect(spawn).toHaveBeenCalledWith("claude", ["plugin", "list"], expect.objectContaining({ cwd: "/abs/proj" }));
+  });
+});
 
 const missing = vi.fn(async () => ({ code: null, stdout: "", missing: true }));
 
