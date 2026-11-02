@@ -49,6 +49,21 @@ manager (`pnpm`, `yarn`, `bun`), running `npm install -g tea-rags@latest`
 will still update the binary on most setups, but you can also run the
 manager-specific equivalent yourself.
 
+## Automatic updates
+
+The client updates itself in the background by default. `tea-rags prime`
+starts a background `tea-rags update` at most once a day, and it installs a
+release only after that release is 3 days old (7 days for a major version).
+
+```bash
+tea-rags update --auto off   # turn it off
+tea-rags update --auto on    # turn it back on
+```
+
+`TEA_RAGS_AUTO_UPDATE=0` overrides the setting. Every `tea-rags update`, manual
+or automatic, also re-pins the Claude and Codex plugin marketplaces to the
+installed version and refreshes Cursor's plugin copy.
+
 ## Update notice in `tea-rags prime`
 
 The `tea-rags prime` command (used by SessionStart hooks in agent
