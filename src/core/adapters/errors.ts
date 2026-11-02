@@ -100,6 +100,9 @@ export const INFRA_ERROR_CODES = [
   "INFRA_KEV_SESSION_BUSY",
   "INFRA_KEV_SESSION_UNAVAILABLE",
   "INFRA_KEV_SESSION_LOST",
+  // rustc call-site driver release
+  "INFRA_RUSTC_DRIVER_RELEASE_UNAVAILABLE",
+  "INFRA_RUSTC_DRIVER_RELEASE_STALE",
 ] as const;
 
 /** Infrastructure error codes. Local strict union, derived from `INFRA_ERROR_CODES`. */

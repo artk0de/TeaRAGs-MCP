@@ -175,9 +175,9 @@ describe("discoverRustcDriver", () => {
 });
 
 describe("rustcDriverInstallHint", () => {
-  it("names the pin and the escape-hatch env var", () => {
+  it("names tea-rags rustc-driver install, the pin and the escape-hatch env var", () => {
     expect(rustcDriverInstallHint(PIN)).toBe(
-      `rustc call-site driver unavailable — install with 'rustup toolchain install ${PIN} -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH`,
+      `rustc call-site driver unavailable — install with 'tea-rags rustc-driver install', build it with 'rustup toolchain install ${PIN} -c rustc-dev,rust-src' (≈1.5 GB), or set CODEGRAPH_RUST_DRIVER_PATH`,
     );
   });
 });

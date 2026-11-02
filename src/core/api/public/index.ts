@@ -280,6 +280,14 @@ export {
   type EmbeddingModelCatalogEntry,
 } from "../../adapters/embeddings/model-catalog.js";
 export { selectEmbeddingModelForLanguages } from "../../adapters/embeddings/model-choice.js";
+// Prebuilt rustc call-site driver + its pinned toolchain — `tea-rags rustc-driver install|status`.
+export {
+  downloadRustcDriverRelease,
+  installRustcDriverToolchain,
+  RUSTC_DRIVER_TOOLCHAIN_PIN,
+  rustcDriverInstallStatus,
+  type RustcDriverInstallStatus,
+} from "../../adapters/rustc-driver/release-download.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
 // The one definition of "chunk points only" — every CLI chunk count passes it
 // to countPoints so it agrees with get_index_status (bd tea-rags-mcp-39xca.16).

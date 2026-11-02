@@ -96,6 +96,7 @@ import {
   type RustcDriverCommandOutcome,
   type RustcDriverDiscovery,
 } from "./executable.js";
+import { managedRustToolchainEnv } from "./managed-toolchain.js";
 import { RUSTC_DRIVER_TOOLCHAIN_PIN } from "./pin.js";
 
 /** Disables the driver when set to `off` (also `0` / `false` / `no`). */
@@ -955,12 +956,23 @@ export function rustcDriverCrateDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "native", "tea-rags-rustc-driver");
 }
 
-/** Runner bound to the real host. */
+/**
+ * Runner bound to the real host. A toolchain `tea-rags rustc-driver install`
+ * put under `${dataDir}/rust` is overlaid on `baseEnv`, so rustup and a
+ * prebuilt driver find the pinned nightly there.
+ */
 export function defaultRustcCallSiteRunnerDeps(
-  env: Readonly<Record<string, string | undefined>> = process.env,
+  baseEnv: Readonly<Record<string, string | undefined>> = process.env,
 ): RustcCallSiteRunnerDeps {
   const pin = RUSTC_DRIVER_TOOLCHAIN_PIN;
-  const dataDir = env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+  const dataDir = baseEnv.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+  const env = managedRustToolchainEnv(baseEnv, dataDir, {
+    platform: process.platform,
+    arch: process.arch,
+    exists: existsSync,
+  });
+  const runInEnv = (command: string, args: readonly string[], timeoutMs: number): RustcDriverCommandOutcome =>
+    runRustcDriverHostCommand(command, args, timeoutMs, env);
   const crateDir = rustcDriverCrateDir();
   const crateShipped = existsSync(join(crateDir, "Cargo.toml"));
   let sourceHash = "unshipped";
@@ -976,7 +988,8 @@ export function defaultRustcCallSiteRunnerDeps(
     dataDir,
     pin,
     cpuCount: availableParallelism(),
-    discover: () => discoverRustcDriver(defaultRustcDriverDiscoveryDeps(pin, sourceHash, env)),
+    // The probe runs under the managed env too: a prebuilt driver answers -V only once it finds librustc_driver.
+    discover: () => discoverRustcDriver({ ...defaultRustcDriverDiscoveryDeps(pin, sourceHash, env), run: runInEnv }),
     buildDriver: async (buildable) =>
       crateShipped
         ? ensureRustcDriverBuilt(
@@ -997,7 +1010,7 @@ export function defaultRustcCallSiteRunnerDeps(
             detail: `driver crate not shipped at ${crateDir}`,
             logPath: "",
           },
-    run: runRustcDriverHostCommand,
+    run: runInEnv,
     spawn: (command, args, options) => spawnSupervisedChild(command, args, options, CHILD_NAME),
     sampleTreeRssKb: sampleProcessTreeRssKb,
     clock: systemSupervisorClock,
