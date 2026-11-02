@@ -65,6 +65,7 @@ import type {
 import { composeExtractionWalker } from "../kernel/index.js";
 import { RustChunkClassifier } from "./chunking/classifier.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
+import { isRustModuleImport } from "./chunking/module-import.js";
 import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
 import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
 import { fileIsInlineTestOnly, isInlineTestNode } from "./inline-tests.js";
@@ -114,6 +115,9 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   // A file made test-only by an inner `#![cfg(test)]` has test-only top-level
   // code no chunk carries (a fixture under the chunk floor, `use super::*;`).
   moduleRemainderChunkType: (root, code) => (fileIsInlineTestOnly(root, code) ? "test_setup" : undefined),
+  // An import's outer attribute rows and a body-less test-only `mod x;` stay
+  // out of the module remainder with the import itself.
+  isModuleImport: isRustModuleImport,
   // Rust function items are searchable symbols even when their bodies are
   // shorter than the generic 50-character noise floor.
   keepShortChildChunkTypes: ["function_item", "function_signature_item"],
