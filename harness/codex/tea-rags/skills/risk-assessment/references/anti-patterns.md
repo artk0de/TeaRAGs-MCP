@@ -13,8 +13,10 @@ inlined in SKILL.md near the top for skim safety; the rest live here.
   Phase 4, reuse held bodies and batch only missing bodies needed to review
   selected candidates with `find_symbol(symbols: [...])`.
 - **Paginating all 3 presets to page 3.** If gradient drops on page 1 — stop.
-- **Reporting 1/N overlap as risk.** Single-preset hits are noise. Minimum 2/N
-  for Medium.
+- **Hiding Medium and Low tiers.** Printing only Critical/High reads as "no
+  risks" when the project has many one- and two-axis risks. Medium (2…N−2) and
+  Low (1/N) always print; Low is a compact table, never escalated without
+  overlap.
 - **find_similar from Medium candidates.** Only Critical warrants expansion.
 - **Brace of full file paths as scan scope.** Matches only those files — rest of
   domain never scanned. Extract directory prefixes instead.

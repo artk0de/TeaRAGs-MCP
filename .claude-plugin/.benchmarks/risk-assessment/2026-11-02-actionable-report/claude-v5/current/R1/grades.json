@@ -1,0 +1,121 @@
+{
+ "case": "R1",
+ "pass": true,
+ "checks": [
+  {
+   "check": "phase1-before-git",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "one-bash-line-scoped",
+   "required": true,
+   "pass": true,
+   "detail": "1 git Bash calls"
+  },
+  {
+   "check": "bodies-fetched",
+   "required": true,
+   "pass": true,
+   "detail": [
+    "InvoiceCalculator#applyDiscount",
+    "InvoiceCalculator#computeTotal",
+    "LedgerSync#reconcile",
+    "RetryQueue#enqueue",
+    "RetryQueue#processBatch"
+   ]
+  },
+  {
+   "check": "overview",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "commits-column",
+   "required": true,
+   "pass": true,
+   "detail": "3 headers"
+  },
+  {
+   "check": "github-links",
+   "required": true,
+   "pass": true,
+   "detail": "missing "
+  },
+  {
+   "check": "cards",
+   "required": true,
+   "pass": true,
+   "detail": "Problem=4 totals=[1, 3, 6, 6]"
+  },
+  {
+   "check": "bugfix-first",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "next-steps",
+   "required": true,
+   "pass": true,
+   "detail": "hdr=True rows=11"
+  },
+  {
+   "check": "offer-line",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "no-start-no-task",
+   "required": true,
+   "pass": true,
+   "detail": "started=[] tracker=[]"
+  },
+  {
+   "check": "commits-print-line",
+   "required": false,
+   "pass": false,
+   "detail": ""
+  },
+  {
+   "check": "tier-legend",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "medium-low-printed",
+   "required": true,
+   "pass": true,
+   "detail": "medium=766 low=270"
+  }
+ ],
+ "tool_calls": 22,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "Read",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "find_similar",
+  "find_similar",
+  "find_symbol",
+  "hybrid_search",
+  "hybrid_search",
+  "hybrid_search",
+  "find_symbol",
+  "Bash",
+  "find_symbol"
+ ]
+}

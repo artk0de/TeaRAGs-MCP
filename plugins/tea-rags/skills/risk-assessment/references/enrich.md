@@ -1,16 +1,19 @@
 # Phase 4: ENRICH — risk-assessment
 
-Loaded by `SKILL.md` Phase 4. Critical + High candidates only.
+Loaded by `SKILL.md` Phase 4. Critical + High + Medium candidates (cap 10, tier
+order); Low rows get no enrichment.
 
-For **Critical and High** candidates (typically 5-10 chunks):
+For **Critical, High and Medium** candidates (cap 10 chunks; runs when
+Critical/High are empty):
 
 **1. Code review** — Phase 1/1b scans contain metadata and signals only
-(`metaOnly: true`). Every Critical/High row needs its body: the card's
+(`metaOnly: true`). Every Critical/High/Medium row needs its body: the card's
 `What's wrong:` line describes the code, not the signals. Reuse bodies already
-in context (including EXPAND results). Collect the remaining Critical/High
-symbolIds into ONE `find_symbol(symbols: [<ids>], metaOnly: false)` batch; no
-body fetch for discarded candidates. Surrounding context → `find_symbol` (Rule
-5), not Read. Never re-fetch an unedited body already held.
+in context (including EXPAND results). Collect the remaining
+Critical/High/Medium symbolIds into ONE
+`find_symbol(symbols: [<ids>], metaOnly: false)` batch; no body fetch for
+discarded candidates. Surrounding context → `find_symbol` (Rule 5), not Read.
+Never re-fetch an unedited body already held.
 
 **2. Test coverage check — stratified, NEVER one batched call.**
 
@@ -23,7 +26,7 @@ damaging output this skill can produce, because it looks like a real result.
 Procedure — one call per domain cluster, reusing the Phase 1 stratification:
 
 ```text
-1. Group Critical/High candidates by relativePath directory prefix
+1. Group Critical/High/Medium candidates by relativePath directory prefix
    (same grouping as the Phase 1 dominant-domain count).
 2. Per cluster: hybrid_search
      query      = that cluster's symbol names only
@@ -83,9 +86,9 @@ risk not assessed (never claim "no cycles" / "no hubs"). See
   > valid "no cycles (DAG)". Surface findings in OUTPUT Structural risks
   > section.
 
-**4. Fix-cost classifier** — every Critical/High risk candidate AND every Phase
-1b structural candidate. Scored from overlay signals already fetched — zero
-extra calls.
+**4. Fix-cost classifier** — every Critical/High/Medium risk candidate AND every
+Phase 1b structural candidate. Scored from overlay signals already fetched —
+zero extra calls.
 
 | Input                   | 0                | 1         | 2        |
 | ----------------------- | ---------------- | --------- | -------- |
@@ -167,7 +170,7 @@ pair diagnostics" for the full table.
 See [references/classification-tiers.md](./classification-tiers.md) for the full
 13-tier table.
 
-**7. Commit evidence** — Critical/High rows (+ Structural debt rows with
+**7. Commit evidence** — Critical/High/Medium rows (+ Structural debt rows with
 `Also risk?` set). Index stores `taskIds` only, no commit list → git is the
 source; the ONLY git read in this skill. ONE Bash call, commands joined by `;`
 (runs in sh, zsh, fish), one `echo "== <#>"` marker per row:

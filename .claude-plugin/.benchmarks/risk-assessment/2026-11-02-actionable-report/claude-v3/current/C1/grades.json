@@ -1,0 +1,59 @@
+{
+ "case": "C1",
+ "pass": true,
+ "checks": [
+  {
+   "check": "parallel-block",
+   "required": true,
+   "pass": true,
+   "detail": {
+    "msg_011CgeGZeA2Tg5pg1ayFWYFN": [
+     "bugHunt",
+     "hotspots",
+     "techDebt",
+     "dangerous",
+     "decomposition",
+     "godModule"
+    ]
+   }
+  },
+  {
+   "check": "exclusions",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "git-after-scan",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "pathPattern",
+   "required": false,
+   "pass": true,
+   "detail": [
+    "**/payments/**"
+   ]
+  }
+ ],
+ "tool_calls": 15,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "Read",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "find_similar",
+  "find_symbol",
+  "hybrid_search",
+  "find_symbol",
+  "Bash",
+  "find_symbol"
+ ]
+}

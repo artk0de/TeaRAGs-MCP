@@ -210,9 +210,11 @@ SIG = {  # file bugFix, volatility, relChurn, ageDays, owner, ownerPct, contribu
 }
 
 
-def row(sym, preset):
+def row(sym, preset, owner=None):
     path, start, end = SPANS[sym]
-    s = SIG[sym]
+    s = list(SIG[sym])
+    if owner:  # R6: every file blamed to one author
+        s[8] = owner
     return [str(uuid.uuid5(uuid.NAMESPACE_URL, "widgets/" + sym)), path, sym, start, end, preset, *s]
 
 
@@ -227,13 +229,25 @@ PRESET_ROWS = {
 }
 
 
-def scan_responses():
+# R5: no symbol reaches 3/4 — two Medium (2/4) rows, three Low (1/4) rows.
+MEDIUM_LOW_ROWS = {
+    "bugHunt": ["InvoiceCalculator#computeTotal"],
+    "hotspots": ["RetryQueue#processBatch", "InvoiceCalculator#applyDiscount"],
+    "techDebt": ["InvoiceCalculator#computeTotal", "TaxTable#rateFor"],
+    "dangerous": ["RetryQueue#processBatch", "LedgerSync#reconcile"],
+    "decomposition": ["InvoiceCalculator#computeTotal", "RetryQueue#processBatch"],
+    "godModule": [],
+    "architecturalHub": [],
+}
+
+
+def scan_responses(preset_rows=None, owner=None):
     out = []
-    for preset, syms in PRESET_ROWS.items():
+    for preset, syms in (preset_rows or PRESET_ROWS).items():
         out.append({"tool": "rank_chunks", "arguments": {"rerank": preset},
-                    "result": {"results": {"columns": COLS, "rows": [row(s, preset) for s in syms]}}})
+                    "result": {"results": {"columns": COLS, "rows": [row(s, preset, owner) for s in syms]}}})
     out.append({"tool": "find_similar", "arguments": {},
-                "result": {"results": {"columns": COLS, "rows": [row("Gateway#charge", "bugHunt")]}}})
+                "result": {"results": {"columns": COLS, "rows": [row("Gateway#charge", "bugHunt", owner)]}}})
     out.append({"tool": "find_cycles", "arguments": {}, "result": {"empty": {"reason": "codegraphDisabled"}, "cycles": []}})
     return out
 
@@ -345,11 +359,12 @@ SCAN_NOTE = ("Synthetic TypeScript repository 'widgets' in the session working d
              "its own commit history. All source files are indexed; codegraph is disabled for this project (no graph tools).")
 
 
-def base_fixture(remote, extra_files=None, initial_context=None):
+def base_fixture(remote, extra_files=None, initial_context=None, preset_rows=None, solo=None):
+    """solo = one (name, email) authoring every commit and owning every file (R6)."""
     files = dict(FILES)
     files.update(extra_files or {})
-    fx = {"files": files, "git_history": [{"date": d, "author": list(w), "subject": s, "files": c} for d, w, s, c in HISTORY],
-          "git_remote": remote, "raw_tool_responses": scan_responses(), "label_maps": LABEL_MAPS,
+    fx = {"files": files, "git_history": [{"date": d, "author": list(solo or w), "subject": s, "files": c} for d, w, s, c in HISTORY],
+          "git_remote": remote, "raw_tool_responses": scan_responses(preset_rows, solo and solo[0]), "label_maps": LABEL_MAPS,
           "prime_extra": "codegraph: disabled for this project (no codegraph enrichment, no graph tools)\n"}
     if initial_context:
         fx["initial_context"] = initial_context
@@ -392,6 +407,15 @@ def main():
         {"id": "commits-print-line", "kind": "answer", "required": False,
          "rule": "Prints 'commits: 3 rows, remote <host|none>' (informational)."},
     ]
+    tier_checks = [
+        {"id": "tier-legend", "kind": "answer", "required": True,
+         "rule": "A legend line under the header explains tiers by axis count: Critical = all N axes, High = N−1, Medium = N−2, Low = one axis (user language allowed)."},
+        {"id": "medium-low-printed", "kind": "answer", "required": True,
+         "rule": "'## Medium' and '## Low' headings both print; Medium names InvoiceCalculator#applyDiscount (2/4); Low lists TaxTable#rateFor (1/4)."},
+        {"id": "authors-live", "kind": "answer", "required": True,
+         "rule": "Prints 'authors: <top author> <pct>% of commits — ownership axis live' (three authors, top share < 90%); the author-check shortlog is not the commit-evidence git call."},
+    ]
+    report_checks = report_checks + tier_checks
     gh_links = {"id": "github-links", "kind": "answer", "required": True,
                 "rule": "Commits column + card entries link each picked SHA as [<sha7>](https://github.com/acme/widgets/commit/<sha>)."}
     no_links = {"id": "bare-shas", "kind": "answer", "required": True,
@@ -429,6 +453,37 @@ def main():
              {"id": "only-case1", "kind": "forbid", "required": True, "rule": "No tool call whose arguments target processBatch/RetryQueue/reconcile/LedgerSync (case #2/#3 not started)."},
              {"id": "next-line", "kind": "answer", "required": True, "rule": "Answer ends with a line starting '→ Next: #2' (user language allowed for the rest)."},
              {"id": "no-task", "kind": "forbid", "required": True, "rule": "No bd/gh/tracker create call."}],
+             "pass_rule": "Every required check passes."}},
+        {"id": "R5", "name": "medium-low-always-printed",
+         "prompt": "Assess the code health of this whole project — where are the risks?",
+         "actor_context": SCAN_NOTE, "fixture": base_fixture(gh, preset_rows=MEDIUM_LOW_ROWS),
+         "expected": "0 Critical / 0 High: both headings print with 'none'; tier legend line; Medium table computeTotal + processBatch (2/4) with full cards (Problem / What's wrong / Commits 3 of 6 each) from bodies + ONE line-scoped git Bash; Low table reconcile, applyDiscount, rateFor (1/4); never 'codebase appears healthy'; Next steps for the Medium rows + offer line.",
+         "grading": {"checks": [
+             dict(tier_checks[0]),
+             {"id": "empty-tiers-printed", "kind": "answer", "required": True, "rule": "'## Critical' and '## High' headings print with none/0 (not omitted)."},
+             {"id": "medium-cards", "kind": "answer", "required": True, "rule": "'## Medium' table has computeTotal and processBatch; >=2 'Problem:', >=2 \"What's wrong:\", Commits cards with totals 6 and 6."},
+             {"id": "medium-bodies-git", "kind": "tool", "required": True, "rule": "find_symbol bodies for computeTotal + processBatch; exactly one git Bash with -L ranges for both."},
+             {"id": "low-table", "kind": "answer", "required": True, "rule": "'## Low' heading followed by rows naming reconcile, applyDiscount and rateFor."},
+             {"id": "risk-patterns", "kind": "answer", "required": True, "rule": "'## Risk patterns' table '| Pattern | Symbols | What it means | Signature (signals) | Where to look |' with one row per Risk Type printed (>=2 rows); Symbols cells name symbols, not bare row numbers."},
+             {"id": "low-risk-type", "kind": "answer", "required": True, "rule": "Low table header has a 'Risk Type' column."},
+             {"id": "low-batch", "kind": "answer", "required": True, "rule": "Next steps holds >=1 batch row whose '#' is a comma list of Low row numbers naming reconcile / applyDiscount / rateFor."},
+             {"id": "no-healthy-claim", "kind": "forbid", "required": True, "rule": "No 'appears healthy' / 'no risks found' / 'выглядит здоровым' claim."},
+             {"id": "next-steps", "kind": "answer", "required": True, "rule": "'## Next steps' table with header '| # | Case | Action | Call |' and an offer line starting '→'."}],
+             "pass_rule": "Every required check passes."}},
+        {"id": "R6", "name": "solo-author-ownership-degenerate",
+         "prompt": "Assess the code health of this whole project — where are the risks?",
+         "actor_context": SCAN_NOTE, "fixture": base_fixture(gh, solo=ALICE),
+         "expected": "One author wrote every commit: prints 'authors: Alice Moreau 100% of commits — ownership axis degenerate'; dangerous merges into the bugHunt axis (N=3, legend shows bugHunt+dangerous as one axis); Critical computeTotal + processBatch (3/3), High reconcile + applyDiscount (2/3; Medium if healthy-demoted), Low rateFor; no Fragile silo / Toxic silo Risk Type; no knowledge-transfer Next steps row; Summary 'Bus factor: project-wide'; one shortlog + ONE line-scoped commit-evidence git Bash.",
+         "grading": {"checks": [
+             {"id": "authors-degenerate", "kind": "answer", "required": True, "rule": "Line 'authors: Alice Moreau 100% of commits — ownership axis degenerate'."},
+             {"id": "author-check-call", "kind": "tool", "required": True, "rule": "A Bash call runs git shortlog (the Phase 2 author check)."},
+             {"id": "one-bash-line-scoped", "kind": "bash_git_single_call", "required": True, "rule": "Besides the shortlog, exactly one git Bash; it carries -L ranges for computeTotal, processBatch, reconcile and applyDiscount; no repo-wide log, no blame."},
+             {"id": "legend-merged", "kind": "answer", "required": True, "rule": "Tier legend line names bugHunt and dangerous as ONE axis (bugHunt+dangerous)."},
+             {"id": "tiers", "kind": "answer", "required": True, "rule": "Critical holds computeTotal and processBatch; High holds reconcile; applyDiscount (2/3) in High, or Medium when healthy-demoted (chunk bugFixRate healthy); Low holds rateFor."},
+             {"id": "no-silo", "kind": "forbid", "required": True, "rule": "No 'Fragile silo' / 'Toxic silo' anywhere in the answer."},
+             {"id": "no-knowledge-transfer", "kind": "forbid", "required": True, "rule": "Next steps holds no 'knowledge transfer' / 'owner reviews' row."},
+             {"id": "bus-factor-line", "kind": "answer", "required": True, "rule": "Summary line 'Bus factor: project-wide'."},
+             {"id": "next-steps", "kind": "answer", "required": True, "rule": "'## Next steps' table with header '| # | Case | Action | Call |' and an offer line starting '→'."}],
              "pass_rule": "Every required check passes."}},
         {"id": "C1", "name": "control-phase1-shape",
          "prompt": "Run a risk assessment of the payments domain.",
