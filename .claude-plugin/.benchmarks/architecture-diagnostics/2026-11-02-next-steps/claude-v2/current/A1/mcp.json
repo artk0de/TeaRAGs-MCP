@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "tea-rags": {
+      "command": "/opt/homebrew/bin/python3",
+      "args": [
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/.benchmarks/architecture-diagnostics/2026-11-02-next-steps/repro/fixture_mcp.py",
+        "--fixture",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/.benchmarks/architecture-diagnostics/2026-11-02-next-steps/claude-v2/current/A1/fixture.json",
+        "--audit",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/.benchmarks/architecture-diagnostics/2026-11-02-next-steps/claude-v2/current/A1/fixture-tool-audit.jsonl",
+        "--plugin-root",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags"
+      ]
+    }
+  }
+}

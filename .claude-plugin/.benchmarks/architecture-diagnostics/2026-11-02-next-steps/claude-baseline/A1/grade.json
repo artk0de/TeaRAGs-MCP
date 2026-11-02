@@ -1,0 +1,86 @@
+{
+  "case": "A1",
+  "checks": [
+    {
+      "id": "actual-report",
+      "kind": "require_tool",
+      "pass": true,
+      "note": "1 call(s)"
+    },
+    {
+      "id": "diagnostic-workflow",
+      "kind": "require_read_or_invoke",
+      "pass": true,
+      "note": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-1-report.md; /Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-3c-silent-c"
+    },
+    {
+      "id": "next-steps-heading",
+      "kind": "answer_regex",
+      "pass": false,
+      "note": ""
+    },
+    {
+      "id": "row-root-cause-first",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "In the Next steps table the FIRST row is the SDP root cause / session↔providers violation for src/auth/providers, and its Call is Skill(tea-rags:refactoring-planning) naming the component path src/auth/providers."
+    },
+    {
+      "id": "row-silent-coupling",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "A Next steps row maps the authKeys.ts silent-coupling group to its drill call find_co_changed with files [\"src/auth/config/authKeys.ts\"] (limit 10 if stated)."
+    },
+    {
+      "id": "row-misfit",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "A Next steps row maps the ApiKeyAuthenticator.ts → SessionService.ts norms MISFIT to Skill(tea-rags:data-driven-generation) on the source file src/auth/providers/ApiKeyAuthenticator.ts."
+    },
+    {
+      "id": "offer-line-present",
+      "kind": "answer_regex",
+      "pass": false,
+      "note": ""
+    },
+    {
+      "id": "offer-line-content",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "The report ends with the → offer line: work through the findings here and now starting with #1, OR file a task per finding — a question to the user, in the user's language (the user-level CLAUDE.md of the run host mandates Russian replies, so a faithful Russian rendering passes)."
+    },
+    {
+      "id": "no-follow-up-started",
+      "kind": "forbid_invoke",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "no-drill-started",
+      "kind": "forbid_tool",
+      "pass": true,
+      "note": "0 call(s)"
+    },
+    {
+      "id": "no-task-created",
+      "kind": "forbid_bash_regex",
+      "pass": true,
+      "note": ""
+    }
+  ],
+  "trace": [
+    "Skill {\"skill\": \"tea-rags:architecture-diagnostics\", \"args\": \"pathPattern: src/auth/** \\u2014 dependency/layer violations, silent coupling, dependency-norm misfits; d",
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__get_architecture_report,mcp__tea-rags__find_symbol\", \"max_results\": 2}",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-1-repor",
+    "get_architecture_report {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/A1/workspace\", \"project\": \"arch-next-a1\", \"pathPattern\": \"src/auth/**\", \"limit\": 50,",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-3c-sile",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-3g-depe",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-4-exclu",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/A1/workspace\", \"project\": \"arch-next-a1\", \"relativePath\": \"src/auth/providers/ApiKey",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/A1/workspace\", \"project\": \"arch-next-a1\", \"relativePath\": \"src/auth/session/SessionS",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/A1/workspace\", \"project\": \"arch-next-a1\", \"symbols\": [\"ApiKeyAuthenticator\", \"Sessio",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/A1/workspace\", \"project\": \"arch-next-a1\", \"symbols\": [\"ApiKeyAuthenticator#revokeLoc",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-3i-reme"
+  ],
+  "answer": "О, Мудрейший Господин!\n\n## Архитектурный отчёт по `src/auth/**`: 1 нарушение SDP, 1 корневая причина, 1 группа скрытой связности, 1 нарушение нормы зависимостей\n\n- В `src/auth` 4 компонента и ни одного модуля-фасада. Оценены все 5 межкомпонентных зависимостей из 5. По containment и малой поддержке исключено 0. Служебных и тестовых файлов исключено 0.\n- Уровни влияния: SDP critical 0, active 1, structural 0. Порог reach cut задаётся во всём графе.\n\n### Корневая причина: цикл `session ↔ providers`\n\n| # | Целевой компонент | Уровень | I | Зависимые | Цикл | Как чинить |\n|---|---|---|---|---|---|---|\n| 1 | `src/auth/providers` | active | 0.75 | `src/auth/session` | **да** | Убрать обратную ссылку из providers в session |\n\nДве находки из разных детекторов описывают один дефект:\n\n1. **SDP.** Стабильный `session` (I=0.25) зависит от нестабильного `providers` (I=0.75), ΔI=0.5. Компоненты не вложены друг в друга. Эту зависимость держит одно ребро: `SessionService.ts → ApiKeyAuthenticator.ts`, вес вызова 1. Его даёт фабрика `SessionService.createDefault()`, которая напрямую вызывает `new ApiKeyAuthenticator()` (`src/auth/session/SessionService.ts:5`).\n2. **Нарушение нормы.** Ребро `ApiKeyAuthenticator.ts → SessionService.ts` (authenticator → service) идёт против направления, принятого в проекте: обычно service → authenticator, 11:1, p=0.0215. Обратное ребро создаёт `revokeLocalSession(sessions: SessionService, id)` (`src/auth/providers/ApiKeyAuthenticator.ts:10`): провайдер получает сессионный сервис и вызывает у него `logout`.\n\n**Почему так вышло.** Нестабильность `providers` — дело его собственных рук: из-за `revokeLocalSession` у него появилась исходящая зависимость на собственного зависимого, а это повышает Ce и поднимает I. Если эту зависимость инвертировать, исчезнет вся группа: цикл, нарушение SDP и нарушение нормы. Для этого нужны два изменения:\n- Убрать `revokeLocalSession` из провайдера. Отзыв сессии — обязанность `SessionService`: провайдер может сообщать о событии через callback или порт, а `logout` должен вызывать сервис.\n- Перенести `createDefault()` в composition root. Тогда `session` будет знать только абстракцию аутентификатора, на которую уже опирается `renew()` через `this.authenticator.refresh`.\n\nПопутный дефект контракта, к графу не относится. `SessionService#renew` опирается на `authenticator.refresh()`, а `ApiKeyAuthenticator#refresh` всегда бросает `\"API keys do not refresh\"`. При этом `createDefault()` подставляет именно этот провайдер, поэтому сессия по умолчанию после истечения срока не продлевается, хотя `renew` утверждает обратное. Это нарушение LSP на стыке тех же двух компонентов.\n\n### Скрытая связность: 2 пары, сгруппированы в 1 находку; среди сильных пар связанных в коде 0\n\n- Порог 0.6 (метод otsu, η 0.84). История: 48 коммитов с 2026-06-01, HEAD `a1b2c3d`.\n\n| # | Общий файл | Партнёров | Партнёры (support / λ / strength) | Детализация |\n|---|---|---|---|---|\n| 1 | `src/auth/config/authKeys.ts` | 2 | `AuthController.ts` 7 / 1.2 / 0.71; `providers/ApiKeyAuthenticator.ts` 5 / 0.9 / 0.63 | `find_co_changed(files: [\"src/auth/config/authKeys.ts\"], limit: 10)` |\n\n**Почему так вышло.** `authKeys.ts` меняется вместе с контроллером в 7 раз чаще ожидаемого (≈5.8×λ) и вместе с провайдером в 5 раз (≈5.6×λ). При этом ни импорта, ни вызова между ними нет. Обе пары прошли проверку значимости, и общий сосед их не объясняет. Похоже, связь держится на строковых ключах или согласованном формате, который в коде нигде не записан. Чинить так: объявить ключи типизированным контрактом, который оба партнёра реально импортируют, либо отдать их одному владельцу. Тогда связь станет видна в графе.\n\n### Нормы зависимостей: 1 нарушение; в семействе typescript направление установлено для 2 из 6 пар, 1 из них односторонняя; 4 типизированных файла\n\n- Нарушение — это ребро `ApiKeyAuthenticator → SessionService`, разобранное выше.\n- Исключено ребро без вызовов: 1, а также с константными ссылками 0, межъязыковое 0, framework-routed 0, displaced 0.\n- Из 6 типизированных рёбер оценено 5. 1 файл со слабой ролью не оценивался.\n\n### Что не проверялось\n- **Leaking abstraction, main sequence, hub-like, layering, propagation cost:** в ответе их нет, потому что модулей-фасадов 0. Это значит «не проверялось», а не «чисто».\n- **Скрытая связность:** 7 пар `notSignificant`. Они просмотрены, но их поддержка не выше нулевой модели.\n- **Нормы:** 1 ребро без вызовов и 1 файл со слабой ролью не оценивались.\n- **Симуляция исправлений не запускалась.** `restructure` моделирует только перенос, разделение или слияние файлов, а нужное здесь исправление — инверсия ребра внутри файлов. Подходящей операции нет. Слияние `session` и `providers` убрало бы цикл, но спрятало бы дефект, поэтому как решение я его не предлагаю.\n\n**Итог:** в `src/auth` два структурных дефекта.\n1. Цикл `session ↔ providers` из-за `revokeLocalSession` и `createDefault`. Убирается инверсией одного метода и переносом фабрики, после чего исчезают 2 из 3 находок.\n2. Неявный контракт `authKeys.ts`, который меняется вместе с контроллером и провайдером без единого ребра в коде.\n\nФайлы я не менял."
+}

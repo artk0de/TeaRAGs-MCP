@@ -1,0 +1,159 @@
+{
+  "suite": ".claude-plugin/.benchmarks/risk-assessment/evals/2026-11-02-actionable-report.json",
+  "model": "opus",
+  "harness": "claude -p (Claude Code), x1 per case per arm",
+  "fingerprint": {
+    "baseline": {
+      "version": "0.54.4",
+      "sha256_combined": "066235877097f558",
+      "files": {
+        "skills/risk-assessment/SKILL.md": "95419b58f199",
+        "skills/risk-assessment/references/enrich.md": "acfad6edc948",
+        "rules/references/report-follow-up.md": "absent"
+      }
+    },
+    "current": {
+      "version": "0.55.0",
+      "sha256_combined": "a0937e4fb84a549a",
+      "files": {
+        "skills/risk-assessment/SKILL.md": "e9e933dd46b7",
+        "skills/risk-assessment/references/enrich.md": "b287b95f93a5",
+        "rules/references/report-follow-up.md": "52a62fddbafe"
+      }
+    }
+  },
+  "baseline_ref": "196a3ce4e (main)",
+  "current_ref": "568c6a134 (worktree-risk-report-actionable)",
+  "results": {
+    "R1": {
+      "baseline": {
+        "pass": false,
+        "failed_required": [
+          "one-bash-line-scoped",
+          "overview",
+          "commits-column",
+          "github-links",
+          "cards",
+          "bugfix-first",
+          "next-steps",
+          "offer-line"
+        ],
+        "failed_informational": ["commits-print-line"],
+        "tool_calls": 22,
+        "wall_seconds": 143.8,
+        "rc": 0
+      },
+      "current": {
+        "pass": false,
+        "failed_required": ["github-links", "bugfix-first"],
+        "failed_informational": [],
+        "tool_calls": 20,
+        "wall_seconds": 140.6,
+        "rc": 0
+      }
+    },
+    "R2": {
+      "baseline": {
+        "pass": false,
+        "failed_required": [
+          "one-bash-line-scoped",
+          "overview",
+          "commits-column",
+          "bare-shas",
+          "cards",
+          "bugfix-first",
+          "next-steps",
+          "offer-line"
+        ],
+        "failed_informational": ["commits-print-line"],
+        "tool_calls": 21,
+        "wall_seconds": 141.1,
+        "rc": 0
+      },
+      "current": {
+        "pass": false,
+        "failed_required": ["bare-shas", "bugfix-first"],
+        "failed_informational": ["commits-print-line"],
+        "tool_calls": 22,
+        "wall_seconds": 142.4,
+        "rc": 0
+      }
+    },
+    "C1": {
+      "baseline": {
+        "pass": true,
+        "failed_required": [],
+        "failed_informational": [],
+        "tool_calls": 12,
+        "wall_seconds": 56.2,
+        "rc": 0
+      },
+      "current": {
+        "pass": true,
+        "failed_required": [],
+        "failed_informational": [],
+        "tool_calls": 9,
+        "wall_seconds": 80.5,
+        "rc": 0
+      }
+    },
+    "R3": {
+      "baseline": {
+        "pass": false,
+        "failed_required": ["awaiting-line", "no-create"],
+        "failed_informational": [],
+        "tool_calls": 6,
+        "wall_seconds": 38.8,
+        "rc": 0
+      },
+      "current": {
+        "pass": true,
+        "failed_required": [],
+        "failed_informational": [],
+        "tool_calls": 2,
+        "wall_seconds": 28.6,
+        "rc": 0
+      }
+    },
+    "R4": {
+      "baseline": {
+        "pass": false,
+        "failed_required": ["next-line"],
+        "failed_informational": [],
+        "tool_calls": 10,
+        "wall_seconds": 109.1,
+        "rc": 0
+      },
+      "current": {
+        "pass": true,
+        "failed_required": [],
+        "failed_informational": [],
+        "tool_calls": 9,
+        "wall_seconds": 58.1,
+        "rc": 0
+      }
+    }
+  },
+  "stand_v1_archived": {
+    "R3": {
+      "baseline": {
+        "pass": false,
+        "failed_required": ["awaiting-line", "no-create"]
+      },
+      "current": {
+        "pass": false,
+        "failed_required": ["awaiting-line", "no-create"]
+      }
+    },
+    "R4": {
+      "baseline": {
+        "pass": false,
+        "failed_required": ["next-line"]
+      },
+      "current": {
+        "pass": false,
+        "failed_required": ["next-line"]
+      }
+    }
+  }
+}

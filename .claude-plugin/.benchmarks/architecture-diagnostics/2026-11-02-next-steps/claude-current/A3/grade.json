@@ -1,0 +1,55 @@
+{
+  "case": "A3",
+  "checks": [
+    {
+      "id": "follow-up-protocol",
+      "kind": "require_read",
+      "pass": true,
+      "note": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/rules/references/report-follow-up.md"
+    },
+    {
+      "id": "finding-1-call",
+      "kind": "require_invoke",
+      "pass": true,
+      "note": "tea-rags:refactoring-planning"
+    },
+    {
+      "id": "not-finding-2",
+      "kind": "forbid_tool",
+      "pass": true,
+      "note": "0 call(s)"
+    },
+    {
+      "id": "not-finding-3",
+      "kind": "forbid_invoke",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "next-line",
+      "kind": "answer_regex",
+      "pass": true,
+      "note": "\n→ Next: #2"
+    },
+    {
+      "id": "one-finding-only",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "The answer works finding #1 (src/auth/providers root cause) through the refactoring-planning flow and does not present results or fixes for findings #2 or #3 beyond naming #2 in the Next line."
+    }
+  ],
+  "trace": [
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/rules/references/report-follow-up.md\"}",
+    "Skill {\"skill\": \"tea-rags:refactoring-planning\", \"args\": \"src/auth/providers \\u2014 SDP root cause (cycleWithDependents: true, session \\u2194 providers), reportId aut",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/repair/stableDependencies.md\"}",
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__get_architecture_report,mcp__tea-rags__find_symbol\", \"max_results\": 2}",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"files\": [\"src/auth/session/SessionService.",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"relativePath\": \"src/auth\"}",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"symbols\": [\"SessionService\", \"ApiKeyAuthen",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"symbols\": [\"SessionService.createDefault\",",
+    "get_architecture_report {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"plannedEdges\": [{\"from\": \"src/auth/session",
+    "find_symbol {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"symbols\": [\"AuthController#constructor\", \"",
+    "get_architecture_report {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A3/workspace\", \"project\": \"arch-next-a3\", \"restructurePlan\": {\"includeReportCandidate"
+  ],
+  "answer": "О, Мудрейший Господин!\n\nПричина цикла `session ↔ providers` подтверждена по телам методов. Сервер предложил один шаг, после которого SDP-нарушений не остаётся (1 → 0). Но он вернул другой кандидат, не те два, что я отправил, поэтому план держится на его ответе, а не на моих операциях. Файлы не правил (по вашему запрету и по условию eval). Файл плана тоже не записан.\n\n**Что показал код:**\n- `SessionService#constructor(private authenticator: Authenticator)` уже зависит от контракта из `src/auth/contracts.ts`.\n- Единственное конкретное ребро session → providers — `SessionService.createDefault` (`SessionService.ts:5`): `new SessionService(new ApiKeyAuthenticator())`. Это wiring, ему место в composition root.\n- Обратное ребро providers → session — `ApiKeyAuthenticator#revokeLocalSession(sessions: SessionService, id)` (`ApiKeyAuthenticator.ts:10`). Это и есть MISFIT из кейса #3.\n- `AuthController#constructor(private sessions: SessionService)` получает зависимость снаружи, через DI.\n- В прошлом ответе я назвал оба метода, не открыв их. Сейчас прочитал, всё подтвердилось.\n\n**Кандидаты, отправленные в `restructurePlan`** (`includeReportCandidates: false`; блока `splitMerge` в отчёте нет, поэтому R = 0):\n\n1. `stableDependencies-session-createDefault`, rationale `stableDependencies:src/auth/session->src/auth/providers`. Новый файл по рецепту не нужен: интерфейс `Authenticator` уже лежит в `src/auth/contracts.ts`, и оба файла от него зависят.\n   - `removeEdge {src/auth/session/SessionService.ts → src/auth/providers/ApiKeyAuthenticator.ts}`\n   - `addEdge {src/auth/session/SessionService.ts → src/auth/contracts.ts}`\n   - `addEdge {src/auth/providers/ApiKeyAuthenticator.ts → src/auth/contracts.ts}`\n2. `stableDependencies-providers-backref`, тот же rationale. Это инверсия обратного ребра, рекомендуемая для `cycleWithDependents: true`.\n   - `removeEdge {src/auth/providers/ApiKeyAuthenticator.ts → src/auth/session/SessionService.ts}`\n\nПроверка `plannedEdges` для двух `addEdge` в `contracts.ts` вернула отчёт без вердиктов по рёбрам, так что они **не проверены**. Новые имена не вводились, поэтому lexicon-проверка не нужна.\n\n## Plan — src/auth/**: 1 шаг, total net 1 (critical 0/0, active 1/0, structural 0/0)\n\n| # | Candidate | Rationale | Expected resolved | Introduced | byTier | Blast | Note |\n|---|---|---|---|---|---|---|---|\n| 1 | `moveSymbol SessionService.createDefault → src/auth/AuthController.ts` (кандидат сервера) | `stableDependencies:src/auth/session->src/auth/providers` | stableDependencies 1 | нет | active 1/0 | 1 | touched: `SessionService.ts`, `AuthController.ts`; refactoring-scan не запускался (скилла нет в списке) |\n\n**Task 1 (намерение):** перенести `createDefault` из `SessionService` в `AuthController.ts`, который станет точкой сборки. После этого у `SessionService.ts` пропадает импорт `ApiKeyAuthenticator`. Реализация через `tea-rags:data-driven-generation` с TDD. Задача заканчивается строкой:\n`GATE review_changes: introduced=<n>, partial=<true|false>`\n\n**Расхождения в ответе сервера, их нужно учитывать:**\n- Ни одного из двух моих кандидатов нет ни в `steps`, ни в `unselected` (там пусто), ни в `tradeOffs`. Шаг 1 — `moveSymbol`, которого я не отправлял. Из ответа нельзя понять, отклонены мои кандидаты или подменены. Сравнить их напрямую можно отдельным `restructure` по каждому.\n- Сервер записал «introduced: {}», но после переноса у `AuthController.ts` появится ребро в `ApiKeyAuthenticator.ts`. Как его оценят layering и norms, зависит от того, признают ли контроллер composition root. Это проверит гейт после задачи.\n- Обратное ребро `revokeLocalSession` этот шаг не закрывает. Это MISFIT из кейса #3.\n\n```text\nExecution contract (refactoring-planning):\n1. After each Task: review_changes(changes: {base: <commit before this Task>},\n   sections: [\"architecture\"]) — compare change.resolved and introduced\n   (findings + change.nonLocal) with the Task's expected delta.\n2. Match → DDG Step 7 gate line, commit, next Task.\n3. Diverged (expected resolved missing, or unexpected introduced) → DDG Step 7\n   fix-at-write loop (≤ 2 rounds).\n4. Not converging → get_architecture_report(path: <working dir>,\n   restructurePlan: {candidates: <remaining Tasks' candidates>}) on the real\n   tree; replace remaining Tasks with the new steps + expected deltas.\n   Never continue on the stale plan.\n```\n\n## Trade-offs / Unselected / Not ordered / Deferred / Escalated / Dropped\n- Trade-offs: нет. Unselected: пусто, хотя мои 2 кандидата нигде не упомянуты (см. выше). Not ordered / Deferred / Escalated / Dropped: нет.\n\nPlan file: не создан. Скилла `dinopowers:writing-plans` нет в списке, и действует запрет на правку файлов.\n\n→ Next: #2 silent coupling `src/auth/config/authKeys.ts` — продолжаем, пропускаем или оформить оставшиеся кейсы задачами?"
+}

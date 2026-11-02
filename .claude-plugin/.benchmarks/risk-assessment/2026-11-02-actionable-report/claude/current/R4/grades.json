@@ -1,0 +1,44 @@
+{
+  "case": "R4",
+  "pass": true,
+  "checks": [
+    {
+      "check": "case1-call",
+      "required": true,
+      "pass": true,
+      "detail": "skill=True aimed=True"
+    },
+    {
+      "check": "only-case1",
+      "required": true,
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "check": "next-line",
+      "required": true,
+      "pass": true,
+      "detail": [
+        "→ Next: #2 RetryQueue#processBatch — continue, skip, or file the rest as tasks?"
+      ]
+    },
+    {
+      "check": "no-task",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "tool_calls": 9,
+  "tools": [
+    "Read",
+    "Skill",
+    "Bash",
+    "ToolSearch",
+    "semantic_search",
+    "semantic_search",
+    "find_symbol",
+    "find_similar",
+    "find_symbol"
+  ]
+}

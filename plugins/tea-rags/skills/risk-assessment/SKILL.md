@@ -51,7 +51,8 @@ block. `Output:` = last line, verbatim:
 2. MERGE — negativeIds dedup, never manual filtering
 3. EXPAND — healthy-demoted candidates
 4. ENRICH — bodies of every Critical/High row, tiers, fix cost, signal pairs
-4b. COMMITS — ONE Bash (enrich.md step 7): `git remote get-url origin; git status --porcelain -- <files>;` + per Critical/High row `echo "== <#>"; git log -L<start>,<end>:<file> -s --no-merges -n 20 --format='%H %as %s'` (file row → `git log --follow … -- <file>`); ≤3 per row, bug-fix first
+4b. COMMITS — ONE Bash (enrich.md step 7): `git remote get-url origin; git status --porcelain -- <files>;` + per Critical/High row `echo "== <#>"; git log -L<start>,<end>:<file> -s --no-merges -n 20 --format='%H %as %s'` (file row → `git log --follow … -- <file>`); ≤3 per row, bug-fix first, cosmetic never
+    print: commits: <rows> rows, remote <host|none>
 5. OUTPUT:
 ## Overview
 - <module/dir> — <what goes wrong there, 1 sentence>
@@ -509,8 +510,9 @@ parsing…). Body not fetched → `What's wrong: [not reviewed]`, never a guess.
 build a URL from a guess. No commit in range → `—` and card
 `Commits: none in history window`.
 
-**Next steps — one row per (case, action), Critical first.** Action by Risk Type
-/ card:
+**Next steps — one row per (case, action), Critical first.** `#` = the case's
+row number in the risk tables, never renumbered — "start with #1" means risk row
+#1. Action by Risk Type / card:
 
 | Risk Type / card                                                                           | Action                                  | Call                                                                 |
 | ------------------------------------------------------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- |

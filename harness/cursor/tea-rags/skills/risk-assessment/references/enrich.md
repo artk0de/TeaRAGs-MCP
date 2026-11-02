@@ -187,11 +187,18 @@ git remote get-url origin; git status --porcelain -- <file1> <file2> …; echo "
   `(uncommitted edits — ranges may be shifted)`.
 - Never a repo-wide `git log`, never `git blame`, never one call per row.
 
-Pick ≤3 per row: bug-fix commits first, then newest. Bug-fix = subject matches
-`fix:` / `fix(<scope>):` / `hotfix:`, `[Fix]` `[Bug]` `[Hotfix]` `[Bugfix]`,
-`<TICKET-123> fix…`, or `fixes|resolves|closes #<n>`; NOT when it fixes typo,
-lint, format, style, whitespace, imports, tests, specs, flaky, ci, conflicts, or
-review. Subject cut at 72 chars.
+Three commit classes per row:
+
+- **bug-fix** — subject matches `fix:` / `fix(<scope>):` / `hotfix:`, `[Fix]`
+  `[Bug]` `[Hotfix]` `[Bugfix]`, `<TICKET-123> fix…`, or
+  `fixes|resolves|closes #<n>`.
+- **cosmetic** — fixes typo, lint, format, style, whitespace, imports, tests,
+  specs, flaky, ci, conflicts, or review. Never picked, never tagged; still
+  counted in `<total>`.
+- **other** — everything else.
+
+Pick ≤3 per row: bug-fix (newest first), then other (newest first). Subject cut
+at 72 chars.
 
 Link — normalize remote to `https://<host>/<owner>/<repo>` (strip `git@`,
 `ssh://`, `:port`, `.git`; `host:path` → `host/path`):

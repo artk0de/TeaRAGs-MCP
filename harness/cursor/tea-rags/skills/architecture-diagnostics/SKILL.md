@@ -247,11 +247,11 @@ Every line cites evidence numbers from report. No evidence → no claim.
 **Next steps** — one row per finding, root causes first; `→` line in user's
 language:
 
-| Finding                                                                            | Action                   | Call                                    |
-| ---------------------------------------------------------------------------------- | ------------------------ | --------------------------------------- |
-| SDP root cause / violation, hub-like, main sequence, layering, leaking abstraction | ordered restructure plan | `/refactoring-planning`, component path |
-| silent coupling, shotgun surgery                                                   | confirm co-change first  | row's Drill `find_co_changed(…)`        |
-| dependency-norm MISFIT (one edge)                                                  | fix that edge in place   | `/data-driven-generation`, source file  |
+| Finding                                                                            | Action                     | Call                                                            |
+| ---------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------- |
+| SDP root cause / violation, hub-like, main sequence, layering, leaking abstraction | ordered restructure plan   | `/refactoring-planning`, component path                         |
+| silent coupling, shotgun surgery                                                   | co-locate or make explicit | `/refactoring-planning`, the pair's files (3c drill = evidence) |
+| dependency-norm MISFIT (one edge)                                                  | fix that edge in place     | `/data-driven-generation`, source file                          |
 
 User picks; never start a finding or create a task before. Answer turn → read
 [../../references/report-follow-up.md](../../references/report-follow-up.md).

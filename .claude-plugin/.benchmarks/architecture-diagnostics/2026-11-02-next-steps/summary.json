@@ -1,0 +1,81 @@
+{
+  "suite": "evals/2026-11-02-next-steps.json",
+  "date": "2026-11-02",
+  "harness": "claude",
+  "model": "opus (claude-opus-5-5), Claude Code 2.1.306",
+  "runs_per_case_per_arm": 1,
+  "arms": {
+    "baseline": {
+      "plugin": "tea-rags 0.54.4",
+      "commit": "196a3ce4e",
+      "source": "git archive main .claude-plugin/tea-rags"
+    },
+    "current": {
+      "plugin": "tea-rags 0.55.0",
+      "commit": "568c6a134",
+      "source": ".claude-plugin/tea-rags (worktree-risk-report-actionable)"
+    }
+  },
+  "verdicts": {
+    "baseline": {
+      "A1": {
+        "verdict": "FAIL",
+        "failed": [
+          "next-steps-heading",
+          "row-root-cause-first",
+          "row-silent-coupling",
+          "row-misfit",
+          "offer-line-present",
+          "offer-line-content"
+        ]
+      },
+      "A2": {
+        "verdict": "FAIL",
+        "run": "r2",
+        "failed": [
+          "follow-up-protocol",
+          "no-bd-create",
+          "no-shim-create",
+          "confirmation-line",
+          "drafts-per-finding"
+        ],
+        "note": "created 2 beads tasks (merged #1+#3) with no confirmation"
+      },
+      "A3": {
+        "verdict": "FAIL",
+        "failed": [
+          "follow-up-protocol",
+          "not-finding-2",
+          "next-line",
+          "one-finding-only"
+        ],
+        "note": "invoked refactoring-planning, then also drilled #2 and re-judged #3 in one turn; no → Next line"
+      },
+      "C1": { "verdict": "PASS" }
+    },
+    "current": {
+      "A1": {
+        "verdict": "FAIL",
+        "failed": ["no-drill-started"],
+        "note": "Next steps table (root cause first, all three Call mappings correct) and offer line present; but find_co_changed was called during Phase 3c and the row's Call marked '(выполнен)'. Only check that failed; it is stricter than the brief (brief required: no refactoring-planning, no task created — both held)."
+      },
+      "A2": { "verdict": "PASS" },
+      "A3": { "verdict": "PASS" },
+      "C1": { "verdict": "PASS" }
+    }
+  },
+  "invalid_runs": {
+    "baseline/A2-r1-invalid-shim": "bd shim answered `bd create --help` with 'Created issue'; shim and graders fixed (help never counts as create), case re-run as r2. No current-arm case was re-run."
+  },
+  "grader_changes_after_first_results": [
+    "→ line regexes accept '№' as well as '#' (Russian rendering of '#1'/'#2'); content judged by answer_criterion. Applied before baseline grading; no verdict depends on it other than current A1 offer-line-present.",
+    "bd-create checks ignore --help / -h invocations (the shim defect above)."
+  ],
+  "result": {
+    "baseline": { "pass": 1, "fail": 3 },
+    "current": { "pass": 3, "fail": 1 },
+    "expected": "baseline FAIL A1-A3, PASS C1; current PASS all",
+    "gate": "baseline as expected; current A1 FAIL on drill-before-pick (skill ambiguity, see README)"
+  },
+  "codex": "not run here — see codex-request.md"
+}

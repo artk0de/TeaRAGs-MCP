@@ -1,0 +1,8 @@
+{
+  "case": "R3",
+  "arm": "current",
+  "rc": 0,
+  "wall_seconds": 71.4,
+  "plugin": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags",
+  "workspace": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/risk-evals/work/current/R3/workspace"
+}

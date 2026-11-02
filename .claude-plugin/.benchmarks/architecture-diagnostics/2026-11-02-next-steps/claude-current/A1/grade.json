@@ -1,0 +1,91 @@
+{
+  "case": "A1",
+  "checks": [
+    {
+      "id": "actual-report",
+      "kind": "require_tool",
+      "pass": true,
+      "note": "1 call(s)"
+    },
+    {
+      "id": "diagnostic-workflow",
+      "kind": "require_read_or_invoke",
+      "pass": true,
+      "note": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references/phase-1-report.md; /Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/"
+    },
+    {
+      "id": "next-steps-heading",
+      "kind": "answer_regex",
+      "pass": true,
+      "note": "## Next steps"
+    },
+    {
+      "id": "row-root-cause-first",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "In the Next steps table the FIRST row is the SDP root cause / session↔providers violation for src/auth/providers, and its Call is Skill(tea-rags:refactoring-planning) naming the component path src/auth/providers."
+    },
+    {
+      "id": "row-silent-coupling",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "A Next steps row maps the authKeys.ts silent-coupling group to its drill call find_co_changed with files [\"src/auth/config/authKeys.ts\"] (limit 10 if stated)."
+    },
+    {
+      "id": "row-misfit",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "A Next steps row maps the ApiKeyAuthenticator.ts → SessionService.ts norms MISFIT to Skill(tea-rags:data-driven-generation) on the source file src/auth/providers/ApiKeyAuthenticator.ts."
+    },
+    {
+      "id": "offer-line-present",
+      "kind": "answer_regex",
+      "pass": true,
+      "note": "\n→ Разбираем находки сейчас, начиная с №1, или заводим по задаче на каждую?"
+    },
+    {
+      "id": "offer-line-content",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "The report ends with the → offer line: work through the findings here and now starting with #1, OR file a task per finding — a question to the user, in the user's language (the user-level CLAUDE.md of the run host mandates Russian replies, so a faithful Russian rendering passes)."
+    },
+    {
+      "id": "no-follow-up-started",
+      "kind": "forbid_invoke",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "no-drill-started",
+      "kind": "forbid_tool",
+      "pass": false,
+      "note": "1 call(s)"
+    },
+    {
+      "id": "no-task-created",
+      "kind": "forbid_bash_regex",
+      "pass": true,
+      "note": ""
+    }
+  ],
+  "trace": [
+    "Skill {\"skill\": \"tea-rags:architecture-diagnostics\", \"args\": \"Audit src/auth \\u2014 dependency/layer violations, silent coupling, dependency-norm misfits. Diagnose on",
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__get_architecture_report,mcp__tea-rags__find_co_changed,mcp__tea-rags__find_symbol\", \"max_results\": 3}",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references",
+    "get_architecture_report {\"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"project\": \"arch-next-a1\", \"pathPattern\": \"src/auth/**\", \"norms\": true",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references",
+    "find_symbol {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"files\": [\"src/auth/session/SessionService.",
+    "find_symbol {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"relativePath\": \"src/auth/providers/ApiKeyA",
+    "find_symbol {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"relativePath\": \"src/auth/session/SessionSe",
+    "find_co_changed {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"files\": [\"src/auth/config/authKeys.ts\"], \"",
+    "find_symbol {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"symbols\": [\"ApiKeyAuthenticator\", \"Session",
+    "find_symbol {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"symbols\": [\"ApiKeyAuthenticator#authentica",
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__get_callees\", \"max_results\": 1}",
+    "get_callees {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"relativePath\": \"src/auth/session/SessionSe",
+    "get_callees {\"project\": \"arch-next-a1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/A1/workspace\", \"relativePath\": \"src/auth/providers/ApiKeyA",
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/skills/architecture-diagnostics/references"
+  ],
+  "answer": "О, Мудрейший Господин!\n\nЯ провёл аудит `src/auth`. В нём три находки, и две из них описывают одну проблему с разных сторон: двусторонняя связь между `session` и `providers`. Третья находка независимая: `authKeys.ts` меняется вместе с кодом, который его не импортирует. Файлы не менялись.\n\n```\nArchitecture report: src/auth/** — 1 SDP violation, 1 root cause\n4 components (0 modules); judged 5 of 5 component deps (excluded: containment 0, low support 0); tooling excluded: 0 files; test support excluded: 0 files\nImpact tiers: SDP critical 0 / active 1 / structural 0; co-change history built (48 commits since 2026-06-01 @ a1b2c3d)\n```\n\n## Root causes\n| # | Target component | Tier | I | Dependents | Cycle | Fix direction |\n|---|---|---|---|---|---|---|\n| 1 | `src/auth/providers` | active | 0.75 | `src/auth/session` (0.25) | **yes** | Развернуть обратную ссылку из `providers` в `session` и вынести конструирование провайдера в composition root |\n\n**Диагноз по телам методов.** Связь держится на двух рёбрах, по одному в каждую сторону:\n\n1. **`session → providers`** (SDP, Δ 0.5, disjoint, 1 file edge, callWeight 1). Ребро даёт `SessionService.createDefault` (`src/auth/session/SessionService.ts:5`): `new SessionService(new ApiKeyAuthenticator())`. Сам сервис написан правильно: конструктор принимает абстракцию `Authenticator` (`:6`), а `login`/`renew` работают только через неё. Конкретный провайдер появляется только в статической фабрике. Получается, что стабильный модуль сам себя собирает и поэтому знает о реализации.\n2. **`providers → session`** (norms MISFIT, см. ниже). Ребро даёт `ApiKeyAuthenticator#revokeLocalSession(sessions: SessionService, id)` (`src/auth/providers/ApiKeyAuthenticator.ts:10`), который вызывает `sessions.logout(id)`. Провайдер управляет жизненным циклом сессии, а это не его ответственность. Плюс это обёртка в одну строку без собственной логики.\n\nОтсюда `cycleWithDependents: true`. Нестабильность `providers` (I 0.75) возникла из-за того, что он сам зависит от `session`, хотя `session` зависит от него. Уберите оба ребра, и цикл, SDP-нарушение и misfit исчезнут вместе. Tier `active` означает, что хотя бы одна пара файлов на этом ребре меняется вместе чаще случайного, то есть связь проявляется и в истории изменений.\n\n## Cross-component violations (disjoint)\n| # | Source → Target | Tier | I src → tgt | Δ | file edges (top) | calls |\n|---|---|---|---|---|---|---|\n| 1 | `session → providers` | active | 0.25 → 0.75 | 0.5 | `SessionService.ts → ApiKeyAuthenticator.ts` [`ApiKeyAuthenticator`] | 1 |\n\nЭто то же ребро, что и в root cause №1. Отдельного дефекта здесь нет.\n\n## Silent coupling — 2 pairs (0 strong pairs linked in code), 1 grouped finding\nПорог 0.6 (otsu, η 0.84); история 48 коммитов с 2026-06-01 @ a1b2c3d\n\n| # | Shared file | Partners (2) | Top (support / λ / strength) | Drill |\n|---|---|---|---|---|\n| 1 | `src/auth/config/authKeys.ts` | `AuthController.ts`, `providers/ApiKeyAuthenticator.ts` | 7 / 1.2 / 0.71; 5 / 0.9 / 0.63 | `find_co_changed(files: [\"src/auth/config/authKeys.ts\"], limit: 10)` ✔ выполнен |\n\nDrill это подтвердил: P(partner | authKeys) равно 0.78 и 0.70, общий коммит `9f1e2d3` (у `AuthController` есть ещё `77ab410`). Фактическая поддержка в 5–6 раз выше ожидаемой при независимых изменениях (λ), так что совпадение случайным не выглядит. Importer'ов `authKeys.ts` среди этих двух файлов нет. Скорее всего, ключи связаны через строковые литералы или общий формат, но сами тела я не читал, так что это гипотеза. Чтобы связь стала явной, есть два пути: типизированный контракт ключей в `config`, который импортируют оба партнёра, или один владелец этой логики.\n\n## Dependency norms — 1 MISFIT; typescript: 2/6 pairs directed (1 one-way); 4 typed files\nexcluded: constant-reference 0, cross-language 0, uncalled 1, framework-routed 0, displaced-role 0; judged 5 of 6 typed edges\n\n| # | Family | Edge (src → dst) | Roles | Locality | Against (established → support) | Minority | p |\n|---|---|---|---|---|---|---|---|\n| 1 | typescript | `ApiKeyAuthenticator.ts → SessionService.ts` | authenticator → service | sameDomain | service → authenticator, 11 | 1 | 0.0215 |\n\nСоотношение 1:11 при p 0.0215 означает, что в проекте соглашение устоялось и не оспаривается. Это не спорная конвенция, а прямая ошибка направления. Это обратное ребро из root cause №1.\n\n## Remedies — simulated\nНе симулировались. Оба исправления меняют отдельные рёбра (метод переезжает или удаляется, фабрика выносится), а файлы и компоненты не перемещаются. `restructure` работает только с move/split/merge, поэтому прогнать через него эти исправления нельзя. Если перенести `ApiKeyAuthenticator.ts` в `session` или слить два компонента, цикл исчезнет формально, но граница авторизации размоется. Такой вариант я не рекомендую.\n\n## Exclusions (not judged)\n- Norms: 1 typed edge с `uncalled` (callWeight 0, то есть type-only или `.new`) вошло в ledger как прецедент, но вердикт по нему не выносился.\n- Silent coupling: 7 пар `notSignificant`. Их co-change не выходит за пределы того, что предсказывает null-модель, и это не то же самое, что «чисто».\n- Leaking abstraction, main sequence, hub-like, layering: в ответе этих групп нет, модулей с facade 0 (`moduleComponentCount: 0`). Значит, эти детекторы на `src/auth` не проверяли, а не «нарушений нет».\n- `get_callees` по обоим файлам вернул `noEdgeFixture`. Где объявлены `Authenticator`/`AuthResult`, я не проверял.\n\n## Next steps\n| # | Finding | Action | Call |\n|---|---|---|---|\n| 1 | Root cause: цикл `session ↔ providers` (SDP + misfit) | Упорядоченный план: (a) вынести `createDefault` в composition root, (b) убрать `revokeLocalSession` из провайдера, чтобы logout вызывал владелец сессии | `Skill(tea-rags:refactoring-planning)`, `src/auth/providers` |\n| 2 | Norms MISFIT `ApiKeyAuthenticator → SessionService` | Исправить ребро на месте (оно же шаг 1b) | `Skill(tea-rags:data-driven-generation)`, `src/auth/providers/ApiKeyAuthenticator.ts` |\n| 3 | Silent coupling вокруг `authKeys.ts` | Прочитать тела трёх файлов и подтвердить, какой контракт ключей они делят неявно, потом сделать его явным | `find_co_changed(files: [\"src/auth/config/authKeys.ts\"], limit: 10)` (выполнен) → тела партнёров |\n\n→ Разбираем находки сейчас, начиная с №1, или заводим по задаче на каждую?"
+}

@@ -1,0 +1,8 @@
+{
+  "case": "R4",
+  "arm": "baseline",
+  "rc": 0,
+  "wall_seconds": 92.4,
+  "plugin": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/risk-evals/baseline-pkg/.claude-plugin/tea-rags",
+  "workspace": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/risk-evals/work/baseline/R4/workspace"
+}

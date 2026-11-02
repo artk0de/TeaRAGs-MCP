@@ -247,11 +247,11 @@ Every line cites evidence numbers from report. No evidence → no claim.
 **Next steps** — one row per finding, root causes first; `→` line in user's
 language:
 
-| Finding                                                                            | Action                   | Call                                                   |
-| ---------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------ |
-| SDP root cause / violation, hub-like, main sequence, layering, leaking abstraction | ordered restructure plan | `Skill(tea-rags:refactoring-planning)`, component path |
-| silent coupling, shotgun surgery                                                   | confirm co-change first  | row's Drill `find_co_changed(…)`                       |
-| dependency-norm MISFIT (one edge)                                                  | fix that edge in place   | `Skill(tea-rags:data-driven-generation)`, source file  |
+| Finding                                                                            | Action                     | Call                                                                           |
+| ---------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
+| SDP root cause / violation, hub-like, main sequence, layering, leaking abstraction | ordered restructure plan   | `Skill(tea-rags:refactoring-planning)`, component path                         |
+| silent coupling, shotgun surgery                                                   | co-locate or make explicit | `Skill(tea-rags:refactoring-planning)`, the pair's files (3c drill = evidence) |
+| dependency-norm MISFIT (one edge)                                                  | fix that edge in place     | `Skill(tea-rags:data-driven-generation)`, source file                          |
 
 User picks; never start a finding or create a task before. Answer turn → read
 [../../rules/references/report-follow-up.md](../../rules/references/report-follow-up.md).

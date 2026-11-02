@@ -1,0 +1,108 @@
+{
+  "case": "R2",
+  "pass": false,
+  "checks": [
+    {
+      "check": "phase1-before-git",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "one-bash-line-scoped",
+      "required": true,
+      "pass": false,
+      "detail": "0 git Bash calls"
+    },
+    {
+      "check": "bodies-fetched",
+      "required": true,
+      "pass": true,
+      "detail": [
+        "InvoiceCalculator#computeTotal",
+        "LedgerSync#reconcile",
+        "RetryQueue#constructor",
+        "RetryQueue#enqueue",
+        "RetryQueue#processBatch"
+      ]
+    },
+    {
+      "check": "overview",
+      "required": true,
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "check": "commits-column",
+      "required": true,
+      "pass": false,
+      "detail": "0 headers"
+    },
+    {
+      "check": "bare-shas",
+      "required": true,
+      "pass": false,
+      "detail": "url=False missing=['fix(billing): skip zero-quantity lines', 'fix(billing): round totals per line, not per invoice', 'fix typo in rounding comment', 'handle backoff overflow, fixes #42', 'fix(payments): drop duplicate retries after gateway timeout', 'hotfix: reconcile skipped the last ledger page', 'chore(sync): rename loop counters', 'feat(sync): ledger reconciliation'] note=False"
+    },
+    {
+      "check": "cards",
+      "required": true,
+      "pass": false,
+      "detail": "Problem=0 totals=[]"
+    },
+    {
+      "check": "bugfix-first",
+      "required": true,
+      "pass": false,
+      "detail": "InvoiceCalculator#computeTotal: picks found 0/3; RetryQueue#processBatch: picks found 1/3; LedgerSync#reconcile: picks found 0/3"
+    },
+    {
+      "check": "next-steps",
+      "required": true,
+      "pass": false,
+      "detail": "hdr=False rows=0"
+    },
+    {
+      "check": "offer-line",
+      "required": true,
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "check": "no-start-no-task",
+      "required": true,
+      "pass": true,
+      "detail": "started=[] tracker=[]"
+    },
+    {
+      "check": "commits-print-line",
+      "required": false,
+      "pass": false,
+      "detail": ""
+    }
+  ],
+  "tool_calls": 21,
+  "tools": [
+    "Skill",
+    "ToolSearch",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "Read",
+    "find_similar",
+    "find_similar",
+    "find_symbol",
+    "hybrid_search",
+    "hybrid_search",
+    "hybrid_search",
+    "find_symbol",
+    "find_symbol"
+  ]
+}
