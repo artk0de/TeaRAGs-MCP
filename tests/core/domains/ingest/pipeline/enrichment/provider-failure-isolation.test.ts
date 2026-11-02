@@ -149,6 +149,41 @@ describe("recomputeEnrichments isolates a provider whose forced repair fails (xv
       coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["git", "codegraph"]),
     ).rejects.toBe(coldQdrant);
   });
+
+  it("reports codegraph failed even when the recompute scope has no stored chunks (63bdw)", async () => {
+    // A scope with zero stored points and a forced repair that re-extracted
+    // nothing used to return before any run opened, so the collected failure
+    // reached the pipeline log alone — never the terminal markers that feed
+    // enrichmentHealth and the CLI `outcome.failed`.
+    const terminals = captureFileTerminals();
+    const qdrant = recomputeQdrant();
+    qdrant.scrollFiltered.mockResolvedValue([]);
+    const executor = new InlineEnrichmentExecutor();
+    const runFileBatch = vi.spyOn(executor, "runFileBatch").mockRejectedValue(new Error(DAEMON_DOWN));
+    const codegraph = codegraphProvider({
+      readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>([["src/c.ts", "realC"]])),
+    });
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [gitProvider(), codegraph], undefined, executor);
+    // The sync leg's repair captured a chunkless file in the scan; the store is
+    // current for it, so nothing dispatches here.
+    await coordinator.runRepairPass(
+      fixturePhysicalCollectionName("code_x_v1"),
+      "/repo",
+      new Map([["src/c.ts", "realC"]]),
+    );
+    expect(runFileBatch).not.toHaveBeenCalled();
+
+    await expect(
+      coordinator.recomputeEnrichments(fixturePhysicalCollectionName("code_x_v1"), "/repo", ["git", "codegraph"]),
+    ).resolves.toBeDefined();
+
+    expect(runFileBatch).toHaveBeenCalled();
+    expect(terminals.get("codegraph.symbols")).toEqual(
+      expect.objectContaining({ status: "failed", errorMessage: DAEMON_DOWN }),
+    );
+    // Git had nothing to do and keeps the no-run path: no terminal written.
+    expect(terminals.has("git")).toBe(false);
+  });
 });
 
 async function completionHarness(codegraphFinalize: () => Promise<never>) {
