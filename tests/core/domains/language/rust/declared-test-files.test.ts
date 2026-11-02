@@ -144,6 +144,28 @@ describe("findRustDeclaredTestFiles", () => {
     ).toEqual(["src/bin/checks.rs"]);
   });
 
+  it("treats a Cargo.toml `[lib] path` target as a crate root", async () => {
+    expect(
+      await declaredTestFiles({
+        "crates/core/Cargo.toml": '[package]\nname = "grep-core"\n\n[lib]\npath = "src/core.rs"\n',
+        "crates/core/src/core.rs": "#[cfg(test)]\nmod testutil;\n",
+        "crates/core/src/testutil.rs": "",
+        "crates/core/src/core/testutil.rs": "",
+      }),
+    ).toEqual(["crates/core/src/testutil.rs"]);
+  });
+
+  it("treats every Cargo.toml `[[bin]] path` target as a crate root", async () => {
+    expect(
+      await declaredTestFiles({
+        "Cargo.toml": '[package]\nname = "tool"\n\n[[bin]]\nname = "rg"\npath = "crates/core/flags.rs"\n',
+        "crates/core/flags.rs": "#[cfg(test)]\nmod fixtures;\n",
+        "crates/core/fixtures.rs": "",
+        "crates/core/flags/fixtures.rs": "",
+      }),
+    ).toEqual(["crates/core/fixtures.rs"]);
+  });
+
   it("survives a cycle of declarations and an unreadable file", async () => {
     expect(
       await declaredTestFiles({

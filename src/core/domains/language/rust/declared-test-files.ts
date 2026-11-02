@@ -12,7 +12,8 @@
  *     grows, so a cycle of declarations terminates).
  *
  * Resolution follows the Rust reference: a declaration in a mod-rs file
- * (`mod.rs`, `lib.rs`, `main.rs`, a crate root) resolves under that file's
+ * (`mod.rs`, `lib.rs`, `main.rs`, a crate root by location or by a run
+ * `Cargo.toml` target `path`) resolves under that file's
  * directory, in any other file under `<dir>/<stem>/`; inline modules append
  * their names; the child is `x.rs`, else `x/mod.rs`. `#[path = "p"]` is
  * relative to the file's directory at file level and to the module directory
@@ -30,6 +31,7 @@ import type { AstNode } from "../../../contracts/types/ast.js";
 import type { DeclaredTestFileQuery, DeclaredTestFileSource } from "../../../contracts/types/language.js";
 import { loadRustSourceParser, type RustSourceParserLoader } from "./external-signatures/table-cache.js";
 import { fileIsInlineTestOnly, isInlineTestNode, outerAttributes } from "./inline-tests.js";
+import { parseRustTargetRootFiles, RUST_CRATE_MANIFEST_FILE } from "./manifest.js";
 
 const BODYLESS_MOD_DECLARATION = /\bmod\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*;/;
 const CFG_ATTRIBUTE = /\bcfg\s*\(/;
@@ -62,6 +64,7 @@ export async function findRustDeclaredTestFiles(
 ): Promise<ReadonlySet<string>> {
   const runFiles = new Set(query.relativePaths);
   const declaring = await readDeclaringSources(query);
+  const targetRoots = declaring.size === 0 ? new Set<string>() : await readManifestTargetRoots(query);
   let parse: ((source: string) => AstNode) | undefined;
   const parsed = new Map<string, RustModuleDeclarations>();
   const declarationsOf = (relativePath: string): RustModuleDeclarations | undefined => {
@@ -70,7 +73,7 @@ export async function findRustDeclaredTestFiles(
     let declarations = parsed.get(relativePath);
     if (!declarations) {
       parse ??= loadParser();
-      declarations = collectModuleDeclarations(relativePath, source, parse(source), runFiles);
+      declarations = collectModuleDeclarations(relativePath, source, parse(source), runFiles, targetRoots);
       parsed.set(relativePath, declarations);
     }
     return declarations;
@@ -96,15 +99,46 @@ export async function findRustDeclaredTestFiles(
 async function readDeclaringSources(query: DeclaredTestFileQuery): Promise<Map<string, string>> {
   const rustFiles = query.relativePaths.filter((relativePath) => relativePath.endsWith(".rs"));
   const sources = new Map<string, string>();
-  for (let start = 0; start < rustFiles.length; start += READ_BATCH_SIZE) {
-    const batch = rustFiles.slice(start, start + READ_BATCH_SIZE);
-    const contents = await Promise.all(batch.map(async (relativePath) => query.readFile(relativePath)));
-    batch.forEach((relativePath, index) => {
-      const content = contents[index];
-      if (content !== undefined && BODYLESS_MOD_DECLARATION.test(content)) sources.set(relativePath, content);
-    });
+  for (const [relativePath, content] of await readRunFiles(query, rustFiles)) {
+    if (BODYLESS_MOD_DECLARATION.test(content)) sources.set(relativePath, content);
   }
   return sources;
+}
+
+/**
+ * The crate roots the run's `Cargo.toml` files set by `path` (`[lib] path`,
+ * `[[bin]] path`, …), repo-relative. A custom root such as `src/core.rs` is a
+ * crate root wherever it sits, so its declarations resolve under its own
+ * directory — the location rules cannot know it.
+ */
+async function readManifestTargetRoots(query: DeclaredTestFileQuery): Promise<Set<string>> {
+  const manifests = query.relativePaths.filter(
+    (relativePath) => posix.basename(relativePath) === RUST_CRATE_MANIFEST_FILE,
+  );
+  const roots = new Set<string>();
+  for (const [manifest, content] of await readRunFiles(query, manifests)) {
+    for (const rootFile of parseRustTargetRootFiles(content)) {
+      roots.add(posix.normalize(posix.join(posix.dirname(manifest), rootFile)));
+    }
+  }
+  return roots;
+}
+
+/** The readable contents of `relativePaths`, read in bounded batches. */
+async function readRunFiles(
+  query: DeclaredTestFileQuery,
+  relativePaths: readonly string[],
+): Promise<Map<string, string>> {
+  const contents = new Map<string, string>();
+  for (let start = 0; start < relativePaths.length; start += READ_BATCH_SIZE) {
+    const batch = relativePaths.slice(start, start + READ_BATCH_SIZE);
+    const read = await Promise.all(batch.map(async (relativePath) => query.readFile(relativePath)));
+    batch.forEach((relativePath, index) => {
+      const content = read[index];
+      if (content !== undefined) contents.set(relativePath, content);
+    });
+  }
+  return contents;
 }
 
 function collectModuleDeclarations(
@@ -112,6 +146,7 @@ function collectModuleDeclarations(
   source: string,
   root: AstNode,
   runFiles: ReadonlySet<string>,
+  targetRoots: ReadonlySet<string>,
 ): RustModuleDeclarations {
   const testOnly: string[] = [];
   const all: string[] = [];
@@ -126,7 +161,14 @@ function collectModuleDeclarations(
         visit(body, { inlinePath: [...scope.inlinePath, name], testOnly: itemIsTestOnly });
         continue;
       }
-      const target = resolveModuleFile(relativePath, scope.inlinePath, name, declaredPathOf(item), runFiles);
+      const target = resolveModuleFile(
+        relativePath,
+        scope.inlinePath,
+        name,
+        declaredPathOf(item),
+        runFiles,
+        targetRoots,
+      );
       if (target === undefined) continue;
       all.push(target);
       if (itemIsTestOnly) testOnly.push(target);
@@ -151,9 +193,10 @@ function resolveModuleFile(
   name: string,
   declaredPath: string | undefined,
   runFiles: ReadonlySet<string>,
+  targetRoots: ReadonlySet<string>,
 ): string | undefined {
   const fileDirectory = posix.dirname(declaringFile);
-  const moduleDirectory = isModRsFile(declaringFile)
+  const moduleDirectory = isModRsFile(declaringFile, targetRoots)
     ? fileDirectory
     : posix.join(fileDirectory, posix.basename(declaringFile, ".rs"));
   const candidates =
@@ -170,8 +213,12 @@ function resolveModuleFile(
   return candidates.find((candidate) => runFiles.has(candidate));
 }
 
-function isModRsFile(relativePath: string): boolean {
-  return MOD_RS_BASENAMES.has(posix.basename(relativePath)) || CRATE_ROOT_BY_LOCATION.test(relativePath);
+function isModRsFile(relativePath: string, targetRoots: ReadonlySet<string>): boolean {
+  return (
+    MOD_RS_BASENAMES.has(posix.basename(relativePath)) ||
+    CRATE_ROOT_BY_LOCATION.test(relativePath) ||
+    targetRoots.has(relativePath)
+  );
 }
 
 /** Rust's declared-test-file capability, handed to the factory's languages. */

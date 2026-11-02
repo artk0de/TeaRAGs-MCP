@@ -35,6 +35,7 @@ const RUST_DEFAULT_CRATE_ROOT_FILE = "src/lib.rs";
 /** A `[table]` header — `[[array]]` tables never match, so a `[[bin]] name` is never read as the package's. */
 const TOML_TABLE_HEADER = /^\[\s*([A-Za-z0-9_.-]+)\s*\]$/;
 const TOML_ARRAY_TABLE_HEADER = /^\[\[.*\]\]$/;
+const TOML_TARGET_ARRAY_TABLE_HEADER = /^\[\[\s*(?:bin|test|example|bench)\s*\]\]$/;
 const TOML_STRING_KEY = /^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/;
 
 /**
@@ -52,6 +53,28 @@ export function parseRustCrateManifest(content: string): RustCrateManifest | und
     crateName: rustCrateNameOf(lib?.get("name") ?? packageName),
     rootFile: (lib?.get("path") ?? RUST_DEFAULT_CRATE_ROOT_FILE).replace(/^\.\//, ""),
   };
+}
+
+/**
+ * The target root files a Cargo.toml sets EXPLICITLY, relative to the
+ * manifest's directory: `[lib] path` and the `path` of every `[[bin]]`,
+ * `[[test]]`, `[[example]]` and `[[bench]]` table. A target Cargo discovers by
+ * location (`src/lib.rs`, `src/bin/*.rs`, …) carries no `path` and is not
+ * listed.
+ */
+export function parseRustTargetRootFiles(content: string): string[] {
+  const rootFiles: string[] = [];
+  let inTargetTable = false;
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("[")) {
+      inTargetTable = TOML_TARGET_ARRAY_TABLE_HEADER.test(line) || TOML_TABLE_HEADER.exec(line)?.[1] === "lib";
+      continue;
+    }
+    const entry = inTargetTable ? TOML_STRING_KEY.exec(line) : null;
+    if (entry?.[1] === "path") rootFiles.push((entry[2] ?? entry[3] ?? "").replace(/^\.\//, ""));
+  }
+  return rootFiles;
 }
 
 /** The `[package] name` a Cargo.toml declares, verbatim (`servo-webxr-api`), or `undefined` for a virtual root. */
