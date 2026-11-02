@@ -26,9 +26,15 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** The api/internal files the sweep pinned to the contract surface. */
+/**
+ * The api/internal files the sweep pinned to the contract surface.
+ * `collection-resolver.ts` left the pin in b06247f98: it sits on the lean
+ * agent-prime startup path (`entry-points/prime`), which must not load the
+ * eager public barrel and the embedded daemon behind it ("Lean startup
+ * assembly entries", `.claude/rules/domain-boundaries.md`; guarded by
+ * `tests/cli/prime-agent-imports.test.ts`), so it imports `public/errors.js`.
+ */
 const PINNED_CONSUMERS = [
-  "src/core/api/internal/collection-resolver.ts",
   "src/core/api/internal/ops/document-metadata-schema.ts",
   "src/core/api/internal/ops/explore-ops.ts",
   "src/core/api/internal/ops/indexing-ops.ts",
