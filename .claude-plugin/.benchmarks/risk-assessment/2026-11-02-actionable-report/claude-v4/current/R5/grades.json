@@ -1,0 +1,88 @@
+{
+ "case": "R5",
+ "pass": true,
+ "checks": [
+  {
+   "check": "tier-legend",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "empty-tiers-printed",
+   "required": true,
+   "pass": true,
+   "detail": "crit='## Critical (4/4)\\nnone\\n\\n' high='## High (3/4)\\nnone\\n\\n'"
+  },
+  {
+   "check": "medium-cards",
+   "required": true,
+   "pass": true,
+   "detail": "totals={6: 2}"
+  },
+  {
+   "check": "medium-bodies-git",
+   "required": true,
+   "pass": true,
+   "detail": "fetched=['InvoiceCalculator#computeTotal', 'RetryQueue#processBatch'] gits=1"
+  },
+  {
+   "check": "low-table",
+   "required": true,
+   "pass": true,
+   "detail": "low=896"
+  },
+  {
+   "check": "signal-legend",
+   "required": true,
+   "pass": true,
+   "detail": "rows=5"
+  },
+  {
+   "check": "low-watch",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "low-batch",
+   "required": true,
+   "pass": true,
+   "detail": [
+    "| 4, 5 | Low batch: код у одного владельца (`LedgerSync#reconcile`, `TaxTable#rateFor`) | передача знаний | Dana Okafor (#4), Alice Moreau (#5) |"
+   ]
+  },
+  {
+   "check": "no-healthy-claim",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "next-steps",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  }
+ ],
+ "tool_calls": 17,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "Read",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "find_symbol",
+  "hybrid_search",
+  "hybrid_search",
+  "Bash"
+ ]
+}

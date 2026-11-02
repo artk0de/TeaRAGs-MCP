@@ -180,6 +180,7 @@ Report as "not judged", never "clean"; reasons verbatim from `exclusionReasons`.
 Architecture report: [scope] — [violationCount] SDP violations, [rootCauseCount] root causes
 [componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files; test support excluded: [testSupport.excludedFileCount] files
 Impact tiers: SDP critical N / active N / structural N; layering …; leaks …; reach cut [threshold] ([method]) | not built (no co-change history)
+Detectors: [detector] [count] | [detector] 0 (judged [N]) | [detector] not judged — [reason verbatim] … (every detector, zeros included)
 
 ## Root causes
 | # | Target component | Tier | I | Dependents | Cycle | Fix direction |
@@ -237,6 +238,12 @@ excluded constant-reference N, cross-language N, uncalled N, framework-routed N,
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.
+
+**Zero is not clean.** The `Detectors:` line always prints. Section with 0
+findings → heading + `0 (judged N)`; not built / excluded → heading +
+`not judged — <reason>`. Informational items (`composition: true`, islands)
+print under their section, marked informational. Never "no problems" while any
+detector is not judged.
 
 **Next steps** — one row per finding, root causes first; `→` line in user's
 language:
