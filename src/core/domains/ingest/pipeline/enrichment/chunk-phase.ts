@@ -26,7 +26,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
-import { enrichmentScope, enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";
+import { partitionChunkEntries, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
@@ -714,9 +714,11 @@ export class ChunkPhase {
     if (!ctx.provider.shouldEnrich) return;
     const stamps: { id: string; skippedAs: EnrichmentSkipReason }[] = [];
     for (const [rel, entries] of map) {
-      const skippedAs = enrichmentSkipReason(ctx.provider, rel, "chunk", { fileLines: fileLinesOf(entries) });
-      if (skippedAs === null) continue;
-      for (const entry of entries) stamps.push({ id: entry.chunkId, skippedAs });
+      // Per entry, not per file: a test chunk inside a file the provider
+      // enriches is declined on its own (bd tea-rags-mcp-52wk3.7).
+      for (const { entry, skippedAs } of partitionChunkEntries(ctx.provider, rel, entries).declined) {
+        stamps.push({ id: entry.chunkId, skippedAs });
+      }
     }
     if (stamps.length === 0) return;
     state.chunkWork.push(
@@ -735,7 +737,7 @@ export class ChunkPhase {
       const fp = item.chunk.metadata.filePath;
       const rel = fp.startsWith(pathBase) ? fp.slice(pathBase.length + 1) : fp;
       const arr = map.get(rel) ?? [];
-      const { symbolId, moduleLines } = item.chunk.metadata;
+      const { symbolId, moduleLines, chunkType } = item.chunk.metadata;
       arr.push({
         chunkId: item.chunkId,
         startLine: item.chunk.startLine,
@@ -744,6 +746,8 @@ export class ChunkPhase {
         ...(typeof symbolId === "string" ? { symbolId } : {}),
         // The size-driven chunk decline reads it per FILE (bd tea-rags-mcp-2brzq).
         ...(typeof moduleLines === "number" ? { moduleLines } : {}),
+        // The test-chunk decline reads it per ENTRY (bd tea-rags-mcp-52wk3.7).
+        ...(typeof chunkType === "string" ? { chunkType } : {}),
       });
       map.set(rel, arr);
     }
@@ -777,9 +781,10 @@ export class ChunkPhase {
     const filtered = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of map) {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
-      if (enrichmentScope(provider, rel, { fileLines: fileLinesOf(entries) }) === "full") {
-        filtered.set(filePath, entries);
-      }
+      // Declined entries — the whole file, or a test chunk inside it (bd
+      // tea-rags-mcp-52wk3.7) — are stamped by stampDeclinedChunks, never walked.
+      const { owed } = partitionChunkEntries(provider, rel, entries);
+      if (owed.length > 0) filtered.set(filePath, owed);
     }
     return filtered;
   }

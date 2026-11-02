@@ -38,6 +38,13 @@ export interface ChunkLookupEntry {
    * and on indices predating the symbol-mass pass.
    */
   moduleLines?: number;
+  /**
+   * The chunker's payload `chunkType`, as stored. Carried so the enrichment
+   * policy can decline a test chunk ({@link TEST_CHUNK_TYPES}) inside a file
+   * it otherwise enriches — a Rust `#[cfg(test)]` module or a Vitest in-source
+   * block, which the codegraph walker prunes (bd tea-rags-mcp-52wk3.7).
+   */
+  chunkType?: string;
 }
 
 /**

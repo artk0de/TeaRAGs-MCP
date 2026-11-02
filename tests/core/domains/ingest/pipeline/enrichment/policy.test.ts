@@ -7,6 +7,7 @@ import {
   fileLinesOf,
   filterChunkEnrichMap,
   filterFileEnrichPaths,
+  partitionChunkEntries,
 } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/policy.js";
 
 function providerWith(shouldEnrich?: EnrichmentProvider["shouldEnrich"]): EnrichmentProvider {
@@ -105,6 +106,48 @@ describe("enrichmentSkipReason", () => {
       const p = providerWith(() => "file-only");
       expect(enrichmentSkipReason(p, "src/big.ts", "chunk", { fileLines: 5000 })).toBe("policy");
     });
+  });
+});
+
+// bd tea-rags-mcp-52wk3.7 — a test chunk inside a production file is test code
+// by its CHUNK TYPE while its path classifies as source. The chunk type counts
+// at chunk level only: it never declines the file the chunk lives in.
+describe("test chunk type (bd tea-rags-mcp-52wk3.7)", () => {
+  const declinesTests = providerWith((f) => (f.classification.isTest ? "none" : "full"));
+  const keepsTests = providerWith(() => "full");
+
+  it("names 'test' at chunk level for a test chunk of a production file", () => {
+    expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "chunk", { chunkType: "test" })).toBe("test");
+    expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "chunk", { chunkType: "test_setup" })).toBe("test");
+  });
+
+  it("leaves the file level and non-test chunk types owed", () => {
+    expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "file", { chunkType: "test" })).toBeNull();
+    expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "chunk", { chunkType: "function" })).toBeNull();
+    expect(enrichmentSkipReason(declinesTests, "src/lib.rs", "chunk")).toBeNull();
+  });
+
+  it("declines nothing for a provider whose policy keeps test code", () => {
+    expect(enrichmentSkipReason(keepsTests, "src/lib.rs", "chunk", { chunkType: "test" })).toBeNull();
+  });
+
+  it("partitions one file's chunk entries into owed and declined", () => {
+    const entries = [
+      { chunkId: "p1", startLine: 1, endLine: 40, chunkType: "function" },
+      { chunkId: "t1", startLine: 20, endLine: 35, chunkType: "test" },
+      { chunkId: "b1", startLine: 41, endLine: 45 },
+    ];
+    const { owed, declined } = partitionChunkEntries(declinesTests, "src/lib.rs", entries);
+    expect(owed.map((e) => e.chunkId)).toEqual(["p1", "b1"]);
+    expect(declined).toEqual([{ entry: entries[1], skippedAs: "test" }]);
+  });
+
+  it("declines every entry with the file's reason when the file itself is declined", () => {
+    const entries = [{ chunkId: "d1", startLine: 1, endLine: 4 }];
+    const docs = providerWith((f) => (f.classification.isDocumentation ? "file-only" : "full"));
+    const { owed, declined } = partitionChunkEntries(docs, "README.md", entries);
+    expect(owed).toEqual([]);
+    expect(declined).toEqual([{ entry: entries[0], skippedAs: "documentation" }]);
   });
 });
 

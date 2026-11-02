@@ -9,6 +9,7 @@
  */
 import { extname } from "node:path";
 
+import { TEST_CHUNK_TYPES } from "../../../../contracts/types/chunker.js";
 import type { EnrichmentProvider, EnrichmentScope } from "../../../../contracts/types/provider.js";
 import { classify } from "../../../../primitives/paths/index.js";
 import { LANGUAGE_DEFINITIONS, LANGUAGE_MAP } from "../chunker/language-config/index.js";
@@ -45,6 +46,12 @@ export interface EnrichmentFileFacts {
   contentHead?: string;
   /** Physical line count as the caller knows it — see {@link fileLinesOf}. */
   fileLines?: number;
+  /**
+   * The point's own chunk type, for a CHUNK-level question. A test chunk type
+   * ({@link TEST_CHUNK_TYPES}) classifies that chunk as test code whatever its
+   * path says (bd tea-rags-mcp-52wk3.7); it never decides the file level.
+   */
+  chunkType?: string;
 }
 
 /**
@@ -67,6 +74,18 @@ function classifyPath(relPath: string, contentHead?: string) {
 }
 
 /**
+ * The path's classification, with `isTest` raised for a test chunk type — test
+ * code inside a production file (bd tea-rags-mcp-52wk3.7). The FACT stays the
+ * path's; only the test flag widens, so each provider's own `shouldEnrich`
+ * decides whether test code is owed, exactly as it does for a test file.
+ */
+function classifyPoint(relPath: string, facts: EnrichmentFileFacts) {
+  const classification = classifyPath(relPath, facts.contentHead);
+  if (facts.chunkType === undefined || !TEST_CHUNK_TYPES.has(facts.chunkType)) return classification;
+  return { ...classification, isTest: true };
+}
+
+/**
  * Resolve the enrichment scope a provider wants for a repo-relative path.
  * Computes the FileClassification (generated/test/doc/source) and delegates to
  * the provider's policy, with the file's line count when the caller knows it.
@@ -80,7 +99,7 @@ export function enrichmentScope(
   if (!provider.shouldEnrich) return "full";
   return provider.shouldEnrich({
     relPath,
-    classification: classifyPath(relPath, facts.contentHead),
+    classification: classifyPoint(relPath, facts),
     ...(facts.fileLines !== undefined ? { fileLines: facts.fileLines } : {}),
   });
 }
@@ -113,7 +132,8 @@ export function enrichmentSkipReason(
   facts: EnrichmentFileFacts = {},
 ): EnrichmentSkipReason | null {
   if (!provider.shouldEnrich) return null;
-  const classification = classifyPath(relPath, facts.contentHead);
+  // A chunk's type speaks for that chunk only, never for the file around it.
+  const classification = level === "chunk" ? classifyPoint(relPath, facts) : classifyPath(relPath, facts.contentHead);
   const { fileLines } = facts;
   const scope = provider.shouldEnrich({
     relPath,
@@ -128,6 +148,37 @@ export function enrichmentSkipReason(
     return "oversized";
   }
   return "policy";
+}
+
+/**
+ * Split one file's chunk entries into the ones the provider owes chunk
+ * enrichment and the ones it declines, each declined entry with its reason.
+ *
+ * The file's own decline covers every entry. Otherwise a test chunk inside it
+ * (`chunkType`) is asked separately: a provider that declines test code — the
+ * codegraph walker prunes those subtrees — must never see it, or its owner rule
+ * hands the chunk the enclosing production symbol's signals (bd
+ * tea-rags-mcp-52wk3.7). Providers without `shouldEnrich` owe every entry.
+ */
+export function partitionChunkEntries<E extends { endLine: number; moduleLines?: number; chunkType?: string }>(
+  provider: Pick<EnrichmentProvider, "shouldEnrich">,
+  relPath: string,
+  entries: readonly E[],
+): { owed: E[]; declined: { entry: E; skippedAs: EnrichmentSkipReason }[] } {
+  const fileLines = fileLinesOf(entries);
+  const fileReason = enrichmentSkipReason(provider, relPath, "chunk", { fileLines });
+  if (fileReason !== null) return { owed: [], declined: entries.map((entry) => ({ entry, skippedAs: fileReason })) };
+  const owed: E[] = [];
+  const declined: { entry: E; skippedAs: EnrichmentSkipReason }[] = [];
+  for (const entry of entries) {
+    const skippedAs =
+      entry.chunkType !== undefined && TEST_CHUNK_TYPES.has(entry.chunkType)
+        ? enrichmentSkipReason(provider, relPath, "chunk", { fileLines, chunkType: entry.chunkType })
+        : null;
+    if (skippedAs === null) owed.push(entry);
+    else declined.push({ entry, skippedAs });
+  }
+  return { owed, declined };
 }
 
 /**

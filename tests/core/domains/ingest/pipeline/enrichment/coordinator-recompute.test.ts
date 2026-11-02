@@ -68,6 +68,19 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     expect(finalizeSignals).toHaveBeenCalled();
   });
 
+  // bd tea-rags-mcp-52wk3.7 — the recompute reads chunks back from Qdrant, so
+  // the chunk type must survive the scroll: without it a test chunk inside a
+  // production file reaches the codegraph owner rule and inherits the enclosing
+  // symbol's signals. The decline itself is pinned in chunk-phase.test.ts.
+  it("reads the chunk type back with the stored chunks", async () => {
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
+
+    await coordinator.recomputeEnrichments(fixturePhysicalCollectionName("coll"), "/repo", ["git"]);
+
+    const scrollFiltered = qdrant.scrollFiltered as ReturnType<typeof vi.fn>;
+    expect(scrollFiltered.mock.calls[0][4]).toContain("chunkType");
+  });
+
   it("returns the run's enrichment metrics rather than nothing", async () => {
     // The CLI's --json surfaces these; reporting zero work on a successful
     // recompute is what made the run look like a no-op.

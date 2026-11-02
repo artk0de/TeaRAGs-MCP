@@ -765,6 +765,15 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(provider.shouldEnrich({ relPath: "app/models/user.rb", classification: base })).toBe("full");
     });
 
+    // bd tea-rags-mcp-52wk3.7 — a chunk-level policy question about a test
+    // chunk inside a production file arrives with `isTest` set on a path no test
+    // convention matches; the walker pruned that chunk, so it is no graph symbol.
+    it("skips test code classified by the chunk, not only by the file path", () => {
+      const provider = buildProvider();
+      expect(provider.shouldEnrich({ relPath: "src/lib.rs", classification: { ...base, isTest: true } })).toBe("none");
+      expect(provider.shouldEnrich({ relPath: "src/lib.rs", classification: base })).toBe("full");
+    });
+
     // bd tea-rags-mcp-6xxh5 — the exclusion holds with no exclusion config at
     // all, because there is no longer a setting that could turn it off.
     it("skips test files even when the provider was built without exclusion config", () => {

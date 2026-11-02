@@ -125,7 +125,8 @@ const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 
 /** Payload keys recovery actually reads — everything else stays server-side. */
 // `moduleLines` feeds the policy's size-driven chunk decline (bd tea-rags-mcp-2brzq).
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId", "moduleLines"];
+// `chunkType` feeds the test-chunk decline (bd tea-rags-mcp-52wk3.7).
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId", "moduleLines", "chunkType"];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -613,7 +614,10 @@ export class EnrichmentRecovery {
       // One point is one chunk: its `moduleLines` is the whole file's count,
       // so the per-point answer matches the per-file one the chunk phase gave.
       const fileLines = endLine === undefined ? moduleLines : fileLinesOf([{ endLine, moduleLines }]);
-      const skippedAs = enrichmentSkipReason(provider, relativePath, level, { fileLines });
+      // The point's chunk type decides only its CHUNK level: a test chunk
+      // inside a production file (bd tea-rags-mcp-52wk3.7).
+      const chunkType = typeof point.payload?.chunkType === "string" ? point.payload.chunkType : undefined;
+      const skippedAs = enrichmentSkipReason(provider, relativePath, level, { fileLines, chunkType });
       if (skippedAs !== null) {
         declined.push({ id: point.id, skippedAs });
         continue;

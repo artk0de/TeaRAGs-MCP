@@ -1056,8 +1056,10 @@ export class EnrichmentCoordinator {
       undefined,
       // `moduleLines` is the enrichment policy's size input — without it a
       // recompute would walk (and zero-stamp) files the policy declines by
-      // their line count (bd tea-rags-mcp-2brzq).
-      ["relativePath", "startLine", "endLine", "symbolId", "moduleLines"],
+      // their line count (bd tea-rags-mcp-2brzq). `chunkType` is its test-chunk
+      // input — without it a recompute re-attributes a test chunk inside a
+      // production file to the enclosing symbol (bd tea-rags-mcp-52wk3.7).
+      ["relativePath", "startLine", "endLine", "symbolId", "moduleLines", "chunkType"],
     );
 
     const items: ChunkItem[] = [];
@@ -1073,6 +1075,7 @@ export class EnrichmentCoordinator {
       const symbolIdField = typeof point.payload?.symbolId === "string" ? { symbolId: point.payload.symbolId } : {};
       const moduleLinesField =
         typeof point.payload?.moduleLines === "number" ? { moduleLines: point.payload.moduleLines } : {};
+      const chunkTypeField = typeof point.payload?.chunkType === "string" ? { chunkType: point.payload.chunkType } : {};
 
       items.push({
         type: "upsert",
@@ -1081,12 +1084,12 @@ export class EnrichmentCoordinator {
           content: "",
           startLine,
           endLine,
-          metadata: { filePath: `${root}/${relativePath}`, ...symbolIdField, ...moduleLinesField },
+          metadata: { filePath: `${root}/${relativePath}`, ...symbolIdField, ...moduleLinesField, ...chunkTypeField },
         },
       } as unknown as ChunkItem);
 
       const entries = chunkMap.get(relativePath) ?? [];
-      entries.push({ chunkId, startLine, endLine, ...symbolIdField, ...moduleLinesField });
+      entries.push({ chunkId, startLine, endLine, ...symbolIdField, ...moduleLinesField, ...chunkTypeField });
       chunkMap.set(relativePath, entries);
     }
 

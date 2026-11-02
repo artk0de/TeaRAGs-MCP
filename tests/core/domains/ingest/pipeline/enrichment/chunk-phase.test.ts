@@ -838,4 +838,90 @@ describe("ChunkPhase", () => {
       expect(applySpy.mock.calls[0][4]).toEqual(new Set(["c1"]));
     });
   });
+
+  // bd tea-rags-mcp-52wk3.7 — a test chunk inside a production file (Rust
+  // #[cfg(test)] mod, Vitest in-source block) is test code the codegraph walker
+  // prunes. A provider whose policy declines test code must decline that CHUNK
+  // even though it enriches the file: otherwise the chunk-owner rule hands it
+  // the enclosing production symbol's signals, or settles it unowned with an
+  // empty overlay that reads as "measured zero".
+  describe("test chunks inside production files (bd tea-rags-mcp-52wk3.7)", () => {
+    const declineTests = (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full");
+    const keepTests = () => "full";
+
+    // `mod tests` sits inside the production `mod foo` range (1-40).
+    const productionChunk = {
+      chunkId: "p1",
+      chunk: { metadata: { filePath: "/repo/src/lib.rs", chunkType: "function" }, startLine: 1, endLine: 40 },
+    } as any;
+    const testChunk = {
+      chunkId: "t1",
+      chunk: { metadata: { filePath: "/repo/src/lib.rs", chunkType: "test" }, startLine: 20, endLine: 35 },
+    } as any;
+    const setupChunk = {
+      chunkId: "s1",
+      chunk: { metadata: { filePath: "/repo/src/lib.rs", chunkType: "test_setup" }, startLine: 18, endLine: 19 },
+    } as any;
+
+    it("stamps a test chunk of an enriched file skippedAs 'test' at accumulation time", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(2);
+      const ctx = buildCtx({ defersChunkEnrichment: true, shouldEnrich: declineTests });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
+
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [productionChunk, testChunk, setupChunk]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [
+        { id: "t1", skippedAs: "test" },
+        { id: "s1", skippedAs: "test" },
+      ]);
+    });
+
+    it("runDeferredChunk never hands a test chunk to the provider, so no symbol can own it", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      vi.spyOn(applier, "applySkipStamps").mockResolvedValue(2);
+      const applySpy = vi.spyOn(applier, "applyChunkSignals").mockResolvedValue(1);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ defersChunkEnrichment: true, buildChunkSignals, shouldEnrich: declineTests });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
+
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [productionChunk, testChunk, setupChunk]);
+      await phase.drain();
+      await phase.runDeferredChunk(
+        fixturePhysicalCollectionName("coll"),
+        ctx,
+        "/repo",
+        phase.getDeferredChunkMap("git"),
+      );
+
+      // The production chunk keeps its dispatch (pin); the nested test chunks
+      // are absent, so the owner rule cannot attribute them to `p1`'s symbol.
+      const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, { chunkId: string }[]>;
+      expect(dispatched.get("src/lib.rs")!.map((e) => e.chunkId)).toEqual(["p1"]);
+      // Nor do they get the bare "no signals" enrichedAt stamp.
+      expect(applySpy.mock.calls[0][4]).toEqual(new Set(["p1"]));
+    });
+
+    it("leaves test chunks owed to a provider whose policy keeps test code", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(0);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({ buildChunkSignals, shouldEnrich: keepTests });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "ts");
+
+      phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [productionChunk, testChunk]);
+      await phase.drain();
+
+      expect(stampSpy).not.toHaveBeenCalled();
+      const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, { chunkId: string }[]>;
+      expect(dispatched.get("src/lib.rs")!.map((e) => e.chunkId)).toEqual(["p1", "t1"]);
+    });
+  });
 });

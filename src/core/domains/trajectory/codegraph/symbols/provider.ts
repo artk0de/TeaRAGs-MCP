@@ -385,6 +385,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
     if (file.classification.isGenerated) return "none";
+    // Test code is no graph symbol: a test file by path below, a test chunk
+    // inside a production file by its chunk type here (bd tea-rags-mcp-52wk3.7).
+    if (file.classification.isTest) return "none";
     if (this.codegraphExclusionFilter.ignores(file.relPath)) return "none";
     return "full";
   }

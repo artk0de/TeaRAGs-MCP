@@ -573,8 +573,9 @@ describe("EnrichmentRecovery", () => {
       // `symbolId` joined the projection with bd tea-rags-mcp-9i2ow: the codegraph
       // chunk-owner rule anchors on it, and recovery hands entries to that rule.
       // `moduleLines` joined with bd tea-rags-mcp-2brzq: the policy's
-      // size-driven chunk decline reads the file's line count.
-      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId", "moduleLines"]);
+      // size-driven chunk decline reads the file's line count. `chunkType`
+      // joined with bd tea-rags-mcp-52wk3.7: the test-chunk decline reads it.
+      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId", "moduleLines", "chunkType"]);
     });
   });
 });
@@ -1004,6 +1005,35 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
     ]);
     expect(result.recoveredChunks).toBe(0);
     expect(result.remainingUnenriched).toBe(0);
+  });
+
+  // bd tea-rags-mcp-52wk3.7 — a test chunk inside a production file that an
+  // earlier run left unenriched is a decline, not a recovery candidate: it
+  // must leave the scan stamped, never be healed through the owner rule.
+  it("stamps a test chunk of a production file 'test' and keeps it out of the owed set", async () => {
+    const declinesTests = {
+      ...policyProvider(),
+      shouldEnrich: (f: { classification: { isTest: boolean } }) => (f.classification.isTest ? "none" : "full"),
+    };
+    const { qdrant, applier, recovery } = harness([
+      { id: "prod-1", payload: { relativePath: "src/lib.rs", startLine: 1, endLine: 40, chunkType: "function" } },
+      { id: "test-1", payload: { relativePath: "src/lib.rs", startLine: 20, endLine: 35, chunkType: "test" } },
+    ]);
+
+    await recovery.recoverChunkLevel(
+      fixturePhysicalCollectionName("coll"),
+      "/repo",
+      declinesTests as any,
+      "2026-01-01T00:00:00Z",
+    );
+
+    // The scan must project the chunk type, or the decline is invisible.
+    expect(qdrant.scrollFiltered.mock.calls[0][4]).toContain("chunkType");
+    expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "test-1", skippedAs: "test" }]);
+    const healed = declinesTests.buildChunkSignals.mock.calls.flatMap((call: unknown[]) =>
+      [...(call[1] as Map<string, { chunkId: string }[]>).values()].flat().map((e) => e.chunkId),
+    );
+    expect(healed).not.toContain("test-1");
   });
 
   it("stamps a chunk of an oversized file 'oversized' from its moduleLines, not its own span", async () => {
