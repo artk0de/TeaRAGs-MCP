@@ -43,6 +43,15 @@ pub const DEFAULT_LIMIT: usize = 4096 * 16 + 1024;
     }
   });
 
+  it("keeps the outer doc comment of a body-less test-only mod out of production chunks", async () => {
+    const code = CODE.replace("#[cfg(test)]\nmod testutil;", "/// Shared test helpers.\n#[cfg(test)]\nmod testutil;");
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    for (const chunk of chunks.filter((candidate) => !isTestChunk(candidate.metadata.chunkType))) {
+      expect(chunk.content, `${chunk.metadata.chunkType} ${chunk.startLine}`).not.toContain("Shared test helpers.");
+    }
+  });
+
   it("drops the attribute of any import with its import, and keeps a production mod declaration", async () => {
     const chunks = await chunker.chunk(CODE, "src/lib.rs", "rust");
 

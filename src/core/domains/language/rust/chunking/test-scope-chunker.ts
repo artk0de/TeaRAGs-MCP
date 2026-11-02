@@ -71,6 +71,50 @@ function attributedStart(node: AstNode): AstNode {
   return first;
 }
 
+/** An outer doc comment (`///` or a `/**` block): tree-sitter-rust gives it an `outer_doc_comment_marker` child. */
+function isOuterDocComment(node: AstNode): boolean {
+  return (
+    (node.type === "line_comment" || node.type === "block_comment") &&
+    node.namedChildren.some((child) => child.type === "outer_doc_comment_marker")
+  );
+}
+
+/** A comment's last row of text; a `///` line comment's range ends on the next row, column 0. */
+function lastTextRow(node: AstNode): number {
+  const { row, column } = node.endPosition;
+  return column === 0 && row > node.startPosition.row ? row - 1 : row;
+}
+
+/**
+ * Where a TEST-ONLY item's source starts: its outer attributes and the outer
+ * doc comments directly above them (no blank row), interleaved in any order.
+ * Plain `//` and inner `//!` comments end the run. Only claimed test-only
+ * items read this — a production item keeps `attributedStart` — so the doc
+ * rows of test code leave the production module remainder with their item.
+ */
+function testItemStart(node: AstNode): AstNode {
+  let first = node;
+  for (let sibling = node.previousNamedSibling; sibling; sibling = sibling.previousNamedSibling) {
+    const joins =
+      sibling.type === "attribute_item" ||
+      (isOuterDocComment(sibling) && lastTextRow(sibling) + 1 >= first.startPosition.row);
+    if (!joins) break;
+    first = sibling;
+  }
+  return first;
+}
+
+/**
+ * The sibling a classified test-only item's chunk opens at
+ * (`ChunkDecision.leadingNode`) when an outer doc comment sits in the run
+ * above it, else `undefined` — the engine's own attribute prefix then applies,
+ * exactly as before.
+ */
+export function rustTestItemLeadingNode(node: AstNode): AstNode | undefined {
+  const first = testItemStart(node);
+  return first === attributedStart(node) ? undefined : first;
+}
+
 function attributeStartLine(node: AstNode): number {
   return attributedStart(node).startPosition.row + 1;
 }
@@ -110,12 +154,13 @@ function directDeclarations(node: AstNode): AstNode[] {
  * Tree-sitter keeps them as siblings before the `mod_item`, so without this no
  * chunk claims them and the module remainder carries them as production code.
  * An attribute sharing the `mod` row is already inside the scope's rows.
+ * `first` is where the leading run starts: the first attribute, or for the
+ * claimed root the first outer doc comment (`testItemStart`).
  */
-function moduleAttributeLines(node: AstNode, code: string): TestScopeLine[] {
-  const first = attributedStart(node);
+function moduleAttributeLines(node: AstNode, first: AstNode, code: string): TestScopeLine[] {
   if (first.startPosition.row === node.startPosition.row) return [];
   const modRowStart = node.startIndex - node.startPosition.column;
-  const startLine = attributeStartLine(node);
+  const startLine = first.startPosition.row + 1;
   return code
     .substring(first.startIndex, modRowStart)
     .trimEnd()
@@ -123,10 +168,20 @@ function moduleAttributeLines(node: AstNode, code: string): TestScopeLine[] {
     .map((text, row) => ({ text, sourceLine: startLine + row }));
 }
 
-function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope {
+/**
+ * A nested module's doc comment is a statement of its parent test scope
+ * already, so only the claimed root takes its doc comments
+ * (`leadingStart = testItemStart`).
+ */
+function buildRustScope(
+  node: AstNode,
+  code: string,
+  pathPrefix = "",
+  leadingStart: AstNode = attributedStart(node),
+): TestScope {
   const localName = nodeName(node);
   const name = pathPrefix ? `${pathPrefix}.${localName}` : localName;
-  const otherLines: TestScopeLine[] = moduleAttributeLines(node, code);
+  const otherLines: TestScopeLine[] = moduleAttributeLines(node, leadingStart, code);
   const examples: TestExample[] = [];
   const children: TestScope[] = [];
 
@@ -151,7 +206,7 @@ function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope
 
   return {
     name,
-    startLine: attributeStartLine(node),
+    startLine: leadingStart.startPosition.row + 1,
     endLine: node.endPosition.row + 1,
     setupLines: [],
     otherLines,
@@ -161,7 +216,7 @@ function buildRustScope(node: AstNode, code: string, pathPrefix = ""): TestScope
 }
 
 export function buildRustTestScope(containerNode: AstNode, code: string): TestScope {
-  return buildRustScope(containerNode, code);
+  return buildRustScope(containerNode, code, "", testItemStart(containerNode));
 }
 
 /** The subject every Rust test id hangs under: the file's basename without `.rs`. */
@@ -254,8 +309,8 @@ export const rustTestScopeChunkerHook: ChunkingHook = {
         : rustInlineItemChunks(
             containerNode,
             {
-              text: sourceText(containerNode, code),
-              startLine: attributeStartLine(containerNode),
+              text: code.substring(testItemStart(containerNode).startIndex, containerNode.endIndex).trim(),
+              startLine: testItemStart(containerNode).startPosition.row + 1,
               endLine: containerNode.endPosition.row + 1,
             },
             ctx.filePath,

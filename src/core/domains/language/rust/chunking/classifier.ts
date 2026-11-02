@@ -14,7 +14,7 @@
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
-import { isRustTestOnlyItem, rustInlineItemChunks } from "./test-scope-chunker.js";
+import { isRustTestOnlyItem, rustInlineItemChunks, rustTestItemLeadingNode } from "./test-scope-chunker.js";
 
 /** Only the id and type are read from the kernel here; the engine cuts the content. */
 const ID_ONLY_CHUNKING_CONFIG = { maxChunkSize: Number.MAX_SAFE_INTEGER };
@@ -27,6 +27,9 @@ export class RustChunkClassifier implements LanguageChunkClassifier {
     if (chunk?.symbolId === undefined || chunk.name === undefined) return { kind: "passthrough" };
     return {
       kind: "emit",
+      // An outer doc comment above a test-only item opens its chunk, so the
+      // doc row does not stay behind in the production module remainder.
+      leadingNode: rustTestItemLeadingNode(node),
       chunks: [
         { name: chunk.name, symbolId: chunk.symbolId, chunkType: chunk.chunkType === "test" ? "test" : "test_setup" },
       ],

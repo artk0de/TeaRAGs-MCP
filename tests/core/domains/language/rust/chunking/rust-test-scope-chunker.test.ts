@@ -162,6 +162,78 @@ mod testing {
     expect(fixture?.content).toContain("#[cfg(test)]");
   });
 
+  it("keeps the outer doc comment above a test-only item inside its test chunk, out of production chunks", async () => {
+    const code = `pub fn production_value(input: usize) -> usize {
+    input.saturating_mul(2).saturating_add(1)
+}
+
+/// Documented test module.
+#[allow(dead_code)]
+#[cfg(all(test, feature = "slow"))]
+mod slow_tests {
+    #[test]
+    fn slow_add() {
+        assert_eq!(40 + 2, 42);
+    }
+}
+
+/** Documented fixture. */
+#[cfg(test)]
+fn fixture() -> usize {
+    let table = [10, 20, 30, 40, 50, 60];
+    table.iter().sum()
+}
+
+#[allow(dead_code)]
+/// Documented test impl.
+#[cfg(test)]
+impl Engine {
+    fn idle_for_tests() -> Self {
+        Engine { speed: 0 }
+    }
+}
+
+/// Documented test struct.
+#[cfg(test)]
+struct FixtureTable {
+    rows: Vec<(usize, usize, usize, usize)>,
+}
+
+// A plain note, not documentation.
+#[cfg(test)]
+fn other_fixture() -> usize {
+    let table = [11, 21, 31, 41, 51, 61];
+    table.iter().sum()
+}
+
+/// Documented production function.
+pub fn other_production_value(input: usize) -> usize {
+    input.saturating_mul(3).saturating_add(2)
+}
+`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+    const isTestChunk = (chunkType: string | undefined) => chunkType === "test" || chunkType === "test_setup";
+    const docs = ["Documented test module.", "Documented fixture.", "Documented test impl.", "Documented test struct."];
+
+    for (const chunk of chunks.filter((candidate) => !isTestChunk(candidate.metadata.chunkType))) {
+      for (const doc of docs)
+        expect(chunk.content, `${chunk.metadata.chunkType} ${chunk.startLine}`).not.toContain(doc);
+    }
+    // Rows of `/// Documented test module.`, `/** Documented fixture. */`,
+    // `/// Documented test impl.` and `/// Documented test struct.`.
+    for (const row of [5, 15, 23, 31]) {
+      const owner = chunks.find(
+        (chunk) => isTestChunk(chunk.metadata.chunkType) && chunk.startLine <= row && row <= chunk.endLine,
+      );
+      expect(owner, `doc row ${row}`).toBeDefined();
+    }
+    expect(chunkHolding(chunks, "fn fixture()")?.content).toContain("Documented fixture.");
+    expect(chunkHolding(chunks, "struct FixtureTable")?.content).toContain("Documented test struct.");
+    // A plain comment is not documentation, and a production item keeps today's range.
+    expect(chunkHolding(chunks, "fn other_fixture()")?.content).not.toContain("A plain note");
+    expect(chunkHolding(chunks, "pub fn other_production_value")?.startLine).toBe(45);
+  });
+
   it("keeps the attribute rows above a test-only module inside its test scope, out of the production remainder", async () => {
     const code = `pub fn production_value(input: usize) -> usize {
     input.saturating_mul(2).saturating_add(1)
