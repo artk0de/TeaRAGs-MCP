@@ -3,6 +3,7 @@ import {
   type CompositeRerankPreset,
   type OverlayMask,
   type ScoringWeights,
+  type SignalLevel,
 } from "../../../contracts/index.js";
 
 /**
@@ -34,6 +35,7 @@ import {
 export class BugHuntCompositePreset implements CompositeRerankPreset {
   readonly name = "bugHunt";
   readonly filter = { presets: "production" } as const;
+  readonly signalLevel: SignalLevel = "file";
   readonly description =
     "Find potential bug hiding spots: commit churn, bug fix history, change density, recency, burst activity, and call-graph centrality";
   readonly tools = ["semantic_search", "hybrid_search", "search_code", "find_similar", "rank_chunks", "trace_path"];

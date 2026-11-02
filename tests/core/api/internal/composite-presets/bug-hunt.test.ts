@@ -84,8 +84,9 @@ describe("BugHuntCompositePreset", () => {
     ]);
   });
 
-  it("stays chunk-level like the base (undeclared signalLevel defaults to chunk)", () => {
-    expect(composite.signalLevel).toBeUndefined();
+  it("ranks at file level like the base (bd tea-rags-mcp-9z8ae: backtest is file-level)", () => {
+    expect(composite.signalLevel).toBe(base.signalLevel);
+    expect(composite.signalLevel).toBe("file");
     expect(composite.groupBy).toBeUndefined();
   });
 });
