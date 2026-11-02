@@ -146,3 +146,26 @@ describe("daemon paths over a long storage dir (js1ie)", () => {
     expect(() => lstatSync(alias)).toThrow();
   });
 });
+
+describe("daemon shutdown owns its tmp alias (5yhxq)", () => {
+  it("a clean shutdown removes the alias it created, so no symlink outlives the key dir", async () => {
+    const dir = makeLongRoot();
+    const paths = getDaemonPaths(dir);
+    const alias = dirname(paths.socketPath);
+    aliases.push(alias);
+
+    const { shutdown } = await runDaemon({
+      rootDir: dir,
+      paths,
+      migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
+      exit: () => undefined,
+    });
+    shutdowns.push(shutdown);
+    expect(lstatSync(alias).isSymbolicLink()).toBe(true);
+
+    await shutdown();
+
+    expect(() => lstatSync(alias)).toThrow();
+    expect(existsSync(paths.buildDir)).toBe(true);
+  });
+});

@@ -41,6 +41,8 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly device: string;
   private readonly socketPath: string;
   private readonly pidFile: string | undefined;
+  /** Dir the socket belongs to; handed to a spawned daemon so it can make the socket's tmp alias (64j9p). */
+  private readonly socketHomeDir: string | undefined;
 
   private socket: Socket | null = null;
   private splitter: LineSplitter | null = null;
@@ -68,6 +70,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     socketPath = DEFAULT_SOCKET_PATH,
     pidFile?: string,
     spawnTimeoutMs = 30_000,
+    socketHomeDir?: string,
   ) {
     this.model = model;
     this.dimensionsPinned = dimensions !== undefined && dimensions > 0;
@@ -77,6 +80,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     this.socketPath = socketPath;
     this.pidFile = pidFile;
     this.spawnTimeoutMs = spawnTimeoutMs;
+    this.socketHomeDir = socketHomeDir;
   }
 
   // ---------------------------------------------------------------------------
@@ -140,10 +144,14 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private async spawnDaemon(): Promise<void> {
     const daemonPath = join(dirname(fileURLToPath(import.meta.url)), "onnx", "daemon.js");
 
-    const child: ChildProcess = spawn(process.execPath, [daemonPath, this.socketPath, this.pidFile ?? ""], {
-      detached: true,
-      stdio: "ignore",
-    });
+    const child: ChildProcess = spawn(
+      process.execPath,
+      [daemonPath, this.socketPath, this.pidFile ?? "", this.socketHomeDir ?? ""],
+      {
+        detached: true,
+        stdio: "ignore",
+      },
+    );
     child.unref();
 
     // Poll for socket file to appear

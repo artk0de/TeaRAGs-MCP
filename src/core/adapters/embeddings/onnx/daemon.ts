@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
+import { ensureUnixSocketDir, removeUnixSocketAlias } from "../../filesystem/unix-socket-path.js";
 import { BatchSizeController } from "./batch-size-controller.js";
 import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
 import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
@@ -25,6 +26,12 @@ import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 export interface DaemonConfig {
   socketPath: string;
+  /**
+   * Dir the socket belongs to (the app-data dir). When `socketPath` is its
+   * short tmp alias (`boundedUnixSocketPath`, bd tea-rags-mcp-64j9p) the alias
+   * is created before `listen` and removed on stop. Absent → the socket's own dir.
+   */
+  socketHomeDir?: string;
   pidFile?: string;
   idleTimeoutMs: number;
   heartbeatTimeoutMs: number;
@@ -98,6 +105,8 @@ export class OnnxDaemon {
     this.startTime = Date.now();
     this.lastActivityTime = Date.now();
     this.stopped = false;
+
+    ensureUnixSocketDir(this.socketHomeDir(), this.config.socketPath);
 
     // Clean up stale socket file
     if (existsSync(this.config.socketPath)) {
@@ -530,12 +539,17 @@ export class OnnxDaemon {
     }
   }
 
+  private socketHomeDir(): string {
+    return this.config.socketHomeDir ?? dirname(this.config.socketPath);
+  }
+
   private cleanupFiles(): void {
     try {
       if (existsSync(this.config.socketPath)) unlinkSync(this.config.socketPath);
     } catch {
       // ignore
     }
+    removeUnixSocketAlias(this.socketHomeDir(), this.config.socketPath);
     try {
       if (this.config.pidFile && existsSync(this.config.pidFile)) unlinkSync(this.config.pidFile);
     } catch {
@@ -545,7 +559,7 @@ export class OnnxDaemon {
 }
 
 // ---------------------------------------------------------------------------
-// CLI entry — runs when executed as: node daemon.js <socketPath> [pidFile]
+// CLI entry — runs when executed as: node daemon.js <socketPath> [pidFile] [socketHomeDir]
 // ---------------------------------------------------------------------------
 
 /* v8 ignore start */
@@ -556,15 +570,17 @@ const isDirectRun =
 
 if (isDirectRun) {
   const socketPath = process.argv[2];
-  const pidFile = process.argv[3];
+  const pidFile = process.argv[3] || undefined;
+  const socketHomeDir = process.argv[4] || undefined;
   if (!socketPath) {
-    console.error("Usage: daemon.js <socketPath> [pidFile]");
+    console.error("Usage: daemon.js <socketPath> [pidFile] [socketHomeDir]");
     process.exit(1);
   }
 
   const daemon = new OnnxDaemon({
     socketPath,
     pidFile,
+    socketHomeDir,
     idleTimeoutMs: 30_000,
     heartbeatTimeoutMs: 45_000,
   });
