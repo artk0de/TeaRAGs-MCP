@@ -10,8 +10,7 @@ import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
 import { compilePathPatternMatcher } from "../../../primitives/paths/index.js";
-import { FileLevelGrouper } from "../chunk-grouping/index.js";
-import type { ScrollChunk } from "../chunk-grouping/types.js";
+import { FILE_GROUP_KEY, FileLevelGrouper, type ScrollChunk } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors/index.js";
 import { keepPathPatternMatches } from "../post-process.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
@@ -20,11 +19,6 @@ import { workingTreeRowAdmitted } from "../working-tree/sparse-floor.js";
 import { BaseExploreStrategy } from "./base.js";
 import { fetchUntilPathPatternFilled, type PathPatternPage } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
-
-/** Initial overfetch multiplier for file-level dedup. */
-const FILE_OVERFETCH_INITIAL = 3;
-/** Max adaptive re-fetch rounds before giving up. */
-const FILE_OVERFETCH_MAX_ROUNDS = 3;
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
@@ -140,8 +134,16 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       presetName: ctx.presetName,
       ...(ctx.historyAnchorSec !== undefined ? { historyAnchorSec: ctx.historyAnchorSec } : {}),
       // The rerank collapses on the preset's groupBy, so the pool is sized in
-      // those groups — not in points (bd tea-rags-mcp-s9vgb).
-      groupBy: ctx.presetName ? this.reranker.getFullPreset(ctx.presetName, "rank_chunks")?.groupBy : undefined,
+      // those groups — not in points (bd tea-rags-mcp-s9vgb). At file level the
+      // group is the file: its chunks tie on file signals and scroll side by
+      // side, so a pool sized in chunks held a handful of files (bd
+      // tea-rags-mcp-xiogj).
+      groupBy:
+        ctx.level === "file"
+          ? FILE_GROUP_KEY
+          : ctx.presetName
+            ? this.reranker.getFullPreset(ctx.presetName, "rank_chunks")?.groupBy
+            : undefined,
       substituteCandidates: async (
         candidates: ScrollChunk[],
         legFilters: readonly (Record<string, unknown> | undefined)[],
@@ -160,34 +162,11 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       return { matches, exhausted: scrollWindow.exhausted };
     };
 
-    // Chunk-level: single fetch, no dedup needed — unless an exact pathPattern
-    // thinned the window, then the bounded fill loop scrolls further.
-    if (ctx.level !== "file") {
-      if (!matcher) return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: ctx.limit });
-      return fetchUntilPathPatternFilled(ctx.limit, fetchWindow, (matches) => matches.length >= ctx.limit);
-    }
-
-    // File-level: adaptive fetch — increase limit until enough unique files
-    const targetFiles = ctx.limit;
-    let fetchLimit = targetFiles * FILE_OVERFETCH_INITIAL;
-    let prevChunkCount = 0;
-
-    for (let attempt = 0; attempt < FILE_OVERFETCH_MAX_ROUNDS; attempt++) {
-      const { matches: results, exhausted } = await fetchWindow(fetchLimit);
-      const uniqueFiles = new Set(results.map((r) => r.payload?.relativePath)).size;
-
-      // Unfiltered, a window that stopped growing means the source ran out. Under
-      // a pathPattern a window can stop growing while the scroll still has points.
-      const sourceExhausted = matcher ? exhausted : results.length <= prevChunkCount;
-      if (uniqueFiles >= targetFiles || sourceExhausted) {
-        return results;
-      }
-
-      prevChunkCount = results.length;
-      fetchLimit *= 2;
-    }
-
-    return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: fetchLimit });
+    // One fetch: RankModule sizes the pool in groups (files at file level) and
+    // returns at most `limit` of them — unless an exact pathPattern thinned the
+    // window, then the bounded fill loop scrolls further.
+    if (!matcher) return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: ctx.limit });
+    return fetchUntilPathPatternFilled(ctx.limit, fetchWindow, (matches) => matches.length >= ctx.limit);
   }
 
   private async fetchAndMap(collectionName: string, opts: RankOptions): Promise<ExploreResult[]> {
