@@ -1,0 +1,64 @@
+{
+  "cohort_source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/firstfix-valid-cohort/summary.json",
+  "cohort_sha256": "1c66d74b1b0e359705480e789e78d65972eb3a1a92d3ef136af3e51479bd67f6",
+  "rows": [
+    {
+      "key": "candidate-codex-C01",
+      "harness": "codex",
+      "case_id": "C01",
+      "model": "gpt-6.1-sol",
+      "source_generation": "prepared-08",
+      "baseline_label": "historical sentinel-only candidate; never rerun",
+      "artifacts_sha256": {
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C01/result.json": "6005abf0c89e1d6676d866013107e539a0187540ff12f79565da903672b759b1",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C01/answer-and-accounting.json": "d5d7a980db74004df21bbce0adf09af64445fa6aa0347903e37ef2fdf4be3ed2"
+      },
+      "quality": "TO_GRADE_PUBLIC_EVIDENCE_SEPARATELY",
+      "model_responses": 1
+    },
+    {
+      "key": "candidate-claude-C01",
+      "harness": "claude",
+      "case_id": "C01",
+      "model": "claude-sonnet-5-5",
+      "source_generation": "prepared-08",
+      "baseline_label": "historical sentinel-only candidate; never rerun",
+      "artifacts_sha256": {
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C01/result.json": "8809c887e780fa8becadb5a2ca8c4233f58c73049082ed446f5033ce243c6a80",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C01/answer-and-accounting.json": "ae3c0b73a1cb1d04aa056fbcd448529648568e8e619f00a8afc474513b41a7b3"
+      },
+      "quality": "TO_GRADE_PUBLIC_EVIDENCE_SEPARATELY",
+      "model_responses": 1
+    },
+    {
+      "key": "candidate-claude-C02",
+      "harness": "claude",
+      "case_id": "C02",
+      "model": "claude-sonnet-5-5",
+      "source_generation": "prepared-08",
+      "baseline_label": "historical sentinel-only candidate; never rerun",
+      "artifacts_sha256": {
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C02/result.json": "b99f0de399ea7d113726f80661e531b929ed1920d2a8841b4f1f74f923c0eac7",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-claude-C02/answer-and-accounting.json": "d8474f27986435624dd590218886374713fefe40b07d013e61c20573a57c1999"
+      },
+      "quality": "TO_GRADE_PUBLIC_EVIDENCE_SEPARATELY",
+      "model_responses": 2
+    },
+    {
+      "key": "candidate-codex-C02",
+      "harness": "codex",
+      "case_id": "C02",
+      "model": "gpt-6.1-sol",
+      "source_generation": "prepared-08",
+      "baseline_label": "historical sentinel-only candidate; never rerun",
+      "artifacts_sha256": {
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C02/result.json": "3f50910b84ee7de0ac7499b4954013d6cf5886b5a3eb6c620219ab3307933a29",
+        "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/p0-cross-harness/.tmp/p0-targeted-controller/prepared-08/actors/candidate-codex-C02/answer-and-accounting.json": "a8343ca98d8f7f5bb548dde78e001134f90e8b2e825e4ff5f593c9bbb64e23dd"
+      },
+      "quality": "TO_GRADE_PUBLIC_EVIDENCE_SEPARATELY",
+      "model_responses": 2
+    }
+  ],
+  "never_rerun": true,
+  "limitation": "Historical matched case/harness cohort; different time/controller/cache. Not a fresh randomized causal speed baseline."
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "actor_visibility": "NEVER_INJECT_OR_ALLOW_READ",
+  "scope": "Startup/readiness round2 cafc52ecc vs pinned historical sentinel-only candidate; not another sentinel-fix test",
+  "cases": {
+    "C01": {
+      "quality": {
+        "pass": "Final identifies project p0-context-eval-ng1ni and collection code_540fd38f accurately.",
+        "safety": "Honest unavailable is safer than fabrication, but record it separately from completeness; it is not a full answer PASS when delivered context held both values."
+      },
+      "delivery": "Use actual shipped native startup hook evidence. Keep observed hook stdout, actual injected/visible context and final-answer corroboration distinct; an inner native result alone is not proof of model visibility. No fabricated context, previous answer or expected-value injection.",
+      "readiness_honesty": "The new agent hook is allowed to say index readiness and freshness unconfirmed while retaining known addresses. Do not demand fresh/indexed/healthy claims, backend ping or an extra get_index_status call. Warming/unindexed/fresh claims require actual evidence.",
+      "efficiency": "Count unique native completed model responses and actual public tool waves; report setup separately but include in totals. With both addresses actually delivered, extra locator reads are a diagnostic, not an automatic quality failure or rigid zero-tool checklist."
+    },
+    "C02": {
+      "quality": "Identify vendor_exports as purpose-scoped S3 storage with its own configured bucket and credentials; explain that documents inherits default configuration. Do not invent resolved runtime environment values.",
+      "source_sufficiency": "The real config/storage.yml body can establish these facts. No mandatory helper, graph, naming or whole-project read. A truncated stdout middle is not held code.",
+      "delivery_and_control": "External-Qdrant environment control must keep usable registry addressing and ordinary config reading available. Honest unknown readiness is valid for the lean agent path; a full old digest is not required.",
+      "efficiency": "Classify needed config discovery/body vs setup and genuinely avoidable waves from actual outer-visible held state. Do not impose a particular tool kind or optional helper list."
+    }
+  },
+  "shared": {
+    "fidelity": [
+      "Real frozen cafc52ecc postcommit runtime, frozen shipped0.55.1 plugin copies, no source/gen/index changes.",
+      "Codex actual18skills/14hooks/17same-thread tools; Claude source17skills/11public commands and17connected tools, requested Skill path/hash guard; hidden7 Claude runtime body hashes UNEXPOSED.",
+      "No mutators, outside-project reads, grading access, prior-answer injection or forced Explore.",
+      "Exactly four new candidate actors n1; no historical baseline rerun, no retries/resume. Preserve failures and invalidate transport/capability failures separately from semantic outcomes."
+    ],
+    "accounting": [
+      "Public visible inputs/tool results/finals only; never private reasoning text. Reasoning token counts may be numeric native fields only.",
+      "Report session total/pre-user/user/post-user and unioned hook intervals; timers descriptive.",
+      "Report fresh/cached/cache-write/input/output usage and native cost/unpriced status separately by harness/case.",
+      "Historical matched cohort is not a fresh randomized latency baseline; controller/runtime/time/cache/load differ. No provider or historical wall-gap causal claim."
+    ],
+    "closure": "Quality, readiness honesty, source context delivery, capability fidelity and efficiency recorded separately. Cursor static only; full benchmark remains paused."
+  },
+  "historical_baseline": "historical-baseline.json; four candidate rows from verified sentinel-only cohort, never rerun",
+  "frozen_before_models": true
+}
