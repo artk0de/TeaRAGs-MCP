@@ -122,18 +122,22 @@ export async function downloadRustcDriverRelease(
     join(root, "downloads"),
     deps,
   );
-  await publishArchive(
-    archive,
-    binDir,
-    async (stagingDir) => {
-      // -V cannot run yet: the pinned toolchain may not be installed. sha256 vouches for the bytes.
-      if (!(await isPublished(stagingDir, binaries))) {
-        throw new RustcDriverReleaseUnavailableError(`${entry.asset} lacks ${binaries.join(" / ")}`);
-      }
-    },
-    deps,
-  );
-  await rm(archive, { force: true });
+  try {
+    await publishArchive(
+      archive,
+      binDir,
+      async (stagingDir) => {
+        // -V cannot run yet: the pinned toolchain may not be installed. sha256 vouches for the bytes.
+        if (!(await isPublished(stagingDir, binaries))) {
+          throw new RustcDriverReleaseUnavailableError(`${entry.asset} lacks ${binaries.join(" / ")}`);
+        }
+      },
+      deps,
+    );
+  } finally {
+    // A kept archive would be reused by digest on the next run, failing the same way forever.
+    await rm(archive, { force: true });
+  }
   return join(binDir, binaries[0]);
 }
 
