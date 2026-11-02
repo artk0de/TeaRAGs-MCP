@@ -25,6 +25,11 @@ import {
   renderLlamaServerCommands,
   type LlamaServerTargetOs,
 } from "./llama-server-command-format.js";
+import {
+  LLAMA_SERVER_INSTALL_BACKENDS,
+  productionLlamaServerInstallDeps,
+  runLlamaServerInstall,
+} from "./llama-server-install.js";
 
 /** The model tea-rags embeds with when EMBEDDING_MODEL is unset. */
 const DEFAULT_GGUF_MODEL_REFERENCE = "unclemusclez/jina-embeddings-v2-base-code:latest";
@@ -166,7 +171,7 @@ function productionCommandDeps(): LlamaServerCommandDeps {
 /** `tea-rags llama-server <fetch-model|command>` — helpers for the llama-server provider. */
 export const llamaServerCommand: CommandModule = {
   command: "llama-server",
-  describe: "Helpers for the llama-server embedding provider (fetch-model, command)",
+  describe: "Helpers for the llama-server embedding provider (fetch-model, command, install)",
   builder: (yargs: Argv) =>
     yargs
       .command(
@@ -236,6 +241,19 @@ export const llamaServerCommand: CommandModule = {
             },
             productionCommandDeps(),
           );
+        },
+      )
+      .command(
+        "install",
+        "Install llama-server from the pinned llama.cpp release for this machine and print its path",
+        (y) =>
+          y.option("backend", {
+            choices: LLAMA_SERVER_INSTALL_BACKENDS,
+            default: "auto" as const,
+            describe: "GPU build: auto probes nvidia-smi, rocminfo, vulkaninfo; macOS arm64 is always metal",
+          }),
+        async (argv) => {
+          await runLlamaServerInstall({ backend: argv.backend }, productionLlamaServerInstallDeps());
         },
       )
       .demandCommand(1)
