@@ -238,6 +238,18 @@
       "expected_output": "Routes to tea-rags-setup:tune (re-bench the llama-server pool, restart, set-env EMBEDDING_BASE_URL), not a fresh install.",
       "not_expected": "Re-running the install skill.",
       "assertions": [{ "text": "Routes to tune", "type": "routing" }]
+    },
+    {
+      "id": 21,
+      "expected_output": "Harness is claude (CLAUDECODE wins over an exported CODEX_HOME). Step 5.7 uses the Claude commands: marketplace add pinned #v<version>, plugin install --scope user, claude mcp add --scope user tea-rags -- tea-rags server.",
+      "not_expected": "Treating the harness as codex because CODEX_HOME is set. Running Codex plugin commands.",
+      "assertions": [
+        { "text": "Identifies the harness as claude", "type": "routing" },
+        {
+          "text": "Uses claude marketplace add with #v<ver>, plugin install --scope user and claude mcp add --scope user tea-rags -- tea-rags server",
+          "type": "command"
+        }
+      ]
     }
   ]
 }

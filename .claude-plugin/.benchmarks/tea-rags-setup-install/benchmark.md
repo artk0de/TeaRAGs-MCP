@@ -8,12 +8,12 @@ foreground.
 
 ## Files
 
-- `prompts.json` — what the actor sees (20 cases; script outputs inlined as
+- `prompts.json` — what the actor sees (21 cases; script outputs inlined as
   fixtures).
 - `grading.json` — expected output, `not_expected`, assertions. Grader only;
   never shown to the actor.
 
-Cases: 12 findings (changed behaviour) · 6 edges · 1 subagent · 1 control
+Cases: 12 findings (changed behaviour) · 7 edges · 1 subagent · 1 control
 (re-tune routes to `tune`). Changed behaviour covered: no question before the
 plan, ignore before profile, model taken verbatim from `choose-model`, no
 Ollama, no squash question, `Change model` pick is the confirmation, plugin

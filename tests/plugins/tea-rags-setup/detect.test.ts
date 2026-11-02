@@ -33,6 +33,20 @@ describe("detect.mjs", () => {
     expect(runScript("detect.mjs", [], { ...CLEAN_ENV, CLAUDECODE: "1" }).json.harness).toBe("claude");
   });
 
+  it("reports harness claude when CLAUDECODE is set even if CODEX_HOME is exported", () => {
+    const env = { ...CLEAN_ENV, CLAUDECODE: "1", CODEX_HOME: "/tmp/codex" };
+    expect(runScript("detect.mjs", [], env).json.harness).toBe("claude");
+  });
+
+  it("reports harness cursor when CURSOR_AGENT is set even if CODEX_HOME is exported", () => {
+    const env = { ...CLEAN_ENV, CURSOR_AGENT: "1", CODEX_HOME: "/tmp/codex" };
+    expect(runScript("detect.mjs", [], env).json.harness).toBe("cursor");
+  });
+
+  it("reports harness codex when only CODEX_SANDBOX is set", () => {
+    expect(runScript("detect.mjs", [], { ...CLEAN_ENV, CODEX_SANDBOX: "seatbelt" }).json.harness).toBe("codex");
+  });
+
   it("reports harness cursor when CURSOR_AGENT is set", () => {
     expect(runScript("detect.mjs", [], { ...CLEAN_ENV, CURSOR_AGENT: "1" }).json.harness).toBe("cursor");
   });
