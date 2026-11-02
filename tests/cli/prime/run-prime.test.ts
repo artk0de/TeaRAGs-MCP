@@ -144,10 +144,11 @@ describe("runPrime — failure paths", () => {
 
     expect(openSession).not.toHaveBeenCalled();
     expect(writeMock).toHaveBeenCalledTimes(1);
-    expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
+    expect(writeMock.mock.calls[0][0]).toContain("readiness and freshness unconfirmed");
+    expect(output()).toContain("project `proj` · collection `code_proj`");
   });
 
-  it("emits qdrant-cold placeholder + cleans up when the digest read rejects after bootstrap", async () => {
+  it("retains addressing and cleans up when the digest read rejects after bootstrap", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
     const session = fakeSession(async () => {
@@ -157,13 +158,14 @@ describe("runPrime — failure paths", () => {
     await run({ session });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
-    expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
+    expect(writeMock.mock.calls[0][0]).toContain("readiness and freshness unconfirmed");
+    expect(output()).toContain("project `proj` · collection `code_proj`");
     expect(session.close).toHaveBeenCalled();
   });
 });
 
-// bd tea-rags-mcp-zqg1i: only a genuinely cold / unreachable Qdrant renders
-// the warm-up placeholder; any other status failure shows the real error.
+// An unreachable backend does not establish warm-up; other typed failures
+// still show their actual error, code and remedy.
 describe("runPrime — status failure that is not a cold Qdrant", () => {
   function sessionRejecting(error: unknown) {
     return fakeSession(async () => {
@@ -206,7 +208,7 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
     expect(output()).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
   });
 
-  it("keeps the warm-up placeholder when bootstrap finds Qdrant cold", async () => {
+  it("keeps known addressing when bootstrap cannot reach Qdrant", async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
 
@@ -216,7 +218,8 @@ describe("runPrime — status failure that is not a cold Qdrant", () => {
       },
     });
 
-    expect(output()).toContain("warm-up pending");
+    expect(output()).toContain("readiness and freshness unconfirmed");
+    expect(output()).toContain("project `proj` · collection `code_proj`");
   });
 
   it("renders an untyped error's message instead of 'warm-up pending'", async () => {

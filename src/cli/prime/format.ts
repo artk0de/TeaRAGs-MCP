@@ -1,3 +1,4 @@
+import { formatAgentDigest } from "../../bootstrap/prime-agent.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason } from "./types.js";
 
@@ -10,7 +11,8 @@ const REFRESH_LINE = '→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh 
  */
 export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
   if ("kind" in input) {
-    return formatFailure(input);
+    const failure = formatFailure(input);
+    return input.clientUpdateHint ? `${failure}tea-rags client: ${input.clientUpdateHint}\n` : failure;
   }
   const blocks: string[] = [input.digest.trimEnd()];
   if (input.agent === true) {
@@ -43,9 +45,16 @@ function formatFailure(reason: PrimeFailureReason): string {
     case "path-not-found":
       return `# tea-rags prime\nPath not found: ${reason.path}\n`;
     case "qdrant-cold":
-      return (
-        `# tea-rags prime — ${reason.path}\n` +
-        `Qdrant warm-up pending — index queries will be available after MCP server attaches.\n`
+      return formatAgentDigest(
+        {
+          path: reason.path,
+          projectName: reason.registry?.name ?? null,
+          registry: reason.registry,
+          status: null,
+          metrics: null,
+          drift: null,
+        },
+        new Date(),
       );
     case "not-registered":
       return `# tea-rags prime — ${reason.path}\nnot indexed. Run \`/tea-rags:index\` to index this codebase.\n`;

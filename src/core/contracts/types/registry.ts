@@ -7,6 +7,9 @@
 import type { CollectionAlias } from "./collection-identity.js";
 import type { LanguageCodeVersions } from "./language.js";
 
+/** Persisted embedded-backend sentinel shared by registry replay and the daemon adapter. */
+export const EMBEDDED_MARKER = "embedded";
+
 /**
  * Valid project-alias regex. Constraints: lowercase letters, digits, dash,
  * underscore; must start with letter or digit; max 64 chars.

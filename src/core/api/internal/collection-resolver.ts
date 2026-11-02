@@ -20,7 +20,7 @@ import type {
   ResolveInput,
 } from "../../contracts/types/registry.js";
 import type { WorkingTree } from "../../contracts/types/working-tree.js";
-import { CollectionNotFoundError } from "../../domains/explore/index.js";
+import { CollectionNotFoundError } from "../../domains/explore/errors/index.js";
 import { collectionAliasOfRegistryEntry, resolveCollectionName } from "../../primitives/ids/index.js";
 import {
   CollectionNotProvidedError,
@@ -28,7 +28,7 @@ import {
   ProjectNotRegisteredError,
   StaleProjectAliasError,
   SubmoduleNotIndexedError,
-} from "../public/index.js";
+} from "../public/errors.js";
 
 /** Declared in `contracts/types/registry.ts`; re-exported for this file's callers. */
 export type { ResolveInput };
