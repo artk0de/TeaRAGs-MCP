@@ -38,9 +38,24 @@ export function isRustTestOnlyItem(node: AstNode, code: string): boolean {
 /**
  * Ids of a test-only item outside a test module hang under the file subject
  * as its full path: `lib.smoke` for a top-level `#[test] fn smoke` in
- * `src/lib.rs`, `lib.fixture` for a top-level `#[cfg(test)] fn fixture`.
+ * `src/lib.rs`, `lib.fixture` for a top-level `#[cfg(test)] fn fixture`. No
+ * noise floor: the item is test code however short, and no other chunk would
+ * carry it — dropped, it would land in a production chunk (bd
+ * tea-rags-mcp-52wk3.9).
  */
-const RUST_INLINE_ITEM_VOCABULARY: ScopeChunkVocabulary = { ...TEST_SCOPE_CHUNK_VOCABULARY, idPath: "namespace" };
+const RUST_INLINE_ITEM_VOCABULARY: ScopeChunkVocabulary = {
+  ...TEST_SCOPE_CHUNK_VOCABULARY,
+  idPath: "namespace",
+  minSetupContent: 0,
+};
+
+/**
+ * A claimed test module the default vocabulary yields no chunk for (its own
+ * lines under the noise floor, no test function) is still test code: read
+ * again without the floor, so its rows reach a `test_setup` chunk instead of a
+ * production one (bd tea-rags-mcp-52wk3.9).
+ */
+const CLAIMED_TEST_MODULE_VOCABULARY: ScopeChunkVocabulary = { ...TEST_SCOPE_CHUNK_VOCABULARY, minSetupContent: 0 };
 
 /** One item's source as a chunk carries it: rows, and the text of those rows. */
 export interface RustInlineItemSource {
@@ -253,11 +268,10 @@ export function rustTestScopeChunks(
   filePath: string,
   config: HookChunkingConfig,
 ): BodyChunkResult[] {
-  return produceTestScopeChunks(
-    buildRustTestScope(containerNode, code),
-    rustTestIdSubject(containerNode, filePath),
-    config,
-  );
+  const scope = buildRustTestScope(containerNode, code);
+  const subject = rustTestIdSubject(containerNode, filePath);
+  const chunks = produceTestScopeChunks(scope, subject, config);
+  return chunks.length > 0 ? chunks : produceTestScopeChunks(scope, subject, config, CLAIMED_TEST_MODULE_VOCABULARY);
 }
 
 /**
@@ -292,7 +306,7 @@ export function buildRustInlineItemScope(node: AstNode, subject: string, itemSou
   return root;
 }
 
-/** The chunk of one test-only item outside a test module (none when the kernel drops it as noise). */
+/** The chunk of one test-only item outside a test module. */
 export function rustInlineItemChunks(
   node: AstNode,
   itemSource: RustInlineItemSource,

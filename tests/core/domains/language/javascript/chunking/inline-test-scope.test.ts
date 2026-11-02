@@ -140,5 +140,56 @@ if (process.env.X) {
   });
 });
 
+/** A chunk whose type sets `payload.isTest` — anything else is production code. */
+const isTestChunk = (chunk: { metadata: { chunkType?: string } }): boolean =>
+  chunk.metadata.chunkType === "test" || chunk.metadata.chunkType === "test_setup";
+
+describe("TreeSitterChunker — an in-source block never becomes production code (52wk3.9)", () => {
+  const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+
+  const UNRECOGNISED_CALL = 'import.meta.vitest.it("t", () => expect(1).toBe(1));';
+  const TINY_EXAMPLE = 'it("t", () => {});';
+  const topLevel = (body: string): string =>
+    `export function add(a, b) {\n  const total = a + b;\n  return total;\n}\n\nif (import.meta.vitest) {\n  ${body}\n}\n`;
+  const nested = (body: string): string =>
+    `export function scale(value) {\n  const scaled = value * 3;\n  if (import.meta.vitest) {\n    ${body}\n  }\n  return scaled;\n}\n`;
+  const productionHolding = (chunks: { content: string; metadata: { chunkType?: string } }[], text: string): string[] =>
+    chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes(text)).map((c) => c.content);
+
+  const SHORT_SETUP_SUITE = 'describe("a suite holding only a short fixture", () => {\n    const x = 1;\n  });';
+
+  for (const [label, body, marker] of [
+    ["a call the DSL reader does not recognise", UNRECOGNISED_CALL, 'it("t"'],
+    ["one tiny example", TINY_EXAMPLE, 'it("t"'],
+    ["a suite whose only setup is under the noise floor", SHORT_SETUP_SUITE, "const x = 1;"],
+  ] as const) {
+    it(`chunks a top-level block with ${label} as test code`, async () => {
+      const chunks = await chunker.chunk(topLevel(body), "src/math.js", "javascript");
+
+      expect(chunks.filter((c) => c.metadata.chunkType === "test" && c.content.includes(marker))).not.toHaveLength(0);
+      expect(productionHolding(chunks, "import.meta.vitest")).toEqual([]);
+      expect(productionHolding(chunks, marker)).toEqual([]);
+      expect(chunks.find((c) => c.metadata.symbolId === "add")?.content).toContain("return total;");
+    });
+
+    it(`chunks a block with ${label} inside a function body as test code`, async () => {
+      const chunks = await chunker.chunk(nested(body), "src/math.js", "javascript");
+
+      expect(chunks.filter((c) => c.metadata.chunkType === "test" && c.content.includes(marker))).not.toHaveLength(0);
+      expect(productionHolding(chunks, "import.meta.vitest")).toEqual([]);
+      expect(productionHolding(chunks, marker)).toEqual([]);
+      expect(chunks.some((c) => c.metadata.symbolId === "scale" && c.content.includes("return scaled;"))).toBe(true);
+    });
+  }
+
+  it("ids a block the DSL reader yields nothing for as the vitest scope, under the file subject", async () => {
+    const chunks = await chunker.chunk(topLevel(UNRECOGNISED_CALL), "src/math.js", "javascript");
+
+    const holders = chunks.filter((c) => c.content.includes("import.meta.vitest.it"));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId])).toEqual([["test", "math.vitest"]]);
+  });
+});
+
 /** Output of this fixture before Vitest in-source support, recorded on the base commit. */
 const PLAIN_IF_BASELINE = [{ chunkType: "function", symbolId: "init", startLine: 1, endLine: 6 }];

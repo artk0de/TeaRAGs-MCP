@@ -5,6 +5,10 @@ import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/
 import { classify } from "../../../../../../src/core/primitives/paths/file-classification/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
+/** A chunk whose type sets `payload.isTest` — anything else is production code. */
+const isTestChunk = (chunk: { metadata: { chunkType?: string } }): boolean =>
+  chunk.metadata.chunkType === "test" || chunk.metadata.chunkType === "test_setup";
+
 describe("TreeSitterChunker — Rust test scopes", () => {
   let chunker: TreeSitterChunker;
 
@@ -293,11 +297,12 @@ mod slow {
     expect(chunkHolding(chunks, "pub fn production_helper")?.metadata.chunkType).toBe("function");
   });
 
-  // Pinned boundary: only chunkable containers (function / impl / trait /
-  // struct / enum / mod / macro) can be claimed. A top-level test-only `const`
-  // (or `use`, which never joins any chunk) is not one, so it stays in the
-  // module remainder with its generic label.
-  it("leaves a top-level test-only const in the module remainder", async () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-52wk3.9): an inline test node never
+  // yields a production chunk. A top-level test-only `const` used to stay in
+  // the production module remainder with its generic label; it is now its own
+  // `test_setup` chunk, ided under the file subject. (`use` still never joins
+  // any chunk.)
+  it("chunks a top-level test-only const as its own test setup, out of the module remainder", async () => {
     const code = `#[cfg(test)]
 const FIXTURE_TABLE: [usize; 6] = [10, 20, 30, 40, 50, 60];
 
@@ -312,9 +317,12 @@ pub fn other_production_value(input: usize) -> usize {
     const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
     const holder = chunkHolding(chunks, "const FIXTURE_TABLE");
 
-    expect(holder).toBeDefined();
-    expect(holder?.metadata.chunkType).not.toBe("test");
-    expect(holder?.metadata.chunkType).not.toBe("test_setup");
+    expect(holder?.metadata.chunkType).toBe("test_setup");
+    expect(holder?.metadata.symbolId).toBe("lib.FIXTURE_TABLE");
+    expect(holder?.startLine).toBe(1);
+    expect(
+      chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes("FIXTURE_TABLE")).map((c) => c.content),
+    ).toEqual([]);
   });
 });
 
@@ -521,3 +529,89 @@ describe("Rust test files by path", () => {
     expect(classify("src/foo/tests.rs").isTest).toBe(true);
   });
 });
+
+describe("TreeSitterChunker — a short Rust inline test node never becomes production code (52wk3.9)", () => {
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  });
+
+  const PRODUCTION = `pub fn production_value(input: usize) -> usize {
+    input.saturating_mul(2).saturating_add(1)
+}
+
+pub fn other_production_value(input: usize) -> usize {
+    input.saturating_mul(3).saturating_add(2)
+}
+`;
+
+  const productionHolding = (chunks: { content: string; metadata: { chunkType?: string } }[], text: string): string[] =>
+    chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes(text)).map((c) => c.content);
+
+  it("chunks a short top-level #[cfg(test)] fixture fn as one test setup chunk", async () => {
+    const code = `#[cfg(test)]\nfn fixture() -> usize { 7 }\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    const holders = chunks.filter((chunk) => chunk.content.includes("fn fixture"));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId, c.startLine, c.endLine])).toEqual([
+      ["test_setup", "lib.fixture", 1, 2],
+    ]);
+    expect(productionHolding(chunks, "fn fixture")).toEqual([]);
+    expect(productionHolding(chunks, "#[cfg(test)]")).toEqual([]);
+  });
+
+  it("chunks a short top-level #[cfg(test)] const as one test setup chunk", async () => {
+    const code = `#[cfg(test)]\nconst LIMIT: usize = 3;\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    const holders = chunks.filter((chunk) => chunk.content.includes("const LIMIT"));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId, c.startLine, c.endLine])).toEqual([
+      ["test_setup", "lib.LIMIT", 1, 2],
+    ]);
+    expect(productionHolding(chunks, "const LIMIT")).toEqual([]);
+    expect(productionHolding(chunks, "#[cfg(test)]")).toEqual([]);
+  });
+
+  it("chunks a short top-level #[test] fn as one test chunk", async () => {
+    const code = `#[test]\nfn t() {}\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    const holders = chunks.filter((chunk) => chunk.content.includes("fn t()"));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId, c.startLine, c.endLine])).toEqual([
+      ["test", "lib.t", 1, 2],
+    ]);
+    expect(productionHolding(chunks, "#[test]")).toEqual([]);
+  });
+
+  it("chunks a short #[cfg(test)] module with no test as one test setup chunk under its module id", async () => {
+    const code = `#[cfg(test)]\nmod tests { const X: u8 = 1; }\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    const holders = chunks.filter((chunk) => chunk.content.includes("const X"));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId])).toEqual([["test_setup", "lib.tests"]]);
+    expect(productionHolding(chunks, "const X")).toEqual([]);
+    expect(productionHolding(chunks, "mod tests")).toEqual([]);
+  });
+
+  it("keeps a short production fn and const exactly as before", async () => {
+    const code = `fn seven() -> usize { 7 }\n\nconst LIMIT: usize = 3;\n\n${PRODUCTION}`;
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    expect(
+      chunks.map((c) => ({
+        chunkType: c.metadata.chunkType,
+        symbolId: c.metadata.symbolId,
+        startLine: c.startLine,
+        endLine: c.endLine,
+      })),
+    ).toEqual(SHORT_PRODUCTION_BASELINE);
+  });
+});
+
+/** Output of the short-production fixture before bd tea-rags-mcp-52wk3.9, recorded on the base commit. */
+const SHORT_PRODUCTION_BASELINE = [
+  { chunkType: "function", symbolId: "production_value", startLine: 1, endLine: 7 },
+  { chunkType: "function", symbolId: "other_production_value", startLine: 9, endLine: 11 },
+];

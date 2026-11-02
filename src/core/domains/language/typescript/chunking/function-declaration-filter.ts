@@ -36,6 +36,7 @@ import {
   constObjectNamespaceContainerName,
   moduleLevelFunctionDeclarationNames,
 } from "../../../../primitives/ids/index.js";
+import { inlineTestBlockClassifier } from "./test-scope-chunker.js";
 
 /** The declaration node types a `variable_declarator` can sit under. */
 const DECLARATION_TYPES = new Set(["lexical_declaration", "variable_declaration"]);
@@ -85,7 +86,9 @@ export const typescriptFunctionDeclarationFilterHook: ChunkingHook = {
  * already, and this classifier exists only for the shape that is not.
  */
 export const typescriptChunkClassifier: LanguageChunkClassifier = {
-  classifyNode(node: AstNode): ChunkDecision {
+  classifyNode(node: AstNode, filePath?: string): ChunkDecision {
+    // A Vitest in-source block is test code however short (bd tea-rags-mcp-52wk3.9).
+    if (node.type === "if_statement") return inlineTestBlockClassifier.classifyNode(node, filePath);
     if (!DECLARATION_TYPES.has(node.type)) return { kind: "passthrough" };
     const names = moduleLevelFunctionDeclarationNames(node);
     if (names.length === 0) return { kind: "passthrough" };

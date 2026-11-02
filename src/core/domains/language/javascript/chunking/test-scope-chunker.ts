@@ -32,8 +32,16 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook, HookContext, TestScope } from "../../../../contracts/types/chunker.js";
-import { produceTestScopeChunks } from "../../kernel/index.js";
+import type {
+  BodyChunkResult,
+  ChunkDecision,
+  ChunkingHook,
+  HookChunkingConfig,
+  HookContext,
+  LanguageChunkClassifier,
+  TestScope,
+} from "../../../../contracts/types/chunker.js";
+import { produceTestScopeChunks, TEST_SCOPE_CHUNK_VOCABULARY, type ScopeChunkVocabulary } from "../../kernel/index.js";
 import { isInlineTestNode } from "../inline-tests.js";
 import { getCallDisplayName, getCallName, isTestFile } from "./test-dsl-filter.js";
 
@@ -268,6 +276,50 @@ export function buildInlineTestScopeTree(ifNode: AstNode, code: string): TestSco
   return scope;
 }
 
+/**
+ * An in-source block the default vocabulary yields no chunk for — calls the
+ * DSL reader does not recognise (`import.meta.vitest.it(…)`), or own lines
+ * under the noise floor — is still test code: read again without the floor,
+ * its lines one `test` chunk under the `vitest` scope id, so the block never
+ * falls through to a production chunk (bd tea-rags-mcp-52wk3.9).
+ */
+const IN_SOURCE_BLOCK_VOCABULARY: ScopeChunkVocabulary = {
+  ...TEST_SCOPE_CHUNK_VOCABULARY,
+  minSetupContent: 0,
+  setupChunkType: "test",
+};
+
+/** The chunks of a Vitest in-source block; none only for a block with no line of its own. */
+export function inlineTestBlockChunks(
+  ifNode: AstNode,
+  code: string,
+  filePath: string,
+  config: HookChunkingConfig,
+): BodyChunkResult[] {
+  const scope = buildInlineTestScopeTree(ifNode, code);
+  const subject = inlineTestSubjectName(filePath);
+  const chunks = produceTestScopeChunks(scope, subject, config);
+  return chunks.length > 0 ? chunks : produceTestScopeChunks(scope, subject, config, IN_SOURCE_BLOCK_VOCABULARY);
+}
+
+/**
+ * Lifts a top-level Vitest in-source block past the engine's 50-character
+ * noise gate, which would otherwise fold a tiny block into a production chunk
+ * before `jsTestScopeChunkerHook` sees it. The hook still claims the block; this
+ * decision's chunk — the whole block, `test`, under the `vitest` scope id —
+ * stands only where the hook yields nothing (a block with no line of its own).
+ * A classifier is handed no source, so the recogniser reads the node's own
+ * text at its file offsets.
+ */
+export const inlineTestBlockClassifier: LanguageChunkClassifier = {
+  classifyNode(node: AstNode, filePath?: string): ChunkDecision {
+    if (filePath === undefined || node.type !== "if_statement") return { kind: "passthrough" };
+    if (!isInlineTestNode(node, " ".repeat(node.startIndex) + node.text)) return { kind: "passthrough" };
+    const symbolId = `${inlineTestSubjectName(filePath)}${TEST_SCOPE_CHUNK_VOCABULARY.idSeparator}${INLINE_TEST_SCOPE_NAME}`;
+    return { kind: "emit", chunks: [{ name: INLINE_TEST_SCOPE_NAME, symbolId, chunkType: "test" }] };
+  },
+};
+
 // ── Core: produceScopeChunks ─────────────────────────────────────────
 
 /** The chunks of one top-level container call: its scope tree, emitted by the kernel. */
@@ -286,18 +338,29 @@ function produceDslContainerChunks(ctx: HookContext): BodyChunkResult[] {
   return produceScopeChunks(ctx.containerNode, ctx.code, ctx.config);
 }
 
+/**
+ * A Vitest in-source block nested in a function body holding no DSL call the
+ * engine extracts is emitted as a LEAF child of the function — no hook ever
+ * sees it as a container — so it is labelled `test` here, under the id the
+ * engine composes for it, instead of reaching the index as production code
+ * (bd tea-rags-mcp-52wk3.9).
+ */
+function labelInlineTestChildren(ctx: HookContext): void {
+  ctx.validChildren.forEach((child, index) => {
+    if (isInlineTestNode(child, ctx.code)) ctx.methodChunkTypes.set(index, "test");
+  });
+}
+
 // ── Hook export ──────────────────────────────────────────────────────
 
 export const jsTestScopeChunkerHook: ChunkingHook = {
   name: "js-test-scope-chunker",
 
   process(ctx: HookContext): void {
-    const chunks = isInlineTestNode(ctx.containerNode, ctx.code)
-      ? produceTestScopeChunks(
-          buildInlineTestScopeTree(ctx.containerNode, ctx.code),
-          inlineTestSubjectName(ctx.filePath),
-          ctx.config,
-        )
+    const inlineTestBlock = isInlineTestNode(ctx.containerNode, ctx.code);
+    if (!inlineTestBlock) labelInlineTestChildren(ctx);
+    const chunks = inlineTestBlock
+      ? inlineTestBlockChunks(ctx.containerNode, ctx.code, ctx.filePath, ctx.config)
       : produceDslContainerChunks(ctx);
 
     if (chunks.length > 0) {

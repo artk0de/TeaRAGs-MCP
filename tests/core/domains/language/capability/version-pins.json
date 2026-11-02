@@ -38,7 +38,7 @@
   "javascript": {
     "chunking": {
       "version": 4,
-      "digest": "sha256:df01d05191fee73332b7b42d242d202b1a0ede30b816cb2e6133f2c04a4bcd8e"
+      "digest": "sha256:752df5cdb4f89ce1607d508b5f05eaca3038d577aff98fb4b661010e74158ee3"
     },
     "walker": {
       "version": 6,
@@ -70,11 +70,11 @@
   "rust": {
     "chunking": {
       "version": 5,
-      "digest": "sha256:320e742f2e877ac06200e4382b04f8c8313e0bf6c088111e10ee6ea552c5f484"
+      "digest": "sha256:eff314bca2e32cf5f8d3d74a522f5390d48ef254ec94ca12ef7a0df8ee34480b"
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:067147a911f08f84f061fb2df13330b92264f484816cfd90e0d841d73ff172d4"
+      "digest": "sha256:28a93dda66e12d4cce8f68308786e52deb6b889886f11d9e0219cb9acf840c9e"
     }
   },
   "swift": {
@@ -90,7 +90,7 @@
   "typescript": {
     "chunking": {
       "version": 4,
-      "digest": "sha256:b58e8a8b1855e5df070090e3d9f1371bda98cda3fd3b225d65a1b40f11d993df"
+      "digest": "sha256:036b98d44884af291488f102b0687cd9c6930ecd34b5d8a913873a4056796d74"
     },
     "walker": {
       "version": 17,

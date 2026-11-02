@@ -101,6 +101,15 @@ const rustChunkerHooks: LanguageChunkerHooks = {
     "enum_item",
     "mod_item",
     "macro_definition",
+    // Candidates only as a TEST-ONLY item (`#[cfg(test)] const LIMIT: usize = 3;`):
+    // `rustTestDslFilterHook` rejects every other one, so discovery and the
+    // module remainder treat production declarations exactly as before, and the
+    // classifier gives the test-only one its `test_setup` chunk (bd
+    // tea-rags-mcp-52wk3.9).
+    "const_item",
+    "static_item",
+    "type_item",
+    "union_item",
   ],
   // Keep impl blocks in the child-container walk so methods retain the
   // implementing header when they are nested below a module. The impl name
