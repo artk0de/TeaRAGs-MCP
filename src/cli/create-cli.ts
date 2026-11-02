@@ -12,6 +12,7 @@ import { projectsCommand } from "./commands/projects.js";
 import { qdrantCommand } from "./commands/qdrant.js";
 import { resolveCodegraphResidualCommand } from "./commands/resolve-codegraph-residual.js";
 import { resourceCommand } from "./commands/resource.js";
+import { rustcDriverCommand } from "./commands/rustc-driver.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
 import { updateCommand } from "./commands/update.js";
@@ -40,6 +41,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(indexCodebaseCommand)
     .command(resolveCodegraphResidualCommand)
     .command(llamaServerCommand)
+    .command(rustcDriverCommand)
     .command(autoUpdateCommand)
     .completion(
       "completion",

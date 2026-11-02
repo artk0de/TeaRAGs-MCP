@@ -89,7 +89,7 @@ export function parseRustcDriverVersion(stdout: string): RustcDriverVersion | nu
 
 /** The one install-hint line shown when the driver is neither found nor buildable. */
 export function rustcDriverInstallHint(pin: string): string {
-  return `rustc call-site driver unavailable — install with 'rustup toolchain install ${pin} -c rustc-dev,rust-src' (≈1.5 GB), or set ${RUSTC_DRIVER_PATH_ENV}`;
+  return `rustc call-site driver unavailable — install with 'tea-rags rustc-driver install', build it with 'rustup toolchain install ${pin} -c rustc-dev,rust-src' (≈1.5 GB), or set ${RUSTC_DRIVER_PATH_ENV}`;
 }
 
 /** First usable driver in the mandated tier order, or null. Never throws. */
@@ -215,13 +215,16 @@ export function defaultRustcDriverDiscoveryDeps(
   };
 }
 
+/** Runs a host command; `env` replaces the inherited environment when given. */
 export function runRustcDriverHostCommand(
   command: string,
   args: readonly string[],
   timeoutMs: number,
+  env?: Readonly<Record<string, string | undefined>>,
 ): RustcDriverCommandOutcome {
   try {
     const result = spawnSync(command, args, {
+      ...(env ? { env } : {}),
       timeout: timeoutMs,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
