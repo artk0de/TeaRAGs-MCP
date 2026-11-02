@@ -55,6 +55,7 @@ describe("TracePathOps danger rerank under the index's history clock", () => {
     expect(historyAnchor.anchorSecOf).toHaveBeenCalledWith("c");
     expect(reranker.rerank).toHaveBeenCalledWith(expect.anything(), "hotspots", "trace_path", {
       reorder: false,
+      signalLevel: "chunk",
       now: HEAD_SEC,
     });
   });
@@ -62,6 +63,9 @@ describe("TracePathOps danger rerank under the index's history clock", () => {
   it("a wall-clock index passes exactly the options it passed before", async () => {
     const { ops, reranker } = makeOps(undefined);
     await ops.tracePath({ collection: "c", from: "A", to: "B", rerank: "hotspots" });
-    expect(reranker.rerank).toHaveBeenCalledWith(expect.anything(), "hotspots", "trace_path", { reorder: false });
+    expect(reranker.rerank).toHaveBeenCalledWith(expect.anything(), "hotspots", "trace_path", {
+      reorder: false,
+      signalLevel: "chunk",
+    });
   });
 });

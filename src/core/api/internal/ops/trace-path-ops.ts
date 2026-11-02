@@ -543,6 +543,9 @@ export class TracePathOps {
     const historyAnchorSec = await this.deps.historyAnchor?.anchorSecOf(collectionName);
     const annotated = await this.deps.reranker.rerank(rerankInput, preset, "trace_path", {
       reorder: false,
+      // A path step is a symbol: chunk-level scoring whatever the preset's own
+      // `signalLevel` (the default of the list-ranking tools, 9z8ae).
+      signalLevel: "chunk",
       ...historyClockRerankOption({ historyAnchorSec }),
     });
     const dangerByNode = new Map<FileScopedSymbolId, StepDanger>();

@@ -20,13 +20,12 @@ import { ExploreFacade } from "../../../../../src/core/api/internal/facades/expl
 import { IndexHistoryAnchorResolver } from "../../../../../src/core/api/internal/infra/index-history-anchor.js";
 import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
 import { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
-import { GitTrajectory } from "../../../../../src/core/domains/trajectory/git.js";
 import {
   GIT_FILTER_PRESETS,
   gitDerivedSignals,
   gitPayloadSignalDescriptors,
 } from "../../../../../src/core/domains/trajectory/git/index.js";
-import { TrajectoryRegistry } from "../../../../../src/core/domains/trajectory/index.js";
+import { GitTrajectory, TrajectoryRegistry } from "../../../../../src/core/domains/trajectory/index.js";
 
 const DAY = 86_400;
 const ALICE = { name: "Alice", email: "alice@example.com" };
@@ -143,6 +142,7 @@ describe("head-anchored index: the request clock is the indexed commit's time", 
     const rerank = vi.spyOn(reranker, "rerank");
     await facade.findSymbol({ collection: "col", relativePath: "a.ts", rerank: { custom: { recency: 1 } } });
     expect(rerank).toHaveBeenCalledWith(expect.anything(), { custom: { recency: 1 } }, "semantic_search", {
+      signalLevel: "chunk",
       now: HEAD_SEC,
     });
   });

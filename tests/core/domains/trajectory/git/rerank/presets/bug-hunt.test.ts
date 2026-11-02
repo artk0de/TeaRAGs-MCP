@@ -75,7 +75,7 @@ describe("BugHuntPreset", () => {
     expect(preset.overlayMask.chunk).toContain("recentContributorCount");
   });
 
-  it("does not set signalLevel (defaults to chunk)", () => {
-    expect(preset.signalLevel).toBeUndefined();
+  it("ranks at file level by default (bd tea-rags-mcp-9z8ae: backtest is file-level)", () => {
+    expect(preset.signalLevel).toBe("file");
   });
 });

@@ -107,6 +107,11 @@ history carry most of the signal, followed by change density and recency.
 Volatility and relative churn were redundant with churn and were dropped. Used
 by `/tea-rags:bug-hunt`.
 
+The backtest labels files, not methods, so `bugHunt` ranks at file level by
+default (`signalLevel: "file"`): `semantic_search`, `hybrid_search` and
+`rank_chunks` return one row per file. Pass `level: "chunk"` for per-method
+rows.
+
 ### `dangerous`
 
 ```
@@ -119,6 +124,9 @@ Calibrated by the same backtest as `bugHunt`; volatility was redundant with
 churn and dropped. `knowledgeSilo` stays at 0.1 as the bus-factor term: it is a
 design choice, since the backtest does not show it predicting fixes consistently
 (opposite sign on the two corpora). Low `similarity` weight — signal dominates over relevance.
+
+Like `bugHunt`, it ranks at file level by default (`signalLevel: "file"`, the
+level of the backtest); pass `level: "chunk"` for per-method rows.
 
 ### `techDebt`
 
@@ -230,7 +238,8 @@ Some presets are `signalLevel: "file"` — they intentionally use file-level
 signals (ownership, age) because chunk-level would be too noisy. Others use
 chunk-level when available (churn, bug-fix rate per function).
 
-File-level presets: `proven`, `ownership`, `onboarding`, `securityAudit`.
+File-level presets: `proven`, `ownership`, `onboarding`, `securityAudit`,
+`bugHunt`, `dangerous`. An explicit `level: "chunk"` overrides the preset.
 All others prefer chunk-level data when present, falling back to file-level.
 
 ## See Also

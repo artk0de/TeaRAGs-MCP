@@ -86,7 +86,7 @@ describe("DangerousPreset", () => {
     expect(preset.overlayMask.chunk).toContain("bugFixRate");
   });
 
-  it("does not set signalLevel (defaults to blended)", () => {
-    expect(preset.signalLevel).toBeUndefined();
+  it("ranks at file level by default (bd tea-rags-mcp-9z8ae: backtest is file-level)", () => {
+    expect(preset.signalLevel).toBe("file");
   });
 });
