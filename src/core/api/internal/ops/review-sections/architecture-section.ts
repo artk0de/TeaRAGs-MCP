@@ -88,6 +88,7 @@ import {
 } from "../architecture-report-ops.js";
 import {
   collapsePersistingFindings,
+  filesWithChangedDependencyEdges,
   measureArchitectureViolationDelta,
   resolvedChangeSubjects,
   type ArchitectureViolationDelta,
@@ -603,11 +604,22 @@ export async function measureChangeViolationDelta(
         }
       : {}),
   };
+  const { renamedFrom } = lookups.scope;
+  const overlaidFacts = applyEdgeOverlay(facts, overlay, { renamedFrom });
   const [base, overlaid] = await Promise.all([
     ops.judge(facts, request, history),
-    ops.judge(applyEdgeOverlay(facts, overlay, { renamedFrom: lookups.scope.renamedFrom }), request, history),
+    ops.judge(overlaidFacts, request, history),
   ]);
-  const delta = measureArchitectureViolationDelta(base.violations, overlaid.violations, lookups.scope.renamedFrom);
+  const edgeChangedFiles = new Set<string>();
+  for (const relPath of filesWithChangedDependencyEdges(
+    facts.production.graph.edges,
+    overlaidFacts.production.graph.edges,
+  )) {
+    edgeChangedFiles.add(renamedFrom?.get(relPath) ?? relPath);
+  }
+  const delta = measureArchitectureViolationDelta(base.violations, overlaid.violations, renamedFrom, {
+    edgeChangedFiles,
+  });
   return { delta, tiers: new ArchitectureViolationTierLookup(base.violations, delta) };
 }
 
