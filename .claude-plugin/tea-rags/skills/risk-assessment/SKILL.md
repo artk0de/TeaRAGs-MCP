@@ -8,7 +8,8 @@ description: >-
   off in X" (dinopowers:systematic-debugging), NOT refactoring candidates ("what
   to refactor in X", "cleanup X" → explore), NOT risks of named `Class#method`
   symbols (explore PRE-GEN). Answer: phases 0–5, Critical/High tables (Symbol,
-  File:Line, Risk Type, Key Signals, Tests), final Output: line
+  File:Line, Risk Type, Key Signals, Tests, Commits) + case cards, Next steps,
+  final Output: line
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
@@ -42,17 +43,31 @@ block. `Output:` = last line, verbatim:
 1b. STRUCTURAL — same parallel block, pathPattern=<resolved>
 2. MERGE — negativeIds dedup, never manual filtering
 3. EXPAND — healthy-demoted candidates
-4. ENRICH — tiers, fix cost, signal pairs
+4. ENRICH — bodies of every Critical/High row, tiers, fix cost, signal pairs
+4b. COMMITS — ONE Bash (enrich.md step 7): `git remote get-url origin; git status --porcelain -- <files>;` + per Critical/High row `echo "== <#>"; git log -L<start>,<end>:<file> -s --no-merges -n 20 --format='%H %as %s'` (file row → `git log --follow … -- <file>`); ≤3 per row, bug-fix first, cosmetic never
+    print: commits: <rows> rows, remote <host|none>
 5. OUTPUT:
+## Overview
+- <module/dir> — <what goes wrong there, 1 sentence>
 ## Critical
-| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+  Problem: <what breaks / what it threatens>
+  What's wrong: <what is wrong with the code itself>
+  Commits (<shown> of <total>, bug-fix first): - [<sha7>](<url>) <date> <subject> [— bug-fix]
 ## High
-| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+  (same three card lines per row)
 ## Structural risks   (codegraph active)
 ## Summary
+## Next steps
+| # | Case | Action | Call |
+→ Work through the cases here and now (starting with #1), or file a task per case?
 Hand-off: pathPattern + per-symbol File:Line + labels
-Output: Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) + Structural + Summary
+Output: Overview + Critical/High | Symbol | File:Line | Risk Type | Key Signals | Tests(path/none/unverified) | Commits + cards (Problem / What's wrong / Commits) + Structural + Summary + Next steps
 ```
+
+Card lines, `## Overview` and the `→` offer line print in the user's language;
+labels (`Problem:`, `What's wrong:`, `Commits`) stay as written.
 
 No `## Label maps` above → read
 `tea-rags://project/<alias>/metrics?language=<lang>&section=labelMap,resolve`
@@ -94,15 +109,19 @@ failed metrics / label-map read never stops the run: Phase 0 still resolves
 `pathPattern`, the skeleton prints whole, missing values `[planned; not run]`.
 
 **Lag ≠ unusable:** `changedFiles` / `pendingFiles` / drift on an answer =
-distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool over code. Row without `treeState` = current; `treeState`
-row → `find_symbol` re-call. Own checkout with `changedFiles` > 0 → incremental
-`index_codebase` now (drift `Run:` with `--force*` → `AskUserQuestion`, never
-awaited; print `--force not run; reads continue`; then keep working); subagent /
-linked worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag
-never licenses leaving tea-rags".
+distance index↔tree, never licence for Bash `cat` / `sed` / `head` or Read tool
+over code. Row without `treeState` = current; `treeState` row → `find_symbol`
+re-call. Own checkout with `changedFiles` > 0 → incremental `index_codebase` now
+(drift `Run:` with `--force*` → `AskUserQuestion`, never awaited; print
+`--force not run; reads continue`; then keep working); subagent / linked
+worktree → never reindex. Protocol: `tea-rags://guide/freshness` "Lag never
+licenses leaving tea-rags".
 
 1. **Execute YOURSELF** — never dispatch a subagent; you ARE one → run it.
-2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
+2. **Signals from overlay only — never `git log`, `git diff`, `git blame` for
+   them.** Sole git read: Phase 4 step 7 commit evidence (index stores no commit
+   list) — Critical/High rows only, one Bash call, line-scoped `-L`, never a
+   repo-wide log.
 3. **No built-in Search/Grep for code discovery** — tea-rags tools only.
 4. **Risk scans return signals only (`metaOnly: true`).** MERGE and EXPAND use
    metadata, overlay labels and chunk UUIDs. Reuse bodies already in context;
@@ -116,9 +135,9 @@ never licenses leaving tea-rags".
    all Critical UUIDs into one find_similar (vector math, order-free). Do NOT
    batch symbol names into one `hybrid_search` — BM25 scores the join as one bag
    of terms and the biggest-file domain takes every slot (see Phase 4 step 2).
-   Target: ≤17 calls domain scope, ≤22 broad scope (codegraph off: −1 / −2 — no
-   criticalPath). Phase 4 god-class attribution adds ≤5 (one outline per
-   `godModule` hit).
+   Target: ≤18 calls domain scope, ≤23 broad scope (codegraph off: −1 / −2 — no
+   criticalPath), commit evidence's one Bash call included. Phase 4 god-class
+   attribution adds ≤5 (one outline per `godModule` hit).
 
 ## Flow
 
@@ -129,8 +148,9 @@ never licenses leaving tea-rags".
 2. MERGE              → risk presets ONLY — structural results never enter tiers
 3. EXPAND             → find_similar from Critical only
 4. ENRICH             → find_symbol depth + test coverage + codegraph axis + fix cost
-                        + god-class attribution + classify
-5. OUTPUT             → top-10 risk map + structural risks + structural debt
+                        + god-class attribution + classify + commit evidence (git)
+5. OUTPUT             → overview + top-10 risk map with case cards + structural
+                        risks + structural debt + next steps
 ```
 
 ## Phase 0: SCOPE RESOLUTION
@@ -377,10 +397,11 @@ Add qualifying results as "Related risk" under parent Critical candidate.
 ## Phase 4: ENRICH
 
 **MANDATORY: read [references/enrich.md](./references/enrich.md) before Phase
-4** — Critical + High candidates (5–10 chunks), six steps in order:
+4** — Critical + High candidates (5–10 chunks), seven steps in order:
 
-1. Code review — reuse bodies in context; fetch only missing bodies needed for
-   candidate review in ONE `find_symbol(symbols: [...])` batch, never Read.
+1. Code review — every Critical/High row needs its body (`What's wrong:` line
+   reads it). Reuse bodies in context; fetch the rest in ONE
+   `find_symbol(symbols: [...])` batch, never Read.
 2. Test coverage — **stratified, one `hybrid_search` per domain cluster, NEVER
    one batched call** (batched BM25 fabricates "untested"); exact mirrored-path
    `find_symbol` preferred.
@@ -390,6 +411,8 @@ Add qualifying results as "Related risk" under parent Critical candidate.
    print
    `structural-violation <candidate> — <component> <family>: escalated, Risk Type tagged, top of its tier; fix cost per repair/<family>.md`.
 4. Fix-cost classifier. 5. God-class attribution. 6. Risk classification.
+5. Commit evidence — ONE Bash call, Critical/High rows only (literal script:
+   enrich.md step 7). Print `commits: <rows> rows, remote <host|none>`.
 
 ## Phase 5: OUTPUT
 
@@ -399,20 +422,32 @@ Top-10 risk map, sorted by tier → severity sum.
 Risk Assessment: [scope]
 Scanned: [N chunks across M presets], [K unique files]
 
+## Overview
+
+- [module/dir] — [what goes wrong there, from its rows' cards: 1 sentence]
+
 ## Critical (N/N presets)
 
-| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
-|---|--------|-----------|-----------|-------------|-------|
-| 1 | symbol() | file.ts:42 | Bug magnet, Untested | bugFix:58% concerning churn:high | none |
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+|---|--------|-----------|-----------|-------------|-------|---------|
+| 1 | symbol() | file.ts:42 | Bug attractor, Untested hotspot | bugFix:58% concerning churn:high | none | [abc1234](<url>) [def5678](<url>) |
+
+  Problem: [what breaks / what it threatens — from signals + commit subjects]
+  What's wrong: [what is wrong with the code itself — from its body]
+  Commits (3 of 14, bug-fix first):
+  - [abc1234](<url>) 2026-01-31 fix(x): [subject ≤72 chars] — bug-fix
+  - [def5678](<url>) 2026-01-12 [subject]
 
   Related risks (find_similar):
   - relatedFn() file.ts:85 — same pattern [bugFix:50% concerning]
 
 ## High (N-1/N presets)
 
-| # | Symbol | File:Line | Risk Type | Key Signals | Tests |
-|---|--------|-----------|-----------|-------------|-------|
-| 2 | symbol() | file.ts:149 | Fragile | volatility:erratic burst:extreme | 776 LOC |
+| # | Symbol | File:Line | Risk Type | Key Signals | Tests | Commits |
+|---|--------|-----------|-----------|-------------|-------|---------|
+| 2 | symbol() | file.ts:149 | Fragile | volatility:erratic burst:extreme | test/file.test.ts | [0a1b2c3](<url>) |
+
+  Problem: … / What's wrong: … / Commits (…): … — same card as Critical
 
 ## Medium (N-2/N) — [count] candidates
 
@@ -445,7 +480,45 @@ not assessed — codegraph off") when codegraph is off by that test.
 - Structural debt: [count] — [count] cheap, [count] also in a risk tier
 - Dominant risk type: [most common classification]
 - Recommendation: [one-sentence next step]
+
+## Next steps
+
+| # | Case | Action | Call |
+|---|------|--------|------|
+| 1 | symbol() file.ts:42 | root-cause the repeated fixes | Skill(tea-rags:bug-hunt) on symbol() |
+| 1 | symbol() file.ts:42 | cover with tests before any change | Skill(dinopowers:test-driven-development) |
+
+→ Work through the cases here and now (starting with #1), or file a task per case?
 ```
+
+**Card rules.** Every Critical/High row gets all three card lines; evidence
+only, no claim without it. `Problem:` — consequence for the system or its users,
+from signal pair + commit subjects. `What's wrong:` — the code defect seen in
+the body (mixed responsibilities, nested branches on error type, duplicated
+parsing…). Body not fetched → `What's wrong: [not reviewed]`, never a guess.
+`## Overview` groups rows by module/dir, one line each.
+
+**Commits column + card.** From step 7. Column = up to 3 linked short SHAs.
+`remote none` → bare SHAs, card says `no web remote — links omitted`; never
+build a URL from a guess. No commit in range → `—` and card
+`Commits: none in history window`.
+
+**Next steps — one row per (case, action), Critical first.** `#` = the case's
+row number in the risk tables, never renumbered — "start with #1" means risk row
+#1. Action by Risk Type / card:
+
+| Risk Type / card                                                                           | Action                                  | Call                                                                 |
+| ------------------------------------------------------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- |
+| Bug attractor, Fragile, Legacy minefield, Fragile legacy, Race condition                   | root-cause the repeated fixes           | `Skill(tea-rags:bug-hunt)` on the symbol                             |
+| `Tests` = `none`                                                                           | cover with tests before any change      | `Skill(dinopowers:test-driven-development)` on the symbol            |
+| Oversized, god-method / god-class, Coupling point, Emerging coupling, structural-violation | plan decomposition / boundary fix       | `Skill(tea-rags:refactoring-planning)` with `pathPattern` of the row |
+| blast-radius hub                                                                           | map dependents before touching          | `get_callers(symbolId, depth: 2)`                                    |
+| Toxic silo, Fragile silo                                                                   | knowledge transfer — owner reviews next | name `blameDominantAuthor` from the overlay                          |
+
+The `→` line is the answer's offer; the user picks. Both branches follow
+[../../rules/references/report-follow-up.md](../../rules/references/report-follow-up.md):
+read it in the turn the user answers. Never start a case or create a task before
+the answer.
 
 **Structural debt section** — present whenever Phase 1b ran. Sorted by (size ×
 cheapness): cheap decomposition candidates on top. `Also risk?` is the only link

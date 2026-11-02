@@ -1,0 +1,3 @@
+Environment: Synthetic TypeScript repository at /Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-v2/current/A1/workspace. All five source files are indexed; codegraph is enabled and all local imports resolve. No source changes are requested in this evaluation.
+
+Audit the architecture of src/auth — dependency and layer violations, silent coupling and dependency-norm misfits. Diagnose structural causes from the graph evidence. Do not edit files.

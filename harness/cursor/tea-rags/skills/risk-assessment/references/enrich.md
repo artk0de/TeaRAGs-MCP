@@ -9,12 +9,12 @@ Loaded by `SKILL.md` Phase 4. Critical + High candidates only.
 For **Critical and High** candidates (typically 5-10 chunks):
 
 **1. Code review** — Phase 1/1b scans contain metadata and signals only
-(`metaOnly: true`). For Critical/High candidates whose classification or review
-needs code, reuse bodies already in context (including EXPAND results). Collect
-only the remaining needed symbolIds into ONE
-`find_symbol(symbols: [<needed ids>], metaOnly: false)` batch; no body fetch for
-signal-only judgments or discarded candidates. Surrounding context →
-`find_symbol` (Rule 5), not Read. Never re-fetch an unedited body already held.
+(`metaOnly: true`). Every Critical/High row needs its body: the card's
+`What's wrong:` line describes the code, not the signals. Reuse bodies already
+in context (including EXPAND results). Collect the remaining Critical/High
+symbolIds into ONE `find_symbol(symbols: [<ids>], metaOnly: false)` batch; no
+body fetch for discarded candidates. Surrounding context → `find_symbol` (Rule
+5), not Read. Never re-fetch an unedited body already held.
 
 **2. Test coverage check — stratified, NEVER one batched call.**
 
@@ -170,3 +170,45 @@ diagnostics" for the full table.
 
 See [references/classification-tiers.md](./classification-tiers.md) for the full
 13-tier table.
+
+**7. Commit evidence** — Critical/High rows (+ Structural debt rows with
+`Also risk?` set). Index stores `taskIds` only, no commit list → git is the
+source; the ONLY git read in this skill. ONE Bash call, commands joined by `;`
+(runs in sh, zsh, fish), one `echo "== <#>"` marker per row:
+
+```text
+git remote get-url origin; git status --porcelain -- <file1> <file2> …; echo "== 1"; git log -L<startLine>,<endLine>:<file1> -s --no-merges -n 20 --format='%H %as %s'; echo "== 2"; git log --follow --no-merges -n 20 --format='%H %as %s' -- <file2>
+```
+
+- Method / chunk row (has `startLine`–`endLine`) → `-L<start>,<end>:<file>` —
+  history of those lines, not the whole file.
+- File row (`godModule` god-class / god-module) → `--follow -- <file>`.
+- File listed by `git status --porcelain` → keep the `-L` result, card adds
+  `(uncommitted edits — ranges may be shifted)`.
+- Never a repo-wide `git log`, never `git blame`, never one call per row.
+
+Three commit classes per row:
+
+- **bug-fix** — subject matches `fix:` / `fix(<scope>):` / `hotfix:`, `[Fix]`
+  `[Bug]` `[Hotfix]` `[Bugfix]`, `<TICKET-123> fix…`, or
+  `fixes|resolves|closes #<n>`.
+- **cosmetic** — fixes typo, lint, format, style, whitespace, imports, tests,
+  specs, flaky, ci, conflicts, or review. Never picked, never tagged; still
+  counted in `<total>`.
+- **other** — everything else.
+
+Pick ≤3 per row: bug-fix (newest first), then other (newest first). Subject cut
+at 72 chars.
+
+Link — normalize remote to `https://<host>/<owner>/<repo>` (strip `git@`,
+`ssh://`, `:port`, `.git`; `host:path` → `host/path`):
+
+| Host                                 | Commit URL              |
+| ------------------------------------ | ----------------------- |
+| `github.com`, `codeberg.org`, gitea  | `<base>/commit/<sha>`   |
+| `gitlab.com`, host containing gitlab | `<base>/-/commit/<sha>` |
+| `bitbucket.org`                      | `<base>/commits/<sha>`  |
+| other host / no remote               | bare `<sha7>`, no link  |
+
+Print `commits: <rows> rows, remote <host|none>`. Rows with no commit in range →
+`Commits: none in history window`.

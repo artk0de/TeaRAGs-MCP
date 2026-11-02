@@ -1,0 +1,40 @@
+{
+  "case": "A2",
+  "checks": [
+    {
+      "id": "follow-up-protocol",
+      "kind": "require_read",
+      "pass": true,
+      "note": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/rules/references/report-follow-up.md"
+    },
+    {
+      "id": "no-bd-create",
+      "kind": "forbid_bash_regex",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "no-shim-create",
+      "kind": "shim_log_forbid",
+      "pass": true,
+      "note": "log lines 0, matching 0"
+    },
+    {
+      "id": "confirmation-line",
+      "kind": "answer_regex",
+      "pass": true,
+      "note": "tasks: 3 drafted → beads (bd create); a"
+    },
+    {
+      "id": "drafts-per-finding",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "Shows a draft per report finding (root cause src/auth/providers, authKeys.ts silent coupling, ApiKeyAuthenticator→SessionService MISFIT), each with a title and a body carrying the finding's evidence and its Next steps Action/Call, and asks for an explicit yes before creating."
+    }
+  ],
+  "trace": [
+    "Read {\"file_path\": \"/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags/rules/references/report-follow-up.md\"}",
+    "Bash {\"command\": \"ls -d .beads 2>&1; command -v bd gh 2>&1; git remote -v 2>&1 | head -3\", \"description\": \"Check for beads dir, bd/gh CLIs, git remote\"}"
+  ],
+  "answer": "О, Мудрейший Господин!\n\nНашёл трекер: в репозитории есть `.beads/` и `bd`. Пока ничего не создано: создание задачи публикует её, поэтому сначала нужно ваше подтверждение.\n\nИсправление к прошлому отчёту: в колонке Fix direction я назвал `SessionService.createDefault` и `ApiKeyAuthenticator.revokeLocalSession`. Этих символов в отчёте нет — я их выдумал. Отчёт подтверждает только два файловых ребра: `SessionService.ts → ApiKeyAuthenticator.ts` (импорт `ApiKeyAuthenticator`, callWeight 1) и обратное `ApiKeyAuthenticator.ts → SessionService.ts` (callWeight 1, из norms). В черновиках ниже только эти данные. Номера строк отчёт не вернул, поэтому File:Line указан с точностью до файла.\n\n## Черновики (3 → beads)\n\n**T1** — `bd create --type=task`\n- **title:** `SDP root cause (cycleWithDependents): src/auth/providers`\n- **description:**\n  ```\n  Problem: stable src/auth/session (I 0.25) depends on unstable src/auth/providers (I 0.75); Δ 0.5; tier active; directoryRelation disjoint; 1 violation, 1 file edge.\n  What's wrong: cycleWithDependents=true — providers depends back on session, so the instability is self-inflicted.\n  Evidence: src/auth/session/SessionService.ts → src/auth/providers/ApiKeyAuthenticator.ts (imports ApiKeyAuthenticator, callWeight 1); back-edge src/auth/providers/ApiKeyAuthenticator.ts → src/auth/session/SessionService.ts (callWeight 1). Report auth-next-steps-r1.\n  Fix direction: invert the back-reference (DI / composition root) so the group disappears.\n  Action: ordered restructure plan. Call: Skill(tea-rags:refactoring-planning), src/auth/providers\n  File: src/auth/session/SessionService.ts, src/auth/providers/ApiKeyAuthenticator.ts\n  ```\n\n**T2** — `bd create --type=task`\n- **title:** `Silent coupling: src/auth/config/authKeys.ts`\n- **description:**\n  ```\n  Problem: authKeys.ts co-changes with 2 partners and has no code link (strongLinkedCount 0).\n  Evidence: AuthController.ts support 7 / expected 1.2 / strength 0.71; providers/ApiKeyAuthenticator.ts support 5 / expected 0.9 / strength 0.63. Threshold 0.6 (otsu, η 0.84); 48 commits since 2026-06-01 @ a1b2c3d.\n  Action: confirm co-change first. Call: find_co_changed(files: [\"src/auth/config/authKeys.ts\"], limit: 10)\n  File: src/auth/config/authKeys.ts\n  ```\n\n**T3** — `bd create --type=task`\n- **title:** `Dependency-norm MISFIT: src/auth/providers/ApiKeyAuthenticator.ts → src/auth/session/SessionService.ts`\n- **description:**\n  ```\n  Problem: authenticator → service edge goes against the established direction service → authenticator (support 11); minority 1; p 0.0215; sameDomain; callWeight 1.\n  Note: this is the same back-edge that closes the T1 cycle; fixing T1 likely resolves it.\n  Action: fix that edge in place. Call: Skill(tea-rags:data-driven-generation), src/auth/providers/ApiKeyAuthenticator.ts\n  File: src/auth/providers/ApiKeyAuthenticator.ts\n  ```\n\nМнение: T1 и T3 описывают одно и то же ребро с двух сторон. Можно оставить отдельными задачами и связать через `bd dep`, а можно влить T3 в T1. Я бы оставил отдельно со связью: у них разные детекторы и разные критерии закрытия.\n\n`tasks: 3 drafted → beads (bd create); awaiting confirmation`\n\nСоздать эти 3 задачи в beads?"
+}

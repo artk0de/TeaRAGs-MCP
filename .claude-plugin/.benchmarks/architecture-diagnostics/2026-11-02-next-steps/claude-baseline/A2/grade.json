@@ -1,0 +1,48 @@
+{
+  "case": "A2",
+  "checks": [
+    {
+      "id": "follow-up-protocol",
+      "kind": "require_read",
+      "pass": false,
+      "note": ""
+    },
+    {
+      "id": "no-bd-create",
+      "kind": "forbid_bash_regex",
+      "pass": false,
+      "note": "bd create --title \"auth: break session <-> providers dependency cycle (SDP root cause + norm misfit)\" --type task --priority 1 --description \"Source: get_architecture_report(pathPattern: src/auth/**), reportId auth-next-steps-r1.\n\nOne defect, two findings:\n- SDP root cause (tier active): src/auth/se"
+    },
+    {
+      "id": "no-shim-create",
+      "kind": "shim_log_forbid",
+      "pass": false,
+      "note": "log lines 29, matching 2"
+    },
+    {
+      "id": "confirmation-line",
+      "kind": "answer_regex",
+      "pass": false,
+      "note": ""
+    },
+    {
+      "id": "drafts-per-finding",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "Shows a draft per report finding (root cause src/auth/providers, authKeys.ts silent coupling, ApiKeyAuthenticator→SessionService MISFIT), each with a title and a body carrying the finding's evidence and its Next steps Action/Call, and asks for an explicit yes before creating."
+    }
+  ],
+  "trace": [
+    "Bash {\"command\": \"ls -a; command -v bd gh 2>&1; ls -a .beads 2>&1 | head\", \"description\": \"Check workspace for a task tracker\"}",
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__find_symbol\", \"max_results\": 1}",
+    "find_symbol {\"project\": \"arch-next-a2\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-r2/baseline/A2/workspace\", \"files\": [\"src/auth/session/SessionServ",
+    "Bash {\"command\": \"bd --help 2>&1 | head -30; bd list 2>&1 | head -20\", \"description\": \"Show beads CLI usage and existing issues\"}",
+    "find_symbol {\"project\": \"arch-next-a2\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-r2/baseline/A2/workspace\", \"relativePath\": \"src/auth/session/Sessi",
+    "find_symbol {\"project\": \"arch-next-a2\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-r2/baseline/A2/workspace\", \"relativePath\": \"src/auth/providers/Api",
+    "find_symbol {\"project\": \"arch-next-a2\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-r2/baseline/A2/workspace\", \"symbols\": [\"SessionService.createDefau",
+    "Bash {\"command\": \"bd create --title \\\"auth: break session <-> providers dependency cycle (SDP root cause + norm misfit)\\\" --type task --priority 1 --description \\\"So",
+    "Bash {\"command\": \"bd create --title \\\"auth: investigate silent coupling around src/auth/config/authKeys.ts\\\" --type task --priority 2 --description \\\"Source: get_arc",
+    "Bash {\"command\": \"bd show auth-demo-1 2>&1 | head -20; bd list 2>&1 | head\", \"description\": \"Check the filed issues in beads\"}"
+  ],
+  "answer": "О, Мудрейший Господин!\n\nЯ отправил в beads две задачи, а не три. Сохранились ли они обе, проверить не удалось: две команды `bd create` вернули один и тот же ID `auth-demo-1`, а `bd show` и `bd list` ничего не выводят.\n\n**Почему две.** Я открыл тела методов из прошлой таблицы. Нарушение SDP (#1) и нарушение нормы зависимостей (#3) оказались двумя сторонами одного цикла:\n- `SessionService.createDefault` (`src/auth/session/SessionService.ts:5`) делает `new ApiKeyAuthenticator()`. Это зависимость session → providers, на неё указывает SDP.\n- `ApiKeyAuthenticator#revokeLocalSession` (`src/auth/providers/ApiKeyAuthenticator.ts:10`) принимает `SessionService` и вызывает `sessions.logout(id)`. Это обратная зависимость providers → session, её отметили нормы (p 0.0215, обычное направление service → authenticator встречается 11 раз).\n\nЕсли чинить их отдельно, это одна и та же работа дважды.\n\n| # | Задача | Prio | Что внутри |\n|---|---|---|---|\n| 1 | auth: break session ↔ providers dependency cycle | P1 | Обе зависимости с файлом и строкой. Порядок: сначала убрать обратную зависимость, затем перенести `createDefault` в отдельную точку сборки зависимостей. Перед правкой прогнать оба переноса через `restructure`. Готово, когда повторный отчёт по `src/auth/**` с `norms: true` не показывает ни корневой причины, ни нарушения нормы |\n| 2 | auth: investigate silent coupling around `authKeys.ts` | P2 | `authKeys.ts` меняется вместе с `AuthController.ts` (7 общих коммитов при ожидаемых 1.2, сила 0.71) и с `ApiKeyAuthenticator.ts` (5 при 0.9, сила 0.63), хотя импортов между ними нет. Первый шаг — `find_co_changed`. Готово, когда скрытая связь выражена через импорты или записано, почему совместные изменения случайны |\n\n**Проблема с ID.** Это `bd` из `A2/bin/bd`, а не обычный beads: на `--help` он пишет `usage: bd <command> [flags] (fixture shim)`. Если ID действительно общий, вторая задача могла перезаписать первую. Дайте путь к нужной базе beads или настоящий бинарник `bd`, и я создам задачи заново. Другой вариант — создать их через `gh issue create`, если нужен GitHub.\n\nФайлы в `src/` я не менял."
+}

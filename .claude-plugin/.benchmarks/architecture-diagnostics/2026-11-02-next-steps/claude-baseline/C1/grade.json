@@ -1,0 +1,45 @@
+{
+  "case": "C1",
+  "checks": [
+    {
+      "id": "no-report",
+      "kind": "forbid_tool",
+      "pass": true,
+      "note": "0 call(s)"
+    },
+    {
+      "id": "no-diagnostic-workflow",
+      "kind": "forbid_read_or_invoke",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "source-investigation",
+      "kind": "require_source_body",
+      "pass": "MANUAL",
+      "note": ""
+    },
+    {
+      "id": "contract-semantics",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "Distinguishes interface requirements from the renew branch: refreshToken is optional in AuthResult, but an expired session without one throws; ApiKeyAuthenticator.refresh throws and its normal result uses MAX_SAFE_INTEGER expiry."
+    },
+    {
+      "id": "no-next-steps",
+      "kind": "answer_forbid_regex",
+      "pass": true,
+      "note": ""
+    }
+  ],
+  "trace": [
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__find_symbol\", \"max_results\": 1}",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace\", \"relativePath\": \"src/auth\"}",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace\", \"symbols\": [\"AuthResult\", \"Authenticator\",",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace/src/auth/contracts.ts\"}",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace/src/auth/session/SessionService.ts\"}",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace/src/auth/providers/ApiKeyAuthenticator.ts\"}",
+    "Read {\"file_path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/baseline/C1/workspace/src/auth/AuthController.ts\"}"
+  ],
+  "answer": "О, Мудрейший Господин!\n\n## Где «провайдер-нейтральные» контракты на деле повторяют форму OAuth\n\n| Точка | Что предполагается |\n|---|---|\n| `src/auth/contracts.ts:1-5` `AuthResult` | Обязательные `accessToken: string` и `expiresAt: number`, опциональный `refreshToken`. Это схема OAuth token response. У результата аутентификации нет нейтрального представления вроде principal, credential или session handle. |\n| `src/auth/contracts.ts:8` `Authenticator#refresh(refreshToken)` | Обновление по refresh token входит в базовый контракт. Каждый провайдер обязан его реализовать, даже если обновлять нечего. |\n| `src/auth/session/SessionService.ts:4` | Состояние сессии — это `Map<string, AuthResult>`, то есть хранится сам OAuth-ответ, а не отдельная абстракция сессии. |\n| `SessionService#login`, `:7-11` | Возвращает `result.accessToken`. Наружу всегда уходит «access token». |\n| `SessionService#renew`, `:12-20` | Вся логика продления построена на OAuth: проверка `expiresAt > now` (`:15`), обязательный `refreshToken` (`:16`), затем `authenticator.refresh(...)` (`:17`). Другой стратегии продления нет. |\n| `src/auth/AuthController.ts:4-5` | Просто передаёт вызовы дальше, но наследует ту же семантику: `login` и `renew` возвращают access token. |\n\nЕщё два места, где слой сессий не нейтрален по отношению к провайдеру:\n- `SessionService.createDefault` (`SessionService.ts:2,5`) жёстко подставляет `ApiKeyAuthenticator`.\n- `ApiKeyAuthenticator` импортирует `SessionService` (`ApiKeyAuthenticator.ts:2,10`, метод `revokeLocalSession`).\n\nВ итоге между сессией и провайдером циклическая зависимость, и провайдер управляет жизненным циклом сессии.\n\n## API-key: как это работает сейчас\n\n`ApiKeyAuthenticator` подстраивается под OAuth-контракт заглушками:\n\n1. **`authenticate`** (`ApiKeyAuthenticator.ts:4-6`) кладёт сырой API key в `accessToken` и ставит `expiresAt: Number.MAX_SAFE_INTEGER`, чтобы изобразить бессрочность. `refreshToken` не задаётся.\n   - Последствие: `SessionService#login` (`:10`) возвращает клиенту сам секретный ключ как «access token». Он же хранится в `sessions`.\n2. **`refresh`** (`:7-9`) всегда бросает `\"API keys do not refresh\"`. Это refused bequest и нарушение LSP по отношению к `Authenticator`.\n\n## Продление сессии (`SessionService#renew`, `:12-20`)\n\n- **Нет сессии** → `\"missing session\"` (`:14`).\n- **API key:** при любом реалистичном `now` выполняется условие `MAX_SAFE_INTEGER > now`, и на `:15` возвращается тот же ключ. Продление ничего не делает: ключ заново не проверяется. Если ключ отозвали на стороне эмитента, сессия остаётся валидной до явного `logout`.\n- Даже если `now >= MAX_SAFE_INTEGER`, выполнение остановится на `:16` с `\"refresh token required\"`, потому что `refreshToken` не задан. Поэтому `ApiKeyAuthenticator#refresh` через `SessionService` недостижим, и его `throw` — мёртвый код на этом пути.\n- **OAuth-подобный провайдер:** если сессия истекла и `refreshToken` есть → вызывается `refresh`, сессия целиком перезаписывается (`:17-18`), возвращается новый `accessToken`. Если `refreshToken` нет → обычный `Error` без отдельного типа. Граница сравнения: при `expiresAt == now` токен считается истёкшим. Единицы измерения `expiresAt`/`now` в контракте не указаны.\n\n## Итог\n\nНейтральность провайдера держится на двух sentinel-значениях: `MAX_SAFE_INTEGER` как «не истекает» и отсутствие `refreshToken` как «не обновляется». Плюс один метод, который всегда бросает исключение. Если провайдер не укладывается в модель «access token + expiry + опциональный refresh token», ему нужна собственная стратегия продления (например, перепроверка ключа, sliding expiry или отказ), а текущий `Authenticator`/`SessionService` её выразить не может.\n\nВызовы `revokeLocalSession` извне `src/auth` я не искал. Изменений в код не вносил."
+}

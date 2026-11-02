@@ -1,0 +1,109 @@
+{
+  "case": "R2",
+  "pass": false,
+  "checks": [
+    {
+      "check": "phase1-before-git",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "one-bash-line-scoped",
+      "required": true,
+      "pass": true,
+      "detail": "1 git Bash calls"
+    },
+    {
+      "check": "bodies-fetched",
+      "required": true,
+      "pass": true,
+      "detail": [
+        "InvoiceCalculator#computeTotal",
+        "LedgerSync#reconcile",
+        "RetryQueue#constructor",
+        "RetryQueue#enqueue",
+        "RetryQueue#processBatch"
+      ]
+    },
+    {
+      "check": "overview",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "commits-column",
+      "required": true,
+      "pass": true,
+      "detail": "2 headers"
+    },
+    {
+      "check": "bare-shas",
+      "required": true,
+      "pass": false,
+      "detail": "url=False missing=['fix typo in rounding comment'] note=True"
+    },
+    {
+      "check": "cards",
+      "required": true,
+      "pass": true,
+      "detail": "Problem=3 totals=[3, 6, 6]"
+    },
+    {
+      "check": "bugfix-first",
+      "required": true,
+      "pass": false,
+      "detail": "InvoiceCalculator#computeTotal: picks found 2/3"
+    },
+    {
+      "check": "next-steps",
+      "required": true,
+      "pass": true,
+      "detail": "hdr=True rows=10"
+    },
+    {
+      "check": "offer-line",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "no-start-no-task",
+      "required": true,
+      "pass": true,
+      "detail": "started=[] tracker=[]"
+    },
+    {
+      "check": "commits-print-line",
+      "required": false,
+      "pass": false,
+      "detail": ""
+    }
+  ],
+  "tool_calls": 22,
+  "tools": [
+    "Skill",
+    "ToolSearch",
+    "Read",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "find_similar",
+    "find_similar",
+    "find_symbol",
+    "hybrid_search",
+    "hybrid_search",
+    "hybrid_search",
+    "Bash",
+    "find_symbol",
+    "find_symbol"
+  ]
+}

@@ -236,6 +236,22 @@ excluded constant-reference N, cross-language N, uncalled N, framework-routed N,
 
 ## Remedies — simulated (restructure), ranked by net
 | # | Remedy | ops | net | resolved (by family) | introduced (subjects) |
+
+## Next steps
+| # | Finding | Action | Call |
+→ Work through the findings here and now (starting with #1), or file a task per finding?
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.
+
+**Next steps** — one row per finding, root causes first; `→` line in user's
+language:
+
+| Finding                                                                            | Action                     | Call                                                            |
+| ---------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------- |
+| SDP root cause / violation, hub-like, main sequence, layering, leaking abstraction | ordered restructure plan   | `/refactoring-planning`, component path                         |
+| silent coupling, shotgun surgery                                                   | co-locate or make explicit | `/refactoring-planning`, the pair's files (3c drill = evidence) |
+| dependency-norm MISFIT (one edge)                                                  | fix that edge in place     | `/data-driven-generation`, source file                          |
+
+User picks; never start a finding or create a task before. Answer turn → read
+[../../references/report-follow-up.md](../../references/report-follow-up.md).

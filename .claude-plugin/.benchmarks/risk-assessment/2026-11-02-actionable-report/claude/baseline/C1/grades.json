@@ -1,0 +1,54 @@
+{
+  "case": "C1",
+  "pass": true,
+  "checks": [
+    {
+      "check": "parallel-block",
+      "required": true,
+      "pass": true,
+      "detail": {
+        "msg_011CgdpscyZbeHmGj5zAnotQ": [
+          "bugHunt",
+          "hotspots",
+          "techDebt",
+          "dangerous",
+          "decomposition",
+          "godModule"
+        ]
+      }
+    },
+    {
+      "check": "exclusions",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "git-after-scan",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "pathPattern",
+      "required": false,
+      "pass": true,
+      "detail": ["**/payments/**"]
+    }
+  ],
+  "tool_calls": 12,
+  "tools": [
+    "Skill",
+    "ToolSearch",
+    "Read",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "rank_chunks",
+    "find_similar",
+    "hybrid_search",
+    "find_symbol"
+  ]
+}

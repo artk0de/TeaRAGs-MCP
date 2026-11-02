@@ -1,0 +1,265 @@
+{
+  "cwd": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work-v2/current/A1/workspace",
+  "alias": "arch-next-a1",
+  "files": {
+    "src/auth/contracts.ts": "export interface AuthResult {\n  accessToken: string;\n  refreshToken?: string;\n  expiresAt: number;\n}\nexport interface Authenticator {\n  authenticate(input: string): Promise<AuthResult>;\n  refresh(refreshToken: string): Promise<AuthResult>;\n}\n",
+    "src/auth/session/SessionService.ts": "import type { Authenticator, AuthResult } from \"../contracts\";\nimport { ApiKeyAuthenticator } from \"../providers/ApiKeyAuthenticator\";\nexport class SessionService {\n  private sessions = new Map<string, AuthResult>();\n  static createDefault() { return new SessionService(new ApiKeyAuthenticator()); }\n  constructor(private authenticator: Authenticator) {}\n  async login(id: string, input: string) {\n    const result = await this.authenticator.authenticate(input);\n    this.sessions.set(id, result);\n    return result.accessToken;\n  }\n  async renew(id: string, now: number) {\n    const session = this.sessions.get(id);\n    if (!session) throw new Error(\"missing session\");\n    if (session.expiresAt > now) return session.accessToken;\n    if (!session.refreshToken) throw new Error(\"refresh token required\");\n    const next = await this.authenticator.refresh(session.refreshToken);\n    this.sessions.set(id, next);\n    return next.accessToken;\n  }\n  logout(id: string) { this.sessions.delete(id); }\n}\n",
+    "src/auth/providers/ApiKeyAuthenticator.ts": "import type { Authenticator, AuthResult } from \"../contracts\";\nimport { SessionService } from \"../session/SessionService\";\nexport class ApiKeyAuthenticator implements Authenticator {\n  async authenticate(key: string): Promise<AuthResult> {\n    return { accessToken: key, expiresAt: Number.MAX_SAFE_INTEGER };\n  }\n  async refresh(_refreshToken: string): Promise<AuthResult> {\n    throw new Error(\"API keys do not refresh\");\n  }\n  revokeLocalSession(sessions: SessionService, id: string) { sessions.logout(id); }\n}\n",
+    "src/auth/AuthController.ts": "import { SessionService } from \"./session/SessionService\";\nexport class AuthController {\n  constructor(private sessions: SessionService) {}\n  login(id: string, input: string) { return this.sessions.login(id, input); }\n  renew(id: string, now: number) { return this.sessions.renew(id, now); }\n  logout(id: string) { this.sessions.logout(id); }\n}\n",
+    "src/auth/config/authKeys.ts": "export const AUTH_KEYS = {\n  loginFailed: \"auth.login.failed\",\n  apiKeyRevoked: \"auth.apiKey.revoked\",\n  sessionExpired: \"auth.session.expired\",\n} as const;\n"
+  },
+  "raw_tool_responses": {
+    "get_architecture_report": {
+      "reportId": "auth-next-steps-r1",
+      "scope": { "pathPattern": "src/auth/**" },
+      "componentCount": 4,
+      "moduleComponentCount": 0,
+      "componentEdgeCount": 5,
+      "judgedEdgeCount": 5,
+      "rootCauses": [
+        {
+          "detector": "stableDependencies",
+          "targetComponent": "src/auth/providers",
+          "targetInstability": 0.75,
+          "violationCount": 1,
+          "maxInstabilityDelta": 0.5,
+          "sources": ["src/auth/session"],
+          "cycleWithDependents": true,
+          "tier": "active"
+        }
+      ],
+      "violations": {
+        "stableDependencies": [
+          {
+            "sourceComponent": "src/auth/session",
+            "targetComponent": "src/auth/providers",
+            "sourceInstability": 0.25,
+            "targetInstability": 0.75,
+            "instabilityDelta": 0.5,
+            "tier": "active",
+            "evidence": {
+              "directoryRelation": "disjoint",
+              "fileEdgeCount": 1,
+              "fileEdges": [
+                {
+                  "sourceRelPath": "src/auth/session/SessionService.ts",
+                  "targetRelPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+                  "importedNames": ["ApiKeyAuthenticator"],
+                  "callWeight": 1
+                }
+              ]
+            }
+          }
+        ],
+        "silentCoupling": [
+          {
+            "detector": "silentCoupling",
+            "kind": "group",
+            "relPath": "src/auth/config/authKeys.ts",
+            "subject": "src/auth/config/authKeys.ts",
+            "partnerCount": 2,
+            "evidence": {
+              "topPartners": [
+                {
+                  "relPath": "src/auth/AuthController.ts",
+                  "support": 7,
+                  "expectedSupport": 1.2,
+                  "strength": 0.71
+                },
+                {
+                  "relPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+                  "support": 5,
+                  "expectedSupport": 0.9,
+                  "strength": 0.63
+                }
+              ],
+              "maxStrength": 0.71,
+              "drillDown": {
+                "tool": "find_co_changed",
+                "files": ["src/auth/config/authKeys.ts"],
+                "limit": 10,
+                "hint": "find_co_changed(path, files: evidence.drillDown.files, limit: evidence.drillDown.limit)"
+              }
+            },
+            "partners": [
+              {
+                "relPath": "src/auth/AuthController.ts",
+                "support": 7,
+                "expectedSupport": 1.2,
+                "strength": 0.71
+              },
+              {
+                "relPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+                "support": 5,
+                "expectedSupport": 0.9,
+                "strength": 0.63
+              }
+            ]
+          }
+        ]
+      },
+      "norms": {
+        "summary": {
+          "roleFileCount": 4,
+          "weakRoleFileCount": 1,
+          "ioShapeRoleFileCount": 0,
+          "untypedFileCount": 0,
+          "typedEdgeCount": 6,
+          "judgedEdgeCount": 5,
+          "violationCount": 1,
+          "pairCount": 6,
+          "excluded": {
+            "crossLanguageEdgeCount": 0,
+            "inheritanceEdgeCount": 0,
+            "constantReferenceEdgeCount": 0,
+            "uncalledEdgeCount": 1,
+            "frameworkRoutedEdgeCount": 0,
+            "displacedRoleEdgeCount": 0
+          }
+        },
+        "ledgers": [
+          {
+            "family": "typescript",
+            "pairCount": 6,
+            "significance": {
+              "method": "directionInversion",
+              "q": 0.05,
+              "familySize": 6,
+              "significantPairCount": 2,
+              "oneWayPairCount": 1
+            }
+          }
+        ],
+        "findings": [
+          {
+            "kind": "misfit",
+            "family": "typescript",
+            "sourceRelPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+            "targetRelPath": "src/auth/session/SessionService.ts",
+            "roleSrc": "authenticator",
+            "roleDst": "service",
+            "locality": "sameDomain",
+            "callWeight": 1,
+            "pairSupport": 1,
+            "pValue": 0.0215,
+            "establishedDirection": {
+              "roleSrc": "service",
+              "roleDst": "authenticator",
+              "support": 11
+            }
+          }
+        ]
+      },
+      "violationDrillDownHints": {
+        "silentCoupling": "find_co_changed(path: <working directory>, files: <row evidence.drillDown.files>, limit: <row evidence.drillDown.limit>)"
+      },
+      "summary": {
+        "stableDependencies": {
+          "violationCount": 1,
+          "excludedContainmentCount": 0,
+          "excludedLowSupportCount": 0
+        },
+        "silentCoupling": {
+          "built": true,
+          "build": {
+            "head": "a1b2c3d",
+            "windowSince": "2026-06-01",
+            "commitCount": 48,
+            "maxFilesPerBundle": 30
+          },
+          "pairCount": 9,
+          "candidateCount": 9,
+          "strongCount": 2,
+          "strongLinkedCount": 0,
+          "violationCount": 2,
+          "groupedFindingCount": 1,
+          "rootCauseCount": 0,
+          "strengthThreshold": 0.6,
+          "strengthThresholdMethod": "otsu",
+          "strengthSeparability": 0.84,
+          "excluded": {
+            "testEndpoints": 0,
+            "generatedEndpoints": 0,
+            "documentationEndpoints": 0,
+            "versionManifestEndpoints": 0,
+            "unwalkedEndpoints": 0,
+            "notSignificant": 7,
+            "explainedByFacadeChain": 0,
+            "explainedBySharedNeighbour": 0
+          }
+        },
+        "nonProduction": { "excludedFileCount": 0 },
+        "testSupport": { "excludedFileCount": 0 },
+        "impactTiers": {
+          "built": true,
+          "stableDependencies": { "critical": 0, "active": 1, "structural": 0 }
+        }
+      },
+      "exclusionReasons": []
+    },
+    "get_architecture_report.restructure": {
+      "baselineReportId": "auth-next-steps-r1",
+      "delta": {
+        "resolved": { "stableDependencies": 1 },
+        "introduced": {},
+        "net": 1
+      }
+    },
+    "get_architecture_report.restructurePlan": {
+      "baselineReportId": "auth-next-steps-r1",
+      "steps": [
+        {
+          "order": 1,
+          "candidate": {
+            "op": "moveSymbol",
+            "symbol": "SessionService.createDefault",
+            "toRelPath": "src/auth/AuthController.ts"
+          },
+          "delta": {
+            "resolved": { "stableDependencies": 1 },
+            "introduced": {},
+            "net": 1
+          },
+          "byTier": { "active": { "resolved": 1, "introduced": 0 } },
+          "touchedFiles": [
+            "src/auth/session/SessionService.ts",
+            "src/auth/AuthController.ts"
+          ],
+          "blastRadius": 1
+        }
+      ],
+      "tradeOffs": [],
+      "unselected": [],
+      "total": {
+        "base": { "stableDependencies": 1 },
+        "final": { "stableDependencies": 0 }
+      },
+      "timing": { "totalMs": 120, "factsMs": 40, "judgeCount": 4 }
+    },
+    "find_co_changed": {
+      "files": ["src/auth/config/authKeys.ts"],
+      "partners": [
+        {
+          "relPath": "src/auth/AuthController.ts",
+          "support": 7,
+          "strength": 0.71,
+          "confidence": 0.78,
+          "sampleCommits": ["9f1e2d3", "77ab410"]
+        },
+        {
+          "relPath": "src/auth/providers/ApiKeyAuthenticator.ts",
+          "support": 5,
+          "strength": 0.63,
+          "confidence": 0.7,
+          "sampleCommits": ["9f1e2d3"]
+        }
+      ]
+    },
+    "resolve_metrics": {
+      "codegraphEnabled": true,
+      "built": true,
+      "edgeCount": 6,
+      "resolvedRate": 1.0
+    }
+  }
+}

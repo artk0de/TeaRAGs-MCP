@@ -1,0 +1,8 @@
+{
+  "case": "A2",
+  "arm": "current",
+  "rc": 0,
+  "model": "opus",
+  "wall_seconds": 29.0,
+  "plugin": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude/worktrees/risk-report-actionable/.claude-plugin/tea-rags"
+}

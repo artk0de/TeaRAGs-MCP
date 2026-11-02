@@ -1,0 +1,38 @@
+{
+  "case": "R3",
+  "pass": false,
+  "checks": [
+    {
+      "check": "drafts",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "tracker-beads",
+      "required": true,
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "awaiting-line",
+      "required": true,
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "check": "no-create",
+      "required": true,
+      "pass": false,
+      "detail": ["bd create", "bd create", "bd create"]
+    },
+    {
+      "check": "no-rescan",
+      "required": false,
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "tool_calls": 6,
+  "tools": ["Bash", "Bash", "Bash", "Bash", "Read", "Bash"]
+}

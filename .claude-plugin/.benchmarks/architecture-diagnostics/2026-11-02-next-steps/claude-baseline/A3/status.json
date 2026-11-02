@@ -1,0 +1,8 @@
+{
+  "case": "A3",
+  "arm": "baseline",
+  "rc": 0,
+  "model": "opus",
+  "wall_seconds": 112.8,
+  "plugin": "/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/baseline-pkg/.claude-plugin/tea-rags"
+}

@@ -1,0 +1,44 @@
+{
+  "case": "C1",
+  "checks": [
+    {
+      "id": "no-report",
+      "kind": "forbid_tool",
+      "pass": true,
+      "note": "0 call(s)"
+    },
+    {
+      "id": "no-diagnostic-workflow",
+      "kind": "forbid_read_or_invoke",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "id": "source-investigation",
+      "kind": "require_source_body",
+      "pass": "MANUAL",
+      "note": ""
+    },
+    {
+      "id": "contract-semantics",
+      "kind": "answer_criterion",
+      "pass": "MANUAL",
+      "note": "Distinguishes interface requirements from the renew branch: refreshToken is optional in AuthResult, but an expired session without one throws; ApiKeyAuthenticator.refresh throws and its normal result uses MAX_SAFE_INTEGER expiry."
+    },
+    {
+      "id": "no-next-steps",
+      "kind": "answer_forbid_regex",
+      "pass": true,
+      "note": ""
+    }
+  ],
+  "trace": [
+    "ToolSearch {\"query\": \"select:mcp__tea-rags__find_symbol,mcp__tea-rags__get_callees,mcp__tea-rags__get_callers\", \"max_results\": 3}",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/C1/workspace\", \"relativePath\": \"src/auth\"}",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/C1/workspace\", \"symbols\": [\"AuthResult\", \"Authenticator\", ",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/C1/workspace\", \"symbols\": [\"Authenticator#authenticate\", \"",
+    "find_symbol {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/C1/workspace\", \"symbol\": \"AuthResult\"}",
+    "get_callers {\"project\": \"arch-next-c1\", \"path\": \"/Users/artk0re/.claude/jobs/1c110b8c/tmp/arch-evals/work/current/C1/workspace\", \"symbolId\": \"ApiKeyAuthenticator#refresh\", "
+  ],
+  "answer": "О, Мудрейший Господин!\n\nКратко: контракт в `src/auth` выглядит нейтральным к провайдеру, но на деле он построен вокруг OAuth (`accessToken` + `expiresAt` + `refresh(refreshToken)`). `ApiKeyAuthenticator` подгоняет API-ключ под эту форму двумя костылями: ставит фиктивный бесконечный срок жизни и бросает исключение в `refresh`. Поэтому для API-ключа «продление сессии» на самом деле никогда не срабатывает, а путь refresh для него в принципе не может выполниться.\n\n## Где контракты и пути выполнения предполагают OAuth\n\n**1. `AuthResult` — `src/auth/contracts.ts:1-5`**\n```ts\naccessToken: string; refreshToken?: string; expiresAt: number;\n```\n- `accessToken` обязателен. У API-ключа нет «access token», есть credential, и его приходится выдавать за токен.\n- `expiresAt: number` тоже обязателен. Типом нельзя выразить «срока жизни нет», остаётся только фиктивное значение.\n- `refreshToken` — поле чисто из OAuth, прямо в общем результате.\n\n**2. `Authenticator#refresh(refreshToken: string)` — `src/auth/contracts.ts:8`**\nЭто обязательный метод интерфейса. Каждый провайдер должен уметь обновлять сессию по refresh-токену. Возможности провайдера (`canRefresh`) или отдельной роли вроде `RefreshableAuthenticator` в контракте нет. В итоге провайдеры, которые обновлять не умеют, вынуждены реализовывать метод через `throw`, а это нарушает LSP.\n\n**3. `SessionService#login` — `src/auth/session/SessionService.ts:7-11`**\nВ сессии хранится весь `AuthResult`, наружу отдаётся `result.accessToken`. Модель сессии — это и есть OAuth-результат.\n\n**4. `SessionService#renew` — `src/auth/session/SessionService.ts:12-20`**\nЭто главное место, где OAuth зашит в нейтральный сервис:\n```ts\nif (session.expiresAt > now) return session.accessToken;               // :15\nif (!session.refreshToken) throw new Error(\"refresh token required\");  // :16\nconst next = await this.authenticator.refresh(session.refreshToken);    // :17\n```\nАлгоритм продления (проверка срока → refresh-токен → `authenticator.refresh`) жёстко прописан в сервисе. Решение о продлении не передано провайдеру.\n\n**5. `AuthController#renew` — `src/auth/AuthController.ts:5`**\nЭто просто проброс в `SessionService#renew`. Он открывает OAuth-продление как общую операцию для любого провайдера.\n\n**6. `SessionService.createDefault` — `src/auth/session/SessionService.ts:5`**\nЗдесь по умолчанию подставляется именно `ApiKeyAuthenticator`. То есть путь по умолчанию — это как раз провайдер, которому OAuth-модель подходит хуже всего.\n\n## Что сейчас происходит с API-ключом\n\n`ApiKeyAuthenticator` в `src/auth/providers/ApiKeyAuthenticator.ts`:\n\n- **`authenticate` (:4-6)** возвращает `{ accessToken: key, expiresAt: Number.MAX_SAFE_INTEGER }`. Сам ключ подкладывается как `accessToken`, `refreshToken` не задаётся, а срок жизни подделан бесконечным значением.\n- **`refresh` (:7-9)** бросает `\"API keys do not refresh\"`.\n- **`revokeLocalSession` (:10)** вызывает `SessionService#logout`. Получается обратная зависимость: провайдер знает о сессионном слое. Никакого отзыва у провайдера здесь не происходит, сессия просто удаляется локально.\n\nКак идёт `AuthController#renew(id, now)` → `SessionService#renew`:\n\n| Состояние | Строка | Результат |\n|---|---|---|\n| сессии нет | `:14` | `Error(\"missing session\")` |\n| обычный случай | `:15` | `MAX_SAFE_INTEGER > now` всегда истинно, поэтому возвращается сам ключ. Ничего не продлевается, ключ просто отдаётся снова |\n| `now >= MAX_SAFE_INTEGER` (крайний случай) | `:16` | `Error(\"refresh token required\")`, потому что `refreshToken` нет |\n| `ApiKeyAuthenticator#refresh` | `:17` → `:7-9` | для API-ключа сюда не дойти: `:16` всегда срабатывает раньше. Метод — мёртвая реализация, нужная только ради интерфейса |\n\nОтсюда два следствия:\n- Корректность продления для API-ключа держится на фиктивном значении `expiresAt`, а не на типах. Если кто-то поставит API-ключу реальный TTL (например, ради ротации), `renew` начнёт падать с `\"refresh token required\"`. Ключ при этом не будет перевыпущен и не будет признан просто действительным.\n- Понятия «эта сессия не продлевается» в модели нет. Клиент API-ключа не может отличить «продлено» от «отдали тот же ключ».\n\n## Ограничения проверки\n\n- `get_callers` для `ApiKeyAuthenticator#refresh` ничего не вернул (`noEdgeFixture`): вызов идёт через интерфейс `Authenticator`, и codegraph эту связь не видит. Связь `renew` → `refresh` выведена из тела `SessionService#renew:17`, а не из графа вызовов.\n- Код ничего не исполнял и тестов не запускал. Все выводы основаны только на чтении тел методов из индекса.\n\nИсправить это можно, например, так: разделить контракт на базовую аутентификацию и отдельную опциональную роль для обновления (refresh), сделать `expiresAt` опциональным или явно выразить «без срока», а решение о продлении отдать стратегии провайдера, а не держать в `SessionService`."
+}
