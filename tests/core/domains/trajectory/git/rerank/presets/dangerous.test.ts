@@ -16,21 +16,34 @@ describe("DangerousPreset", () => {
     expect(preset.tools).toContain("rank_chunks");
   });
 
-  it("uses bugFix as dominant signal", () => {
+  it("pins the backtest-calibrated weights", () => {
+    expect(preset.weights).toEqual({
+      bugFix: 0.25,
+      churn: 0.2,
+      density: 0.15,
+      recency: 0.15,
+      knowledgeSilo: 0.1,
+      burstActivity: 0.05,
+      similarity: 0.1,
+      blockPenalty: -0.05,
+    });
+  });
+
+  it("uses bugFix as the highest weight", () => {
     const w = preset.weights;
-    const positiveWeights = Object.entries(w).filter(([, v]) => v > 0);
-    const maxWeight = Math.max(...positiveWeights.map(([, v]) => v));
+    const maxWeight = Math.max(...Object.values(w).filter((v): v is number => (v ?? 0) > 0));
     expect(w.bugFix).toBe(maxWeight);
   });
 
-  it("includes all 5 expected signals plus blockPenalty", () => {
-    const keys = Object.keys(preset.weights);
-    expect(keys).toContain("bugFix");
-    expect(keys).toContain("volatility");
-    expect(keys).toContain("knowledgeSilo");
-    expect(keys).toContain("burstActivity");
-    expect(keys).toContain("similarity");
-    expect(keys).toContain("blockPenalty");
+  it("drops volatility (redundant with churn) but keeps knowledgeSilo as a design term", () => {
+    expect(preset.weights).not.toHaveProperty("volatility");
+    expect(preset.weights.knowledgeSilo).toBe(0.1);
+  });
+
+  it("surfaces commitCount and changeDensity right after bugFixRate in the file overlay", () => {
+    const file = preset.overlayMask.file ?? [];
+    const i = file.indexOf("bugFixRate");
+    expect(file.slice(i + 1, i + 3)).toEqual(["commitCount", "changeDensity"]);
   });
 
   it("includes blockPenalty as negative weight", () => {

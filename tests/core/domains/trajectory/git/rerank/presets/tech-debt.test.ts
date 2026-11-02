@@ -14,8 +14,23 @@ describe("TechDebtPreset", () => {
     expect(preset.overlayMask.file).toContain("ageDays");
     expect(preset.overlayMask.file).toContain("commitCount");
     expect(preset.overlayMask.file).toContain("bugFixRate");
-    expect(preset.overlayMask.file).toContain("churnVolatility");
-    expect(preset.overlayMask.file).toContain("changeDensity");
+    expect(preset.overlayMask.file).toContain("recencyWeightedFreq");
+    expect(preset.overlayMask.file).toContain("relativeChurn");
+    expect(preset.overlayMask.file).not.toContain("churnVolatility");
+    expect(preset.overlayMask.file).not.toContain("changeDensity");
+  });
+
+  it("pins the backtest-calibrated weights, age held at 0.15", () => {
+    expect(preset.weights).toEqual({
+      similarity: 0.15,
+      age: 0.15,
+      chunkChurn: 0.3,
+      burstActivity: 0.2,
+      bugFix: 0.05,
+      chunkRelativeChurn: 0.05,
+      relativeChurnNorm: 0.05,
+      blockPenalty: -0.05,
+    });
   });
 
   it("surfaces pair-diagnostic disambiguators for architectural interpretation", () => {

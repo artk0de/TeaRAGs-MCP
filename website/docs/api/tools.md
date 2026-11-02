@@ -164,10 +164,10 @@ Reorder search results based on git metadata signals.
 
 | Preset          | Use Case                        | Signals                                                                |
 | --------------- | ------------------------------- | ---------------------------------------------------------------------- |
-| `techDebt`      | Legacy problematic code         | age + churn + bugFix + volatility                                      |
-| `hotspots`      | Bug-prone areas                 | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility  |
-| `dangerous`     | High-risk modification targets  | bugFix + volatility + pathRisk + imports                               |
-| `bugHunt`       | Historically buggy code         | bugFix + chunkChurn + volatility                                       |
+| `techDebt`      | Legacy problematic code         | age + chunkChurn + burstActivity + bugFix                              |
+| `hotspots`      | Bug-prone areas                 | chunkChurn + chunkRelativeChurn + bugFix + relativeChurnNorm           |
+| `dangerous`     | High-risk modification targets  | bugFix + churn + density + recency + knowledgeSilo                     |
+| `bugHunt`       | Historically buggy code         | churn + bugFix + density + recency                                     |
 | `codeReview`    | Review recent changes           | recency + burstActivity + density + chunkChurn                         |
 | `refactoring`   | Refactoring candidates          | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age |
 | `onboarding`    | Entry points for new devs       | documentation + stability                                              |
