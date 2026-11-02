@@ -311,7 +311,9 @@ describe("runUpdateCommand — Claude Code plugin sync", () => {
     const out = printed(stdoutMock);
     expect(out).toContain("tea-rags@tea-rags 0.44.7 → 0.44.11");
     expect(out).not.toContain("dinopowers@tea-rags 0.22.6 →");
-    expect(out.trimEnd().endsWith("Restart Claude Code to load the updated plugins.")).toBe(true);
+    // The run always closes with the automatic-update state line (c2dr6); the restart notice precedes it.
+    expect(out.trimEnd().split("\n").slice(-2)[0]).toBe("Restart Claude Code to load the updated plugins.");
+    expect(out.trimEnd().split("\n").at(-1)).toMatch(/^Automatic updates: (on|off)/);
     expect(exitMock).toHaveBeenCalledWith(0);
   });
 

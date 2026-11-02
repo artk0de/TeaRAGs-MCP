@@ -113,6 +113,42 @@ describe("ClaudePluginSyncAdapter", () => {
     expect(report.repinned).toEqual({ from: "artk0de/TeaRAGs-MCP", to: "v1.50.0" });
   });
 
+  it("refuses the re-pin in background mode while a plugin is installed with project or local scope", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: plugins(["tea-rags@tea-rags", "0.44.7", "user"], ["dinopowers@tea-rags", "0.22.4", "local"]),
+      [MARKETPLACE_LIST]: marketplace({ source: "github", repo: "artk0de/TeaRAGs-MCP" }),
+    });
+
+    const report = await new ClaudePluginSyncAdapter({
+      runClaude,
+      clientVersion: "1.50.0",
+      repinScopedInstalls: false,
+    }).sync();
+
+    expect(runClaude.mock.calls.map((c) => c[0].join(" "))).toEqual([PLUGIN_LIST, MARKETPLACE_LIST]);
+    expect(report.repinned).toBeUndefined();
+    expect(report.repinDeferred).toEqual({ to: "v1.50.0", scopedIds: ["dinopowers@tea-rags (local)"] });
+  });
+
+  it("still re-pins in background mode when every plugin is user-scoped", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: [plugins(["tea-rags@tea-rags", "0.44.7"]), line([])],
+      [MARKETPLACE_LIST]: marketplace({ source: "github", repo: "artk0de/TeaRAGs-MCP" }),
+      "plugin marketplace remove tea-rags --json": line({ outcome: "ok" }),
+      [`plugin marketplace add ${PINNED_SOURCE} --json`]: line({ outcome: "ok" }),
+      "plugin install tea-rags@tea-rags --scope user --json": line({ outcome: "ok", newVersion: "0.54.4" }),
+    });
+
+    const report = await new ClaudePluginSyncAdapter({
+      runClaude,
+      clientVersion: "1.50.0",
+      repinScopedInstalls: false,
+    }).sync();
+
+    expect(report.repinDeferred).toBeUndefined();
+    expect(report.repinned).toEqual({ from: "artk0de/TeaRAGs-MCP", to: "v1.50.0" });
+  });
+
   it("surfaces a marketplace-declared command on reinstall for confirmation instead of accepting it", async () => {
     const runClaude = makeRunClaude({
       [PLUGIN_LIST]: [plugins(["tea-rags@tea-rags", "0.44.7"]), line([])],

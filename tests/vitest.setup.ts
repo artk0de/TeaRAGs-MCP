@@ -64,6 +64,10 @@ for (const v of [
   delete process.env[v];
 }
 
+// Client self-update (c2dr6) off by default: a prime test that builds the real
+// trigger must never spawn a detached `tea-rags update --background`.
+process.env.TEA_RAGS_AUTO_UPDATE = "0";
+
 // Redirect app data to temp dir to avoid polluting user's home
 const testDataDir = mkdtempSync(join(tmpdir(), "tea-rags-test-"));
 process.env.TEA_RAGS_DATA_DIR = testDataDir;

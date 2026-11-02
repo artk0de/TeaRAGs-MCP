@@ -4,6 +4,17 @@ import { join } from "node:path";
 
 import type { CommandModule } from "yargs";
 
+import { runBackgroundClientUpdate } from "../client-update/background.js";
+import { isLinkedGlobalInstall, isPidAlive, liveIndexWorkers, npmGlobalRoot } from "../client-update/guards.js";
+import { installExitCode, runNpmGlobalInstall, type UpdateInstallOutcome } from "../client-update/npm-install.js";
+import {
+  clientUpdateDataDir,
+  readClientAutoUpdateSetting,
+  writeClientAutoUpdateSetting,
+  type ClientAutoUpdateSetting,
+} from "../client-update/settings.js";
+import { clientUpdateStatePath, ClientUpdateStateStore } from "../client-update/state-store.js";
+import { IndexWorkerRegistry, indexWorkerRegistryDir } from "../index-progress/worker-registry.js";
 import { createColorizer, type Colorizer } from "../infra/color.js";
 import {
   resolvePackageRoot,
@@ -35,15 +46,14 @@ export interface RunUpdateDeps {
   homedir: string;
   codexHome: string;
   packageRoot: string;
+  /** tea-rags data dir — holds settings.json and the client-update state. */
+  dataDir: string;
+  /** Env the automatic-update setting is read from (`TEA_RAGS_AUTO_UPDATE`). */
+  env: NodeJS.ProcessEnv;
   exit: ExitFn;
 }
 
-export type UpdateInstallOutcome =
-  | { kind: "installed"; version: string }
-  | { kind: "not-requested" }
-  | { kind: "npm-missing" }
-  | { kind: "spawn-failed"; message: string }
-  | { kind: "failed"; exitCode: number };
+export type { UpdateInstallOutcome };
 
 /** Everything one `tea-rags update` run did, for a caller that prints it or logs it. */
 export interface UpdateRunReport {
@@ -76,6 +86,8 @@ function defaultDeps(spawn: SpawnFn): RunUpdateDeps {
     homedir: home,
     codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
     packageRoot: resolvePackageRoot(),
+    dataDir: clientUpdateDataDir(),
+    env: process.env,
     exit: (code) => process.exit(code),
   };
 }
@@ -99,7 +111,7 @@ export async function performUpdate(
 
   if (status.kind === "available" && options.install) {
     options.onInstallStart?.(status);
-    const install = await runNpmInstall(status, deps);
+    const install = await runNpmGlobalInstall(deps.spawn, "latest", status.latest);
     if (install.kind !== "installed") return { status, install, exitCode: installExitCode(install) };
     return { status, install, plugins: await syncPlugins(deps, status.latest), exitCode: 0 };
   }
@@ -118,6 +130,7 @@ export async function performUpdate(
  */
 export async function runUpdateCommand(depsOverride: Partial<RunUpdateDeps> = {}): Promise<void> {
   const exit = depsOverride.exit ?? ((code: number) => process.exit(code));
+  const dataDir = depsOverride.dataDir ?? clientUpdateDataDir();
   const report = await performUpdate(depsOverride, { install: true, onInstallStart: printInstallStart });
 
   switch (report.status.kind) {
@@ -131,7 +144,56 @@ export async function runUpdateCommand(depsOverride: Partial<RunUpdateDeps> = {}
       printInstallFailure(report.install);
   }
   if (report.plugins) printHarnessPluginSyncReport(report.plugins);
+  // A manual run re-pins whatever a background run refused to — its hint is settled.
+  if (report.exitCode === 0) clearManualUpdateHint(dataDir);
+  printAutoUpdateState(readClientAutoUpdateSetting(dataDir, depsOverride.env ?? process.env));
   exit(report.exitCode);
+}
+
+/** `tea-rags update --auto on|off`: persists the machine-wide setting, prints the state, installs nothing. */
+export function runClientAutoUpdateToggle(
+  mode: "on" | "off",
+  deps: Pick<RunUpdateDeps, "dataDir" | "env" | "exit">,
+): void {
+  writeClientAutoUpdateSetting(deps.dataDir, mode === "on");
+  printAutoUpdateState(readClientAutoUpdateSetting(deps.dataDir, deps.env));
+  deps.exit(0);
+}
+
+/**
+ * `tea-rags update --background` — the detached run prime spawns; stdout is
+ * the client-update log. Canary-windowed install, guards, and a Claude sync
+ * that refuses re-pins of project/local-scope installs.
+ */
+export async function runBackgroundUpdateCommand(depsOverride: Partial<RunUpdateDeps> = {}): Promise<void> {
+  const deps = withDefaults(depsOverride);
+  const registry = new IndexWorkerRegistry(indexWorkerRegistryDir(deps.dataDir));
+  const exitCode = await runBackgroundClientUpdate({
+    currentVersion: deps.clientVersion,
+    releaseTimeline: async () => new NpmRegistryClient().fetchReleaseTimeline("tea-rags", { timeoutMs: 30_000 }),
+    isDevInstall: async () => isLinkedGlobalInstall(npmGlobalRoot),
+    liveWorkers: () => liveIndexWorkers(registry, isPidAlive),
+    install: async (version) => runNpmGlobalInstall(deps.spawn, version, version),
+    syncPlugins: async (version) => syncPlugins(deps, version, { repinScopedClaudeInstalls: false }),
+    store: new ClientUpdateStateStore(clientUpdateStatePath(deps.dataDir)),
+    clock: () => Date.now(),
+    out: (line) => process.stdout.write(`${line}\n`),
+  });
+  deps.exit(exitCode);
+}
+
+function clearManualUpdateHint(dataDir: string): void {
+  const store = new ClientUpdateStateStore(clientUpdateStatePath(dataDir));
+  if (store.read().manualUpdateHint !== undefined) store.update({ manualUpdateHint: undefined });
+}
+
+function printAutoUpdateState(setting: ClientAutoUpdateSetting): void {
+  const state = setting.enabled ? "on" : "off";
+  const toggle = setting.enabled ? "off" : "on";
+  const override = setting.source === "env" ? " (set by TEA_RAGS_AUTO_UPDATE, which overrides the setting)" : "";
+  process.stdout.write(
+    `Automatic updates: ${state}${override} — turn ${toggle} with \`tea-rags update --auto ${toggle}\`\n`,
+  );
 }
 
 /** Colors for stderr lines — gated on stderr's own TTY, not stdout's. */
@@ -152,7 +214,11 @@ function readClientVersion(deps: RunUpdateDeps): string | undefined {
   }
 }
 
-async function syncPlugins(deps: RunUpdateDeps, clientVersion: string): Promise<HarnessPluginSyncReport> {
+async function syncPlugins(
+  deps: RunUpdateDeps,
+  clientVersion: string,
+  options: { repinScopedClaudeInstalls?: boolean } = {},
+): Promise<HarnessPluginSyncReport> {
   return syncHarnessPlugins({
     clientVersion,
     runClaude: deps.runClaude,
@@ -160,44 +226,8 @@ async function syncPlugins(deps: RunUpdateDeps, clientVersion: string): Promise<
     homedir: deps.homedir,
     codexHome: deps.codexHome,
     packageRoot: deps.packageRoot,
+    ...options,
   });
-}
-
-async function runNpmInstall(status: AvailableUpdateStatus, deps: RunUpdateDeps): Promise<UpdateInstallOutcome> {
-  return new Promise((resolve) => {
-    // Force postinstall to run even if user's ~/.npmrc has ignore-scripts=true.
-    // tea-rags' postinstall (scripts/postinstall.js) is required for proper setup.
-    const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], {
-      stdio: "inherit",
-      env: { ...process.env, npm_config_ignore_scripts: "false" },
-    });
-
-    child.on("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "ENOENT" || /ENOENT|not found/i.test(err.message)) {
-        resolve({ kind: "npm-missing" });
-        return;
-      }
-      resolve({ kind: "spawn-failed", message: err.message });
-    });
-
-    child.on("exit", (code) => {
-      resolve(code === 0 ? { kind: "installed", version: status.latest } : { kind: "failed", exitCode: code ?? 1 });
-    });
-  });
-}
-
-function installExitCode(install: UpdateInstallOutcome): number {
-  switch (install.kind) {
-    case "npm-missing":
-      return 127;
-    case "spawn-failed":
-      return 1;
-    case "failed":
-      return install.exitCode;
-    case "installed":
-    case "not-requested":
-      return 0;
-  }
 }
 
 function printInstallFailure(install: UpdateInstallOutcome | undefined): void {
@@ -253,11 +283,35 @@ function printPluginSyncReport(harness: PluginHarness, report: PluginSyncReport)
   }
 }
 
-export const updateCommand: CommandModule<object, object> = {
+interface UpdateCommandArgs {
+  auto?: "on" | "off";
+  background?: boolean;
+}
+
+export const updateCommand: CommandModule<object, UpdateCommandArgs> = {
   command: "update",
   describe:
     "Check for a newer tea-rags version, install it via npm and bring the tea-rags plugins of Claude Code, Codex and Cursor to the installed release.",
-  handler: async () => {
+  builder: (yargs) =>
+    yargs
+      .option("auto", {
+        choices: ["on", "off"] as const,
+        describe: "Turn automatic background updates (run from `tea-rags prime`) on or off, then exit",
+      })
+      .option("background", { type: "boolean", hidden: true }),
+  handler: async (argv) => {
+    if (argv.auto !== undefined) {
+      runClientAutoUpdateToggle(argv.auto, {
+        dataDir: clientUpdateDataDir(),
+        env: process.env,
+        exit: (code) => process.exit(code),
+      });
+      return;
+    }
+    if (argv.background === true) {
+      await runBackgroundUpdateCommand();
+      return;
+    }
     await runUpdateCommand();
   },
 };

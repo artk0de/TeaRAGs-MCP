@@ -11,6 +11,12 @@ export interface ClaudePluginSyncDeps {
   runClaude: HarnessCliRunner;
   /** The tea-rags client version the plugins must match — the marketplace is pinned to `v<clientVersion>`. */
   clientVersion: string;
+  /**
+   * false → refuse a re-pin while any plugin is installed with project or
+   * local scope (the removal would uninstall it and only its project can put it
+   * back); the refusal comes back as `repinDeferred`. Default true.
+   */
+  repinScopedInstalls?: boolean;
 }
 
 interface InstalledClaudePlugin {
@@ -64,9 +70,14 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
     const tag = releaseTag(this.deps.clientVersion);
     if (entry?.ref === tag) {
       await this.updateInPlace(installed, report);
-    } else {
-      await this.repin(entry, tag, installed, report);
+      return report;
     }
+    const scoped = installed.filter(({ scope }) => scope !== "user");
+    if (this.deps.repinScopedInstalls === false && scoped.length > 0) {
+      report.repinDeferred = { to: tag, scopedIds: scoped.map(({ id, scope }) => `${id} (${scope})`) };
+      return report;
+    }
+    await this.repin(entry, tag, installed, report);
     return report;
   }
 

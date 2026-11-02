@@ -23,6 +23,8 @@ export interface PrimeData {
   autoUpdateOutcome?: AutoUpdateTriggerOutcome | null;
   /** Per-project auto-update log path, shown on failure lines. */
   autoUpdateLogPath?: string;
+  /** Step a background client update refused (c2dr6) — printed in both modes until a manual `tea-rags update`. */
+  clientUpdateHint?: string | null;
   /** `--agent`: print the digest alone — no update notice, auto-update status or refresh line. */
   agent?: boolean;
 }

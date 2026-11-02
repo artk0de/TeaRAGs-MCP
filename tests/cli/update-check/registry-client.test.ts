@@ -14,6 +14,40 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("NpmRegistryClient.fetchReleaseTimeline", () => {
+  it("reads the latest dist-tag and the publish-time map from the package document", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () =>
+        Promise.resolve({
+          "dist-tags": { latest: "1.51.0" },
+          time: { created: "2025-01-01T00:00:00.000Z", "1.51.0": "2026-10-30T00:00:00.000Z", bogus: 3 },
+        }),
+    });
+    const timeline = await new NpmRegistryClient().fetchReleaseTimeline("tea-rags");
+    expect(timeline).toEqual({
+      latest: "1.51.0",
+      publishedAt: { created: "2025-01-01T00:00:00.000Z", "1.51.0": "2026-10-30T00:00:00.000Z" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://registry.npmjs.org/tea-rags",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("returns null on a non-OK status, a missing time map or a network error", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, json: async () => Promise.resolve({}) });
+    expect(await new NpmRegistryClient().fetchReleaseTimeline("tea-rags")).toBeNull();
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => Promise.resolve({ "dist-tags": { latest: "1.0.0" } }),
+    });
+    expect(await new NpmRegistryClient().fetchReleaseTimeline("tea-rags")).toBeNull();
+    fetchMock.mockRejectedValueOnce(new Error("ENOTFOUND"));
+    expect(await new NpmRegistryClient().fetchReleaseTimeline("tea-rags", { timeoutMs: 50 })).toBeNull();
+  });
+});
+
 describe("NpmRegistryClient.fetchLatestVersion", () => {
   it("returns the version string on a 200 with a well-formed payload", async () => {
     fetchMock.mockResolvedValue({

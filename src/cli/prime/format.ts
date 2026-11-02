@@ -19,12 +19,15 @@ export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = n
       const autoUpdateLine = formatAutoUpdateLine(input, now);
       if (autoUpdateLine !== null) blocks.push(autoUpdateLine);
     }
+    // A refused client-update step names an action too.
+    if (input.clientUpdateHint) blocks.push(`tea-rags client: ${input.clientUpdateHint}`);
     if (input.metrics !== undefined) blocks.push(input.metrics.trimEnd());
     return `${blocks.join("\n")}\n`;
   }
 
   const autoUpdateLine = formatAutoUpdateLine(input, now);
   if (autoUpdateLine !== null) blocks.push(autoUpdateLine);
+  if (input.clientUpdateHint) blocks.push(`tea-rags client: ${input.clientUpdateHint}`);
 
   const updateLines = input.update !== null ? formatForPrime(input.update) : [];
   if (updateLines.length > 0) blocks.push(updateLines.join("\n"));

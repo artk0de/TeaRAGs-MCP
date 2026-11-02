@@ -24,6 +24,12 @@ export interface PluginSyncReport {
   needsConfirmation: { id: string; command: string; sha256: string; acceptWith: string }[];
   /** Set when the marketplace was re-pointed to the client's release tag. */
   repinned?: { from: string; to: string };
+  /**
+   * The re-pin to `to` was refused: it would uninstall plugins installed with
+   * project or local scope (`scopedIds`, each `<id> (<scope>)`), which cannot be
+   * put back from here. Only a background run refuses; `tea-rags update` re-pins.
+   */
+  repinDeferred?: { to: string; scopedIds: string[] };
   skipped?: "cli-missing" | "none-installed" | "dev-marketplace";
 }
 
