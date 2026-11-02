@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  LLAMA_SERVER_REVIVE_REARM_MS,
   LlamaServerEmbeddings,
   type LlamaServerEmbeddingsDeps,
 } from "../../../../../src/core/adapters/embeddings/llama-server/provider.js";
@@ -60,8 +61,8 @@ function fakeEndpoints(urls: string[]) {
 function makeProvider(
   endpoints: ReturnType<typeof fakeEndpoints>,
   reviveEndpoints?: LlamaServerEmbeddingsDeps["reviveEndpoints"],
+  clock: { now: number } = { now: 1_000_000 },
 ): LlamaServerEmbeddings {
-  let now = 1_000_000;
   return new LlamaServerEmbeddings(
     MODEL,
     undefined,
@@ -71,9 +72,9 @@ function makeProvider(
     undefined,
     {
       fetch: endpoints.fetch,
-      now: () => now,
+      now: () => clock.now,
       sleep: async (ms) => {
-        now += ms;
+        clock.now += ms;
       },
       setInterval: () => ({ unref() {} }) as unknown as ReturnType<typeof setInterval>,
       clearInterval: () => {},
@@ -167,6 +168,63 @@ describe("LlamaServerEmbeddings — reviveEndpoints", () => {
     });
     await provider.embedBatch(["t0"]);
     endpoints.takeDown();
+
+    await errorOf(provider.embedBatch(["t1"]));
+
+    expect(calls).toBe(1);
+  });
+
+  it("re-arms after a successful revive once the re-arm window has passed", async () => {
+    const endpoints = fakeEndpoints([PEER_A, PEER_B]);
+    const clock = { now: 1_000_000 };
+    let calls = 0;
+    const provider = makeProvider(
+      endpoints,
+      async () => {
+        calls += 1;
+        endpoints.bringUp();
+        return true;
+      },
+      clock,
+    );
+    await provider.embedBatch(["t0"]);
+    endpoints.takeDown();
+    clock.now += LLAMA_SERVER_REVIVE_REARM_MS;
+
+    const results = await provider.embedBatch(["t1"]);
+
+    expect(results).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+
+  it("a revive that reports success while the endpoints stay down fails once, without looping", async () => {
+    const endpoints = fakeEndpoints([PEER_A, PEER_B]);
+    let calls = 0;
+    const provider = makeProvider(endpoints, async () => {
+      calls += 1;
+      return true;
+    });
+
+    const error = await errorOf(provider.embedBatch(["t0"]));
+
+    expect(error.name).toBe("LlamaServerUnavailableError");
+    expect(calls).toBe(1);
+  });
+
+  it("never re-arms after a failed revive", async () => {
+    const endpoints = fakeEndpoints([PEER_A, PEER_B]);
+    const clock = { now: 1_000_000 };
+    let calls = 0;
+    const provider = makeProvider(
+      endpoints,
+      async () => {
+        calls += 1;
+        return false;
+      },
+      clock,
+    );
+    await errorOf(provider.embedBatch(["t0"]));
+    clock.now += LLAMA_SERVER_REVIVE_REARM_MS * 10;
 
     await errorOf(provider.embedBatch(["t1"]));
 
