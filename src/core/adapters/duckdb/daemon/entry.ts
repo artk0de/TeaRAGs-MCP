@@ -23,14 +23,13 @@
  * import `runDaemon` / `createConnectionHandler` and drive them explicitly.
  */
 
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
-import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../primitives/diagnostics/index.js";
-import { UnknownError } from "../../../primitives/errors/tea-rags-error.js";
+import { UnknownError } from "../../../primitives/errors/index.js";
 import {
   CodegraphDaemonDrainRefusedError,
   CodegraphDaemonMalformedFrameError,
@@ -45,6 +44,7 @@ import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
   claimDaemonOwnership,
   decrementRefs,
+  ensureDaemonSocketDir,
   getDaemonPaths,
   getStorageDir,
   incrementRefs,
@@ -460,8 +460,9 @@ async function startOwnedDaemon(
   // The build-key directory (bd tea-rags-mcp-42hno) may not exist yet — a
   // cold spawn from a fresh build has never created it. The spawner creates it
   // for the log fd, but a daemon started any other way (tests, manual run)
-  // must not fail `server.listen` on a missing parent.
-  mkdirSync(dirname(options.paths.socketPath), { recursive: true });
+  // must not fail `server.listen` on a missing parent. A socket moved under a
+  // short tmp alias dir (js1ie, over-long key dir) gets that alias here.
+  ensureDaemonSocketDir(options.paths);
   // Clear any stale socket file left by a previously-crashed daemon. Without
   // this, `server.listen` fails with EADDRINUSE because the unix socket inode
   // still exists on disk even though no process is bound to it. Idempotent —
