@@ -77,9 +77,9 @@ export async function syncHarnessPlugins(deps: HarnessPluginSyncDeps): Promise<H
 
 /** Runs `<command> <args>` capturing stdout/stderr; a spawn ENOENT reports `missing`. */
 export function spawnHarnessCli(spawn: typeof nodeSpawn, command: string): HarnessCliRunner {
-  return async (args) =>
+  return async (args, options) =>
     new Promise((resolve) => {
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], cwd: options?.cwd });
       let stdout = "";
       let stderr = "";
       child.stdout?.on("data", (chunk: Buffer) => {

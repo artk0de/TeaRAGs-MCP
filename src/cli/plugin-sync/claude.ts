@@ -2,6 +2,7 @@ import { releaseTag, TEA_RAGS_GIT_URL, TEA_RAGS_MARKETPLACE } from "./release-pi
 import {
   emptyPluginSyncReport,
   type HarnessCliRunner,
+  type HarnessCliRunOptions,
   type HarnessCliRunResult,
   type HarnessPluginSyncAdapter,
   type PluginSyncReport,
@@ -14,15 +15,20 @@ export interface ClaudePluginSyncDeps {
   /**
    * false → refuse a re-pin while any plugin is installed with project or
    * local scope (the removal would uninstall it and only its project can put it
-   * back); the refusal comes back as `repinDeferred`. Default true.
+   * back); the refusal comes back as `repinDeferred`. Default true: the re-pin
+   * reinstalls such a plugin from its project, and still refuses when Claude
+   * reported no project path for it.
    */
   repinScopedInstalls?: boolean;
 }
 
+/** One install of a plugin — Claude lists an id once per scope (and per project) it is installed in. */
 interface InstalledClaudePlugin {
   id: string;
   version: string;
   scope: string;
+  /** The project a project- or local-scope install belongs to; its commands must run there. */
+  projectPath?: string;
 }
 
 /** One row of `claude plugin marketplace list --json`. */
@@ -43,8 +49,8 @@ const MARKETPLACE_FAILURE_ID = `${TEA_RAGS_MARKETPLACE} marketplace`;
  * tea-rags client was cut from: the marketplace is pinned to `v<clientVersion>`
  * (`claude plugin marketplace add <git-url>#<tag>`). Claude Code has no way to
  * move an added marketplace to another ref, so a re-pin is remove + add; the
- * removal uninstalls the marketplace's plugins, which are reinstalled at user
- * scope. A re-added marketplace carries no `autoUpdate`, i.e. background
+ * removal uninstalls the marketplace's plugins, which are reinstalled in every
+ * scope they had — a project/local one from its own project directory. A re-added marketplace carries no `autoUpdate`, i.e. background
  * auto-update stays off (the third-party default). Never passes `-y`: a
  * marketplace-declared command comes back as `needsConfirmation`.
  */
@@ -73,8 +79,13 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
       return report;
     }
     const scoped = installed.filter(({ scope }) => scope !== "user");
-    if (this.deps.repinScopedInstalls === false && scoped.length > 0) {
-      report.repinDeferred = { to: tag, scopedIds: scoped.map(({ id, scope }) => `${id} (${scope})`) };
+    const unrestorable =
+      this.deps.repinScopedInstalls === false ? scoped : scoped.filter(({ projectPath }) => projectPath === undefined);
+    if (unrestorable.length > 0) {
+      report.repinDeferred = {
+        to: tag,
+        scopedIds: [...new Set(unrestorable.map(({ id, scope }) => `${id} (${scope})`))],
+      };
       return report;
     }
     await this.repin(entry, tag, installed, report);
@@ -82,14 +93,23 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
   }
 
   private async updateInPlace(installed: InstalledClaudePlugin[], report: PluginSyncReport): Promise<void> {
-    for (const { id } of installed) {
-      const run = await this.deps.runClaude(["plugin", "update", id, "--json"]);
+    for (const plugin of installed) {
+      const { id, scope } = plugin;
+      const command = ["plugin", "update", id, ...(scope === "user" ? [] : ["--scope", scope])];
+      if (scope !== "user" && plugin.projectPath === undefined) {
+        report.failed.push({
+          id,
+          reason: `installed with ${scope} scope in a project Claude did not name; update it from that project: claude ${command.join(" ")}`,
+        });
+        continue;
+      }
+      const run = await this.deps.runClaude([...command, "--json"], runOptions(plugin));
       const result = parseResultLine(run.stdout);
-      if (this.recordConfirmation(id, result, `claude plugin update ${id}`, report)) continue;
+      if (this.recordConfirmation(id, result, `claude ${command.join(" ")}`, report)) continue;
       if (run.code !== 0 || result?.outcome !== "ok") {
         report.failed.push({ id, reason: failureReason(result, run.code) });
       } else if (typeof result.newVersion === "string" && result.newVersion !== result.oldVersion) {
-        report.updated.push({ id, oldVersion: String(result.oldVersion), newVersion: result.newVersion });
+        recordUpdate(report, { id, oldVersion: String(result.oldVersion), newVersion: result.newVersion });
       }
     }
   }
@@ -124,17 +144,15 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
     return this.deps.runClaude(["plugin", "marketplace", "add", source, "--json"]);
   }
 
-  /** The marketplace removal uninstalled every plugin it served; put the user-scope ones back. */
+  /**
+   * The marketplace removal uninstalled every plugin it served; put each install
+   * back in its scope — a project/local one from its project directory (`sync`
+   * defers the re-pin when one has none).
+   */
   private async reinstall(installed: InstalledClaudePlugin[], report: PluginSyncReport): Promise<void> {
-    for (const { id, scope } of installed) {
-      if (scope !== "user") {
-        report.failed.push({
-          id,
-          reason: `uninstalled with the marketplace re-pin; reinstall it from its project: claude plugin install ${id} --scope ${scope}`,
-        });
-        continue;
-      }
-      const run = await this.deps.runClaude(["plugin", "install", id, "--scope", scope, "--json"]);
+    for (const plugin of installed) {
+      const { id, scope } = plugin;
+      const run = await this.deps.runClaude(["plugin", "install", id, "--scope", scope, "--json"], runOptions(plugin));
       const result = parseResultLine(run.stdout);
       if (this.recordConfirmation(id, result, `claude plugin install ${id} --scope ${scope}`, report)) continue;
       if (run.code !== 0 || result?.outcome !== "ok") {
@@ -143,11 +161,11 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
     }
 
     const after = await this.deps.runClaude(["plugin", "list", "--json"]);
-    const versions = new Map(installedPlugins(after.stdout).map((p) => [p.id, p.version]));
-    for (const { id, version } of installed) {
-      const newVersion = versions.get(id);
-      if (newVersion !== undefined && newVersion !== version) {
-        report.updated.push({ id, oldVersion: version, newVersion });
+    const versions = new Map(installedPlugins(after.stdout).map((p) => [installKey(p), p.version]));
+    for (const plugin of installed) {
+      const newVersion = versions.get(installKey(plugin));
+      if (newVersion !== undefined && newVersion !== plugin.version) {
+        recordUpdate(report, { id: plugin.id, oldVersion: plugin.version, newVersion });
       }
     }
   }
@@ -170,22 +188,40 @@ export class ClaudePluginSyncAdapter implements HarnessPluginSyncAdapter {
   }
 }
 
+/** Every `*@tea-rags` install, one per (id, scope, project) — never collapsed by id, or a scope is lost. */
 function installedPlugins(stdout: string): InstalledClaudePlugin[] {
   try {
-    const rows = JSON.parse(stdout) as { id?: unknown; version?: unknown; scope?: unknown }[];
-    const byId = new Map<string, InstalledClaudePlugin>();
+    const rows = JSON.parse(stdout) as { id?: unknown; version?: unknown; scope?: unknown; projectPath?: unknown }[];
+    const byInstall = new Map<string, InstalledClaudePlugin>();
     for (const row of rows) {
-      if (typeof row.id !== "string" || !row.id.endsWith(`@${TEA_RAGS_MARKETPLACE}`) || byId.has(row.id)) continue;
-      byId.set(row.id, {
+      if (typeof row.id !== "string" || !row.id.endsWith(`@${TEA_RAGS_MARKETPLACE}`)) continue;
+      const plugin: InstalledClaudePlugin = {
         id: row.id,
         version: typeof row.version === "string" ? row.version : "unknown",
         scope: typeof row.scope === "string" ? row.scope : "user",
-      });
+      };
+      if (typeof row.projectPath === "string") plugin.projectPath = row.projectPath;
+      const key = installKey(plugin);
+      if (!byInstall.has(key)) byInstall.set(key, plugin);
     }
-    return [...byId.values()];
+    return [...byInstall.values()];
   } catch {
     return [];
   }
+}
+
+function installKey({ id, scope, projectPath }: InstalledClaudePlugin): string {
+  return JSON.stringify([id, scope, projectPath ?? null]);
+}
+
+/** A project/local install's command runs in its project; a user one wherever tea-rags runs. */
+function runOptions({ scope, projectPath }: InstalledClaudePlugin): HarnessCliRunOptions | undefined {
+  return scope === "user" || projectPath === undefined ? undefined : { cwd: projectPath };
+}
+
+/** One `updated` row per plugin id — every scope of one id moves to the same release. */
+function recordUpdate(report: PluginSyncReport, update: PluginSyncReport["updated"][number]): void {
+  if (!report.updated.some(({ id }) => id === update.id)) report.updated.push(update);
 }
 
 function parseMarketplaces(stdout: string): ClaudeMarketplaceEntry[] {

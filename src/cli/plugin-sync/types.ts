@@ -10,7 +10,12 @@ export interface HarnessCliRunResult {
   stderr?: string;
 }
 
-export type HarnessCliRunner = (args: string[]) => Promise<HarnessCliRunResult>;
+export interface HarnessCliRunOptions {
+  /** Working directory of the run — a project-scope plugin command acts on the project it runs in. */
+  cwd?: string;
+}
+
+export type HarnessCliRunner = (args: string[], options?: HarnessCliRunOptions) => Promise<HarnessCliRunResult>;
 
 /**
  * Outcome of one harness's sync. `skipped` means nothing was attempted:
@@ -26,8 +31,9 @@ export interface PluginSyncReport {
   repinned?: { from: string; to: string };
   /**
    * The re-pin to `to` was refused: it would uninstall plugins installed with
-   * project or local scope (`scopedIds`, each `<id> (<scope>)`), which cannot be
-   * put back from here. Only a background run refuses; `tea-rags update` re-pins.
+   * project or local scope (`scopedIds`, each `<id> (<scope>)`). A background
+   * run refuses for any such install; `tea-rags update` re-pins and reinstalls
+   * them from their project, refusing only for one whose project it cannot name.
    */
   repinDeferred?: { to: string; scopedIds: string[] };
   skipped?: "cli-missing" | "none-installed" | "dev-marketplace";
