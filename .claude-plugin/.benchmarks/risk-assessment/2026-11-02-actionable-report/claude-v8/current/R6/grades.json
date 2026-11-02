@@ -1,0 +1,86 @@
+{
+ "case": "R6",
+ "pass": true,
+ "checks": [
+  {
+   "check": "authors-degenerate",
+   "required": true,
+   "pass": true,
+   "detail": "authors: Alice Moreau 100% of commits — ownership axis degenerate"
+  },
+  {
+   "check": "author-check-call",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "one-bash-line-scoped",
+   "required": true,
+   "pass": true,
+   "detail": "1 commit-evidence git Bash calls"
+  },
+  {
+   "check": "legend-merged",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "tiers",
+   "required": true,
+   "pass": true,
+   "detail": "crit=True,True high=True,False low=True"
+  },
+  {
+   "check": "no-silo",
+   "required": true,
+   "pass": true,
+   "detail": []
+  },
+  {
+   "check": "no-knowledge-transfer",
+   "required": true,
+   "pass": true,
+   "detail": []
+  },
+  {
+   "check": "bus-factor-line",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "next-steps",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  }
+ ],
+ "tool_calls": 23,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "Read",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "Bash",
+  "find_similar",
+  "find_similar",
+  "find_symbol",
+  "hybrid_search",
+  "hybrid_search",
+  "hybrid_search",
+  "find_symbol",
+  "Bash",
+  "find_symbol"
+ ]
+}

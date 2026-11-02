@@ -1,0 +1,90 @@
+{
+ "case": "R5",
+ "pass": true,
+ "checks": [
+  {
+   "check": "tier-legend",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "empty-tiers-printed",
+   "required": true,
+   "pass": true,
+   "detail": "crit='## Critical\\nnone\\n\\n' high='## High\\nnone\\n\\n'"
+  },
+  {
+   "check": "medium-cards",
+   "required": true,
+   "pass": true,
+   "detail": "totals={6: 2}"
+  },
+  {
+   "check": "medium-bodies-git",
+   "required": true,
+   "pass": true,
+   "detail": "fetched=['InvoiceCalculator#computeTotal', 'RetryQueue#enqueue', 'RetryQueue#processBatch'] gits=1"
+  },
+  {
+   "check": "low-table",
+   "required": true,
+   "pass": true,
+   "detail": "low=586"
+  },
+  {
+   "check": "risk-patterns",
+   "required": true,
+   "pass": true,
+   "detail": "rows=7"
+  },
+  {
+   "check": "low-risk-type",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "low-batch",
+   "required": true,
+   "pass": true,
+   "detail": [
+    "| 3, 5 | Low batch: watch only (`applyDiscount`, `rateFor`) | перепроверить при следующем изменении | — |"
+   ]
+  },
+  {
+   "check": "no-healthy-claim",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "check": "next-steps",
+   "required": true,
+   "pass": true,
+   "detail": ""
+  }
+ ],
+ "tool_calls": 19,
+ "tools": [
+  "Skill",
+  "ToolSearch",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "rank_chunks",
+  "Read",
+  "find_symbol",
+  "hybrid_search",
+  "hybrid_search",
+  "Bash",
+  "find_symbol",
+  "find_symbol"
+ ]
+}
