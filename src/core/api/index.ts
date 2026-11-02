@@ -140,9 +140,14 @@ export { InputValidationError, CollectionNotProvidedError } from "./public/error
 // llama.cpp binary install + discovery — `tea-rags llama-server install` and
 // every llama-server consumer that needs the binary path.
 export {
+  benchPoolThroughput,
+  chooseInstanceCount,
+  createLlamaServerPoolBenchEmbed,
+  defaultPoolBenchMaxInstances,
   detectLlamaServerBackend,
   downloadLlamaServer,
   LlamaServerPools,
+  type LlamaServerPoolThroughputSample,
   productionLlamaServerPoolsDeps,
   resolveLlamaServerBinary,
   type LlamaServerBackend,

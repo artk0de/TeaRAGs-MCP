@@ -13,7 +13,21 @@ export {
   type LlamaCppReleaseAsset,
   type LlamaServerBackend,
 } from "./install/llama-cpp-assets.js";
-export { LlamaServerPoolRegistryCorruptedError, LlamaServerPoolStartError } from "./pools/errors.js";
+export {
+  LlamaServerPoolBenchError,
+  LlamaServerPoolRegistryCorruptedError,
+  LlamaServerPoolStartError,
+} from "./pools/errors.js";
+export {
+  BENCH_CORPUS_SIZE,
+  benchPoolThroughput,
+  buildPoolBenchCorpus,
+  chooseInstanceCount,
+  createLlamaServerPoolBenchEmbed,
+  defaultPoolBenchMaxInstances,
+  type LlamaServerPoolBenchEmbed,
+  type LlamaServerPoolThroughputSample,
+} from "./pools/pool-bench.js";
 export {
   buildPoolLaunchArgs,
   LlamaServerPools,

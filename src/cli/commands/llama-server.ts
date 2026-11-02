@@ -37,7 +37,9 @@ import {
   runLlamaServerInstall,
 } from "./llama-server-install.js";
 import {
+  parseLlamaServerInstancesFlag,
   productionLlamaServerPoolsCommandDeps,
+  runLlamaServerBench,
   runLlamaServerStart,
   runLlamaServerStatus,
   runLlamaServerStop,
@@ -354,7 +356,15 @@ export const llamaServerCommand: CommandModule = {
               demandOption: true,
               describe: "Catalog Hugging Face id, fetched first with fetch-model (e.g. nomic-ai/CodeRankEmbed)",
             })
-            .option("instances", { type: "number", default: 2, describe: "llama-server processes in the pool (≥ 2)" })
+            .option("instances", {
+              type: "string",
+              default: "2",
+              describe: "llama-server processes in the pool (≥ 2), or auto: bench first and take the fastest count",
+            })
+            .option("max-instances", {
+              type: "number",
+              describe: "Highest count --instances auto benches (default: 4 on Apple Silicon, else 3)",
+            })
             .option("slots", { type: "number", default: 4, describe: "Parallel slots per instance (-np)" })
             .option("gpu-layers", { type: "number", default: 999, describe: "Layers offloaded to the GPU (-ngl)" })
             .option("flash-attention", { type: "boolean", default: true, describe: "Flash attention (-fa on|off)" }),
@@ -362,12 +372,43 @@ export const llamaServerCommand: CommandModule = {
           await runLlamaServerStart(
             {
               model: argv.model,
-              instances: argv.instances,
+              instances: parseLlamaServerInstancesFlag(argv.instances),
+              maxInstances: argv.maxInstances,
               slots: argv.slots,
               gpuLayers: argv.gpuLayers,
               flashAttention: argv.flashAttention,
             },
-            productionLlamaServerPoolsCommandDeps(),
+            productionLlamaServerPoolsCommandDeps({ slots: argv.slots }),
+          );
+        },
+      )
+      .command(
+        "bench",
+        "Embed a fixed synthetic corpus on pools of 1..K instances; prints texts/s per count and the count --instances auto picks",
+        (y) =>
+          y
+            .option("model", {
+              type: "string",
+              demandOption: true,
+              describe: "Catalog Hugging Face id, fetched first with fetch-model (e.g. nomic-ai/CodeRankEmbed)",
+            })
+            .option("max-instances", {
+              type: "number",
+              describe: "Highest instance count to bench (default: 4 on Apple Silicon, else 3)",
+            })
+            .option("slots", { type: "number", default: 4, describe: "Parallel slots per instance (-np)" })
+            .option("gpu-layers", { type: "number", default: 999, describe: "Layers offloaded to the GPU (-ngl)" })
+            .option("flash-attention", { type: "boolean", default: true, describe: "Flash attention (-fa on|off)" }),
+        async (argv) => {
+          await runLlamaServerBench(
+            {
+              model: argv.model,
+              maxInstances: argv.maxInstances,
+              slots: argv.slots,
+              gpuLayers: argv.gpuLayers,
+              flashAttention: argv.flashAttention,
+            },
+            productionLlamaServerPoolsCommandDeps({ slots: argv.slots }),
           );
         },
       )
