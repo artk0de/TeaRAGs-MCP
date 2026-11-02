@@ -1,8 +1,19 @@
 import { spawn as nodeSpawn } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type { CommandModule } from "yargs";
 
 import { createColorizer, type Colorizer } from "../infra/color.js";
+import {
+  resolvePackageRoot,
+  spawnHarnessCli,
+  syncHarnessPlugins,
+  type HarnessCliRunner,
+  type HarnessPluginSyncReport,
+  type PluginHarness,
+  type PluginSyncReport,
+} from "../plugin-sync/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { formatForCli } from "../update-check/format.js";
@@ -12,78 +23,115 @@ import { PackageJsonVersionSource } from "../update-check/version-source.js";
 
 type SpawnFn = typeof nodeSpawn;
 type ExitFn = (code: number) => void;
-
-/** One `claude …` invocation; `missing` = the claude CLI is not on PATH. */
-export interface ClaudeRunResult {
-  code: number | null;
-  stdout: string;
-  missing: boolean;
-}
+type AvailableUpdateStatus = Extract<UpdateStatus, { kind: "available" }>;
 
 export interface RunUpdateDeps {
   service: Pick<UpdateCheckService, "checkForUpdate">;
   spawn: SpawnFn;
-  runClaude: (args: string[]) => Promise<ClaudeRunResult>;
+  runClaude: HarnessCliRunner;
+  runCodex: HarnessCliRunner;
+  /** Installed client version — read only when the registry is unreachable and the status carries none. */
+  clientVersion: () => string;
+  homedir: string;
+  codexHome: string;
+  packageRoot: string;
   exit: ExitFn;
 }
 
-export interface PluginSyncReport {
-  updated: { id: string; oldVersion: string; newVersion: string }[];
-  failed: { id: string; reason: string }[];
-  needsConfirmation: { id: string; command: string; sha256: string }[];
-  skipped?: "claude-missing" | "none-installed";
+export type UpdateInstallOutcome =
+  | { kind: "installed"; version: string }
+  | { kind: "not-requested" }
+  | { kind: "npm-missing" }
+  | { kind: "spawn-failed"; message: string }
+  | { kind: "failed"; exitCode: number };
+
+/** Everything one `tea-rags update` run did, for a caller that prints it or logs it. */
+export interface UpdateRunReport {
+  status: UpdateStatus;
+  /** Present when a newer version was available. */
+  install?: UpdateInstallOutcome;
+  /** Absent only when the npm install failed, or the client version could not be read. */
+  plugins?: HarnessPluginSyncReport;
+  exitCode: number;
 }
 
-const PLUGIN_MARKETPLACE = "tea-rags";
+export interface PerformUpdateOptions {
+  /** false → report an available version without installing it; plugins still sync to the installed client. */
+  install: boolean;
+  /** Called right before npm starts, so a caller can announce the install npm's own output follows. */
+  onInstallStart?: (status: AvailableUpdateStatus) => void;
+}
+
+const HARNESS_PRODUCT: Record<PluginHarness, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor" };
 
 function defaultDeps(spawn: SpawnFn): RunUpdateDeps {
   const service = new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
+  const home = homedir();
   return {
     service,
     spawn,
-    runClaude: claudeRunner(spawn),
+    runClaude: spawnHarnessCli(spawn, "claude"),
+    runCodex: spawnHarnessCli(spawn, "codex"),
+    clientVersion: () => new PackageJsonVersionSource().getCurrent(),
+    homedir: home,
+    codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
+    packageRoot: resolvePackageRoot(),
     exit: (code) => process.exit(code),
   };
 }
 
-function claudeRunner(spawn: SpawnFn): RunUpdateDeps["runClaude"] {
-  return async (args) =>
-    new Promise((resolve) => {
-      const child = spawn("claude", args, { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = "";
-      child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        resolve({ code: null, stdout, missing: err.code === "ENOENT" });
-      });
-      child.on("close", (code) => {
-        resolve({ code, stdout, missing: false });
-      });
-    });
+function withDefaults(depsOverride: Partial<RunUpdateDeps>): RunUpdateDeps {
+  return { ...defaultDeps(depsOverride.spawn ?? nodeSpawn), ...depsOverride };
 }
 
 /**
- * Pure handler — accepts injected deps so tests can mock the service and
- * the spawn function without touching node:child_process or the real
- * registry.
+ * Non-printing update run: checks the registry, installs the newer version when
+ * asked, then syncs every harness's tea-rags plugins to the installed client's
+ * release — after an install, when already up to date, and when the registry is
+ * unreachable alike. Only a failed install skips the sync.
  */
-export async function runUpdateCommand(depsOverride: Partial<RunUpdateDeps> = {}): Promise<void> {
-  const deps = { ...defaultDeps(depsOverride.spawn ?? nodeSpawn), ...depsOverride };
+export async function performUpdate(
+  depsOverride: Partial<RunUpdateDeps>,
+  options: PerformUpdateOptions,
+): Promise<UpdateRunReport> {
+  const deps = withDefaults(depsOverride);
   const status = await deps.service.checkForUpdate({ allowNetwork: true, preferCache: false });
 
-  switch (status.kind) {
-    case "up-to-date":
-      process.stdout.write(`${formatForCli(status, createColorizer())}\n`);
-      deps.exit(0);
-      return;
-    case "unavailable":
-      process.stderr.write(`${formatForCli(status, stderrColorizer())}\n`);
-      deps.exit(1);
-      return;
-    case "available":
-      runNpmInstall(status, deps);
+  if (status.kind === "available" && options.install) {
+    options.onInstallStart?.(status);
+    const install = await runNpmInstall(status, deps);
+    if (install.kind !== "installed") return { status, install, exitCode: installExitCode(install) };
+    return { status, install, plugins: await syncPlugins(deps, status.latest), exitCode: 0 };
   }
+
+  const install: UpdateInstallOutcome | undefined = status.kind === "available" ? { kind: "not-requested" } : undefined;
+  const exitCode = status.kind === "unavailable" ? 1 : 0;
+  const version = status.kind === "unavailable" ? readClientVersion(deps) : status.current;
+  const plugins = version === undefined ? undefined : await syncPlugins(deps, version);
+  return { status, ...(install ? { install } : {}), ...(plugins ? { plugins } : {}), exitCode };
+}
+
+/**
+ * Pure handler — accepts injected deps so tests can mock the service, the
+ * spawn function and the harness CLIs without touching node:child_process,
+ * the real registry or the machine's plugin installs.
+ */
+export async function runUpdateCommand(depsOverride: Partial<RunUpdateDeps> = {}): Promise<void> {
+  const exit = depsOverride.exit ?? ((code: number) => process.exit(code));
+  const report = await performUpdate(depsOverride, { install: true, onInstallStart: printInstallStart });
+
+  switch (report.status.kind) {
+    case "up-to-date":
+      process.stdout.write(`${formatForCli(report.status, createColorizer())}\n`);
+      break;
+    case "unavailable":
+      process.stderr.write(`${formatForCli(report.status, stderrColorizer())}\n`);
+      break;
+    case "available":
+      printInstallFailure(report.install);
+  }
+  if (report.plugins) printHarnessPluginSyncReport(report.plugins);
+  exit(report.exitCode);
 }
 
 /** Colors for stderr lines — gated on stderr's own TTY, not stdout's. */
@@ -91,134 +139,124 @@ function stderrColorizer(): Colorizer {
   return createColorizer({ isTTY: Boolean(process.stderr.isTTY) });
 }
 
-function runNpmInstall(status: Extract<UpdateStatus, { kind: "available" }>, deps: RunUpdateDeps): void {
+function printInstallStart(status: AvailableUpdateStatus): void {
   const c = createColorizer();
   process.stdout.write(`Updating tea-rags ${status.current} → ${c.bold(c.ok(status.latest))}...\n`);
-  // Force postinstall to run even if user's ~/.npmrc has ignore-scripts=true.
-  // tea-rags' postinstall (scripts/postinstall.js) is required for proper setup.
-  const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], {
-    stdio: "inherit",
-    env: { ...process.env, npm_config_ignore_scripts: "false" },
-  });
-
-  child.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "ENOENT" || /ENOENT|not found/i.test(err.message)) {
-      process.stderr.write(
-        `${stderrColorizer().alert("npm not found in PATH. Install Node.js or update tea-rags manually.")}\n`,
-      );
-      deps.exit(127);
-      return;
-    }
-    process.stderr.write(`${stderrColorizer().alert(`Failed to spawn npm: ${err.message}`)}\n`);
-    deps.exit(1);
-  });
-
-  child.on("exit", (code) => {
-    if (code !== 0) {
-      deps.exit(code ?? 1);
-      return;
-    }
-    void syncClaudePlugins(deps).then((report) => {
-      printPluginSyncReport(report);
-      deps.exit(0);
-    });
-  });
 }
 
-/**
- * Brings the installed `*@tea-rags` Claude Code plugins to the marketplace's
- * latest. Never passes `-y`: a marketplace-declared command comes back as
- * `needsConfirmation` for a person to accept.
- */
-export async function syncClaudePlugins(deps: Pick<RunUpdateDeps, "runClaude">): Promise<PluginSyncReport> {
-  const report: PluginSyncReport = { updated: [], failed: [], needsConfirmation: [] };
-  const list = await deps.runClaude(["plugin", "list", "--json"]);
-  if (list.missing) return { ...report, skipped: "claude-missing" };
-
-  const ids = installedPluginIds(list.stdout);
-  if (ids.length === 0) return { ...report, skipped: "none-installed" };
-
-  const marketplace = await deps.runClaude(["plugin", "marketplace", "update", PLUGIN_MARKETPLACE, "--json"]);
-  const refresh = parseResultLine(marketplace.stdout);
-  if (marketplace.code !== 0) {
-    report.failed.push({ id: `${PLUGIN_MARKETPLACE} marketplace`, reason: failureReason(refresh, marketplace.code) });
-  }
-
-  for (const id of ids) {
-    const updateRun = await deps.runClaude(["plugin", "update", id, "--json"]);
-    const updateResult = parseResultLine(updateRun.stdout);
-    const shown = updateResult?.shownCommand as { command?: string; sha256?: string } | undefined;
-    if (shown?.sha256) {
-      report.needsConfirmation.push({ id, command: shown.command ?? "", sha256: shown.sha256 });
-    } else if (updateRun.code !== 0 || updateResult?.outcome !== "ok") {
-      report.failed.push({ id, reason: failureReason(updateResult, updateRun.code) });
-    } else if (typeof updateResult.newVersion === "string" && updateResult.newVersion !== updateResult.oldVersion) {
-      report.updated.push({ id, oldVersion: String(updateResult.oldVersion), newVersion: updateResult.newVersion });
-    }
-  }
-  return report;
-}
-
-function installedPluginIds(stdout: string): string[] {
+function readClientVersion(deps: RunUpdateDeps): string | undefined {
   try {
-    const plugins = JSON.parse(stdout) as { id?: unknown }[];
-    const ids = plugins.map((p) => p.id).filter((id): id is string => typeof id === "string");
-    return [...new Set(ids.filter((id) => id.endsWith(`@${PLUGIN_MARKETPLACE}`)))];
-  } catch {
-    return [];
-  }
-}
-
-/** The machine-readable result is the last JSON line `--json` prints on stdout. */
-function parseResultLine(stdout: string): Record<string, unknown> | undefined {
-  const line = stdout
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith("{"))
-    .pop();
-  if (!line) return undefined;
-  try {
-    return JSON.parse(line) as Record<string, unknown>;
+    return deps.clientVersion();
   } catch {
     return undefined;
   }
 }
 
-function failureReason(result: Record<string, unknown> | undefined, code: number | null): string {
-  if (typeof result?.message === "string") return result.message;
-  if (typeof result?.failureCode === "string") return result.failureCode;
-  return `claude exited with code ${code ?? "unknown"}`;
+async function syncPlugins(deps: RunUpdateDeps, clientVersion: string): Promise<HarnessPluginSyncReport> {
+  return syncHarnessPlugins({
+    clientVersion,
+    runClaude: deps.runClaude,
+    runCodex: deps.runCodex,
+    homedir: deps.homedir,
+    codexHome: deps.codexHome,
+    packageRoot: deps.packageRoot,
+  });
 }
 
-function printPluginSyncReport(report: PluginSyncReport): void {
+async function runNpmInstall(status: AvailableUpdateStatus, deps: RunUpdateDeps): Promise<UpdateInstallOutcome> {
+  return new Promise((resolve) => {
+    // Force postinstall to run even if user's ~/.npmrc has ignore-scripts=true.
+    // tea-rags' postinstall (scripts/postinstall.js) is required for proper setup.
+    const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], {
+      stdio: "inherit",
+      env: { ...process.env, npm_config_ignore_scripts: "false" },
+    });
+
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT" || /ENOENT|not found/i.test(err.message)) {
+        resolve({ kind: "npm-missing" });
+        return;
+      }
+      resolve({ kind: "spawn-failed", message: err.message });
+    });
+
+    child.on("exit", (code) => {
+      resolve(code === 0 ? { kind: "installed", version: status.latest } : { kind: "failed", exitCode: code ?? 1 });
+    });
+  });
+}
+
+function installExitCode(install: UpdateInstallOutcome): number {
+  switch (install.kind) {
+    case "npm-missing":
+      return 127;
+    case "spawn-failed":
+      return 1;
+    case "failed":
+      return install.exitCode;
+    case "installed":
+    case "not-requested":
+      return 0;
+  }
+}
+
+function printInstallFailure(install: UpdateInstallOutcome | undefined): void {
+  if (install?.kind === "npm-missing") {
+    process.stderr.write(
+      `${stderrColorizer().alert("npm not found in PATH. Install Node.js or update tea-rags manually.")}\n`,
+    );
+  } else if (install?.kind === "spawn-failed") {
+    process.stderr.write(`${stderrColorizer().alert(`Failed to spawn npm: ${install.message}`)}\n`);
+  }
+}
+
+function printHarnessPluginSyncReport(report: HarnessPluginSyncReport): void {
+  for (const { harness, report: harnessReport } of report.harnesses) {
+    printPluginSyncReport(harness, harnessReport);
+  }
+}
+
+function printPluginSyncReport(harness: PluginHarness, report: PluginSyncReport): void {
+  const product = HARNESS_PRODUCT[harness];
+  // Claude Code is the primary harness, so its absence is worth a line; Codex
+  // and Cursor are optional and stay silent when not installed.
   if (report.skipped === "none-installed") return;
-  if (report.skipped === "claude-missing") {
-    process.stdout.write("claude CLI not found — Claude Code plugins not synced.\n");
+  if (report.skipped === "cli-missing") {
+    if (harness === "claude") process.stdout.write("claude CLI not found — Claude Code plugins not synced.\n");
+    return;
+  }
+  if (report.skipped === "dev-marketplace") {
+    process.stdout.write(`${product}: the tea-rags marketplace is a local checkout — plugins left as they are.\n`);
     return;
   }
   const c = createColorizer();
+  if (report.repinned) {
+    process.stdout.write(
+      `${product}: pinned the tea-rags marketplace to ${report.repinned.to} (was ${report.repinned.from}).\n`,
+    );
+  }
   for (const { id, reason } of report.failed) {
     process.stderr.write(`${stderrColorizer().alert(`✘ ${id}: ${reason}`)}\n`);
   }
-  for (const { id, command, sha256 } of report.needsConfirmation) {
+  for (const { id, command, acceptWith } of report.needsConfirmation) {
     process.stdout.write(
-      `! ${id} asks to run a marketplace-declared command: ${command}\n` +
-        `  Review it, then: claude plugin update ${id} --accept-command ${sha256}\n`,
+      `! ${id} asks to run a marketplace-declared command: ${command}\n  Review it, then: ${acceptWith}\n`,
     );
   }
   for (const { id, oldVersion, newVersion } of report.updated) {
     process.stdout.write(`✓ ${id} ${oldVersion} → ${c.bold(c.ok(newVersion))}\n`);
   }
   if (report.updated.length > 0) {
-    process.stdout.write("Restart Claude Code to load the updated plugins.\n");
+    process.stdout.write(`Restart ${product} to load the updated plugins.\n`);
   } else if (report.failed.length === 0 && report.needsConfirmation.length === 0) {
-    process.stdout.write("Claude Code plugins are up to date.\n");
+    process.stdout.write(`${product} plugins are up to date.\n`);
   }
 }
 
 export const updateCommand: CommandModule<object, object> = {
   command: "update",
-  describe: "Check for a newer tea-rags version, install it via npm and update the tea-rags Claude Code plugins.",
+  describe:
+    "Check for a newer tea-rags version, install it via npm and bring the tea-rags plugins of Claude Code, Codex and Cursor to the installed release.",
   handler: async () => {
     await runUpdateCommand();
   },

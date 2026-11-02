@@ -61,6 +61,7 @@
   "files": [
     "build/",
     "benchmarks/",
+    "harness/cursor/",
     "scripts/postinstall.js",
     "scripts/install-fish-completion.js",
     "prompts.json",
