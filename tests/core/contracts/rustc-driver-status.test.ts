@@ -180,7 +180,10 @@ describe("liveRustcDriverStatus", () => {
 
   it("names the path when no project alias is known", () => {
     expect(rustcDriverRecomputeCommand({ path: "/repo" })).toBe(
-      "tea-rags index-codebase --path /repo --force-enrichments codegraph --languages rust",
+      "tea-rags index-codebase /repo --force-enrichments codegraph --languages rust",
+    );
+    expect(rustcDriverRecomputeCommand({ path: "/my repo" })).toBe(
+      'tea-rags index-codebase "/my repo" --force-enrichments codegraph --languages rust',
     );
     expect(rustcDriverRecomputeCommand({ project: "repo", path: "/repo" })).toBe(RECOMPUTE);
   });

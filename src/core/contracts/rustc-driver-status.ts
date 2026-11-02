@@ -65,7 +65,9 @@ export function rustcDriverRecomputeCommand(target: RustcDriverRemedyTarget): st
     target.project !== undefined
       ? `--project ${target.project}`
       : target.path !== undefined
-        ? `--path ${target.path}`
+        ? /\s/.test(target.path)
+          ? JSON.stringify(target.path)
+          : target.path
         : "--project <alias>";
   return `tea-rags index-codebase ${address} --force-enrichments codegraph --languages rust`;
 }
