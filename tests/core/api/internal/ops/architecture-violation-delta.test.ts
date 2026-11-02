@@ -7,14 +7,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   collapsePersistingFindings,
+  filesWithChangedDependencyEdges,
   measureArchitectureViolationDelta,
   resolvedChangeSubjects,
 } from "../../../../../src/core/api/internal/ops/architecture-violation-delta.js";
 import type {
   ArchitectureViolation,
   FacadeLeakArchitectureViolation,
+  SilentCouplingArchitectureViolation,
   StableDependencyArchitectureViolation,
 } from "../../../../../src/core/contracts/types/architecture-report.js";
+import type { FileDependencyEdge } from "../../../../../src/core/contracts/types/codegraph-graph.js";
 import type { DiffDetectorFinding } from "../../../../../src/core/contracts/types/diff-detector-finding.js";
 
 function sdp(source: string, target: string): StableDependencyArchitectureViolation {
@@ -157,6 +160,74 @@ describe("measureArchitectureViolationDelta", () => {
     expect(delta.persisting.size).toBe(119);
     expect([...delta.introduced.keys()]).toHaveLength(1);
     expect(resolvedChangeSubjects(delta)).toEqual([{ family: "stableDependencies", subject: "src/s0 → src/t" }]);
+  });
+});
+
+describe("silentCoupling flips judged by endpoint edges (bd tea-rags-mcp-u6pc0)", () => {
+  // A and B co-change and share one neighbour N both import. The base run
+  // explains the pair by N; the overlaid run calls it a violation because the
+  // overlay moved the neighbour statistics. Whether that counts as introduced
+  // depends on whether the overlay touched an edge of A or B.
+  const A = "src/store/client.ts";
+  const B = "src/store/daemon/client.ts";
+  const N = "src/contracts/status.ts";
+
+  function pair(): SilentCouplingArchitectureViolation {
+    return {
+      detector: "silentCoupling",
+      sourceRelPath: A,
+      targetRelPath: B,
+      evidence: {
+        support: 9,
+        confidenceAB: 0.6,
+        confidenceBA: 0.6,
+        lift: 4,
+        strength: 0.5,
+        lastCoChangeAt: 0,
+        sampleCommits: [],
+        structuralVisibility: "both-walked",
+        directoryRelation: "descendant",
+      },
+    };
+  }
+
+  function edge(sourceRelPath: string, targetRelPath: string): FileDependencyEdge {
+    return { sourceRelPath, targetRelPath, callWeight: 1, importedExportNames: ["Status"] };
+  }
+
+  const baseEdges = [edge(A, N), edge(B, N), edge("src/other/x.ts", N)];
+
+  it("reads a flip driven by a third file importing the shared neighbour as persisting", () => {
+    const overlaidEdges = [...baseEdges, edge("src/feature/probe.ts", N)];
+    const edgeChangedFiles = filesWithChangedDependencyEdges(baseEdges, overlaidEdges);
+
+    const delta = measureArchitectureViolationDelta([], [pair()], undefined, { edgeChangedFiles });
+    const collapsed = collapsePersistingFindings([], delta);
+
+    expect(delta.introduced.size).toBe(0);
+    expect(delta.persisting.size).toBe(1);
+    expect(collapsed.nonLocal).toEqual([]);
+    expect(collapsed.introducedCount).toBe(0);
+  });
+
+  it("keeps a flip introduced when the overlay removes an endpoint's import of the shared neighbour", () => {
+    const overlaidEdges = baseEdges.filter((e) => e.sourceRelPath !== A);
+    const edgeChangedFiles = filesWithChangedDependencyEdges(baseEdges, overlaidEdges);
+
+    const delta = measureArchitectureViolationDelta([], [pair()], undefined, { edgeChangedFiles });
+    const collapsed = collapsePersistingFindings([], delta);
+
+    expect(delta.introduced.size).toBe(1);
+    expect(collapsed.nonLocal).toEqual([{ family: "silentCoupling.pair", subject: `${A} ~ ${B}` }]);
+    expect(collapsed.introducedCount).toBe(1);
+  });
+
+  it("leaves every other family's overlaid-only key introduced whatever the edge changes", () => {
+    const delta = measureArchitectureViolationDelta([], [sdp("src/far", "src/away")], undefined, {
+      edgeChangedFiles: new Set(),
+    });
+
+    expect(delta.introduced.size).toBe(1);
   });
 });
 
