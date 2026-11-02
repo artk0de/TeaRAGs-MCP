@@ -253,6 +253,17 @@ function inlineTestSubjectName(filePath: string): string {
 }
 
 /**
+ * The name of a Vitest in-source block, for the engine's `nameExtractor`
+ * (bd tea-rags-mcp-52wk3.9): a nested block the engine emits as a leaf child
+ * composes its id from this name under its enclosing scope (`scale.vitest`),
+ * as a claimed block's root scope is named `vitest`. Undefined for every other
+ * node, so the engine's default naming stays in charge.
+ */
+export function inSourceBlockNameExtractor(node: AstNode, code: string): string | undefined {
+  return node.type === "if_statement" && isInlineTestNode(node, code) ? INLINE_TEST_SCOPE_NAME : undefined;
+}
+
+/**
  * Read a Vitest in-source test block into the neutral scope tree. The `if`
  * block is the root scope: its `const { it, expect } = import.meta.vitest`
  * destructuring is an `otherLines` row (the scope's setup chunk), and its

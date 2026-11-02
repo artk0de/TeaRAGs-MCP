@@ -516,6 +516,30 @@ pub mod outer {
     expect(chunks.some((chunk) => chunk.metadata.symbolId?.startsWith("engine."))).toBe(false);
   });
 
+  it("keeps the attribute rows of a module's test members out of its production remainder (52wk3.9)", async () => {
+    const code = `pub mod inner {
+    pub struct Engine { pub speed: u64 }
+    #[cfg(test)]
+    impl Engine { pub fn idle_for_tests() -> Self { Engine { speed: 0 } } }
+    #[cfg(test)]
+    fn engine_fixture_with_speed(speed: u64) -> Engine { Engine { speed } }
+    #[test]
+    fn accelerates_from_idle() { assert_eq!(engine_fixture_with_speed(0).speed, 0); }
+    #[test] fn same_line() { assert_eq!(1, 1); }
+    pub fn prod(input: usize) -> usize { input.saturating_mul(2).saturating_add(1) }
+}
+`;
+    const chunks = await chunker.chunk(code, "src/engine.rs", "rust");
+
+    const production = chunks.filter((chunk) => !isTestChunk(chunk)).map((chunk) => chunk.content);
+    expect(production.filter((content) => content.includes("#[test]"))).toEqual([]);
+    expect(production.filter((content) => content.includes("#[cfg(test)]"))).toEqual([]);
+    expect(byId(chunks, "inner.accelerates_from_idle")?.content).toContain("#[test]\n");
+    expect(byId(chunks, "inner.engine_fixture_with_speed")?.content).toContain("#[cfg(test)]\n");
+    // A same-line attribute rides its item's row once, never twice.
+    expect(byId(chunks, "inner.same_line")?.content.match(/#\[test\]/g)).toHaveLength(1);
+  });
+
   it("joins two enclosing modules with the engine's scope separator", async () => {
     const chunks = await chunker.chunk(ENGINE_RS, "src/engine.rs", "rust");
 
@@ -609,6 +633,85 @@ pub fn other_production_value(input: usize) -> usize {
     ).toEqual(SHORT_PRODUCTION_BASELINE);
   });
 });
+
+describe("TreeSitterChunker — a test-only declaration inside a non-test module (52wk3.9)", () => {
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  });
+
+  const TEST_ONLY_DECLARATIONS = `pub mod inner {
+    #[cfg(test)]
+    const LIMIT: usize = 3;
+    #[cfg(test)]
+    static COUNTER: u8 = 0;
+    #[cfg(test)]
+    type Alias = u8;
+    #[cfg(test)]
+    union Bits { a: u8, b: i8 }
+    pub fn prod(input: usize) -> usize { input.saturating_mul(2).saturating_add(1) }
+}
+`;
+
+  const productionHolding = (chunks: { content: string; metadata: { chunkType?: string } }[], text: string): string[] =>
+    chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes(text)).map((c) => c.content);
+
+  it("chunks each short test-only const, static, type and union as test setup under the module path", async () => {
+    const chunks = await chunker.chunk(TEST_ONLY_DECLARATIONS, "src/lib.rs", "rust");
+
+    // The engine composes a non-method leaf under its module with the Rust
+    // namespace separator (symbolid-convention: `Outer::Inner`); a claimed
+    // test CONTAINER keeps the kernel's `<module>.<name>` form.
+    for (const [marker, id] of [
+      ["const LIMIT", "inner::LIMIT"],
+      ["static COUNTER", "inner::COUNTER"],
+      ["type Alias", "inner::Alias"],
+      ["union Bits", "inner::Bits"],
+    ] as const) {
+      const holders = chunks.filter((chunk) => chunk.content.includes(marker));
+      expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId])).toEqual([["test_setup", id]]);
+      expect(productionHolding(chunks, marker)).toEqual([]);
+    }
+    expect(productionHolding(chunks, "#[cfg(test)]")).toEqual([]);
+    expect(chunks.find((c) => c.metadata.symbolId === "inner.prod")?.metadata.chunkType).toBe("function");
+  });
+
+  it("keeps a module of production declarations exactly as before", async () => {
+    const code = TEST_ONLY_DECLARATIONS.replace(/ {4}#\[cfg\(test\)\]\n/g, "");
+    const chunks = await chunker.chunk(code, "src/lib.rs", "rust");
+
+    expect(
+      chunks.map((c) => ({
+        chunkType: c.metadata.chunkType,
+        symbolId: c.metadata.symbolId,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        content: c.content,
+      })),
+    ).toEqual(PRODUCTION_MODULE_BASELINE);
+  });
+});
+
+/** Output of the production-declarations module before the child-candidate change, recorded on its base commit. */
+const PRODUCTION_MODULE_BASELINE = [
+  {
+    chunkType: "function",
+    symbolId: "inner.prod",
+    startLine: 6,
+    endLine: 6,
+    content: "pub mod inner {\npub fn prod(input: usize) -> usize { input.saturating_mul(2).saturating_add(1) }",
+  },
+  {
+    chunkType: "block",
+    symbolId: "inner",
+    startLine: 1,
+    endLine: 7,
+    content:
+      "pub mod inner {\n    const LIMIT: usize = 3;\n    static COUNTER: u8 = 0;\n    type Alias = u8;\n    union Bits { a: u8, b: i8 }\n}",
+  },
+];
 
 /** Output of the short-production fixture before bd tea-rags-mcp-52wk3.9, recorded on the base commit. */
 const SHORT_PRODUCTION_BASELINE = [

@@ -48,4 +48,5 @@ export {
   isDslContainerCall,
   buildScopeTree,
   produceScopeChunks,
+  inSourceBlockNameExtractor,
 } from "./test-scope-chunker.js";

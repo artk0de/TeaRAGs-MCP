@@ -30,6 +30,7 @@
  * `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx / z95o / d1f8).
  */
 
+import type { AstNode } from "../../../contracts/types/ast.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   emptyDispatchFanout,
@@ -51,7 +52,12 @@ import type {
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker, readEcmascriptImportSpecifiers } from "../kernel/index.js";
 import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "../typescript/package-manifest.js";
-import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
+import {
+  inSourceBlockNameExtractor,
+  javascriptHooks,
+  JsChunkClassifier,
+  jsExportNameExtractor,
+} from "./chunking/index.js";
 import { isInlineTestNode } from "./inline-tests.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
@@ -119,13 +125,19 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // top-level block, while the enclosing function keeps its other rows.
   childChunkTypes: ["method_definition", "call_expression", "if_statement"],
   alwaysExtractChildren: true,
+  // An in-source block is test code however short it is; the filter admits an
+  // `if` only as one, so an ordinary short `if` stays inside its function (bd
+  // tea-rags-mcp-52wk3.9).
+  keepShortChildChunkTypes: ["if_statement"],
   // `export_statement` is chunkable above, so the engine claims the export
   // rather than the `class_declaration` it wraps — and an export carries no
   // `name` field for the default extraction to find. Without this the descent
   // would scope `Registry`'s method at file level as a bare `register`, an id
-  // no cg_symbols row carries. Names ONLY `export_statement`; every other node
-  // falls through to the engine's default extraction.
-  nameExtractor: jsExportNameExtractor,
+  // no cg_symbols row carries. An in-source block a leaf emission names is
+  // `vitest`, as in TypeScript; every other node falls through to the engine's
+  // default extraction.
+  nameExtractor: (node: AstNode, code: string): string | undefined =>
+    inSourceBlockNameExtractor(node, code) ?? jsExportNameExtractor(node, code),
   hooks: javascriptHooks,
   // Node→chunk classifier capability — the LanguageChunkClassifier wrapper over
   // jsChunkSymbols (CommonJS `obj.method = fn` / `exports.foo` / `module.exports`,

@@ -191,5 +191,79 @@ describe("TreeSitterChunker — an in-source block never becomes production code
   });
 });
 
+describe("TreeSitterChunker — residual in-source leaks into production chunks (52wk3.9)", () => {
+  const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+
+  const productionHolding = (chunks: { content: string; metadata: { chunkType?: string } }[], text: string): string[] =>
+    chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes(text)).map((c) => c.content);
+
+  const SHORT_NESTED = `export function scale(value: number): number {
+  const scaled = value * 3;
+  if (import.meta.vitest) { it("s", () => {}); }
+  return scaled;
+}
+`;
+
+  it("chunks a nested in-source block under the noise floor as test code, out of the function chunk", async () => {
+    const chunks = await chunker.chunk(SHORT_NESTED, "src/math.ts", "typescript");
+
+    expect(chunks.filter((c) => isTestChunk(c) && c.content.includes('it("s"'))).not.toHaveLength(0);
+    expect(productionHolding(chunks, "import.meta.vitest")).toEqual([]);
+    expect(productionHolding(chunks, 'it("s"')).toEqual([]);
+    expect(chunks.some((c) => c.metadata.symbolId === "scale" && c.content.includes("return scaled;"))).toBe(true);
+  });
+
+  it("names a nested in-source block the engine emits as a leaf `vitest`, under its enclosing scope", async () => {
+    const chunks = await chunker.chunk(SHORT_NESTED, "src/math.ts", "typescript");
+
+    const holders = chunks.filter((c) => c.content.includes('it("s"'));
+    expect(holders.map((c) => [c.metadata.chunkType, c.metadata.symbolId])).toEqual([["test", "scale.vitest"]]);
+  });
+
+  it("keeps a block whose suite yields no hook chunk out of every production chunk", async () => {
+    const suite = 'describe("an empty suite with a long enough title to pass", () => {});';
+    const topLevel = `export function add(a: number, b: number): number {\n  const total = a + b;\n  return total;\n}\n\nif (import.meta.vitest) {\n  ${suite}\n}\n`;
+    const nested = `export function scale(value: number): number {\n  const scaled = value * 3;\n  if (import.meta.vitest) {\n    ${suite}\n  }\n  return scaled;\n}\n`;
+
+    for (const code of [topLevel, nested]) {
+      const chunks = await chunker.chunk(code, "src/math.ts", "typescript");
+      expect(chunks.filter((c) => isTestChunk(c) && c.content.includes("an empty suite"))).not.toHaveLength(0);
+      expect(productionHolding(chunks, "an empty suite")).toEqual([]);
+      expect(productionHolding(chunks, "import.meta.vitest")).toEqual([]);
+    }
+  });
+
+  it("chunks a function with plain short ifs exactly as before", async () => {
+    const code = `export function guard(value: number): number {
+  const limit = 100;
+  if (value < 0) { return 0; }
+  if (value > limit) return limit;
+  return value;
+}
+`;
+    const chunks = await chunker.chunk(code, "src/guard.ts", "typescript");
+
+    expect(
+      chunks.map((c) => ({
+        chunkType: c.metadata.chunkType,
+        symbolId: c.metadata.symbolId,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        content: c.content,
+      })),
+    ).toEqual([
+      {
+        chunkType: "function",
+        symbolId: "guard",
+        startLine: 1,
+        endLine: 6,
+        content:
+          "function guard(value: number): number {\n  const limit = 100;\n  if (value < 0) { return 0; }\n  if (value > limit) return limit;\n  return value;\n}",
+      },
+    ]);
+  });
+});
+
 /** Output of this fixture before Vitest in-source support, recorded on the base commit. */
 const PLAIN_IF_BASELINE = [{ chunkType: "function", symbolId: "init", startLine: 1, endLine: 6 }];

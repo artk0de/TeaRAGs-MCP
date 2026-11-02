@@ -43,7 +43,12 @@ import type {
   TestDependencyManifestSource,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker, deriveStructuralConformance, isEcmascriptSourcePath } from "../kernel/index.js";
-import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
+import {
+  inSourceBlockNameExtractor,
+  readEcmascriptImportSpecifiers,
+  typescriptChunkClassifier,
+  typescriptHooks,
+} from "./chunking/index.js";
 import { isInlineTestNode } from "./inline-tests.js";
 import { typescriptKernel } from "./kernel.js";
 import { PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST } from "./package-manifest.js";
@@ -58,9 +63,10 @@ import {
 /**
  * Chunk-boundary config for TypeScript — mirrors the chunker slice of the legacy
  * `LANGUAGE_DEFINITIONS.typescript` entry 1:1 (chunkableTypes, childChunkTypes,
- * alwaysExtractChildren, and the ordered hook chain). No `nameExtractor` /
- * `keepShortChildChunkTypes` / `macroSymbols` — TypeScript declares none (it has
- * no `def`-less method idiom, unlike Ruby's class-body DSL macros).
+ * alwaysExtractChildren, and the ordered hook chain). No `macroSymbols` —
+ * TypeScript has no `def`-less method idiom, unlike Ruby's class-body DSL
+ * macros. `nameExtractor` / `keepShortChildChunkTypes` serve the Vitest
+ * in-source block alone (bd tea-rags-mcp-52wk3.9).
  */
 const typescriptChunkerHooks: LanguageChunkerHooks = {
   chunkableTypes: [
@@ -101,6 +107,11 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
   // top-level block, while the enclosing function keeps its other rows.
   childChunkTypes: ["method_definition", "call_expression", "if_statement"],
   alwaysExtractChildren: true,
+  // An in-source block is test code however short it is; the filter admits an
+  // `if` only as one, so an ordinary short `if` stays inside its function (bd
+  // tea-rags-mcp-52wk3.9).
+  keepShortChildChunkTypes: ["if_statement"],
+  nameExtractor: inSourceBlockNameExtractor,
   hooks: typescriptHooks,
   classifier: typescriptChunkClassifier,
   readImportSpecifiers: readEcmascriptImportSpecifiers,

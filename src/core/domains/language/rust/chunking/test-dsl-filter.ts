@@ -13,8 +13,13 @@ import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
 import { isInlineTestNode } from "../inline-tests.js";
 
-/** Declarations chunkable only as a test-only item outside a test module (`rustChunkerHooks.chunkableTypes`). */
-const TEST_ONLY_DECLARATION_TYPES = new Set(["const_item", "static_item", "type_item", "union_item"]);
+/**
+ * Declarations chunkable only as a test-only item outside a test module —
+ * `rustChunkerHooks` lists them as chunkable AND child types, and this filter
+ * admits one only when it is test-only.
+ */
+export const RUST_TEST_ONLY_DECLARATION_TYPES = ["const_item", "static_item", "type_item", "union_item"] as const;
+const TEST_ONLY_DECLARATION_TYPES = new Set<string>(RUST_TEST_ONLY_DECLARATION_TYPES);
 
 export const rustTestDslFilterHook: ChunkingHook = {
   name: "rust-test-dsl-filter",

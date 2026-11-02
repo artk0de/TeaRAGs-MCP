@@ -67,7 +67,7 @@ import { composeExtractionWalker } from "../kernel/index.js";
 import { RustChunkClassifier } from "./chunking/classifier.js";
 import { rustCommentCaptureHook } from "./chunking/comment-capture.js";
 import { isRustModuleImport } from "./chunking/module-import.js";
-import { rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
+import { RUST_TEST_ONLY_DECLARATION_TYPES, rustTestDslFilterHook } from "./chunking/test-dsl-filter.js";
 import { rustTestScopeChunkerHook } from "./chunking/test-scope-chunker.js";
 import { RUST_DECLARED_TEST_FILES } from "./declared-test-files.js";
 import { fileIsInlineTestOnly, isInlineTestNode } from "./inline-tests.js";
@@ -108,16 +108,23 @@ const rustChunkerHooks: LanguageChunkerHooks = {
     // module remainder treat production declarations exactly as before, and the
     // classifier gives the test-only one its `test_setup` chunk (bd
     // tea-rags-mcp-52wk3.9).
-    "const_item",
-    "static_item",
-    "type_item",
-    "union_item",
+    ...RUST_TEST_ONLY_DECLARATION_TYPES,
   ],
   // Keep impl blocks in the child-container walk so methods retain the
   // implementing header when they are nested below a module. The impl name
   // still composes through the kernel scope separator; it is not emitted as
-  // an extra standalone leaf.
-  childChunkTypes: ["function_item", "function_signature_item", "macro_definition", "impl_item", "trait_item"],
+  // an extra standalone leaf. The test-only declarations are child candidates
+  // under the same filter rule as at top level — a production one never is —
+  // so one inside a non-test module leaves that module's remainder and is
+  // relabelled `test_setup` by `rustTestScopeChunkerHook` (bd tea-rags-mcp-52wk3.9).
+  childChunkTypes: [
+    "function_item",
+    "function_signature_item",
+    "macro_definition",
+    "impl_item",
+    "trait_item",
+    ...RUST_TEST_ONLY_DECLARATION_TYPES,
+  ],
   alwaysExtractChildren: true,
   hooks: [rustTestDslFilterHook, rustCommentCaptureHook, rustTestScopeChunkerHook],
   // A top-level test-only item with no member to extract reaches no container
@@ -130,8 +137,9 @@ const rustChunkerHooks: LanguageChunkerHooks = {
   // out of the module remainder with the import itself.
   isModuleImport: isRustModuleImport,
   // Rust function items are searchable symbols even when their bodies are
-  // shorter than the generic 50-character noise floor.
-  keepShortChildChunkTypes: ["function_item", "function_signature_item"],
+  // shorter than the generic 50-character noise floor, and so is a test-only
+  // declaration (only a test-only one is ever a candidate).
+  keepShortChildChunkTypes: ["function_item", "function_signature_item", ...RUST_TEST_ONLY_DECLARATION_TYPES],
   nameExtractor: (node: AstNode, code: string): string | undefined => {
     if (node.type !== "impl_item") return undefined;
     const ty = node.childForFieldName("type");

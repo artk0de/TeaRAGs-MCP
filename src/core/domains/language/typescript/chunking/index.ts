@@ -17,6 +17,12 @@ export { typescriptBodyChunkingHook, extractBodyChunks } from "./class-body-chun
 export { typescriptCommentCaptureHook } from "./comment-capture.js";
 export { typescriptChunkClassifier, typescriptFunctionDeclarationFilterHook } from "./function-declaration-filter.js";
 export { testDslFilterHook, isTestFile, getCallName } from "./test-dsl-filter.js";
-export { testScopeChunkerHook, isDslContainerCall, buildScopeTree, produceScopeChunks } from "./test-scope-chunker.js";
+export {
+  testScopeChunkerHook,
+  isDslContainerCall,
+  buildScopeTree,
+  produceScopeChunks,
+  inSourceBlockNameExtractor,
+} from "./test-scope-chunker.js";
 export { findClassBody } from "./utils.js";
 export { readEcmascriptImportSpecifiers } from "../../kernel/index.js";
