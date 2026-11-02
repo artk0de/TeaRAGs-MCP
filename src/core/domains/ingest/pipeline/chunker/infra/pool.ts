@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../../../primitives/diagnostics/index.js";
+import { compiledModuleDir } from "../../../../../primitives/paths/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
 import { ProcessTransport, WorkerDispatchPool } from "../../infra/worker-dispatch/index.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
@@ -33,7 +34,7 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  *   production: .../build/core/domains/ingest/pipeline/chunker/infra/pool.js
  *   vitest:     .../src/core/domains/ingest/pipeline/chunker/infra/pool.ts (remap to build/)
  */
-const POOL_DIR = path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/");
+const POOL_DIR = compiledModuleDir(fileURLToPath(import.meta.url));
 // POOL_DIR = build/core/domains/ingest/pipeline/chunker/infra — five levels
 // below build/core (domains, ingest, pipeline, chunker, infra).
 const CORE_DIR = path.resolve(POOL_DIR, "../../../../..");
