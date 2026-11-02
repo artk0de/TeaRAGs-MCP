@@ -6,6 +6,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  OllamaModelReferenceEmptyError,
+  OllamaRegistryManifestMissingError,
+  OllamaRegistryModelLayerMissingError,
+} from "../../../../../src/core/adapters/embeddings/ollama-registry/errors.js";
+import {
   downloadVerifiedGguf,
   parseOllamaModelReference,
   resolveOllamaRegistryGguf,
@@ -76,6 +81,19 @@ describe("parseOllamaModelReference", () => {
   it("rejects an empty reference", () => {
     expect(() => parseOllamaModelReference("  ")).toThrow(/model reference/i);
   });
+
+  it("rejects an empty reference as a typed error carrying a hint", () => {
+    let failure: unknown;
+    try {
+      parseOllamaModelReference("  ");
+    } catch (err) {
+      failure = err;
+    }
+
+    expect(failure).toBeInstanceOf(OllamaModelReferenceEmptyError);
+    expect((failure as OllamaModelReferenceEmptyError).code).toBe("INFRA_OLLAMA_MODEL_REFERENCE_EMPTY");
+    expect((failure as OllamaModelReferenceEmptyError).hint).not.toBe("");
+  });
 });
 
 describe("resolveOllamaRegistryGguf", () => {
@@ -113,6 +131,18 @@ describe("resolveOllamaRegistryGguf", () => {
     );
   });
 
+  it("fails as a typed error with hint when the registry has no manifest", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 404 }));
+
+    const failure = await resolveOllamaRegistryGguf("nobody/nothing:latest", { fetch: fetchImpl }).catch(
+      (err: unknown) => err,
+    );
+
+    expect(failure).toBeInstanceOf(OllamaRegistryManifestMissingError);
+    expect((failure as OllamaRegistryManifestMissingError).code).toBe("INFRA_OLLAMA_REGISTRY_MANIFEST_MISSING");
+    expect((failure as OllamaRegistryManifestMissingError).hint).not.toBe("");
+  });
+
   it("throws when the manifest has no model layer", async () => {
     const manifest = { ...JINA_MANIFEST, layers: [] };
     const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(manifest), { status: 200 }));
@@ -120,6 +150,17 @@ describe("resolveOllamaRegistryGguf", () => {
     await expect(resolveOllamaRegistryGguf(JINA, { fetch: fetchImpl })).rejects.toThrow(
       /application\/vnd\.ollama\.image\.model/,
     );
+  });
+
+  it("fails as a typed error with hint when the manifest has no model layer", async () => {
+    const manifest = { ...JINA_MANIFEST, layers: [] };
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(manifest), { status: 200 }));
+
+    const failure = await resolveOllamaRegistryGguf(JINA, { fetch: fetchImpl }).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(OllamaRegistryModelLayerMissingError);
+    expect((failure as OllamaRegistryModelLayerMissingError).code).toBe("INFRA_OLLAMA_REGISTRY_MODEL_LAYER_MISSING");
+    expect((failure as OllamaRegistryModelLayerMissingError).hint).not.toBe("");
   });
 });
 

@@ -70,4 +70,38 @@ describe("tea-rags llama-server download failures", () => {
     expect(errorLog).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
+
+  it("fetch-model prints a registry without the manifest as message + hint and exits 1", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 404 }));
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await runCommand("llama-server", "fetch-model", "nobody/nothing:latest");
+
+    const printed = printedTo(stderr);
+    expect(printed).toMatch(
+      /^llama-server fetch-model: Ollama registry has no manifest for nobody\/nothing:latest \(status 404\)\n\S/,
+    );
+    expect(printed).not.toContain("    at ");
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("command prints a registry without the manifest as message + hint and exits 1", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 404 }));
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await runCommand("llama-server", "command", "--bin", "/opt/llama-server", "--model", "nobody/nothing:latest");
+
+    const printed = printedTo(stderr);
+    expect(printed).toMatch(
+      /^llama-server command: Ollama registry has no manifest for nobody\/nothing:latest \(status 404\)\n\S/,
+    );
+    expect(printed).not.toContain("    at ");
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
 });
