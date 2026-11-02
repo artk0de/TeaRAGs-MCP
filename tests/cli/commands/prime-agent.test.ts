@@ -17,7 +17,7 @@ let out: string;
 const deps = (): PrimeAgentDeps => ({
   resolveProject: vi.fn(() => ({ entry, path: "/repo/linked" })),
   clientUpdate: { maybeSpawn: vi.fn(), manualUpdateHint: () => null },
-  autoUpdate: vi.fn(() => "disabled"),
+  autoUpdate: vi.fn(() => "disabled" as const),
 });
 beforeEach(() => {
   out = "";
