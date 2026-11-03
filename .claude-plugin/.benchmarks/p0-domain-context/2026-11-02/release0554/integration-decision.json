@@ -1,0 +1,429 @@
+{
+  "status": "APPROVED_WITH_CLAUDE_LIVE_GATE_WAIVED",
+  "user_instruction": "без проверки claude",
+  "date": "2026-11-03",
+  "source_commit": "1c9ad400c1abc9a321dcd0bd6e7cc1aacaee6d83",
+  "skipped_cases": [
+    "candidate-claude-F01 resource-discovery follow-up",
+    "candidate-claude-F02 resource-discovery follow-up"
+  ],
+  "skipped_cases_verdict": "NOT_RUN_USER_WAIVER; not passed",
+  "preserved_evidence": "Eight direct/hook actors passed; two explicit-guide Codex actors passed; metadata guard pure checks passed55. Failed Claude attempts remain retained.",
+  "full_campaign": "PAUSED",
+  "risk_scan": {
+    "scope_files": [
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/q20-repro/cases.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/q20-repro/grading.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/README.md",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/anthropic-verification-required.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/capacity-failure-attempt01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/claude-independent-review-before-final.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/comparison-accounting.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/domain-grading.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-cases.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-grading.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-mcp-pending-attempt.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-metadata-cases.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-verdicts-before-account-verification.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/hook-component-records.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/invalid-shared-build-attempt.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/one-file-hook-cost-diagnostic.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/review-triage.md",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/routing-failure-public-errors.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/runtime-rebuild.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/scoped-review.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/startup-grading.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/README.md",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/auth_transport.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/claude_native.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/codex_native.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/diagnostic_fetch.cjs",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/freshness-generation-provenance.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/import-provenance.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/native_mcp_wait.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/permission-correction-provenance.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/policy.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/run.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/runtime_cli.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/scoped_proxy.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/selected12.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_controller.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_domain_runner.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_execution_gate.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_freshness_version.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_native_mcp_wait.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_native_permissions.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/test_resource_discovery.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61/metadata-table-schemas.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_app_rpc.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_mcp_proxy.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/controller_io.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/mcp_readiness.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/protocol.py",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup02-acceptance01/candidate-codex-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup02-acceptance01/candidate-codex-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup02-acceptance01/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup02-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup03/candidate-codex-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup03/candidate-codex-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup03/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/direct-lookup03/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness06-acceptance01/candidate-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness06-acceptance01/candidate-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness06-acceptance01/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness06-acceptance01/candidate-codex-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness06-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-acceptance01/candidate-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-acceptance01/candidate-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-acceptance01/candidate-codex-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-transport-attempt02/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/freshness07-transport-attempt02/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/hook-profile01/candidate-claude-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/hook-profile01/candidate-codex-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/hook-profile01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/baseline-claude-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/baseline-claude-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/baseline-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/baseline-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-claude-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-claude-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-codex-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-codex-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/candidate-codex-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/main-acceptance01/verdicts.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/q20-main-acceptance01/candidate-claude-Q20.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/q20-main-acceptance01/candidate-codex-Q20.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/q20-main-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/q20-main-acceptance01/verdicts.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain-attempt02/candidate-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain-attempt02/candidate-codex-D01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain-attempt02/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain-attempt02/candidate-codex-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain-attempt02/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain/candidate-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain/candidate-codex-D02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-domain/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide-attempt02/candidate-claude-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide-attempt02/candidate-codex-F02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide-attempt02/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide/candidate-claude-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide/candidate-codex-F01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-guide/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-startup/candidate-claude-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-startup/candidate-codex-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-startup/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/release0554-verdicts.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/candidate-claude-C01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/candidate-claude-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/candidate-codex-C01.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/candidate-codex-C02.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/summary.json",
+      ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/runs/startup-main-acceptance01/verdicts.json",
+      ".claude-plugin/tea-rags/.claude-plugin/plugin.json",
+      ".claude-plugin/tea-rags/rules/core.md",
+      ".claude-plugin/tea-rags/rules/guides/freshness.md",
+      ".claude-plugin/tea-rags/scripts/search-drift.sh",
+      "harness/codex/AGENTS.tea-rags.md",
+      "harness/codex/README.md",
+      "harness/codex/tea-rags/.codex-plugin/plugin.json",
+      "harness/codex/tea-rags/scripts/codex-rules.txt",
+      "harness/codex/tea-rags/scripts/core.txt",
+      "harness/codex/tea-rags/scripts/search-drift.sh",
+      "harness/codex/tea-rags/skills/explore/SKILL.md",
+      "harness/codex/tea-rags/skills/tea-rags-core/SKILL.md",
+      "harness/cursor/README.md",
+      "harness/cursor/tea-rags/.cursor-plugin/plugin.json",
+      "harness/cursor/tea-rags/rules/tea-rags-core.mdc",
+      "harness/cursor/tea-rags/scripts/search-drift.sh",
+      "plugins/tea-rags/.claude-plugin/plugin.json",
+      "plugins/tea-rags/rules/core.md",
+      "plugins/tea-rags/rules/guides/freshness.md",
+      "plugins/tea-rags/scripts/search-drift.sh",
+      "plugins/tea-rags/skills/explore/SKILL.md",
+      "scripts/gen-harness-codex.ts",
+      "src/mcp/resources/generated/agent-context.ts",
+      "tests/hooks/search-drift.test.sh"
+    ],
+    "presets": {
+      "bugHunt": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": [],
+            "level": "file"
+          }
+        }
+      },
+      "hotspots": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": []
+          }
+        }
+      },
+      "techDebt": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": []
+          }
+        }
+      },
+      "dangerous": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": [],
+            "level": "file"
+          }
+        }
+      },
+      "criticalPath": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": [],
+            "level": "chunk"
+          }
+        }
+      },
+      "decomposition": {
+        "status": "fulfilled",
+        "value": {
+          "content": [
+            {
+              "type": "text",
+              "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+            }
+          ],
+          "structuredContent": {
+            "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+            "results": {
+              "columns": [
+                "payload.relativePath",
+                "payload.symbolId",
+                "payload.startLine",
+                "payload.endLine",
+                "payload.signature",
+                "rankingOverlay.preset",
+                "rankingOverlay.chunk.methodLines"
+              ],
+              "rows": [
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_app_rpc.py",
+                  "config#part2",
+                  150,
+                  178,
+                  "def config(home,plugin_root=None,extra_roots=()):",
+                  "decomposition",
+                  83
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/run.py",
+                  "prepare#part4",
+                  87,
+                  89,
+                  "def prepare(spec_path,out):",
+                  "decomposition",
+                  45
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_mcp_proxy.py",
+                  "filtered_response#part2",
+                  236,
+                  258,
+                  "def filtered_response(message,request):",
+                  "decomposition",
+                  53
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/claude_native.py",
+                  "ClaudeNative#query#part2",
+                  120,
+                  123,
+                  "def query(self,prompt):",
+                  "decomposition",
+                  29
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/policy.py",
+                  "tool_decision#part2",
+                  99,
+                  108,
+                  "def tool_decision(name,args,cfg):",
+                  "decomposition",
+                  39
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_mcp_proxy.py",
+                  "parse_tool_text#part2",
+                  198,
+                  204,
+                  "def parse_tool_text(text,name,args):",
+                  "decomposition",
+                  33
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/runtime_cli.py",
+                  "main#part1",
+                  7,
+                  25,
+                  "def main():",
+                  "decomposition",
+                  24
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_app_rpc.py",
+                  "RPC#__init__",
+                  22,
+                  50,
+                  "def __init__(self,home,logdir,extra_env=None,allow_model_turns=False):",
+                  "decomposition",
+                  28
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/selected12.py",
+                  "execute#part1",
+                  24,
+                  42,
+                  "def execute(out,go_path,native_go):",
+                  "decomposition",
+                  20
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/claude_native.py",
+                  "ClaudeNative#_guard_event",
+                  32,
+                  53,
+                  "def _guard_event(self,e):",
+                  "decomposition",
+                  21
+                ]
+              ]
+            },
+            "level": "chunk",
+            "presetFilterNotice": {
+              "preset": "decomposition",
+              "by": "coreLogic (chunkType, isTest, codegraph.symbols.file.skippedAs)",
+              "clearWith": "filter: {}"
+            },
+            "workingTree": {
+              "tree": "/Users/Shared/nav-ab/p0-verified-policy-fixes-20261103",
+              "project": "tea-rags",
+              "changedFiles": 134,
+              "treeGraphUnavailable": "building",
+              "gitUnavailable": {
+                "reason": "2387 rows pending"
+              }
+            }
+          }
+        }
+      },
+      "godModule": {
+        "status": "fulfilled",
+        "value": {
+          "content": [],
+          "structuredContent": {
+            "results": {
+              "columns": [
+                "payload.relativePath",
+                "rankingOverlay.preset",
+                "rankingOverlay.file.moduleLines",
+                "rankingOverlay.file.moduleMethodCount"
+              ],
+              "rows": [
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/policy.py",
+                  "godModule",
+                  162,
+                  22
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_mcp_proxy.py",
+                  "godModule",
+                  342,
+                  16
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/run.py",
+                  "godModule",
+                  161,
+                  13
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/controller_io.py",
+                  "godModule",
+                  155,
+                  11
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/claude_native.py",
+                  "godModule",
+                  132,
+                  10
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/codex_native.py",
+                  "godModule",
+                  85,
+                  9
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/protocol.py",
+                  "godModule",
+                  131,
+                  9
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/native_mcp_wait.py",
+                  "godModule",
+                  64,
+                  8
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/validated/codex61_app_rpc.py",
+                  "godModule",
+                  179,
+                  8
+                ],
+                [
+                  ".claude-plugin/.benchmarks/p0-domain-context/2026-11-02/repro/native_runner_release_v4/selected12.py",
+                  "godModule",
+                  46,
+                  4
+                ]
+              ]
+            },
+            "level": "file",
+            "workingTree": {
+              "tree": "/Users/Shared/nav-ab/p0-verified-policy-fixes-20261103",
+              "project": "tea-rags",
+              "changedFiles": 134,
+              "treeGraphUnavailable": "building",
+              "gitUnavailable": {
+                "reason": "2387 rows pending"
+              }
+            }
+          }
+        }
+      }
+    },
+    "limitations": [
+      "Git signals unavailable for2387 rows; empty risk axes do not establish absence of risk.",
+      "Structural size rows are benchmark controller helpers, not a production code defect.",
+      "No new production imports/signatures/edges; retained scoped review found zero introduced architecture findings.",
+      "Affected checks only as explicitly required by user; full suite not run."
+    ]
+  }
+}

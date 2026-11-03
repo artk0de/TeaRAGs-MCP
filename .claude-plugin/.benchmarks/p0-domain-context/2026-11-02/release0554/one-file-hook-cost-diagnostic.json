@@ -1,0 +1,11 @@
+{
+  "kind": "NON_MODEL_SCRIPT_DIAGNOSTIC",
+  "n": 1,
+  "script": "one-file-read.sh",
+  "wall_seconds": 0.03804200000013225,
+  "returncode": 0,
+  "stdout_chars": 0,
+  "stderr_chars": 0,
+  "historical_current_native_C02_ms": 2630,
+  "limits": "Same scoped profile and command shape, different time/host load; not a paired behavioral timing win and not proof of cause."
+}

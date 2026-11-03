@@ -112,9 +112,10 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(relativePath: <dir they share>)`, never one suggestion.
 - A requested row without `treeState` / `degraded` is current, overlay too;
   global `changedFiles` / `pendingFiles` alone never require a reread. A
-  `treeState` row is pre-edit (say why): fanIn/churn are usable, its body is not
-  proof of the edit. Refresh only that requested stale/missing body once in
-  tea-rags; if still unavailable, name the gap. No `workingTree` → current.
+  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same
+  `find_symbol` arguments once**: it reads the working tree, not a cached body.
+  No Read/shell refresh. Still stale → state the gap. No `workingTree` →
+  current.
 - Freshness (subagent: keep reading, never `index_codebase`/ask the user,
   drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠
   alias's path → print `linked worktree (<test>) — no reindex`; own checkout
@@ -171,6 +172,13 @@ named tool and print only
 Reuse known schemas. Never print full descriptions, repeated core instructions
 or return schemas; if that declaration is absent, use the listed tool interface.
 Otherwise they are direct tools — call them as listed.
+
+**Direct local lookup.** When the user names an indexable file/symbol and asks
+only for its body/local contract, with project/path known and no other workflow,
+make `find_symbol` the first tool call, without loading Explore. Core already
+supplies `{project,path,relativePath}` or `{project,path,symbol}`; no
+schema-only prelude is needed. Explicit skill requests, discovery, flow/impact
+and code changes still require their selected skill before use.
 
 **Choose missing facts before tools.** On follow-ups, use retained bodies,
 locators and edges to answer the current request; fetch only its remaining

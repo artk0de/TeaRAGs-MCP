@@ -167,6 +167,10 @@ case "$(field '.tool_name')" in
     [ -n "$COMMAND" ] || allow
     W=$(field '.tool_input.workdir')
     case "$W" in "") ;; /*) CWD="$W" ;; *) CWD="$CWD/$W" ;; esac
+    # No concept alternation means this command cannot advance search drift.
+    # Skip CLI membership checks for neutral reads; mixed read/search commands
+    # still use the indexed-read exemption below.
+    concept_shell_search "$COMMAND" || allow
     # A command that reads indexed source is a read: never counted, never denied.
     if [ -n "$CWD" ] && printf '%s' "$COMMAND" | grep -qE '(^|[;&|(`[:space:]])(cat|sed|head|tail|less|more)([[:space:]]|$)'; then
       [ -n "$(indexed_rel --command "$COMMAND" --cwd "$CWD")" ] && allow

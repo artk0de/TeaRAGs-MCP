@@ -1,0 +1,142 @@
+{
+  "origin": "native Codex CLI targeted eval",
+  "source": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/freshness07/actors/candidate-codex-F01/native/events.jsonl",
+  "events": [
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 2/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 3/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 4/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 5/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 1/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 2/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 3/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 4/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "Reconnecting... 5/5",
+        "codexErrorInfo": {
+          "responseStreamDisconnected": {
+            "httpStatusCode": null
+          }
+        },
+        "additionalDetails": "workspace routing discovery failed"
+      },
+      "willRetry": true
+    },
+    {
+      "method": "error",
+      "error": {
+        "message": "workspace routing discovery failed",
+        "codexErrorInfo": "other",
+        "additionalDetails": null
+      },
+      "willRetry": false
+    },
+    {
+      "method": "turn/completed",
+      "status": "failed",
+      "error": {
+        "message": "workspace routing discovery failed",
+        "codexErrorInfo": "other",
+        "additionalDetails": null,
+        "misalignment": null
+      }
+    }
+  ]
+}

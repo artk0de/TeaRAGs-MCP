@@ -1,0 +1,103 @@
+{
+  "suite": "release0554-guide-attempt02",
+  "source_seal_sha256": "a5ad4bd2e54a885293fbf6206a5b888cc6e708d383b32cf9c7ddd0c1b04b42c5",
+  "seal": {
+    "cases_sha256": "2b6cebeee62aaf61189371de7cf62b9ce6ab5989e58708ece99225938844ef33",
+    "grading_sha256": "f4ce71c1674dee8d1da0bd5bb960490a77abd1e1b3ee92ed1247de2b8b6eb81f",
+    "profiles_sha256": "f5514451dd681f4b82ce91611b74b8c05fcdd3a0c200c12c230121a7a2955f14",
+    "source_sha256": "88f7312a638fd25fce07047358eb54dd6331e71dd571189b3a6de9786dee1cba",
+    "runtimes_sha256": "9d9e87287e9157166b8f029d41e46366a1cc073b4b548f097a0a68a7c7cbcad4",
+    "schedule_sha256": "ac26115038d3587f109183d90d8cacd6d12733a362e3ed92b2fa37192df12503",
+    "models": {
+      "codex": "gpt-6.1-sol",
+      "claude": "claude-sonnet-5-5"
+    },
+    "efforts": {
+      "codex": "medium",
+      "claude": "medium"
+    },
+    "n": 1,
+    "actors": 4,
+    "spec_sha256": "8bb1efeeb8fa2300f4b4a6693497a0b3a0e893ca22a4d50bc0539f4b2d227a91",
+    "fixture": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+    "cases_path": "/Users/Shared/nav-ab/p0-verified-policy-fixes-20261103/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-cases.json",
+    "grading_path": "/Users/Shared/nav-ab/p0-verified-policy-fixes-20261103/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/release0554/guide-grading.json",
+    "runtime_identity": {
+      "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+      "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+      "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+      "cache_tag": "cpython-315",
+      "flags": {
+        "bytes_warning": 0,
+        "context_aware_warnings": 0,
+        "debug": 0,
+        "dev_mode": false,
+        "dont_write_bytecode": 0,
+        "gil": 1,
+        "hash_randomization": 1,
+        "ignore_environment": 0,
+        "inspect": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 0,
+        "lazy_imports": -1,
+        "n_fields": 22,
+        "n_sequence_fields": 18,
+        "n_unnamed_fields": 0,
+        "no_site": 0,
+        "no_user_site": 0,
+        "optimize": 0,
+        "quiet": 0,
+        "safe_path": false,
+        "thread_inherit_context": 0,
+        "utf8_mode": 1,
+        "verbose": 0,
+        "warn_default_encoding": 0
+      }
+    },
+    "spec_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/release0554-guide-attempt02-spec.json",
+    "status": "STATIC_PREPARED; nativeproofs/modelGO required",
+    "fixture_inventory_reference": {
+      "files": 20,
+      "canonical_sha256": "eff751f5777f1b64ee85c22c8e4b43a5941fd696a6065b96cd2d9d8f28a4d1d6",
+      "private_seal": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/release0554-guide-attempt02/seal.json"
+    }
+  },
+  "actors": [
+    {
+      "key": "candidate-claude-F02",
+      "model_responses": 5,
+      "replay": "EXERCISED_UNGRADED",
+      "usage": {
+        "input": 108917,
+        "fresh_input": 18379,
+        "cached_input": 90538,
+        "cache_write": 18369,
+        "output": 1090,
+        "reasoning_numeric": 144,
+        "native_cost_usd": 0.09344979999999999,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-F02.json"
+    },
+    {
+      "key": "candidate-codex-F02",
+      "model_responses": 3,
+      "replay": "EXERCISED_UNGRADED",
+      "usage": {
+        "input": 59911,
+        "fresh_input": 18055,
+        "cached_input": 41856,
+        "cache_write": 0,
+        "output": 282,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-F02.json"
+    }
+  ],
+  "quality": "Controller review stored separately; completion is not a pass."
+}

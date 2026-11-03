@@ -53,20 +53,21 @@ disk). Rows from changed files are read from the tree unless they carry
 `treeState`; `denseUnavailable` / `treeGraphUnavailable` name why a layer fell
 back to the index (no `treeGraphUnavailable` = graph answers cover the tree);
 `gitUnavailable` counts changed-file rows whose git signals are still computing
-— they rank without that history this call, re-call later. `pendingFiles` =
-re-read files not yet warm: their rows are the index's
-(`treeState: "modified"`), a later call reads more of the tree — re-call for
-current code; never a reindex trigger by itself. `indexOnlyFiles` = changed
-files with no AST chunking (json / yaml / sql / toml …): never re-read, rows are
-the index's (`treeState: "modified"`); current text → `Read` the file. Graph
-answer with `changedFiles` > 0 and `treeGraphUnavailable` → edges touching
-changed files are the index's (`degraded` says why): trust edges between
-untouched files, re-check changed ones via `find_symbol` / `hybrid_search`
-(`metaOnly`), `path=<your working directory>`; linked worktree → that re-check
-is the whole fix, no reindex. `degraded` → its `remedy` under the consent rows
-of "Reindex triggers" (subagent: report it to the parent, never reindex). `tree`
-≠ the tree you addressed (your working directory, or the checkout a skill names)
-→ wrong tree, its rows unusable; re-call with `project` + that `path`.
+— they rank without that history this call, re-call later. `pendingFiles` counts
+files not yet warm; it does not make a returned current body stale. Check the
+requested row's `treeState` / `degraded`, not the global count. Refresh only
+that requested pre-edit or missing body once via `find_symbol`; global pending
+counts alone never require a reread or reindex. `indexOnlyFiles` = changed files
+with no AST chunking (json / yaml / sql / toml …): never re-read, rows are the
+index's (`treeState: "modified"`); current text → `Read` the file. Graph answer
+with `changedFiles` > 0 and `treeGraphUnavailable` → edges touching changed
+files are the index's (`degraded` says why): trust edges between untouched
+files, re-check changed ones via `find_symbol` / `hybrid_search` (`metaOnly`),
+`path=<your working directory>`; linked worktree → that re-check is the whole
+fix, no reindex. `degraded` → its `remedy` under the consent rows of "Reindex
+triggers" (subagent: report it to the parent, never reindex). `tree` ≠ the tree
+you addressed (your working directory, or the checkout a skill names) → wrong
+tree, its rows unusable; re-call with `project` + that `path`.
 
 **Lag ≠ unusable (MANDATORY).** Counts above, `degraded` and drift = distance
 index↔tree, never licence to leave tea-rags — thousands of changed files
@@ -90,9 +91,11 @@ tree changed or deleted, served only when no tree floor covered it (e.g.
 `denseUnavailable`, `pendingFiles`, `indexOnlyFiles`) = **pre-edit copy**:
 file-level signals (fanIn of dependents, churn, bugFixRate) still valid, text
 and lines stale — never evidence the edit is correct. Current code →
-`find_symbol` (chunks floor), not the row. Name the reason in the answer:
-`denseUnavailable` → vector ranking fell back to the index; `pendingFiles` → not
-read yet. `pendingFiles` row → re-call later; `indexOnlyFiles` file → `Read` it
+`find_symbol` (working-tree reader), repeating the same scoped arguments once,
+not a raw Read/shell confirmation. If the body is still unavailable, name the
+gap instead of retrying again. Name the reason in the answer: `denseUnavailable`
+→ vector ranking fell back to the index; `pendingFiles` → not read yet. Only the
+requested stale row needs that one refresh; `indexOnlyFiles` file → `Read` it
 (no tree floor ever covers it).
 
 ## Reindex triggers
@@ -137,25 +140,28 @@ and tree, never "index unusable". Thousands of changed files included.
   tree (find_symbol chunks, hybrid_search BM25, vector rank of semantic_search /
   find_similar / hybrid). Row current; print `current — read from the tree`.
 - Row without `treeState` from an unchanged file → row current. Use it.
-- Row with `treeState` / file in `pendingFiles` → `find_symbol` (reads tree once
-  warm); `pendingFiles` > 0 (a count; your file may be one) → plan both lines:
-  `find_symbol(<same params>)` and
-  `still in pendingFiles → find_symbol(<same params>) again`. `indexOnlyFiles`
-  only → `Read`.
+- Requested body with `treeState` / `degraded`, or missing → repeat the same
+  `find_symbol` arguments once. It reads the working tree, not a cached body.
+  Use the fresh body even if unrelated `pendingFiles` remains nonzero; no
+  confirming Read/shell or second refresh. Still unavailable → state the gap. A
+  current returned body needs zero refreshes. `indexOnlyFiles` only → `Read`.
 - `pendingFiles` on first calls = overlay warming, not failure. Subagent or
-  linked worktree → no reindex, keep calling, later calls read more; main
-  session in the own checkout → incremental `index_codebase` now (table above).
+  linked worktree → no reindex; use current bodies and refresh only a requested
+  stale/missing body once. In the own checkout, use the actual reindex triggers
+  in the table above; the pending count alone is not one. No available
+  `index_codebase` tool → needed bodies via `find_symbol`, never indexing or
+  mutator-schema discovery.
 - Graph slow / `treeGraphUnavailable` → edges between untouched files hold. For
   changed-file edges, in order: `find_symbol` on the caller in the changed file,
   then Grep tool `"<name>"` (literal). No graph retry.
 - Graph answer missed edges at a changed file and you ran the incremental
   `index_codebase` → do NOT retry the graph call. Next: `find_symbol` on the
-  caller in the changed file + Grep tool `"<name>"` (literal)
-  for callers the index lacks.
+  caller in the changed file + Grep tool `"<name>"` (literal) for callers the
+  index lacks.
 - Standard read/search tools are routed, not forbidden (core routing row 1):
   config / DSL / routes / migrations / specs, an unindexed file or a
-  `find_symbol` stub → Read tool; other indexed code →
-  `find_symbol`. Lag never changes that choice.
+  `find_symbol` stub → Read tool; other indexed code → `find_symbol`. Lag never
+  changes that choice.
 
 ## Worktree clone — teardown only
 
@@ -206,7 +212,8 @@ endpoints deprecated.
 
 - Downgrade to text search / Read / Bash shell reads because index stale,
   lagging or drifted — trades away recall user did not agree to. Own checkout:
-  incremental reindex, then search; anywhere: keep calling tea-rags.
+  incremental reindex when available, then search; anywhere: reuse current
+  bodies and refresh only requested stale/missing evidence once in tea-rags.
 - Run `force_reindex` for stale-only or edited-only cases — incremental correct
   and far cheaper. Full rebuild reserved for the drift reports whose `Run:` line
   actually says `--force`; enrichment-owned drift is repaired by

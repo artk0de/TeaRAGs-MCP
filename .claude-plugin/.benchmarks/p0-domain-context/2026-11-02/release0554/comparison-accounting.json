@@ -1,0 +1,239 @@
+{
+  "rows": [
+    {
+      "actor": "candidate-claude-F02",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain",
+      "old_responses": 3,
+      "new_responses": 3,
+      "old_usage": {
+        "input": 56612,
+        "fresh_input": 10710,
+        "cached_input": 45902,
+        "cache_write": 10704,
+        "output": 589,
+        "reasoning_numeric": 109,
+        "native_cost_usd": 0.0533082,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "new_usage": {
+        "input": 56965,
+        "fresh_input": 11260,
+        "cached_input": 45705,
+        "cache_write": 11254,
+        "output": 594,
+        "reasoning_numeric": 116,
+        "native_cost_usd": 0.0555385,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "old_session_wall_seconds": 37.19967904200894,
+      "new_session_wall_seconds": 9.691769708995707
+    },
+    {
+      "actor": "candidate-codex-D02",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain",
+      "old_responses": 3,
+      "new_responses": 2,
+      "old_usage": {
+        "input": 64654,
+        "fresh_input": 15246,
+        "cached_input": 49408,
+        "cache_write": 0,
+        "output": 356,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "new_usage": {
+        "input": 33796,
+        "fresh_input": 20996,
+        "cached_input": 12800,
+        "cache_write": 0,
+        "output": 226,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "old_session_wall_seconds": 27.180927499983227,
+      "new_session_wall_seconds": 10.187855791999027
+    },
+    {
+      "actor": "candidate-claude-F01",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain-attempt02",
+      "old_responses": 2,
+      "new_responses": 2,
+      "old_usage": {
+        "input": 37239,
+        "fresh_input": 10212,
+        "cached_input": 27027,
+        "cache_write": 10208,
+        "output": 721,
+        "reasoning_numeric": 48,
+        "native_cost_usd": 0.0507527,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "new_usage": {
+        "input": 37268,
+        "fresh_input": 10227,
+        "cached_input": 27041,
+        "cache_write": 10223,
+        "output": 666,
+        "reasoning_numeric": 49,
+        "native_cost_usd": 0.0502641,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "old_session_wall_seconds": 32.12853841701872,
+      "new_session_wall_seconds": 9.827077666996047
+    },
+    {
+      "actor": "candidate-codex-F01",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain-attempt02",
+      "old_responses": 3,
+      "new_responses": 2,
+      "old_usage": {
+        "input": 54342,
+        "fresh_input": 10182,
+        "cached_input": 44160,
+        "cache_write": 0,
+        "output": 353,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "new_usage": {
+        "input": 33855,
+        "fresh_input": 8255,
+        "cached_input": 25600,
+        "cache_write": 0,
+        "output": 223,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "old_session_wall_seconds": 32.051192666986026,
+      "new_session_wall_seconds": 16.359604708995903
+    },
+    {
+      "actor": "candidate-codex-F02",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain-attempt02",
+      "old_responses": 5,
+      "new_responses": 3,
+      "old_usage": {
+        "input": 93798,
+        "fresh_input": 11238,
+        "cached_input": 82560,
+        "cache_write": 0,
+        "output": 469,
+        "reasoning_numeric": 28,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "new_usage": {
+        "input": 51319,
+        "fresh_input": 8695,
+        "cached_input": 42624,
+        "cache_write": 0,
+        "output": 200,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "old_session_wall_seconds": 26.40832879199297,
+      "new_session_wall_seconds": 28.982082292000996
+    },
+    {
+      "actor": "candidate-codex-D01",
+      "old_condition": "main-acceptance01",
+      "new_condition": "release0554-domain-attempt02",
+      "old_responses": 7,
+      "new_responses": 7,
+      "old_usage": {
+        "input": 189441,
+        "fresh_input": 26241,
+        "cached_input": 163200,
+        "cache_write": 0,
+        "output": 893,
+        "reasoning_numeric": 26,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "new_usage": {
+        "input": 141905,
+        "fresh_input": 24273,
+        "cached_input": 117632,
+        "cache_write": 0,
+        "output": 764,
+        "reasoning_numeric": 38,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "old_session_wall_seconds": 38.70632112500607,
+      "new_session_wall_seconds": 33.022178791987244
+    },
+    {
+      "actor": "candidate-claude-C02",
+      "old_condition": "startup-main-acceptance01",
+      "new_condition": "release0554-startup",
+      "old_responses": 2,
+      "new_responses": 2,
+      "old_usage": {
+        "input": 37108,
+        "fresh_input": 10340,
+        "cached_input": 26768,
+        "cache_write": 10336,
+        "output": 751,
+        "reasoning_numeric": 19,
+        "native_cost_usd": 0.0515388,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "new_usage": {
+        "input": 37128,
+        "fresh_input": 10010,
+        "cached_input": 27118,
+        "cache_write": 10006,
+        "output": 820,
+        "reasoning_numeric": 19,
+        "native_cost_usd": 0.0509438,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "old_session_wall_seconds": 28.001974374987185,
+      "new_session_wall_seconds": 10.574501124996459
+    },
+    {
+      "actor": "candidate-codex-C02",
+      "old_condition": "startup-main-acceptance01",
+      "new_condition": "release0554-startup",
+      "old_responses": 2,
+      "new_responses": 2,
+      "old_usage": {
+        "input": 35429,
+        "fresh_input": 14949,
+        "cached_input": 20480,
+        "cache_write": 0,
+        "output": 371,
+        "reasoning_numeric": 38,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "new_usage": {
+        "input": 33762,
+        "fresh_input": 17122,
+        "cached_input": 16640,
+        "cache_write": 0,
+        "output": 206,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "old_session_wall_seconds": 31.3096982499992,
+      "new_session_wall_seconds": 12.46336170900031
+    }
+  ],
+  "interpretation": "Descriptive n1 matched tasks. Final newer engine includes preserved unrelated main work; no causal whole-session latency or universal quality/ROI inference. Pure first-call hypothesis was separately controlled on c807.",
+  "provider_cache": "Observed cached and fresh input per actor; no prefix-cache-reset claim. No previous conversation/answer injection.",
+  "cost": "Claude native list-equivalent estimates retained. Codex remains unpriced; do not fabricate totalUSD. Failed provider/native-preflight attempts retained separately and not assumed free."
+}

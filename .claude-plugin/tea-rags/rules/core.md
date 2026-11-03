@@ -94,10 +94,11 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - `empty.reason: unknownPath` with suggestions →
   `find_symbol(relativePath: <dir they share>)`, never one suggestion.
 - A requested row without `treeState` / `degraded` is current, overlay too;
-  global `changedFiles` / `pendingFiles` alone never require a reread.
-  A `treeState` row is pre-edit (say why): fanIn/churn are usable, its body is not proof
-  of the edit. Refresh only that requested stale/missing body once in tea-rags;
-  if still unavailable, name the gap. No `workingTree` → current.
+  global `changedFiles` / `pendingFiles` alone never require a reread. A
+  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same
+  `find_symbol` arguments once**: it reads the working tree, not a cached body.
+  No Read/shell refresh. Still stale → state the gap. No `workingTree` →
+  current.
 - Freshness (subagent: keep reading, never `index_codebase`/`AskUserQuestion`,
   drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠
   alias's path → print `linked worktree (<test>) — no reindex`; own checkout
@@ -106,9 +107,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   (status/prime/index only, not a read answer) → own-checkout incremental first
   if behind, plus ONE line
   `AskUserQuestion: run <Run: line>? — --force not run; reads continue meanwhile`,
-  never awaited, never "won't proceed"; next = the task's read call.
-  No available `index_codebase` → needed stale bodies via `find_symbol`;
-  never look up indexing/mutator schemas.
+  never awaited, never "won't proceed"; next = the task's read call. No
+  available `index_codebase` → needed stale bodies via `find_symbol`; never look
+  up indexing/mutator schemas.
 - Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none
   dropped (a `--force` ask rides beside, never a slot):
   `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)

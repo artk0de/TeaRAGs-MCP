@@ -1,0 +1,12 @@
+{
+  "status": "INVALID_PRE_MODEL_PENDING",
+  "native_servers": [
+    {
+      "name": "tea-rags",
+      "status": "pending",
+      "error": null
+    }
+  ],
+  "actor": "release0554-guide/candidate-claude-F02",
+  "model_requests": 0
+}
