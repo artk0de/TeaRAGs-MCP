@@ -1,11 +1,14 @@
 # P0 acceptance — plugin 0.55.4
 
-**Integration pending.** The eight direct/hook cases below passed. A subsequent
+**Integration approved; Claude follow-up waived by user on 2026-11-03.**
+The two remaining Claude resource-discovery cases are NOT RUN, not passed.
+See integration-decision.json for the explicit instruction and scan limitations.
+The eight direct/hook cases below passed. A subsequent
 guide-consistency correction passed both explicit-guide Codex cases. Claude's
 guide cases exposed an overly restrictive builtin-resource metadata guard; its
 correction passes55 pure checks but the live follow-up is blocked by Anthropic
-`verification_required`. The account owner must restore access. Neither the
-remaining gate nor all-six completion is claimed closed.
+`verification_required`. The user requested integration without that follow-up.
+Full cross-harness validation is therefore not claimed.
 
 Eight final shipped-path actors satisfy the targeted behavior criteria.
 Integration is recorded separately after merge. Models: gpt-6.1-sol/medium and
