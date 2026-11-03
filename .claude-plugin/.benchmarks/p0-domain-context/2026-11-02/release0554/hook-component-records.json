@@ -1,0 +1,314 @@
+{
+  "candidate-codex-C02": [
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.03796137499739416,
+      "child_user_cpu_seconds": 0.026611,
+      "child_system_cpu_seconds": 0.008222,
+      "child_involuntary_context_switches": 127,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/session-start.sh",
+      "child_wall_seconds": 0.13309454201953486,
+      "child_user_cpu_seconds": 0.004957,
+      "child_system_cpu_seconds": 0.010976999999999999,
+      "child_involuntary_context_switches": 202,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/session-codex-rules.sh",
+      "child_wall_seconds": 0.13719191699055955,
+      "child_user_cpu_seconds": 0.004405,
+      "child_system_cpu_seconds": 0.011267,
+      "child_involuntary_context_switches": 185,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/session-digest.sh",
+      "child_wall_seconds": 0.23951037498773076,
+      "child_user_cpu_seconds": 0.095525,
+      "child_system_cpu_seconds": 0.043637999999999996,
+      "child_involuntary_context_switches": 910,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.040356417011935264,
+      "child_user_cpu_seconds": 0.027159,
+      "child_system_cpu_seconds": 0.009712,
+      "child_involuntary_context_switches": 256,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/search-drift.sh --harness codex",
+      "child_wall_seconds": 0.24502187498728745,
+      "child_user_cpu_seconds": 0.008943,
+      "child_system_cpu_seconds": 0.020869,
+      "child_involuntary_context_switches": 288,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/turn-routing.sh --harness codex",
+      "child_wall_seconds": 0.2506588750111405,
+      "child_user_cpu_seconds": 0.007404,
+      "child_system_cpu_seconds": 0.017133,
+      "child_involuntary_context_switches": 260,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-4d4c594e-6e43-490e-bff7-99883083cd32",
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.12629908398957923,
+      "child_user_cpu_seconds": 0.033289,
+      "child_system_cpu_seconds": 0.012306,
+      "child_involuntary_context_switches": 378,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-ef088068-95b2-4a74-b21e-c198c2cdc427",
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.13243225001497194,
+      "child_user_cpu_seconds": 0.036992,
+      "child_system_cpu_seconds": 0.013850999999999999,
+      "child_involuntary_context_switches": 349,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-4d4c594e-6e43-490e-bff7-99883083cd32",
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/search-drift.sh --harness codex",
+      "child_wall_seconds": 0.31161029200302437,
+      "child_user_cpu_seconds": 0.150216,
+      "child_system_cpu_seconds": 0.10192599999999999,
+      "child_involuntary_context_switches": 1557,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-ef088068-95b2-4a74-b21e-c198c2cdc427",
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/search-drift.sh --harness codex",
+      "child_wall_seconds": 0.31502850001561455,
+      "child_user_cpu_seconds": 0.150641,
+      "child_system_cpu_seconds": 0.104029,
+      "child_involuntary_context_switches": 1573,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-4d4c594e-6e43-490e-bff7-99883083cd32",
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/one-file-read.sh",
+      "child_wall_seconds": 0.330203084013192,
+      "child_user_cpu_seconds": 0.017922999999999998,
+      "child_system_cpu_seconds": 0.011966,
+      "child_involuntary_context_switches": 148,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-ef088068-95b2-4a74-b21e-c198c2cdc427",
+      "command": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/one-file-read.sh",
+      "child_wall_seconds": 0.3284969579835888,
+      "child_user_cpu_seconds": 0.019185,
+      "child_system_cpu_seconds": 0.013859,
+      "child_involuntary_context_switches": 204,
+      "exit_code": 0
+    },
+    {
+      "event": "PostToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-4d4c594e-6e43-490e-bff7-99883083cd32",
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.03875162501935847,
+      "child_user_cpu_seconds": 0.027353,
+      "child_system_cpu_seconds": 0.008184,
+      "child_involuntary_context_switches": 154,
+      "exit_code": 0
+    },
+    {
+      "event": "PostToolUse",
+      "tool": "Bash",
+      "tool_use_id": "exec-ef088068-95b2-4a74-b21e-c198c2cdc427",
+      "command": "node \"/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/profiles/candidate-codex-C02/codex-home/plugins/cache/tea-rags/tea-rags/0.55.3/scripts/reread-ledger.mjs\" --harness codex",
+      "child_wall_seconds": 0.03881108300993219,
+      "child_user_cpu_seconds": 0.028036,
+      "child_system_cpu_seconds": 0.008322,
+      "child_involuntary_context_switches": 169,
+      "exit_code": 0
+    }
+  ],
+  "candidate-claude-C02": [
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+      "child_wall_seconds": 0.2372911669954192,
+      "child_user_cpu_seconds": 0.031376999999999995,
+      "child_system_cpu_seconds": 0.013271,
+      "child_involuntary_context_switches": 431,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-fresh.sh",
+      "child_wall_seconds": 0.3198432499775663,
+      "child_user_cpu_seconds": 0.007567,
+      "child_system_cpu_seconds": 0.017305,
+      "child_involuntary_context_switches": 301,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 1",
+      "child_wall_seconds": 0.3314668750099372,
+      "child_user_cpu_seconds": 0.007451999999999999,
+      "child_system_cpu_seconds": 0.016047,
+      "child_involuntary_context_switches": 240,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "tea-rags prime --agent \"$CLAUDE_PROJECT_DIR\"",
+      "child_wall_seconds": 0.38480783297563903,
+      "child_user_cpu_seconds": 0.089657,
+      "child_system_cpu_seconds": 0.039511,
+      "child_involuntary_context_switches": 1014,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+      "child_wall_seconds": 0.061347665992798284,
+      "child_user_cpu_seconds": 0.034728999999999996,
+      "child_system_cpu_seconds": 0.015719,
+      "child_involuntary_context_switches": 315,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh --part 1 --parts 1",
+      "child_wall_seconds": 0.13349262499832548,
+      "child_user_cpu_seconds": 0.007239,
+      "child_system_cpu_seconds": 0.016985,
+      "child_involuntary_context_switches": 199,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-build-fresh.sh",
+      "child_wall_seconds": 0.1295222909830045,
+      "child_user_cpu_seconds": 0.008072,
+      "child_system_cpu_seconds": 0.017925,
+      "child_involuntary_context_switches": 189,
+      "exit_code": 0
+    },
+    {
+      "event": "SessionStart",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "tea-rags prime --agent \"$CLAUDE_PROJECT_DIR\"",
+      "child_wall_seconds": 0.2093317079998087,
+      "child_user_cpu_seconds": 0.100216,
+      "child_system_cpu_seconds": 0.046863999999999996,
+      "child_involuntary_context_switches": 810,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+      "child_wall_seconds": 0.04174600000260398,
+      "child_user_cpu_seconds": 0.025800999999999998,
+      "child_system_cpu_seconds": 0.009670999999999999,
+      "child_involuntary_context_switches": 120,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh --harness claude",
+      "child_wall_seconds": 0.14590924998628907,
+      "child_user_cpu_seconds": 0.009722999999999999,
+      "child_system_cpu_seconds": 0.024058,
+      "child_involuntary_context_switches": 325,
+      "exit_code": 0
+    },
+    {
+      "event": "UserPromptSubmit",
+      "tool": null,
+      "tool_use_id": null,
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/turn-routing.sh --harness claude",
+      "child_wall_seconds": 0.149180249980418,
+      "child_user_cpu_seconds": 0.008242,
+      "child_system_cpu_seconds": 0.019785999999999998,
+      "child_involuntary_context_switches": 249,
+      "exit_code": 0
+    },
+    {
+      "event": "PreToolUse",
+      "tool": "Read",
+      "tool_use_id": "toolu_01568fXCPnPFjaXKfgSi24DU",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+      "child_wall_seconds": 0.042400167003506795,
+      "child_user_cpu_seconds": 0.028061,
+      "child_system_cpu_seconds": 0.010395,
+      "child_involuntary_context_switches": 118,
+      "exit_code": 0
+    },
+    {
+      "event": "PostToolUse",
+      "tool": "Read",
+      "tool_use_id": "toolu_01568fXCPnPFjaXKfgSi24DU",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs",
+      "child_wall_seconds": 0.043888250016607344,
+      "child_user_cpu_seconds": 0.028498,
+      "child_system_cpu_seconds": 0.010137,
+      "child_involuntary_context_switches": 122,
+      "exit_code": 0
+    }
+  ]
+}

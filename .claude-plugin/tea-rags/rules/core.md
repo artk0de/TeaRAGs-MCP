@@ -95,9 +95,9 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `find_symbol(relativePath: <dir they share>)`, never one suggestion.
 - A requested row without `treeState` / `degraded` is current, overlay too;
   global `changedFiles` / `pendingFiles` alone never require a reread.
-  A `treeState` row is pre-edit (say why): fanIn/churn are usable, its body is not proof
-  of the edit. Refresh only that requested stale/missing body once in tea-rags;
-  if still unavailable, name the gap. No `workingTree` → current.
+  A `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same
+  `find_symbol` arguments once**: it reads the working tree, not a cached body.
+  No Read/shell refresh. Still stale → state the gap. No `workingTree` → current.
 - Freshness (subagent: keep reading, never `index_codebase`/`AskUserQuestion`,
   drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠
   alias's path → print `linked worktree (<test>) — no reindex`; own checkout

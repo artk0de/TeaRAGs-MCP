@@ -1,0 +1,103 @@
+{
+  "suite": "q20-01",
+  "source_seal_sha256": "1fad039d3c9f6aefd2d7be9dc84fd6d1fea41c9229f36606368ce30f73042fd6",
+  "seal": {
+    "cases_sha256": "c0b7b44b19e70b9750db2d6e005d270cb561e5c51f81779e75a26ce983261af2",
+    "grading_sha256": "c2f20a4f8ed42db959e256e3d90c922122bd6f0dfc964ca30a137e600d4e2f8c",
+    "profiles_sha256": "27f2a1a00dd5326966dbaf1a16ed24b8135f77e02911f149f360d82863be753d",
+    "source_sha256": "f2309a6cb3e598a08976ed688a5cfcd2b11675cf575150c33dea6a737897c4ef",
+    "runtimes_sha256": "273c44bc5c92ea823286e93697152529f89bae9d26e44219ed351d914e086190",
+    "schedule_sha256": "49021b355a48ddda150efe781d7354edf049dbb6fd36a3577456d5682ed4dc8d",
+    "models": {
+      "codex": "gpt-6.1-sol",
+      "claude": "claude-sonnet-5-5"
+    },
+    "efforts": {
+      "codex": "medium",
+      "claude": "medium"
+    },
+    "n": 1,
+    "actors": 4,
+    "spec_sha256": "69e622ef7523df72b8319cbd33a0ab315ea72f1b7d20b2ebc848710d9670cbb1",
+    "fixture": "/Users/Shared/nav-ab/repo-master",
+    "cases_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/q20-repro/cases.json",
+    "grading_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/q20-repro/grading.json",
+    "runtime_identity": {
+      "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+      "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+      "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+      "cache_tag": "cpython-315",
+      "flags": {
+        "bytes_warning": 0,
+        "context_aware_warnings": 0,
+        "debug": 0,
+        "dev_mode": false,
+        "dont_write_bytecode": 0,
+        "gil": 1,
+        "hash_randomization": 1,
+        "ignore_environment": 0,
+        "inspect": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 0,
+        "lazy_imports": -1,
+        "n_fields": 22,
+        "n_sequence_fields": 18,
+        "n_unnamed_fields": 0,
+        "no_site": 0,
+        "no_user_site": 0,
+        "optimize": 0,
+        "quiet": 0,
+        "safe_path": false,
+        "thread_inherit_context": 0,
+        "utf8_mode": 1,
+        "verbose": 0,
+        "warn_default_encoding": 0
+      }
+    },
+    "spec_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/q20-spec.json",
+    "status": "STATIC_PREPARED; nativeproofs/modelGO required",
+    "fixture_inventory_reference": {
+      "files": 51728,
+      "canonical_sha256": "fe0463d8c026e3318b58bfde9bb99e6a46815b5dbecfc1afe23c78b4e5125e8f",
+      "private_seal": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/q20-01/seal.json"
+    }
+  },
+  "actors": [
+    {
+      "key": "candidate-claude-Q20",
+      "model_responses": 6,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 133456,
+        "fresh_input": 18650,
+        "cached_input": 114806,
+        "cache_write": 18638,
+        "output": 2316,
+        "reasoning_numeric": 108,
+        "native_cost_usd": 0.1092166,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-Q20.json"
+    },
+    {
+      "key": "candidate-codex-Q20",
+      "model_responses": 6,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 154135,
+        "fresh_input": 21527,
+        "cached_input": 132608,
+        "cache_write": 0,
+        "output": 911,
+        "reasoning_numeric": 32,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-Q20.json"
+    }
+  ],
+  "quality": "Controller review stored separately; completion is not a pass."
+}

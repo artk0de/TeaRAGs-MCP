@@ -7,6 +7,13 @@ Reuse known schemas. Never print full descriptions, repeated core instructions o
 return schemas; if that declaration is absent, use the listed tool interface.
 Otherwise they are direct tools — call them as listed.
 
+**Direct local lookup.** When the user names an indexable file/symbol and asks
+only for its body/local contract, with project/path known and no other workflow,
+make `find_symbol` the first tool call, without loading Explore. Core already
+supplies `{project,path,relativePath}` or `{project,path,symbol}`; no schema-only
+prelude is needed. Explicit skill requests, discovery, flow/impact and code changes
+still require their selected skill before use.
+
 **Choose missing facts before tools.** On follow-ups, use retained bodies, locators
 and edges to answer the current request; fetch only its remaining evidence gaps.
 Apply this check inside skills too: a behaviour question alone does not require

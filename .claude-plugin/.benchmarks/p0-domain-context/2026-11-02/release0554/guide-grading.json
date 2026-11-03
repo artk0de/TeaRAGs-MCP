@@ -1,0 +1,23 @@
+{
+  "actor_read_forbidden": true,
+  "condition": "0.55.4 guide consistency correction after completed8 direct cases",
+  "guide_delivery": "The actor must actually read tea-rags://guide/freshness through the shipped MCP resource path. Verify received guide content includes row-specific single-refresh guidance, not the obsolete pending-count-driven repeat rule. Catalog discovery or merely mentioning the guide is not a pass.",
+  "F01": {
+    "eligibility": "Actual controlled current-body find_symbol delivery with unrelated pending3 must be exercised.",
+    "quality": [
+      "queued",
+      "processing",
+      "settled",
+      "rejected",
+      "refund_settlement",
+      "status_changed"
+    ],
+    "behavior": "Use the full current target body once, without confirmation or repeat because of the global pending count. Guide reading is an explicit user request and is not an avoidable setup violation."
+  },
+  "F02": {
+    "eligibility": "The actual first requested body is marked pre-edit; the controlled next result is current while unrelated pending3 remains.",
+    "quality": ["refund_settlement", "status_changed"],
+    "behavior": "Repeat the same scoped find_symbol arguments once, then answer the current values. No raw Read/shell refresh, no second confirmation, no unavailable indexing/mutator-schema discovery."
+  },
+  "limits": "n1 per harness/case, same chosen models. Earlier8 cases remain evidence for unchanged direct routes and hooks; their actual tools did not fetch the modified guide. This correction fixes an explicit document contradiction; no speed gain is inferred. Preserve all native failures and failed hypotheses."
+}

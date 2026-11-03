@@ -35,6 +35,7 @@ FAKEBIN="$(mktemp -d)"; NOCLI="$(mktemp -d)"
 cat > "$FAKEBIN/tea-rags" <<'EOF'
 #!/usr/bin/env bash
 [ "$1 $2" = "project indexed" ] || exit 3
+[ -z "${FAKE_CLI_LOG:-}" ] || printf '%s\n' "$*" >> "$FAKE_CLI_LOG"
 printf '%s\n' "$FAKE_OUT"
 EOF
 chmod +x "$FAKEBIN/tea-rags"
@@ -119,6 +120,19 @@ fresh() { rm -rf "$STATE"; mkdir -p "$STATE"; NOW=1000000; }
 
 for H in claude codex cursor; do
   [ -f "$(hook_of "$H")" ] || { note 1 "$H: hook script exists at $(hook_of "$H")"; continue; }
+
+  # A neutral body read cannot advance search drift. Avoid booting the CLI just
+  # to establish a fact that cannot change this hook's decision.
+  fresh
+  export FAKE_CLI_LOG="$STATE/cli-calls"
+  run "$H" "$(pre "$H" neutral-read bash "sed -n '1,20p' src/a.ts")"
+  allowed "$H"; note $? "$H: neutral shell read stays allowed"
+  [ ! -s "$FAKE_CLI_LOG" ]; note $? "$H: neutral shell read does not start membership CLI"
+  # A mixed read/search still needs the existing indexed-read exemption.
+  run "$H" "$(pre "$H" mixed-read bash "cat src/a.ts && rg 'retry|backoff' src")"
+  allowed "$H"; note $? "$H: mixed indexed read and concept search retains read exemption"
+  [ -s "$FAKE_CLI_LOG" ]; note $? "$H: mixed read/search retains membership check"
+  unset FAKE_CLI_LOG
 
   fresh
   run "$H" "$(pre "$H" s1 grep "$C")"; allowed "$H"; note $? "$H: search 1 allowed"

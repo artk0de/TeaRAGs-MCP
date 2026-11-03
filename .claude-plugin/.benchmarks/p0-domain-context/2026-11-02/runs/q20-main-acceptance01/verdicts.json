@@ -1,0 +1,38 @@
+{
+  "condition": "q20-main-acceptance01",
+  "manual_controller_review": true,
+  "actors": [
+    {
+      "key": "candidate-claude-Q20",
+      "answer_quality": "PASS",
+      "native_model_responses": 6,
+      "native_permission": "PASS",
+      "n": 1,
+      "scope_selection": "PASS",
+      "source_evidence": "PASS: UpdateStatus initialize/perform/failure_reason_of_report and BroadcastStatus frame delivered",
+      "first_query": "See exported public tools for exact query",
+      "limits": "Current main succeeds without extra domain guidance. n1 per harness; no universal ranking/latency claim."
+    },
+    {
+      "key": "candidate-codex-Q20",
+      "answer_quality": "PASS",
+      "native_model_responses": 6,
+      "native_permission": "PASS",
+      "n": 1,
+      "scope_selection": "PASS",
+      "source_evidence": "PASS: UpdateStatus initialize/perform/failure_reason_of_report and BroadcastStatus frame delivered",
+      "first_query": "Instead shared integration status update service broadcast status frontend",
+      "limits": "Current main succeeds without extra domain guidance. n1 per harness; no universal ranking/latency claim."
+    }
+  ],
+  "completion_status": "All model actors completed; individual behavior failures remain open.",
+  "models": {
+    "codex": "gpt-6.1-sol/medium",
+    "claude": "claude-sonnet-5-5/medium"
+  },
+  "limits": [
+    "Provider prefix cache observed, not forcibly reset. Independent fresh homes and no previous-question or answer injection.",
+    "Cursor static only; full GruntWorx campaign paused.",
+    "No private reasoning text exported. Native numeric thinking/output usage retained."
+  ]
+}

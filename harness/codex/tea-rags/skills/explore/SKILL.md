@@ -1,8 +1,9 @@
 ---
 name: explore
 description:
-  "Use for questions about existing code behavior, usages, structure, examples,
-  or explicit pre-change context that need investigation. Not bug symptoms,
+  "Use when existing-code questions need discovery, call flow, impact, examples,
+  or explicit pre-change investigation. Not direct lookups of an already named
+  symbol or file body/local contract covered by core; not bug symptoms,
   implementation-plan authoring, or broad code-health audits."
 ---
 

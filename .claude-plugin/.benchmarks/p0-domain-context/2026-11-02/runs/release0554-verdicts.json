@@ -1,0 +1,359 @@
+{
+  "release": "0.55.4",
+  "valid_actors": 8,
+  "passed": 8,
+  "n": 1,
+  "rows": [
+    {
+      "suite": "release0554-domain",
+      "key": "candidate-claude-F02",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "exact_one_mcp_refresh": true,
+        "no_raw_refresh": true,
+        "three_model_responses": true
+      },
+      "responses": 3,
+      "usage": {
+        "input": 56965,
+        "fresh_input": 11260,
+        "cached_input": 45705,
+        "cache_write": 11254,
+        "output": 594,
+        "reasoning_numeric": 116,
+        "native_cost_usd": 0.0555385,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "public_tools": [
+        {
+          "name": "mcp__tea-rags__find_symbol",
+          "arguments": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          },
+          "id": "toolu_017aj17sKVQhyR4djAAw9uQ2"
+        },
+        {
+          "name": "mcp__tea-rags__find_symbol",
+          "arguments": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          },
+          "id": "toolu_014YBLknwgteo5sjyCVQBWCe"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-domain",
+      "key": "candidate-codex-D02",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "first_tool_is_lookup": true,
+        "two_model_responses": true
+      },
+      "responses": 2,
+      "usage": {
+        "input": 33796,
+        "fresh_input": 20996,
+        "cached_input": 12800,
+        "cache_write": 0,
+        "output": 226,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "public_tools": [
+        {
+          "name": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/marketing/status.ts"
+          },
+          "status": "completed",
+          "id": "exec-9fb51c65-3347-4cd9-966c-cbfe6a1c43e3",
+          "delivered_result_sha256": "52dfb8cfb3df04040ec04fab3949fa7b88bbcbc9658db516d9ad7d076c7de35a"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-domain-attempt02",
+      "key": "candidate-claude-F01",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "one_body_read": true,
+        "two_model_responses": true
+      },
+      "responses": 2,
+      "usage": {
+        "input": 37268,
+        "fresh_input": 10227,
+        "cached_input": 27041,
+        "cache_write": 10223,
+        "output": 666,
+        "reasoning_numeric": 49,
+        "native_cost_usd": 0.0502641,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "public_tools": [
+        {
+          "name": "mcp__tea-rags__find_symbol",
+          "arguments": {
+            "relativePath": "src/refund-settlement/status.ts",
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni"
+          },
+          "id": "toolu_01JQs1Rirz71c55wiEaPWKk7"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-domain-attempt02",
+      "key": "candidate-codex-F01",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "one_body_read": true,
+        "two_model_responses": true
+      },
+      "responses": 2,
+      "usage": {
+        "input": 33855,
+        "fresh_input": 8255,
+        "cached_input": 25600,
+        "cache_write": 0,
+        "output": 223,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "public_tools": [
+        {
+          "name": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed",
+          "id": "exec-189120a7-8601-4531-8604-aa7c54c1ea50",
+          "delivered_result_sha256": "3b333c2fe96a7e65118705186806cbcbcd74f699c3f0b54ea875d2ebbeca1def"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-domain-attempt02",
+      "key": "candidate-codex-F02",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "exact_one_mcp_refresh": true,
+        "no_raw_refresh": true,
+        "three_model_responses": true
+      },
+      "responses": 3,
+      "usage": {
+        "input": 51319,
+        "fresh_input": 8695,
+        "cached_input": 42624,
+        "cache_write": 0,
+        "output": 200,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "public_tools": [
+        {
+          "name": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed",
+          "id": "exec-c052e2ba-72a5-4c2d-8ff8-9da0dcb9a8a7",
+          "delivered_result_sha256": "471264a7306eb09ae0df3afbf5493577e69d3169419cc7c6244cb2e82a561c96"
+        },
+        {
+          "name": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed",
+          "id": "exec-5ef22d09-306d-4ca1-8a00-e2ca0cc61a1e",
+          "delivered_result_sha256": "3b333c2fe96a7e65118705186806cbcbcd74f699c3f0b54ea875d2ebbeca1def"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-domain-attempt02",
+      "key": "candidate-codex-D01",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "discovery_retained": true
+      },
+      "responses": 7,
+      "usage": {
+        "input": 141905,
+        "fresh_input": 24273,
+        "cached_input": 117632,
+        "cache_write": 0,
+        "output": 764,
+        "reasoning_numeric": 38,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "public_tools": [
+        {
+          "name": "commandExecution",
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/Shared/nav-ab/p0-acceptance-main-20261102/release0554-domain-attempt02/profiles/candidate-codex-D01/codex-home/plugins/cache/tea-rags/tea-rags/0.55.4/skills/explore/SKILL.md\"",
+          "exit_code": 0,
+          "id": "exec-a1309ff8-1aaf-4c44-98ec-cdcfea840946"
+        },
+        {
+          "name": "semantic_search",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "query": "refund settlement processing state changes dashboard event frame",
+            "metaOnly": true,
+            "limit": 5
+          },
+          "status": "completed",
+          "id": "exec-99ceddfd-a005-4f98-9fb3-ae14f40c3787",
+          "delivered_result_sha256": "a8e719475ea5ac7101d08b490b166b486adc33d8e5de916e8232ca53523053e2"
+        },
+        {
+          "name": "find_symbol",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "relativePath": "src/refund-settlement/status.ts"
+          },
+          "status": "completed",
+          "id": "exec-de117baf-977a-4de2-a346-9040c946be3b",
+          "delivered_result_sha256": "07e9f1981a9050121ec76ce06726b9a92150305869087140926fe513652ee5c8"
+        },
+        {
+          "name": "get_callers",
+          "arguments": {
+            "project": "p0-domain-context-ng1ni-external",
+            "path": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+            "symbolId": "src/refund-settlement/status.ts:applyProcessingState",
+            "depth": 2
+          },
+          "status": "failed",
+          "id": "exec-489701e8-d6dd-4251-8a0a-c3a4fafaf806",
+          "delivered_result_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+        },
+        {
+          "name": "commandExecution",
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'applyProcessingState' src/refund-settlement\"",
+          "exit_code": 0,
+          "id": "exec-b551105d-253e-41a1-a6af-0c3fb7270c53"
+        },
+        {
+          "name": "commandExecution",
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'applyProcessingState' src\"",
+          "exit_code": 0,
+          "id": "exec-89c0ee44-b808-42fc-a624-32781ce22629"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-startup",
+      "key": "candidate-claude-C02",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true
+      },
+      "responses": 2,
+      "usage": {
+        "input": 37128,
+        "fresh_input": 10010,
+        "cached_input": 27118,
+        "cache_write": 10006,
+        "output": 820,
+        "reasoning_numeric": 19,
+        "native_cost_usd": 0.0509438,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "public_tools": [
+        {
+          "name": "Read",
+          "arguments": {
+            "file_path": "/Users/Shared/nav-ab/p0-context-eval-ng1ni/config/storage.yml"
+          },
+          "id": "toolu_01UMB3iRGgesoY4CCQvGUQRp"
+        }
+      ]
+    },
+    {
+      "suite": "release0554-startup",
+      "key": "candidate-codex-C02",
+      "verdict": "PASS",
+      "checks": {
+        "answer_core_facts": true,
+        "native_permission": true,
+        "post_actor_seal": true,
+        "no_membership_cli": true
+      },
+      "responses": 2,
+      "usage": {
+        "input": 33762,
+        "fresh_input": 17122,
+        "cached_input": 16640,
+        "cache_write": 0,
+        "output": 206,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "public_tools": [
+        {
+          "name": "commandExecution",
+          "command": "/bin/zsh -c \"sed -n '1,240p' config/storage.yml\"",
+          "exit_code": 0,
+          "id": "exec-4b308c2a-4dc4-41a2-bd6a-dde7c7bbf9e5"
+        }
+      ]
+    }
+  ],
+  "failed_transport_attempts": [
+    {
+      "suite": "release0554-domain",
+      "key": "candidate-codex-F01",
+      "reason": "serverOverloaded: Selected model is at capacity",
+      "retained": true,
+      "valid_repetition": false
+    }
+  ],
+  "limits": [
+    "Eight selected current-release actors, no full GruntWorx benchmark.",
+    "Older isolated hypotheses used c807; final engine4e8042bdb includes unrelated preserved main changes. No causal cross-engine model-wall latency claim.",
+    "Provider cache observed, not reset; Codex cost remains unpriced.",
+    "Cursor static144check coverage only, no live subscription."
+  ]
+}

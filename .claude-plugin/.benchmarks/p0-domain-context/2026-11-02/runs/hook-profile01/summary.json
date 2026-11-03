@@ -1,0 +1,103 @@
+{
+  "suite": "hook-profile01",
+  "source_seal_sha256": "6b8e1bdae590dd161d505630258be8fd7f436af413b3b0115426d2ffbae8d5d4",
+  "seal": {
+    "cases_sha256": "e9365953518b3137c4895b6443d6b3f0e4925ff79665cc712d642349c5003afe",
+    "grading_sha256": "32079d56be3be70d43a2807aeb98ced96d2641021b99828ad499c1f675b97b87",
+    "profiles_sha256": "aed03715bcfc1571e1668f40dc13752ac46f035f81671de2d977b91857f89be0",
+    "source_sha256": "f2309a6cb3e598a08976ed688a5cfcd2b11675cf575150c33dea6a737897c4ef",
+    "runtimes_sha256": "2c1cf71aa211cf6244f95690cc3b64db276834d1d5bcb25ffecfbcd3afeba2fa",
+    "schedule_sha256": "ca1220c2ce0ed76d40b902f4cc50a82017fd3514765d344f3b490dd47ee89a2a",
+    "models": {
+      "codex": "gpt-6.1-sol",
+      "claude": "claude-sonnet-5-5"
+    },
+    "efforts": {
+      "codex": "medium",
+      "claude": "medium"
+    },
+    "n": 1,
+    "actors": 4,
+    "spec_sha256": "d425c52b4fa154dc44d44458065387d0f1563d49f8d7e05048469657d666ffe8",
+    "fixture": "/Users/Shared/nav-ab/p0-context-eval-ng1ni",
+    "cases_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/prime-agent-startup/2026-11-02/cases.json",
+    "grading_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01-grading.json",
+    "runtime_identity": {
+      "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+      "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+      "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+      "cache_tag": "cpython-315",
+      "flags": {
+        "bytes_warning": 0,
+        "context_aware_warnings": 0,
+        "debug": 0,
+        "dev_mode": false,
+        "dont_write_bytecode": 0,
+        "gil": 1,
+        "hash_randomization": 1,
+        "ignore_environment": 0,
+        "inspect": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 0,
+        "lazy_imports": -1,
+        "n_fields": 22,
+        "n_sequence_fields": 18,
+        "n_unnamed_fields": 0,
+        "no_site": 0,
+        "no_user_site": 0,
+        "optimize": 0,
+        "quiet": 0,
+        "safe_path": false,
+        "thread_inherit_context": 0,
+        "utf8_mode": 1,
+        "verbose": 0,
+        "warn_default_encoding": 0
+      }
+    },
+    "spec_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01-spec.json",
+    "status": "STATIC_PREPARED; nativeproofs/modelGO required",
+    "fixture_inventory_reference": {
+      "files": 34,
+      "canonical_sha256": "abe74c7eeab1fa4a79a67d5ab838b2b75ed078db0b9348fb898b774edeb890f5",
+      "private_seal": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/hook-profile01/seal.json"
+    }
+  },
+  "actors": [
+    {
+      "key": "candidate-claude-C02",
+      "model_responses": 2,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 37123,
+        "fresh_input": 10352,
+        "cached_input": 26771,
+        "cache_write": 10348,
+        "output": 809,
+        "reasoning_numeric": 28,
+        "native_cost_usd": 0.0521671,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-C02.json"
+    },
+    {
+      "key": "candidate-codex-C02",
+      "model_responses": 2,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 36638,
+        "fresh_input": 16158,
+        "cached_input": 20480,
+        "cache_write": 0,
+        "output": 440,
+        "reasoning_numeric": 43,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-C02.json"
+    }
+  ],
+  "quality": "Controller review stored separately; completion is not a pass."
+}

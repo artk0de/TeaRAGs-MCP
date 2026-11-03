@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "F01",
+      "prompt": "First use ToolSearch to load ReadMcpResourceTool, then read and use tea-rags://guide/freshness for this investigation. What processing states does src/refund-settlement/status.ts accept, and what resource/event frame does it publish?"
+    },
+    {
+      "id": "F02",
+      "prompt": "First use ToolSearch to load ReadMcpResourceTool, then read and use tea-rags://guide/freshness for this investigation. What does the current src/refund-settlement/status.ts publish as its resource type and event?"
+    }
+  ]
+}

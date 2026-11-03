@@ -1,0 +1,88 @@
+{
+  "rows": [
+    {
+      "suite": "release0554-guide",
+      "key": "candidate-claude-F01",
+      "checks": {
+        "actual_updated_guide_received": false,
+        "expected_body_reads": true,
+        "same_args_if_refresh": true,
+        "no_raw_read": true,
+        "current_type_and_event": true
+      },
+      "body_behavior_pass": false,
+      "metadata_denials": [
+        {
+          "tool": "ToolSearch",
+          "decision": {
+            "allow": false,
+            "reason": "Tool discovery must target tea-rags"
+          },
+          "tool_use_id": "toolu_01DPePQuVCWLH8yxJESj6DAu"
+        }
+      ],
+      "efficiency_attribution": "INVALID_METADATA_GUARD_INTERFERENCE",
+      "guide_result_sha256": null,
+      "responses": 3
+    },
+    {
+      "suite": "release0554-guide",
+      "key": "candidate-codex-F01",
+      "checks": {
+        "actual_updated_guide_received": true,
+        "expected_body_reads": true,
+        "same_args_if_refresh": true,
+        "no_raw_read": true,
+        "current_type_and_event": true
+      },
+      "body_behavior_pass": true,
+      "metadata_denials": [],
+      "efficiency_attribution": "VALID",
+      "guide_result_sha256": "673804c76ff81757b6aea509ab1158b35e9bf07938c57d06794d6d729794811b",
+      "responses": 3
+    },
+    {
+      "suite": "release0554-guide-attempt02",
+      "key": "candidate-codex-F02",
+      "checks": {
+        "actual_updated_guide_received": true,
+        "expected_body_reads": true,
+        "same_args_if_refresh": true,
+        "no_raw_read": true,
+        "current_type_and_event": true
+      },
+      "body_behavior_pass": true,
+      "metadata_denials": [],
+      "efficiency_attribution": "VALID",
+      "guide_result_sha256": "673804c76ff81757b6aea509ab1158b35e9bf07938c57d06794d6d729794811b",
+      "responses": 3
+    },
+    {
+      "suite": "release0554-guide-attempt02",
+      "key": "candidate-claude-F02",
+      "checks": {
+        "actual_updated_guide_received": true,
+        "expected_body_reads": true,
+        "same_args_if_refresh": true,
+        "no_raw_read": true,
+        "current_type_and_event": true
+      },
+      "body_behavior_pass": true,
+      "metadata_denials": [
+        {
+          "tool": "ToolSearch",
+          "decision": {
+            "allow": false,
+            "reason": "Tool discovery must target tea-rags"
+          },
+          "tool_use_id": "toolu_01VYk3mLuV6TgzPoaYTetv7g"
+        }
+      ],
+      "efficiency_attribution": "INVALID_METADATA_GUARD_INTERFERENCE",
+      "guide_result_sha256": "d2016d2d12f06f66f8ccc296e4254a2c4abb7d23f165f6e4a9b1a9a6d4b1f0c6",
+      "responses": 5
+    }
+  ],
+  "native_metadata_fix": "55 pure checks green; actual single metadata actor unserved verification_required. Do not close this remaining gate.",
+  "limits": "Body contract observations and valid efficiency attribution are distinct. No failed or blocked case is silently converted to a pass."
+}

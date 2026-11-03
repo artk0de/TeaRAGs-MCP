@@ -1,0 +1,221 @@
+{
+  "calls": [
+    {
+      "name": "Agent",
+      "id": "toolu_01HcQds5F6SDYfGditUu1TcR",
+      "subagent_type": "reviewer",
+      "parent_tool_use_id": null
+    },
+    {
+      "name": "Read",
+      "id": "toolu_014VLtZQTwxKRjtqBTuN17dW",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_01W97Vi65kdPAj4uphQANF4z",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Grep",
+      "id": "toolu_01RytrX6uAwdJuE7QZh1P7eY",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_01EtCZKP9RfzXpk1wGdd9ueq",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_01T8iUkij3cHuvXYPYURydWW",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_0117JWBAzsVvwftBCeR4Egv5",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_01Uvm5YqcPFESm678izsWrod",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Grep",
+      "id": "toolu_019FkBQkeKoykWfgKQ5WPuKE",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_018HJFpodSu8ig2jtovGQ9P1",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_0195FHhHEM9yZbwajvuh4kza",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_014sHG5KiTfw1qBWMBQ2dB1Y",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Read",
+      "id": "toolu_01WNi7TRAxzeK7HsVjk5QwqX",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "name": "Grep",
+      "id": "toolu_01BfEvVcbcMo7nVtoWHGMX9F",
+      "subagent_type": null,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    }
+  ],
+  "tool_results": [
+    {
+      "tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR",
+      "is_error": false,
+      "parent_tool_use_id": null
+    },
+    {
+      "tool_use_id": "toolu_01RytrX6uAwdJuE7QZh1P7eY",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01W97Vi65kdPAj4uphQANF4z",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_014VLtZQTwxKRjtqBTuN17dW",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01EtCZKP9RfzXpk1wGdd9ueq",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01T8iUkij3cHuvXYPYURydWW",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01Uvm5YqcPFESm678izsWrod",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_0117JWBAzsVvwftBCeR4Egv5",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_019FkBQkeKoykWfgKQ5WPuKE",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_014sHG5KiTfw1qBWMBQ2dB1Y",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_018HJFpodSu8ig2jtovGQ9P1",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_0195FHhHEM9yZbwajvuh4kza",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01WNi7TRAxzeK7HsVjk5QwqX",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    },
+    {
+      "tool_use_id": "toolu_01BfEvVcbcMo7nVtoWHGMX9F",
+      "is_error": false,
+      "parent_tool_use_id": "toolu_01HcQds5F6SDYfGditUu1TcR"
+    }
+  ],
+  "observed_models": ["claude-sonnet-5-5"],
+  "agent_call_count": 1,
+  "nested_tool_call_count": 13,
+  "exit_code": 0,
+  "final": {
+    "subtype": "success",
+    "is_error": false,
+    "result": "Ниже отчёт reviewer. Я его не перепроверял и сам файлы не читал. Задачу я не объявляю завершённой.\n\n**Итог.** Все 6 P0 не закрыты. Обоснованно закрыты 2 из 6, ещё один (ng1ni.5) закрыт только по записи в STATUS. Подтверждённого HTTP 503 нет.\n\n**Закрыты обоснованно**\n- **ng1ni.2 (domain anchor, Q20).** Оба актора, Claude и Codex, дали PASS. Выборка n=1 на каждый harness. Evidence: `evidence/q20-main-acceptance01/verdicts.json`.\n- **ng1ni.1 (eval isolation, native MCP permission).**\n  - Во всех summary `permission_denials: 0`, в verdicts `native_permission: PASS`.\n  - Это косвенное подтверждение. Отдельного артефакта про изоляцию в evidence/ нет.\n- **ng1ni.5 (embedded sentinel).** Закрыт только по записи «previously validated» в STATUS. Артефактов в evidence/ нет, поэтому reviewer этого не подтвердил.\n\n**Не завершено**\n- **ng1ni.3 (synchronous hooks).**\n  - Startup прошёл на n=1, PASS у всех 4 акторов (`evidence/startup-main-acceptance01/verdicts.json`).\n  - Причинного анализа overhead нет, тайминги только описательные.\n  - Прогон начался до пересборки shared main, поэтому его валидность подтверждена лишь post-hoc.\n- **ng1ni.4 (navigation/rereads).**\n  - F01 проходит.\n  - Claude F02 и в baseline, и в candidate получает `FAIL_STALE_BODY_REFRESH_USED_READ`: ответ верный, но маршрут не тот (`evidence/main-acceptance01/verdicts.json`).\n- **ng1ni.6 (instruction-only startup).**\n  - Прямой поиск по одному описанию не сработал: Codex D02 и F01 остались на 3 ответах.\n  - Усиленное правило первого вызова подготовлено, но не запускалось.\n  - В `evidence/direct-lookup02-acceptance01/` нет verdicts.json, только summary.\n\n**HTTP 503**\n- В `codex-503-public-errors.json` у всех событий `httpStatusCode: null`, `codexErrorInfo: other`, детали «workspace routing discovery failed». Было две серии по 5/5 переподключений.\n- Это ошибка workspace routing или транспорта, а не подтверждённый HTTP 503. Регрессией плагина её считать нельзя.\n- Попытку нельзя засчитывать как валидную повторность.\n- Оригинальный `events.jsonl` reviewer не читал, а файл с ошибками лишь выдержка.\n\n**Провалившиеся гипотезы и пробелы**\n- **F02 Claude, freshness06.** Подход провалился: после `find_symbol` идёт `Read`, то есть прямое чтение в обход TeaRAGs (`evidence/freshness06-acceptance01/candidate-claude-F02.json`).\n- **F02 Claude, freshness07.**\n  - Два вызова `find_symbol`, ни одного `Read`, ответ правильный. Это похоже на улучшение маршрута.\n  - Качество `UNGRADED`, вердикта нет.\n  - STATUS эту деталь не отражает.\n  - Это n=1 с другим профилем, поэтому считать гипотезу сработавшей или проваленной рано.\n- **Прочее.** Описание без усиленного правила не даёт прямого поиска. freshness05 признана недействительной из-за пересборки shared main, но самого артефакта reviewer не видел. Prefix-кэш провайдера не сбрасывался.\n\n**Что проверять дальше**\n1. Выставить вердикт по freshness07 Claude F02 и при чистом маршруте повторить минимум 2–3 раза.\n2. Заново прогнать freshness07 Codex F01 отдельной валидной попыткой, не засчитывая упавшую и внутренние переподключения.\n3. Запустить усиленное правило первого вызова на Codex D02/F01 и вынести отдельные verdicts.\n4. Для ng1ni.3 сделать контролируемое сравнение с хуками и без них.\n5. Положить в evidence/ артефакты изоляции (ng1ni.1) и sentinel (ng1ni.5).\n\n**Основные пути** (относительно `/Users/Shared/nav-ab/claude-subagent-auth-check-20261103/cwd`): `STATUS.json`, `codex-503-public-errors.json`, `evidence/freshness06-acceptance01/candidate-claude-F02.json`, `evidence/freshness07-acceptance01/candidate-claude-F02.json`, `evidence/main-acceptance01/verdicts.json`, `evidence/startup-main-acceptance01/verdicts.json`, `evidence/q20-main-acceptance01/verdicts.json`, `evidence/direct-lookup02-acceptance01/summary.json`.",
+    "total_cost_usd": 0.22117919999999996,
+    "modelUsage": {
+      "claude-sonnet-5-5": {
+        "inputTokens": 18,
+        "outputTokens": 7238,
+        "cacheReadInputTokens": 84697,
+        "cacheCreationInputTokens": 48600,
+        "webSearchRequests": 0,
+        "costUSD": 0.22117919999999996,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000,
+        "thinkingTokens": 771,
+        "canonicalModel": "claude-sonnet-5-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "usage": {
+      "input_tokens": 4,
+      "cache_creation_input_tokens": 3169,
+      "cache_read_input_tokens": 9360,
+      "output_tokens": 1779,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 3169,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 4,
+          "output_tokens": 1779,
+          "cache_read_input_tokens": 9360,
+          "cache_creation_input_tokens": 3169,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 3169
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "limits": "Independent evidence audit, not another behavioral efficacy trial. No token value or private reasoning exported."
+}

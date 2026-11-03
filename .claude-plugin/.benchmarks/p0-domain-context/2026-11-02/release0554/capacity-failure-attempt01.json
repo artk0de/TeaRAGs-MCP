@@ -1,0 +1,17 @@
+{
+  "condition": "release0554-domain",
+  "actor": "candidate-codex-F01",
+  "errors": [
+    {
+      "error": {
+        "message": "Selected model is at capacity. Please try a different model.",
+        "codexErrorInfo": "serverOverloaded",
+        "additionalDetails": null,
+        "misalignment": null
+      },
+      "willRetry": false
+    }
+  ],
+  "valid_repetition": false,
+  "resumed_as": "release0554-domain-attempt02; same model, after independent Claude checks"
+}

@@ -1,0 +1,11 @@
+{
+  "reason": "shared-main build mutated after native actor validation; next actor preflight detected factory.d.ts.map change",
+  "invalid_attribution": ["candidate-claude-F02"],
+  "not_started": [
+    "candidate-claude-F01",
+    "candidate-codex-F02",
+    "candidate-codex-F01"
+  ],
+  "retry": false,
+  "correction": "dedicated pinned c807 runtime; validate all hashes before and after each new actor"
+}
