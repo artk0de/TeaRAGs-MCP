@@ -1,0 +1,69 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1,
+  "selected": "contract-boundaries",
+  "variants": [
+    {
+      "stage": "baseline",
+      "version": "0.55.5",
+      "steps": {
+        "Q01": 11,
+        "Q03": 9
+      },
+      "quality": {
+        "Q01": "PASS material points",
+        "Q03": "PARTIAL: missing recording-hook scrubbing"
+      }
+    },
+    {
+      "stage": "candidate",
+      "hypothesis": "H1",
+      "version": "0.55.6",
+      "steps": {
+        "C01": 9,
+        "E01": 8,
+        "Q01": 13,
+        "Q03": 11
+      },
+      "verdict": "REJECTED: input/steps regress; Q03 scrubbing still absent",
+      "controls": "C01/E01 factual routes preserved"
+    },
+    {
+      "stage": "contract-boundaries",
+      "hypothesis": "H2",
+      "version": "0.55.6",
+      "steps": {
+        "Q01": 9,
+        "Q03": 13,
+        "V01": 6,
+        "W01": 20
+      },
+      "verdict": "SELECTED: material quality PASS, lower fresh input and elapsed time versus fresh control; no universal B win",
+      "limitations": "Q03 uses more steps and cached input; actual native costs unpriced"
+    },
+    {
+      "stage": "class-anchor",
+      "hypothesis": "H3",
+      "version": "0.55.6",
+      "steps": {
+        "F01": 3,
+        "Q01": 13,
+        "Q03": 10,
+        "W01": 14
+      },
+      "verdict": "REJECTED as a whole: Q01 regresses; Q03 omits persisted identity reuse and conflates return/entity type",
+      "controls": "F01 focused core bypassed Explore: not evidence for the changed skill shortcut"
+    }
+  ],
+  "historical_B": {
+    "Q01": 9,
+    "Q03": 11,
+    "launched_this_task": false,
+    "Q03_wall_time": "excluded: environment interruption"
+  },
+  "pooling": "Never combine best Q01 from H2 with best Q03 from H3",
+  "source_body_sha256": "03c545370457182d778cb9aa1b0a2465ad897edf231df3c286189bd7e7f07023",
+  "global_goal": "OPEN: model steps and time superiority to standard tools not established",
+  "next_hypothesis": "Constrain local-helper graph traversal before pagination; current global BFS pages policy fan-out ahead of local helper conditions."
+}

@@ -1,0 +1,1649 @@
+{
+  "source": "/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/actors/Q03-A/events.jsonl",
+  "source_journal_sha256": "d5b53c84aecf15bb4c1ed99faad0583d42165e88ce6abefecfd0904e645c3ac7",
+  "waves": [
+    {
+      "wave": 1,
+      "id": "resp_0174a84b74f8ed17016aea5a2e95b087d29b192eb627838afc",
+      "ms": 1793743411090,
+      "outer_calls": [
+        {
+          "id": "call_c5b8f6167f4c4eafa2c0325142a1dd4f",
+          "wave": 1,
+          "name": "exec",
+          "start_ms": 1793743411047,
+          "code": "const r = await tools.exec_command({cmd:\"sed -n '1,240p' /Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/skills/explore/SKILL.md\",max_output_tokens:9000});text(r.output);\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")).map(t=>({name:t.name})));\n",
+          "schema_introspection": true,
+          "end_ms": 1793743411845,
+          "output_chars": 8440,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-af9e6c90-b055-46f9-bc26-4276bfb67b4d",
+          "type": "commandExecution",
+          "start_ms": 1793743411798,
+          "end_ms": 1793743411798,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,240p' /Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/skills/explore/SKILL.md\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 7694,
+          "output_truncated": false,
+          "skill_read": true,
+          "instruction_read": true,
+          "wave": 1,
+          "outer_id": "call_c5b8f6167f4c4eafa2c0325142a1dd4f"
+        }
+      ],
+      "instruction_only": true,
+      "schema_introspection": true
+    },
+    {
+      "wave": 2,
+      "id": "resp_0174a84b74f8ed17016aea5a340a6087d2a55204e6ec722be3",
+      "ms": 1793743416554,
+      "outer_calls": [
+        {
+          "id": "call_631e7145234a48cdba9d88ea8a546358",
+          "wave": 2,
+          "name": "exec",
+          "start_ms": 1793743416428,
+          "code": "text(await tools.mcp__tea_rags__semantic_search({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",query:\"Instead integration rate limits ||| Instead lost webhooks reconciliation ||| Instead failure reasons ||| Instead signed URL cassettes ||| Instead entity matching\",metaOnly:true,limit:5}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793743418428,
+          "output_chars": 1321,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-0e4de143-f09b-415b-afab-35e438222464",
+          "type": "mcpToolCall",
+          "start_ms": 1793743416465,
+          "end_ms": 1793743418272,
+          "status": "completed",
+          "duration_ms": 1806,
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "query": "Instead integration rate limits ||| Instead lost webhooks reconciliation ||| Instead failure reasons ||| Instead signed URL cassettes ||| Instead entity matching",
+            "metaOnly": true,
+            "limit": 5
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "spec/unit/getting_paid/workers/inbox_events/quickbooks/webhooks_prune_worker_spec.rb",
+              "symbol": "GettingPaid::InboxEvents::Quickbooks::WebhooksPruneWorker.RSpec.describe GettingPaid::InboxEvents::Quickbooks::WebhooksPruneWorker, :unit.it 'destroys old webhooks'",
+              "start": 11,
+              "end": 19,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Instead::RateLimitGroup",
+              "start": 14,
+              "end": 14,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/javascript/react-app/modules/crm/routes/pages/CalendarPage/types/EntityFilter.ts",
+              "symbol": "EntityFilter",
+              "start": 1,
+              "end": 1,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "lib/html_converter.rb",
+              "symbol": "HtmlConverter.html_with_signed_images",
+              "start": 5,
+              "end": 16,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/services/communication/twilio/attributes_adapters_helper.rb",
+              "symbol": "Communication::Twilio::AttributesAdaptersHelper.failure_reasons",
+              "start": 76,
+              "end": 82,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["banner", "results"],
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "wave": 2,
+          "outer_id": "call_631e7145234a48cdba9d88ea8a546358"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 3,
+      "id": "resp_0174a84b74f8ed17016aea5a3a9f4087d2b5b46fb74c52a9c0",
+      "ms": 1793743427342,
+      "outer_calls": [
+        {
+          "id": "call_aab3ff39f4a1409eaad090d135565be5",
+          "wave": 3,
+          "name": "exec",
+          "start_ms": 1793743427295,
+          "code": "text(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",relativePath:\"app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb\"}));\ntext(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' 'Instead|instead' app/lib/tax_preparation app/services/tax_preparation app/workers spec lib\",max_output_tokens:7000}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793743429458,
+          "output_chars": 29595,
+          "output_truncated": true
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-9e10e730-768b-4d21-9c2d-3b7837555247",
+          "type": "mcpToolCall",
+          "start_ms": 1793743427298,
+          "end_ms": 1793743428435,
+          "status": "completed",
+          "duration_ms": 1137,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "relativePath": "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb"
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 15,
+              "body_chars": 631,
+              "body_sha256": "7908c4f1917ee82689071071cb443f71388d99e5b8f9cd647876333a7a553a69"
+            }
+          ],
+          "result_top_keys": ["results"],
+          "banner": null,
+          "wave": 3,
+          "outer_id": "call_aab3ff39f4a1409eaad090d135565be5"
+        },
+        {
+          "id": "exec-8dfb3b39-e27d-466e-b31d-d33f45ec61ce",
+          "type": "commandExecution",
+          "start_ms": 1793743428905,
+          "end_ms": 1793743429407,
+          "status": "completed",
+          "duration_ms": 501,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'Instead|instead' app/lib/tax_preparation app/services/tax_preparation app/workers spec lib\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 69882,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 3,
+          "outer_id": "call_aab3ff39f4a1409eaad090d135565be5"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 4,
+      "id": "resp_0174a84b74f8ed17016aea5a45a41487d2bf47dffd3e9989ca",
+      "ms": 1793743442654,
+      "outer_calls": [
+        {
+          "id": "call_28c5010ffacc484a874b8b25776e3d20",
+          "wave": 4,
+          "name": "exec",
+          "start_ms": 1793743442610,
+          "code": "const p={project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\"};\ntext(await tools.mcp__tea_rags__find_symbol({...p,symbols:[\"app/lib/tax_preparation/tax_automations/instead/client.rb\",\"app/workers/tax_preparation/tax_automations/instead/operation_worker.rb\",\"app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb\",\"app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb\",\"app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb\",\"app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb\",\"app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb\",\"app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb\",\"app/models/tax_preparation/tax_automations/document.rb\"]}));\ntext(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -e 'signed_url' -e 'presigned' -e 'cassette' spec/support/instead_mocks spec/services/tax_preparation/tax_automations spec/unit/tax_preparation/lib/tax_automations\",max_output_tokens:2500}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793743443130,
+          "output_chars": 28516,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-e38412bd-456a-434d-825c-77740ecc9fbf",
+          "type": "mcpToolCall",
+          "start_ms": 1793743442615,
+          "end_ms": 1793743442770,
+          "status": "completed",
+          "duration_ms": 154,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "app/workers/tax_preparation/tax_automations/instead/operation_worker.rb",
+              "app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb",
+              "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb",
+              "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb",
+              "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb",
+              "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb",
+              "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+              "app/models/tax_preparation/tax_automations/document.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 1989,
+              "body_sha256": "ec90247d792e151ea8f99e997116bf50163f88a2c18cf5716eaef7fa9d263155"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/instead/operation_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 25,
+              "body_chars": 1199,
+              "body_sha256": "7178460dfea73782f3faf3b664f036fee82de46b573c62dd59c052e1c9c19ed8"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 61,
+              "body_chars": 2633,
+              "body_sha256": "fd0f21db071d1e8f921d13a4a5de2c467c0c279ddf2603dcf51d9c5d7752db05"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 80,
+              "body_chars": 3574,
+              "body_sha256": "345ef2221a076bdd6c7ab19989546819d7c0d9ec51297efa6133f54dca84743d"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 59,
+              "body_chars": 3062,
+              "body_sha256": "a5e59dc4910828d71f1e827977802187478e0bb2466105f70b4f1a4f77e14e0e"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 36,
+              "body_chars": 1444,
+              "body_sha256": "23f50def03b351d855ace1f4095afa88bc2ddc7991a1289de4c491219eb4a174"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 147,
+              "body_chars": 7210,
+              "body_sha256": "308de48be0b28134256342cca085f46e508abe894b95c9ec373254742f5142ad"
+            },
+            {
+              "path": "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 48,
+              "body_chars": 2223,
+              "body_sha256": "62623855073107a915a278afb1540481c86bbcf7fa42798aefa25d7d12603d8d"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/document.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 1418,
+              "body_sha256": "3fa7aa6c6b041d1a5f700b3927083d8f7b6eadb92062589ba287784cc1c73fb4"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 4,
+          "outer_id": "call_28c5010ffacc484a874b8b25776e3d20"
+        },
+        {
+          "id": "exec-a5865738-f8bb-4f80-821c-de1d3a448870",
+          "type": "commandExecution",
+          "start_ms": 1793743443086,
+          "end_ms": 1793743443086,
+          "status": "failed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -e 'signed_url' -e 'presigned' -e 'cassette' spec/support/instead_mocks spec/services/tax_preparation/tax_automations spec/unit/tax_preparation/lib/tax_automations\"",
+          "exit_code": 2,
+          "output_unknown": false,
+          "output_chars": 991,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 4,
+          "outer_id": "call_28c5010ffacc484a874b8b25776e3d20"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 5,
+      "id": "resp_0174a84b74f8ed17016aea5a5355fc87d2b35b374e5c4139b6",
+      "ms": 1793743457312,
+      "outer_calls": [
+        {
+          "id": "call_7219a3365d6c45928a5b893366e77136",
+          "wave": 5,
+          "name": "exec",
+          "start_ms": 1793743457297,
+          "code": "const p={project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\"};\nconst rs=await Promise.allSettled([\ntools.mcp__tea_rags__find_symbol({...p,symbols:[\"TaxPreparation::TaxAutomations::Document::FAILURE_REASONS\",\"app/lib/tax_preparation/tax_automations/base_client.rb\",\"app/workers/tax_preparation/tax_automations/operation_worker.rb\",\"app/workers/tax_preparation/tax_automations/instead/documents/reconcile_statuses_worker.rb\",\"app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb\",\"app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses_async.rb\"]}),\ntools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -e 'Instead' -e 'tax_automations_instead' config\",max_output_tokens:2000}),\ntools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -e 'Instead' -e 'instead' spec/support\",max_output_tokens:2000}),\ntools.exec_command({cmd:\"sed -n '1,230p' spec/services/tax_preparation/tax_automations/instead/documents/start_upload_spec.rb\",max_output_tokens:5000})\n]);rs.forEach((r,i)=>text({i,result:r}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793743457821,
+          "output_chars": 34856,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-c456edde-8c7f-456a-a433-16281a5623c0",
+          "type": "mcpToolCall",
+          "start_ms": 1793743457300,
+          "end_ms": 1793743457461,
+          "status": "completed",
+          "duration_ms": 160,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::Document::FAILURE_REASONS",
+              "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "app/workers/tax_preparation/tax_automations/operation_worker.rb",
+              "app/workers/tax_preparation/tax_automations/instead/documents/reconcile_statuses_worker.rb",
+              "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+              "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses_async.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/models/tax_preparation/tax_automations/document.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Document::FAILURE_REASONS",
+              "start": 11,
+              "end": 18,
+              "body_chars": 660,
+              "body_sha256": "4ff5be6cfcb9c5070298b7e9c473a5b983a1322d5efc6a519771d6c962f54cb6"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 4758,
+              "body_sha256": "6fa4e33047012290bee55c8a94f060298affec26a1d2b5e241b3fdd8a2007fdd"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/operation_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 70,
+              "body_chars": 3472,
+              "body_sha256": "e33c69b34aac5ddf6aff65d95914801a19af4d1302afb17be0c8b1e2c443de5a"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/instead/documents/reconcile_statuses_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 65,
+              "body_chars": 2634,
+              "body_sha256": "e442a43366118430ecb2377795fc6c6efe79f744fab8206859b936b22dbe83a5"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 43,
+              "body_chars": 2120,
+              "body_sha256": "1c93c5b9a291ec4551d6504e9bf0964432e632d821f636406f70f7a8d78c288e"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses_async.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 52,
+              "body_chars": 2436,
+              "body_sha256": "11db81263faa02b4cef8926fcf728a31104797626f73e08f2b361e0e301ae3ac"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 5,
+          "outer_id": "call_7219a3365d6c45928a5b893366e77136"
+        },
+        {
+          "id": "exec-78ceb417-a275-4a28-a8cb-cc1f53d3ee36",
+          "type": "commandExecution",
+          "start_ms": 1793743457612,
+          "end_ms": 1793743457613,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,230p' spec/services/tax_preparation/tax_automations/instead/documents/start_upload_spec.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 11043,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 5,
+          "outer_id": "call_7219a3365d6c45928a5b893366e77136"
+        },
+        {
+          "id": "exec-f59102dc-b53c-4918-90bd-58924c98a513",
+          "type": "commandExecution",
+          "start_ms": 1793743457751,
+          "end_ms": 1793743457761,
+          "status": "completed",
+          "duration_ms": 9,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -e 'Instead' -e 'instead' spec/support\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 4376,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 5,
+          "outer_id": "call_7219a3365d6c45928a5b893366e77136"
+        },
+        {
+          "id": "exec-4c39dbf9-b668-45b3-a199-068fb35aff4c",
+          "type": "commandExecution",
+          "start_ms": 1793743457766,
+          "end_ms": 1793743457766,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -e 'Instead' -e 'tax_automations_instead' config\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 834,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 5,
+          "outer_id": "call_7219a3365d6c45928a5b893366e77136"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 6,
+      "id": "resp_0174a84b74f8ed17016aea5a61ff8087d2b63626437f0b2267",
+      "ms": 1793743468787,
+      "outer_calls": [
+        {
+          "id": "call_ba86214be3c646b7a074db2bd8e07d48",
+          "wave": 6,
+          "name": "exec",
+          "start_ms": 1793743468737,
+          "code": "const p={project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\"};\nconst tasks=[\n[\"bodies\",()=>tools.mcp__tea_rags__find_symbol({...p,symbols:[\"TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after\",\"TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete\",\"TaxPreparation::TaxAutomations::BaseClient#request\",\"TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target\",\"app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb\"]})],\n[\"settings\",()=>tools.exec_command({cmd:\"rg -n -e 'tax_automations:' -e 'rate_limit_groups' -e 'sent_after' -e 'processing_after' -e 'give_up_after' config/settings.yml\",max_output_tokens:1500})],\n[\"throttle\",()=>tools.exec_command({cmd:\"rg -n -e 'tax_automations_instead' -e 'rate_limit_group' config/initializers/sidekiq.rb\",max_output_tokens:2000})],\n[\"cassette test\",()=>tools.exec_command({cmd:\"sed -n '1,240p' spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb\",max_output_tokens:6500})],\n[\"helper\",()=>tools.exec_command({cmd:\"sed -n '1,200p' spec/support/tax_automations_helpers.rb\",max_output_tokens:3500})]\n];const rs=await Promise.allSettled(tasks.map(async ([label,fn])=>({label,value:await fn()})));rs.forEach(text);\n",
+          "schema_introspection": false,
+          "end_ms": 1793743469238,
+          "output_chars": 26029,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-41a85025-df46-4337-a2d9-547db6f6e086",
+          "type": "mcpToolCall",
+          "start_ms": 1793743468744,
+          "end_ms": 1793743468822,
+          "status": "completed",
+          "duration_ms": 78,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after",
+              "TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete",
+              "TaxPreparation::TaxAutomations::BaseClient#request",
+              "TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target",
+              "app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::BaseClient::RateLimitedError#retry_after",
+              "start": 121,
+              "end": 129,
+              "body_chars": 450,
+              "body_sha256": "a7d621c44d0f5077f4f904464dbfe2fdba2826ee5677bf2c5a0d5f1b45884137"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::BaseClient::RecordRateLimit#on_complete",
+              "start": 216,
+              "end": 227,
+              "body_chars": 813,
+              "body_sha256": "26f0cf84f2b6cecb7e877e1cc6231b854554e99df64b3612a87cbac2c17a94fa"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::BaseClient#request",
+              "start": 280,
+              "end": 331,
+              "body_chars": 2757,
+              "body_sha256": "646c93c56be67626a18b05e1e0bf11bf18b77545803fa0c6753e2a9ef9d0076d"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::BaseClient#upload_to_signed_target",
+              "start": 243,
+              "end": 274,
+              "body_chars": 1657,
+              "body_sha256": "9bb27f5d765f9aeef9e38dc33798938ac9bf0fe2355bd2c89bd3a5af2fc5745c"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/instead/export_operation_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 25,
+              "body_chars": 1485,
+              "body_sha256": "76cfd5e8650c9626e712ba95cbdfb45ed1358036f5817843a305d3d5ed1641b2"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+          "wave": 6,
+          "outer_id": "call_ba86214be3c646b7a074db2bd8e07d48"
+        },
+        {
+          "id": "exec-524924b2-80aa-4668-b6f7-6adfb607de6e",
+          "type": "commandExecution",
+          "start_ms": 1793743469099,
+          "end_ms": 1793743469099,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,200p' spec/support/tax_automations_helpers.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 4526,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 6,
+          "outer_id": "call_ba86214be3c646b7a074db2bd8e07d48"
+        },
+        {
+          "id": "exec-0b833008-4b93-4a5a-b3be-5868142360dd",
+          "type": "commandExecution",
+          "start_ms": 1793743469099,
+          "end_ms": 1793743469099,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,240p' spec/unit/tax_preparation/lib/tax_automations/instead/client_spec.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 11834,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 6,
+          "outer_id": "call_ba86214be3c646b7a074db2bd8e07d48"
+        },
+        {
+          "id": "exec-499a3f4c-7199-45d4-b7b2-5583fa0a4006",
+          "type": "commandExecution",
+          "start_ms": 1793743469196,
+          "end_ms": 1793743469196,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -n -e 'tax_automations:' -e 'rate_limit_groups' -e 'sent_after' -e 'processing_after' -e 'give_up_after' config/settings.yml\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 50,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 6,
+          "outer_id": "call_ba86214be3c646b7a074db2bd8e07d48"
+        },
+        {
+          "id": "exec-483686c4-90f6-4404-a03b-b4d2a034f2ef",
+          "type": "commandExecution",
+          "start_ms": 1793743469196,
+          "end_ms": 1793743469196,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -n -e 'tax_automations_instead' -e 'rate_limit_group' config/initializers/sidekiq.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 102,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 6,
+          "outer_id": "call_ba86214be3c646b7a074db2bd8e07d48"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 7,
+      "id": "resp_0174a84b74f8ed17016aea5a6d756887d29360cecc11489e12",
+      "ms": 1793743477328,
+      "outer_calls": [
+        {
+          "id": "call_fc5c3330c9a54edd85c87d5be41b8e02",
+          "wave": 7,
+          "name": "exec",
+          "start_ms": 1793743477256,
+          "code": "const p={project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\"};\nconst tasks=[\n[\"settings\",()=>tools.exec_command({cmd:\"sed -n '1789,1845p' config/settings.yml\",max_output_tokens:2000})],\n[\"throttle\",()=>tools.exec_command({cmd:\"sed -n '96,135p' config/initializers/sidekiq.rb\",max_output_tokens:2000})],\n[\"vcr locator\",()=>tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -e 'vcr_fixed_time' -e 'ExpiresAt' spec/support --glob '*.rb'\",max_output_tokens:1200})],\n[\"failure and matching\",()=>tools.mcp__tea_rags__find_symbol({...p,symbols:[\"app/helpers/tax_preparation/tax_automations/refusals_helper.rb\",\"app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb\",\"app/services/tax_preparation/tax_automations/instead/clients/sync_entities_page.rb\",\"app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb\",\"TaxPreparation::TaxAutomations::Instead::Client#upload_target\"]})]\n];const rs=await Promise.allSettled(tasks.map(async ([label,fn])=>({label,value:await fn()})));rs.forEach(text);\n",
+          "schema_introspection": false,
+          "end_ms": 1793743477755,
+          "output_chars": 17920,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-c5556d16-0521-4c12-98bd-5bfaa5eeeac5",
+          "type": "mcpToolCall",
+          "start_ms": 1793743477263,
+          "end_ms": 1793743477517,
+          "status": "completed",
+          "duration_ms": 252,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/helpers/tax_preparation/tax_automations/refusals_helper.rb",
+              "app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb",
+              "app/services/tax_preparation/tax_automations/instead/clients/sync_entities_page.rb",
+              "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+              "TaxPreparation::TaxAutomations::Instead::Client#upload_target"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 126,
+              "body_chars": 4832,
+              "body_sha256": "7b8431adf33d295acb419a8d9d5f34f040a4fe5a1c2c3a86adbb0889d58c16f9"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/clients/sync_entities_page.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 82,
+              "body_chars": 3578,
+              "body_sha256": "9cbe02b686640fe1a11fc0ceea2b9dae557af19bc9841072496b4f05e5d8581e"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/instead/documents/transfer_bytes_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 31,
+              "body_chars": 1225,
+              "body_sha256": "2968907fdb38f8b22a09dba411befdb733053908b7053fa94a2b23bb4a4a01ee"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Instead::Client#upload_target",
+              "start": 157,
+              "end": 174,
+              "body_chars": 1225,
+              "body_sha256": "bf2fe95c195a51e87319e3465f4e37a124b74bc8af383262a28b3403b6d99edc"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+          "wave": 7,
+          "outer_id": "call_fc5c3330c9a54edd85c87d5be41b8e02"
+        },
+        {
+          "id": "exec-48031b2e-e1c7-4624-beb5-90c6be922971",
+          "type": "commandExecution",
+          "start_ms": 1793743477564,
+          "end_ms": 1793743477564,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '96,135p' config/initializers/sidekiq.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 1606,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 7,
+          "outer_id": "call_fc5c3330c9a54edd85c87d5be41b8e02"
+        },
+        {
+          "id": "exec-040d7254-dcd2-4ac9-b565-0c69f840e68f",
+          "type": "commandExecution",
+          "start_ms": 1793743477567,
+          "end_ms": 1793743477567,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1789,1845p' config/settings.yml\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 3134,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 7,
+          "outer_id": "call_fc5c3330c9a54edd85c87d5be41b8e02"
+        },
+        {
+          "id": "exec-8754517a-96b4-42a0-adf6-ca30e0877450",
+          "type": "commandExecution",
+          "start_ms": 1793743477713,
+          "end_ms": 1793743477713,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -e 'vcr_fixed_time' -e 'ExpiresAt' spec/support --glob '*.rb'\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 162,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 7,
+          "outer_id": "call_fc5c3330c9a54edd85c87d5be41b8e02"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 8,
+      "id": "resp_0174a84b74f8ed17016aea5a75fd0c87d2be167d20bf2b5d58",
+      "ms": 1793743489877,
+      "outer_calls": [
+        {
+          "id": "call_96f950978d2644b3b5addff6644232d3",
+          "wave": 8,
+          "name": "exec",
+          "start_ms": 1793743489843,
+          "code": "const p={project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\"};\nconst rs=await Promise.allSettled([\ntools.exec_command({cmd:\"sed -n '1,220p' spec/support/vcr_fixed_time.rb\",max_output_tokens:4000}),\ntools.mcp__tea_rags__find_symbol({...p,symbols:[\"app/lib/tax_preparation/tax_automations/refusals_helper.rb\",\"app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb\",\"app/services/tax_preparation/tax_automations/instead/webhooks/process_document_event.rb\"]}),\ntools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -e 'ReconcileSweepWorker' lib/platform config app\",max_output_tokens:1200})\n]);rs.forEach((result,i)=>text({i,result}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793743491972,
+          "output_chars": 14160,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-dafd240c-2a9f-49e9-9661-88db04641bd9",
+          "type": "mcpToolCall",
+          "start_ms": 1793743489846,
+          "end_ms": 1793743489907,
+          "status": "completed",
+          "duration_ms": 61,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/lib/tax_preparation/tax_automations/refusals_helper.rb",
+              "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb",
+              "app/services/tax_preparation/tax_automations/instead/webhooks/process_document_event.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/refusals_helper.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 73,
+              "body_chars": 3968,
+              "body_sha256": "4a9a0b51662da537ccd6da34723d80f4d282f10efd25c7603e5ef8ac7ffbd2f1"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 66,
+              "body_chars": 2956,
+              "body_sha256": "540ecf4b5efbde122ccea40d831c06eb6a9085276f7ebd1b9af4606c0582f9b9"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/webhooks/process_document_event.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 73,
+              "body_chars": 3321,
+              "body_sha256": "5ff9f201b5b07a829d6c7c0143273673180dd387703843ed38b7a921dcec224d"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+          "wave": 8,
+          "outer_id": "call_96f950978d2644b3b5addff6644232d3"
+        },
+        {
+          "id": "exec-a8f45b80-34e2-4230-bbd2-036f0637c593",
+          "type": "commandExecution",
+          "start_ms": 1793743490086,
+          "end_ms": 1793743490086,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,220p' spec/support/vcr_fixed_time.rb\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 803,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 8,
+          "outer_id": "call_96f950978d2644b3b5addff6644232d3"
+        },
+        {
+          "id": "exec-d5390645-c6ee-4884-921f-748b0c6397c0",
+          "type": "commandExecution",
+          "start_ms": 1793743490179,
+          "end_ms": 1793743491923,
+          "status": "failed",
+          "duration_ms": 1744,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -e 'ReconcileSweepWorker' lib/platform config app\"",
+          "exit_code": 2,
+          "output_unknown": false,
+          "output_chars": 1796,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 8,
+          "outer_id": "call_96f950978d2644b3b5addff6644232d3"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 9,
+      "id": "resp_0174a84b74f8ed17016aea5a84282c87d29bf1d9290d566735",
+      "ms": 1793743528264,
+      "outer_calls": [],
+      "children": [],
+      "instruction_only": false,
+      "schema_introspection": false
+    }
+  ],
+  "hooks": [
+    {
+      "id": "session-start:6:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793743405685,
+      "end_ms": 1793743406126,
+      "duration_ms": 255,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags core\n\n**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):\noutput past ~10k tokens loses its middle (`…N tokens truncated…`), and\na rule you did not see is not a rule you may guess. Missing instructions → read only\ntheir missing ranges (`sed -n`). For source, follow the tea-rags continuation only\nif needed code is missing; never reread retained bodies because output was truncated.\n\n**Each step takes the tool its routing row names.**\n\n**Addressing.** Every read or suggested call: `project=<alias>` +\n`path=<task cwd>`. Alias: digest, SubagentStart or `workingTree.project`.\nUnknown/\"not registered\" → `path` alone, never ask; only a `collection` → it\nalone; then use `project=<workingTree.project> + path`. No cwd → `project`\nalone. `workingTree.tree` ≠ cwd → discard those rows, re-call with `path=<cwd>`.\n`index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.\n\nShell rg -l --hidden --glob '!.git': unknown filenames/inventory/absence; known file → content;\n`| head` ≠ absence proof. Use anchor dir, else `<src dir>` (a dir under cwd,\nnever cwd itself); no dir search or find/Glob.\n\n**Routing** (first match wins; a loaded skill's steps run first, override rows —\na file path in them → row 1; tools `mcp__tea-rags__*`):\n\n- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →\n  shell sed -n '<start>,<end>p' <one file> (path unknown → shell rg -l --hidden --glob '!.git' first); all X\n  in a known `<dir>`, proving absence (\"no X exists\") → shell rg -l --hidden --glob '!.git'\n  over that dir (empty = proof); migration `X` → `\"X\"` over `db/migrate/`;\n  table/column exists, `create_table` → that search over `db/schema.rb`, then\n  `db/migrate/` (`:<table>`, `\"<table>\"` before \"absent\"), never\n  `semantic_search`. Other file/dir path, lines N–M, doc TOC, how `<dir>` works\n  / what's in it → `find_symbol(relativePath:)` outline first, then ONE batch of\n  needed ids (N–M: ids whose `L<a>-<b>` covers N–M, never Read offset/limit);\n  known method id → body, no outline. Imports → `get_callees(relativePath:)`\n  (`imports[]`; a row's `imports` = a count)\n- code history — when X appeared/changed, \"посмотри через git\" → never\n  `git log`/`blame`/`-S`/`show`:\n  `semantic_search(query: <X>, rerank: \"bugHunt\")`\n- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)\n  → ONE `semantic_search(query: \"a ||| b ||| c\", metaOnly:true, limit:5)` (≤5\n  phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`). Choose\n  anchors before bodies; expand only as needed, never text search for meaning\n- non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,\n  or a search tool demanded on an error → bug-hunt), even \"every …\" → shell rg -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these three lines,\n  never stop at the hit:\n  `shell rg -l --hidden --glob '!.git' \"<phrase>\" <dir> (literal, line cap)` →\n  `find_symbol(relativePath: <hit file>)` outline →\n  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code\n  name, even a \"pattern\"/\"glob\" → usages row. Command output, failing tests,\n  counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill\n- how X works/what happens when → `get_callees` (body unseen → `find_symbol`\n  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,\n  `depth: 2`; every call/all callers of X (grep named) → plan both lines:\n  `get_callers` + the usages row. Then ONE batch: needed tree methods\n- known symbol / identifier definition/body/outline → `find_symbol(symbol:)`\n  `Class#inst`/`C.st`, never text search\n- where X is used/referenced, every occurrence, who constructs X, files\n  containing X (exact name/constant/string you know; `a|b` only of seen ids),\n  \"grep for X\" → `shell rg -l --hidden --glob '!.git' \"<X>\" <src dir, e.g. app/ or src/>`\n  (literal, `-l`) → `find_symbol` outline → batch of only the needed methods,\n  never stop at the hit\n- symbol + intent (\"the X that does Y\"), files named X →\n  `hybrid_search(metaOnly)`\n- code like a chunk in hand → `find_similar(positiveIds:)`\n- how does X reach Y / A→B → `find_symbol` ids → `trace_path`\n- diff review, a diff's names →\n  `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =\n  uncommitted, `{base}` = branch; its verdicts = answer, nothing after\n- a name's fit → `get_naming_lexicon(names:[{name,kind}])`; naming a T value →\n  `types:[T]`\n- project's embedding/Qdrant/env → `list_projects(project:)`\n- research — layers/wrong-way deps of `<dir>` → explicit diagnosis/refactoring\n  only: `get_architecture_report(pathPattern)`; never for context gathering or\n  overviews. Implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`;\n  registered/configured `<X>` → `hybrid_search(\"<X> register config\")`; ticket\n  `<T>` → `semantic_search(taskId: <T>, level: \"chunk\")` → ONE\n  `find_symbol(symbols: <touched ids>)`, no grep; owners/recent\n  churn/debt/don't-touch →\n  `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;\n  dead code → `filter:{presets:\"deadCandidates\"}`; which to copy →\n  `rerank: \"proven\"`\n\n**Invariants.**\n\n- Reuse held code, outlines, edges and instructions (skills/guides) on\n  follow-ups. Refresh only affected edited/stale or missing material, including\n  after compaction. Each read closes a current evidence gap, not a future\n  question; a held body may need zero calls.\n- Batch missing symbols/files → `find_symbol(symbols:)`, never dirs;\n  config/spec/migrations → concurrent bounded per-file reads.\n- Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are\n  authoritative code, not hints. Never confirm the same body via `find_symbol`,\n  Read or shell. Metadata/outline/signature/container header ≠ method body.\n- Anchor = the hit for the requested behaviour. Flow/impact → needed edges\n  (`depth: 2`); change-impact may need `find_co_changed`. Batch required\n  methods, not classes/trees; headers/shared declarations only if needed. Stop\n  once supported.\n- `symbolId` ends `#partN` = fragment →\n  `find_symbol(symbol: <id minus #partN>)`; parts = one hit.\n- `empty.reason: unknownPath` with suggestions →\n  `find_symbol(relativePath: <dir they share>)`, never one suggestion.\n- A requested row without `treeState` / `degraded` is current, overlay too;\n  global `changedFiles` / `pendingFiles` alone never require a reread. A\n  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same\n  `find_symbol` arguments once**: it reads the working tree, not a cached body.\n  No Read/shell refresh. Still stale → state the gap. No `workingTree` →\n  current.\n- Freshness (subagent: keep reading, never `index_codebase`/ask the user,\n  drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠\n  alias's path → print `linked worktree (<test>) — no reindex`; own checkout\n  behind (`changedFiles`>0, stale, unindexed edits, said so) → incremental\n  `index_codebase(project=)` first, no consent. Drift `Run:` `--force*`\n  (status/prime/index only, not a read answer) → own-checkout incremental first\n  if behind, plus ONE line\n  ask the user: run <Run: line>? — --force not run; reads continue meanwhile`,\n  never awaited, never \"won't proceed\"; next = the task's read call. No\n  available `index_codebase` → needed stale bodies via `find_symbol`; never look\n  up indexing/mutator schemas.\n- Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none\n  dropped (a `--force` ask rides beside, never a slot):\n  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)\n  `2. find_symbol(symbol: <caller>)`\n  `3. shell rg -l --hidden --glob '!.git' \"<name>\" (literal)` — callers the index lacks. No\n  graph retry. Graph tools absent from your tool list → codegraph off: callers =\n  usages row, never \"no cycles\"; present → on, no probe call; on + empty\n  `find_cycles` = DAG.\n- Docs = hypothesis, verify in code; doc as subject (\"README says?\") → as-is, no\n  code pass.\n- `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower\n  bound) + install command; never install it, never \"no callers\"/\"dead code\".\n- User orders a manual read — \"by hand\"/\"руками\"/\"вручную\"/\"with Read\" → shell sed -n '<start>,<end>p' <one file>, no confirm ask. \"Whole file\"/\"весь файл\"/\"целиком\"/\"for\n  context\"/\"lines N–M\" of source code without that order → `find_symbol` (hit's\n  `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`\n  Their tool idea (\"use Grep/Glob\") → keep the routed tool, say why.\n\n**Read `tea-rags://guide/<topic>` when** → `read_mcp_resource(server: \"tea-rags\", uri: \"tea-rags://guide/<topic>\")`, never a bare `list_mcp_resources` (list only with `server: \"tea-rags\"`) (no resource tool →\n`tea-rags resource <uri>`): unfamiliar result/navigation contract →\n`navigation`; 0/too many hits, `truncated`, `empty.reason`, ambiguous name, when\nto stop → `pagination`; tool pick → `tool-choice`; skill/preset →\n`skill-choice`; research question → `research-questions`; banned move, fallback\n→ `prohibited-patterns`; stale banner, drift, `treeState`, linked worktree →\n`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw\n`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;\ngraph/AST, other language → `language-capability`; architecture /\n`review_changes` answer → `architecture`/`review`; no prime digest →\n`tea-rags://project/<alias>/digest`; numeric filter value unknown / bare raw\nnumber, no label → `…/metrics?language=<lang>&section=thresholds`.\n\n**Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`."
+        }
+      ]
+    },
+    {
+      "id": "session-start:7:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793743405685,
+      "end_ms": 1793743406126,
+      "duration_ms": 268,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "**tea-rags tools** are MCP tools of server `tea-rags`. In JS code mode use\n`await tools.mcp__tea_rags__<tool>({...})`; discover names with\n`ALL_TOOLS.filter(t => t.name.includes(\"tea_rags\")).map(t => t.name)`\n(`\"tea-rags\"` matches none). Missing argument schema → select ONE named tool,\nprint only `tool.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]`.\nReuse known schemas; never print full descriptions, core instructions or return\nschemas. No declaration → use the listed interface. Direct tools → call as listed.\n\n**Core navigation.** Focused questions about existing behavior, definitions or\nlocal contracts use core directly, including discovery of the relevant code.\nDo not load Explore merely because the location is unknown. Start with the\nmissing source evidence: known file/symbol → `find_symbol`; unknown behavior\nlocation → `semantic_search({project,path,query,metaOnly:true,limit:5})`.\nThese argument contracts are known; no schema-only prelude is needed.\nBroad structure, cross-component flow/impact, examples, pre-change investigation,\nexplicit skill requests and code changes still load their selected skill first.\n\nFor a complete adapter/extension contract, derive required members from actual\nproduction dispatch sites, including background entry points. Inventory learned\nreceiver/registry references across the source root; a provider registry or one\ndirectory does not establish the whole interface. For operational lessons,\nretain explicit retry/window bounds and reset conditions that change guarantees.\n\n**Property questions.** For units/type/representation of a named business\nconstruct, the FIRST query contains ONLY that construct's short noun phrase.\nAdd property terms only if that query misses; inspect the property in its owner.\nA vendor name or generic object is not the construct. Workflow questions retain\ntheir behavior and domain; never shorten them to a vendor name alone.\n\n**Reuse before reading**, inside skills too: fetch only the current question's\nmissing facts. Held code proves its explicit adapter/implementation selection;\ngraph closes a missing caller/trigger/flow fact. Outline, header and blocked read\nare not bodies. Read a caller's qualified member directly; inventory its owner\nonly after missing/ambiguous lookup. Do not guess receivers.\nIf an entrypoint proves a request stops before dispatch, stop there; downstream\nworkflow/retry internals are needed only when the question asks about them.\nCodex unknownPath exception: if exactly one suggested file has the requested\nbasename, read that relativePath directly. With ambiguous suggestions, inventory\ntheir common directory first. This replaces the unconditional directory fallback.\nFor config filenames/policy names from a manifest, resolve paths with one scoped\nfilename inventory (`rg --files <known config dir>`), then read the selected files.\nSearching a filename in file contents does not locate that file.\nPositive filename globs are alternatives: `-g '*name*' -g '*.rb'` includes all\nRuby files. For name AND extension use one `-g '*name*.rb'`; omit the extension\nglob when any matching filename is wanted. Do not widen a narrow inventory.\n\n**Tool execution and waiting.** Select missing evidence from held outlines/nextCall\nhints for each requested fact. A helper is unnecessary when held code proves it.\nPut ready needed bodies AND independent reference/absence searches in one executor\nwave. Two already-known groups may use concurrent batch calls in the same exec;\npreserve their output budgets instead of spending a model response per group.\nDo not prefetch context for future questions.\nUse `find_symbol(symbols:[…])` for methods/files (at most 20 targets per call;\nsplit larger sets into concurrent calls); config/spec reads are bounded per-file\ncalls. Directories use separate `find_symbol(relativePath:)`\ncalls, never `symbols`. Dispatch independent calls together (`Promise.allSettled`\n/ `Promise.all` in code mode); await prerequisites before dependent calls.\nDifferent tool kinds do not create a dependency. Another wave needs a newly\ndiscovered locator, ambiguity, prerequisite or actual output-budget constraint;\nmerge pending independent work before following a continuation.\nRead only evidence for the current request, not future questions.\nParallelism never justifies extra context reads or competing edits.\nKeep each result (or error) labelled by its input path/id; emit the labelled results\nafter awaiting the batch, never anonymous output in completion order. Inspect all\nsettled outcomes and cover every requested item.\nA returned result is ready. A running executor with a cell/session id needs its\nmatching native `wait` / `write_stdin`, reusing that id; do not restart the work.\nFor subagents use the harness's agent-wait or completion notification. For user\ninput ask the question, then yield control until the reply; clarification is allowed.\nContinue independent work when useful. Never use `sleep`, shell/Python/JS timer\ndelays or busy polling to await tools, agents or users.\n\n**Skills are not loaded for you** — except this core:\n`$tea-rags-core` IS this text, never open its `SKILL.md`. A task a skill covers (`$name` /\n`$dino-<name>`) → read its `SKILL.md` before using it, unless its instructions\nare already in the current context. Reuse loaded skills, references and guides\nacross follow-ups; a new turn alone is not a reason to read them again.\nRetained current text satisfies a workflow's read-before-use requirements.\nReopen only changed instructions or material missing after compaction.\nLoad only the selected workflow's needed references and handoffs, using the\nlisted skill paths rather than inventing paths or loading adjacent skills.\nEvery skill you name in a plan must be available in context; a plan from memory\nis not reading it. `repair/<family>.md`, `rules/…` resolve from the plugin root\n(the folder holding `skills/`), never the skill's own folder.\n\n**Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:\ncontinue the requested source task. For changed-file graph answers, re-check\nchanged-file callers via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'\n(literal); never retry the graph."
+        }
+      ]
+    },
+    {
+      "id": "session-start:8:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793743405685,
+      "end_ms": 1793743406126,
+      "duration_ms": 440,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags digest — taxdome-worktree-navmaster\n\nproject `taxdome-worktree-navmaster` · collection `code_b6533d3e` — pass `project: \"taxdome-worktree-navmaster\"` + `path` on tea-rags calls\nindex readiness and freshness unconfirmed; use get_index_status if needed"
+        }
+      ]
+    },
+    {
+      "id": "session-start:9:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793743405685,
+      "end_ms": 1793743406126,
+      "duration_ms": 152,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:10:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793743406126,
+      "end_ms": 1793743406300,
+      "duration_ms": 172,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "tea-rags routing (this turn):\n- source code via find_symbol; config/migrations/specs, stubs → shell sed -n '<start>,<end>p' <one file>\n- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search\n- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections\n- exact text, all X in a dir, absence → shell rg -l --hidden --glob '!.git'\n- ids or files needed at once: ONE find_symbol(symbols:[…])\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.\n- A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name."
+        }
+      ]
+    },
+    {
+      "id": "user-prompt-submit:11:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793743406126,
+      "end_ms": 1793743406300,
+      "duration_ms": 172,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:12:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793743406126,
+      "end_ms": 1793743406300,
+      "duration_ms": 61,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-af9e6c90-b055-46f9-bc26-4276bfb67b4d",
+      "event": "preToolUse",
+      "start_ms": 1793743411566,
+      "end_ms": 1793743411728,
+      "duration_ms": 144,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-af9e6c90-b055-46f9-bc26-4276bfb67b4d",
+      "event": "preToolUse",
+      "start_ms": 1793743411567,
+      "end_ms": 1793743411729,
+      "duration_ms": 137,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-af9e6c90-b055-46f9-bc26-4276bfb67b4d",
+      "event": "preToolUse",
+      "start_ms": 1793743411567,
+      "end_ms": 1793743411729,
+      "duration_ms": 64,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-af9e6c90-b055-46f9-bc26-4276bfb67b4d",
+      "event": "postToolUse",
+      "start_ms": 1793743411800,
+      "end_ms": 1793743411843,
+      "duration_ms": 44,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0e4de143-f09b-415b-afab-35e438222464",
+      "event": "postToolUse",
+      "start_ms": 1793743418273,
+      "end_ms": 1793743418422,
+      "duration_ms": 148,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0e4de143-f09b-415b-afab-35e438222464",
+      "event": "postToolUse",
+      "start_ms": 1793743418273,
+      "end_ms": 1793743418422,
+      "duration_ms": 106,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-9e10e730-768b-4d21-9c2d-3b7837555247",
+      "event": "postToolUse",
+      "start_ms": 1793743428436,
+      "end_ms": 1793743428604,
+      "duration_ms": 168,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-9e10e730-768b-4d21-9c2d-3b7837555247",
+      "event": "postToolUse",
+      "start_ms": 1793743428436,
+      "end_ms": 1793743428604,
+      "duration_ms": 122,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8dfb3b39-e27d-466e-b31d-d33f45ec61ce",
+      "event": "preToolUse",
+      "start_ms": 1793743428605,
+      "end_ms": 1793743428753,
+      "duration_ms": 65,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8dfb3b39-e27d-466e-b31d-d33f45ec61ce",
+      "event": "preToolUse",
+      "start_ms": 1793743428605,
+      "end_ms": 1793743428753,
+      "duration_ms": 144,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8dfb3b39-e27d-466e-b31d-d33f45ec61ce",
+      "event": "preToolUse",
+      "start_ms": 1793743428605,
+      "end_ms": 1793743428753,
+      "duration_ms": 47,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8dfb3b39-e27d-466e-b31d-d33f45ec61ce",
+      "event": "postToolUse",
+      "start_ms": 1793743429407,
+      "end_ms": 1793743429456,
+      "duration_ms": 48,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-e38412bd-456a-434d-825c-77740ecc9fbf",
+      "event": "postToolUse",
+      "start_ms": 1793743442771,
+      "end_ms": 1793743442877,
+      "duration_ms": 106,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-e38412bd-456a-434d-825c-77740ecc9fbf",
+      "event": "postToolUse",
+      "start_ms": 1793743442771,
+      "end_ms": 1793743442877,
+      "duration_ms": 69,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a5865738-f8bb-4f80-821c-de1d3a448870",
+      "event": "preToolUse",
+      "start_ms": 1793743442878,
+      "end_ms": 1793743443016,
+      "duration_ms": 51,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a5865738-f8bb-4f80-821c-de1d3a448870",
+      "event": "preToolUse",
+      "start_ms": 1793743442878,
+      "end_ms": 1793743443016,
+      "duration_ms": 134,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a5865738-f8bb-4f80-821c-de1d3a448870",
+      "event": "preToolUse",
+      "start_ms": 1793743442878,
+      "end_ms": 1793743443016,
+      "duration_ms": 47,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a5865738-f8bb-4f80-821c-de1d3a448870",
+      "event": "postToolUse",
+      "start_ms": 1793743443086,
+      "end_ms": 1793743443129,
+      "duration_ms": 42,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-78ceb417-a275-4a28-a8cb-cc1f53d3ee36",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457563,
+      "duration_ms": 142,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-78ceb417-a275-4a28-a8cb-cc1f53d3ee36",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457563,
+      "duration_ms": 257,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-78ceb417-a275-4a28-a8cb-cc1f53d3ee36",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457563,
+      "duration_ms": 121,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-c456edde-8c7f-456a-a433-16281a5623c0",
+      "event": "postToolUse",
+      "start_ms": 1793743457462,
+      "end_ms": 1793743457565,
+      "duration_ms": 103,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-c456edde-8c7f-456a-a433-16281a5623c0",
+      "event": "postToolUse",
+      "start_ms": 1793743457462,
+      "end_ms": 1793743457565,
+      "duration_ms": 77,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-f59102dc-b53c-4918-90bd-58924c98a513",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457598,
+      "duration_ms": 135,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-f59102dc-b53c-4918-90bd-58924c98a513",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457598,
+      "duration_ms": 293,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-f59102dc-b53c-4918-90bd-58924c98a513",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457598,
+      "duration_ms": 143,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-4c39dbf9-b668-45b3-a199-068fb35aff4c",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457605,
+      "duration_ms": 141,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-4c39dbf9-b668-45b3-a199-068fb35aff4c",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457605,
+      "duration_ms": 301,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-4c39dbf9-b668-45b3-a199-068fb35aff4c",
+      "event": "preToolUse",
+      "start_ms": 1793743457300,
+      "end_ms": 1793743457605,
+      "duration_ms": 122,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-78ceb417-a275-4a28-a8cb-cc1f53d3ee36",
+      "event": "postToolUse",
+      "start_ms": 1793743457613,
+      "end_ms": 1793743457691,
+      "duration_ms": 78,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-4c39dbf9-b668-45b3-a199-068fb35aff4c",
+      "event": "postToolUse",
+      "start_ms": 1793743457766,
+      "end_ms": 1793743457820,
+      "duration_ms": 53,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-f59102dc-b53c-4918-90bd-58924c98a513",
+      "event": "postToolUse",
+      "start_ms": 1793743457761,
+      "end_ms": 1793743457820,
+      "duration_ms": 59,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-41a85025-df46-4337-a2d9-547db6f6e086",
+      "event": "postToolUse",
+      "start_ms": 1793743468823,
+      "end_ms": 1793743469012,
+      "duration_ms": 188,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-41a85025-df46-4337-a2d9-547db6f6e086",
+      "event": "postToolUse",
+      "start_ms": 1793743468823,
+      "end_ms": 1793743469012,
+      "duration_ms": 119,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0b833008-4b93-4a5a-b3be-5868142360dd",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469048,
+      "duration_ms": 197,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0b833008-4b93-4a5a-b3be-5868142360dd",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469048,
+      "duration_ms": 298,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0b833008-4b93-4a5a-b3be-5868142360dd",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469048,
+      "duration_ms": 186,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-524924b2-80aa-4668-b6f7-6adfb607de6e",
+      "event": "preToolUse",
+      "start_ms": 1793743468746,
+      "end_ms": 1793743469048,
+      "duration_ms": 203,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-524924b2-80aa-4668-b6f7-6adfb607de6e",
+      "event": "preToolUse",
+      "start_ms": 1793743468746,
+      "end_ms": 1793743469048,
+      "duration_ms": 298,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-524924b2-80aa-4668-b6f7-6adfb607de6e",
+      "event": "preToolUse",
+      "start_ms": 1793743468746,
+      "end_ms": 1793743469048,
+      "duration_ms": 189,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-483686c4-90f6-4404-a03b-b4d2a034f2ef",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 187,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-499a3f4c-7199-45d4-b7b2-5583fa0a4006",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 169,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-499a3f4c-7199-45d4-b7b2-5583fa0a4006",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 311,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-483686c4-90f6-4404-a03b-b4d2a034f2ef",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 317,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-499a3f4c-7199-45d4-b7b2-5583fa0a4006",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 192,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-483686c4-90f6-4404-a03b-b4d2a034f2ef",
+      "event": "preToolUse",
+      "start_ms": 1793743468744,
+      "end_ms": 1793743469061,
+      "duration_ms": 180,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-524924b2-80aa-4668-b6f7-6adfb607de6e",
+      "event": "postToolUse",
+      "start_ms": 1793743469099,
+      "end_ms": 1793743469142,
+      "duration_ms": 43,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-0b833008-4b93-4a5a-b3be-5868142360dd",
+      "event": "postToolUse",
+      "start_ms": 1793743469099,
+      "end_ms": 1793743469142,
+      "duration_ms": 43,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-483686c4-90f6-4404-a03b-b4d2a034f2ef",
+      "event": "postToolUse",
+      "start_ms": 1793743469196,
+      "end_ms": 1793743469238,
+      "duration_ms": 41,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-499a3f4c-7199-45d4-b7b2-5583fa0a4006",
+      "event": "postToolUse",
+      "start_ms": 1793743469196,
+      "end_ms": 1793743469238,
+      "duration_ms": 41,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-48031b2e-e1c7-4624-beb5-90c6be922971",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 173,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-48031b2e-e1c7-4624-beb5-90c6be922971",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 233,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-48031b2e-e1c7-4624-beb5-90c6be922971",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 138,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-040d7254-dcd2-4ac9-b565-0c69f840e68f",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 179,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-040d7254-dcd2-4ac9-b565-0c69f840e68f",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 238,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-040d7254-dcd2-4ac9-b565-0c69f840e68f",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477502,
+      "duration_ms": 124,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8754517a-96b4-42a0-adf6-ca30e0877450",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477556,
+      "duration_ms": 174,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8754517a-96b4-42a0-adf6-ca30e0877450",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477556,
+      "duration_ms": 288,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8754517a-96b4-42a0-adf6-ca30e0877450",
+      "event": "preToolUse",
+      "start_ms": 1793743477263,
+      "end_ms": 1793743477556,
+      "duration_ms": 156,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-c5556d16-0521-4c12-98bd-5bfaa5eeeac5",
+      "event": "postToolUse",
+      "start_ms": 1793743477518,
+      "end_ms": 1793743477669,
+      "duration_ms": 150,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-c5556d16-0521-4c12-98bd-5bfaa5eeeac5",
+      "event": "postToolUse",
+      "start_ms": 1793743477518,
+      "end_ms": 1793743477669,
+      "duration_ms": 68,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-48031b2e-e1c7-4624-beb5-90c6be922971",
+      "event": "postToolUse",
+      "start_ms": 1793743477564,
+      "end_ms": 1793743477675,
+      "duration_ms": 110,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-040d7254-dcd2-4ac9-b565-0c69f840e68f",
+      "event": "postToolUse",
+      "start_ms": 1793743477567,
+      "end_ms": 1793743477675,
+      "duration_ms": 108,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8754517a-96b4-42a0-adf6-ca30e0877450",
+      "event": "postToolUse",
+      "start_ms": 1793743477713,
+      "end_ms": 1793743477754,
+      "duration_ms": 41,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-dafd240c-2a9f-49e9-9661-88db04641bd9",
+      "event": "postToolUse",
+      "start_ms": 1793743489907,
+      "end_ms": 1793743490015,
+      "duration_ms": 107,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-dafd240c-2a9f-49e9-9661-88db04641bd9",
+      "event": "postToolUse",
+      "start_ms": 1793743489907,
+      "end_ms": 1793743490015,
+      "duration_ms": 67,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-d5390645-c6ee-4884-921f-748b0c6397c0",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490027,
+      "duration_ms": 100,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-d5390645-c6ee-4884-921f-748b0c6397c0",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490027,
+      "duration_ms": 177,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-d5390645-c6ee-4884-921f-748b0c6397c0",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490027,
+      "duration_ms": 73,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8f45b80-34e2-4230-bbd2-036f0637c593",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490036,
+      "duration_ms": 88,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8f45b80-34e2-4230-bbd2-036f0637c593",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490036,
+      "duration_ms": 185,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8f45b80-34e2-4230-bbd2-036f0637c593",
+      "event": "preToolUse",
+      "start_ms": 1793743489846,
+      "end_ms": 1793743490036,
+      "duration_ms": 91,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8f45b80-34e2-4230-bbd2-036f0637c593",
+      "event": "postToolUse",
+      "start_ms": 1793743490086,
+      "end_ms": 1793743490184,
+      "duration_ms": 97,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/broad-efficiency-0556-evals/baseline/harness/profiles/Q03-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-d5390645-c6ee-4884-921f-748b0c6397c0",
+      "event": "postToolUse",
+      "start_ms": 1793743491924,
+      "end_ms": 1793743491972,
+      "duration_ms": 47,
+      "status": "completed",
+      "entries": []
+    }
+  ],
+  "compactions": [],
+  "limits": [
+    "Native result bodies are represented only by hashes/locators; no reasoning fields exported.",
+    "Outer output truncation prevents treating every native body as delivered; inspect public outer outputs where needed.",
+    "No response scheduling saving inferred solely from native tool count."
+  ]
+}

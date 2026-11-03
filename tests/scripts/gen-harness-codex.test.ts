@@ -247,6 +247,16 @@ describe("extractInjectionBlock", () => {
 });
 
 describe("renderCodexHarness", () => {
+  it("keeps the Codex Explore entrypoint below 4800 characters without removing its references", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const explore = rendered.get("tea-rags/skills/explore/SKILL.md") ?? "";
+    expect(parseFrontmatter(explore).fields.name).toBe("explore");
+    expect(explore.length).toBeLessThanOrEqual(4800);
+    for (const reference of ["architecture-pattern", "usage-pattern", "pre-gen-pattern", "exemplar-pattern"]) {
+      expect(rendered.has(`tea-rags/skills/explore/references/${reference}.md`), reference).toBe(true);
+    }
+  });
+
   it("ships direct content routing for known configuration files through the executable SessionStart hook", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-content-routing-"));

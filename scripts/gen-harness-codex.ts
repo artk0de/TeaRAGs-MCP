@@ -842,7 +842,14 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
     const description = skill.internal ? internalDescription(skill, callers, CODEX_DIALECT.skillMention) : undefined;
     for (const file of walk(skill.dir)) {
       const rel = relative(skill.dir, file);
-      const source = readFileSync(file, "utf8");
+      let source = readFileSync(file, "utf8");
+      // A harness-specific body keeps the shared skill's discovery metadata and
+      // references while avoiding instructions for other execution models.
+      const bodyPath = join(pluginRoot, "harness", "codex", `${skill.name}.md`);
+      if (rel === "SKILL.md" && existsSync(bodyPath)) {
+        const { body } = parseFrontmatter(source);
+        source = source.slice(0, source.length - body.length) + readFileSync(bodyPath, "utf8");
+      }
       const out =
         rel === "SKILL.md"
           ? toCodexSkill(source, { skillNames, name: skill.name, description })

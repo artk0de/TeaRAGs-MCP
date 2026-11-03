@@ -1,0 +1,19 @@
+{
+  "source": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.tmp/gruntworx_codex_isolated_2026-11-01_01/harness/actors/Q03-B/observations.json",
+  "source_sha256": "7a89e09bd8705296a7d3359fdc58d3a1c72403630f0ab6ed53bfddaa27967ba1",
+  "model_responses": 11,
+  "input_tokens": 404640,
+  "fresh_input_tokens": 92832,
+  "cached_input_tokens": 311808,
+  "output_tokens": 2898,
+  "seconds": 407.4984085840115,
+  "initial_input_tokens": 11072,
+  "prompt_sha256": "8f4eaab9895f9e380164fa62dee5d552cca441f654dcd23b6d839fea5a5d6e0a",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

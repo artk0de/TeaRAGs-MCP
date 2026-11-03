@@ -1,0 +1,64 @@
+{
+  "grading": "controller manual check of final answers and observed public tool actions against separated original rubrics; no private reasoning inspection",
+  "selected": "contract-boundaries",
+  "selected_cases": {
+    "Q01": {
+      "quality": "PASS",
+      "points": [
+        "vendor-neutral ports",
+        "registration and complete namespace contract including background reconciliation",
+        "class-level capability passport",
+        "shared/vendor data model"
+      ],
+      "delivery": "no outer truncation"
+    },
+    "Q03": {
+      "quality": "PASS",
+      "points": [
+        "scoped budgets and10-retry/reset limitation",
+        "bounded reconciliation and shared mapping",
+        "shared failure vocabulary",
+        "recording sanitization plus deterministic replay",
+        "persisted identity reuse plus conservative unique matching"
+      ],
+      "efficiency": "13 steps; not a step-count improvement"
+    },
+    "V01": {
+      "quality": "PASS",
+      "points": [
+        "recording scrub fields and Instead-host scope",
+        "no retroactive sanitization claim; actual existing counterexamples inspected"
+      ],
+      "limitation": "focused core route, not Explore-loaded coverage"
+    },
+    "W01": {
+      "quality": "PASS",
+      "points": [
+        "new send versus internal existing IDs",
+        "PrepareForSend resend/reset and failure clearing",
+        "workflow reentry versus step retry"
+      ],
+      "efficiency": "20 steps; remains a performance target"
+    }
+  },
+  "rejected": {
+    "candidate": {
+      "quality_Q03": "PARTIAL: no recording scrubbing",
+      "Q01": "efficiency regression",
+      "C01": "requested graph-centrality control PASS",
+      "E01": "explicit Explore/control facts PASS; earlier policy only"
+    },
+    "class-anchor": {
+      "Q03": "PARTIAL: persisted identity reuse absent, entity-type scope misstated as return type",
+      "Q01": "efficiency regression",
+      "F01": "focused-core facts PASS; did not load changed skill",
+      "W01": "requested flow facts PASS"
+    }
+  },
+  "limitations": [
+    "No fresh B or Claude run",
+    "All cases n1 per distinct policy; no silent retry and no pooling favorable cases",
+    "Native accounting unpriced; cost comparison is an explicit rate condition",
+    "Model steps and historical-B Q01 time target still open"
+  ]
+}

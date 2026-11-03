@@ -1,0 +1,16 @@
+test_ttft_distinguishes_commentary_from_final (test_isolated.FirstVisibleTests.test_ttft_distinguishes_commentary_from_final) ... ok
+test_hook_state_unique_per_question_and_condition (test_isolated.HookStateTests.test_hook_state_unique_per_question_and_condition) ... ok
+test_authorization_binds_all_inputs (test_isolated.IsolationTests.test_authorization_binds_all_inputs) ... ok
+test_checkpoint_exclusive_and_failure_stops (test_isolated.IsolationTests.test_checkpoint_exclusive_and_failure_stops) ... ok
+test_exact_readiness_and_exposure_not_count_only (test_isolated.IsolationTests.test_exact_readiness_and_exposure_not_count_only) ... ok
+test_invalid_case_set_rejected (test_isolated.IsolationTests.test_invalid_case_set_rejected) ... ok
+test_one_literal_input_no_cross_question_context (test_isolated.IsolationTests.test_one_literal_input_no_cross_question_context) ... ok
+test_runtime_hash_change_fails_closed (test_isolated.IsolationTests.test_runtime_hash_change_fails_closed) ... ok
+test_unique_10_A_only_homes (test_isolated.IsolationTests.test_unique_10_A_only_homes) ... ok
+test_fresh_native_thread_has_no_history_fields (test_isolated.MetadataTests.test_fresh_native_thread_has_no_history_fields) ... ok
+test_parallel_nested_runtime_union_not_summed (test_isolated.MetadataTests.test_parallel_nested_runtime_union_not_summed) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.003s
+
+OK

@@ -1,0 +1,23 @@
+{
+  "source": "/Users/Shared/nav-ab/broad-efficiency-0556-evals/class-anchor/harness/actors/F01-A/observations.json",
+  "source_sha256": "dd55a628934e2cf818ff5a08d7439c43481c237bb816237d7eda5639d5e48ea7",
+  "model_responses": 3,
+  "input_tokens": 53991,
+  "fresh_input_tokens": 19815,
+  "cached_input_tokens": 34176,
+  "output_tokens": 428,
+  "seconds": 30.68022729200311,
+  "initial_input_tokens": 17030,
+  "prompt_sha256": "43ff7c34aa4d531a43b8fec8d6e6809c672f6c38bf025c35106daaa38da61b0b",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 266,
+  "final_stream_seconds": 5.841,
+  "observed_runtime_union_seconds": 5.397,
+  "model_network_client_residual_seconds": 25.261000000000003,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}
