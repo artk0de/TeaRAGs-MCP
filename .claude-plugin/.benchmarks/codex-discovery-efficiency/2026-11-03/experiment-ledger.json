@@ -1,0 +1,129 @@
+{
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n_per_variant_case": 1,
+  "scope": "Codex only; no B, Claude, full suite or full benchmark",
+  "variants": [
+    {
+      "stage": "stage1",
+      "change": "focused core route",
+      "steps": {
+        "Q08": 6,
+        "Q10": 6,
+        "E01": 7
+      },
+      "verdict": "Route works; efficiency mixed"
+    },
+    {
+      "stage": "stage2",
+      "change": "broad domain-first",
+      "steps": {
+        "Q08": 10,
+        "Q10": 4
+      },
+      "verdict": "REJECTED"
+    },
+    {
+      "stage": "stage2b",
+      "change": "short concept globally",
+      "steps": {
+        "Q08": 5,
+        "Q10": 11
+      },
+      "verdict": "REJECTED"
+    },
+    {
+      "stage": "stage2c",
+      "change": "property-only short concept",
+      "steps": {
+        "Q08": 6,
+        "Q10": 4
+      },
+      "verdict": "retained for controls"
+    },
+    {
+      "stage": "final-main + final-controls",
+      "change": "compact/glob policy",
+      "steps": {
+        "Q01": 12,
+        "Q03": 11,
+        "Q08": 5,
+        "Q10": 4,
+        "E01": 5,
+        "L01": 2,
+        "R01": 1
+      },
+      "verdict": "NOT_ACCEPTED as complete: callback/retry omissions also existed in baseline"
+    },
+    {
+      "stage": "quality-main + quality-controls",
+      "change": "generic completeness guards",
+      "steps": {
+        "Q01": 11,
+        "Q03": 10,
+        "Q08": 6,
+        "Q10": 8,
+        "E01": 8,
+        "L01": 3,
+        "R01": 1
+      },
+      "verdict": "Quality gaps closed; efficiency mixed"
+    },
+    {
+      "stage": "release-main + release-controls",
+      "change": "deduplicate per-turn paragraph",
+      "steps": {
+        "Q01": 16,
+        "Q03": 14,
+        "Q08": 8,
+        "Q10": 8,
+        "E01": 8,
+        "L01": 2,
+        "R01": 1
+      },
+      "verdict": "REJECTED as final efficiency policy"
+    },
+    {
+      "stage": "release-text-control",
+      "change": "eight-character copy edit",
+      "steps": {
+        "L01": 2,
+        "R01": 1
+      },
+      "verdict": "PASS scoped controls"
+    },
+    {
+      "stage": "bounded-navigation",
+      "change": "property query only named construct; stop at proved rejection unless downstream internals asked; deduplicate route scope",
+      "steps": {
+        "Q08": 5,
+        "Q10": 5,
+        "E01": 6,
+        "W01": 13
+      },
+      "verdict": "PASS scoped navigation and requested downstream control; no overall efficiency claim"
+    }
+  ],
+  "baseline_A_0554_steps": {
+    "Q01": 11,
+    "Q03": 12,
+    "Q08": 7,
+    "Q10": 5
+  },
+  "static_context_chars": {
+    "baseline": 17385,
+    "candidate": 16889,
+    "reduction": 496,
+    "per_turn_baseline": 1624,
+    "per_turn_candidate": 987
+  },
+  "limitations": [
+    "Exploratory n1, not statistical or full-campaign speedup; do not pool best variants as one run.",
+    "Broad Q01/Q03 completeness improved at cost of more steps than old incomplete answers; further optimization remains open.",
+    "Final correction affects Q08/Q10 and W01 nearby control; other controls have earlier policy fingerprints and scoped claims.",
+    "Provider prefix cache observed, not forcibly disabled; independent fresh actor homes/history and denied gold inputs.",
+    "Private raw journals kept at paths/hashes; committed transcripts exclude private reasoning and source bodies.",
+    "Wrong-Python launcher rejected before model invocation; corrected required explicit Homebrew Python is not actor retry.",
+    "Static RED failed at 17643, then 17006; current 16889 passes unchanged 17000 ceiling. Failed logs retained."
+  ]
+}

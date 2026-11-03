@@ -1,0 +1,20 @@
+{
+  "status": "BEHAVIORAL_RED_REUSED",
+  "plugin": "0.55.4",
+  "source_commit": "b9e62c298669773c66acaf4032f3fc8ea95f559a",
+  "cases": {
+    "Q08": {
+      "journal": "/Users/Shared/nav-ab/gruntworx-A0554-isolated10-20261103-01/harness/actors/Q08-A/events.jsonl",
+      "steps": 7,
+      "first_step": "Explore and schema only",
+      "journal_sha256": "759e8b7a27f79adfa40bc58cd55cddff24847f2cde2481c56541ffb85de428f1"
+    },
+    "Q10": {
+      "journal": "/Users/Shared/nav-ab/gruntworx-A0554-isolated10-20261103-01/harness/actors/Q10-A/events.jsonl",
+      "steps": 5,
+      "first_step": "Explore and schema only",
+      "journal_sha256": "2da34301b44a3bc6c78fd5b67521acf263a1174e94611437c010d204f5dd9286"
+    }
+  },
+  "control_E01": "New nearby control, not claimed baseline-tested."
+}

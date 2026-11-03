@@ -1,0 +1,3 @@
+{
+  "text": "[Метод `capabilities_for`](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/registry.rb:108):\n\n```ruby\ndef capabilities_for(firm)\n  adapter_for(firm)::Connection.capabilities\nend\n```\n\nВозвращает объект `TaxPreparation::TaxAutomations::HasCapabilities::Capabilities` — описание возможностей провайдера, выбранного для `firm`. Получает его у класса `Connection` соответствующего адаптера; согласно комментарию, запись подключения в БД для этого не нужна."
+}

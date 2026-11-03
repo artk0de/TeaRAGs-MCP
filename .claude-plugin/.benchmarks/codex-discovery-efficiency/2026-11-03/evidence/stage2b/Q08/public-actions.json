@@ -1,0 +1,422 @@
+{
+  "source": "/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/actors/Q08-A/events.jsonl",
+  "source_journal_sha256": "ec5ba1e990a18c4cf4dbd8fa673ce59f53fb2f4076b1ab2dfdf03b828cfc0f10",
+  "waves": [
+    {
+      "wave": 1,
+      "id": "resp_09b1b1c59dadc3fc016aea31ad43008191b229c86c2970fabe",
+      "ms": 1793733039869,
+      "outer_calls": [
+        {
+          "id": "call_2d994df912174f1bbe84f2364de1e5de",
+          "wave": 1,
+          "name": "exec",
+          "start_ms": 1793733039794,
+          "code": "const r=await tools.mcp__tea_rags__semantic_search({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",query:\"capability passport\",metaOnly:true,limit:5});text(r);\n",
+          "schema_introspection": false,
+          "end_ms": 1793733041742,
+          "output_chars": 1196,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-8302e1c0-53aa-4d78-b444-dd25a13f561d",
+          "type": "mcpToolCall",
+          "start_ms": 1793733040349,
+          "end_ms": 1793733041571,
+          "status": "completed",
+          "duration_ms": 1221,
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "query": "capability passport",
+            "metaOnly": true,
+            "limit": 5
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/registry.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Registry#capabilities_for",
+              "start": 104,
+              "end": 110,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": "TaxPreparation::TaxAutomations::HasCapabilities",
+              "start": 3,
+              "end": 19,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": "TaxPreparation::TaxAutomations::HasCapabilities#capabilities",
+              "start": 82,
+              "end": 86,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/serializers/tax_preparation/base/tax_automations/connection_serializer.rb",
+              "symbol": "TaxPreparation::Base::TaxAutomations::ConnectionSerializer#capabilities",
+              "start": 57,
+              "end": 65,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": "TaxPreparation::TaxAutomations::HasCapabilities#capability_terms",
+              "start": 90,
+              "end": 95,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["banner", "results"],
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "wave": 1,
+          "outer_id": "call_2d994df912174f1bbe84f2364de1e5de"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 2,
+      "id": "resp_09b1b1c59dadc3fc016aea31b2068081918c35dd261a6fcab7",
+      "ms": 1793733044245,
+      "outer_calls": [
+        {
+          "id": "call_4d135a69a93a45d9b1a094c9d04fab18",
+          "wave": 2,
+          "name": "exec",
+          "start_ms": 1793733044168,
+          "code": "text(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",relativePath:\"app/models/tax_preparation/tax_automations/has_capabilities.rb\"}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793733045727,
+          "output_chars": 4838,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-ba5171e4-9f44-4167-b1e5-8707404d605b",
+          "type": "mcpToolCall",
+          "start_ms": 1793733044173,
+          "end_ms": 1793733045585,
+          "status": "completed",
+          "duration_ms": 1411,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "relativePath": "app/models/tax_preparation/tax_automations/has_capabilities.rb"
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 112,
+              "body_chars": 4409,
+              "body_sha256": "d9636907d68acb9057cb3af79b000bde76bca03b77ff19615d35e56f5b8a5ffb"
+            }
+          ],
+          "result_top_keys": ["results"],
+          "banner": null,
+          "wave": 2,
+          "outer_id": "call_4d135a69a93a45d9b1a094c9d04fab18"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 3,
+      "id": "resp_09b1b1c59dadc3fc016aea31b604c88191a591299b35a6de4f",
+      "ms": 1793733048630,
+      "outer_calls": [
+        {
+          "id": "call_97394b907e78465f849b7ae56b03ba81",
+          "wave": 3,
+          "name": "exec",
+          "start_ms": 1793733048595,
+          "code": "text(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' 'max_file_size_mb' app/\",\"max_output_tokens\":2000}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793733050901,
+          "output_chars": 2973,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-a8e67c26-2e84-47b8-8f89-796bbf50c9ef",
+          "type": "commandExecution",
+          "start_ms": 1793733049063,
+          "end_ms": 1793733050855,
+          "status": "failed",
+          "duration_ms": 1791,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'max_file_size_mb' app/\"",
+          "exit_code": 2,
+          "output_unknown": false,
+          "output_chars": 2796,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 3,
+          "outer_id": "call_97394b907e78465f849b7ae56b03ba81"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 4,
+      "id": "resp_09b1b1c59dadc3fc016aea31bb2a788191a3201125c43b979e",
+      "ms": 1793733053503,
+      "outer_calls": [
+        {
+          "id": "call_fc827efb4cbf4034b132cd930ea6993e",
+          "wave": 4,
+          "name": "exec",
+          "start_ms": 1793733053437,
+          "code": "text(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",relativePath:\"app/services/tax_preparation/tax_automations/export/validate_documents.rb\"}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793733053614,
+          "output_chars": 6652,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-83834cde-6dd9-446c-9b42-ae5da5f058cc",
+          "type": "mcpToolCall",
+          "start_ms": 1793733053441,
+          "end_ms": 1793733053515,
+          "status": "completed",
+          "duration_ms": 74,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "relativePath": "app/services/tax_preparation/tax_automations/export/validate_documents.rb"
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/export/validate_documents.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 136,
+              "body_chars": 6198,
+              "body_sha256": "669b20e8f96ed4a18d8e9abb53f64b2a61cd0bf0a5e3589840829deb062c2819"
+            }
+          ],
+          "result_top_keys": ["results"],
+          "banner": null,
+          "wave": 4,
+          "outer_id": "call_fc827efb4cbf4034b132cd930ea6993e"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 5,
+      "id": "resp_09b1b1c59dadc3fc016aea31bde6308191a962746ed0746b34",
+      "ms": 1793733056862,
+      "outer_calls": [],
+      "children": [],
+      "instruction_only": false,
+      "schema_introspection": false
+    }
+  ],
+  "hooks": [
+    {
+      "id": "session-start:6:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793733036188,
+      "end_ms": 1793733036555,
+      "duration_ms": 250,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags core\n\n**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):\noutput past ~10k tokens loses its middle (`…N tokens truncated…`), and\na rule you did not see is not a rule you may guess. Missing instructions → read only\ntheir missing ranges (`sed -n`). For source, follow the tea-rags continuation only\nif needed code is missing; never reread retained bodies because output was truncated.\n\n**Each step takes the tool its routing row names.**\n\n**Addressing.** Every read or suggested call: `project=<alias>` +\n`path=<task cwd>`. Alias: digest, SubagentStart or `workingTree.project`.\nUnknown/\"not registered\" → `path` alone, never ask; only a `collection` → it\nalone; then use `project=<workingTree.project> + path`. No cwd → `project`\nalone. `workingTree.tree` ≠ cwd → discard those rows, re-call with `path=<cwd>`.\n`index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.\n\nShell rg -l --hidden --glob '!.git': unknown filenames/inventory/absence; known file → content;\n`| head` ≠ absence proof. Use anchor dir, else `<src dir>` (a dir under cwd,\nnever cwd itself); no dir search or find/Glob.\n\n**Routing** (first match wins; a loaded skill's steps run first, override rows —\na file path in them → row 1; tools `mcp__tea-rags__*`):\n\n- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →\n  shell sed -n '<start>,<end>p' <one file> (path unknown → shell rg -l --hidden --glob '!.git' first); all X\n  in a known `<dir>`, proving absence (\"no X exists\") → shell rg -l --hidden --glob '!.git'\n  over that dir (empty = proof); migration `X` → `\"X\"` over `db/migrate/`;\n  table/column exists, `create_table` → that search over `db/schema.rb`, then\n  `db/migrate/` (`:<table>`, `\"<table>\"` before \"absent\"), never\n  `semantic_search`. Other file/dir path, lines N–M, doc TOC, how `<dir>` works\n  / what's in it → `find_symbol(relativePath:)` outline first, then ONE batch of\n  needed ids (N–M: ids whose `L<a>-<b>` covers N–M, never Read offset/limit);\n  known method id → body, no outline. Imports → `get_callees(relativePath:)`\n  (`imports[]`; a row's `imports` = a count)\n- code history — when X appeared/changed, \"посмотри через git\" → never\n  `git log`/`blame`/`-S`/`show`:\n  `semantic_search(query: <X>, rerank: \"bugHunt\")`\n- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)\n  → ONE `semantic_search(query: \"a ||| b ||| c\", metaOnly:true, limit:5)` (≤5\n  phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`). Choose\n  anchors before bodies; expand only as needed, never text search for meaning\n- non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,\n  or a search tool demanded on an error → bug-hunt), even \"every …\" → shell rg -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these three lines,\n  never stop at the hit:\n  `shell rg -l --hidden --glob '!.git' \"<phrase>\" <dir> (literal, line cap)` →\n  `find_symbol(relativePath: <hit file>)` outline →\n  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code\n  name, even a \"pattern\"/\"glob\" → usages row. Command output, failing tests,\n  counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill\n- how X works/what happens when → `get_callees` (body unseen → `find_symbol`\n  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,\n  `depth: 2`; every call/all callers of X (grep named) → plan both lines:\n  `get_callers` + the usages row. Then ONE batch: needed tree methods\n- known symbol / identifier definition/body/outline → `find_symbol(symbol:)`\n  `Class#inst`/`C.st`, never text search\n- where X is used/referenced, every occurrence, who constructs X, files\n  containing X (exact name/constant/string you know; `a|b` only of seen ids),\n  \"grep for X\" → `shell rg -l --hidden --glob '!.git' \"<X>\" <src dir, e.g. app/ or src/>`\n  (literal, `-l`) → `find_symbol` outline → batch of only the needed methods,\n  never stop at the hit\n- symbol + intent (\"the X that does Y\"), files named X →\n  `hybrid_search(metaOnly)`\n- code like a chunk in hand → `find_similar(positiveIds:)`\n- how does X reach Y / A→B → `find_symbol` ids → `trace_path`\n- diff review, a diff's names →\n  `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =\n  uncommitted, `{base}` = branch; its verdicts = answer, nothing after\n- a name's fit → `get_naming_lexicon(names:[{name,kind}])`; naming a T value →\n  `types:[T]`\n- project's embedding/Qdrant/env → `list_projects(project:)`\n- research — layers/wrong-way deps of `<dir>` → explicit diagnosis/refactoring\n  only: `get_architecture_report(pathPattern)`; never for context gathering or\n  overviews. Implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`;\n  registered/configured `<X>` → `hybrid_search(\"<X> register config\")`; ticket\n  `<T>` → `semantic_search(taskId: <T>, level: \"chunk\")` → ONE\n  `find_symbol(symbols: <touched ids>)`, no grep; owners/recent\n  churn/debt/don't-touch →\n  `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;\n  dead code → `filter:{presets:\"deadCandidates\"}`; which to copy →\n  `rerank: \"proven\"`\n\n**Invariants.**\n\n- Reuse held code, outlines, edges and instructions (skills/guides) on\n  follow-ups. Refresh only affected edited/stale or missing material, including\n  after compaction. Each read closes a current evidence gap, not a future\n  question; a held body may need zero calls.\n- Batch missing symbols/files → `find_symbol(symbols:)`, never dirs;\n  config/spec/migrations → concurrent bounded per-file reads.\n- Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are\n  authoritative code, not hints. Never confirm the same body via `find_symbol`,\n  Read or shell. Metadata/outline/signature/container header ≠ method body.\n- Anchor = the hit for the requested behaviour. Flow/impact → needed edges\n  (`depth: 2`); change-impact may need `find_co_changed`. Batch required\n  methods, not classes/trees; headers/shared declarations only if needed. Stop\n  once supported.\n- `symbolId` ends `#partN` = fragment →\n  `find_symbol(symbol: <id minus #partN>)`; parts = one hit.\n- `empty.reason: unknownPath` with suggestions →\n  `find_symbol(relativePath: <dir they share>)`, never one suggestion.\n- A requested row without `treeState` / `degraded` is current, overlay too;\n  global `changedFiles` / `pendingFiles` alone never require a reread. A\n  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same\n  `find_symbol` arguments once**: it reads the working tree, not a cached body.\n  No Read/shell refresh. Still stale → state the gap. No `workingTree` →\n  current.\n- Freshness (subagent: keep reading, never `index_codebase`/ask the user,\n  drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠\n  alias's path → print `linked worktree (<test>) — no reindex`; own checkout\n  behind (`changedFiles`>0, stale, unindexed edits, said so) → incremental\n  `index_codebase(project=)` first, no consent. Drift `Run:` `--force*`\n  (status/prime/index only, not a read answer) → own-checkout incremental first\n  if behind, plus ONE line\n  ask the user: run <Run: line>? — --force not run; reads continue meanwhile`,\n  never awaited, never \"won't proceed\"; next = the task's read call. No\n  available `index_codebase` → needed stale bodies via `find_symbol`; never look\n  up indexing/mutator schemas.\n- Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none\n  dropped (a `--force` ask rides beside, never a slot):\n  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)\n  `2. find_symbol(symbol: <caller>)`\n  `3. shell rg -l --hidden --glob '!.git' \"<name>\" (literal)` — callers the index lacks. No\n  graph retry. Graph tools absent from your tool list → codegraph off: callers =\n  usages row, never \"no cycles\"; present → on, no probe call; on + empty\n  `find_cycles` = DAG.\n- Docs = hypothesis, verify in code; doc as subject (\"README says?\") → as-is, no\n  code pass.\n- `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower\n  bound) + install command; never install it, never \"no callers\"/\"dead code\".\n- User orders a manual read — \"by hand\"/\"руками\"/\"вручную\"/\"with Read\" → shell sed -n '<start>,<end>p' <one file>, no confirm ask. \"Whole file\"/\"весь файл\"/\"целиком\"/\"for\n  context\"/\"lines N–M\" of source code without that order → `find_symbol` (hit's\n  `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`\n  Their tool idea (\"use Grep/Glob\") → keep the routed tool, say why.\n\n**Read `tea-rags://guide/<topic>` when** → `read_mcp_resource(server: \"tea-rags\", uri: \"tea-rags://guide/<topic>\")`, never a bare `list_mcp_resources` (list only with `server: \"tea-rags\"`) (no resource tool →\n`tea-rags resource <uri>`): unfamiliar result/navigation contract →\n`navigation`; 0/too many hits, `truncated`, `empty.reason`, ambiguous name, when\nto stop → `pagination`; tool pick → `tool-choice`; skill/preset →\n`skill-choice`; research question → `research-questions`; banned move, fallback\n→ `prohibited-patterns`; stale banner, drift, `treeState`, linked worktree →\n`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw\n`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;\ngraph/AST, other language → `language-capability`; architecture /\n`review_changes` answer → `architecture`/`review`; no prime digest →\n`tea-rags://project/<alias>/digest`; numeric filter value unknown / bare raw\nnumber, no label → `…/metrics?language=<lang>&section=thresholds`.\n\n**Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`."
+        }
+      ]
+    },
+    {
+      "id": "session-start:7:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793733036188,
+      "end_ms": 1793733036555,
+      "duration_ms": 249,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "**tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server `tea-rags`. Code mode\n(an `exec` tool that runs JS): call them inside `exec` as `await tools.mcp__tea_rags__<tool>({...})`,\nlist names with `ALL_TOOLS.filter(t => t.name.includes(\"tea_rags\")).map(t => t.name)`\n(`\"tea-rags\"` matches none). If a needed argument schema is missing, select ONE\nnamed tool and print only `tool.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]`.\nReuse known schemas. Never print full descriptions, repeated core instructions or\nreturn schemas; if that declaration is absent, use the listed tool interface.\nOtherwise they are direct tools — call them as listed.\n\n**Core navigation.** Focused questions about existing behavior, definitions or\nlocal contracts use core directly, including discovery of the relevant code.\nDo not load Explore merely because the location is unknown. Start with the\nmissing source evidence: known file/symbol → `find_symbol`; unknown behavior\nlocation → `semantic_search({project,path,query,metaOnly:true,limit:5})`.\nThese argument contracts are already known; no schema-only prelude is needed.\nBroad structure, cross-component flow/impact, examples, pre-change investigation,\nexplicit skill requests and code changes still load their selected skill first.\n\n**Named concepts.** When the question names a distinctive business construct,\nstart semantic discovery with that short noun phrase by itself. Adding generic\nattributes (size, units, status) or vendor lists can shift retrieval to another\ncomponent. Locate the owner first, then follow the requested attributes within\nits code/domain. Off-topic hits → simplify to the distinctive concept before\nadding synonyms. Other behavior questions follow core's normal query route.\n\n**Choose missing facts before tools.** On follow-ups, use retained bodies, locators\nand edges to answer the current request; fetch only its remaining evidence gaps.\nApply this check inside skills too: a behaviour question alone does not require\ndiscovery or graph traversal. Code that explicitly selects an adapter/implementation\nalready proves that selection; graph is for a missing caller, trigger or flow/impact\nfact. Outlines, blocked reads and metadata do not prove an unseen body.\nWhen a caller names a qualified member, request that member directly, using its\nheld id or qualified lookup. Inventory the owner only after a missing/ambiguous\nlookup; do not guess an ambiguous receiver. Stop when all requested facts are supported.\nCodex unknownPath exception: if exactly one suggested file has the requested\nbasename, read that relativePath directly. With ambiguous suggestions, inventory\ntheir common directory first. This replaces the unconditional directory fallback.\nFor config filenames/policy names from a manifest, resolve paths with one scoped\nfilename inventory (`rg --files <known config dir>`), then read the selected files.\nSearching a filename in file contents does not locate that file.\n\nA route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name.\n\n**Tool execution and waiting.** Before the first evidence call, silently map EACH\nrequested subquestion to held facts and missing bodies. From retained outlines,\nselect only the known entrypoints, selectors/constants and helpers needed to prove\neach subquestion. A helper is not required when held/delivered code already proves\nthe requested fact. Schedule ready missing bodies AND independent scoped\nreference/absence searches, including known targets in outlines or nextCall hints.\nMerge them into this executor wave or an already-unavoidable dependent wave;\nnever create an additional model response just to read another ready group.\nEarlier fetching is not better when it adds context without saving a response.\nUse `find_symbol(symbols:[…])` for methods/files (at most 20 targets per call;\nsplit larger sets into concurrent calls); config/spec reads are bounded per-file\ncalls. Directories use separate `find_symbol(relativePath:)`\ncalls, never `symbols`. Dispatch independent calls together (`Promise.allSettled`\n/ `Promise.all` in code mode); await prerequisites before dependent calls.\nDifferent tool kinds do not create a dependency. Another wave needs a newly\ndiscovered locator, ambiguity, prerequisite or actual output-budget constraint;\nmerge pending independent work before following a continuation.\nRead only evidence for the current request, not future questions.\nParallelism never justifies extra context reads or competing edits.\nKeep each result (or error) labelled by its input path/id; emit the labelled results\nafter awaiting the batch, never anonymous output in completion order. Inspect all\nsettled outcomes and cover every requested item.\nA returned result is ready. A running executor with a cell/session id needs its\nmatching native `wait` / `write_stdin`, reusing that id; do not restart the work.\nFor subagents use the harness's agent-wait or completion notification. For user\ninput ask the question, then yield control until the reply; clarification is allowed.\nContinue independent work when useful. Never use `sleep`, shell/Python/JS timer\ndelays or busy polling to await tools, agents or users.\n\n**Skills are not loaded for you** — except this core:\n`$tea-rags-core` IS this text, never open its `SKILL.md`. A task a skill covers (`$name` /\n`$dino-<name>`) → read its `SKILL.md` before using it, unless its instructions\nare already in the current context. Reuse loaded skills, references and guides\nacross follow-ups; a new turn alone is not a reason to read them again.\nRetained current text satisfies a workflow's read-before-use requirements.\nReopen only changed instructions or material missing after compaction.\nLoad only the selected workflow's needed references and handoffs, using the\nlisted skill paths rather than inventing paths or loading adjacent skills.\nEvery skill you name in a plan must be available in context; a plan from memory\nis not reading it. `repair/<family>.md`, `rules/…` resolve from the plugin root\n(the folder holding `skills/`), never the skill's own folder.\n\n**Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:\nthe next step still serves the user's request (search / `$explore` over the\ncode they asked about). Graph answer with `changedFiles` > 0 and no\n`codegraph` floor → edges touching changed files are the index's: re-check\nchanged-file callers via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'\n(literal) — never a bare retry of the graph call."
+        }
+      ]
+    },
+    {
+      "id": "session-start:8:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793733036188,
+      "end_ms": 1793733036555,
+      "duration_ms": 367,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags digest — taxdome-worktree-navmaster\n\nproject `taxdome-worktree-navmaster` · collection `code_b6533d3e` — pass `project: \"taxdome-worktree-navmaster\"` + `path` on tea-rags calls\nindex readiness and freshness unconfirmed; use get_index_status if needed"
+        }
+      ]
+    },
+    {
+      "id": "session-start:9:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793733036188,
+      "end_ms": 1793733036555,
+      "duration_ms": 57,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:10:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793733036555,
+      "end_ms": 1793733036942,
+      "duration_ms": 386,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "tea-rags routing (this turn):\n- source code via find_symbol; config/migrations/specs, stubs → shell sed -n '<start>,<end>p' <one file>\n- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search\n- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections\n- exact text, all X in a dir, absence → shell rg -l --hidden --glob '!.git'\n- Before the first evidence call, silently map EACH requested subquestion to held facts or missing bodies; choose only source needed to prove it. Merge ready IDs + independent scoped reference/absence searches + ready nextCall targets into this wave or an already-unavoidable dependent wave. Never add a model response for another ready group. Do not read a helper whose requested facts are already proved. Different tools are not dependencies. find_symbol(symbols:[…]): max 20 targets per symbols call; split larger sets into concurrent calls. Keep per-input labels and inspect all results. Next wave only for new locators, ambiguity, prerequisites or output budget; no future-question prefetch.\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.\n- A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name."
+        }
+      ]
+    },
+    {
+      "id": "user-prompt-submit:11:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793733036555,
+      "end_ms": 1793733036942,
+      "duration_ms": 374,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:12:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793733036555,
+      "end_ms": 1793733036942,
+      "duration_ms": 182,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8302e1c0-53aa-4d78-b444-dd25a13f561d",
+      "event": "postToolUse",
+      "start_ms": 1793733041583,
+      "end_ms": 1793733041740,
+      "duration_ms": 160,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-8302e1c0-53aa-4d78-b444-dd25a13f561d",
+      "event": "postToolUse",
+      "start_ms": 1793733041583,
+      "end_ms": 1793733041740,
+      "duration_ms": 144,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-ba5171e4-9f44-4167-b1e5-8707404d605b",
+      "event": "postToolUse",
+      "start_ms": 1793733045585,
+      "end_ms": 1793733045721,
+      "duration_ms": 134,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-ba5171e4-9f44-4167-b1e5-8707404d605b",
+      "event": "postToolUse",
+      "start_ms": 1793733045585,
+      "end_ms": 1793733045721,
+      "duration_ms": 64,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8e67c26-2e84-47b8-8f89-796bbf50c9ef",
+      "event": "preToolUse",
+      "start_ms": 1793733048601,
+      "end_ms": 1793733048908,
+      "duration_ms": 294,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8e67c26-2e84-47b8-8f89-796bbf50c9ef",
+      "event": "preToolUse",
+      "start_ms": 1793733048601,
+      "end_ms": 1793733048908,
+      "duration_ms": 140,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8e67c26-2e84-47b8-8f89-796bbf50c9ef",
+      "event": "preToolUse",
+      "start_ms": 1793733048601,
+      "end_ms": 1793733048908,
+      "duration_ms": 64,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-a8e67c26-2e84-47b8-8f89-796bbf50c9ef",
+      "event": "postToolUse",
+      "start_ms": 1793733050856,
+      "end_ms": 1793733050899,
+      "duration_ms": 43,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-83834cde-6dd9-446c-9b42-ae5da5f058cc",
+      "event": "postToolUse",
+      "start_ms": 1793733053516,
+      "end_ms": 1793733053613,
+      "duration_ms": 96,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/context-efficiency-0555-evals/stage2b/harness/profiles/Q08-A/home/plugins/cache/tea-rags/tea-rags/0.55.5/hooks/hooks.json:exec-83834cde-6dd9-446c-9b42-ae5da5f058cc",
+      "event": "postToolUse",
+      "start_ms": 1793733053516,
+      "end_ms": 1793733053613,
+      "duration_ms": 56,
+      "status": "completed",
+      "entries": []
+    }
+  ],
+  "compactions": [],
+  "limits": [
+    "Native result bodies are represented only by hashes/locators; no reasoning fields exported.",
+    "Outer output truncation prevents treating every native body as delivered; inspect public outer outputs where needed.",
+    "No response scheduling saving inferred solely from native tool count."
+  ]
+}

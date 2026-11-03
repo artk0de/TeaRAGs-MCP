@@ -162,74 +162,79 @@ number, no label → `…/metrics?language=<lang>&section=thresholds`.
 
 **Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.
 
-**tea-rags tools** (named bare here: `find_symbol`, …) are MCP tools of server
-`tea-rags`. Code mode (an `exec` tool that runs JS): call them inside `exec` as
-`await tools.mcp__tea_rags__<tool>({...})`, list names with
+**tea-rags tools** are MCP tools of server `tea-rags`. In JS code mode use
+`await tools.mcp__tea_rags__<tool>({...})`; discover names with
 `ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)`
-(`"tea-rags"` matches none). If a needed argument schema is missing, select ONE
-named tool and print only
+(`"tea-rags"` matches none). Missing argument schema → select ONE named tool,
+print only
 `tool.description.split("exec tool declaration:")[1]?.split("Promise<")[0]`.
-Reuse known schemas. Never print full descriptions, repeated core instructions
-or return schemas; if that declaration is absent, use the listed tool interface.
-Otherwise they are direct tools — call them as listed.
+Reuse known schemas; never print full descriptions, core instructions or return
+schemas. No declaration → use the listed interface. Direct tools → call as
+listed.
 
-**Direct local lookup.** When the user names an indexable file/symbol and asks
-only for its body/local contract, with project/path known and no other workflow,
-make `find_symbol` the first tool call, without loading Explore. Core already
-supplies `{project,path,relativePath}` or `{project,path,symbol}`; no
-schema-only prelude is needed. Explicit skill requests, discovery, flow/impact
-and code changes still require their selected skill before use.
+**Core navigation.** Focused questions about existing behavior, definitions or
+local contracts use core directly, including discovery of the relevant code. Do
+not load Explore merely because the location is unknown. Start with the missing
+source evidence: known file/symbol → `find_symbol`; unknown behavior location →
+`semantic_search({project,path,query,metaOnly:true,limit:5})`. These argument
+contracts are known; no schema-only prelude is needed. Broad structure,
+cross-component flow/impact, examples, pre-change investigation, explicit skill
+requests and code changes still load their selected skill first.
 
-**Choose missing facts before tools.** On follow-ups, use retained bodies,
-locators and edges to answer the current request; fetch only its remaining
-evidence gaps. Apply this check inside skills too: a behaviour question alone
-does not require discovery or graph traversal. Code that explicitly selects an
-adapter/implementation already proves that selection; graph is for a missing
-caller, trigger or flow/impact fact. Outlines, blocked reads and metadata do not
-prove an unseen body. When a caller names a qualified member, request that
-member directly, using its held id or qualified lookup. Inventory the owner only
-after a missing/ambiguous lookup; do not guess an ambiguous receiver. Stop when
-all requested facts are supported. Codex unknownPath exception: if exactly one
-suggested file has the requested basename, read that relativePath directly. With
-ambiguous suggestions, inventory their common directory first. This replaces the
-unconditional directory fallback. For config filenames/policy names from a
-manifest, resolve paths with one scoped filename inventory
-(`rg --files <known config dir>`), then read the selected files. Searching a
-filename in file contents does not locate that file.
+For a complete adapter/extension contract, derive required members from actual
+production dispatch sites, including background entry points. Inventory learned
+receiver/registry references across the source root; a provider registry or one
+directory does not establish the whole interface. For operational lessons,
+retain explicit retry/window bounds and reset conditions that change guarantees.
 
-A route's fully qualified controller requires its enclosing namespaces, not just
-the inner route block. If those declarations are not held, batch a bounded file
-header with the requested excerpt; fetch any still-missing enclosing scope
-before qualifying the name.
+**Property questions.** For units/type/representation of a named business
+construct, the FIRST query contains ONLY that construct's short noun phrase. Add
+property terms only if that query misses; inspect the property in its owner. A
+vendor name or generic object is not the construct. Workflow questions retain
+their behavior and domain; never shorten them to a vendor name alone.
 
-**Tool execution and waiting.** Before the first evidence call, silently map
-EACH requested subquestion to held facts and missing bodies. From retained
-outlines, select only the known entrypoints, selectors/constants and helpers
-needed to prove each subquestion. A helper is not required when held/delivered
-code already proves the requested fact. Schedule ready missing bodies AND
-independent scoped reference/absence searches, including known targets in
-outlines or nextCall hints. Merge them into this executor wave or an
-already-unavoidable dependent wave; never create an additional model response
-just to read another ready group. Earlier fetching is not better when it adds
-context without saving a response. Use `find_symbol(symbols:[…])` for
-methods/files (at most 20 targets per call; split larger sets into concurrent
-calls); config/spec reads are bounded per-file calls. Directories use separate
-`find_symbol(relativePath:)` calls, never `symbols`. Dispatch independent calls
-together (`Promise.allSettled` / `Promise.all` in code mode); await
-prerequisites before dependent calls. Different tool kinds do not create a
-dependency. Another wave needs a newly discovered locator, ambiguity,
-prerequisite or actual output-budget constraint; merge pending independent work
-before following a continuation. Read only evidence for the current request, not
-future questions. Parallelism never justifies extra context reads or competing
-edits. Keep each result (or error) labelled by its input path/id; emit the
-labelled results after awaiting the batch, never anonymous output in completion
-order. Inspect all settled outcomes and cover every requested item. A returned
-result is ready. A running executor with a cell/session id needs its matching
-native `wait` / `write_stdin`, reusing that id; do not restart the work. For
-subagents use the harness's agent-wait or completion notification. For user
-input ask the question, then yield control until the reply; clarification is
-allowed. Continue independent work when useful. Never use `sleep`,
-shell/Python/JS timer delays or busy polling to await tools, agents or users.
+**Reuse before reading**, inside skills too: fetch only the current question's
+missing facts. Held code proves its explicit adapter/implementation selection;
+graph closes a missing caller/trigger/flow fact. Outline, header and blocked
+read are not bodies. Read a caller's qualified member directly; inventory its
+owner only after missing/ambiguous lookup. Do not guess receivers. If an
+entrypoint proves a request stops before dispatch, stop there; downstream
+workflow/retry internals are needed only when the question asks about them.
+Codex unknownPath exception: if exactly one suggested file has the requested
+basename, read that relativePath directly. With ambiguous suggestions, inventory
+their common directory first. This replaces the unconditional directory
+fallback. For config filenames/policy names from a manifest, resolve paths with
+one scoped filename inventory (`rg --files <known config dir>`), then read the
+selected files. Searching a filename in file contents does not locate that file.
+Positive filename globs are alternatives: `-g '*name*' -g '*.rb'` includes all
+Ruby files. For name AND extension use one `-g '*name*.rb'`; omit the extension
+glob when any matching filename is wanted. Do not widen a narrow inventory.
+
+**Tool execution and waiting.** Select missing evidence from held
+outlines/nextCall hints for each requested fact. A helper is unnecessary when
+held code proves it. Put ready needed bodies AND independent reference/absence
+searches in one executor wave. Two already-known groups may use concurrent batch
+calls in the same exec; preserve their output budgets instead of spending a
+model response per group. Do not prefetch context for future questions. Use
+`find_symbol(symbols:[…])` for methods/files (at most 20 targets per call; split
+larger sets into concurrent calls); config/spec reads are bounded per-file
+calls. Directories use separate `find_symbol(relativePath:)` calls, never
+`symbols`. Dispatch independent calls together (`Promise.allSettled` /
+`Promise.all` in code mode); await prerequisites before dependent calls.
+Different tool kinds do not create a dependency. Another wave needs a newly
+discovered locator, ambiguity, prerequisite or actual output-budget constraint;
+merge pending independent work before following a continuation. Read only
+evidence for the current request, not future questions. Parallelism never
+justifies extra context reads or competing edits. Keep each result (or error)
+labelled by its input path/id; emit the labelled results after awaiting the
+batch, never anonymous output in completion order. Inspect all settled outcomes
+and cover every requested item. A returned result is ready. A running executor
+with a cell/session id needs its matching native `wait` / `write_stdin`, reusing
+that id; do not restart the work. For subagents use the harness's agent-wait or
+completion notification. For user input ask the question, then yield control
+until the reply; clarification is allowed. Continue independent work when
+useful. Never use `sleep`, shell/Python/JS timer delays or busy polling to await
+tools, agents or users.
 
 **Skills are not loaded for you** — except this core: `$tea-rags-core` IS this
 text, never open its `SKILL.md`. A task a skill covers (`$name` /
@@ -245,8 +250,6 @@ a plan must be available in context; a plan from memory is not reading it.
 `skills/`), never the skill's own folder.
 
 **Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:
-the next step still serves the user's request (search / `$explore` over the code
-they asked about). Graph answer with `changedFiles` > 0 and no `codegraph` floor
-→ edges touching changed files are the index's: re-check changed-file callers
-via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'
-(literal) — never a bare retry of the graph call.
+continue the requested source task. For changed-file graph answers, re-check
+changed-file callers via `find_symbol`, find missing ones via shell rg -l
+--hidden --glob '!.git' (literal); never retry the graph.

@@ -1,0 +1,3 @@
+{
+  "text": "`max_file_size_mb` is converted to bytes by `.megabytes`. In Rails, 1 megabyte here equals **1,048,576 bytes** (1024²), so `document.file_size` is expected to be in bytes.\n\nThe check uses strict `>`:\n\n- Exactly at the limit: accepted by the size check.\n- Above the limit: returns `:file_too_large`.\n- Below the limit: accepted by the size check.\n\nAn unsupported extension returns `:unsupported_file_format` first, regardless of size. If both checks pass, the method returns `nil`."
+}

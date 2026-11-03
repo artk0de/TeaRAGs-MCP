@@ -1,0 +1,3 @@
+{
+  "text": "Тело [TaxPreparation::TaxAutomations::Registry#capabilities_for](/Users/Shared/nav-ab/repo-master/app/lib/tax_preparation/tax_automations/registry.rb:108):\n\n```ruby\ndef capabilities_for(firm)\n  adapter_for(firm)::Connection.capabilities\nend\n```\n\nМетод выбирает адаптер для `firm` и возвращает `Connection.capabilities` — описание возможностей провайдера типа `TaxPreparation::TaxAutomations::HasCapabilities::Capabilities`. По комментарию в коде, результат доступен даже без записи подключения в БД.\n\nФайлы не изменены."
+}

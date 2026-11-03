@@ -1,10 +1,10 @@
 ---
 name: explore
 description:
-  "Use when existing-code questions need discovery, call flow, impact, examples,
-  or explicit pre-change investigation. Not direct lookups of an already named
-  symbol or file body/local contract covered by core; not bug symptoms,
-  implementation-plan authoring, or broad code-health audits."
+  "Use for broad code-structure investigations, cross-component flow or impact,
+  examples, explicit pre-change investigation, or an explicit explore request.
+  Not focused behavior questions or locating their implementation, definitions,
+  or local contracts covered by core; not bugs, plans, or code-health audits."
 ---
 
 # Explore

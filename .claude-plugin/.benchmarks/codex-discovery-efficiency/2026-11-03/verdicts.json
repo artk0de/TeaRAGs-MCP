@@ -1,0 +1,83 @@
+{
+  "method": "Controller manual grading of public tool actions and final answer against controller-only rubric; no model private reasoning inspected",
+  "cases": [
+    {
+      "id": "Q08",
+      "stage": "bounded-navigation",
+      "verdict": "PASS",
+      "facts": [
+        "first semantic query exactly capability passport",
+        "actual validator read",
+        "binary 1048576 multiplier, 52428800 boundary, strict >"
+      ]
+    },
+    {
+      "id": "Q10",
+      "stage": "bounded-navigation",
+      "verdict": "PASS",
+      "facts": [
+        "uploaded+not archived+same return type",
+        "waiting/uploading across return types",
+        "scoped firm/client/contact/year/provider/document",
+        "rejected before provider dispatch",
+        "no downstream workflow detour"
+      ]
+    },
+    {
+      "id": "E01",
+      "stage": "bounded-navigation",
+      "verdict": "PASS",
+      "facts": [
+        "explicit Explore loaded first",
+        "refusal/dispatch scopes correct"
+      ]
+    },
+    {
+      "id": "W01",
+      "stage": "bounded-navigation",
+      "verdict": "PASS",
+      "facts": [
+        "workflow and PrepareForSend actual bodies inspected",
+        "resend/reset hooks/cleared reasons distinguished",
+        "workflow reentry versus per-step retry distinguished"
+      ]
+    },
+    {
+      "id": "Q01",
+      "stage": "release-main",
+      "verdict": "PASS scoped completeness; EFFICIENCY_REGRESSION",
+      "facts": [
+        "required Documents::ReconcileStatusesAsync recovered from background production dispatch",
+        "registration/ports/passport/data model covered"
+      ],
+      "limitation": "16 steps versus baseline11; this broad-survey case was not rerun after focused Q08/Q10 correction"
+    },
+    {
+      "id": "Q03",
+      "stage": "release-main",
+      "verdict": "PASS scoped completeness; EFFICIENCY_REGRESSION",
+      "facts": [
+        "ten retries/reset means no wallclock bound",
+        "reconciliation/status/vocabulary/cassette/entity points covered"
+      ],
+      "limitation": "14 steps versus baseline12; not rerun after focused correction"
+    },
+    {
+      "id": "L01",
+      "stage": "release-text-control",
+      "verdict": "PASS",
+      "facts": ["find_symbol direct body", "no Explore setup-only turn"]
+    },
+    {
+      "id": "R01",
+      "stage": "release-text-control",
+      "verdict": "PASS",
+      "facts": ["zero tools", "held current code authoritative"]
+    }
+  ],
+  "limitations": [
+    "n1, no aggregate statistical quality or latency claim",
+    "Earlier compact-policy quality misses remain FAIL/PARTIAL, not relabelled PASS",
+    "Only affected behavioral cases, no B/Claude/full benchmark"
+  ]
+}

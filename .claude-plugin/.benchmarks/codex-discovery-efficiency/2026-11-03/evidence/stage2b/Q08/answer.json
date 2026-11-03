@@ -1,0 +1,3 @@
+{
+  "text": "TaxDome compares sizes in **binary MiB**, despite naming the passport field `max_file_size_mb`.\n\nThe [validator](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/export/validate_documents.rb:112) converts it using Rails’ `.megabytes` (1,048,576 bytes) and rejects files only when `file_size > limit`.\n\nTherefore, GruntWorx’s **50 MiB** limit maps directly to `max_file_size_mb: 50`: **52,428,800 bytes**, inclusive."
+}

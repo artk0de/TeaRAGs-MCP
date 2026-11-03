@@ -1,0 +1,3 @@
+{
+  "text": "В **двоичных MiB**, несмотря на имя поля `max_file_size_mb`.\n\nВ [ValidateDocuments](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/export/validate_documents.rb:109) лимит вычисляется как `terms.max_file_size_mb.megabytes`: в Rails это умножение на **1 048 576**. Файл отклоняется, только если `document.file_size > limit`.\n\nПоэтому для лимита GruntWorx **50 MiB** нужно указать `max_file_size_mb: 50`: порог составит **52 428 800 байт**, и файл ровно такого размера пройдёт проверку размера."
+}

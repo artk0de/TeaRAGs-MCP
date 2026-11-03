@@ -1,0 +1,3 @@
+{
+  "text": "**Binary MiB**, despite the passport field being named `max_file_size_mb`.\n\nThe validator converts it with Rails’ `.megabytes` (`1,048,576` bytes) and rejects files only when `document.file_size > limit`: [validate_documents.rb](/Users/Shared/nav-ab/repo-master/app/services/tax_preparation/tax_automations/export/validate_documents.rb:112).\n\nThus, setting `max_file_size_mb: 50` enforces **52,428,800 bytes (50 MiB)**. A file exactly at that limit passes the size check."
+}

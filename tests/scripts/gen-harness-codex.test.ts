@@ -272,7 +272,7 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("delivers the missing-evidence wave policy through the actual per-turn hook", async () => {
+  it("keeps a batching reminder per turn and the full scheduling contract at startup", async () => {
     const rendered = await renderCodexHarness(ROOT);
     const pluginRoot = mkdtempSync(join(tmpdir(), "codex-routing-"));
     try {
@@ -290,8 +290,11 @@ describe("renderCodexHarness", () => {
       expect(output.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
       expect(context).toContain("missing flow/impact fact");
       expect(context).not.toContain("how it works / impact →");
-      expect(context).toContain("independent scoped reference/absence searches");
-      expect(context).toContain("20 targets per symbols call");
+      expect(context).toContain("ONE find_symbol(symbols:[…])");
+      expect(context).not.toContain("Before the first evidence call");
+      const startup = rendered.get("tea-rags/scripts/codex-rules.txt") ?? "";
+      expect(startup).toContain("independent reference/absence searches");
+      expect(startup).toContain("at most 20 targets per call");
       expect(context).toContain("ambiguous suggestions");
       expect(context).toContain("enclosing namespaces");
       expect(context).toContain("bounded file header");
@@ -403,6 +406,16 @@ describe("renderCodexHarness", () => {
       rmSync(pluginRoot, { recursive: true, force: true });
       rmSync(bin, { recursive: true, force: true });
     }
+  });
+
+  it("fits the combined static startup and per-turn context into 17000 characters", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    // 0.55.4 injected 17385 chars before the dynamic digest. The combined
+    // budget catches duplication that the individual hook caps cannot catch.
+    const paths = ["core.txt", "codex-rules.txt", "turn-routing.txt"];
+    const total = paths.reduce((sum, path) => sum + (rendered.get(`tea-rags/scripts/${path}`)?.length ?? 0), 0);
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThanOrEqual(17000);
   });
 
   it("tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md", async () => {
@@ -616,7 +629,7 @@ describe("renderCodexHarness", () => {
     // codex-cli 0.162.1 code mode: nested tools are normalized JS identifiers (`tea-rags` → `tea_rags`).
     expect(codexRules).toContain("`await tools.mcp__tea_rags__<tool>({...})`");
     expect(codexRules).toContain('`ALL_TOOLS.filter(t => t.name.includes("tea_rags")).map(t => t.name)`');
-    expect(codexRules).toContain("Otherwise they are direct tools");
+    expect(codexRules).toContain("Direct tools → call as listed");
     for (const path of ["AGENTS.tea-rags.md", "tea-rags/skills/tea-rags-core/SKILL.md"]) {
       expect(rendered.get(path), path).toContain("tools.mcp__tea_rags__<tool>");
     }
@@ -788,7 +801,7 @@ describe("renderCodexHarness", () => {
     for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
       expect(rendered.get(path)).toMatch(/prelude/);
       expect(rendered.get(path)).toMatch(/re-check\s+changed-file\s+callers\s+via\s+`find_symbol`/);
-      expect(rendered.get(path)).toMatch(/never\s+a\s+bare\s+retry/);
+      expect(rendered.get(path)).toMatch(/never\s+retry\s+the\s+graph/);
     }
   });
 });

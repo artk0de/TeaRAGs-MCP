@@ -1,0 +1,27 @@
+{
+  "native_model_response_count": 2,
+  "native_usage": {
+    "inputTokens": 34443,
+    "cachedInputTokens": 17024,
+    "cacheWriteInputTokens": 0,
+    "outputTokens": 231,
+    "reasoningOutputTokens": 0,
+    "totalTokens": 34674
+  },
+  "initial_cached_input_tokens": 0,
+  "initial_input_tokens": 17053,
+  "initial_uncached_input_tokens": 17053,
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "actor_wall_seconds": 11.448644542018883,
+  "turn_controller_wall_seconds": 9.96213662502123,
+  "prompt_sha256": "93f9fa350ac721202027be2cb166649982df7db7325752c0be8451afd0021a81",
+  "cache_limit": "Provider prefix cache uncontrollable; observed values only, no fake zero-cache guarantee",
+  "runtime_union_note": "Native command/MCP, hooks and outer executor intervals unioned and clipped to native turn; no overlap double-counting. Residual includes model/network/client/unobserved work, never pure model time.",
+  "api_cumulative_equals_completed": true,
+  "source": "/Users/Shared/nav-ab/context-efficiency-0555-evals/release-controls/harness/actors/L01-A/observations.json",
+  "source_sha256": "99281f10d54aabc40ea65201e8bf346d17bf3c8134239868e2728196032d8d59"
+}
