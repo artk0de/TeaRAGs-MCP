@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "Q20",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nWhat does the shared status-update service accept, and what frame does the status broadcast send to the frontend?"
+    }
+  ]
+}

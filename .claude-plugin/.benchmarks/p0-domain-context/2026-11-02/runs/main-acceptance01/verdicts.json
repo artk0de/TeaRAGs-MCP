@@ -1,0 +1,124 @@
+{
+  "condition": "main-acceptance01",
+  "manual_controller_review": true,
+  "actors": [
+    {
+      "key": "baseline-claude-D01",
+      "answer_quality": "PASS",
+      "native_model_responses": 4,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "baseline-claude-D02",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "baseline-claude-F01",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "baseline-claude-F02",
+      "answer_quality": "PASS",
+      "native_model_responses": 3,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "FAIL_STALE_BODY_REFRESH_USED_READ",
+      "notes": "F02 Claude answer is factually correct but switched to Read instead of TeaRAGs. This fails the shipped core route and is not closed."
+    },
+    {
+      "key": "candidate-claude-D01",
+      "answer_quality": "PASS",
+      "native_model_responses": 6,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-claude-D02",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-claude-F01",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-claude-F02",
+      "answer_quality": "PASS",
+      "native_model_responses": 3,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "FAIL_STALE_BODY_REFRESH_USED_READ",
+      "notes": "F02 Claude answer is factually correct but switched to Read instead of TeaRAGs. This fails the shipped core route and is not closed."
+    },
+    {
+      "key": "candidate-codex-D01",
+      "answer_quality": "PASS",
+      "native_model_responses": 7,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-codex-D02",
+      "answer_quality": "PASS",
+      "native_model_responses": 3,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-codex-F01",
+      "answer_quality": "PASS",
+      "native_model_responses": 3,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    },
+    {
+      "key": "candidate-codex-F02",
+      "answer_quality": "PASS",
+      "native_model_responses": 5,
+      "native_permission": "PASS",
+      "n": 1,
+      "routing": "PASS_WITH_LIMITS",
+      "notes": "Facts reviewed against frozen separate grading and observed actual source. D01 absence/scope claims assessed separately; extra discovery/flow work is not counted as an improvement."
+    }
+  ],
+  "completion_status": "All model actors completed; individual behavior failures remain open.",
+  "models": {
+    "codex": "gpt-6.1-sol/medium",
+    "claude": "claude-sonnet-5-5/medium"
+  },
+  "limits": [
+    "Provider prefix cache observed, not forcibly reset. Independent fresh homes and no previous-question or answer injection.",
+    "Cursor static only; full GruntWorx campaign paused.",
+    "No private reasoning text exported. Native numeric thinking/output usage retained."
+  ]
+}

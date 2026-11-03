@@ -1,0 +1,120 @@
+{
+  "suite": "freshness07",
+  "source_seal_sha256": "ef959f70a68adbfea551c63a4a60e8b18ec7f24da0bbd0d29b22e09da112b357",
+  "seal": {
+    "cases_sha256": "98410b41ad6abd2e324ecd278a55a7fbdcb5776d93cd7f0486309feecbc347b1",
+    "grading_sha256": "a20b591818db29bf91cc930fd83e0ab5a5aa8c078e9d50188541966da6e237cd",
+    "profiles_sha256": "90564f9f6e43979c7ce31251cfdec29de17a11cfbb29d0507b7799a72fb8a3bb",
+    "source_sha256": "f2309a6cb3e598a08976ed688a5cfcd2b11675cf575150c33dea6a737897c4ef",
+    "runtimes_sha256": "2c1cf71aa211cf6244f95690cc3b64db276834d1d5bcb25ffecfbcd3afeba2fa",
+    "schedule_sha256": "38ebfb7d655c6456efe9274ce5e4708fcf13896612eb5c301034efeeddbad6dd",
+    "models": {
+      "codex": "gpt-6.1-sol",
+      "claude": "claude-sonnet-5-5"
+    },
+    "efforts": {
+      "codex": "medium",
+      "claude": "medium"
+    },
+    "n": 1,
+    "actors": 8,
+    "spec_sha256": "aae155fcba0d40fd3a4991f07aaa9c6799023c6ecf09e1a8d123db266d01728a",
+    "fixture": "/Users/Shared/nav-ab/p0-domain-context-ng1ni",
+    "cases_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/cases.json",
+    "grading_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/p0-domain-context/2026-11-02/grading.json",
+    "runtime_identity": {
+      "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+      "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+      "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+      "cache_tag": "cpython-315",
+      "flags": {
+        "bytes_warning": 0,
+        "context_aware_warnings": 0,
+        "debug": 0,
+        "dev_mode": false,
+        "dont_write_bytecode": 0,
+        "gil": 1,
+        "hash_randomization": 1,
+        "ignore_environment": 0,
+        "inspect": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 0,
+        "lazy_imports": -1,
+        "n_fields": 22,
+        "n_sequence_fields": 18,
+        "n_unnamed_fields": 0,
+        "no_site": 0,
+        "no_user_site": 0,
+        "optimize": 0,
+        "quiet": 0,
+        "safe_path": false,
+        "thread_inherit_context": 0,
+        "utf8_mode": 1,
+        "verbose": 0,
+        "warn_default_encoding": 0
+      }
+    },
+    "spec_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/freshness07-spec.json",
+    "status": "STATIC_PREPARED; nativeproofs/modelGO required",
+    "fixture_inventory_reference": {
+      "files": 20,
+      "canonical_sha256": "eff751f5777f1b64ee85c22c8e4b43a5941fd696a6065b96cd2d9d8f28a4d1d6",
+      "private_seal": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/freshness07/seal.json"
+    }
+  },
+  "actors": [
+    {
+      "key": "candidate-claude-F01",
+      "model_responses": 2,
+      "replay": "EXERCISED_UNGRADED",
+      "usage": {
+        "input": 37204,
+        "fresh_input": 10170,
+        "cached_input": 27034,
+        "cache_write": 10166,
+        "output": 557,
+        "reasoning_numeric": 0,
+        "native_cost_usd": 0.0489454,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-F01.json"
+    },
+    {
+      "key": "candidate-claude-F02",
+      "model_responses": 3,
+      "replay": "EXERCISED_UNGRADED",
+      "usage": {
+        "input": 56031,
+        "fresh_input": 11278,
+        "cached_input": 44753,
+        "cache_write": 11272,
+        "output": 612,
+        "reasoning_numeric": 136,
+        "native_cost_usd": 0.055695299999999996,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-F02.json"
+    },
+    {
+      "key": "candidate-codex-F02",
+      "model_responses": 4,
+      "replay": "EXERCISED_UNGRADED",
+      "usage": {
+        "input": 74124,
+        "fresh_input": 19724,
+        "cached_input": 54400,
+        "cache_write": 0,
+        "output": 368,
+        "reasoning_numeric": 8,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-F02.json"
+    }
+  ],
+  "quality": "Controller review stored separately; completion is not a pass."
+}

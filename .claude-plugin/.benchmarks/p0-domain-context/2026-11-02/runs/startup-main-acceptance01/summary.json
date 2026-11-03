@@ -1,0 +1,137 @@
+{
+  "suite": "startup01",
+  "source_seal_sha256": "ade89805f02b1232061c0bb26907ce10e40b2099b96ccba14f88ccfc4304af6f",
+  "seal": {
+    "cases_sha256": "e9365953518b3137c4895b6443d6b3f0e4925ff79665cc712d642349c5003afe",
+    "grading_sha256": "dd52b2dd3fe2a133bec6e9852c689e8d3f78c516e786a6fe935b542866df7a01",
+    "profiles_sha256": "6c03c37fda247985ef9e2ae280eecd2f18dda14d48f2beb9816c9ec0eba9852e",
+    "source_sha256": "f2309a6cb3e598a08976ed688a5cfcd2b11675cf575150c33dea6a737897c4ef",
+    "runtimes_sha256": "273c44bc5c92ea823286e93697152529f89bae9d26e44219ed351d914e086190",
+    "schedule_sha256": "4165367921f25847fda6996a3eae50477abe8b92c363d5080df8ec600ff6d1d6",
+    "models": {
+      "codex": "gpt-6.1-sol",
+      "claude": "claude-sonnet-5-5"
+    },
+    "efforts": {
+      "codex": "medium",
+      "claude": "medium"
+    },
+    "n": 1,
+    "actors": 8,
+    "spec_sha256": "194306267a7f9eca13ae2be4ef09b99d5f0a1862015c62d3e0e3fb59b0eb3de8",
+    "fixture": "/Users/Shared/nav-ab/p0-context-eval-ng1ni",
+    "cases_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/prime-agent-startup/2026-11-02/cases.json",
+    "grading_path": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.claude-plugin/.benchmarks/prime-agent-startup/2026-11-02/grading.json",
+    "runtime_identity": {
+      "executable": "/opt/homebrew/Cellar/python@3.15/3.15.0_1/Frameworks/Python.framework/Versions/3.15/bin/python3.15",
+      "executable_sha256": "a7d8a09da6400b33e78b90281f3f81d058804d082689257b9008290ebd8a3b28",
+      "version": "3.15.0 (main, Oct  9 2026, 11:16:41) [Clang 21.0.0 (clang-2100.3.34.2)]",
+      "cache_tag": "cpython-315",
+      "flags": {
+        "bytes_warning": 0,
+        "context_aware_warnings": 0,
+        "debug": 0,
+        "dev_mode": false,
+        "dont_write_bytecode": 0,
+        "gil": 1,
+        "hash_randomization": 1,
+        "ignore_environment": 0,
+        "inspect": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 0,
+        "lazy_imports": -1,
+        "n_fields": 22,
+        "n_sequence_fields": 18,
+        "n_unnamed_fields": 0,
+        "no_site": 0,
+        "no_user_site": 0,
+        "optimize": 0,
+        "quiet": 0,
+        "safe_path": false,
+        "thread_inherit_context": 0,
+        "utf8_mode": 1,
+        "verbose": 0,
+        "warn_default_encoding": 0
+      }
+    },
+    "spec_path": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/startup-spec.json",
+    "status": "STATIC_PREPARED; nativeproofs/modelGO required",
+    "fixture_inventory_reference": {
+      "files": 34,
+      "canonical_sha256": "abe74c7eeab1fa4a79a67d5ab838b2b75ed078db0b9348fb898b774edeb890f5",
+      "private_seal": "/Users/Shared/nav-ab/p0-acceptance-main-20261102/startup01/seal.json"
+    }
+  },
+  "actors": [
+    {
+      "key": "candidate-claude-C01",
+      "model_responses": 1,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 18299,
+        "fresh_input": 9865,
+        "cached_input": 8434,
+        "cache_write": 9863,
+        "output": 103,
+        "reasoning_numeric": 0,
+        "native_cost_usd": 0.0413294,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-C01.json"
+    },
+    {
+      "key": "candidate-claude-C02",
+      "model_responses": 2,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 37108,
+        "fresh_input": 10340,
+        "cached_input": 26768,
+        "cache_write": 10336,
+        "output": 751,
+        "reasoning_numeric": 19,
+        "native_cost_usd": 0.0515388,
+        "cost_status": "Native CLI estimate, not invoice"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-claude-C02.json"
+    },
+    {
+      "key": "candidate-codex-C01",
+      "model_responses": 1,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 16649,
+        "fresh_input": 7689,
+        "cached_input": 8960,
+        "cache_write": 0,
+        "output": 36,
+        "reasoning_numeric": 0,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-C01.json"
+    },
+    {
+      "key": "candidate-codex-C02",
+      "model_responses": 2,
+      "replay": "NOT_APPLICABLE",
+      "usage": {
+        "input": 35429,
+        "fresh_input": 14949,
+        "cached_input": 20480,
+        "cache_write": 0,
+        "output": 371,
+        "reasoning_numeric": 38,
+        "cost_usd": null,
+        "cost_status": "UNPRICED"
+      },
+      "permission_denials": 0,
+      "evidence": "candidate-codex-C02.json"
+    }
+  ],
+  "quality": "Controller review stored separately; completion is not a pass."
+}

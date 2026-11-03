@@ -1,0 +1,11 @@
+{
+  "case_id": "Q20",
+  "controller_only": true,
+  "criteria": [
+    "The chosen service must belong to the integration context supplied in the literal prompt, with actual source evidence for accepted arguments and processing states.",
+    "The frontend frame must be derived from delivered source; unrelated billing, generic workflow or marketing services do not satisfy this scope.",
+    "Record first query and ranked hits, locator dependencies, delivered bodies, native model responses, complete usage and all failed attempts.",
+    "Do not grade metadata, outline or declined calls as a delivered body. Missing facts must remain explicit."
+  ],
+  "limits": "Diagnostic current-main reproduction, not a new full benchmark or proof of a policy fix. No answer paths or gold are injected."
+}

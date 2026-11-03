@@ -1,0 +1,56 @@
+{
+  "condition": "startup-main-acceptance01",
+  "manual_controller_review": true,
+  "actors": [
+    {
+      "key": "candidate-claude-C01",
+      "answer_quality": "PASS",
+      "native_model_responses": 1,
+      "native_permission": "PASS",
+      "n": 1,
+      "startup_delivery": "PASS: actual native hook output and final-address corroboration",
+      "readiness_honesty": "PASS: known addresses retained without claiming healthy/fresh index",
+      "limits": "Predated shared-main build mutation; next freshness actor preflight validated the original runtime after all4 finished. Original grading had historical cafc/0.55.1 identity strings; pre-model spec explicitly declared current-main c807/0.55.3 condition. Quality criteria unchanged. Timing is descriptive; this does not yet close all synchronous-hook overhead."
+    },
+    {
+      "key": "candidate-claude-C02",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "startup_delivery": "PASS: actual native hook output and final-address corroboration",
+      "readiness_honesty": "PASS: known addresses retained without claiming healthy/fresh index",
+      "limits": "Predated shared-main build mutation; next freshness actor preflight validated the original runtime after all4 finished. Original grading had historical cafc/0.55.1 identity strings; pre-model spec explicitly declared current-main c807/0.55.3 condition. Quality criteria unchanged. Timing is descriptive; this does not yet close all synchronous-hook overhead."
+    },
+    {
+      "key": "candidate-codex-C01",
+      "answer_quality": "PASS",
+      "native_model_responses": 1,
+      "native_permission": "PASS",
+      "n": 1,
+      "startup_delivery": "PASS: actual native hook output and final-address corroboration",
+      "readiness_honesty": "PASS: known addresses retained without claiming healthy/fresh index",
+      "limits": "Predated shared-main build mutation; next freshness actor preflight validated the original runtime after all4 finished. Original grading had historical cafc/0.55.1 identity strings; pre-model spec explicitly declared current-main c807/0.55.3 condition. Quality criteria unchanged. Timing is descriptive; this does not yet close all synchronous-hook overhead."
+    },
+    {
+      "key": "candidate-codex-C02",
+      "answer_quality": "PASS",
+      "native_model_responses": 2,
+      "native_permission": "PASS",
+      "n": 1,
+      "startup_delivery": "PASS: actual native hook output and final-address corroboration",
+      "readiness_honesty": "PASS: known addresses retained without claiming healthy/fresh index",
+      "limits": "Predated shared-main build mutation; next freshness actor preflight validated the original runtime after all4 finished. Original grading had historical cafc/0.55.1 identity strings; pre-model spec explicitly declared current-main c807/0.55.3 condition. Quality criteria unchanged. Timing is descriptive; this does not yet close all synchronous-hook overhead."
+    }
+  ],
+  "completion_status": "All model actors completed; individual behavior failures remain open.",
+  "models": {
+    "codex": "gpt-6.1-sol/medium",
+    "claude": "claude-sonnet-5-5/medium"
+  },
+  "limits": [
+    "Provider prefix cache observed, not forcibly reset. Independent fresh homes and no previous-question or answer injection.",
+    "Cursor static only; full GruntWorx campaign paused.",
+    "No private reasoning text exported. Native numeric thinking/output usage retained."
+  ]
+}
