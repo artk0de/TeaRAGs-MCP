@@ -1,0 +1,3 @@
+
+> tea-rags@1.50.0 build
+> tsc && tsx scripts/copy-build-assets.ts && chmod +x build/cli/index.js

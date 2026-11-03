@@ -1,0 +1,145 @@
+ok   - claude: neutral shell read stays allowed
+ok   - claude: neutral shell read does not start membership CLI
+ok   - claude: mixed indexed read and concept search retains read exemption
+ok   - claude: mixed read/search retains membership check
+ok   - claude: search 1 allowed
+ok   - claude: search 2 allowed
+ok   - claude: search 3 denied, names semantic_search
+ok   - claude: deny says the counter is reset
+ok   - claude: deny reset the counter
+ok   - claude: no second deny within 120 s
+ok   - claude: deny again after 120 s
+ok   - claude: tea-rags call passes through
+ok   - claude: tea-rags call resets the counter
+ok   - claude: a streak of 6 indexed reads is never denied and gets no search-drift reminder
+ok   - claude: reads outside the index are neutral
+ok   - claude: search, read, search allowed
+ok   - claude: a read after searches is never denied
+ok   - claude: reads neither count nor reset — the 3rd search is denied
+ok   - claude: edit allowed
+ok   - claude: edits neither count nor reset
+ok   - claude: grep over command output is neutral
+ok   - claude: shell concept search 2 allowed
+ok   - claude: shell concept search 3 (a|b, a\|b, -e -e) denied
+ok   - claude: literal searches (one identifier) are neutral
+ok   - claude: shell literal / phrase / -F searches are neutral
+ok   - claude: neutral searches left the counter at 0
+ok   - claude: concept search scoped to db/migrate is neutral
+ok   - claude: concept search scoped to spec/ and config/ is neutral
+ok   - claude: three literal searches scoped to db/migrate are not denied
+ok   - claude: Grep tool alternation with path db/migrate is neutral
+ok   - claude: reads of migrations / initializers / specs / routes are neutral
+ok   - claude: zone reads left the read counter at 0
+ok   - claude: a zone word in the cwd — source reads still never denied
+ok   - claude: sessions are counted apart
+ok   - claude: unparsable stdin → allow
+ok   - claude: unwritable state dir → allow
+ok   - codex: neutral shell read stays allowed
+ok   - codex: neutral shell read does not start membership CLI
+ok   - codex: mixed indexed read and concept search retains read exemption
+ok   - codex: mixed read/search retains membership check
+ok   - codex: search 1 allowed
+ok   - codex: search 2 allowed
+ok   - codex: search 3 denied, names semantic_search
+ok   - codex: deny says the counter is reset
+ok   - codex: deny reset the counter
+ok   - codex: no second deny within 120 s
+ok   - codex: deny again after 120 s
+ok   - codex: tea-rags call passes through
+ok   - codex: tea-rags call resets the counter
+ok   - codex: a code-mode tea-rags call (mcp__tea_rags__*) resets the counter
+ok   - codex: a streak of 6 indexed reads is never denied and gets no search-drift reminder
+ok   - codex: reads outside the index are neutral
+ok   - codex: search, read, search allowed
+ok   - codex: a read after searches is never denied
+ok   - codex: reads neither count nor reset — the 3rd search is denied
+ok   - codex: edit allowed
+ok   - codex: edits neither count nor reset
+ok   - codex: grep over command output is neutral
+ok   - codex: shell concept search 2 allowed
+ok   - codex: shell concept search 3 (a|b, a\|b, -e -e) denied
+ok   - codex: literal searches (one identifier) are neutral
+ok   - codex: shell literal / phrase / -F searches are neutral
+ok   - codex: neutral searches left the counter at 0
+ok   - codex: concept search scoped to db/migrate is neutral
+ok   - codex: concept search scoped to spec/ and config/ is neutral
+ok   - codex: three literal searches scoped to db/migrate are not denied
+ok   - codex: reads of migrations / initializers / specs / routes are neutral
+ok   - codex: zone reads left the read counter at 0
+ok   - codex: a zone word in the cwd — source reads still never denied
+ok   - codex: sessions are counted apart
+ok   - codex: unparsable stdin → allow
+ok   - codex: unwritable state dir → allow
+ok   - cursor: neutral shell read stays allowed
+ok   - cursor: neutral shell read does not start membership CLI
+ok   - cursor: mixed indexed read and concept search retains read exemption
+ok   - cursor: mixed read/search retains membership check
+ok   - cursor: search 1 allowed
+ok   - cursor: search 2 allowed
+ok   - cursor: search 3 denied, names semantic_search
+ok   - cursor: deny says the counter is reset
+ok   - cursor: deny reset the counter
+ok   - cursor: no second deny within 120 s
+ok   - cursor: deny again after 120 s
+ok   - cursor: tea-rags call passes through
+ok   - cursor: tea-rags call resets the counter
+ok   - cursor: a streak of 6 indexed reads is never denied and gets no search-drift reminder
+ok   - cursor: reads outside the index are neutral
+ok   - cursor: search, read, search allowed
+ok   - cursor: a read after searches is never denied
+ok   - cursor: reads neither count nor reset — the 3rd search is denied
+ok   - cursor: edit allowed
+ok   - cursor: edits neither count nor reset
+ok   - cursor: grep over command output is neutral
+ok   - cursor: shell concept search 2 allowed
+ok   - cursor: shell concept search 3 (a|b, a\|b, -e -e) denied
+ok   - cursor: literal searches (one identifier) are neutral
+ok   - cursor: shell literal / phrase / -F searches are neutral
+ok   - cursor: neutral searches left the counter at 0
+ok   - cursor: concept search scoped to db/migrate is neutral
+ok   - cursor: concept search scoped to spec/ and config/ is neutral
+ok   - cursor: three literal searches scoped to db/migrate are not denied
+ok   - cursor: Grep tool alternation with path db/migrate is neutral
+ok   - cursor: reads of migrations / initializers / specs / routes are neutral
+ok   - cursor: zone reads left the read counter at 0
+ok   - cursor: a zone word in the cwd — source reads still never denied
+ok   - cursor: sessions are counted apart
+ok   - cursor: unparsable stdin → allow
+ok   - cursor: unwritable state dir → allow
+ok   - claude: prompt event passes through (claude shape)
+ok   - claude: 2 searches, new prompt, 2 searches -> no deny
+ok   - claude: 3 searches within one turn still denied
+ok   - claude: setup deny
+ok   - claude: deny, new prompt, 3 searches within 120 s -> no second deny (cooldown kept)
+ok   - claude: prompt without prior state creates no state
+ok   - claude: state file is drift-<harness>-<session id> exactly (reread-ledger.mjs reads it)
+ok   - claude: prompt without session id fails open
+ok   - codex: prompt event passes through (codex shape)
+ok   - codex: 2 searches, new prompt, 2 searches -> no deny
+ok   - codex: 3 searches within one turn still denied
+ok   - codex: setup deny
+ok   - codex: deny, new prompt, 3 searches within 120 s -> no second deny (cooldown kept)
+ok   - codex: prompt without prior state creates no state
+ok   - codex: state file is drift-<harness>-<session id> exactly (reread-ledger.mjs reads it)
+ok   - codex: prompt without session id fails open
+ok   - cursor: prompt event passes through (cursor shape)
+ok   - cursor: 2 searches, new prompt, 2 searches -> no deny
+ok   - cursor: 3 searches within one turn still denied
+ok   - cursor: setup deny
+ok   - cursor: deny, new prompt, 3 searches within 120 s -> no second deny (cooldown kept)
+ok   - cursor: prompt without prior state creates no state
+ok   - cursor: state file is drift-<harness>-<session id> exactly (reread-ledger.mjs reads it)
+ok   - cursor: prompt without session id fails open
+ok   - claude: PreToolUse wires search-drift
+ok   - no harness wires deny-indexed-read
+ok   - no harness ships deny-indexed-read.sh
+ok   - claude: PostToolUse(tea-rags MCP) wires search-drift
+ok   - codex: PreToolUse wires search-drift
+ok   - codex: PostToolUse(tea-rags MCP, direct or code-mode name) wires search-drift
+ok   - cursor: preToolUse wires search-drift
+ok   - cursor: afterMCPExecution wires search-drift
+ok   - claude: UserPromptSubmit wires search-drift (turn reset)
+ok   - codex: UserPromptSubmit wires search-drift (turn reset)
+ok   - cursor: beforeSubmitPrompt wires search-drift (turn reset)
+ok   - one script: Codex and Cursor ship the plugin's search-drift.sh byte-identical
+passed=144 failed=0

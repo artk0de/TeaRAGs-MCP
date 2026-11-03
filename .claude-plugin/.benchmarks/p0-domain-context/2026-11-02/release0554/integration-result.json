@@ -1,0 +1,42 @@
+{
+  "status": "INTEGRATED_WITH_USER_WAIVER",
+  "main_merge_commit": "749638d7db626d03e816d0f198fc72acd8ff9d56",
+  "plugin_version": "0.55.4",
+  "installed_codex_source_files_identical": 88,
+  "trusted_hooks": 14,
+  "foreign_hooks_unchanged": true,
+  "native_config_reload": true,
+  "native_mcp_reload": true,
+  "build_exit_code": 0,
+  "main_typecheck_lanes": 3,
+  "main_affected_tests": "PASS (27.30 seconds)",
+  "search_drift": {
+    "passed": 144,
+    "failed": 0
+  },
+  "main_incremental_index": {
+    "added_files": 50,
+    "modified_files": 84,
+    "removed_files": 0,
+    "added_chunks": 2387,
+    "removed_chunks": 1877,
+    "duration_seconds": 18.6,
+    "background_enrichments": "in_progress at return"
+  },
+  "unrun_claude_followup_issue": "tea-rags-mcp-x2u4e",
+  "full_campaign": "PAUSED",
+  "removed_owned_worktrees": [
+    "/Users/Shared/nav-ab/p0-verified-policy-fixes-20261103",
+    "/Users/Shared/nav-ab/p0-acceptance-runtime-c807a6a70"
+  ],
+  "source_bundle": "/Users/Shared/nav-ab/archives/p0-verified-policy-fixes-20261103.bundle",
+  "source_bundle_verified": true,
+  "foreign_main_files_preserved": [".tool-versions", "TeaRAGs.code-workspace"],
+  "limitations": [
+    "Two Claude live follow-up cases waived, NOT_RUN not PASS.",
+    "Cursor static only.",
+    "No claim of absolute optimality or universal latency/quality improvement.",
+    "No full suite/full benchmark rerun."
+  ],
+  "old_resumer_usable": false
+}

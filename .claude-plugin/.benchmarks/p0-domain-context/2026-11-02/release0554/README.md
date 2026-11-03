@@ -1,14 +1,19 @@
 # P0 acceptance — plugin 0.55.4
 
-**Integration approved; Claude follow-up waived by user on 2026-11-03.** The two
-remaining Claude resource-discovery cases are NOT RUN, not passed. See
-integration-decision.json for the explicit instruction and scan limitations. The
-eight direct/hook cases below passed. A subsequent guide-consistency correction
-passed both explicit-guide Codex cases. Claude's guide cases exposed an overly
-restrictive builtin-resource metadata guard; its correction passes55 pure checks
-but the live follow-up is blocked by Anthropic `verification_required`. The user
-requested integration without that follow-up. Full cross-harness validation is
-therefore not claimed.
+**Integrated on main: 749638d7d; plugin0.55.4 installed in Codex.** Claude
+follow-up waived by user on 2026-11-03. The two remaining Claude
+resource-discovery cases are NOT RUN, not passed; follow-up tea-rags-mcp-x2u4e
+remains open. Main build, all three type-check lanes, affected tests and144/144
+search-drift checks passed. All14 TeaRAGs hooks are trusted; live config and MCP
+were reloaded. Both owned temporary worktrees were removed after verifying the
+source bundle; unrelated main edits/worktrees remain. See
+integration-result.json and integration-decision.json for evidence and limits.
+The eight direct/hook cases below passed. A subsequent guide-consistency
+correction passed both explicit-guide Codex cases. Claude's guide cases exposed
+an overly restrictive builtin-resource metadata guard; its correction passes55
+pure checks but the live follow-up is blocked by Anthropic
+`verification_required`. The user requested integration without that follow-up.
+Full cross-harness validation is therefore not claimed.
 
 Eight final shipped-path actors satisfy the targeted behavior criteria.
 Integration is recorded separately after merge. Models: gpt-6.1-sol/medium and
