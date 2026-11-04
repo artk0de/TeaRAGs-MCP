@@ -1,0 +1,47 @@
+
+ RUN  v5.0.3 /Users/Shared/nav-ab/codex-graph-continuations-20261104
+
+ ✓ |isolated| tests/scripts/gen-harness-codex.test.ts (62 tests) 26279ms
+   ✓ renderCodexHarness (33)
+     ✓ keeps the Codex Explore entrypoint below 4800 characters without removing its references 1012ms
+     ✓ ships direct content routing for known configuration files through the executable SessionStart hook 764ms
+     ✓ keeps a batching reminder per turn and the full scheduling contract at startup 812ms
+     ✓ describes every Codex hook source and handler for the hook UI 729ms
+     ✓ renders byte-identically twice 1392ms
+     ✓ emits parseable JSON with the plugin manifest paths 921ms
+     ✓ SessionStart runs three context hooks — core, the Codex-only rules, then the prime digest — and the reread ledger; the digest hook is silent without the CLI 1032ms
+     ✓ fits the combined static startup and per-turn context into 17000 characters 663ms
+     ✓ tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md 654ms
+     ✓ renders the core usages row as one copyable rg literal whose dir slot names two relative examples 608ms
+     ✓ keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last 850ms
+     ✓ gives the digest hook the whole budget: a section larger than what core would leave is kept 1000ms
+     ✓ fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, unranked sections dropped first 703ms
+     ✓ keeps every hook text payload within Codex's hook-output cap 606ms
+     ✓ core's guide-read line reads the known URI on the tea-rags server, never a bare resource listing 633ms
+     ✓ the skill and AGENTS copies still carry the whole Codex core: rules + Codex-only rules in one text 591ms
+     ✓ Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l 584ms
+     ✓ Codex rules say how to call tea-rags tools with code mode on and off 606ms
+     ✓ no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep 589ms
+     ✓ ships no dinopowers skill, every skill named after its folder 599ms
+     ✓ keeps every tea-rags skill description within what Codex shows unclipped 587ms
+     ✓ keeps every dinopowers skill description within what Codex shows unclipped 591ms
+     ✓ ships every plugin file a shipped skill links to by relative path 594ms
+     ✓ ships a subagent block script that does not depend on Claude Code variables 591ms
+     ✓ ships a PreToolUse hook that rejects shell commands printing more than one .md file 593ms
+     ✓ loads only a selected workflow's missing instructions and needed references 589ms
+     ✓ reuses current instructions across follow-ups and reloads changed or compacted material 605ms
+     ✓ ships no indexed-read deny hook 584ms
+     ✓ the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol 585ms
+     ✓ tells the core to read one file per command and to re-read a truncated one in ranges 596ms
+     ✓ opens the core with the read discipline so truncation never drops it 580ms
+     ✓ keeps the eval-stand plan-only rule out of the core 591ms
+     ✓ tells the core that an incremental index is a prelude and how to re-check a lagging graph answer 582ms
+   ✓ writeCodexHarness (2)
+     ✓ writes exactly the rendered package and marketplace manifest, dropping stale files 1237ms
+     ✓ is idempotent 1228ms
+
+ Test Files  1 passed (1)
+      Tests  62 passed (62)
+   Start at  02:38:52
+   Duration  26.45s (tests 100%)
+

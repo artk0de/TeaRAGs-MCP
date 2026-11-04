@@ -1,0 +1,1623 @@
+{
+  "source": "/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/actors/Q01-A/events.jsonl",
+  "source_journal_sha256": "93d513405ae877d17e8b8f2fd439a17b2298d02a6b5192334bc34632f1ecac95",
+  "waves": [
+    {
+      "wave": 1,
+      "id": "resp_0f6c536b2ce9af5d016aea6c0b132087d28ad3733d2eedddbf",
+      "ms": 1793747984085,
+      "outer_calls": [
+        {
+          "id": "call_8a268ab5941a499ebe90dea8523a5a3e",
+          "wave": 1,
+          "name": "exec",
+          "start_ms": 1793747984048,
+          "code": "text(await tools.exec_command({cmd:\"sed -n '1,220p' /Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/skills/explore/SKILL.md\",max_output_tokens:6500}));\ntext(ALL_TOOLS.filter(t=>t.name.includes(\"tea_rags\")).map(t=>({name:t.name,description:t.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]})).filter(t=>/semantic_search|find_symbol|get_callees|get_callers/.test(t.name)));\n",
+          "schema_introspection": true,
+          "end_ms": 1793747984798,
+          "output_chars": 11636,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-292f7d0c-54cd-49e5-8d27-74a01938cb42",
+          "type": "commandExecution",
+          "start_ms": 1793747984752,
+          "end_ms": 1793747984752,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"sed -n '1,220p' /Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/skills/explore/SKILL.md\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 4709,
+          "output_truncated": false,
+          "skill_read": true,
+          "instruction_read": true,
+          "wave": 1,
+          "outer_id": "call_8a268ab5941a499ebe90dea8523a5a3e"
+        }
+      ],
+      "instruction_only": true,
+      "schema_introspection": true
+    },
+    {
+      "wave": 2,
+      "id": "resp_0f6c536b2ce9af5d016aea6c10f9cc87d2b01c1a68616bfcc1",
+      "ms": 1793747989335,
+      "outer_calls": [
+        {
+          "id": "call_6b712e0b56654e60ae5c92a29247fd62",
+          "wave": 2,
+          "name": "exec",
+          "start_ms": 1793747989316,
+          "code": "const topics=[\"tax automation provider ports adapter registration\",\"capability passport\",\"tax automation data model\"];\nawait Promise.all(topics.map(async query=>text({query,result:await tools.mcp__tea_rags__semantic_search({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",query,metaOnly:true,limit:3})})));\n",
+          "schema_introspection": false,
+          "end_ms": 1793747990813,
+          "output_chars": 2770,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-6ea340bf-1625-4060-ad48-433ec6ffb569",
+          "type": "mcpToolCall",
+          "start_ms": 1793747989323,
+          "end_ms": 1793747990673,
+          "status": "completed",
+          "duration_ms": 1350,
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "query": "tax automation provider ports adapter registration",
+            "metaOnly": true,
+            "limit": 3
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/registry.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Registry#adapter_for_provider",
+              "start": 17,
+              "end": 28,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/registry.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Registry",
+              "start": 3,
+              "end": 16,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/serializers/tax_preparation/base/document_serializer.rb",
+              "symbol": "TaxPreparation::Base::DocumentSerializer#tax_automation_provider",
+              "start": 319,
+              "end": 321,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["banner", "results"],
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "wave": 2,
+          "outer_id": "call_6b712e0b56654e60ae5c92a29247fd62"
+        },
+        {
+          "id": "exec-4ec8dc0c-8afb-4816-bbba-7a6e1bf73736",
+          "type": "mcpToolCall",
+          "start_ms": 1793747989323,
+          "end_ms": 1793747990675,
+          "status": "completed",
+          "duration_ms": 1351,
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "query": "capability passport",
+            "metaOnly": true,
+            "limit": 3
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/registry.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Registry#capabilities_for",
+              "start": 104,
+              "end": 110,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": "TaxPreparation::TaxAutomations::HasCapabilities",
+              "start": 3,
+              "end": 19,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": "TaxPreparation::TaxAutomations::HasCapabilities#capabilities",
+              "start": 82,
+              "end": 86,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["banner", "results"],
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "wave": 2,
+          "outer_id": "call_6b712e0b56654e60ae5c92a29247fd62"
+        },
+        {
+          "id": "exec-2244db02-f8a1-4384-9f7d-15895b5a5f3a",
+          "type": "mcpToolCall",
+          "start_ms": 1793747989324,
+          "end_ms": 1793747990673,
+          "status": "completed",
+          "duration_ms": 1349,
+          "tool": "semantic_search",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "query": "tax automation data model",
+            "metaOnly": true,
+            "limit": 3
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/javascript/react-app/modules/taxPreparation/components/TaxAutomationProviderCard/TaxAutomationProviderCard.tsx",
+              "symbol": "t",
+              "start": 17,
+              "end": 17,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/javascript/react-app/modules/taxPreparation/components/TaxAutomationsSidebar/TaxAutomationsSidebar.tsx",
+              "symbol": "t",
+              "start": 24,
+              "end": 24,
+              "body_chars": 0,
+              "body_sha256": null
+            },
+            {
+              "path": "app/javascript/react-app/modules/taxPreparation/routes/pages/TaxAutomationsPage/TaxAutomationsPage.tsx",
+              "symbol": "t",
+              "start": 16,
+              "end": 16,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["banner", "results"],
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "wave": 2,
+          "outer_id": "call_6b712e0b56654e60ae5c92a29247fd62"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 3,
+      "id": "resp_0f6c536b2ce9af5d016aea6c16fd4c87d292b1138b9a204188",
+      "ms": 1793747994362,
+      "outer_calls": [
+        {
+          "id": "call_bb926d2154a04291a6f33453d0596d9f",
+          "wave": 3,
+          "name": "exec",
+          "start_ms": 1793747994327,
+          "code": "text(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[\"app/lib/tax_preparation/tax_automations/registry.rb\",\"app/models/tax_preparation/tax_automations/has_capabilities.rb\"]}));\ntext(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' 'TaxAutomations|TaxAutomation' app/models/tax_preparation app/services app/workers app/lib\",max_output_tokens:5500}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793747996056,
+          "output_chars": 17717,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-dc34dc17-46f3-48f6-ac1d-8905d1fee388",
+          "type": "mcpToolCall",
+          "start_ms": 1793747994332,
+          "end_ms": 1793747995377,
+          "status": "completed",
+          "duration_ms": 1043,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/lib/tax_preparation/tax_automations/registry.rb",
+              "app/models/tax_preparation/tax_automations/has_capabilities.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/lib/tax_preparation/tax_automations/registry.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 133,
+              "body_chars": 4851,
+              "body_sha256": "9191ec6421f757f731025ae5d3de16c71d2848f9b213efb0b7e0c22293c4fe5b"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 112,
+              "body_chars": 4409,
+              "body_sha256": "d9636907d68acb9057cb3af79b000bde76bca03b77ff19615d35e56f5b8a5ffb"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+          "wave": 3,
+          "outer_id": "call_bb926d2154a04291a6f33453d0596d9f"
+        },
+        {
+          "id": "exec-ced8043e-2771-4963-b29c-0bec38ea57e0",
+          "type": "commandExecution",
+          "start_ms": 1793747995793,
+          "end_ms": 1793747996010,
+          "status": "completed",
+          "duration_ms": 216,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'TaxAutomations|TaxAutomation' app/models/tax_preparation app/services app/workers app/lib\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 7454,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 3,
+          "outer_id": "call_bb926d2154a04291a6f33453d0596d9f"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 4,
+      "id": "resp_0f6c536b2ce9af5d016aea6c1c4f4887d294d25b26704dfa78",
+      "ms": 1793748003900,
+      "outer_calls": [
+        {
+          "id": "call_d951f842403941269e7560c0b9f18c1b",
+          "wave": 4,
+          "name": "exec",
+          "start_ms": 1793748003879,
+          "code": "await Promise.all([\n(async()=>text({id:\"registry references\",result:await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' 'TaxAutomations::Registry|Registry\\\\.|adapter::|adapter_for|client_for|provider_adapter' app\",max_output_tokens:6500})}))(),\n(async()=>text({id:\"core layout\",result:await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",relativePath:\"app/services/tax_preparation/tax_automations\"})}))(),\n(async()=>text({id:\"models\",result:await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[\"app/models/tax_preparation/tax_automations/document.rb\",\"app/models/tax_preparation/tax_automations/tax_preparation.rb\",\"app/models/tax_preparation/tax_automations/firm_settings.rb\",\"app/models/tax_preparation/tax_automations/instead/connection.rb\",\"app/models/tax_preparation/tax_automations/instead/entity.rb\",\"app/models/tax_preparation/tax_automations/instead/document.rb\"]})}))()\n]);\n",
+          "schema_introspection": false,
+          "end_ms": 1793748005935,
+          "output_chars": 29163,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-7854533a-f4e5-4333-915e-8a4c2a278138",
+          "type": "mcpToolCall",
+          "start_ms": 1793748003882,
+          "end_ms": 1793748004032,
+          "status": "completed",
+          "duration_ms": 149,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "relativePath": "app/services/tax_preparation/tax_automations"
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 0,
+              "body_sha256": null
+            }
+          ],
+          "result_top_keys": ["results", "directory"],
+          "banner": null,
+          "wave": 4,
+          "outer_id": "call_d951f842403941269e7560c0b9f18c1b"
+        },
+        {
+          "id": "exec-3debfd18-d4e0-4a88-a681-c75e32ce9ae6",
+          "type": "mcpToolCall",
+          "start_ms": 1793748003882,
+          "end_ms": 1793748003959,
+          "status": "completed",
+          "duration_ms": 77,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/models/tax_preparation/tax_automations/document.rb",
+              "app/models/tax_preparation/tax_automations/tax_preparation.rb",
+              "app/models/tax_preparation/tax_automations/firm_settings.rb",
+              "app/models/tax_preparation/tax_automations/instead/connection.rb",
+              "app/models/tax_preparation/tax_automations/instead/entity.rb",
+              "app/models/tax_preparation/tax_automations/instead/document.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/models/tax_preparation/tax_automations/document.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 139,
+              "body_chars": 6092,
+              "body_sha256": "40a131d6a59d2058421b945d891f4f07001be995a4af05893f2188101031bac3"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/tax_preparation.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 112,
+              "body_chars": 4566,
+              "body_sha256": "a519fb247e69227fbd515c49fcefc43b33c9234702982b471b6a20162620a611"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/firm_settings.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 17,
+              "body_chars": 608,
+              "body_sha256": "2b755ee9eaf72b475499603f7c190a74ab28124f3c70ad76b8b98af59cdffbed"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/instead/connection.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 88,
+              "body_chars": 3553,
+              "body_sha256": "43c28fbdd017f6139bfe980934688749572eae5a9e8117d2b500e1927f51423b"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/instead/entity.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 110,
+              "body_chars": 3988,
+              "body_sha256": "921d1388de74c5f821cfac2d8d608085276dd92b205766b4d037bddd447cbee0"
+            },
+            {
+              "path": "app/models/tax_preparation/tax_automations/instead/document.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 29,
+              "body_chars": 1346,
+              "body_sha256": "8d5c0bf6aec105bfdb9dd104e8d15aa6479417dce76ff7e8a7b83177fb918b29"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body shown in full — answer from it; do not reopen the file.",
+          "wave": 4,
+          "outer_id": "call_d951f842403941269e7560c0b9f18c1b"
+        },
+        {
+          "id": "exec-52939ead-ef5b-477a-9d52-02aeadffef97",
+          "type": "commandExecution",
+          "start_ms": 1793748004191,
+          "end_ms": 1793748005890,
+          "status": "failed",
+          "duration_ms": 1698,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' 'TaxAutomations::Registry|Registry\\\\.|adapter::|adapter_for|client_for|provider_adapter' app\"",
+          "exit_code": 2,
+          "output_unknown": false,
+          "output_chars": 6173,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 4,
+          "outer_id": "call_d951f842403941269e7560c0b9f18c1b"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 5,
+      "id": "resp_0f6c536b2ce9af5d016aea6c261eec87d2930f64b1f1c182b9",
+      "ms": 1793748013882,
+      "outer_calls": [
+        {
+          "id": "call_b23027cab17647078b74e1c49fa4d0a9",
+          "wave": 5,
+          "name": "exec",
+          "start_ms": 1793748013853,
+          "code": "// @exec: {\"max_output_tokens\": 17000}\nconst prefix=\"app/services/tax_preparation/tax_automations/\";\ntext(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[\"authorizations/create.rb\",\"connections/create.rb\",\"connections/find.rb\",\"connections/disconnect.rb\",\"connections/renew.rb\",\"connections/verify_grant.rb\",\"connections/revoke.rb\",\"connections/disconnect_all.rb\",\"export_async.rb\",\"documents/resume_sends.rb\",\"firms/destroy_cleanup.rb\",\"tax_preparations/batch_destroy.rb\",\"tax_preparations/merge_for_contact.rb\"].map(x=>prefix+x)}));\ntext(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -g '*.rb' 'Registry|adapter::|adapter_for|client_for' app/workers/tax_preparation app/queries/tax_preparation app/models/tax_preparation app/controllers/tax_preparation app/lib/tax_preparation app/services/tax_preparation\",max_output_tokens:3500}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793748014354,
+          "output_chars": 35596,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-45a77d15-fcfb-489b-a094-6411516c8b0c",
+          "type": "mcpToolCall",
+          "start_ms": 1793748013861,
+          "end_ms": 1793748013952,
+          "status": "completed",
+          "duration_ms": 90,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/services/tax_preparation/tax_automations/authorizations/create.rb",
+              "app/services/tax_preparation/tax_automations/connections/create.rb",
+              "app/services/tax_preparation/tax_automations/connections/find.rb",
+              "app/services/tax_preparation/tax_automations/connections/disconnect.rb",
+              "app/services/tax_preparation/tax_automations/connections/renew.rb",
+              "app/services/tax_preparation/tax_automations/connections/verify_grant.rb",
+              "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+              "app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+              "app/services/tax_preparation/tax_automations/export_async.rb",
+              "app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+              "app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb",
+              "app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+              "app/services/tax_preparation/tax_automations/tax_preparations/merge_for_contact.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/authorizations/create.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 81,
+              "body_chars": 3427,
+              "body_sha256": "7b12e59080b74ad965734f4bed105208cda6e5413fdbd1f4a8f27c0cd1d806b8"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/create.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 144,
+              "body_chars": 6736,
+              "body_sha256": "a39014aa805e456e5c9f6dc767209043d0dd99aa472c304714da139d65e0c44e"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/find.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 48,
+              "body_chars": 1811,
+              "body_sha256": "b4a077d628d65398d256ffe8e1e22b9ed19b7e30232fcbb469fbd6b512ef9f8a"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/disconnect.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 59,
+              "body_chars": 2323,
+              "body_sha256": "d66524fc556331f13cf2a61a8ca3a7ca1ffdb17fa8739f7ad8ca000a4b1d0bbf"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/renew.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 47,
+              "body_chars": 2107,
+              "body_sha256": "7f7de38dbe8fb81f97e6356d9a31ecc7b036cd5778d3dab23d80a22aadf074b3"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/verify_grant.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 36,
+              "body_chars": 1652,
+              "body_sha256": "9ed5e773575e08a1e1130c20aef516a45a4266ccba60eaac30f1f2f159447593"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/revoke.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 45,
+              "body_chars": 1801,
+              "body_sha256": "cc054523117dafc24fb761e650132a793ca041c2b10b011775c3b1a0fb9d76d1"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/connections/disconnect_all.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 55,
+              "body_chars": 2003,
+              "body_sha256": "6654a08617aedeb2fa055a8e825bc95bd2bb979d95f740d319bb6e45de8b24ee"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 2198,
+              "body_sha256": "c1d513e4cd362f92c6417dc4848b5d760745eda11a75919a7af1c1189e2c0988"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 973,
+              "body_sha256": "d57a73330770e1b77f6d6e0d77ac6fdaf515b078d5d9ca4906e8abb5682157f8"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 835,
+              "body_sha256": "9bd5a93076cba093538fb2591c57c5213f4967385a124bbb519c929dc3d08d02"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 901,
+              "body_sha256": "82f33e759c63092f8ad87419e44a33c54e9991317ec8f3c1032a8920b29569ba"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/tax_preparations/merge_for_contact.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 1531,
+              "body_sha256": "c84437ca95a289cde4b6ea25547c1e9f1e9b519580de41f30872b3b71a7bf035"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 5,
+          "outer_id": "call_b23027cab17647078b74e1c49fa4d0a9"
+        },
+        {
+          "id": "exec-a730d12f-d0e2-4e19-b3ec-09d067633b4b",
+          "type": "commandExecution",
+          "start_ms": 1793748014306,
+          "end_ms": 1793748014306,
+          "status": "completed",
+          "duration_ms": 0,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -g '*.rb' 'Registry|adapter::|adapter_for|client_for' app/workers/tax_preparation app/queries/tax_preparation app/models/tax_preparation app/controllers/tax_preparation app/lib/tax_preparation app/services/tax_preparation\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 3450,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 5,
+          "outer_id": "call_b23027cab17647078b74e1c49fa4d0a9"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 6,
+      "id": "resp_0f6c536b2ce9af5d016aea6c2e8f9487d2a72d95ca97fbe505",
+      "ms": 1793748020957,
+      "outer_calls": [
+        {
+          "id": "call_58c923d87e45407e924cf879a89cf9f0",
+          "wave": 6,
+          "name": "exec",
+          "start_ms": 1793748020887,
+          "code": "// @exec: {\"max_output_tokens\": 13500}\nconst p=\"TaxPreparation::TaxAutomations::\";\ntext(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[p+\"ExportAsync#perform\",p+\"ExportAsync#send_to_provider!\",p+\"ExportAsync#build_tax_automation_params\",p+\"ExportAsync#create_tax_automation_documents!\",p+\"Documents::ResumeSends#perform\",p+\"Documents::ResumeSends#resend!\",p+\"Firms::DestroyCleanup#destroy_provider_records!\",p+\"TaxPreparations::BatchDestroy#drop_provider_records!\",p+\"TaxPreparations::MergeForContact#merge_provider_records!\",\"app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb\",\"app/workers/tax_preparation/tax_automations/connections/keep_alive_worker.rb\",\"app/workers/tax_preparation/tax_automations/operation_worker.rb\",\"app/models/tax_preparation/tax_automations/has_oauth_connection.rb\",\"app/lib/tax_preparation/tax_automations/base_client.rb\",\"app/lib/tax_preparation/tax_automations/token_refreshable.rb\"]}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793748021094,
+          "output_chars": 25620,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-5eb2a03d-93a8-4e6c-8b1f-ea63b4357b15",
+          "type": "mcpToolCall",
+          "start_ms": 1793748020892,
+          "end_ms": 1793748020990,
+          "status": "completed",
+          "duration_ms": 98,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::ExportAsync#perform",
+              "TaxPreparation::TaxAutomations::ExportAsync#send_to_provider!",
+              "TaxPreparation::TaxAutomations::ExportAsync#build_tax_automation_params",
+              "TaxPreparation::TaxAutomations::ExportAsync#create_tax_automation_documents!",
+              "TaxPreparation::TaxAutomations::Documents::ResumeSends#perform",
+              "TaxPreparation::TaxAutomations::Documents::ResumeSends#resend!",
+              "TaxPreparation::TaxAutomations::Firms::DestroyCleanup#destroy_provider_records!",
+              "TaxPreparation::TaxAutomations::TaxPreparations::BatchDestroy#drop_provider_records!",
+              "TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#merge_provider_records!",
+              "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+              "app/workers/tax_preparation/tax_automations/connections/keep_alive_worker.rb",
+              "app/workers/tax_preparation/tax_automations/operation_worker.rb",
+              "app/models/tax_preparation/tax_automations/has_oauth_connection.rb",
+              "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "app/lib/tax_preparation/tax_automations/token_refreshable.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": "TaxPreparation::TaxAutomations::ExportAsync#perform",
+              "start": 53,
+              "end": 105,
+              "body_chars": 3246,
+              "body_sha256": "3f7841323ba0f6059167afe8966b8dd28b88272ed58604b02688161f2eab34e3"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": "TaxPreparation::TaxAutomations::ExportAsync#send_to_provider!",
+              "start": 207,
+              "end": 210,
+              "body_chars": 282,
+              "body_sha256": "81eeae07598828ad1667126f53f3343494207a401ce321762d821c2d768c5aae"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": "TaxPreparation::TaxAutomations::ExportAsync#build_tax_automation_params",
+              "start": 196,
+              "end": 205,
+              "body_chars": 328,
+              "body_sha256": "ab847954ec846583b2f445ddb71904d9ad2dae8ebc0d4bb830b9724f95048fba"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+              "symbol": "TaxPreparation::TaxAutomations::ExportAsync#create_tax_automation_documents!",
+              "start": 212,
+              "end": 223,
+              "body_chars": 622,
+              "body_sha256": "d7707fd8d9828e0d6484aaf9ed6a7b396bce30b7dff624a4ed4bea3326f2f039"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Documents::ResumeSends#perform",
+              "start": 33,
+              "end": 48,
+              "body_chars": 758,
+              "body_sha256": "ba847706d78219f7c8d1610394eab18e2cd1bd1092ccdcb92fb0c400c68641ae"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/resume_sends.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Documents::ResumeSends#resend!",
+              "start": 58,
+              "end": 63,
+              "body_chars": 298,
+              "body_sha256": "dfe96ce5c39e0e484710b060749ef4911c17465456adc426c3eb1cd6431d1c52"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/firms/destroy_cleanup.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Firms::DestroyCleanup#destroy_provider_records!",
+              "start": 53,
+              "end": 61,
+              "body_chars": 503,
+              "body_sha256": "fad876ae5c060e53593bbd84a7e521c51f665022798b23fc0404447be6f19b2b"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/tax_preparations/batch_destroy.rb",
+              "symbol": "TaxPreparation::TaxAutomations::TaxPreparations::BatchDestroy#drop_provider_records!",
+              "start": 48,
+              "end": 59,
+              "body_chars": 789,
+              "body_sha256": "a725c62b4128ac47d6a78b7722b985dea4ec071d63f46d603bfa4e138bf5eaea"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/tax_preparations/merge_for_contact.rb",
+              "symbol": "TaxPreparation::TaxAutomations::TaxPreparations::MergeForContact#merge_provider_records!",
+              "start": 89,
+              "end": 99,
+              "body_chars": 765,
+              "body_sha256": "a8655433fc29e89106cb8ad6600344bc7354221754ec09e8da719a9e11e144b4"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 43,
+              "body_chars": 2120,
+              "body_sha256": "1c93c5b9a291ec4551d6504e9bf0964432e632d821f636406f70f7a8d78c288e"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/connections/keep_alive_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 39,
+              "body_chars": 1746,
+              "body_sha256": "430a9f39a4ee59834828bb38de2f81db35908f62629782981988d9d1ce2b1243"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/operation_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 70,
+              "body_chars": 3472,
+              "body_sha256": "e33c69b34aac5ddf6aff65d95914801a19af4d1302afb17be0c8b1e2c443de5a"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 4758,
+              "body_sha256": "6fa4e33047012290bee55c8a94f060298affec26a1d2b5e241b3fdd8a2007fdd"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 2198,
+              "body_sha256": "8cfff5ea2c1a9d34dcf4878ecea7ea005df56504f4fdd8ecf05311910c95b7e0"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 6,
+          "outer_id": "call_58c923d87e45407e924cf879a89cf9f0"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 7,
+      "id": "resp_0f6c536b2ce9af5d016aea6c35473887d2a8bf7bf8ecc11561",
+      "ms": 1793748028133,
+      "outer_calls": [
+        {
+          "id": "call_e971def92f4142d780cee60e51991db5",
+          "wave": 7,
+          "name": "exec",
+          "start_ms": 1793748028090,
+          "code": "// @exec: {\"max_output_tokens\": 13500}\ntext(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[\"app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb\",\"app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb\",\"app/controllers/tax_preparation/api/v1/firm/tax_automations_controller.rb\",\"app/controllers/tax_preparation/api/v1/firm/tax_automations/connections_controller.rb\",\"app/services/tax_preparation/tax_automations/export/validate_documents.rb\",\"app/services/tax_preparation/tax_automations/tax_preparation_prefills/find.rb\",\"app/services/tax_preparation/tax_automations/instead/export_async.rb\",\"app/lib/tax_preparation/tax_automations/return_type.rb\",\"app/workers/tax_preparation/tax_automations/connections/renew_worker.rb\",\"app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb\"]}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793748028271,
+          "output_chars": 28991,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-23d7ad65-7626-478f-ae40-0cadaca4e653",
+          "type": "mcpToolCall",
+          "start_ms": 1793748028097,
+          "end_ms": 1793748028180,
+          "status": "completed",
+          "duration_ms": 82,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb",
+              "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+              "app/controllers/tax_preparation/api/v1/firm/tax_automations_controller.rb",
+              "app/controllers/tax_preparation/api/v1/firm/tax_automations/connections_controller.rb",
+              "app/services/tax_preparation/tax_automations/export/validate_documents.rb",
+              "app/services/tax_preparation/tax_automations/tax_preparation_prefills/find.rb",
+              "app/services/tax_preparation/tax_automations/instead/export_async.rb",
+              "app/lib/tax_preparation/tax_automations/return_type.rb",
+              "app/workers/tax_preparation/tax_automations/connections/renew_worker.rb",
+              "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 183,
+              "body_chars": 7967,
+              "body_sha256": "f79f2db84914ddf70ac2a07ec81a189e5d5485d1006844573c6a331f0a772c19"
+            },
+            {
+              "path": "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 48,
+              "body_chars": 2223,
+              "body_sha256": "62623855073107a915a278afb1540481c86bbcf7fa42798aefa25d7d12603d8d"
+            },
+            {
+              "path": "app/controllers/tax_preparation/api/v1/firm/tax_automations_controller.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 21,
+              "body_chars": 988,
+              "body_sha256": "a17e41d4500f898c2791169f2be8642e7b4383fcdaaa87fa54df9ae2e72972dd"
+            },
+            {
+              "path": "app/controllers/tax_preparation/api/v1/firm/tax_automations/connections_controller.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 49,
+              "body_chars": 2462,
+              "body_sha256": "79e448b76069758743d043f42fc7fbe965ffba79ab5872120ac29e3fdc1d2022"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/export/validate_documents.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 136,
+              "body_chars": 6198,
+              "body_sha256": "669b20e8f96ed4a18d8e9abb53f64b2a61cd0bf0a5e3589840829deb062c2819"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/tax_preparation_prefills/find.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 89,
+              "body_chars": 3388,
+              "body_sha256": "92dcdf82b6f02b1d71d039c04f75372f9a0c9831ebb89c8b8514cfe2f4ac40e6"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/export_async.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 632,
+              "body_sha256": "d3200c192bb6d09980e485034ce6f9a53fc6fd6aef0d93d9b4fd9695e8c96d60"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/return_type.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 691,
+              "body_sha256": "ad9ee6284edecfd0d8f8ca3960e2a59f2f1f4ec96475297627da4b1801c1c749"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/connections/renew_worker.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 229,
+              "body_sha256": "bf8f3b0840a54ef0422659efa09a6e4e4e0e8a8ccdbba4bde6184518eef2f045"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 1060,
+              "body_sha256": "5b7922a1011368853e97681187d2cc116f22e60167a7282d4d91d7e5a7e52241"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 7,
+          "outer_id": "call_e971def92f4142d780cee60e51991db5"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 8,
+      "id": "resp_0f6c536b2ce9af5d016aea6c3c725487d2b0cbd64b1e447eef",
+      "ms": 1793748036791,
+      "outer_calls": [
+        {
+          "id": "call_81095af09c2c423ca03737eb46b93f39",
+          "wave": 8,
+          "name": "exec",
+          "start_ms": 1793748036632,
+          "code": "// @exec: {\"max_output_tokens\": 11000}\nconst p=\"TaxPreparation::TaxAutomations::\";\ntext(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[p+\"Instead::ExportAsync#perform\",p+\"Documents::TransferBytesToPresignedTarget#perform\",p+\"Documents::TransferBytesToPresignedTarget#build_api_client\",p+\"Connections::RenewWorker#perform_operation\",p+\"BaseClient#initialize\",p+\"TokenRefreshable#oauth2_settings\",\"app/lib/tax_preparation/tax_automations/instead/client.rb\",\"app/serializers/tax_preparation/api/v1/firm/tax_automations/connections/show_serializer.rb\"]}));\ntext(await tools.exec_command({cmd:\"rg -l --hidden --glob '!.git' -g '*.rb' 'Registry|adapter::|adapter_for|client_for' app --glob '!javascript/**'\",max_output_tokens:3000}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793748037682,
+          "output_chars": 15561,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-6fd03e8e-7b3e-4765-b516-a18feaa3e992",
+          "type": "mcpToolCall",
+          "start_ms": 1793748036634,
+          "end_ms": 1793748036698,
+          "status": "completed",
+          "duration_ms": 63,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "TaxPreparation::TaxAutomations::Instead::ExportAsync#perform",
+              "TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget#perform",
+              "TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget#build_api_client",
+              "TaxPreparation::TaxAutomations::Connections::RenewWorker#perform_operation",
+              "TaxPreparation::TaxAutomations::BaseClient#initialize",
+              "TaxPreparation::TaxAutomations::TokenRefreshable#oauth2_settings",
+              "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "app/serializers/tax_preparation/api/v1/firm/tax_automations/connections/show_serializer.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/services/tax_preparation/tax_automations/instead/export_async.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Instead::ExportAsync#perform",
+              "start": 28,
+              "end": 38,
+              "body_chars": 718,
+              "body_sha256": "ac6b1de91f40ef72a27d4a2d75c10f7b79ce4df6d70f68dff953a07a50a5f7f8"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget#perform",
+              "start": 27,
+              "end": 53,
+              "body_chars": 1427,
+              "body_sha256": "bca87c4b245da29b63c2aa84d6773a24d3b40de2541ddbf45432407df727959a"
+            },
+            {
+              "path": "app/services/tax_preparation/tax_automations/documents/transfer_bytes_to_presigned_target.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Documents::TransferBytesToPresignedTarget#build_api_client",
+              "start": 61,
+              "end": 65,
+              "body_chars": 290,
+              "body_sha256": "f77a9a44dd5a1925616510f205ccceb2a2e9c2ea0dd5ed487575bdd6af25cd09"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/connections/renew_worker.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Connections::RenewWorker#perform_operation",
+              "start": 37,
+              "end": 42,
+              "body_chars": 379,
+              "body_sha256": "5504fc4fb416cff56bd9b562b0e0490e504fcbac69ec8184d082c75e14b7d435"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::BaseClient#initialize",
+              "start": 230,
+              "end": 241,
+              "body_chars": 749,
+              "body_sha256": "4690f260f041a7d2dce88369e2dc11a483be7fbaf240d97f97f05bab38142e6f"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+              "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable#oauth2_settings",
+              "start": 63,
+              "end": 81,
+              "body_chars": 1129,
+              "body_sha256": "669164ec631dec32e36ae5cf96559e9db134d171ea1c29666dc38ed8951de48e"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "symbol": null,
+              "start": null,
+              "end": null,
+              "body_chars": 1989,
+              "body_sha256": "ec90247d792e151ea8f99e997116bf50163f88a2c18cf5716eaef7fa9d263155"
+            },
+            {
+              "path": "app/serializers/tax_preparation/api/v1/firm/tax_automations/connections/show_serializer.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 7,
+              "body_chars": 264,
+              "body_sha256": "50145151b382be4a4580aaf5a8f74025265f3453c2abf190648e030e94e234e2"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing", "batchNotice"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 8,
+          "outer_id": "call_81095af09c2c423ca03737eb46b93f39"
+        },
+        {
+          "id": "exec-644c3c5d-1c3e-4026-81b6-446027ae9d39",
+          "type": "commandExecution",
+          "start_ms": 1793748037088,
+          "end_ms": 1793748037640,
+          "status": "completed",
+          "duration_ms": 551,
+          "command": "/bin/zsh -c \"rg -l --hidden --glob '\"'!.git'\"' -g '*.rb' 'Registry|adapter::|adapter_for|client_for' app --glob '\"'!javascript/**'\"'\"",
+          "exit_code": 0,
+          "output_unknown": false,
+          "output_chars": 6400,
+          "output_truncated": false,
+          "skill_read": false,
+          "instruction_read": false,
+          "wave": 8,
+          "outer_id": "call_81095af09c2c423ca03737eb46b93f39"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 9,
+      "id": "resp_0f6c536b2ce9af5d016aea6c45e99c87d2b3e1658ce0371891",
+      "ms": 1793748045704,
+      "outer_calls": [
+        {
+          "id": "call_d2a6e38230c8449cb43da1c118665e52",
+          "wave": 9,
+          "name": "exec",
+          "start_ms": 1793748045631,
+          "code": "// @exec: {\"max_output_tokens\": 6500}\ntext(await tools.mcp__tea_rags__find_symbol({project:\"taxdome-worktree-navmaster\",path:\"/Users/Shared/nav-ab/repo-master\",symbols:[\"app/serializers/tax_preparation/base/tax_automations/connection_serializer.rb\",\"app/workers/tax_preparation/tax_automations/documents/resume_sends_worker.rb\",\"app/workers/tax_preparation/tax_automations/connections/revoke_worker.rb\",\"app/workers/tax_preparation/tax_automations/connections/verify_grant_worker.rb\",\"TaxPreparation::TaxAutomations::Instead::Client\",\"app/workers/tax_preparation/tax_automations/instead/documents/export_async_workflow.rb\"]}));\n",
+          "schema_introspection": false,
+          "end_ms": 1793748045852,
+          "output_chars": 18377,
+          "output_truncated": false
+        }
+      ],
+      "children": [
+        {
+          "id": "exec-1b32d977-fd86-4016-a361-898b5acb14d7",
+          "type": "mcpToolCall",
+          "start_ms": 1793748045639,
+          "end_ms": 1793748045741,
+          "status": "completed",
+          "duration_ms": 102,
+          "tool": "find_symbol",
+          "arguments": {
+            "project": "taxdome-worktree-navmaster",
+            "path": "/Users/Shared/nav-ab/repo-master",
+            "symbols": [
+              "app/serializers/tax_preparation/base/tax_automations/connection_serializer.rb",
+              "app/workers/tax_preparation/tax_automations/documents/resume_sends_worker.rb",
+              "app/workers/tax_preparation/tax_automations/connections/revoke_worker.rb",
+              "app/workers/tax_preparation/tax_automations/connections/verify_grant_worker.rb",
+              "TaxPreparation::TaxAutomations::Instead::Client",
+              "app/workers/tax_preparation/tax_automations/instead/documents/export_async_workflow.rb"
+            ]
+          },
+          "error": null,
+          "result_facts": [
+            {
+              "path": "app/serializers/tax_preparation/base/tax_automations/connection_serializer.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 80,
+              "body_chars": 3258,
+              "body_sha256": "5b8d02a300280f48a7154c397fe42f24b2848df1de4b02fce62b1426dcffe201"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/documents/resume_sends_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 30,
+              "body_chars": 1410,
+              "body_sha256": "dac6b6725a2b4c1655f0e55504b88d103eb8e921a611645383c89148b9edf9ee"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/connections/revoke_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 42,
+              "body_chars": 1885,
+              "body_sha256": "6c70167c8564af7ae02fd911adef5fb5f3223d16258b562675acc431fb0d0a56"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/connections/verify_grant_worker.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 31,
+              "body_chars": 1352,
+              "body_sha256": "9bf4dc532b305cebaf4102f016214a61700bc4186b8fd4f373530328b37a130a"
+            },
+            {
+              "path": "app/lib/tax_preparation/tax_automations/instead/client.rb",
+              "symbol": "TaxPreparation::TaxAutomations::Instead::Client",
+              "start": 3,
+              "end": 203,
+              "body_chars": 4730,
+              "body_sha256": "db5afe414d5ea094b2e1a3f1738752ed81068f876feea65d694c6b501474d98f"
+            },
+            {
+              "path": "app/workers/tax_preparation/tax_automations/instead/documents/export_async_workflow.rb",
+              "symbol": null,
+              "start": 1,
+              "end": 85,
+              "body_chars": 4145,
+              "body_sha256": "d598cd76adb150b67674cb2a138d7293b8273a46794efcfd8bbcabf6cc097d99"
+            }
+          ],
+          "result_top_keys": ["banner", "results", "missing"],
+          "banner": "↳ Body rows are complete; class headers may be inlined beside method ids. Outline ids → ONE find_symbol(symbols:[needed ids]).",
+          "wave": 9,
+          "outer_id": "call_d2a6e38230c8449cb43da1c118665e52"
+        }
+      ],
+      "instruction_only": false,
+      "schema_introspection": false
+    },
+    {
+      "wave": 10,
+      "id": "resp_0f6c536b2ce9af5d016aea6c4e0fd887d29e3b334e1916813d",
+      "ms": 1793748081565,
+      "outer_calls": [],
+      "children": [],
+      "instruction_only": false,
+      "schema_introspection": false
+    }
+  ],
+  "hooks": [
+    {
+      "id": "session-start:6:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793747978376,
+      "end_ms": 1793747978662,
+      "duration_ms": 169,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags core\n\n**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):\noutput past ~10k tokens loses its middle (`…N tokens truncated…`), and\na rule you did not see is not a rule you may guess. Missing instructions → read only\ntheir missing ranges (`sed -n`). For source, follow the tea-rags continuation only\nif needed code is missing; never reread retained bodies because output was truncated.\n\n**Each step takes the tool its routing row names.**\n\n**Addressing.** Every read or suggested call: `project=<alias>` +\n`path=<task cwd>`. Alias: digest, SubagentStart or `workingTree.project`.\nUnknown/\"not registered\" → `path` alone, never ask; only a `collection` → it\nalone; then use `project=<workingTree.project> + path`. No cwd → `project`\nalone. `workingTree.tree` ≠ cwd → discard those rows, re-call with `path=<cwd>`.\n`index_codebase`: `project` ONLY; unregistered cwd → `path=<cwd>`.\n\nShell rg -l --hidden --glob '!.git': unknown filenames/inventory/absence; known file → content;\n`| head` ≠ absence proof. Use anchor dir, else `<src dir>` (a dir under cwd,\nnever cwd itself); no dir search or find/Glob.\n\n**Routing** (first match wins; a loaded skill's steps run first, override rows —\na file path in them → row 1; tools `mcp__tea-rags__*`):\n\n- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →\n  shell sed -n '<start>,<end>p' <one file> (path unknown → shell rg -l --hidden --glob '!.git' first); all X\n  in a known `<dir>`, proving absence (\"no X exists\") → shell rg -l --hidden --glob '!.git'\n  over that dir (empty = proof); migration `X` → `\"X\"` over `db/migrate/`;\n  table/column exists, `create_table` → that search over `db/schema.rb`, then\n  `db/migrate/` (`:<table>`, `\"<table>\"` before \"absent\"), never\n  `semantic_search`. Other file/dir path, lines N–M, doc TOC, how `<dir>` works\n  / what's in it → `find_symbol(relativePath:)` outline first, then ONE batch of\n  needed ids (N–M: ids whose `L<a>-<b>` covers N–M, never Read offset/limit);\n  known method id → body, no outline. Imports → `get_callees(relativePath:)`\n  (`imports[]`; a row's `imports` = a count)\n- code history — when X appeared/changed, \"посмотри через git\" → never\n  `git log`/`blame`/`-S`/`show`:\n  `semantic_search(query: <X>, rerank: \"bugHunt\")`\n- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)\n  → ONE `semantic_search(query: \"a ||| b ||| c\", metaOnly:true, limit:5)` (≤5\n  phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`). Choose\n  anchors before bodies; expand only as needed, never text search for meaning\n- non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,\n  or a search tool demanded on an error → bug-hunt), even \"every …\" → shell rg -l --hidden --glob '!.git', not tea-rags; phrase/error string → plan these three lines,\n  never stop at the hit:\n  `shell rg -l --hidden --glob '!.git' \"<phrase>\" <dir> (literal, line cap)` →\n  `find_symbol(relativePath: <hit file>)` outline →\n  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code\n  name, even a \"pattern\"/\"glob\" → usages row. Command output, failing tests,\n  counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill\n- how X works/what happens when → `get_callees` (body unseen → `find_symbol`\n  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,\n  `depth: 2`; every call/all callers of X (grep named) → plan both lines:\n  `get_callers` + the usages row. Then ONE batch: needed tree methods\n- known symbol / identifier definition/body/outline → `find_symbol(symbol:)`\n  `Class#inst`/`C.st`, never text search\n- where X is used/referenced, every occurrence, who constructs X, files\n  containing X (exact name/constant/string you know; `a|b` only of seen ids),\n  \"grep for X\" → `shell rg -l --hidden --glob '!.git' \"<X>\" <src dir, e.g. app/ or src/>`\n  (literal, `-l`) → `find_symbol` outline → batch of only the needed methods,\n  never stop at the hit\n- symbol + intent (\"the X that does Y\"), files named X →\n  `hybrid_search(metaOnly)`\n- code like a chunk in hand → `find_similar(positiveIds:)`\n- how does X reach Y / A→B → `find_symbol` ids → `trace_path`\n- diff review, a diff's names →\n  `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =\n  uncommitted, `{base}` = branch; its verdicts = answer, nothing after\n- a name's fit → `get_naming_lexicon(names:[{name,kind}])`; naming a T value →\n  `types:[T]`\n- project's embedding/Qdrant/env → `list_projects(project:)`\n- research — layers/wrong-way deps of `<dir>` → explicit diagnosis/refactoring\n  only: `get_architecture_report(pathPattern)`; never for context gathering or\n  overviews. Implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`;\n  registered/configured `<X>` → `hybrid_search(\"<X> register config\")`; ticket\n  `<T>` → `semantic_search(taskId: <T>, level: \"chunk\")` → ONE\n  `find_symbol(symbols: <touched ids>)`, no grep; owners/recent\n  churn/debt/don't-touch →\n  `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;\n  dead code → `filter:{presets:\"deadCandidates\"}`; which to copy →\n  `rerank: \"proven\"`\n\n**Invariants.**\n\n- Reuse held code, outlines, edges and instructions (skills/guides) on\n  follow-ups. Refresh only affected edited/stale or missing material, including\n  after compaction. Each read closes a current evidence gap, not a future\n  question; a held body may need zero calls.\n- Batch missing symbols/files → `find_symbol(symbols:)`, never dirs;\n  config/spec/migrations → concurrent bounded per-file reads.\n- Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are\n  authoritative code, not hints. Never confirm the same body via `find_symbol`,\n  Read or shell. Metadata/outline/signature/container header ≠ method body.\n- Anchor = the hit for the requested behaviour. Flow/impact → needed edges\n  (`depth: 2`); change-impact may need `find_co_changed`. Batch required\n  methods, not classes/trees; headers/shared declarations only if needed. Stop\n  once supported.\n- `symbolId` ends `#partN` = fragment →\n  `find_symbol(symbol: <id minus #partN>)`; parts = one hit.\n- `empty.reason: unknownPath` with suggestions →\n  `find_symbol(relativePath: <dir they share>)`, never one suggestion.\n- A requested row without `treeState` / `degraded` is current, overlay too;\n  global `changedFiles` / `pendingFiles` alone never require a reread. A\n  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same\n  `find_symbol` arguments once**: it reads the working tree, not a cached body.\n  No Read/shell refresh. Still stale → state the gap. No `workingTree` →\n  current.\n- Freshness (subagent: keep reading, never `index_codebase`/ask the user,\n  drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠\n  alias's path → print `linked worktree (<test>) — no reindex`; own checkout\n  behind (`changedFiles`>0, stale, unindexed edits, said so) → incremental\n  `index_codebase(project=)` first, no consent. Drift `Run:` `--force*`\n  (status/prime/index only, not a read answer) → own-checkout incremental first\n  if behind, plus ONE line\n  ask the user: run <Run: line>? — --force not run; reads continue meanwhile`,\n  never awaited, never \"won't proceed\"; next = the task's read call. No\n  available `index_codebase` → needed stale bodies via `find_symbol`; never look\n  up indexing/mutator schemas.\n- Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none\n  dropped (a `--force` ask rides beside, never a slot):\n  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)\n  `2. find_symbol(symbol: <caller>)`\n  `3. shell rg -l --hidden --glob '!.git' \"<name>\" (literal)` — callers the index lacks. No\n  graph retry. Graph tools absent from your tool list → codegraph off: callers =\n  usages row, never \"no cycles\"; present → on, no probe call; on + empty\n  `find_cycles` = DAG.\n- Docs = hypothesis, verify in code; doc as subject (\"README says?\") → as-is, no\n  code pass.\n- `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower\n  bound) + install command; never install it, never \"no callers\"/\"dead code\".\n- User orders a manual read — \"by hand\"/\"руками\"/\"вручную\"/\"with Read\" → shell sed -n '<start>,<end>p' <one file>, no confirm ask. \"Whole file\"/\"весь файл\"/\"целиком\"/\"for\n  context\"/\"lines N–M\" of source code without that order → `find_symbol` (hit's\n  `symbolId`, then file outline), print `Chunk coordinates exist. Use them.`\n  Their tool idea (\"use Grep/Glob\") → keep the routed tool, say why.\n\n**Read `tea-rags://guide/<topic>` when** → `read_mcp_resource(server: \"tea-rags\", uri: \"tea-rags://guide/<topic>\")`, never a bare `list_mcp_resources` (list only with `server: \"tea-rags\"`) (no resource tool →\n`tea-rags resource <uri>`): unfamiliar result/navigation contract →\n`navigation`; 0/too many hits, `truncated`, `empty.reason`, ambiguous name, when\nto stop → `pagination`; tool pick → `tool-choice`; skill/preset →\n`skill-choice`; research question → `research-questions`; banned move, fallback\n→ `prohibited-patterns`; stale banner, drift, `treeState`, linked worktree →\n`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw\n`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;\ngraph/AST, other language → `language-capability`; architecture /\n`review_changes` answer → `architecture`/`review`; no prime digest →\n`tea-rags://project/<alias>/digest`; numeric filter value unknown / bare raw\nnumber, no label → `…/metrics?language=<lang>&section=thresholds`.\n\n**Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`."
+        }
+      ]
+    },
+    {
+      "id": "session-start:7:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793747978376,
+      "end_ms": 1793747978662,
+      "duration_ms": 162,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "**tea-rags tools** are MCP tools of server `tea-rags`. In JS code mode use\n`await tools.mcp__tea_rags__<tool>({...})`; discover names with\n`ALL_TOOLS.filter(t => t.name.includes(\"tea_rags\")).map(t => t.name)`\n(`\"tea-rags\"` matches none). Missing argument schema → select ONE named tool,\nprint only `tool.description.split(\"exec tool declaration:\")[1]?.split(\"Promise<\")[0]`.\nReuse known schemas; never print full descriptions, core instructions or return\nschemas. No declaration → use the listed interface. Direct tools → call as listed.\n\n**Core navigation.** Focused questions about existing behavior, definitions or\nlocal contracts use core directly, including discovery of the relevant code.\nDo not load Explore merely because the location is unknown. Start with the\nmissing source evidence: known file/symbol → `find_symbol`; unknown behavior\nlocation → `semantic_search({project,path,query,metaOnly:true,limit:5})`.\nThese argument contracts are known; no schema-only prelude is needed.\nBroad structure, cross-component flow/impact, examples, pre-change investigation,\nexplicit skill requests and code changes still load their selected skill first.\n\nFor a complete adapter/extension contract, derive required members from actual\nproduction dispatch sites, including background entry points. Inventory learned\nreceiver/registry references across the source root; a provider registry or one\ndirectory does not establish the whole interface. For operational lessons,\nretain explicit retry/window bounds and reset conditions that change guarantees.\n\n**Property questions.** For units/type/representation of a named business\nconstruct, the FIRST query contains ONLY that construct's short noun phrase.\nAdd property terms only if that query misses; inspect the property in its owner.\nA vendor name or generic object is not the construct. Workflow questions retain\ntheir behavior and domain; never shorten them to a vendor name alone.\n\n**Reuse before reading**, inside skills too: fetch only the current question's\nmissing facts. Held code proves its explicit adapter/implementation selection;\ngraph closes a missing caller/trigger/flow fact. Outline, header and blocked read\nare not bodies. Read a caller's qualified member directly; inventory its owner\nonly after missing/ambiguous lookup. Do not guess receivers.\nIf an entrypoint proves a request stops before dispatch, stop there; downstream\nworkflow/retry internals are needed only when the question asks about them.\nCodex unknownPath exception: if exactly one suggested file has the requested\nbasename, read that relativePath directly. With ambiguous suggestions, inventory\ntheir common directory first. This replaces the unconditional directory fallback.\nFor config filenames/policy names from a manifest, resolve paths with one scoped\nfilename inventory (`rg --files <known config dir>`), then read the selected files.\nSearching a filename in file contents does not locate that file.\nPositive filename globs are alternatives: `-g '*name*' -g '*.rb'` includes all\nRuby files. For name AND extension use one `-g '*name*.rb'`; omit the extension\nglob when any matching filename is wanted. Do not widen a narrow inventory.\n\n**Tool execution and waiting.** Select missing evidence from held outlines/nextCall\nhints for each requested fact. A helper is unnecessary when held code proves it.\nPut ready bodies AND independent reference/absence searches in one executor wave.\nInside that exec, chain mechanically selected returned ids with dependent calls.\nA new locator needs a model turn only when selection requires judgment.\nPreserve output budgets; never prefetch future questions.\nUse `find_symbol(symbols:[…])` for methods/files (at most 20 targets per call;\nsplit larger sets into concurrent calls); config/spec reads are bounded per-file\ncalls. Directories use separate `find_symbol(relativePath:)`\ncalls, never `symbols`. Dispatch independent calls together (`Promise.allSettled`\n/ `Promise.all` in code mode); await prerequisites before dependent calls.\nDifferent tool kinds do not create a dependency. Another wave needs a newly\ndiscovered locator, ambiguity, prerequisite or actual output-budget constraint;\nmerge pending independent work before following a continuation.\nRead only evidence for the current request, not future questions.\nParallelism never justifies extra context reads or competing edits.\nKeep each result (or error) labelled by its input path/id; emit the labelled results\nafter awaiting the batch, never anonymous output in completion order. Inspect all\nsettled outcomes and cover every requested item.\nA returned result is ready. A running executor with a cell/session id needs its\nmatching native `wait` / `write_stdin`, reusing that id; do not restart the work.\nFor subagents use the harness's agent-wait or completion notification. For user\ninput ask the question, then yield control until the reply; clarification is allowed.\nContinue independent work when useful. Never use `sleep`, shell/Python/JS timer\ndelays or busy polling to await tools, agents or users.\n\n**Skills are not loaded for you** — except this core:\n`$tea-rags-core` IS this text, never open its `SKILL.md`. A task a skill covers (`$name` /\n`$dino-<name>`) → read its `SKILL.md` before using it, unless its instructions\nare already in the current context. Reuse loaded skills, references and guides\nacross follow-ups; a new turn alone is not a reason to read them again.\nRetained current text satisfies a workflow's read-before-use requirements.\nReopen only changed instructions or material missing after compaction.\nLoad only the selected workflow's needed references and handoffs, using the\nlisted skill paths rather than inventing paths or loading adjacent skills.\nEvery skill you name in a plan must be available in context; a plan from memory\nis not reading it. `repair/<family>.md`, `rules/…` resolve from the plugin root\n(the folder holding `skills/`), never the skill's own folder.\n\n**Lag follow-ups.** Incremental `index_codebase` is a prelude, not the answer:\ncontinue the requested source task. For changed-file graph answers, re-check\nchanged-file callers via `find_symbol`, find missing ones via shell rg -l --hidden --glob '!.git'\n(literal); never retry the graph."
+        }
+      ]
+    },
+    {
+      "id": "session-start:8:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793747978376,
+      "end_ms": 1793747978662,
+      "duration_ms": 285,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "# tea-rags digest — taxdome-worktree-navmaster\n\nproject `taxdome-worktree-navmaster` · collection `code_b6533d3e` — pass `project: \"taxdome-worktree-navmaster\"` + `path` on tea-rags calls\nindex readiness and freshness unconfirmed; use get_index_status if needed"
+        }
+      ]
+    },
+    {
+      "id": "session-start:9:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "sessionStart",
+      "start_ms": 1793747978376,
+      "end_ms": 1793747978662,
+      "duration_ms": 63,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:10:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793747978662,
+      "end_ms": 1793747978802,
+      "duration_ms": 140,
+      "status": "completed",
+      "entries": [
+        {
+          "kind": "context",
+          "text": "tea-rags routing (this turn):\n- source code via find_symbol; config/migrations/specs, stubs → shell sed -n '<start>,<end>p' <one file>\n- reuse retained bodies/locators/edges first; discover only missing behaviour/concept evidence → semantic_search\n- missing flow/impact fact → get_callees / get_callers; explicit code already proves its selections\n- exact text, all X in a dir, absence → shell rg -l --hidden --glob '!.git'\n- ids or files needed at once: ONE find_symbol(symbols:[…])\n- unknownPath: exactly one suggested file with the requested basename → read that relativePath directly; ambiguous suggestions → inventory their common directory first. This Codex exception replaces the unconditional directory fallback.\n- A route's fully qualified controller requires its enclosing namespaces, not just the inner route block. If those declarations are not held, batch a bounded file header with the requested excerpt; fetch any still-missing enclosing scope before qualifying the name."
+        }
+      ]
+    },
+    {
+      "id": "user-prompt-submit:11:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793747978662,
+      "end_ms": 1793747978802,
+      "duration_ms": 138,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "user-prompt-submit:12:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json",
+      "event": "userPromptSubmit",
+      "start_ms": 1793747978662,
+      "end_ms": 1793747978802,
+      "duration_ms": 41,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-292f7d0c-54cd-49e5-8d27-74a01938cb42",
+      "event": "preToolUse",
+      "start_ms": 1793747984550,
+      "end_ms": 1793747984699,
+      "duration_ms": 140,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-292f7d0c-54cd-49e5-8d27-74a01938cb42",
+      "event": "preToolUse",
+      "start_ms": 1793747984550,
+      "end_ms": 1793747984699,
+      "duration_ms": 139,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-292f7d0c-54cd-49e5-8d27-74a01938cb42",
+      "event": "preToolUse",
+      "start_ms": 1793747984550,
+      "end_ms": 1793747984699,
+      "duration_ms": 66,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-292f7d0c-54cd-49e5-8d27-74a01938cb42",
+      "event": "postToolUse",
+      "start_ms": 1793747984753,
+      "end_ms": 1793747984796,
+      "duration_ms": 43,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-2244db02-f8a1-4384-9f7d-15895b5a5f3a",
+      "event": "postToolUse",
+      "start_ms": 1793747990673,
+      "end_ms": 1793747990802,
+      "duration_ms": 128,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-2244db02-f8a1-4384-9f7d-15895b5a5f3a",
+      "event": "postToolUse",
+      "start_ms": 1793747990673,
+      "end_ms": 1793747990802,
+      "duration_ms": 83,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-6ea340bf-1625-4060-ad48-433ec6ffb569",
+      "event": "postToolUse",
+      "start_ms": 1793747990673,
+      "end_ms": 1793747990809,
+      "duration_ms": 135,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-6ea340bf-1625-4060-ad48-433ec6ffb569",
+      "event": "postToolUse",
+      "start_ms": 1793747990673,
+      "end_ms": 1793747990809,
+      "duration_ms": 93,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-4ec8dc0c-8afb-4816-bbba-7a6e1bf73736",
+      "event": "postToolUse",
+      "start_ms": 1793747990675,
+      "end_ms": 1793747990812,
+      "duration_ms": 137,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-4ec8dc0c-8afb-4816-bbba-7a6e1bf73736",
+      "event": "postToolUse",
+      "start_ms": 1793747990675,
+      "end_ms": 1793747990812,
+      "duration_ms": 82,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-dc34dc17-46f3-48f6-ac1d-8905d1fee388",
+      "event": "postToolUse",
+      "start_ms": 1793747995378,
+      "end_ms": 1793747995466,
+      "duration_ms": 84,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-dc34dc17-46f3-48f6-ac1d-8905d1fee388",
+      "event": "postToolUse",
+      "start_ms": 1793747995378,
+      "end_ms": 1793747995466,
+      "duration_ms": 58,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-ced8043e-2771-4963-b29c-0bec38ea57e0",
+      "event": "preToolUse",
+      "start_ms": 1793747995468,
+      "end_ms": 1793747995637,
+      "duration_ms": 71,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-ced8043e-2771-4963-b29c-0bec38ea57e0",
+      "event": "preToolUse",
+      "start_ms": 1793747995468,
+      "end_ms": 1793747995637,
+      "duration_ms": 163,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-ced8043e-2771-4963-b29c-0bec38ea57e0",
+      "event": "preToolUse",
+      "start_ms": 1793747995468,
+      "end_ms": 1793747995637,
+      "duration_ms": 46,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-ced8043e-2771-4963-b29c-0bec38ea57e0",
+      "event": "postToolUse",
+      "start_ms": 1793747996011,
+      "end_ms": 1793747996055,
+      "duration_ms": 44,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-52939ead-ef5b-477a-9d52-02aeadffef97",
+      "event": "preToolUse",
+      "start_ms": 1793748003881,
+      "end_ms": 1793748004038,
+      "duration_ms": 75,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-52939ead-ef5b-477a-9d52-02aeadffef97",
+      "event": "preToolUse",
+      "start_ms": 1793748003881,
+      "end_ms": 1793748004038,
+      "duration_ms": 152,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-52939ead-ef5b-477a-9d52-02aeadffef97",
+      "event": "preToolUse",
+      "start_ms": 1793748003881,
+      "end_ms": 1793748004038,
+      "duration_ms": 61,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-3debfd18-d4e0-4a88-a681-c75e32ce9ae6",
+      "event": "postToolUse",
+      "start_ms": 1793748003960,
+      "end_ms": 1793748004043,
+      "duration_ms": 82,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-3debfd18-d4e0-4a88-a681-c75e32ce9ae6",
+      "event": "postToolUse",
+      "start_ms": 1793748003960,
+      "end_ms": 1793748004043,
+      "duration_ms": 49,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-7854533a-f4e5-4333-915e-8a4c2a278138",
+      "event": "postToolUse",
+      "start_ms": 1793748004032,
+      "end_ms": 1793748004175,
+      "duration_ms": 142,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-7854533a-f4e5-4333-915e-8a4c2a278138",
+      "event": "postToolUse",
+      "start_ms": 1793748004032,
+      "end_ms": 1793748004175,
+      "duration_ms": 60,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-52939ead-ef5b-477a-9d52-02aeadffef97",
+      "event": "postToolUse",
+      "start_ms": 1793748005890,
+      "end_ms": 1793748005934,
+      "duration_ms": 44,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-45a77d15-fcfb-489b-a094-6411516c8b0c",
+      "event": "postToolUse",
+      "start_ms": 1793748013953,
+      "end_ms": 1793748014048,
+      "duration_ms": 95,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-45a77d15-fcfb-489b-a094-6411516c8b0c",
+      "event": "postToolUse",
+      "start_ms": 1793748013953,
+      "end_ms": 1793748014048,
+      "duration_ms": 60,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-a730d12f-d0e2-4e19-b3ec-09d067633b4b",
+      "event": "preToolUse",
+      "start_ms": 1793748014049,
+      "end_ms": 1793748014190,
+      "duration_ms": 67,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-a730d12f-d0e2-4e19-b3ec-09d067633b4b",
+      "event": "preToolUse",
+      "start_ms": 1793748014049,
+      "end_ms": 1793748014190,
+      "duration_ms": 137,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-a730d12f-d0e2-4e19-b3ec-09d067633b4b",
+      "event": "preToolUse",
+      "start_ms": 1793748014049,
+      "end_ms": 1793748014190,
+      "duration_ms": 47,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-a730d12f-d0e2-4e19-b3ec-09d067633b4b",
+      "event": "postToolUse",
+      "start_ms": 1793748014306,
+      "end_ms": 1793748014354,
+      "duration_ms": 47,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-5eb2a03d-93a8-4e6c-8b1f-ea63b4357b15",
+      "event": "postToolUse",
+      "start_ms": 1793748020990,
+      "end_ms": 1793748021093,
+      "duration_ms": 102,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-5eb2a03d-93a8-4e6c-8b1f-ea63b4357b15",
+      "event": "postToolUse",
+      "start_ms": 1793748020990,
+      "end_ms": 1793748021093,
+      "duration_ms": 66,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-23d7ad65-7626-478f-ae40-0cadaca4e653",
+      "event": "postToolUse",
+      "start_ms": 1793748028180,
+      "end_ms": 1793748028270,
+      "duration_ms": 90,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-23d7ad65-7626-478f-ae40-0cadaca4e653",
+      "event": "postToolUse",
+      "start_ms": 1793748028180,
+      "end_ms": 1793748028270,
+      "duration_ms": 56,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-6fd03e8e-7b3e-4765-b516-a18feaa3e992",
+      "event": "postToolUse",
+      "start_ms": 1793748036698,
+      "end_ms": 1793748036788,
+      "duration_ms": 89,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-6fd03e8e-7b3e-4765-b516-a18feaa3e992",
+      "event": "postToolUse",
+      "start_ms": 1793748036698,
+      "end_ms": 1793748036788,
+      "duration_ms": 58,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:0:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-644c3c5d-1c3e-4026-81b6-446027ae9d39",
+      "event": "preToolUse",
+      "start_ms": 1793748036789,
+      "end_ms": 1793748036934,
+      "duration_ms": 62,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:1:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-644c3c5d-1c3e-4026-81b6-446027ae9d39",
+      "event": "preToolUse",
+      "start_ms": 1793748036789,
+      "end_ms": 1793748036934,
+      "duration_ms": 133,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "pre-tool-use:2:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-644c3c5d-1c3e-4026-81b6-446027ae9d39",
+      "event": "preToolUse",
+      "start_ms": 1793748036789,
+      "end_ms": 1793748036934,
+      "duration_ms": 45,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:5:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-644c3c5d-1c3e-4026-81b6-446027ae9d39",
+      "event": "postToolUse",
+      "start_ms": 1793748037640,
+      "end_ms": 1793748037681,
+      "duration_ms": 40,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:3:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-1b32d977-fd86-4016-a361-898b5acb14d7",
+      "event": "postToolUse",
+      "start_ms": 1793748045741,
+      "end_ms": 1793748045851,
+      "duration_ms": 109,
+      "status": "completed",
+      "entries": []
+    },
+    {
+      "id": "post-tool-use:4:/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/profiles/Q01-A/home/plugins/cache/tea-rags/tea-rags/0.55.7/hooks/hooks.json:exec-1b32d977-fd86-4016-a361-898b5acb14d7",
+      "event": "postToolUse",
+      "start_ms": 1793748045741,
+      "end_ms": 1793748045851,
+      "duration_ms": 73,
+      "status": "completed",
+      "entries": []
+    }
+  ],
+  "compactions": [],
+  "limits": [
+    "Native result bodies are represented only by hashes/locators; no reasoning fields exported.",
+    "Outer output truncation prevents treating every native body as delivered; inspect public outer outputs where needed.",
+    "No response scheduling saving inferred solely from native tool count."
+  ]
+}

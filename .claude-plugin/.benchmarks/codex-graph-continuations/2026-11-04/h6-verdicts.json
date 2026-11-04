@@ -1,0 +1,32 @@
+{
+  "policy": "H6 direct write-destination exclusion in Codex one-file hook",
+  "decision": "ACCEPT_CLASSIFICATION_FIX_WITH_EXPLICIT_LIMITATIONS",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1,
+  "original_attempt": {
+    "read-write-baseline/H01": "FAIL_EXPECTED: native hook falsely denies one read plus a different write",
+    "read-write-candidate/H01": "OPEN_ENVIRONMENT: native hook accepts, read-only sandbox cannot create heredoc temporary file; end-to-end copying NOT_RUN",
+    "read-write-baseline/H02": "OPEN_FIXTURE_ERROR: CODEX_HOME was absent inside exec shell; hook path did not resolve",
+    "read-write-candidate/H02": "OPEN_FIXTURE_ERROR: same path-resolution failure; hook did not run"
+  },
+  "corrected_no_io_classification_cases": {
+    "classifier-baseline/H03": "FAIL_EXPECTED: false native PreToolUse denial retained",
+    "classifier-candidate/H03": "PASS: exact command once, native hook accepts, process exits zero with CLASSIFIER_ACCEPTED",
+    "classifier-baseline/H04": "PASS: native hook denies two possible read expressions, no process starts",
+    "classifier-candidate/H04": "PASS: same protection retained, no process starts"
+  },
+  "unit_gate": {
+    "red": "Expected 0, observed 2 for a single read and direct Path.write_text destination",
+    "green": "63/63 relevant generator tests",
+    "unchanged_controls": "two real read expressions plus a write, w+ read/write mode, and a pathname also read via a variable"
+  },
+  "limitations": [
+    "H03/H04 validate actual native hook injection and static command classification; their file operations are unreachable and perform no filesystem I/O.",
+    "The original H01/H02 attempts remain open/failed as recorded; no claim that end-to-end copying succeeded in the read-only eval sandbox.",
+    "Both policies use two model responses per classification case. No model-step or general benchmark speed improvement inferred from this fix.",
+    "Only direct recognized write destinations are subtracted. Aliases, dynamic destination expressions and other interpreter syntax retain the old conservative fallback.",
+    "Unrelated quoted Markdown literals in code may still produce false positives; this is not a complete interpreter dataflow analyzer.",
+    "No B or Claude reruns; provider prefix caching observed, not disabled; n=1 is not statistical proof."
+  ]
+}

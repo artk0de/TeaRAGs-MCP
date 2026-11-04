@@ -1,0 +1,112 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-graph-continuations-20261104/.claude-plugin/.benchmarks/codex-graph-continuations/2026-11-04/evidence/domain-files-compact/Q03/public-actions.json",
+  "model_response_waves": 14,
+  "file_level_semantic_searches": 10,
+  "hybrid_searches": 0,
+  "scoped_searches": 5,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration reconcile lost missing webhooks polling",
+      "level": "file",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration failure reason error vocabulary",
+      "level": "file",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead signed URL VCR cassette recording sanitization replay",
+      "level": "file",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration rate limiting requests retry throttle",
+      "level": "file",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration entity matching client taxpayer",
+      "level": "file",
+      "metaOnly": true
+    },
+    {
+      "wave": 4,
+      "tool": "semantic_search",
+      "query": "rate limit throttle Instead",
+      "level": "file",
+      "pathPattern": "app/**/tax_automations/**",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 4,
+      "tool": "semantic_search",
+      "query": "failure reason failed processing Instead",
+      "level": "file",
+      "pathPattern": "app/**/tax_automations/**",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 4,
+      "tool": "semantic_search",
+      "query": "reconcile missing webhooks document sweep",
+      "level": "file",
+      "pathPattern": "app/**/tax_automations/**",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 4,
+      "tool": "semantic_search",
+      "query": "Instead signed URL cassette",
+      "level": "file",
+      "pathPattern": "spec/**",
+      "testFile": "only",
+      "metaOnly": true
+    },
+    {
+      "wave": 10,
+      "tool": "semantic_search",
+      "query": "upload failure reason forbidden api_error exceeded encrypted",
+      "level": "file",
+      "pathPattern": "app/**/tax_automations/**",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 9
+    },
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 6
+    },
+    {
+      "wave": 9,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 11,
+      "tool": "find_symbol",
+      "targets": 2
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

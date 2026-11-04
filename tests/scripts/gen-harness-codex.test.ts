@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   cpSync,
   mkdirSync,
@@ -724,6 +724,41 @@ describe("renderCodexHarness", () => {
     expect(script).toContain("ONE file per command");
     expect(script).toContain("exit 2");
     expect(script).not.toContain("CLAUDE_");
+  });
+
+  it("does not count a direct Python write destination as another Markdown read", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-one-read-"));
+    const script = join(dir, "one-file-read.sh");
+    writeFileSync(script, rendered.get("tea-rags/scripts/one-file-read.sh") ?? "");
+    const cases = [
+      {
+        code: 'from pathlib import Path; data=Path("source.md").read_text(); Path("result.md").write_text(data)',
+        status: 0,
+      },
+      { code: 'data=open("source.md").read(); open("result.md", "w").write(data)', status: 0 },
+      { code: 'data=open("source.md").read(); open("result.md", mode="a").write(data)', status: 0 },
+      {
+        code: 'from pathlib import Path; print(Path("one.md").read_text(), Path("two.md").read_text()); Path("result.md").write_text("done")',
+        status: 2,
+      },
+      { code: 'print(open("source.md").read(), open("result.md", "w+").read())', status: 2 },
+      {
+        code: 'from pathlib import Path; p=Path("one.md"); print(p.read_text(), Path("two.md").read_text()); Path("one.md").write_text("done")',
+        status: 2,
+      },
+    ];
+    try {
+      for (const { code, status } of cases) {
+        const result = spawnSync("bash", [script], {
+          input: JSON.stringify({ tool_input: { command: ["python3", "-c", code] } }),
+          encoding: "utf8",
+        });
+        expect(result.status, code).toBe(status);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("loads only a selected workflow's missing instructions and needed references", async () => {

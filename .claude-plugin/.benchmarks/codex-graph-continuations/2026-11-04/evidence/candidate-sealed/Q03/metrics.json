@@ -1,0 +1,23 @@
+{
+  "source": "/Users/Shared/nav-ab/graph-continuations-0557-evals/candidate-sealed/harness/actors/Q03-A/observations.json",
+  "source_sha256": "96af23e20b48ae711981826de3bfd487c1255a7a4d2e95d58808875db481e3b2",
+  "model_responses": 10,
+  "input_tokens": 340113,
+  "fresh_input_tokens": 43281,
+  "cached_input_tokens": 296832,
+  "output_tokens": 3890,
+  "seconds": 99.95515479199821,
+  "initial_input_tokens": 17090,
+  "prompt_sha256": "8f4eaab9895f9e380164fa62dee5d552cca441f654dcd23b6d839fea5a5d6e0a",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 1173,
+  "final_stream_seconds": 22.698,
+  "observed_runtime_union_seconds": 6.29,
+  "model_network_client_residual_seconds": 93.642,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

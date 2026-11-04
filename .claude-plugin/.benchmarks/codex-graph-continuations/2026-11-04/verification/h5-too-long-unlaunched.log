@@ -1,0 +1,95 @@
+
+ RUN  v5.0.3 /Users/Shared/nav-ab/codex-graph-continuations-20261104
+
+ ❯ |isolated| tests/scripts/gen-harness-codex.test.ts (62 tests | 1 failed) 27741ms
+   ✓ parseFrontmatter (4)
+     ✓ joins folded continuation lines and keeps the body 1ms
+     ✓ unquotes single- and double-quoted folded values 0ms
+     ✓ reads folded (>-) and literal (|) block scalars as YAML does 0ms
+     ✓ returns empty fields for a file without frontmatter 0ms
+   ✓ dropLoadTimeBlocks (3)
+     ✓ drops a block standing alone on its line and keeps the model-read line beside it 0ms
+     ✓ drops an inline block with its double-backtick wrapper 0ms
+     ✓ leaves a backtick-preceded `!` alone 0ms
+   ✓ toCodexSkill (11)
+     ✓ keeps only name and description in the frontmatter 0ms
+     ✓ emits codex-description as the description when the source carries one 0ms
+     ✓ drops load-time blocks 0ms
+     ✓ rewrites resource and MCP tool names to Codex's 0ms
+     ✓ turns skill references into $-mentions 0ms
+     ✓ rewrites Agent-tool passages to spawning a subagent 0ms
+     ✓ rewrites AskUserQuestion to asking the user 0ms
+     ✓ replaces Claude Code environment variables 0ms
+     ✓ names Codex's bundled rg -l for the default code search tool and a one-file sed range for the default code read tool, wrapped and capitalised lines included 0ms
+     ✓ folds the default code search tool and its following pattern + dir span into one copyable rg literal 0ms
+     ✓ falls back to the folder name and a body-derived description 1ms
+   ✓ extractInjectionBlock (1)
+     ✓ returns the first fenced block under the inject heading 0ms
+   ❯ renderCodexHarness (33)
+     × keeps the Codex Explore entrypoint below 4800 characters without removing its references 1731ms
+     ✓ ships direct content routing for known configuration files through the executable SessionStart hook 861ms
+     ✓ keeps a batching reminder per turn and the full scheduling contract at startup 1036ms
+     ✓ describes every Codex hook source and handler for the hook UI 775ms
+     ✓ renders byte-identically twice 1435ms
+     ✓ emits parseable JSON with the plugin manifest paths 667ms
+     ✓ SessionStart runs three context hooks — core, the Codex-only rules, then the prime digest — and the reread ledger; the digest hook is silent without the CLI 1365ms
+     ✓ fits the combined static startup and per-turn context into 17000 characters 713ms
+     ✓ tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md 739ms
+     ✓ renders the core usages row as one copyable rg literal whose dir slot names two relative examples 653ms
+     ✓ keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last 855ms
+     ✓ gives the digest hook the whole budget: a section larger than what core would leave is kept 842ms
+     ✓ fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, unranked sections dropped first 681ms
+     ✓ keeps every hook text payload within Codex's hook-output cap 606ms
+     ✓ core's guide-read line reads the known URI on the tea-rags server, never a bare resource listing 595ms
+     ✓ the skill and AGENTS copies still carry the whole Codex core: rules + Codex-only rules in one text 600ms
+     ✓ Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l 592ms
+     ✓ Codex rules say how to call tea-rags tools with code mode on and off 594ms
+     ✓ no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep 602ms
+     ✓ ships no dinopowers skill, every skill named after its folder 606ms
+     ✓ keeps every tea-rags skill description within what Codex shows unclipped 598ms
+     ✓ keeps every dinopowers skill description within what Codex shows unclipped 611ms
+     ✓ ships every plugin file a shipped skill links to by relative path 610ms
+     ✓ ships a subagent block script that does not depend on Claude Code variables 610ms
+     ✓ ships a PreToolUse hook that rejects shell commands printing more than one .md file 603ms
+     ✓ loads only a selected workflow's missing instructions and needed references 620ms
+     ✓ reuses current instructions across follow-ups and reloads changed or compacted material 614ms
+     ✓ ships no indexed-read deny hook 622ms
+     ✓ the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol 626ms
+     ✓ tells the core to read one file per command and to re-read a truncated one in ranges 614ms
+     ✓ opens the core with the read discipline so truncation never drops it 600ms
+     ✓ keeps the eval-stand plan-only rule out of the core 581ms
+     ✓ tells the core that an incremental index is a prelude and how to re-check a lagging graph answer 650ms
+   ✓ toCodexSkill — dinopowers wrappers (2)
+     ✓ mentions superpowers skills by their own name and wrappers by their dino- name 0ms
+     ✓ keeps the plugin-qualified name in the availability clause, as Codex lists plugin skills 0ms
+   ✓ renderCodexHarness — dinopowers package (6)
+     ✓ writes a manifest with skills and hooks and no MCP server of its own 0ms
+     ✓ ships every wrapper as dino-<name>, mentioning its superpowers skill and the install line 1ms
+     ✓ resolves every relative link inside the package 0ms
+     ✓ injects the routing table at SessionStart and SubagentStart in Codex mention syntax 0ms
+     ✓ routing hook names the installed SKILL.md of every routed skill, in both plugins 149ms
+     ✓ lists every plugin in the root marketplace 1ms
+   ✓ writeCodexHarness (2)
+     ✓ writes exactly the rendered package and marketplace manifest, dropping stale files 1205ms
+     ✓ is idempotent 1212ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| tests/scripts/gen-harness-codex.test.ts > renderCodexHarness > keeps the Codex Explore entrypoint below 4800 characters without removing its references
+AssertionError: expected 4931 to be less than or equal to 4800
+ ❯ tests/scripts/gen-harness-codex.test.ts:254:28
+    252|     const explore = rendered.get("tea-rags/skills/explore/SKILL.md") ?…
+    253|     expect(parseFrontmatter(explore).fields.name).toBe("explore");
+    254|     expect(explore.length).toBeLessThanOrEqual(4800);
+       |                            ^
+    255|     for (const reference of ["architecture-pattern", "usage-pattern", …
+    256|       expect(rendered.has(`tea-rags/skills/explore/references/${refere…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 61 passed (62)
+   Start at  02:37:55
+   Duration  27.97s (tests 100%)
+

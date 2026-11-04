@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "H03",
+      "question": "Native classification of one possible Markdown read and a direct write",
+      "prompt": "This is a native PreToolUse classification probe, not repository research. Execute the exact command below ONCE using exec_command and report stdout or the observed hook denial. It performs no filesystem I/O: the file operations are inside if False. Do not rewrite, retry, inspect skills/source, or bypass a hook. We are testing the hook's static command classification, not end-to-end file copying.\n\npython3 -c 'from pathlib import Path\nif False:\n    data = Path('\\''source.md'\\'').read_text()\n    Path('\\''result.md'\\'').write_text(data)\nprint('\\''CLASSIFIER_ACCEPTED'\\'')\n'"
+    },
+    {
+      "id": "H04",
+      "question": "Native classification still rejects two possible Markdown reads",
+      "prompt": "This is a native PreToolUse classification control, not repository research. Execute the exact command below ONCE using exec_command and report the observed hook refusal, or stdout if it unexpectedly reaches execution. It performs no filesystem I/O: all file operations are inside if False. Do not rewrite, retry, inspect skills/source, or bypass a hook. The static guard must still recognize the two possible read expressions even alongside a write destination.\n\npython3 -c 'from pathlib import Path\nif False:\n    print(Path('\\''one.md'\\'').read_text(), Path('\\''two.md'\\'').read_text())\n    Path('\\''result.md'\\'').write_text('\\''done'\\'')\nprint('\\''SHOULD_NOT_RUN'\\'')\n'"
+    },
+    {
+      "id": "H01",
+      "question": "One Python Markdown read and a distinct write destination",
+      "prompt": "This is a native TeaRAGs hook regression check, not a source investigation. Execute the exact shell command below ONCE using exec_command; it reads one temporary Markdown file and writes a different file. Return stdout or the hook denial if blocked. Do not rewrite or retry the command; do not inspect repository code or skills. The command cleans up its own temporary directory.\n\npython3 - <<'PY'\nfrom pathlib import Path\nimport os, tempfile\nwith tempfile.TemporaryDirectory(prefix='tea-rags-read-write-') as directory:\n    os.chdir(directory)\n    Path('source.md').write_text('probe\\n')\n    data = Path('source.md').read_text()\n    written = Path('result.md').write_text(data.upper())\n    print(f'COPY_OK:{written}:{data.strip()}')\nPY\n"
+    },
+    {
+      "id": "H02",
+      "question": "Two real Markdown reads remain blocked despite a write destination",
+      "prompt": "Check the installed TeaRAGs one-file hook without executing its test payload. Execute the exact shell command below ONCE through exec_command, then report its exit code and stderr. This pipes a synthetic tool-input JSON into the installed hook; it does NOT read the named Markdown files. Do not execute the JSON command, bypass the hook, retry it, or inspect repository code/skills. The fresh profile has exactly one installed TeaRAGs version.\n\nprintf '%s' '{\"tool_input\":{\"command\":[\"python3\",\"-c\",\"from pathlib import Path; print(Path(\\\"one.md\\\").read_text(), Path(\\\"two.md\\\").read_text()); Path(\\\"result.md\\\").write_text(\\\"done\\\")\"]}}' | bash \"$CODEX_HOME\"/plugins/cache/tea-rags/tea-rags/*/scripts/one-file-read.sh"
+    },
+    {
+      "id": "G01",
+      "question": "Local pre-send EIN helper chain",
+      "prompt": "Use $explore in TaxDome, starting from TaxPreparation::TaxAutomations::ExportAsync#perform, to explain when the pre-send EIN check refuses an export and which lookup scope determines that refusal. Follow its local helper chain. Do not edit files."
+    },
+    {
+      "id": "F01",
+      "question": "Class-anchor entity matching control",
+      "prompt": "In TaxDome's Instead integration, when is account-name fallback allowed during entity matching, and what happens if several entities match? Find the current implementation and explain those conditions. Do not edit files."
+    },
+    {
+      "id": "V01",
+      "question": "VCR recording/replay scope control",
+      "prompt": "What do TaxDome's Instead VCR recording hooks scrub from signed-upload interactions, and what do those hooks prove about existing recordings? Inspect the current code and state its limits. Do not edit files."
+    },
+    {
+      "id": "C01",
+      "question": "Explicit graph centrality control",
+      "prompt": "Use $explore to identify source entry points and architectural hubs for TaxDome tax automations. Use graph-based centrality rather than treating search relevance as dependency evidence. State the limits of the result. Do not edit files."
+    },
+    {
+      "id": "W01",
+      "question": "Explicit downstream retry control",
+      "prompt": "In TaxDome's Instead integration, distinguish a new user document send from an internal workflow retry after a failed upload. Follow the internal retry's preparation and reset path in the current code. Do not edit files."
+    },
+    {
+      "id": "Q03",
+      "question": "What lessons from the Instead integration should a second vendor inherit (rate limits, reconciliation of lost webhooks, failure-reason vocabulary, signed-URL cassettes, entity matching)?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nWhat lessons from the Instead integration should a second vendor inherit (rate limits, reconciliation of lost webhooks, failure-reason vocabulary, signed-URL cassettes, entity matching)?"
+    },
+    {
+      "id": "Q08",
+      "question": "The vendor states its upload limit as 50 MiB. Does TaxDome's capability passport compare file size in binary MiB or decimal MB?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nThe vendor states its upload limit as 50 MiB. Does TaxDome's capability passport compare file size in binary MiB or decimal MB?"
+    },
+    {
+      "id": "Q10",
+      "question": "If the same document is sent to the provider a second time, does the send even reach the vendor? Which pre-send refusals exist for documents already sent or still in flight?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nIf the same document is sent to the provider a second time, does the send even reach the vendor? Which pre-send refusals exist for documents already sent or still in flight?"
+    },
+    {
+      "id": "E01",
+      "question": "Explicit Explore control",
+      "prompt": "Use $explore to investigate and answer this question.\n\nПроект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nIf the same document is sent to the provider a second time, does the send even reach the vendor? Which pre-send refusals exist for documents already sent or still in flight?"
+    },
+    {
+      "id": "Q01",
+      "question": "How is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nHow is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?"
+    },
+    {
+      "id": "L01",
+      "question": "Named member lookup control",
+      "prompt": "Проект TaxDome. Покажи тело TaxPreparation::TaxAutomations::Registry#capabilities_for и кратко поясни возвращаемое значение. Не меняй файлы."
+    },
+    {
+      "id": "R01",
+      "question": "Held current body reuse control",
+      "prompt": "Explain the size-limit units and equality behavior from this current code already available in the conversation.\n\n```ruby\nclass TaxPreparation::TaxAutomations::Export::ValidateDocuments\ndef unsupported_file(document, terms)\n    extension = document.file_extension.to_s.downcase\n    limit = terms.max_file_size_mb.megabytes\n\n    return :unsupported_file_format unless terms.accepted_file_formats.include?(extension)\n\n    :file_too_large if document.file_size > limit\n  end\n```"
+    }
+  ],
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1
+}

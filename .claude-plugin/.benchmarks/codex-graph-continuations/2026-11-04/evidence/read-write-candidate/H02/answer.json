@@ -1,0 +1,3 @@
+{
+  "text": "Exit code: `1`\n\nStderr:\n```text\nzsh:1: no matches found: /plugins/cache/tea-rags/tea-rags/*/scripts/one-file-read.sh\n```\n\nThe hook did not run. The JSON payload was not executed. No retry was attempted."
+}

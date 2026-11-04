@@ -1,0 +1,693 @@
+{
+  "review": {
+    "workTree": "/Users/Shared/nav-ab/codex-graph-continuations-20261104",
+    "base": "HEAD",
+    "mergeBase": "86a915b8d2a66fca8014655b867cb8009450af36",
+    "changedFiles": 3,
+    "notJudged": {
+      "columns": [
+        "reasons.naming",
+        "reasons.cohesion",
+        "reasons.architecture",
+        "reasons.norms",
+        "details.architecture",
+        "details.norms",
+        "relPaths"
+      ],
+      "rows": [
+        [
+          "nonProduction",
+          "noCohesionData",
+          "unsupportedLanguage",
+          "unsupportedLanguage",
+          "the bash facade forwards no resolveFileEdges",
+          "the bash facade forwards no resolveFileEdges",
+          [
+            "harness/codex/tea-rags/scripts/one-file-read.sh"
+          ]
+        ],
+        [
+          "nonProduction",
+          "noCohesionData",
+          null,
+          null,
+          null,
+          null,
+          [
+            "scripts/gen-harness-codex.ts"
+          ]
+        ],
+        [
+          "nonProduction",
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            "tests/scripts/gen-harness-codex.test.ts"
+          ]
+        ]
+      ]
+    },
+    "sections": {
+      "naming": {
+        "built": true,
+        "workTree": "/Users/Shared/nav-ab/codex-graph-continuations-20261104",
+        "base": "HEAD",
+        "mergeBase": "86a915b8d2a66fca8014655b867cb8009450af36",
+        "changedFiles": 3,
+        "checked": 0,
+        "conforming": 0,
+        "novel": 0,
+        "findings": [],
+        "notJudged": 3,
+        "notJudgedBy": {
+          "file": {
+            "nonProduction": 3
+          }
+        }
+      },
+      "incompleteChange": {
+        "built": true,
+        "partners": {
+          "columns": [
+            "file",
+            "missingPartner",
+            "partnerKind",
+            "support",
+            "confidence",
+            "strength",
+            "lift",
+            "structurallyLinked",
+            "lastCoChangeAt"
+          ],
+          "rows": [
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "tests/hooks/search-drift.test.sh",
+              "test",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "harness/codex/tea-rags/hooks/hooks.json",
+              "source",
+              10,
+              0.625,
+              0.7224598312333834,
+              14.6875,
+              false,
+              1793362673
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "harness/codex/tea-rags/hooks/hooks.json",
+              "source",
+              10,
+              0.625,
+              0.7224598312333834,
+              14.6875,
+              false,
+              1793362673
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "scripts/gen-harness-cursor.ts",
+              "source",
+              8,
+              0.5,
+              0.6755843804891231,
+              14.6875,
+              false,
+              1793616895
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "harness/codex/tea-rags/scripts/codex-rules.txt",
+              "source",
+              5,
+              0.3125,
+              0.565508505247919,
+              14.6875,
+              false,
+              1793453614
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "scripts/harness/transform.ts",
+              "source",
+              5,
+              0.3125,
+              0.565508505247919,
+              14.6875,
+              false,
+              1793220451
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "harness/codex/tea-rags/scripts/codex-rules.txt",
+              "source",
+              5,
+              0.3125,
+              0.565508505247919,
+              14.6875,
+              false,
+              1793453614
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "scripts/harness/transform.ts",
+              "source",
+              5,
+              0.3125,
+              0.565508505247919,
+              14.6875,
+              false,
+              1793220451
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              ".claude-plugin/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "harness/codex/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "harness/codex/tea-rags/scripts/turn-routing.txt",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793453614
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "harness/cursor/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "scripts/gen-harness-codex.ts",
+              "plugins/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              ".claude-plugin/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "harness/codex/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "harness/codex/tea-rags/scripts/turn-routing.txt",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793453614
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "harness/cursor/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ],
+            [
+              "tests/scripts/gen-harness-codex.test.ts",
+              "plugins/tea-rags/scripts/search-drift.sh",
+              "source",
+              4,
+              0.25,
+              0.5100999795960008,
+              14.6875,
+              false,
+              1793327403
+            ]
+          ]
+        },
+        "coveredPartners": [
+          {
+            "file": "scripts/gen-harness-codex.ts",
+            "missingPartner": "tests/hooks/search-drift.test.sh",
+            "coveredBy": "tests/scripts/gen-harness-codex.test.ts",
+            "subject": "renderCodexHarness"
+          }
+        ],
+        "strengthThreshold": 0.5,
+        "strengthThresholdMethod": "majority",
+        "strengthSeparability": 0.689180296471225,
+        "cochangeSignificance": {
+          "method": "poissonConfigurationNull",
+          "family": "query",
+          "q": 0.05,
+          "familySize": 8709,
+          "testedPairCount": 454,
+          "admittedPairCount": 155,
+          "diffHistory": {
+            "excludedBundleCount": 0,
+            "bundleCommitsAvailable": true
+          }
+        },
+        "notSignificant": 13,
+        "versionManifestPairs": 4
+      },
+      "cohesion": {
+        "built": true,
+        "reports": [
+          {
+            "file": "tests/scripts/gen-harness-codex.test.ts",
+            "analyzedSymbols": 35,
+            "analyzedCommits": 46,
+            "massCommitsDropped": 1,
+            "pairCount": 10,
+            "clusters": {
+              "columns": [
+                "symbols",
+                "support",
+                "topPairs"
+              ],
+              "rows": [
+                [
+                  [
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l\"",
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep\"",
+                    "toCodexSkill.describe \"toCodexSkill\"",
+                    "toCodexSkill.describe \"toCodexSkill\".it \"names Codex's bundled rg -l for the default code search tool and a one-file sed range for the default code read tool, wrapped and capitalised lines included\""
+                  ],
+                  16,
+                  [
+                    {
+                      "a": "toCodexSkill.describe \"toCodexSkill\"",
+                      "b": "toCodexSkill.describe \"toCodexSkill\".it \"names Codex's bundled rg -l for the default code search tool and a one-file sed range for the default code read tool, wrapped and capitalised lines included\"",
+                      "support": 5,
+                      "confidence": 0.8333333333333334
+                    },
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep\"",
+                      "b": "toCodexSkill.describe \"toCodexSkill\"",
+                      "support": 3,
+                      "confidence": 0.5
+                    },
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l\"",
+                      "b": "toCodexSkill.describe \"toCodexSkill\"",
+                      "support": 3,
+                      "confidence": 0.42857142857142855
+                    }
+                  ]
+                ],
+                [
+                  [
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"loads only a selected workflow's missing instructions and needed references\"",
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"ships a subagent block script that does not depend on Claude Code variables\"",
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol\""
+                  ],
+                  6,
+                  [
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"loads only a selected workflow's missing instructions and needed references\"",
+                      "b": "renderCodexHarness.describe \"renderCodexHarness\".it \"the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol\"",
+                      "support": 3,
+                      "confidence": 0.5
+                    },
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"loads only a selected workflow's missing instructions and needed references\"",
+                      "b": "renderCodexHarness.describe \"renderCodexHarness\".it \"ships a subagent block script that does not depend on Claude Code variables\"",
+                      "support": 3,
+                      "confidence": 0.42857142857142855
+                    }
+                  ]
+                ],
+                [
+                  [
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"fits the combined static startup and per-turn context into 17000 characters\"",
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last\"",
+                    "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps every hook text payload within Codex's hook-output cap\""
+                  ],
+                  4,
+                  [
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"fits the combined static startup and per-turn context into 17000 characters\"",
+                      "b": "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps every hook text payload within Codex's hook-output cap\"",
+                      "support": 2,
+                      "confidence": 0.5
+                    },
+                    {
+                      "a": "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last\"",
+                      "b": "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps every hook text payload within Codex's hook-output cap\"",
+                      "support": 2,
+                      "confidence": 0.5
+                    }
+                  ]
+                ],
+                [
+                  [
+                    "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"writes a manifest with skills and hooks and no MCP server of its own\"",
+                    "toCodexSkill — dinopowers wrappers.describe \"toCodexSkill — dinopowers wrappers\".it \"mentions superpowers skills by their own name and wrappers by their dino- name\""
+                  ],
+                  2,
+                  [
+                    {
+                      "a": "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"writes a manifest with skills and hooks and no MCP server of its own\"",
+                      "b": "toCodexSkill — dinopowers wrappers.describe \"toCodexSkill — dinopowers wrappers\".it \"mentions superpowers skills by their own name and wrappers by their dino- name\"",
+                      "support": 2,
+                      "confidence": 1
+                    }
+                  ]
+                ]
+              ]
+            },
+            "unclusteredSymbols": [
+              "parseFrontmatter.describe \"parseFrontmatter\".it \"joins folded continuation lines and keeps the body\"",
+              "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\"",
+              "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"injects the routing table at SessionStart and SubagentStart in Codex mention syntax\"",
+              "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"lists every plugin in the root marketplace\"",
+              "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"resolves every relative link inside the package\"",
+              "renderCodexHarness — dinopowers package.describe \"renderCodexHarness — dinopowers package\".it \"routing hook names the installed SKILL.md of every routed skill, in both plugins\"",
+              "renderCodexHarness.describe \"renderCodexHarness\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"SessionStart runs three context hooks — core, the Codex-only rules, then the prime digest — and the reread ledger; the digest hook is silent without the CLI\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"describes every Codex hook source and handler for the hook UI\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"emits parseable JSON with the plugin manifest paths\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, unranked sections dropped first\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"gives the digest hook the whole budget: a section larger than what core would leave is kept\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps a batching reminder per turn and the full scheduling contract at startup\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"keeps the Codex Explore entrypoint below 4800 characters without removing its references\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"opens the core with the read discipline so truncation never drops it\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"renders the core usages row as one copyable rg literal whose dir slot names two relative examples\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"ships direct content routing for known configuration files through the executable SessionStart hook\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it \"tells the core that an incremental index is a prelude and how to re-check a lagging graph answer\"",
+              "renderCodexHarness.describe \"renderCodexHarness\".it.each \"keeps every %s skill description within what Codex shows unclipped\"",
+              "toCodexSkill — dinopowers wrappers.describe \"toCodexSkill — dinopowers wrappers\"",
+              "toCodexSkill.describe \"toCodexSkill\".it \"keeps only name and description in the frontmatter\"",
+              "writeCodexHarness.describe \"writeCodexHarness\"",
+              "writeCodexHarness.describe \"writeCodexHarness\".it \"writes exactly the rendered package and marketplace manifest, dropping stale files\""
+            ],
+            "cohesion": 0.5714285714285714,
+            "splitCandidate": true,
+            "windowMonths": 6
+          }
+        ],
+        "analyzedFiles": 1,
+        "nullReports": 2,
+        "notJudged": 2
+      },
+      "architecture": {
+        "built": true,
+        "findings": [],
+        "detectors": {
+          "columns": [
+            "detector",
+            "built",
+            "findingCount",
+            "groupedFindingCount",
+            "excluded.testEndpoints",
+            "excluded.generatedEndpoints",
+            "excluded.documentationEndpoints",
+            "excluded.versionManifestEndpoints",
+            "excluded.unwalkedEndpoints",
+            "excluded.notSignificant",
+            "excluded.explainedByFacadeChain",
+            "cochangeSignificance.method",
+            "cochangeSignificance.family",
+            "cochangeSignificance.q",
+            "cochangeSignificance.familySize",
+            "cochangeSignificance.testedPairCount",
+            "cochangeSignificance.admittedPairCount",
+            "cochangeSignificance.diffHistory.excludedBundleCount",
+            "cochangeSignificance.diffHistory.bundleCommitsAvailable"
+          ],
+          "rows": [
+            [
+              "stableDependencies",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "leakingAbstraction",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "cycles",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "mainSequence",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "silentCoupling",
+              true,
+              0,
+              0,
+              8404,
+              0,
+              4452,
+              222,
+              1473,
+              5235,
+              0,
+              "poissonConfigurationNull",
+              "query",
+              0.05,
+              8709,
+              454,
+              155,
+              0,
+              true
+            ],
+            [
+              "facadeContract",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "splitCandidates",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "layeringBackEdge",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "hubLike",
+              true,
+              0,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          ]
+        },
+        "notJudged": 1,
+        "change": {
+          "introducedCount": 0,
+          "nonLocal": [],
+          "resolved": [],
+          "persisting": [],
+          "touchedActive": []
+        }
+      },
+      "norms": {
+        "built": true,
+        "addedEdgeVerdicts": [],
+        "verdictCounts": {
+          "CONFORMS": 0,
+          "MISFIT": 0,
+          "NEW_PATTERN": 0,
+          "UNJUDGED": 0
+        },
+        "unjudgedReasonCounts": {},
+        "removedEdgeCount": 0,
+        "notJudged": 1
+      }
+    }
+  }
+}

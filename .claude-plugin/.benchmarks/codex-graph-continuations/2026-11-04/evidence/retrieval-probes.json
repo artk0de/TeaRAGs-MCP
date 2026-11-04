@@ -1,0 +1,377 @@
+{
+  "kind": "offline-metadata-probes-not-model-evals",
+  "project": "taxdome-worktree-navmaster",
+  "path": "/Users/Shared/nav-ab/repo-master",
+  "probes": [
+    {
+      "name": "matching-chunk",
+      "value": {
+        "label": "matching-chunk",
+        "query": "Instead entity matching taxpayer client",
+        "level": "chunk",
+        "data": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature"
+            ],
+            "rows": [
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb",
+                "TaxPreparation::TaxAutomations::Instead::Clients::FindEntity#taxpayer_entity",
+                32,
+                35,
+                "def taxpayer_entity(entity_type)"
+              ],
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb",
+                "TaxPreparation::TaxAutomations::Instead::Clients::FindEntity",
+                3,
+                6,
+                "include KindOfService"
+              ],
+              [
+                "app/lib/tax_preparation/tax_software_backups/contract.rb",
+                "TaxPreparation::TaxSoftwareBackups::Contract::Client#taxpayer",
+                85,
+                87,
+                "Client = Struct.new(:source_ref, :tax_year, :filing_status, :people, :address, :conditions, :items, :prior_year, :errors, keyword_init: true) do"
+              ]
+            ]
+          },
+          "level": "chunk"
+        }
+      }
+    },
+    {
+      "name": "matching-file",
+      "value": {
+        "label": "matching-file",
+        "query": "Instead entity matching taxpayer client",
+        "level": "file",
+        "data": {
+          "results": {
+            "columns": ["payload.relativePath"],
+            "rows": [
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb"
+              ],
+              ["app/lib/tax_preparation/tax_software_backups/contract.rb"],
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb"
+              ]
+            ]
+          },
+          "level": "file"
+        }
+      }
+    },
+    {
+      "name": "rate-chunk",
+      "value": {
+        "label": "rate-chunk",
+        "query": "Instead integration rate limit retries",
+        "level": "chunk",
+        "data": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature"
+            ],
+            "rows": [
+              [
+                "app/services/getting_paid/service_admin/tasks/stripe_connection/backfill_post_onboarding_action_required.rb",
+                "GettingPaid::ServiceAdmin::Tasks::StripeConnection::BackfillPostOnboardingActionRequired#with_rate_limit_retry",
+                142,
+                154,
+                "def with_rate_limit_retry(firm_id)"
+              ],
+              [
+                "app/services/getting_paid/service_admin/tasks/payment_providers/bulk_request_bnpl_capability.rb",
+                "GettingPaid::ServiceAdmin::Tasks::PaymentProviders::BulkRequestBnplCapability#with_rate_limit_retry",
+                103,
+                119,
+                "def with_rate_limit_retry(firm_id)"
+              ],
+              [
+                "lib/tasks/deploy.rake",
+                null,
+                3,
+                4,
+                "MIGRATIONS_TIMEOUT = 2.hours unless defined?(MIGRATIONS_TIMEOUT)"
+              ]
+            ]
+          },
+          "level": "chunk"
+        }
+      }
+    },
+    {
+      "name": "rate-file",
+      "value": {
+        "label": "rate-file",
+        "query": "Instead integration rate limit retries",
+        "level": "file",
+        "data": {
+          "results": {
+            "columns": ["payload.relativePath"],
+            "rows": [
+              [
+                "app/services/getting_paid/service_admin/tasks/stripe_connection/backfill_post_onboarding_action_required.rb"
+              ],
+              [
+                "app/services/getting_paid/service_admin/tasks/payment_providers/bulk_request_bnpl_capability.rb"
+              ],
+              ["lib/tasks/deploy.rake"]
+            ]
+          },
+          "level": "file"
+        }
+      }
+    },
+    {
+      "name": "scoped-rate",
+      "value": {
+        "label": "scoped-rate",
+        "args": {
+          "query": "rate limits retries",
+          "pathPattern": "**/tax_automations/**",
+          "level": "file"
+        },
+        "data": {
+          "results": {
+            "columns": ["payload.relativePath"],
+            "rows": [
+              ["app/lib/tax_preparation/tax_automations/base_client.rb"],
+              [
+                "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb"
+              ],
+              [
+                "app/workers/tax_preparation/tax_automations/operation_worker.rb"
+              ]
+            ]
+          },
+          "level": "file"
+        }
+      }
+    },
+    {
+      "name": "scoped-matching",
+      "value": {
+        "label": "scoped-matching",
+        "args": {
+          "query": "entity matching",
+          "pathPattern": "**/tax_automations/**",
+          "level": "file"
+        },
+        "data": {
+          "results": {
+            "columns": ["payload.relativePath"],
+            "rows": [
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb"
+              ],
+              ["app/lib/tax_preparation/tax_automations/metrics.rb"],
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/create_entity.rb"
+              ]
+            ]
+          },
+          "level": "file"
+        }
+      }
+    },
+    {
+      "name": "h5-domain-anchor",
+      "value": {
+        "content": [
+          {
+            "type": "text",
+            "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+          }
+        ],
+        "structuredContent": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature",
+              "payload.symbolId"
+            ],
+            "rows": [
+              [
+                "app/javascript/tests/constants/imgMocks.ts",
+                10,
+                10,
+                "};",
+                null
+              ],
+              [
+                "spec/support/tax_automations_helpers.rb",
+                3,
+                7,
+                "module TaxAutomationsHelpers",
+                "TaxAutomationsHelpers"
+              ],
+              [
+                "app/javascript/react-app/modules/workflow/constants/automationsValidationSchema.ts",
+                178,
+                182,
+                "});",
+                null
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "h5-anchor-Instead tax automation",
+      "value": {
+        "content": [
+          {
+            "type": "text",
+            "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+          }
+        ],
+        "structuredContent": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature",
+              "payload.symbolId"
+            ],
+            "rows": [
+              [
+                "app/javascript/react-app/modules/taxPreparation/constants/taxAutomations.ts",
+                15,
+                40,
+                "export const PROVIDERS_META: Record<TaxAutomationProvider, ProviderMeta> = {",
+                null
+              ],
+              [
+                "app/javascript/react-app/modules/taxPreparation/components/TaxAutomationsSidebar/TaxAutomationsSidebar.tsx",
+                24,
+                24,
+                "const t = scopedTranslation('frontend.firm.settings.tax_automations');",
+                "t"
+              ],
+              [
+                "app/javascript/react-app/modules/taxPreparation/components/TaxAutomationDocumentStatusCell/__tests__/TaxAutomationDocumentStatusCell.component.test.tsx",
+                64,
+                118,
+                "describe('TaxAutomationDocumentStatusCell', () => {",
+                "TaxAutomationDocumentStatusCell.describe 'TaxAutomationDocumentStatusCell'.it 'shows the document as sending while its bytes are still on the way'"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "h5-anchor-Instead entity matching",
+      "value": {
+        "content": [
+          {
+            "type": "text",
+            "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+          }
+        ],
+        "structuredContent": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature"
+            ],
+            "rows": [
+              [
+                "app/javascript/react-app/modules/crm/routes/pages/CalendarPage/types/EntityFilter.ts",
+                "EntityFilter",
+                1,
+                1,
+                "type EntityFilter = 'all' | 'tasksOnly' | 'jobsOnly';"
+              ],
+              [
+                "spec/requests/tax_preparation/webhooks/tax_automations/instead/events_controller_spec.rb",
+                "TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController.context 'when the delivery is about an entity'.it 'acknowledges and drops a delivery about an Instead firm no firm is bound to', :aggregate_failures",
+                218,
+                239,
+                "RSpec.describe TaxPreparation::Webhooks::TaxAutomations::Instead::EventsController, type: :request do"
+              ],
+              [
+                "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb",
+                "TaxPreparation::TaxAutomations::Instead::Clients::LinkEntityByName#match_person",
+                72,
+                83,
+                "def match_person(unlinked_entities)"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "h5-anchor-Instead rate limit",
+      "value": {
+        "content": [
+          {
+            "type": "text",
+            "text": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts."
+          }
+        ],
+        "structuredContent": {
+          "banner": "↳ Choose the row answering the question. Read only missing bodies with find_symbol; reuse full bodies already held. Use graph only for missing flow/impact facts.",
+          "results": {
+            "columns": [
+              "payload.relativePath",
+              "payload.symbolId",
+              "payload.startLine",
+              "payload.endLine",
+              "payload.signature"
+            ],
+            "rows": [
+              [
+                "app/lib/tax_preparation/tax_automations/instead/rate_limit_group.rb",
+                "TaxPreparation::TaxAutomations::Instead::RateLimitGroup",
+                14,
+                14,
+                "end"
+              ],
+              [
+                "spec/unit/initializers/sidekiq_spec.rb",
+                "Sidekiq.describe 'tax automations throttling'.it 'reads the configured limit for each named group'",
+                71,
+                92,
+                "RSpec.describe Sidekiq do"
+              ],
+              [
+                "config/initializers/rack_attack.rb",
+                "Rack::Attack.endpoints_throttle_limit",
+                88,
+                90,
+                "def endpoints_throttle_limit(req)"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

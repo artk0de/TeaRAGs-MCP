@@ -1,0 +1,106 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-graph-continuations-20261104/.claude-plugin/.benchmarks/codex-graph-continuations/2026-11-04/evidence/candidate-sealed/Q03/public-actions.json",
+  "model_response_waves": 10,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 0,
+  "scoped_searches": 4,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead API rate limiting retry limits",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead lost webhook reconciliation polling retry window",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead failure reason vocabulary errors",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead signed URL VCR cassette recording sanitization replay",
+      "testFile": "include",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead entity matching clients businesses individuals",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead rate limit",
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead failure_reason",
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead webhook reconciliation",
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 5,
+      "tool": "semantic_search",
+      "query": "Instead rate limit throttle budget retry",
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 3,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 4,
+      "tool": "find_symbol",
+      "targets": 5
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 5
+    },
+    {
+      "wave": 8,
+      "tool": "find_symbol",
+      "targets": 2
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

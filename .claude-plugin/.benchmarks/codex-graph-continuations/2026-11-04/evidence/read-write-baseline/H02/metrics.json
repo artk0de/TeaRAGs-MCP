@@ -1,0 +1,23 @@
+{
+  "source": "/Users/Shared/nav-ab/graph-continuations-0557-evals/read-write-baseline/harness/actors/H02-A/observations.json",
+  "source_sha256": "99d85f9937c9b337df312000fb140804d0d32e396955993455f2b65e54df3944",
+  "model_responses": 2,
+  "input_tokens": 34580,
+  "fresh_input_tokens": 17428,
+  "cached_input_tokens": 17152,
+  "output_tokens": 216,
+  "seconds": 9.073619041999336,
+  "initial_input_tokens": 17169,
+  "prompt_sha256": "9e62707050e575b00090e0c5d58f8386d88a8246fc58be3fe054d2843e5397e1",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 60,
+  "final_stream_seconds": 0.845,
+  "observed_runtime_union_seconds": 1.234,
+  "model_network_client_residual_seconds": 7.824,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

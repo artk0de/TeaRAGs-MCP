@@ -1,0 +1,3 @@
+{
+  "text": "The PreToolUse hook blocked the command:\n\n> tea-rags: read ONE file per command — this command prints 3 .md files\n\nNo stdout was produced. The command was submitted once; no rewrite or retry was attempted."
+}

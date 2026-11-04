@@ -1,0 +1,112 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-graph-continuations-20261104/.claude-plugin/.benchmarks/codex-graph-continuations/2026-11-04/evidence/candidate-sealed/W01/public-actions.json",
+  "model_response_waves": 18,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 0,
+  "scoped_searches": 3,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration internal workflow retry failed upload preparation reset",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration new user send documents upload",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead tax automation document sending retry ||| TaxAutomations Documents retry upload",
+      "metaOnly": true
+    },
+    {
+      "wave": 5,
+      "tool": "semantic_search",
+      "query": "tax automation send documents user Instead",
+      "pathPattern": "app/services/tax_preparation/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 8,
+      "tool": "semantic_search",
+      "query": "internal async workflow retry failed operation reset steps",
+      "pathPattern": "app/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 12,
+      "tool": "semantic_search",
+      "query": "retry failed async workflow operation reset",
+      "pathPattern": "{app/services/tech,lib/platform}/**",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 8,
+      "tool": "find_symbol",
+      "targets": 2
+    },
+    {
+      "wave": 9,
+      "tool": "find_symbol",
+      "targets": 2
+    },
+    {
+      "wave": 10,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 11,
+      "tool": "find_symbol",
+      "targets": 5
+    },
+    {
+      "wave": 12,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 13,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 14,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 15,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 16,
+      "tool": "find_symbol",
+      "targets": 4
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

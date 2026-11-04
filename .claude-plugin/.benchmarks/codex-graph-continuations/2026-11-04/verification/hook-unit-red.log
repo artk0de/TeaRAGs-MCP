@@ -1,0 +1,103 @@
+
+ RUN  v5.0.3 /Users/Shared/nav-ab/codex-graph-continuations-20261104
+
+ ❯ |isolated| tests/scripts/gen-harness-codex.test.ts (63 tests | 1 failed | 62 skipped) 1132ms
+   ↓ parseFrontmatter (4)
+     ↓ joins folded continuation lines and keeps the body
+     ↓ unquotes single- and double-quoted folded values
+     ↓ reads folded (>-) and literal (|) block scalars as YAML does
+     ↓ returns empty fields for a file without frontmatter
+   ↓ dropLoadTimeBlocks (3)
+     ↓ drops a block standing alone on its line and keeps the model-read line beside it
+     ↓ drops an inline block with its double-backtick wrapper
+     ↓ leaves a backtick-preceded `!` alone
+   ↓ toCodexSkill (11)
+     ↓ keeps only name and description in the frontmatter
+     ↓ emits codex-description as the description when the source carries one
+     ↓ drops load-time blocks
+     ↓ rewrites resource and MCP tool names to Codex's
+     ↓ turns skill references into $-mentions
+     ↓ rewrites Agent-tool passages to spawning a subagent
+     ↓ rewrites AskUserQuestion to asking the user
+     ↓ replaces Claude Code environment variables
+     ↓ names Codex's bundled rg -l for the default code search tool and a one-file sed range for the default code read tool, wrapped and capitalised lines included
+     ↓ folds the default code search tool and its following pattern + dir span into one copyable rg literal
+     ↓ falls back to the folder name and a body-derived description
+   ↓ extractInjectionBlock (1)
+     ↓ returns the first fenced block under the inject heading
+   ❯ renderCodexHarness (34)
+     ↓ keeps the Codex Explore entrypoint below 4800 characters without removing its references
+     ↓ ships direct content routing for known configuration files through the executable SessionStart hook
+     ↓ keeps a batching reminder per turn and the full scheduling contract at startup
+     ↓ describes every Codex hook source and handler for the hook UI
+     ↓ renders byte-identically twice
+     ↓ emits parseable JSON with the plugin manifest paths
+     ↓ SessionStart runs three context hooks — core, the Codex-only rules, then the prime digest — and the reread ledger; the digest hook is silent without the CLI
+     ↓ fits the combined static startup and per-turn context into 17000 characters
+     ↓ tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md
+     ↓ renders the core usages row as one copyable rg literal whose dir slot names two relative examples
+     ↓ keeps each SessionStart hook within Codex's per-hook cap: the core hook carries the whole core, the digest hook sections by priority and the pointer last
+     ↓ gives the digest hook the whole budget: a section larger than what core would leave is kept
+     ↓ fits the digest into the ~1,600 chars a 5,000-char core leaves: routing sections kept, unranked sections dropped first
+     ↓ keeps every hook text payload within Codex's hook-output cap
+     ↓ core's guide-read line reads the known URI on the tea-rags server, never a bare resource listing
+     ↓ the skill and AGENTS copies still carry the whole Codex core: rules + Codex-only rules in one text
+     ↓ Codex lag follow-ups find missing callers the way core does: a bounded shell rg -l
+     ↓ Codex rules say how to call tea-rags tools with code mode on and off
+     ↓ no rendered Codex file names a code search or read tool by role, nor an unbounded recursive grep
+     ↓ ships no dinopowers skill, every skill named after its folder
+     ↓ keeps every tea-rags skill description within what Codex shows unclipped
+     ↓ keeps every dinopowers skill description within what Codex shows unclipped
+     ↓ ships every plugin file a shipped skill links to by relative path
+     ↓ ships a subagent block script that does not depend on Claude Code variables
+     ↓ ships a PreToolUse hook that rejects shell commands printing more than one .md file
+     × does not count a direct Python write destination as another Markdown read 1130ms
+     ↓ loads only a selected workflow's missing instructions and needed references
+     ↓ reuses current instructions across follow-ups and reloads changed or compacted material
+     ↓ ships no indexed-read deny hook
+     ↓ the one-file-read deny names find_symbol for an indexed file, so its sed -n advice routes source code to find_symbol
+     ↓ tells the core to read one file per command and to re-read a truncated one in ranges
+     ↓ opens the core with the read discipline so truncation never drops it
+     ↓ keeps the eval-stand plan-only rule out of the core
+     ↓ tells the core that an incremental index is a prelude and how to re-check a lagging graph answer
+   ↓ toCodexSkill — dinopowers wrappers (2)
+     ↓ mentions superpowers skills by their own name and wrappers by their dino- name
+     ↓ keeps the plugin-qualified name in the availability clause, as Codex lists plugin skills
+   ↓ renderCodexHarness — dinopowers package (6)
+     ↓ writes a manifest with skills and hooks and no MCP server of its own
+     ↓ ships every wrapper as dino-<name>, mentioning its superpowers skill and the install line
+     ↓ resolves every relative link inside the package
+     ↓ injects the routing table at SessionStart and SubagentStart in Codex mention syntax
+     ↓ routing hook names the installed SKILL.md of every routed skill, in both plugins
+     ↓ lists every plugin in the root marketplace
+   ↓ writeCodexHarness (2)
+     ↓ writes exactly the rendered package and marketplace manifest, dropping stale files
+     ↓ is idempotent
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |isolated| tests/scripts/gen-harness-codex.test.ts > renderCodexHarness > does not count a direct Python write destination as another Markdown read
+AssertionError: from pathlib import Path; data=Path("source.md").read_text(); Path("result.md").write_text(data): expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ tests/scripts/gen-harness-codex.test.ts:748:37
+    746|           encoding: "utf8",
+    747|         });
+    748|         expect(result.status, code).toBe(status);
+       |                                     ^
+    749|       }
+    750|     } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 62 skipped (63)
+   Start at  02:49:44
+   Duration  1.34s (tests 91%, transform 5%, import 2%, setup 1%)
+

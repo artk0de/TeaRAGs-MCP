@@ -1,0 +1,36 @@
+[STARTED] Backing up original state...
+[COMPLETED] Backed up original state in git stash (8b3ab8114)
+[STARTED] Running tasks for staged files...
+[STARTED] package.json — 99 files
+[STARTED] *.{ts,js,mts,mjs} — 2 files
+[STARTED] *.{md,json,yaml,yml,css} — 90 files
+[STARTED] eslint --no-warn-ignored --max-warnings 0 --fix
+[STARTED] prettier --write
+[COMPLETED] prettier --write
+[COMPLETED] *.{md,json,yaml,yml,css} — 90 files
+[COMPLETED] eslint --no-warn-ignored --max-warnings 0 --fix
+[STARTED] prettier --write
+[COMPLETED] prettier --write
+[COMPLETED] *.{ts,js,mts,mjs} — 2 files
+[COMPLETED] package.json — 99 files
+[COMPLETED] Running tasks for staged files...
+[STARTED] Applying modifications from tasks...
+[COMPLETED] Applying modifications from tasks...
+[STARTED] Cleaning up temporary files...
+[COMPLETED] Cleaning up temporary files...
+⏭️  No src/ changes, skipping tests
+🔍 Running type check...
+
+> tea-rags@1.50.0 type-check
+> tsc --noEmit
+
+🔍 Running scripts type check...
+
+> tea-rags@1.50.0 type-check:scripts
+> tsc -p tsconfig.scripts.json
+
+🔍 Running tests type check...
+
+> tea-rags@1.50.0 type-check:tests
+> tsc -p tsconfig.tests.json
+

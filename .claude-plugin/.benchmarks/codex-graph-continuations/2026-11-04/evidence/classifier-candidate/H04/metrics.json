@@ -1,0 +1,23 @@
+{
+  "source": "/Users/Shared/nav-ab/graph-continuations-0557-evals/classifier-candidate/harness/actors/H04-A/observations.json",
+  "source_sha256": "6de870e8e5883155ba97a693089e95bc4e2c297a3032299def5e1432c2a90892",
+  "model_responses": 2,
+  "input_tokens": 34581,
+  "fresh_input_tokens": 17429,
+  "cached_input_tokens": 17152,
+  "output_tokens": 178,
+  "seconds": 7.812435125000775,
+  "initial_input_tokens": 17150,
+  "prompt_sha256": "6210bcf798a8616baf1831a0e12a63ce78160afe4f54b46c6f4597d0472039df",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 55,
+  "final_stream_seconds": 0.945,
+  "observed_runtime_union_seconds": 1.236,
+  "model_network_client_residual_seconds": 6.563000000000001,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

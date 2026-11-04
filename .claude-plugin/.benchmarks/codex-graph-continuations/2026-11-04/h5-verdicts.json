@@ -1,0 +1,64 @@
+{
+  "policy": "H5 distinct-file discovery and verified production scope",
+  "decision": "REJECTED_AS_GLOBAL_POLICY_NOT_INSTALLED",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1,
+  "cases": {
+    "Q01": {
+      "quality": "PASS",
+      "model_steps": 12,
+      "file_level_searches": 3,
+      "scoped_searches": 0
+    },
+    "Q03": {
+      "quality": "PASS",
+      "model_steps": 14,
+      "file_level_searches": 10,
+      "scoped_searches": 5,
+      "coverage": "All five material points, including persisted identity reuse and recording scrubbing."
+    },
+    "R01": { "quality": "PASS", "model_steps": 1, "source_tools": 0 },
+    "W01": {
+      "quality": "PASS",
+      "model_steps": 12,
+      "file_level_searches": 2,
+      "scoped_searches": 2
+    }
+  },
+  "mechanism": {
+    "file_level": "EXERCISED",
+    "domain_scoping": "EXERCISED",
+    "hybrid_routing": "NOT_EXERCISED"
+  },
+  "Q01_Q03_pair": {
+    "shipped_H2": {
+      "steps": 22,
+      "input": 841245,
+      "fresh": 122141,
+      "cached": 719104,
+      "output": 7873,
+      "seconds": 211.391
+    },
+    "H5": {
+      "steps": 26,
+      "input": 1025598,
+      "fresh": 118590,
+      "cached": 907008,
+      "output": 9033,
+      "seconds": 244.3855300419964
+    }
+  },
+  "interpretation": "Workflow W01 improved from shipped H2's 20 to 12 steps, but the predeclared Q01/Q03 pair regressed in steps, total input, output and elapsed time. Do not pool H2 Q01 with H5 W01 and claim a tested combined policy. Fresh input alone is insufficient for a cost claim.",
+  "cost": {
+    "status": "UNPRICED",
+    "delta_per_million_rates": "(-3551 * fresh_rate + 187904 * cached_rate + 1160 * output_rate) / 1000000",
+    "normalized_example": "At cached/fresh=0.05 and output/fresh=5, the pair is more expensive; these ratios are illustrative, not current prices or a subscription bill."
+  },
+  "limitations": [
+    "n=1 per policy/case",
+    "Independent histories; provider prefix cache recorded, not disabled",
+    "No B or Claude rerun",
+    "Public artifacts exclude private reasoning"
+  ]
+}

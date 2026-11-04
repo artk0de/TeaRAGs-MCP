@@ -1,0 +1,34 @@
+{
+  "policy": "H4 local-helper continuations",
+  "decision": "REJECTED_NOT_INSTALLED",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1,
+  "cases": {
+    "Q01": { "quality": "PASS", "model_steps": 10 },
+    "Q03": {
+      "quality": "PARTIAL",
+      "model_steps": 10,
+      "gap": "Persisted entity identity reuse omitted; name matching alone is insufficient."
+    },
+    "G01": {
+      "quality": "PASS",
+      "model_steps": 6,
+      "mechanism": "NOT_EXERCISED",
+      "observation": "Reference was read; no get_callees or same-executor returned-ID body continuation. Baseline also six steps."
+    },
+    "R01": { "quality": "PASS", "model_steps": 1, "source_tools": 0 },
+    "W01": {
+      "quality": "PASS",
+      "model_steps": 18,
+      "mechanism": "NOT_EXERCISED",
+      "observation": "Separates new user send from workflow preparation and upload-step retry, includes state reset and held-file recovery. No get_callees continuation."
+    }
+  },
+  "limitations": [
+    "One observation per case/policy; no significance or general improvement claim.",
+    "Raw journals retained privately under candidate-sealed; public exports exclude private reasoning.",
+    "The initial candidate preparation failed before any model request on an obsolete exact-file guard; its corrected successor pinned the exact old paths plus one reference.",
+    "H5 first preparation has zero model requests and failed the existing 4800-character unit gate. A shorter source snapshot is a separate stage; do not launch the original."
+  ]
+}

@@ -8,7 +8,7 @@
 INPUT=$(cat)
 command -v python3 >/dev/null 2>&1 || exit 0
 TEA_RAGS_HOOK_INPUT="$INPUT" exec python3 -I - <<'PY'
-import json, os, re, shlex, sys
+import ast, json, os, re, shlex, sys
 
 READERS = {"cat", "head", "tail", "less", "more", "bat", "batcat", "nl", "tac", "awk", "sed"}
 INTERPRETERS = {"python", "python3", "node", "ruby", "perl", "deno", "bun"}
@@ -78,7 +78,42 @@ def code_md(code):
     """Quoted .md literals of inline interpreter code that reads files; globs count as two."""
     found = set()
     if READ_CALL.search(code):
-        for path in MD_LITERAL.findall(code):
+        paths = MD_LITERAL.findall(code)
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            pass  # Other interpreters retain the conservative literal fallback.
+        else:
+            destinations = set()
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
+                # Only a direct Path constructor is a proved destination. A
+                # variable may also be read elsewhere, so never exclude its binding.
+                if isinstance(node.func, ast.Attribute) and node.func.attr in ("write_text", "write_bytes"):
+                    if isinstance(receiver, ast.Call) and (
+                        isinstance(receiver.func, ast.Name) and receiver.func.id == "Path"
+                        or isinstance(receiver.func, ast.Attribute) and receiver.func.attr == "Path"
+                    ):
+                        destinations.update(id(arg) for arg in receiver.args if isinstance(arg, ast.Constant))
+                if isinstance(node.func, ast.Name) and node.func.id == "open" and node.args:
+                    mode = node.args[1] if len(node.args) > 1 else next(
+                        (kw.value for kw in node.keywords if kw.arg == "mode"), None
+                    )
+                    if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+                        if any(flag in mode.value for flag in "wax") and "+" not in mode.value:
+                            # Do not discard nested read calls in a dynamic filename.
+                            if isinstance(node.args[0], ast.Constant):
+                                destinations.add(id(node.args[0]))
+            # Remove only the proved write occurrences, not every identical
+            # pathname: another occurrence may be a real read. Keep the existing
+            # fallback for bytes, escaped literals and non-Python syntax.
+            for node in ast.walk(tree):
+                if id(node) in destinations and isinstance(node, ast.Constant):
+                    if isinstance(node.value, str) and node.value in paths:
+                        paths.remove(node.value)
+        for path in paths:
             found.update({path + "#1", path + "#2"} if GLOB.search(path) else {path})
     return found
 
