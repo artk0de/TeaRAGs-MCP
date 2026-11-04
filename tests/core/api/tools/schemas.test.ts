@@ -36,6 +36,14 @@ const parseSearchCode = (input: unknown) => z.object(SearchCodeSchema).parse(inp
 const parseSemanticSearch = (input: unknown) => z.object(SemanticSearchSchema).parse(input);
 const parseHybridSearch = (input: unknown) => z.object(HybridSearchSchema).parse(input);
 
+describe("distinct file chunk search", () => {
+  it.each([parseSemanticSearch, parseHybridSearch])("accepts the optional distinctFiles flag through %s", (parse) => {
+    expect(parse({ query: "matching behavior", distinctFiles: true })).toHaveProperty("distinctFiles", true);
+    expect(parse({ query: "matching behavior", distinctFiles: "false" })).toHaveProperty("distinctFiles", false);
+    expect(parse({ query: "matching behavior" })).not.toHaveProperty("distinctFiles");
+  });
+});
+
 describe("migration search scope", () => {
   it("accepts an explicit migration scope on semantic and hybrid search", () => {
     expect(parseSemanticSearch({ query: "orders", scope: "migrations" })).toMatchObject({ scope: "migrations" });

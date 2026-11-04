@@ -31,21 +31,16 @@
  * exercises exactly the function the server runs.
  */
 
+import type { SearchConfidence } from "../../contracts/types/search-result.js";
 import type { ScoreBackground } from "../../contracts/types/trajectory.js";
 import { resolveLabel } from "./label-resolver.js";
+
+export type { SearchConfidence } from "../../contracts/types/search-result.js";
 
 /** One result reduced to the two fields confidence reads. */
 export interface SearchConfidenceInput {
   score: number;
   relativePath?: string;
-}
-
-/** Advisory match-quality verdict attached to a search response. */
-export interface SearchConfidence {
-  /** Confidence in [0,1], rounded to two decimals. */
-  value: number;
-  /** `high` | `medium` | `low` — resolved through the shared label resolver. */
-  label: string;
 }
 
 /** Calibration seam — the corpus harness sweeps the bounds it defaults to. */

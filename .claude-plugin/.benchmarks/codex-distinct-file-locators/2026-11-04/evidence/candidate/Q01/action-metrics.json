@@ -1,0 +1,76 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-distinct-file-locators-20261104/.claude-plugin/.benchmarks/codex-distinct-file-locators/2026-11-04/evidence/candidate/Q01/public-actions.json",
+  "model_response_waves": 11,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 0,
+  "distinct_file_searches": 3,
+  "scoped_searches": 0,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation provider vendor neutral ports adapter registration namespace",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "capability passport",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation data model provider integration",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 3,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 10
+    },
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 10
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 12
+    },
+    {
+      "wave": 8,
+      "tool": "find_symbol",
+      "targets": 12
+    },
+    {
+      "wave": 9,
+      "tool": "find_symbol",
+      "targets": 10
+    },
+    {
+      "wave": 10,
+      "tool": "find_symbol",
+      "targets": 5
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

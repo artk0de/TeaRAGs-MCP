@@ -17,16 +17,16 @@ export async function searchQueryVariants(
   ctx: ExploreContext,
   legs: readonly FusedSearchLeg[],
 ): Promise<ExploreResult[]> {
-  const fileLevel = ctx.level === "file";
+  const groupByFile = ctx.level === "file" || ctx.distinctFiles === true;
   const results = await fetchPathPatternMatches(
     ctx.pathPattern,
     {
-      fetchLimit: fileLevel ? ctx.limit * 3 : ctx.limit,
+      fetchLimit: groupByFile ? ctx.limit * 3 : ctx.limit,
       fetchUnit: "chunk",
       target: ctx.limit,
-      targetUnit: fileLevel ? "file" : "chunk",
+      targetUnit: groupByFile ? "file" : "chunk",
     },
     async (limit) => qdrant.fusedSearch(ctx.collectionName, legs, limit, ctx.filter),
   );
-  return fileLevel ? FileLevelGrouper.group(results, ctx.limit) : results;
+  return groupByFile ? FileLevelGrouper.group(results, ctx.limit) : results;
 }

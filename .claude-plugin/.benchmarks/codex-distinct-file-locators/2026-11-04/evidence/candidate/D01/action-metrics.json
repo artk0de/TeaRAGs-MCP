@@ -1,0 +1,31 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-distinct-file-locators-20261104/.claude-plugin/.benchmarks/codex-distinct-file-locators/2026-11-04/evidence/candidate/D01/public-actions.json",
+  "model_response_waves": 3,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 1,
+  "distinct_file_searches": 2,
+  "scoped_searches": 2,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation retry throttling",
+      "level": "chunk",
+      "distinctFiles": true,
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "hybrid_search",
+      "query": "tax automation retry throttling",
+      "level": "chunk",
+      "distinctFiles": true,
+      "pathPattern": "**/tax_automations/**",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

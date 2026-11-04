@@ -1,0 +1,9 @@
+{
+  "policy": "H7 distinct file chunks, production exclusion, original H2 answer style",
+  "decision": "CORRECT_API_AND_FACTUAL_COVERAGE; LATENCY_GOAL_OPEN",
+  "model": "gpt-6.1-sol", "effort": "medium", "n": 1,
+  "cases": {"D01":"PASS locator/filter/scheduling contract; not a ranking-quality claim", "Q01":"PASS all four original material points, including background callback", "Q03":"PASS all five original material points, including durable reuse and recording scrubbing", "R01":"PASS one response and zero source tools", "W01":"PASS actual preparation/reset path, new-send validation distinction and individual-step retry distinction"},
+  "Q01_Q03_pair": {"steps":21,"input":745256,"fresh":110632,"cached":634624,"output":8430,"seconds":226.34097283298615},
+  "cost_status": "UNPRICED; delta from H2 = (-11509*fresh_rate -84480*cached_rate +557*output_rate)/1000000",
+  "limitations": ["n=1, independent fresh histories, observed provider prefix caching", "H2 comparison changes backend plus policy; this is an overall product variant comparison, not isolated wording attribution", "The inherited grading limits string incorrectly said shared backend; actual as-run manifests and hypothesis explicitly pin the newly built runtime. Keep the as-run file and record this documentation defect.", "R01 and W01 use the retained route_gate/downstream_control entries, not case_rubrics entries.", "H7 is not installed; final answer-style experiment remains open. No B or Claude run."]
+}

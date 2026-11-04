@@ -11,6 +11,14 @@
 import type { RankingOverlay } from "./reranker.js";
 import type { WorkingTreeState } from "./working-tree.js";
 
+/** Advisory match-quality verdict attached to a search response. */
+export interface SearchConfidence {
+  /** Confidence in [0,1], rounded to two decimals. */
+  value: number;
+  /** `high` | `medium` | `low` — resolved through the shared label resolver. */
+  label: string;
+}
+
 /** One explore row as the strategies, floors and groupers exchange it. */
 export interface ExploreResult<P = Record<string, unknown>> {
   id?: string | number;

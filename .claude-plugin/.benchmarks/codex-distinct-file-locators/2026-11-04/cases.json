@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "cases": [
+{
+  "id": "U01",
+  "question": "Explicit user answer format overrides compact factual tables",
+  "prompt": "Use $explore in TaxDome, starting from TaxPreparation::TaxAutomations::ExportAsync#perform, to explain when the pre-send EIN check refuses an export and which lookup scope causes that refusal. Answer in exactly two bullets, with no tables, introduction or conclusion. Do not edit files."
+},
+    {
+      "id": "D01",
+      "question": "Distinct production file representatives retain method locators",
+      "prompt": "In TaxDome, locate three distinct production source files for tax automation retry/throttling behavior. Compare semantic_search and hybrid_search in one executor wave, using distinctFiles:true, level:\"chunk\", metaOnly:true, limit:3 and the production filter preset for each. Scope the searches to the tax_automations namespace. Return the relative path, actual symbolId and line range for each result, labelled by search kind. Gather locator metadata only; do not read source bodies or edit files."
+    },
+    {
+      "id": "W01",
+      "question": "Explicit downstream retry control",
+      "prompt": "In TaxDome's Instead integration, distinguish a new user document send from an internal workflow retry after a failed upload. Follow the internal retry's preparation and reset path in the current code. Do not edit files."
+    },
+    {
+      "id": "Q03",
+      "question": "What lessons from the Instead integration should a second vendor inherit (rate limits, reconciliation of lost webhooks, failure-reason vocabulary, signed-URL cassettes, entity matching)?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nWhat lessons from the Instead integration should a second vendor inherit (rate limits, reconciliation of lost webhooks, failure-reason vocabulary, signed-URL cassettes, entity matching)?"
+    },
+    {
+      "id": "Q01",
+      "question": "How is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?",
+      "prompt": "Проект TaxDome. В нём есть интеграция с Instead; рассматривается новая интеграция с GruntWorx. Проанализируй существующий код или оцени предложение, в зависимости от вопроса. Не редактируй файлы.\n\nHow is the tax-automation provider architecture organized today: which vendor-neutral ports exist, how does a provider adapter plug in (registration, what an adapter namespace must provide), what is the capability passport, and what does the data model look like?"
+    },
+    {
+      "id": "R01",
+      "question": "Held current body reuse control",
+      "prompt": "Explain the size-limit units and equality behavior from this current code already available in the conversation.\n\n```ruby\nclass TaxPreparation::TaxAutomations::Export::ValidateDocuments\ndef unsupported_file(document, terms)\n    extension = document.file_extension.to_s.downcase\n    limit = terms.max_file_size_mb.megabytes\n\n    return :unsupported_file_format unless terms.accepted_file_formats.include?(extension)\n\n    :file_too_large if document.file_size > limit\n  end\n```"
+    }
+  ],
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1
+}

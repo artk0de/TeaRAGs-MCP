@@ -1,0 +1,145 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-distinct-file-locators-20261104/.claude-plugin/.benchmarks/codex-distinct-file-locators/2026-11-04/evidence/compact-output/Q01/public-actions.json",
+  "model_response_waves": 13,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 0,
+  "distinct_file_searches": 3,
+  "scoped_searches": 0,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation vendor neutral ports provider registry adapter registration",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation capability passport",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "tax automation data model",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 3,
+      "tool": "find_symbol",
+      "targets": 2
+    },
+    {
+      "wave": 4,
+      "tool": "find_symbol",
+      "targets": 15
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 16
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 7
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 7
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 13
+    },
+    {
+      "wave": 8,
+      "tool": "find_symbol",
+      "targets": 7
+    },
+    {
+      "wave": 9,
+      "tool": "find_symbol",
+      "targets": 8
+    },
+    {
+      "wave": 10,
+      "tool": "find_symbol",
+      "targets": 6
+    },
+    {
+      "wave": 11,
+      "tool": "find_symbol",
+      "targets": 7
+    },
+    {
+      "wave": 12,
+      "tool": "find_symbol",
+      "targets": 8
+    }
+  ],
+  "repeated_body_hash_candidates": [
+    {
+      "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+      "symbol": "TaxPreparation::TaxAutomations::ExportAsync",
+      "sha256": "32710769d10ae641b4831076895d6986dcaf675fa2d24d09bfddeae280499fdd",
+      "deliveries": 2
+    },
+    {
+      "path": "app/services/tax_preparation/tax_automations/export_async.rb",
+      "symbol": "TaxPreparation::TaxAutomations::ExportAsync::ClientUpdateForbiddenError",
+      "sha256": "06a8653c55df126daf1f5518a416768ac1cf257c5bc7f699cddc6ed8fbc0f50a",
+      "deliveries": 2
+    },
+    {
+      "path": "app/services/tax_preparation/tax_automations/connections/create.rb",
+      "symbol": "TaxPreparation::TaxAutomations::Connections::Create",
+      "sha256": "39fba124c1eb2f6ae0270034f06218f11e17c15b264dc91b2a823da6746733d4",
+      "deliveries": 2
+    },
+    {
+      "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient",
+      "sha256": "b3e269ef2f70f2512a6b50736b9044cadd4275e1fa67847a372d1dcb53646c87",
+      "deliveries": 2
+    },
+    {
+      "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::InsufficientScopeError",
+      "sha256": "fd238eb8971bc92c885200e5c366ffbef91a5a35ada5b973efa2fed443736bf9",
+      "deliveries": 2
+    },
+    {
+      "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::UnprocessableEntityError",
+      "sha256": "4b5aa89c6f9b35f79cd549c45b5ab009fbcf38642e7a88dae9119964b5e0079d",
+      "deliveries": 2
+    },
+    {
+      "path": "app/lib/tax_preparation/tax_automations/base_client.rb",
+      "symbol": "TaxPreparation::TaxAutomations::BaseClient::RaiseCustomErrors",
+      "sha256": "2c60ddba03921538beb91a8143c884b4ca860b728dfdbd4d7647ee183f386341",
+      "deliveries": 2
+    },
+    {
+      "path": "app/lib/tax_preparation/tax_automations/token_refreshable.rb",
+      "symbol": "TaxPreparation::TaxAutomations::TokenRefreshable",
+      "sha256": "5b969ecc26676504ecf3ce96592b870c026d9868d3f647e89ab7b4ccc7ad1cef",
+      "deliveries": 2
+    }
+  ],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

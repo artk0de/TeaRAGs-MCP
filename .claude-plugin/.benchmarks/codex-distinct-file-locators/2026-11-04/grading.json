@@ -1,0 +1,348 @@
+{
+  "actor_visibility": "DENIED; controller-only",
+  "case_rubrics": [
+    {
+      "id": "U01",
+      "prompt_sha256": "9cf817a70a885a157595e1f3e258630e524bd8362666dbb912f0300fe5642e50",
+      "question_sha256": "595f2c40b6ec9253c7f3c5b212c302d5e51f7814c8988b6259255517e6f4289b",
+      "rubric_kind": "user_format_priority_and_current_ein_scope",
+      "main_aggregate": false,
+      "points": [
+        {
+          "id": "format",
+          "criterion": "Exactly two bullets, no table/introduction/conclusion; explicit user format overrides the Explore default.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "facts",
+          "criterion": "Business-return gate; same firm/EIN, another client and an existing send record for the envelope; no year/provider/upload-status restriction; newest matching envelope chooses client; BoundAccountError with unprocessable/bound_account_id before provider dispatch. Ground the actual local helpers, not an unrelated adapter workflow.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        }
+      ],
+      "reference_source_facts_not_all_mandatory": [],
+      "control_scoping": "Explicit Explore plus user-format override. No graph-to-executor continuation mechanism requirement."
+    },
+    {
+      "id": "D01",
+      "prompt_sha256": "408eedfa1b9620a4724a23001e84ef36f66e5761a4d8122925c3051f81ab1fa7",
+      "question_sha256": "7c6170e42008dee315bf2a56147535cd583bbc1d8f767f640ff0b929f55f4ce3",
+      "rubric_kind": "native_distinct_locator_and_filter_contract",
+      "main_aggregate": false,
+      "points": [
+        {
+          "id": "distinct_metadata",
+          "criterion": "Observed semantic_search and hybrid_search each request distinctFiles:true, metaOnly:true, limit:3 within the tax_automations namespace, with the production filter preset. Each response has three distinct relativePaths and preserves available symbol/line locators. Final answer labels results by search kind, reports actual values and does not fabricate an unavailable symbol.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "one_search_wave",
+          "criterion": "The two independent source searches run in the same executor wave. No source bodies, file outlines or repeat confirmation reads; schema or filter-guide lookup only if needed. This is a locator contract case, not a claim that semantic results establish complete behavior.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        }
+      ],
+      "reference_source_facts_not_all_mandatory": [],
+      "control_scoping": "Exercises the actual new backend and production filter schema after the hint is shortened; raw fixture contains no expected file names or symbol IDs."
+    },
+    {
+      "id": "Q03",
+      "prompt_sha256": "8f4eaab9895f9e380164fa62dee5d552cca441f654dcd23b6d839fea5a5d6e0a",
+      "question_sha256": "836cbd798719a6358c3ba42411041bb7d8e7c843c0ff4d64b818b2d9c55f0802",
+      "rubric_kind": "current_source_factual",
+      "main_aggregate": true,
+      "points": [
+        {
+          "id": "rate_limits",
+          "criterion": "Ground lessons in the configured quota scopes, retry/backoff semantics and material retry-count limitation.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "reconciliation",
+          "criterion": "Explain stale-send/read-back recovery, shared status mapping and relevant idempotency/ordering limits.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "failure_vocabulary",
+          "criterion": "Explain stable failure meanings and adapter mapping/retry distinction.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "cassettes",
+          "criterion": "Explain signed-target replay time and credential/signature scrubbing; do not claim all old cassettes are sanitized from a recording hook alone.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "entity_matching",
+          "criterion": "Explain persisted identity reuse and conservative unique matching; do not copy Instead-specific taxpayer rules into an unknown vendor contract.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        }
+      ],
+      "reference_source_facts_not_all_mandatory": [
+        {
+          "relativePath": "config/initializers/sidekiq.rb",
+          "symbol_or_range": "Sidekiq::Throttled::Registry.add(:tax_automations_instead)",
+          "lines": "101-133",
+          "sha256": "c212beb07dbfade425f59548df25461cb156ebc663efdaaa888ec79514e33d35",
+          "claim_supported": "Per-group-per-connection threshold precedes app-wide threshold; both budgets configured per vendor."
+        },
+        {
+          "relativePath": "app/workers/tax_preparation/tax_automations/operation_worker.rb",
+          "symbol_or_range": "OperationWorker::RETRY_ATTEMPTS / .global_retry_in",
+          "lines": "3-70",
+          "sha256": "e33c69b34aac5ddf6aff65d95914801a19af4d1302afb17be0c8b1e2c443de5a",
+          "claim_supported": "Ten retries per run; throttled reschedule resets count; invalid grant/policy kill, rate limits use retry_after."
+        },
+        {
+          "relativePath": "app/lib/tax_preparation/tax_automations/base_client.rb",
+          "symbol_or_range": "BaseClient#adapter_spec / #upload_to_signed_target / PresignedUploadTarget#complete? / RateLimitedError#retry_after",
+          "lines": "41-69,121-129,243-274,408-416",
+          "sha256": "57192cfcd72e44681208bb990497fddc43d6adfe6c55b48e0bf903ce163a53eb",
+          "claim_supported": "Injected Faraday test transport or default adapter; signed upload always multipart POST, target needs nonempty fields; Retry-After supports integer or HTTP date."
+        },
+        {
+          "relativePath": "app/queries/tax_preparation/tax_automations/documents/reconcile_candidates_query.rb",
+          "symbol_or_range": "ReconcileCandidatesQuery constants and all four methods",
+          "lines": "3-48",
+          "sha256": "62623855073107a915a278afb1540481c86bbcf7fa42798aefa25d7d12603d8d",
+          "claim_supported": "Uploaded-only inclusive uploaded_at windows: sent>=1h, processing>=12h, <=2d; provider overrides seconds; older unchanged; connected+Owner+feature gate."
+        },
+        {
+          "relativePath": "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "symbol_or_range": "ReconcileSweepWorker#perform / #reconcile",
+          "lines": "3-43",
+          "sha256": "1c93c5b9a291ec4551d6504e9bf0964432e632d821f636406f70f7a8d78c288e",
+          "claim_supported": "30-minute sweep iterates registered adapters, groups by firm, invokes adapter::Documents::ReconcileStatusesAsync as Owner."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/instead/documents/reconcile_statuses.rb",
+          "symbol_or_range": "ReconcileStatuses#perform / #apply_page / #apply",
+          "lines": "3-80",
+          "sha256": "345ef2221a076bdd6c7ab19989546819d7c0d9ec51297efa6133f54dca84743d",
+          "claim_supported": "Paginated folder read, persisted UUID matching, missing status no write, unknown status skips row; absent folder/forbidden entity skipped."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/instead/documents/reconcile_status.rb",
+          "symbol_or_range": "ReconcileStatus#read_file_state / #apply",
+          "lines": "3-61",
+          "sha256": "fd0f21db071d1e8f921d13a4a5de2c467c0c279ddf2603dcf51d9c5d7752db05",
+          "claim_supported": "Single-file fallback applies known status; individual NotFound => archived, unlike omission in folder list."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/instead/documents/apply_processing_status.rb",
+          "symbol_or_range": "ApplyProcessingStatus#perform and mapping constants",
+          "lines": "3-59",
+          "sha256": "a5e59dc4910828d71f1e827977802187478e0bb2466105f70b4f1a4f77e14e0e",
+          "claim_supported": "Shared webhook/reconcile fold; processing/completed/failed/archived mapping, password_required=>encrypted; unknown error detail unset; duplicates and refused transitions do not rewrite state."
+        },
+        {
+          "relativePath": "app/lib/tax_preparation/tax_automations/refusals_helper.rb",
+          "symbol_or_range": "RefusalsHelper::TERMINAL_ERRORS / REASONS / REPORTED_ERRORS / #reason_for",
+          "lines": "3-73",
+          "sha256": "4a9a0b51662da537ccd6da34723d80f4d282f10efd25c7603e5ef8ac7ffbd2f1",
+          "claim_supported": "Quota=>exceeded; invalid grant/401/insufficient scope=>unauthorized; local policy=>forbidden; other terminal errors default api_error and selected contract failures reported."
+        },
+        {
+          "relativePath": "spec/support/vcr_fixed_time.rb",
+          "symbol_or_range": "VcrFixedTime#use_cassette",
+          "lines": "3-22",
+          "sha256": "7b43887c4a9436ec2e56b6b0550fb2588a637a50f5eed1bc7e040e3e66b79920",
+          "claim_supported": "Tagged replay freezes at first recorded_at; new recording uses real clock."
+        },
+        {
+          "relativePath": "spec/spec_helper.rb",
+          "symbol_or_range": "VCR.configure before_record",
+          "lines": "157-195",
+          "sha256": "de7a0c5918ce817b6a9425913583f431d8beaa37b46c33307c7b931b31fbf820",
+          "claim_supported": "Whole-library signed-policy/credential/signature/client_secret body scrubbing; Instead-host-specific bearer/token scrubbing."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/instead/clients/link_entity_by_name.rb",
+          "symbol_or_range": "LinkEntityByName#perform / #match_person / #build_match / normalization constants",
+          "lines": "3-147",
+          "sha256": "308de48be0b28134256342cca085f46e508abe894b95c9ec373254742f5142ad",
+          "claim_supported": "Same-firm active unlinked entity/type; only unique match; normalized names/legal forms/conjunctions; sole-contact account fallback; swapped personal names only after no direct match; ambiguity metrics."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/instead/clients/find_entity.rb",
+          "symbol_or_range": "FindEntity#taxpayer_entity",
+          "lines": "3-36",
+          "sha256": "23f50def03b351d855ace1f4095afa88bc2ddc7991a1289de4c491219eb4a174",
+          "claim_supported": "Stored entity link reused across years for firm/client/contact/entity-type."
+        },
+        {
+          "relativePath": "app/models/tax_preparation/tax_automations/document.rb",
+          "symbol_or_range": "Document constants / AASM / uniqueness",
+          "lines": "3-139",
+          "sha256": "40a131d6a59d2058421b945d891f4f07001be995a4af05893f2188101031bac3",
+          "claim_supported": "Send snapshots provider/return type; upload and processing machines; exact eight failure reasons and document/envelope/provider/return-type uniqueness."
+        }
+      ],
+      "reference_fact_policy": "These retained hash-identified source facts are grader leads/checks, not a checklist of incidental facts or mandatory tool reads. Validate against the frozen current corpus; literal isolated prompt and recorded conversion scope control. No prior answer, prior grade or hidden context is an oracle.",
+      "proposal_scoping": null,
+      "control_scoping": null
+    },
+    {
+      "id": "Q01",
+      "prompt_sha256": "45fc1b7fdbfb2915f707988b92c0d265ad8985013be47c2191516a2658e26bfa",
+      "question_sha256": "d2ebd5545ec77d7a16c35d968e75317245e1ec76684868e3c0a1e49ed5ba3792",
+      "rubric_kind": "current_source_factual",
+      "main_aggregate": true,
+      "points": [
+        {
+          "id": "registration",
+          "criterion": "Explain explicit registered adapters versus provider enum values and how firm selection resolves the adapter.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "adapter_contract",
+          "criterion": "Identify the meaningful shared ports and adapter roles, including the required Documents::ReconcileStatusesAsync hook used by the shared sweep; no incidental private helper list is required.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "capability_passport",
+          "criterion": "Explain class-level typed capabilities with per-return-type formats/size and supported tax years, and how they are consumed.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        },
+        {
+          "id": "data_model",
+          "criterion": "Explain common firm settings/envelope/send records and vendor connection/entities, with provider/type identity and transitional Juno storage where material.",
+          "role": "material_coverage_point",
+          "assessment": "met|partly_met|unmet|unknown|not_applicable",
+          "exact_wording_required": false
+        }
+      ],
+      "reference_source_facts_not_all_mandatory": [
+        {
+          "relativePath": "app/lib/tax_preparation/tax_automations/registry.rb",
+          "symbol_or_range": "Registry::ADAPTERS / FEATURE_FLAGS / client_for",
+          "lines": "3-133",
+          "sha256": "9191ec6421f757f731025ae5d3de16c71d2848f9b213efb0b7e0c22293c4fe5b",
+          "claim_supported": "Only Instead is registered; static adapter/flag maps; firm selection and connection namespace resolve adapter/client."
+        },
+        {
+          "relativePath": "app/models/tax_preparation/tax_automations/firm_settings.rb",
+          "symbol_or_range": "FirmSettings::PROVIDERS",
+          "lines": "3-17",
+          "sha256": "2b755ee9eaf72b475499603f7c190a74ab28124f3c70ad76b8b98af59cdffbed",
+          "claim_supported": "One provider setting per firm; juno=0, gruntworx=1, instead=2."
+        },
+        {
+          "relativePath": "app/models/tax_preparation/tax_automations/has_capabilities.rb",
+          "symbol_or_range": "HasCapabilities::Capabilities / .capabilities",
+          "lines": "3-112",
+          "sha256": "d9636907d68acb9057cb3af79b000bde76bca03b77ff19615d35e56f5b8a5ffb",
+          "claim_supported": "Class passport: per-return-type extension/positive integer size terms, global tax years, duplicate terms rejected; class-level bounds and lazy checks."
+        },
+        {
+          "relativePath": "app/models/tax_preparation/tax_automations/document.rb",
+          "symbol_or_range": "Document constants / AASM / uniqueness",
+          "lines": "3-139",
+          "sha256": "40a131d6a59d2058421b945d891f4f07001be995a4af05893f2188101031bac3",
+          "claim_supported": "Send snapshots provider/return type; upload and processing machines; exact eight failure reasons and document/envelope/provider/return-type uniqueness."
+        },
+        {
+          "relativePath": "app/models/tax_preparation/tax_automations/tax_preparation.rb",
+          "symbol_or_range": "TaxPreparation table, enums and validations",
+          "lines": "3-112",
+          "sha256": "a519fb247e69227fbd515c49fcefc43b33c9234702982b471b6a20162620a611",
+          "claim_supported": "Shared envelope still uses juno_tax_preparations; account/contact/year key, return-type enum, EIN validation and transitional Juno associations."
+        },
+        {
+          "relativePath": "app/services/tax_preparation/tax_automations/export_async.rb",
+          "symbol_or_range": "ExportAsync#initialize / #perform / #send_to_provider!",
+          "lines": "22-105,207-210",
+          "sha256": "3433be6b8582234924d404e176b1cfbebca46b9f9e0a1d33b1b80637191360e7",
+          "claim_supported": "Required client_id; personal contact; business EIN; validation precedes adapter dispatch, all-rejected early return; accepted subset and shared records passed to adapter."
+        },
+        {
+          "relativePath": "app/workers/tax_preparation/tax_automations/documents/reconcile_sweep_worker.rb",
+          "symbol_or_range": "ReconcileSweepWorker#perform / #reconcile",
+          "lines": "3-43",
+          "sha256": "1c93c5b9a291ec4551d6504e9bf0964432e632d821f636406f70f7a8d78c288e",
+          "claim_supported": "30-minute sweep iterates registered adapters, groups by firm, invokes adapter::Documents::ReconcileStatusesAsync as Owner."
+        },
+        {
+          "relativePath": "app/models/concerns/tax_preparation/tax_automations/has_oauth_connection.rb",
+          "symbol_or_range": "HasOauthConnection headers, state machine and #store_tokens!",
+          "lines": "3-103,126-171",
+          "sha256": "f79f2db84914ddf70ac2a07ec81a189e5d5485d1006844573c6a331f0a772c19",
+          "claim_supported": "Encrypted access/refresh credentials, creator columns, OAuth state lifecycle; connect/refresh require both tokens; usable means may_refresh."
+        }
+      ],
+      "reference_fact_policy": "These retained hash-identified source facts are grader leads/checks, not a checklist of incidental facts or mandatory tool reads. Validate against the frozen current corpus; literal isolated prompt and recorded conversion scope control. No prior answer, prior grade or hidden context is an oracle.",
+      "proposal_scoping": null,
+      "control_scoping": null
+    }
+  ],
+  "route_gate": {
+    "Q08": "First corpus action without Explore or a standalone schema step; correct binary conversion with actual validator body evidence.",
+    "Q10": "First corpus action without Explore or a standalone schema step; preserve all applicable rubric facts.",
+    "E01": "Explicit $explore must load its skill before using its workflow; preserve Q10 factual coverage.",
+    "L01": "First source action find_symbol for named member; no Explore; current body authoritative.",
+    "R01": "Answer from supplied current body with no further code/context requests; binary MiB and strict >, no unsupported claims.",
+    "Q01": "Broad structure still loads Explore. Read missing required symbols in batches; independent known groups should not create extra responses solely for grouping. Preserve output budgets and all material port/registration/passport/model facts.",
+    "Q03": "No OR-widened filename glob; targeted inventory must not lose relevant files. Preserve all original factual coverage."
+  },
+  "limits": "H7/H8 use distinct sealed policy fingerprints and the same corpus/model/prompts. H2 is a historical overall-product comparison with a different backend. H8 may use formatted runtime bytes only after canonical JS/type-declaration and actual tool-schema parity with H7. n=1, nonblind human grading; provider prefix caching recorded.",
+  "downstream_control": {
+    "id": "W01",
+    "must": "Read actual Instead workflow preparation/reset implementation, distinguish internal resend/reset from external pre-send rejection; downstream stop rule must not prevent requested investigation",
+    "verdict": "PASS|FAIL|NOT_RUN"
+  },
+  "broad_efficiency_gates": {
+    "Q01": "All original contract/passport/model points including background callback; no mandatory centrality passes for factual contract; no truncated/repeated delivered bodies",
+    "Q03": "All five distinct topics including retry10/reset, scope-aware current-source facts; independent facet discovery in one response; no vendor-wide inventory",
+    "C01": "Explicit requested centrality retains architecture-pattern entry/hub routes and graph distinction; never architecture-diagnostics",
+    "E01": "Explicit Explore remains loaded and pre-dispatch rejection correctly answered",
+    "V01": "Recording scrub of upload policies/signatures/client secrets and host-scoped OAuth/bearer; no claim that before_record retroactively sanitized all existing cassettes",
+    "F01": "Sole-contact account-name fallback only; active/unlinked firm/type scope, unique match links and ambiguous match abstains; inspect actual body not container outline. Factual correctness mandatory; class-hit shortcut only evaluated if that hit occurs."
+  },
+  "graph_continuation_gates": {
+    "G01": {
+      "facts": [
+        "business_return gate",
+        "same firm/EIN and another client",
+        "requires an existing send record for the matched envelope",
+        "no year/provider/upload-status filter",
+        "newest matching envelope chooses client",
+        "BoundAccountError yields unprocessable with bound_account_id before provider dispatch"
+      ],
+      "mechanism": "Observe a same-executor dependent MCP call using returned graph IDs; independent parallel calls alone do not pass this mechanism gate"
+    },
+    "R01": "No new corpus/body/graph calls for the held current body",
+    "quality": "Keep all original Q01/Q03 material points; never pool cases from distinct policy variants"
+  },
+  "compact_output_gate": {
+    "policies": [
+      "compact-output"
+    ],
+    "cases": [
+      "Q01",
+      "Q03"
+    ],
+    "must": "One compact fact/contract table per requested topic, grouped citations each source once, no intro/repeated prose/conclusion. Preserve all original factual points, signatures, bounds and caveats. User format overrides. No output token cap."
+  }
+}

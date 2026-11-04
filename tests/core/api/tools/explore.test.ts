@@ -59,6 +59,26 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
 
 describe("registerSearchTools", () => {
   it.each([
+    ["semantic_search", "semanticSearch"],
+    ["hybrid_search", "hybridSearch"],
+  ] as const)("%s exposes and forwards distinctFiles without changing the chunk level", async (toolName, appMethod) => {
+    const { captured, app } = makeHarness();
+    const tool = captured.find((entry) => entry.name === toolName)!;
+    const input = z.object(tool.config.inputSchema as z.ZodRawShape).parse({
+      path: "/x",
+      query: "matching behavior",
+      distinctFiles: true,
+      level: "chunk",
+      metaOnly: true,
+    });
+    expect(input).toHaveProperty("distinctFiles", true);
+    await tool.handler(input, {});
+    expect(app[appMethod]).toHaveBeenCalledWith(
+      expect.objectContaining({ distinctFiles: true, level: "chunk", metaOnly: true }),
+    );
+  });
+
+  it.each([
     ["semantic_search", "semanticSearch", { query: "sameName" }],
     ["hybrid_search", "hybridSearch", { query: "sameName" }],
     ["rank_chunks", "rankChunks", { rerank: "hotspots" }],

@@ -1,0 +1,92 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-distinct-file-locators-20261104/.claude-plugin/.benchmarks/codex-distinct-file-locators/2026-11-04/evidence/candidate/W01/public-actions.json",
+  "model_response_waves": 14,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 1,
+  "distinct_file_searches": 4,
+  "scoped_searches": 0,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration internal workflow retry failed upload preparation reset",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration new user send documents upload entry point",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead ||| instead document upload ||| Instead retry",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 5,
+      "tool": "hybrid_search",
+      "query": "Instead upload retry prepare send documents",
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 9,
+      "tool": "semantic_search",
+      "query": "tax automation documents user send export create resend reset",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 9,
+      "tool": "semantic_search",
+      "query": "async workflow retry failed operation reset prepare",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 2
+    },
+    {
+      "wave": 10,
+      "tool": "find_symbol",
+      "targets": 2
+    },
+    {
+      "wave": 11,
+      "tool": "find_symbol",
+      "targets": 6
+    },
+    {
+      "wave": 12,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 13,
+      "tool": "find_symbol",
+      "targets": 2
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

@@ -349,9 +349,13 @@ function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeA
     ...collectionPathFields(),
     scope: z.enum(["code", "migrations"]).optional().describe("migrations = Rails schema history."),
     ...searchCommonFields(filterSchema),
+    filter: filterSchema
+      .optional()
+      .describe("Qdrant filter or {presets:'a,b'}; {} clears defaults. tea-rags://guide/filters."),
     ...typedFilterFields(applied),
     ...levelField(),
     rerank: rerankSchema.optional().describe(RERANK_HINT),
+    distinctFiles: coerceBoolean().optional().describe("One chunk/file, retaining symbol/line locators."),
     ...fieldsField(),
     ...paginationFields(),
   };

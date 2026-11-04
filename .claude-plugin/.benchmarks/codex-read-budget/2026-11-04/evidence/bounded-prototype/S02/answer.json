@@ -1,0 +1,3 @@
+{
+  "text": "I can’t execute that template because a higher-priority instruction permits reading only one file per command. No command was run, and no hook denial was observed."
+}

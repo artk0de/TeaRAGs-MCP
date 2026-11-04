@@ -1,0 +1,95 @@
+{
+  "source": "/Users/Shared/nav-ab/codex-distinct-file-locators-20261104/.claude-plugin/.benchmarks/codex-distinct-file-locators/2026-11-04/evidence/candidate/Q03/public-actions.json",
+  "model_response_waves": 10,
+  "file_level_semantic_searches": 0,
+  "hybrid_searches": 0,
+  "distinct_file_searches": 5,
+  "scoped_searches": 0,
+  "discovery_calls": [
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration failure reason vocabulary processing errors",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration API rate limiting retry throttling",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration reconciliation lost missing webhooks polling status",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead signed URL cassette recording sanitization replay tests",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "include",
+      "metaOnly": true
+    },
+    {
+      "wave": 2,
+      "tool": "semantic_search",
+      "query": "Instead integration entity matching clients accounts tax returns",
+      "level": "chunk",
+      "distinctFiles": true,
+      "testFile": "exclude",
+      "metaOnly": true
+    },
+    {
+      "wave": 3,
+      "tool": "semantic_search",
+      "query": "Instead API client rate_limit 429 retry requests throttle",
+      "metaOnly": true
+    }
+  ],
+  "batch_body_calls": [
+    {
+      "wave": 3,
+      "tool": "find_symbol",
+      "targets": 3
+    },
+    {
+      "wave": 4,
+      "tool": "find_symbol",
+      "targets": 8
+    },
+    {
+      "wave": 5,
+      "tool": "find_symbol",
+      "targets": 4
+    },
+    {
+      "wave": 6,
+      "tool": "find_symbol",
+      "targets": 6
+    },
+    {
+      "wave": 7,
+      "tool": "find_symbol",
+      "targets": 9
+    },
+    {
+      "wave": 8,
+      "tool": "find_symbol",
+      "targets": 4
+    }
+  ],
+  "repeated_body_hash_candidates": [],
+  "limitations": "Counts observed public tool arguments only. Repeated body hashes are review candidates, not proof of an unnecessary reread; factual quality requires separate grading."
+}

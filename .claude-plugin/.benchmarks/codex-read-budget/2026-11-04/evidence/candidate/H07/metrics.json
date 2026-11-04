@@ -1,0 +1,24 @@
+{
+  "source": "/Users/Shared/nav-ab/read-budget-0558-evals/candidate/harness/actors/H07-A/observations.json",
+  "source_sha256": "6a6b28aa64d17bad47b0c039d40b8125578bd20e684242db5d2f950638b156b9",
+  "model_responses": 2,
+  "input_tokens": 34584,
+  "fresh_input_tokens": 17432,
+  "cached_input_tokens": 17152,
+  "output_tokens": 199,
+  "reasoning_output_tokens": 0,
+  "seconds": 10.32361141697038,
+  "initial_input_tokens": 17129,
+  "prompt_sha256": "24ce0afdcdec708727e957541082d772af9560540396fcc273de9919efa4c5fc",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 40,
+  "final_stream_seconds": 1.016,
+  "observed_runtime_union_seconds": 1.085,
+  "model_network_client_residual_seconds": 9.228000000000002,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

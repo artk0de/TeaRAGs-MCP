@@ -69,7 +69,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     }
 
     const sparseVector = ctx.sparseVector ?? generateSparseVector(ctx.query ?? "");
-    const fetchLimit = ctx.level === "file" ? ctx.limit * 3 : ctx.limit;
+    const groupByFile = ctx.level === "file" || ctx.distinctFiles === true;
+    const fetchLimit = groupByFile ? ctx.limit * 3 : ctx.limit;
 
     // One identifier → add the identity leg (see ./symbol-identity-leg.ts);
     // any other query sends exactly the two-prefetch request it always did.
@@ -93,7 +94,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
       view ? rows.filter((row) => !view.touchedPaths.has(relativePathOf(row.payload))) : rows;
     const baseResults = await fetchPathPatternMatches(
       ctx.pathPattern,
-      { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
+      { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: groupByFile ? "file" : "chunk" },
       async (limit) =>
         untouched(
           await (
@@ -130,7 +131,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
       : baseResults;
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
-    if (ctx.level === "file") {
+    if (groupByFile) {
       return FileLevelGrouper.group(results, ctx.limit);
     }
 

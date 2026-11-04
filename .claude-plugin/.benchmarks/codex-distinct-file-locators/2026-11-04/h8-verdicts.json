@@ -1,0 +1,24 @@
+{
+  "policy": "H8 compact factual tables plus compressed schema-routing prose",
+  "decision": "REJECT; restore exact H7 wording",
+  "model": "gpt-6.1-sol",
+  "effort": "medium",
+  "n": 1,
+  "backend": "Exact immutable H7 review-repair backend; formatted snapshot was not used",
+  "cases": {
+    "Q01": {"facts": "PASS all four original material points", "format": "PARTLY_MET: tables used; a source file is cited twice rather than once"},
+    "Q03": {"facts": "PASS all five original material points", "format": "PARTLY_MET: a single table covers all five topics; citations remain inline"},
+    "W01": {"facts": "PASS actual internal preparation/reset and step-retry distinction", "steps": 15, "seconds": 93.55095604097005},
+    "U01": {"format": "PASS exactly two bullets, no tables/introduction/conclusion", "facts": "PARTLY_MET under the predeclared rubric: all described business gate, lookup scope, ordering and 422/bound_account_id facts covered, but BoundAccountError class is not named"}
+  },
+  "Q01_Q03_pair": {"steps": 26, "input": 1062487, "fresh": 114775, "cached": 947712, "output": 8938, "seconds": 239.04271254193736, "final_output_tokens": 3219},
+  "H7_Q01_Q03_pair": {"steps": 21, "input": 745256, "fresh": 110632, "cached": 634624, "output": 8430, "seconds": 226.34097283298615, "final_output_tokens": 3398},
+  "cost_status": "UNPRICED; H8-H7 = (4143*fresh_rate +313088*cached_rate +508*output_rate)/1000000; all three billed token categories grew",
+  "limitations": [
+    "n=1; descriptive observed regression, not a causal or statistical conclusion",
+    "Same backend, corpus and model; two wording changes were bundled, so table formatting is not individually identified",
+    "Independent fresh histories; provider prompt-prefix caching was observed, not disabled",
+    "No B or Claude run; no retries or pooled case winners",
+    "Original rubric and failed formatting/factual details are preserved rather than relaxed after seeing outputs"
+  ]
+}

@@ -85,12 +85,40 @@ def code_md(code):
             pass  # Other interpreters retain the conservative literal fallback.
         else:
             destinations = set()
+            parents = {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+
+            def write_only(node):
+                parent = parents.get(id(node))
+                if isinstance(parent, ast.Attribute) and parent.value is node:
+                    if parent.attr == "parent":
+                        parent = parents.get(id(parent))
+                        if not isinstance(parent, ast.Attribute) or parent.attr != "mkdir":
+                            return False
+                    elif parent.attr not in ("write_text", "write_bytes"):
+                        return False
+                    return isinstance(parents.get(id(parent)), ast.Call) and parents[id(parent)].func is parent
+                if isinstance(parent, ast.Call) and parent.args and parent.args[0] is node:
+                    if isinstance(parent.func, ast.Name) and parent.func.id == "open":
+                        mode = parent.args[1] if len(parent.args) > 1 else next(
+                            (kw.value for kw in parent.keywords if kw.arg == "mode"), None
+                        )
+                        return isinstance(mode, ast.Constant) and isinstance(mode.value, str) and (
+                            any(flag in mode.value for flag in "wax") and "+" not in mode.value
+                        )
+                return False
+
+            bindings = {}
             for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    receiver = node.value
+                    if isinstance(receiver, ast.Call) and (
+                        isinstance(receiver.func, ast.Name) and receiver.func.id == "Path"
+                        or isinstance(receiver.func, ast.Attribute) and receiver.func.attr == "Path"
+                    ):
+                        bindings[node.targets[0].id] = receiver
                 if not isinstance(node, ast.Call):
                     continue
                 receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
-                # Only a direct Path constructor is a proved destination. A
-                # variable may also be read elsewhere, so never exclude its binding.
                 if isinstance(node.func, ast.Attribute) and node.func.attr in ("write_text", "write_bytes"):
                     if isinstance(receiver, ast.Call) and (
                         isinstance(receiver.func, ast.Name) and receiver.func.id == "Path"
@@ -106,6 +134,14 @@ def code_md(code):
                             # Do not discard nested read calls in a dynamic filename.
                             if isinstance(node.args[0], ast.Constant):
                                 destinations.add(id(node.args[0]))
+            for name, receiver in bindings.items():
+                references = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == name]
+                # One binding, no aliases/unknown consumers and no actual reads.
+                # A separate occurrence of the same filename remains counted.
+                if sum(isinstance(node.ctx, ast.Store) for node in references) == 1 and any(
+                    isinstance(node.ctx, ast.Load) for node in references
+                ) and all(isinstance(node.ctx, ast.Store) or write_only(node) for node in references):
+                    destinations.update(id(arg) for arg in receiver.args if isinstance(arg, ast.Constant))
             # Remove only the proved write occurrences, not every identical
             # pathname: another occurrence may be a real read. Keep the existing
             # fallback for bytes, escaped literals and non-Python syntax.

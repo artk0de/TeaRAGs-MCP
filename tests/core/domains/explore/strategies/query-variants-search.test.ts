@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { LOCATOR_SIGNALS } from "../__fixtures__/locator-signals.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../../../src/core/adapters/qdrant/sparse.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
@@ -31,6 +32,30 @@ const variants = [
   { query: "rate limit", embedding: [0.1, 0.2] },
   { query: "retry after", embedding: [0.3, 0.4] },
 ];
+
+it.each([
+  { name: "semantic", Strategy: VectorSearchStrategy },
+  { name: "hybrid", Strategy: HybridSearchStrategy },
+])("fused $name preserves locators while selecting distinct files", async ({ Strategy }) => {
+  const qdrant = createMockQdrant();
+  vi.mocked(qdrant.fusedSearch).mockResolvedValue([
+    { id: "a1", score: 0.03, payload: { relativePath: "src/a.ts", symbolId: "A#first", startLine: 1, endLine: 3 } },
+    { id: "a2", score: 0.02, payload: { relativePath: "src/a.ts", symbolId: "A#second", startLine: 5, endLine: 8 } },
+    { id: "b", score: 0.01, payload: { relativePath: "src/b.ts", symbolId: "B#run", startLine: 2, endLine: 4 } },
+  ]);
+  const results = await new Strategy(qdrant, mockReranker, LOCATOR_SIGNALS, []).execute({
+    collectionName: "col",
+    embedding: [0.1],
+    queryVariants: variants,
+    limit: 2,
+    metaOnly: true,
+    distinctFiles: true,
+  });
+  expect(results.map((r) => [r.payload?.relativePath, r.payload?.symbolId, r.payload?.startLine])).toEqual([
+    ["src/a.ts", "A#first", 1],
+    ["src/b.ts", "B#run", 2],
+  ]);
+});
 
 describe("query variants — VectorSearchStrategy", () => {
   it("fuses one dense leg per variant in a single request and keeps Qdrant's order", async () => {

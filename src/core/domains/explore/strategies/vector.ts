@@ -55,7 +55,7 @@ export class VectorSearchStrategy extends BaseExploreStrategy {
     // predates an index run of the same point count) is dropped, never shown.
     const untouched = (rows: ExploreResult[]): ExploreResult[] =>
       floor ? rows.filter((row) => !floor.view.touchedPaths.has(relativePathOf(row.payload))) : rows;
-    if (ctx.level === "file") {
+    if (ctx.level === "file" || ctx.distinctFiles === true) {
       // Groups are keyed on relativePath, so the server's limit counts FILES.
       const grouped = await fetchPathPatternMatches(
         ctx.pathPattern,

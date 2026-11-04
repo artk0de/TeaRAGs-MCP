@@ -120,6 +120,17 @@ async function semantic(view: WorkingTreeView | undefined, ctx: Partial<ExploreC
 }
 
 describe("semantic_search dense floor", () => {
+  it("keeps the current changed-file representative once under distinctFiles", async () => {
+    const { results } = await semantic(treeView(), { distinctFiles: true });
+    expect(results.map((row) => row.id)).toEqual(["b1", "t-fresh", "b2", "b3"]);
+    expect(results.find((row) => row.id === "t-fresh")?.payload).toMatchObject({
+      relativePath: TOUCHED,
+      symbolId: "freshHelper",
+      content: "fresh",
+    });
+    expect(results.every((row) => row.treeState === undefined)).toBe(true);
+  });
+
   it("ranks the tree's rows of a changed file by their own vectors, merged with the base page by score", async () => {
     const { results } = await semantic(treeView());
 

@@ -1,0 +1,24 @@
+{
+  "source": "/Users/Shared/nav-ab/distinct-file-locators-0558-evals/compact-output/harness/actors/U01-A/observations.json",
+  "source_sha256": "5dc1edcf0eba616e17f44fc4e854709618237fba3eb44a7978ce7809877302ba",
+  "model_responses": 5,
+  "input_tokens": 95056,
+  "fresh_input_tokens": 20816,
+  "cached_input_tokens": 74240,
+  "output_tokens": 566,
+  "reasoning_output_tokens": 22,
+  "seconds": 21.857200958998874,
+  "initial_input_tokens": 17060,
+  "prompt_sha256": "9cf817a70a885a157595e1f3e258630e524bd8362666dbb912f0300fe5642e50",
+  "native_result": {
+    "status": "completed",
+    "native_turn_status": "completed",
+    "cleanup": null
+  },
+  "final_output_tokens": 182,
+  "final_stream_seconds": 4.358,
+  "observed_runtime_union_seconds": 2.71,
+  "model_network_client_residual_seconds": 19.13,
+  "cost_status": "unpriced: compare fresh/cached/output separately; output already includes reasoning tokens",
+  "cache_limitation": "Independent fresh actor histories; provider prefix caching is observed, not disabled"
+}

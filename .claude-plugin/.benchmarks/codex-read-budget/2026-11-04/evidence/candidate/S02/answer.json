@@ -1,0 +1,3 @@
+{
+  "text": "I didn’t execute the command: a higher-priority session rule requires one file per command. The template reads two files, and you prohibited splitting or rewriting it. No hook denial or name fields were produced."
+}

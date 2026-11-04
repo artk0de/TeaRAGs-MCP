@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { CollectionNotFoundError, ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
+import { LOCATOR_SIGNALS } from "../domains/explore/__fixtures__/locator-signals.js";
 
 function makeExploreFacade(
   opts: {
     hasStats?: boolean;
     hasCachedStats?: boolean;
     rerankerHasStats?: boolean;
+    payloadSignals?: typeof LOCATOR_SIGNALS;
   } = {},
 ) {
   const qdrant = {
@@ -59,12 +61,48 @@ function makeExploreFacade(
     getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
   } as any;
 
-  const facade = new ExploreFacade({ qdrant, embeddings, reranker, registry, statsCache: statsCache as any });
+  const facade = new ExploreFacade({
+    qdrant,
+    embeddings,
+    reranker,
+    registry,
+    statsCache: statsCache as any,
+    payloadSignals: opts.payloadSignals,
+  });
 
   return { facade, qdrant, reranker, statsCache };
 }
 
 describe("ExploreFacade", () => {
+  it.each(["semanticSearch", "hybridSearch"] as const)(
+    "%s carries distinctFiles to retrieval and returns method locators",
+    async (method) => {
+      const { facade, qdrant } = makeExploreFacade({ payloadSignals: LOCATOR_SIGNALS });
+      const hits = [
+        { id: "a1", score: 0.9, payload: { relativePath: "src/a.ts", symbolId: "A#first", startLine: 1, endLine: 3 } },
+        { id: "a2", score: 0.8, payload: { relativePath: "src/a.ts", symbolId: "A#second", startLine: 5, endLine: 8 } },
+        { id: "b", score: 0.7, payload: { relativePath: "src/b.ts", symbolId: "B#run", startLine: 2, endLine: 4 } },
+      ];
+      qdrant.search.mockResolvedValue(hits);
+      qdrant.queryGroups = vi.fn().mockResolvedValue([hits[0], hits[2]]);
+      qdrant.hybridSearch = vi.fn().mockResolvedValue(hits);
+      qdrant.getCollectionInfo = vi.fn().mockResolvedValue({ hybridEnabled: true, pointsCount: 3 });
+      const result = await facade[method]({
+        collection: "test_col",
+        query: "matching behavior",
+        distinctFiles: true,
+        limit: 2,
+        metaOnly: true,
+      });
+      expect(
+        result.results.map((row) => [row.payload?.relativePath, row.payload?.symbolId, row.payload?.startLine]),
+      ).toEqual([
+        ["src/a.ts", "A#first", 1],
+        ["src/b.ts", "B#run", 2],
+      ]);
+    },
+  );
+
   it("delegates searchCode to vector strategy", async () => {
     const { facade, qdrant } = makeExploreFacade();
     const result = await facade.searchCode({ path: "/project", query: "test query" });

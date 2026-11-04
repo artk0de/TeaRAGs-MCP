@@ -1,0 +1,30 @@
+{
+  "model": "gpt-6.1-sol", "effort": "medium", "n": 1,
+  "decision": "ACCEPT bound-write classification fix; KEEP one-file default; DO NOT SHIP bounded-head prototype",
+  "baseline": {"H05": "FAIL reproduced erroneous two-file denial", "S01": "NOT_EXERCISED: model refused before tools due to the one-file instruction"},
+  "candidate": {
+    "H05": "PASS exact command once, BOUND_WRITE_ACCEPTED",
+    "H06": "PASS exact command once, real hook blocks two read expressions",
+    "H07": "PASS two head -c 64 reads in one Promise.allSettled executor wave, both labelled, correct final names",
+    "S01": "PASS strict hook denies the exact two-file command; no retry",
+    "S02": "NOT_EXERCISED: model refuses before tools; native over-cap control remains OPEN"
+  },
+  "bounded-prototype": {
+    "S01": "PASS bounded two-file command, both name fields returned; command stdout 457 chars including path headers, outer output 622 chars, no truncation",
+    "S02": "NOT_EXERCISED: model refuses before tools; native over-cap control remains OPEN"
+  },
+  "scheduling": {
+    "candidate_H07": {"model_responses": 2, "source_executor_waves": 1, "command_stdout_chars": 128, "outer_output_chars": 528, "seconds": 10.32361141697038},
+    "prototype_S01": {"model_responses": 2, "source_executor_waves": 1, "command_stdout_chars": 457, "outer_output_chars": 622, "seconds": 12.679323500022292},
+    "interpretation": "No observed model-step advantage. Tasks/prompts differ, so wall time and token deltas are not a matched causal performance comparison. Fewer child tool calls are not a model-step win."
+  },
+  "automated_checks": {"generator_tests": 72, "setup_tests": 8, "prototype_classifier_controls": 8},
+  "limitations": [
+    "H05/H06 are native static-classification fixtures under if False, not end-to-end copy evidence",
+    "The prototype over-cap logic passes synthetic executable checks, but its natural native S02 control was not exercised and is not closed",
+    "No retries of failed/unexercised model cases; all attempts retained",
+    "Fresh independent histories with actual generated hook/injection; provider prefix caching observed, not disabled",
+    "Private native journals retained separately; public exports contain actions/finals/locators/hashes and numeric usage only",
+    "No B or Claude run; n=1 does not establish a general latency improvement"
+  ]
+}

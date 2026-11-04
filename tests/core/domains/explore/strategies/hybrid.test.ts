@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { LOCATOR_SIGNALS } from "../__fixtures__/locator-signals.js";
 import type { CollectionInfo, QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import {
   QdrantInvalidQueryParameterError,
@@ -33,6 +34,31 @@ function createStrategy(qdrant?: QdrantManager) {
 }
 
 describe("HybridSearchStrategy", () => {
+  it("paginates distinct files while retaining the representative symbol and lines", async () => {
+    const hits = [
+      { id: "a1", score: 0.9, payload: { relativePath: "src/a.ts", symbolId: "A#first", startLine: 1, endLine: 4 } },
+      { id: "a2", score: 0.8, payload: { relativePath: "src/a.ts", symbolId: "A#second", startLine: 5, endLine: 9 } },
+      { id: "b", score: 0.7, payload: { relativePath: "src/b.ts", symbolId: "B#run", startLine: 10, endLine: 12 } },
+    ];
+    const results = await new HybridSearchStrategy(
+      createMockQdrant(true, hits),
+      mockReranker,
+      LOCATOR_SIGNALS,
+      [],
+    ).execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      query: "matching behavior",
+      limit: 1,
+      offset: 1,
+      distinctFiles: true,
+      metaOnly: true,
+    });
+    expect(
+      results.map((r) => [r.payload?.relativePath, r.payload?.symbolId, r.payload?.startLine, r.payload?.endLine]),
+    ).toEqual([["src/b.ts", "B#run", 10, 12]]);
+  });
+
   it("has type 'hybrid'", () => {
     expect(createStrategy().type).toBe("hybrid");
   });

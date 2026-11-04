@@ -26,6 +26,8 @@ export interface ExploreContext {
   filter?: Record<string, unknown>;
   weights?: Record<string, number>;
   level?: "chunk" | "file";
+  /** Group representatives by file without changing the requested signal/payload level. */
+  distinctFiles?: boolean;
   presetName?: string;
   offset?: number;
   pathPattern?: string;

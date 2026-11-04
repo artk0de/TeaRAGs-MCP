@@ -6,11 +6,10 @@ import type { DirectoryOutline } from "../../../contracts/types/directory-outlin
 import type { EmptyAnswerExplanation } from "../../../contracts/types/empty-answer.js";
 import type { RailsTableState } from "../../../contracts/types/rails-table-state.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
-import type { SearchResult } from "../../../contracts/types/search-result.js";
+import type { SearchConfidence, SearchResult } from "../../../contracts/types/search-result.js";
 import type { SymbolBatchMiss } from "../../../contracts/types/symbol-batch.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
-import type { SearchConfidence } from "../../../domains/explore/index.js";
 import type { CollectionIdentifier } from "./common.js";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +74,8 @@ export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams 
   scope?: "code" | "migrations";
   /** One query, or 1..5 variants (array, or a string holding "|||") fused by RRF — bd tea-rags-mcp-2vuz. */
   query: string | string[];
+  /** Return one representative chunk per file while keeping chunk locators. Default false. */
+  distinctFiles?: boolean;
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;
@@ -101,6 +102,8 @@ export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
   scope?: "code" | "migrations";
   /** One query, or 1..5 variants (array, or a string holding "|||") fused by RRF — bd tea-rags-mcp-2vuz. */
   query: string | string[];
+  /** Return one representative chunk per file while keeping chunk locators. Default false. */
+  distinctFiles?: boolean;
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;

@@ -7,8 +7,9 @@ require another read. Known bodies/local contracts need only core navigation.
 ## Independent facts, one executor wave
 
 Silently identify which requested facts lack evidence. For multiple independent
-source topics, run `semantic_search(metaOnly:true, limit:3)` per topic
-concurrently in ONE executor. Config/spec topics keep core's scoped
+production topics, run
+`semantic_search(metaOnly:true, level:"chunk", distinctFiles:true, testFile:"exclude", limit:3)`
+per topic concurrently in ONE executor. Config/spec topics keep core's scoped
 filename/text routes; requested test behavior uses `testFile:"include"` or
 `"only"`, not production-only search. Fixture/replay lessons need
 creation/sanitization AND replay semantics; a replay helper alone does not

@@ -761,6 +761,68 @@ describe("renderCodexHarness", () => {
     }
   });
 
+  it.each([
+    {
+      name: "a bound Path write_bytes destination and parent mkdir",
+      code: 'from pathlib import Path; p=Path("source.md"); out=Path("result.md"); out.parent.mkdir(parents=True,exist_ok=True); out.write_bytes(p.read_bytes())',
+      status: 0,
+    },
+    {
+      name: "a bound Path write_text destination",
+      code: 'from pathlib import Path; out=Path("result.md"); out.write_text(Path("source.md").read_text())',
+      status: 0,
+    },
+    {
+      name: "a bound Path passed to write-only open",
+      code: 'from pathlib import Path; out=Path("result.md"); data=open("source.md").read(); open(out, "wb").write(data)',
+      status: 0,
+    },
+    {
+      name: "a bound destination that is also read",
+      code: 'from pathlib import Path; out=Path("result.md"); out.write_text("done"); print(out.read_text(), Path("source.md").read_text())',
+      status: 2,
+    },
+    {
+      name: "a bound destination passed to an unknown consumer",
+      code: 'from pathlib import Path; out=Path("result.md"); consume(out); out.write_text(Path("source.md").read_text())',
+      status: 2,
+    },
+    {
+      name: "a bound path passed to read/write open",
+      code: 'from pathlib import Path; out=Path("result.md"); print(open(out, "w+").read(), Path("source.md").read_text())',
+      status: 2,
+    },
+    {
+      name: "two actual reads alongside a bound write destination",
+      code: 'from pathlib import Path; out=Path("result.md"); out.write_text(Path("one.md").read_text()+Path("two.md").read_text())',
+      status: 2,
+    },
+    {
+      name: "a name rebound before a read",
+      code: 'from pathlib import Path; out=Path("result.md"); out.write_text("done"); out=Path("other.md"); print(out.read_text(), Path("source.md").read_text())',
+      status: 2,
+    },
+    {
+      name: "a separate real read of the same spelling as the destination",
+      code: 'from pathlib import Path; out=Path("result.md"); out.write_text("done"); print(Path("result.md").read_text(), Path("source.md").read_text())',
+      status: 2,
+    },
+  ])("classifies $name without executing Python", async ({ code, status }) => {
+    const rendered = await renderCodexHarness(ROOT);
+    const dir = mkdtempSync(join(tmpdir(), "tea-rags-bound-write-"));
+    const script = join(dir, "one-file-read.sh");
+    writeFileSync(script, rendered.get("tea-rags/scripts/one-file-read.sh") ?? "");
+    try {
+      const result = spawnSync("bash", [script], {
+        input: JSON.stringify({ tool_input: { command: ["python3", "-c", code] } }),
+        encoding: "utf8",
+      });
+      expect(result.status, code).toBe(status);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("loads only a selected workflow's missing instructions and needed references", async () => {
     const rendered = await renderCodexHarness(ROOT);
 

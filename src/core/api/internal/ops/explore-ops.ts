@@ -1443,6 +1443,7 @@ function buildVectorSearchContext(
     rerank,
     metaOnly: request.metaOnly,
     level,
+    ...(request.distinctFiles !== undefined && { distinctFiles: request.distinctFiles }),
   };
 }
 

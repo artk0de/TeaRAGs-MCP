@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { LOCATOR_SIGNALS } from "../__fixtures__/locator-signals.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
@@ -34,6 +35,58 @@ function createStrategy(qdrant?: QdrantManager) {
 }
 
 describe("VectorSearchStrategy", () => {
+  it("returns distinct file representatives with readable chunk locators", async () => {
+    const hits = [
+      {
+        id: "a1",
+        score: 0.9,
+        payload: { relativePath: "src/a.ts", symbolId: "A#first", startLine: 3, endLine: 7, content: "first body" },
+      },
+      {
+        id: "a2",
+        score: 0.8,
+        payload: { relativePath: "src/a.ts", symbolId: "A#second", startLine: 9, endLine: 14, content: "second body" },
+      },
+      {
+        id: "b",
+        score: 0.7,
+        payload: { relativePath: "src/b.ts", symbolId: "B#run", startLine: 5, endLine: 8, content: "other body" },
+      },
+    ];
+    const qdrant = {
+      search: vi.fn().mockResolvedValue(hits),
+      queryGroups: vi.fn().mockResolvedValue([hits[0], hits[2]]),
+    } as unknown as QdrantManager;
+    const results = await new VectorSearchStrategy(qdrant, mockReranker, LOCATOR_SIGNALS, []).execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      limit: 2,
+      metaOnly: true,
+      distinctFiles: true,
+    });
+    expect(
+      results.map((r) => [r.payload?.relativePath, r.payload?.symbolId, r.payload?.startLine, r.payload?.endLine]),
+    ).toEqual([
+      ["src/a.ts", "A#first", 3, 7],
+      ["src/b.ts", "B#run", 5, 8],
+    ]);
+    expect(results.every((r) => r.payload?.content === undefined)).toBe(true);
+  });
+
+  it.each([undefined, false])("keeps multiple chunks per file when distinctFiles is %s", async (distinctFiles) => {
+    const hits = [
+      { id: "a1", score: 0.9, payload: { relativePath: "src/a.ts" } },
+      { id: "a2", score: 0.8, payload: { relativePath: "src/a.ts" } },
+    ];
+    const results = await createStrategy(createMockQdrant(hits)).execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      limit: 2,
+      distinctFiles,
+    });
+    expect(results.map((r) => r.id)).toEqual(["a1", "a2"]);
+  });
+
   it("has type 'vector'", () => {
     expect(createStrategy().type).toBe("vector");
   });
