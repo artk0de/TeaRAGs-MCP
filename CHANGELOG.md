@@ -1,76 +1,410 @@
+## [1.51.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.50.0...v1.51.0) (2026-11-06)
+
+### ⚠ BREAKING CHANGES
+
+- **embedding:** llama-server command sheets default to --host 127.0.0.1; pass
+  --host 0.0.0.0 to serve a LAN.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+
+- **trajectory:** TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS and
+  TRAJECTORY_GIT_SESSION_GAP_MINUTES are removed. Setting either has no effect;
+  git signals always count commits. An index built with squash-aware sessions on
+  needs `tea-rags index-codebase --project <alias> --force-enrichments git`.
+
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+
+### Plugin
+
+- **plugin:** actionable risk and architecture reports
+  ([568c6a1](https://github.com/artk0de/TeaRAGs-MCP/commit/568c6a1347c9ac4eb16850e82cd1967935afa677))
+- **plugin:** drop skill internals from eight skill descriptions
+  ([0c5fc29](https://github.com/artk0de/TeaRAGs-MCP/commit/0c5fc296a262125dc9bf6af1328cda52f26b184b))
+- **plugin:** export EMBEDDING_MODEL on the first index, never write it to the
+  registry (hjbow.13)
+  ([711a306](https://github.com/artk0de/TeaRAGs-MCP/commit/711a306845645e830ab97fba5c73a234939ee2f0)),
+  closes
+  [ProjectRegistryOps#validateEnvEdit](https://github.com/artk0de/ProjectRegistryOps/issues/validateEnvEdit)
+  [BaseIndexingPipeline#recordRegistryEntry](https://github.com/artk0de/BaseIndexingPipeline/issues/recordRegistryEntry)
+  [IndexingOps#tryIncrementalIndex](https://github.com/artk0de/IndexingOps/issues/tryIncrementalIndex)
+- **plugin:** gate grep-hit notes to one file, name ids once, drop small-file
+  nudge
+  ([85630af](https://github.com/artk0de/TeaRAGs-MCP/commit/85630afcfc45ccf396a64607881595537c3f4870)),
+  closes
+  [RereadLedger#grepNoteEntry](https://github.com/artk0de/RereadLedger/issues/grepNoteEntry)
+  [#recordGrepNote](https://github.com/artk0de/TeaRAGs-MCP/issues/recordGrepNote)
+- **plugin:** inject a compact per-turn routing block in Claude Code
+  ([853a56e](https://github.com/artk0de/TeaRAGs-MCP/commit/853a56e6a8dcd14466862326032b47c7507b96fb))
+- **plugin:** one-step install skill for Claude, Cursor and Codex (hjbow.11)
+  ([e8dbecc](https://github.com/artk0de/TeaRAGs-MCP/commit/e8dbecc5b5370daf09155ecd6fadbd1737afd78d))
+- **plugin:** resolve eval forks in actionable reports
+  ([51fd4dc](https://github.com/artk0de/TeaRAGs-MCP/commit/51fd4dc9af0d384a52616b4e52caf9d97b360a31))
+- **plugin:** streamline indexed reads and freshness guidance
+  ([1c9ad40](https://github.com/artk0de/TeaRAGs-MCP/commit/1c9ad400c1abc9a321dcd0bd6e7cc1aacaee6d83))
+- **plugin:** use row freshness and retain P0 behavioral evidence
+  ([d4e6c15](https://github.com/artk0de/TeaRAGs-MCP/commit/d4e6c153bd7090d7ef915d25bfa76f6d566a2aba))
+- **plugin:** use row freshness and retain P0 behavioral evidence
+  ([2c75f3b](https://github.com/artk0de/TeaRAGs-MCP/commit/2c75f3bb6273741d8bcdc35c6d47131736d4571d))
+
+### Features
+
+- **adapters:** prebuilt rustc driver from GitHub Releases (hjbow.7)
+  ([e9d6b2c](https://github.com/artk0de/TeaRAGs-MCP/commit/e9d6b2c931002ec66928a0a1cc74f2ab25e6428b))
+- **adapters:** sha256-verified download and atomic archive publish
+  ([bc133b4](https://github.com/artk0de/TeaRAGs-MCP/commit/bc133b4e3f4d3d7cd3b825e508275a2d3b78a859))
+- **chunker:** chunk Vitest in-source test blocks as test scopes (52wk3.3)
+  ([0700326](https://github.com/artk0de/TeaRAGs-MCP/commit/0700326d8a5f25e7df298854f87c0854b0571656))
+- **chunker:** recognise Rust inline test items from AST attributes (52wk3.1)
+  ([712437a](https://github.com/artk0de/TeaRAGs-MCP/commit/712437adde3cc8ad136ccf4098d04eb237f17a1b))
+- **config:** background client auto-update from prime with canary window
+  (c2dr6)
+  ([621d2fa](https://github.com/artk0de/TeaRAGs-MCP/commit/621d2fa66f2ab1638245817522894587ff2b6367))
+- **config:** sync Claude, Codex and Cursor plugins on every tea-rags update
+  (5xw3n)
+  ([609a560](https://github.com/artk0de/TeaRAGs-MCP/commit/609a56032da66a7a5462d90a8d89437bafb1a7b8))
+- **embedding:** HF model catalog and language-based model choice (hjbow.3)
+  ([9e06553](https://github.com/artk0de/TeaRAGs-MCP/commit/9e06553cfb843cc0fdb58024c3feeab6d5615378))
+- **embedding:** install llama-server from llama.cpp release binaries (hjbow.2)
+  ([8d749ed](https://github.com/artk0de/TeaRAGs-MCP/commit/8d749ed743c8036cfe38b061410b181527e75297))
+- **embedding:** llama-server pool throughput bench and --instances auto
+  (hjbow.5)
+  ([06aa3dc](https://github.com/artk0de/TeaRAGs-MCP/commit/06aa3dcb1f97f57042e346bf6a641495b6954e6f))
+- **embedding:** managed llama-server pools on loopback ports (hjbow.4)
+  ([937e7a0](https://github.com/artk0de/TeaRAGs-MCP/commit/937e7a02285a287c7f7792a6bd673c28908e55c3))
+- **embedding:** restart a managed llama-server pool when its endpoints are down
+  (hjbow.6)
+  ([17cf648](https://github.com/artk0de/TeaRAGs-MCP/commit/17cf648c108f7fdb212355a6914842ea23a80c3f)),
+  closes
+  [LlamaServerPools#restart](https://github.com/artk0de/LlamaServerPools/issues/restart)
+- **ingest:** classify Rust files declared through #[cfg(test)] mod as test code
+  (52wk3.10)
+  ([ac4aa2b](https://github.com/artk0de/TeaRAGs-MCP/commit/ac4aa2bf56590bf0bed4336a6082786f46fd7a8a))
+- resume an interrupted first index and add three languages
+  ([4b7d1d8](https://github.com/artk0de/TeaRAGs-MCP/commit/4b7d1d8f9ad8457df1bb2b27c85d6995dca23237))
+- resume an interrupted first index and add three languages
+  ([dbdb977](https://github.com/artk0de/TeaRAGs-MCP/commit/dbdb977188de6e8a57647dacbe5adc84c666fc84))
+
+### Improvements
+
+- **api:** find_symbol rows drop redundant id, score and request
+  ([dd7ba93](https://github.com/artk0de/TeaRAGs-MCP/commit/dd7ba938400a803142365734e25d4512f5aa9905))
+- **api:** one-clause param hints on the alwaysLoad search tools
+  ([5e752e5](https://github.com/artk0de/TeaRAGs-MCP/commit/5e752e5efb0689836cd8a318326aca5e24fba74e)),
+  closes
+  [SchemaBuilder#buildFilterSchema](https://github.com/artk0de/SchemaBuilder/issues/buildFilterSchema)
+- **explore:** answer find_symbol files of at most 9000 chars with full text
+  ([7d18567](https://github.com/artk0de/TeaRAGs-MCP/commit/7d185672a1164760a55ca9a4b874060cf493c82f)),
+  closes
+  [FileOutlineStrategy#fullTextOrOutline](https://github.com/artk0de/FileOutlineStrategy/issues/fullTextOrOutline)
+- **explore:** inline referenced class-constant definitions on find_symbol
+  method rows
+  ([76786b3](https://github.com/artk0de/TeaRAGs-MCP/commit/76786b37b9259b2f428aa2b5698fa84405080b58)),
+  closes [#to_s](https://github.com/artk0de/TeaRAGs-MCP/issues/to_s)
+- **presets:** bugHunt and dangerous rank at file level by default (9z8ae)
+  ([f7db4e2](https://github.com/artk0de/TeaRAGs-MCP/commit/f7db4e291c9a1790c403a0dbf6c37ff593cee8e4))
+- **presets:** calibrate bugHunt, dangerous, hotspots, techDebt by backtest
+  ([516fb22](https://github.com/artk0de/TeaRAGs-MCP/commit/516fb223ccc8cf9eb2ac9cd0d5c30054e457541a))
+- **presets:** risk report prints every tier, explains patterns, handles solo
+  repos
+  ([7f474da](https://github.com/artk0de/TeaRAGs-MCP/commit/7f474da46d3386150f90f8bd4e0998676635a71b))
+- **scripts:** cross-platform Node helpers for the install skill
+  ([9cbc662](https://github.com/artk0de/TeaRAGs-MCP/commit/9cbc662b47d56f91b190fcb68248cd5b81df876c))
+
+### Bug Fixes
+
+- **adapters:** find the rustc driver .exe on Windows (gr8wr)
+  ([5ef3238](https://github.com/artk0de/TeaRAGs-MCP/commit/5ef323838d680b908284c01e588e0aef2e7793dc))
+- **adapters:** keep the codegraph daemon socket path within the platform limit
+  (js1ie)
+  ([b31b441](https://github.com/artk0de/TeaRAGs-MCP/commit/b31b441145012011ba9521c14d81d6cf87c49d2c))
+- **adapters:** per-user socket alias, squat refusal, ONNX socket guard (8tbaa,
+  64j9p, 5yhxq)
+  ([7ae740f](https://github.com/artk0de/TeaRAGs-MCP/commit/7ae740fa253f4fb5e7d1fe299b6b8fe7186b8cb9))
+- **adapters:** run the rustc driver per cargo workspace root
+  ([cd06f31](https://github.com/artk0de/TeaRAGs-MCP/commit/cd06f311038f3f7201140e4ed728fc265dbe753c))
+- **adapters:** typed errors for llama-server archive and Ollama registry
+  failures (0c4vd)
+  ([b169543](https://github.com/artk0de/TeaRAGs-MCP/commit/b16954380c2d1b047559b4ebaa68d9ff128db6ba))
+- **adapters:** typed native-asset download errors; drop archive after failed
+  publish (hjbow.13)
+  ([2fc59ec](https://github.com/artk0de/TeaRAGs-MCP/commit/2fc59ec438e6dd7a42ea29d5fda930ad545d1a4a))
+- **api:** import collection-resolver input errors through the public barrel
+  ([8e6c08d](https://github.com/artk0de/TeaRAGs-MCP/commit/8e6c08d73480ca7d55a1f5abf594c5e0cf3b4e78))
+- **api:** keep collection-resolver on the lean prime path, unpin it from the
+  barrel test
+  ([57bca26](https://github.com/artk0de/TeaRAGs-MCP/commit/57bca264c652a404795c7e4bb428b935ca601e15))
+- **api:** keep distant silentCoupling flips out of introduced (u6pc0)
+  ([582afe5](https://github.com/artk0de/TeaRAGs-MCP/commit/582afe589e5862ccf324417318521daa96a7797b))
+- **api:** read tools without addressing resolve the target from the server cwd
+  ([4633874](https://github.com/artk0de/TeaRAGs-MCP/commit/4633874722cd42c7c372fbe93105c6cbaf2b7a8c)),
+  closes
+  [App#resolveBaseIndexEntry](https://github.com/artk0de/App/issues/resolveBaseIndexEntry)
+- **benchmarks:** journal Codex events and await MCP readiness
+  ([7ea773f](https://github.com/artk0de/TeaRAGs-MCP/commit/7ea773f9fb035f2e89bad58a8987747bf5e0d4b3))
+- **bootstrap:** live rustc driver status at read time (hjbow.9)
+  ([b220096](https://github.com/artk0de/TeaRAGs-MCP/commit/b220096597ed3805a7d5ca176bc30dd55dddbb38))
+- **bootstrap:** name the path positionally in the rustc driver recompute hint
+  (hjbow.9)
+  ([08da180](https://github.com/artk0de/TeaRAGs-MCP/commit/08da180d44d531e8360c4304141dc7331a96f629))
+- **chunker:** chunk a #![cfg(test)] Rust file as test code (52wk3.8)
+  ([7d47e34](https://github.com/artk0de/TeaRAGs-MCP/commit/7d47e3494c128c0c2403c449b4f1efd77dbddedb))
+- **chunker:** chunk a vitest in-source block inside a function body as test
+  (52wk3.9)
+  ([0691e84](https://github.com/artk0de/TeaRAGs-MCP/commit/0691e84c0627012c726912318e12a0ef0660efc4))
+- **chunker:** close the residual inline-test leaks into production chunks
+  (52wk3.9)
+  ([26e46b8](https://github.com/artk0de/TeaRAGs-MCP/commit/26e46b842400d7bbd76386dd4cc6089db141df88))
+- **chunker:** close three inline-test leaks into production chunks (52wk3.9)
+  ([1e4ce7c](https://github.com/artk0de/TeaRAGs-MCP/commit/1e4ce7c5fe5d8fda9d819cc75ec43e54eab75ac9))
+- **chunker:** give classifier-emitted inline test chunks their scope parent
+  (52wk3.9)
+  ([84694de](https://github.com/artk0de/TeaRAGs-MCP/commit/84694de453a616d05a5cdcd463415ad487a956ab))
+- **chunker:** id Rust claimed test items under their enclosing module path
+  (52wk3.9)
+  ([2eaf36f](https://github.com/artk0de/TeaRAGs-MCP/commit/2eaf36ff621f0616df240b592eaf80c672e1eb53))
+- **chunker:** keep outer doc comments of Rust test-only items out of production
+  chunks (52wk3.9)
+  ([e51ecf3](https://github.com/artk0de/TeaRAGs-MCP/commit/e51ecf3055cc509fb7807a59caea6040bdb7c9a6))
+- **chunker:** keep Rust and Vitest inline tests out of the codegraph (52wk3.2,
+  52wk3.5)
+  ([7c60e46](https://github.com/artk0de/TeaRAGs-MCP/commit/7c60e46abef3af9dc5369f6e6bc03d8267faa661))
+- **chunker:** keep Rust import attributes and test-only mod decls out of
+  remainder (52wk3.9)
+  ([df8aa63](https://github.com/artk0de/TeaRAGs-MCP/commit/df8aa63c3202ef877bb9035139f9be4aa58e7645))
+- **chunker:** never let an inline test node become a production chunk (52wk3.9)
+  ([99d91a2](https://github.com/artk0de/TeaRAGs-MCP/commit/99d91a24efb2678c5dbee5cd709932a7433e48e1))
+- **cli:** rustc-driver install takes --release and prints typed failures
+  cleanly (hjbow.13)
+  ([9e680ce](https://github.com/artk0de/TeaRAGs-MCP/commit/9e680ce6789394bea7730e18406a66184942d0b9))
+- **codex:** distinguish Markdown write destinations in read guard
+  ([08673b9](https://github.com/artk0de/TeaRAGs-MCP/commit/08673b95bd9f3196cd6cef6779e9c6e257748b99))
+- **codex:** focus discovery and bound context expansion
+  ([4bfa29c](https://github.com/artk0de/TeaRAGs-MCP/commit/4bfa29c8797cadc7ca315a5687e5ef838356e7c7))
+- **codex:** preserve bounded reads and classify bound write paths
+  ([ac8551f](https://github.com/artk0de/TeaRAGs-MCP/commit/ac8551f35486ad33649550ac6fd4bcb907b4e6fc))
+- **codex:** preserve broad investigation quality with bounded context
+  ([86a915b](https://github.com/artk0de/TeaRAGs-MCP/commit/86a915b8d2a66fca8014655b867cb8009450af36))
+- **config:** keep client-update hint, log and harness skips visible (5o5af)
+  ([4228a30](https://github.com/artk0de/TeaRAGs-MCP/commit/4228a3041792c2571ca3147fbc6b6fcbe11bae3b))
+- **config:** keep project- and local-scope Claude plugin installs through
+  re-pin (6m43s)
+  ([d869148](https://github.com/artk0de/TeaRAGs-MCP/commit/d86914856ed6ee69bc1983e04f7a7b9bbb4ccd74))
+- **embedding:** re-arm the managed-pool revive after a successful restart
+  (hjbow.6)
+  ([ecc70d9](https://github.com/artk0de/TeaRAGs-MCP/commit/ecc70d90c368e89e7c3b1495f5be698f575a8b3b))
+- **explore:** per-symbol rerank paths score at chunk level (9z8ae)
+  ([bb2fe4e](https://github.com/artk0de/TeaRAGs-MCP/commit/bb2fe4e126945808920e6bf94eab062768b8a220))
+- **explore:** rank_chunks level:file returns `limit` distinct files (xiogj)
+  ([1adc7fa](https://github.com/artk0de/TeaRAGs-MCP/commit/1adc7fa9856e8e5caf26eae714aec22b318a70f2))
+- **ingest:** exempt declared test files from the secrets skip (52wk3.10)
+  ([270e629](https://github.com/artk0de/TeaRAGs-MCP/commit/270e629dd61a9b248fd61d741b6380f75260377d))
+- **ingest:** key declared test files by project root (52wk3.10)
+  ([8ef00cb](https://github.com/artk0de/TeaRAGs-MCP/commit/8ef00cbed678655cc3f0a28b7543004e33ace37e)),
+  closes
+  [StaticPayloadBuilder#buildPayload](https://github.com/artk0de/StaticPayloadBuilder/issues/buildPayload)
+- **ingest:** stamp inline test chunks skippedAs test instead of codegraph
+  signals (52wk3.7)
+  ([6df027a](https://github.com/artk0de/TeaRAGs-MCP/commit/6df027a45379a647fce278c2e5e9521e5ae5c741))
+- **language:** complete upstream integration for release
+  ([823364d](https://github.com/artk0de/TeaRAGs-MCP/commit/823364d2dc4ec18d15ec60389d6e0759bb0ee6f7))
+- **language:** resolve declared Rust test modules from Cargo target roots
+  (52wk3.10)
+  ([12148ac](https://github.com/artk0de/TeaRAGs-MCP/commit/12148ac9aa5fdf2baefe7f6c015a4c99b2871383))
+- merge verified P0 plugin fixes with Claude follow-up waiver
+  ([749638d](https://github.com/artk0de/TeaRAGs-MCP/commit/749638d7db626d03e816d0f198fc72acd8ff9d56))
+- **pipeline:** isolate one enrichment provider's failure from the others
+  (xvik1)
+  ([bdeea6a](https://github.com/artk0de/TeaRAGs-MCP/commit/bdeea6a99869bb5188718af51308af9e3f122a7a))
+- **pipeline:** locate compiled workers under the repo's own src/, not the first
+  one
+  ([9efdfad](https://github.com/artk0de/TeaRAGs-MCP/commit/9efdfadb325670460e784673d6dfe581e82ea23e))
+- **pipeline:** report a forced-repair provider failure on an empty recompute
+  scope (63bdw)
+  ([90b0705](https://github.com/artk0de/TeaRAGs-MCP/commit/90b0705d8ce1406a0f41ef10d1ff23669542fa16)),
+  closes
+  [FilePhase#markProviderFailed](https://github.com/artk0de/FilePhase/issues/markProviderFailed)
+- **prime:** decouple agent addressing from engine readiness
+  ([b06247f](https://github.com/artk0de/TeaRAGs-MCP/commit/b06247f984e489f0b081e82a96f9b5a1ab944478))
+- **prime:** decouple agent addressing from engine readiness
+  ([cafc52e](https://github.com/artk0de/TeaRAGs-MCP/commit/cafc52ecc7503b60871cd57a7a48ae49852f0455))
+- **prime:** resolve embedded sentinel through daemon discovery
+  ([99cfc13](https://github.com/artk0de/TeaRAGs-MCP/commit/99cfc134fe98c53738770fba7ec4cbde31471912))
+- **prime:** resolve embedded sentinel through daemon discovery
+  ([480872b](https://github.com/artk0de/TeaRAGs-MCP/commit/480872b98aa89635967a08a63c5a15400b005bc2))
+- **prime:** resolve embedded sentinel through daemon discovery
+  ([db0f4a7](https://github.com/artk0de/TeaRAGs-MCP/commit/db0f4a72dc5c866451279aa9a5e26f7b75d3e7d4))
+- **scripts:** detect the running harness before CODEX_HOME (hjbow.13)
+  ([d4910c4](https://github.com/artk0de/TeaRAGs-MCP/commit/d4910c4b9e64cd634a2106b0dc735a9a869c22eb))
+- **trajectory:** mark test chunk types as isTest in production files (52wk3.4)
+  ([c552ea6](https://github.com/artk0de/TeaRAGs-MCP/commit/c552ea621037308d80b566819a9290fdbfa8153f))
+
+### Documentation
+
+- **bench:** record 0.55.8 deployment and probe limitations
+  ([35c8028](https://github.com/artk0de/TeaRAGs-MCP/commit/35c80284ccd9dab6d2083dfd115af9d126ac99da))
+- **chunker:** spec and plan for inline test chunks (Rust cfg(test), Vitest
+  in-source)
+  ([cd7f70b](https://github.com/artk0de/TeaRAGs-MCP/commit/cd7f70ba04719c9625e7f3dc78c7f9c0790ec6ec))
+- record approved Claude validation waiver for P0 integration
+  ([4d00d13](https://github.com/artk0de/TeaRAGs-MCP/commit/4d00d13fb012a20511bedda9fc1fabd2d4f3cc0b))
+- record merged P0 candidates and open behavioral gates
+  ([c807a6a](https://github.com/artk0de/TeaRAGs-MCP/commit/c807a6a70688b70e3d6b9232e5676a8d1f0c452c))
+- record P0 plugin integration and retained Claude follow-up
+  ([b9e62c2](https://github.com/artk0de/TeaRAGs-MCP/commit/b9e62c298669773c66acaf4032f3fc8ea95f559a))
+- **website:** align install Option A and spec with the shipped install skill
+  (hjbow.12)
+  ([d28cd64](https://github.com/artk0de/TeaRAGs-MCP/commit/d28cd6460e979bcb86619b2c6c09cbdfe552e135))
+- **website:** document the installed-pending rustc driver state (hjbow.12)
+  ([dc8d35f](https://github.com/artk0de/TeaRAGs-MCP/commit/dc8d35f5d34b4b2bc32a43db79e10a9140162177))
+- **website:** one-command install and managed llama-server pools (hjbow.12)
+  ([89718fb](https://github.com/artk0de/TeaRAGs-MCP/commit/89718fb4c17d6bf757feeab37a9170f6366fd1a8))
+- **website:** one-command install design spec
+  ([ccef842](https://github.com/artk0de/TeaRAGs-MCP/commit/ccef84205a128599c4f85bd56ce1ed80f9e95b17))
+- **website:** one-command install implementation plan
+  ([58dad78](https://github.com/artk0de/TeaRAGs-MCP/commit/58dad785f9254b875a3f7d5748ceb9e793bbc0cb))
+
+### Code Refactoring
+
+- **trajectory:** remove squash-aware git sessions
+  ([70ecd2d](https://github.com/artk0de/TeaRAGs-MCP/commit/70ecd2daafc1154d11e3ee369c6bc5592b0d17e7))
+
 ## [1.50.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.49.0...v1.50.0) (2026-10-31)
 
 ### 🔎 Search & ranking
 
-* **Breaking:** search tools return lean rows by default — `id`, `score`, `chunkType`, `language` and `navigation` are no longer included, and reranked rows no longer carry the whole payload. Pass `fields` to get any of them back
-* `semantic_search` and `hybrid_search` accept up to five phrasings of a query in one call and fuse the results, so one search covers synonyms and spellings
-* An empty search or graph answer says why it is empty and which call to make next, and search answers suggest at most two follow-up calls
-* `find_similar` accepts symbol ids as examples, not only point ids
-* ***Rails*** migrations are indexed in their own corpus and searched through `scope: "migrations"`, and `find_symbol` with `table:<name>` folds a table's migrations into its current state
+- **Breaking:** search tools return lean rows by default — `id`, `score`,
+  `chunkType`, `language` and `navigation` are no longer included, and reranked
+  rows no longer carry the whole payload. Pass `fields` to get any of them back
+- `semantic_search` and `hybrid_search` accept up to five phrasings of a query
+  in one call and fuse the results, so one search covers synonyms and spellings
+- An empty search or graph answer says why it is empty and which call to make
+  next, and search answers suggest at most two follow-up calls
+- `find_similar` accepts symbol ids as examples, not only point ids
+- **_Rails_** migrations are indexed in their own corpus and searched through
+  `scope: "migrations"`, and `find_symbol` with `table:<name>` folds a table's
+  migrations into its current state
 
 ### 🧠 Code intelligence
 
-* `get_callers` and `get_callees` return call trees to a requested depth and page through large answers with an offset
-* `find_symbol` reads more in one call: a batch of symbols and file paths, a directory outline, the full text of a small file, and a clear answer when a path is excluded from indexing
-* `get_architecture_report` groups violations per detector, trims their evidence, and pages through a held report by `reportId`
+- `get_callers` and `get_callees` return call trees to a requested depth and
+  page through large answers with an offset
+- `find_symbol` reads more in one call: a batch of symbols and file paths, a
+  directory outline, the full text of a small file, and a clear answer when a
+  path is excluded from indexing
+- `get_architecture_report` groups violations per detector, trims their
+  evidence, and pages through a held report by `reportId`
 
 ### ⚡ Indexing & performance
 
-* **Breaking:** **codegraph** databases are converted to the DuckDB 2.0 storage format on first open. Older tea-rags builds cannot open converted files — restore a pre-conversion backup before downgrading
-* Files that produce no chunks are recorded instead of silently missing, and index status reports any file the index lost
-* Configuration YAML files are indexed as searchable documentation
+- **Breaking:** **codegraph** databases are converted to the DuckDB 2.0 storage
+  format on first open. Older tea-rags builds cannot open converted files —
+  restore a pre-conversion backup before downgrading
+- Files that produce no chunks are recorded instead of silently missing, and
+  index status reports any file the index lost
+- Configuration YAML files are indexed as searchable documentation
 
 ### 🗣 Language support
 
-* ***Rust*** call graphs come from the compiler: a rustc call-site driver is built on first use and resolves calls, macro invocations, local and indirect callees and macro-generated definitions. Without the driver ***Rust*** edges are static-only, and answers say so
-* **Breaking:** rust-analyzer is no longer used for ***Rust*** call graphs — `CODEGRAPH_RUST_ANALYZER`, `CODEGRAPH_RUST_ANALYZER_EXEC`, `CODEGRAPH_RUST_ANALYZER_PATH`, `CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC` and `CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB` are no longer read; configure the rustc driver through `CODEGRAPH_RUST_DRIVER*` instead
-* ***Rust*** calls into std and dependency types resolve through those crates' own signatures, including free functions and tuple returns, and macros resolve across crates
-* ***Ruby*** class-level DSL statements are addressable members, and `.rake` files are indexed as the Rake DSL with task symbols in search and the call graph
+- **_Rust_** call graphs come from the compiler: a rustc call-site driver is
+  built on first use and resolves calls, macro invocations, local and indirect
+  callees and macro-generated definitions. Without the driver **_Rust_** edges
+  are static-only, and answers say so
+- **Breaking:** rust-analyzer is no longer used for **_Rust_** call graphs —
+  `CODEGRAPH_RUST_ANALYZER`, `CODEGRAPH_RUST_ANALYZER_EXEC`,
+  `CODEGRAPH_RUST_ANALYZER_PATH`, `CODEGRAPH_RUST_ANALYZER_TIMEOUT_SEC` and
+  `CODEGRAPH_RUST_ANALYZER_MAX_RSS_MB` are no longer read; configure the rustc
+  driver through `CODEGRAPH_RUST_DRIVER*` instead
+- **_Rust_** calls into std and dependency types resolve through those crates'
+  own signatures, including free functions and tuple returns, and macros resolve
+  across crates
+- **_Ruby_** class-level DSL statements are addressable members, and `.rake`
+  files are indexed as the Rake DSL with task symbols in search and the call
+  graph
 
 ### 🛠 CLI & workflow
 
-* **Breaking:** tool answers are compact — text output is compact JSON, record lists of two or more rows (search results included) are `{ columns, rows }` tables, the `workingTree` marker carries only what an agent acts on, and answers over 12k tokens are trimmed with a continuation. Clients that read `results[i]` read row `i` of the table instead
-* The **MCP** server carries the always-on tea-rags core in its instructions, publishes `tea-rags://guide/*`, project digest and metrics resources, and `tea-rags resource <uri>` reads them from the CLI; `MCP_SERVER_INSTRUCTIONS=pointer` sends only a pointer line
-* `tea-rags doctor --footprints` lists unused collection footprints and `--fix` purges them
-* `tea-rags update` updates the Claude Code plugins too, `tea-rags call --format json` prints plain records, `prime` shows signal thresholds as a table, and subagents learn the repository's project alias
+- **Breaking:** tool answers are compact — text output is compact JSON, record
+  lists of two or more rows (search results included) are `{ columns, rows }`
+  tables, the `workingTree` marker carries only what an agent acts on, and
+  answers over 12k tokens are trimmed with a continuation. Clients that read
+  `results[i]` read row `i` of the table instead
+- The **MCP** server carries the always-on tea-rags core in its instructions,
+  publishes `tea-rags://guide/*`, project digest and metrics resources, and
+  `tea-rags resource <uri>` reads them from the CLI;
+  `MCP_SERVER_INSTRUCTIONS=pointer` sends only a pointer line
+- `tea-rags doctor --footprints` lists unused collection footprints and `--fix`
+  purges them
+- `tea-rags update` updates the Claude Code plugins too,
+  `tea-rags call --format json` prints plain records, `prime` shows signal
+  thresholds as a table, and subagents learn the repository's project alias
 
 ### 🧩 Agent plugin
 
-* Codex and Cursor get plugin packages generated from the same sources as the Claude Code plugin, `dinopowers` ships as its own Codex and Cursor plugin, and the repository root is their marketplace
-* Agents stop re-reading code they already hold: a reread ledger points raw reads of indexed source at `find_symbol`, and a per-turn routing reminder steers drifting searches back to the right tool
-* Skills are leaner and load heavy references on demand, so sessions spend fewer tokens on guidance
-* The setup wizard offers the ***Rust*** compiler driver toolchain, and agents tell the user once when ***Rust*** graph edges are static-only
-* `dinopowers` stops and asks for superpowers when the skill it wraps is missing
-* Codex follows skill steps, output contracts and routing more reliably, closing the forks found across repeated evaluation rounds
+- Codex and Cursor get plugin packages generated from the same sources as the
+  Claude Code plugin, `dinopowers` ships as its own Codex and Cursor plugin, and
+  the repository root is their marketplace
+- Agents stop re-reading code they already hold: a reread ledger points raw
+  reads of indexed source at `find_symbol`, and a per-turn routing reminder
+  steers drifting searches back to the right tool
+- Skills are leaner and load heavy references on demand, so sessions spend fewer
+  tokens on guidance
+- The setup wizard offers the **_Rust_** compiler driver toolchain, and agents
+  tell the user once when **_Rust_** graph edges are static-only
+- `dinopowers` stops and asks for superpowers when the skill it wraps is missing
+- Codex follows skill steps, output contracts and routing more reliably, closing
+  the forks found across repeated evaluation rounds
 
 ### 📚 Documentation
 
-* **Docusaurus:** the ***Rust*** compiler driver, its environment variables and toolchain install, and Apple Silicon llama-server setup through the install wizard
-* **README:** per-harness plugin install instructions under spoilers
+- **Docusaurus:** the **_Rust_** compiler driver, its environment variables and
+  toolchain install, and Apple Silicon llama-server setup through the install
+  wizard
+- **README:** per-harness plugin install instructions under spoilers
 
 ### 🩹 Fixes
 
-* `get_callers` and `get_callees` on a class or module include its members' edges
-* Graph tools on a working tree that is still being indexed answer within 3 seconds, mark edges taken from the index, and never come back silently empty
-* Every line of a ***Ruby*** or ***TypeScript*** class body belongs to a chunk, short methods are addressable, and no non-blank file ends up with zero chunks
-* `find_symbol` finds whole classes and partial paths, keeps a qualified name's owner instead of substituting a namesake, and a miss lists the container's members
-* ***Ruby*** calls no longer land on unrelated project namesakes, and ***TypeScript*** `implements` edges reach project interfaces
-* ***Rails*** migration indexing honours ignore patterns, updates incrementally, and keeps partial-index and foreign-key details
-* ***Rust*** call resolution keeps correct edges it used to lose — pattern bindings, impl blocks, re-exports, trait methods and the rustc driver's retry after a failed or offline build
-* The **codegraph** and **Qdrant** daemons survive malformed requests and track live holders, a sandboxed client no longer wipes or duplicates the machine daemon, and a failing registry watch falls back to polling
-* Purging a collection clears interrupted writes and stale generations by their physical name, never through the live alias
-* `prime` in a linked **worktree** uses its repository's base index
-* Architecture and review answers stay within their budget, keep the requested page, and report every explained pair
+- `get_callers` and `get_callees` on a class or module include its members'
+  edges
+- Graph tools on a working tree that is still being indexed answer within 3
+  seconds, mark edges taken from the index, and never come back silently empty
+- Every line of a **_Ruby_** or **_TypeScript_** class body belongs to a chunk,
+  short methods are addressable, and no non-blank file ends up with zero chunks
+- `find_symbol` finds whole classes and partial paths, keeps a qualified name's
+  owner instead of substituting a namesake, and a miss lists the container's
+  members
+- **_Ruby_** calls no longer land on unrelated project namesakes, and
+  **_TypeScript_** `implements` edges reach project interfaces
+- **_Rails_** migration indexing honours ignore patterns, updates incrementally,
+  and keeps partial-index and foreign-key details
+- **_Rust_** call resolution keeps correct edges it used to lose — pattern
+  bindings, impl blocks, re-exports, trait methods and the rustc driver's retry
+  after a failed or offline build
+- The **codegraph** and **Qdrant** daemons survive malformed requests and track
+  live holders, a sandboxed client no longer wipes or duplicates the machine
+  daemon, and a failing registry watch falls back to polling
+- Purging a collection clears interrupted writes and stale generations by their
+  physical name, never through the live alias
+- `prime` in a linked **worktree** uses its repository's base index
+- Architecture and review answers stay within their budget, keep the requested
+  page, and report every explained pair
 
 ### 🔧 Environment Variables
 
-* `CODEGRAPH_RUST_DRIVER` · Rustc call-site driver for ***Rust*** call graphs; `off` disables it · default: `on` (new)
-* `CODEGRAPH_RUST_DRIVER_PATH` · Explicit driver binary, tried before every other discovery tier · default: `unset` (new)
-* `CODEGRAPH_RUST_DRIVER_JOBS` · Parallel rustc processes of one driver run · default: `max(1, cores / 2)` (new)
-* `CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC` · Wall-clock budget of one driver run · default: `3600` (new)
-* `CODEGRAPH_RUST_DRIVER_MAX_RSS_MB` · Resident-memory budget of one driver run · default: `12288` (new)
-* `MCP_SERVER_INSTRUCTIONS` · What the **MCP** initialize result carries: the full tea-rags core (`core`) or only a pointer line (`pointer`) · default: `core` (new)
-* `EXPERIMENTAL_LOCATE_ENABLE` · Registers the hidden experimental `locate` tool · default: `false` (new)
+- `CODEGRAPH_RUST_DRIVER` · Rustc call-site driver for **_Rust_** call graphs;
+  `off` disables it · default: `on` (new)
+- `CODEGRAPH_RUST_DRIVER_PATH` · Explicit driver binary, tried before every
+  other discovery tier · default: `unset` (new)
+- `CODEGRAPH_RUST_DRIVER_JOBS` · Parallel rustc processes of one driver run ·
+  default: `max(1, cores / 2)` (new)
+- `CODEGRAPH_RUST_DRIVER_TIMEOUT_SEC` · Wall-clock budget of one driver run ·
+  default: `3600` (new)
+- `CODEGRAPH_RUST_DRIVER_MAX_RSS_MB` · Resident-memory budget of one driver run
+  · default: `12288` (new)
+- `MCP_SERVER_INSTRUCTIONS` · What the **MCP** initialize result carries: the
+  full tea-rags core (`core`) or only a pointer line (`pointer`) · default:
+  `core` (new)
+- `EXPERIMENTAL_LOCATE_ENABLE` · Registers the hidden experimental `locate` tool
+  · default: `false` (new)
 
 ## [1.49.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.48.0...v1.49.0) (2026-10-18)
 
