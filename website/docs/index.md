@@ -142,7 +142,7 @@ Qdrant and DuckDB run embedded — no Docker, no servers to manage.
   assessment, code generation, review, and index management
 - 🔒 **Local-first, privacy-first** — embedded Qdrant and DuckDB, embeddings
   through Ollama; your code never leaves your machine (cloud providers optional)
-- 🚀 **Built for enterprise monorepos** — AST-aware chunking across 9 languages,
+- 🚀 **Built for enterprise monorepos** — AST-aware chunking across 12 languages,
   incremental reindexing, parallel pipelines, millions of LOC tested
 
 ## Who It's For

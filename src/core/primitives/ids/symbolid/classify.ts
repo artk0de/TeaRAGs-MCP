@@ -44,6 +44,10 @@ export type MethodClassification = "instance" | "static";
 export function classifyMethod(node: AstNode): MethodClassification | null {
   // TypeScript / JavaScript — explicit `static` keyword child.
   if (node.type === "method_definition") {
+    // Objective-C method definitions share this node type with TypeScript.
+    // The `+` / `-` keyword is an anonymous child a TypeScript method never has.
+    if (hasChildOfTypeOrText(node, "+")) return "static";
+    if (hasChildOfTypeOrText(node, "-")) return "instance";
     // bd tea-rags-mcp-2jhwk / 62hzr — a `method_definition` sitting directly in
     // an OBJECT LITERAL is a namespace member, not a class method: it is invoked
     // as `X.member()` on the object itself and there is no instance to bind.
@@ -72,8 +76,15 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
   // NAMED `static` — a single named `property_identifier` with no modifier —
   // and the text fallback would flip its separator.
   if (node.type === "public_field_definition") return hasStaticModifier(node) ? "static" : "instance";
-  // Java — `static` modifier nested under a `modifiers` child.
-  if (node.type === "method_declaration") return javaHasStaticModifier(node) ? "static" : "instance";
+  // Java, PHP, and Objective-C interface methods share `method_declaration`.
+  // Objective-C is `+` / `-`. PHP puts `static` in a `static_modifier` child.
+  // Java nests `static` under `modifiers`. Each check is a child the others lack.
+  if (node.type === "method_declaration") {
+    if (hasChildOfTypeOrText(node, "+")) return "static";
+    if (hasChildOfTypeOrText(node, "-")) return "instance";
+    if (hasChildOfTypeOrText(node, "static_modifier")) return "static";
+    return javaHasStaticModifier(node) ? "static" : "instance";
+  }
   // Java constructor — instance-bound (initializes an instance).
   if (node.type === "constructor_declaration") return "instance";
   // Ruby — three shapes for class-level methods:
@@ -88,7 +99,12 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
   // `@staticmethod` is class-level, otherwise instance. Module-level
   // functions also pass through here but the caller filters those
   // out by checking the parent kind before joining.
-  if (node.type === "function_definition") return pythonHasClassOrStaticDecorator(node) ? "static" : "instance";
+  if (node.type === "function_definition") {
+    // PHP `function top()` shares the node type with Python `def`. PHP's
+    // keyword child is `function`; Python's is `def`. A PHP function is not a method.
+    if (hasChildOfTypeOrText(node, "function") && !hasChildOfTypeOrText(node, "def")) return null;
+    return pythonHasClassOrStaticDecorator(node) ? "static" : "instance";
+  }
   // Rust — `function_item` declared inside `impl T { ... }`. With a
   // `self` / `&self` / `&mut self` parameter, the fn is an instance
   // method; without, it's an associated function (treated as
@@ -112,6 +128,14 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
   // Swift initializer — instance-bound (constructs an instance), like the
   // Java constructor above. `init_declaration` never carries static/class.
   if (node.type === "init_declaration") return "instance";
+  // Kotlin `fun` shares `function_declaration` with TypeScript (`function`) and
+  // Swift (`func`). Only the anonymous `fun` keyword selects this branch.
+  // Companion-object members are class-level; other type-body members are
+  // instance; a top-level `fun` is not a method.
+  if (node.type === "function_declaration" && kotlinHasFunKeyword(node)) {
+    if (kotlinInsideCompanion(node)) return "static";
+    return kotlinInsideTypeBody(node) ? "instance" : null;
+  }
   return null;
 }
 
@@ -200,6 +224,29 @@ function rustHasSelfParam(node: AstNode): boolean {
  * top-level function of the same node type. Their keyword node is `function`;
  * Swift's is `func`, and in both grammars the keyword is an anonymous child.
  */
+function kotlinHasFunKeyword(node: AstNode): boolean {
+  for (const child of node.children) {
+    if (!child.isNamed && child.type === "fun") return true;
+  }
+  return false;
+}
+
+/** `companion object { fun build() }` — class-level, like Java `static`. */
+function kotlinInsideCompanion(node: AstNode): boolean {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "companion_object") return true;
+  }
+  return false;
+}
+
+/** A `fun` declared in a class or object body, not at file scope. */
+function kotlinInsideTypeBody(node: AstNode): boolean {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "class_body" || current.type === "enum_class_body") return true;
+  }
+  return false;
+}
+
 function swiftHasFuncKeyword(node: AstNode): boolean {
   for (const child of node.children) {
     if (!child.isNamed && child.type === "func") return true;

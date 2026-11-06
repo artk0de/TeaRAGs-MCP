@@ -1,6 +1,6 @@
 {
   "name": "tea-rags-setup",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "One-step TeaRAGs install — llama-server embeddings, plugin and MCP server, project registration, first index — plus re-tuning",
   "skills": "./skills/"
 }

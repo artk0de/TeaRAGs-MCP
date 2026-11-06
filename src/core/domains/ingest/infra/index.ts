@@ -1,4 +1,5 @@
 export { cleanupOrphanedVersions } from "./alias-cleanup.js";
+export type { CodegraphDbLister, CodegraphDbRemover } from "./alias-cleanup.js";
 export { isCollectionBuildInFlight, isCollectionIndexingInFlight } from "./collection-build-lease.js";
 export {
   CollectionIndexingLock,

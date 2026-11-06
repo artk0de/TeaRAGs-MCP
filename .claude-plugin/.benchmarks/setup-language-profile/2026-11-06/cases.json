@@ -1,0 +1,14 @@
+[
+  {
+    "id": "added-languages",
+    "fixture": "fixtures/added-languages",
+    "prompt": "added-languages-prompt.txt",
+    "runs": 1
+  },
+  {
+    "id": "existing-and-ignore",
+    "fixture": "fixtures/existing-and-ignore",
+    "prompt": "existing-and-ignore-prompt.txt",
+    "runs": 1
+  }
+]

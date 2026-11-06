@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,12 +13,18 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { warmChunkerPoolFactory } from "../__helpers__/warm-chunker-pool.js";
+import { fixtureCollectionAlias } from "../../../__helpers__/collection-identity.js";
 import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EmbeddingModelGuard } from "../../../../../src/core/adapters/qdrant/embedding-model-guard.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors/index.js";
 import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import { ParallelFileSynchronizer } from "../../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
+import {
+  firstIndexResumeDirectory,
+  FirstIndexResumeStore,
+} from "../../../../../src/core/domains/ingest/sync/resume/first-index-resume.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
@@ -71,6 +78,102 @@ describe("IndexPipeline", () => {
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
+  });
+
+  describe("interrupted first index", () => {
+    async function interrupted(files: string[]) {
+      const snapshotDir = join(tempDir, "resume-snapshots");
+      ingest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        snapshotDir,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        createChunkerPool: warmChunkerPoolFactory,
+      });
+      for (const name of files) {
+        await createTestFile(
+          codebaseDir,
+          `${name}.ts`,
+          `export function ${name}() { console.log('stored ${name} source content'); return '${name}'; }`,
+        );
+      }
+      await ingest.indexCodebase(codebaseDir);
+      const alias = fixtureCollectionAlias((await ingest.getIndexStatus(codebaseDir)).collectionName!);
+      const physical = await qdrant.aliases.resolveActive(alias);
+      const marker = await qdrant.getPoint(physical, INDEXING_METADATA_ID);
+      await qdrant.aliases.deleteAlias(alias);
+      await qdrant.addPoints(physical, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array(embeddings.getDimensions()).fill(0),
+          payload: {
+            ...marker!.payload,
+            indexingComplete: false,
+            completedAt: undefined,
+            startedAt: "2020-01-01T00:00:00Z",
+            lastHeartbeat: "2020-01-01T00:00:00Z",
+          },
+        },
+      ]);
+      return { alias, physical, snapshotDir };
+    }
+
+    it("derives a missing checkpoint from stored paths and keeps unchanged files", async () => {
+      const { physical } = await interrupted(["kept", "gone"]);
+      await fs.unlink(join(codebaseDir, "gone.ts"));
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export function added() { console.log('newly discovered source content'); return 'added'; }",
+      );
+      const progress = vi.fn();
+
+      const stats = await ingest.indexCodebase(codebaseDir, undefined, progress);
+
+      expect(stats.filesIndexed).toBe(1);
+      expect(progress).toHaveBeenCalledWith(
+        expect.objectContaining({ message: `Resume ${physical}: 1 files kept, 1 left` }),
+      );
+      const points = await qdrant.scrollFiltered(physical, {}, 10_000);
+      const paths = new Set(
+        points.flatMap((point) => (typeof point.payload.relativePath === "string" ? [point.payload.relativePath] : [])),
+      );
+      expect([...paths].sort()).toEqual(["added.ts", "kept.ts"]);
+    });
+
+    it("uses a saved checkpoint to rewrite changed files and removes it after final persistence", async () => {
+      const { alias, physical, snapshotDir } = await interrupted(["kept", "edited", "gone"]);
+      const synchronizer = new ParallelFileSynchronizer(codebaseDir, alias, snapshotDir, 1);
+      await synchronizer.computeContentHashes(
+        ["kept", "edited", "gone"].map((name) => join(codebaseDir, `${name}.ts`)),
+      );
+      await new FirstIndexResumeStore(snapshotDir, alias, physical).save(synchronizer.getCachedFileMetadata());
+      await fs.unlink(join(codebaseDir, "gone.ts"));
+      await createTestFile(
+        codebaseDir,
+        "edited.ts",
+        "export function edited() { console.log('changed source content after the interrupted run'); return 'changed'; }",
+      );
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export function added() { console.log('source added after the interrupted run'); return 'added'; }",
+      );
+
+      const stats = await ingest.indexCodebase(codebaseDir);
+
+      expect(stats.filesIndexed).toBe(2);
+      expect(await qdrant.aliases.resolveActive(alias)).toBe(physical);
+      await expect(
+        fs.readFile(join(firstIndexResumeDirectory(snapshotDir, alias, physical), "meta.json")),
+      ).rejects.toThrow();
+      const points = await qdrant.scrollFiltered(physical, {}, 10_000);
+      const paths = new Set(
+        points.flatMap((point) => (typeof point.payload.relativePath === "string" ? [point.payload.relativePath] : [])),
+      );
+      expect([...paths].sort()).toEqual(["added.ts", "edited.ts", "kept.ts"]);
+    });
   });
 
   describe("indexCodebase", () => {

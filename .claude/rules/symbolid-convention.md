@@ -38,17 +38,20 @@ Same detection logic powers BOTH chunker
 (`codegraph/symbols/provider.ts:<lang>NameOf` returning `instanceMethod`). Keep
 lockstep when adding language.
 
-| Language       | Instance method                                                              | Class / static method                                               |
-| -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **TypeScript** | `method_definition` without `static` keyword                                 | `method_definition` with `static` keyword                           |
-| **JavaScript** | Same as TypeScript (shared `method_definition` shape)                        | Same as TypeScript                                                  |
-| **Python**     | `function_definition` inside class, no decorator                             | `function_definition` decorated with `@classmethod`/`@staticmethod` |
-| **Ruby**       | `method` (`def foo`)                                                         | `singleton_method` (`def self.foo`)                                 |
-| **Go**         | `method_declaration` (has a receiver)                                        | `function_declaration` (top-level — gets `name` form, no parent)    |
-| **Java**       | `method_declaration` without `static` in modifiers                           | `method_declaration` with `static` in modifiers                     |
-| **Rust**       | `function_item` with a `self` / `&self` parameter                            | `function_item` without `self` (associated function)                |
-| **Swift**      | `function_declaration` without `static`/`class` modifier; `init_declaration` | `function_declaration` with a `static`/`class` modifier             |
-| **Bash**       | n/a (no class concept — only top-level functions)                            | n/a                                                                 |
+| Language        | Instance method                                                              | Class / static method                                               |
+| --------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **TypeScript**  | `method_definition` without `static` keyword                                 | `method_definition` with `static` keyword                           |
+| **JavaScript**  | Same as TypeScript (shared `method_definition` shape)                        | Same as TypeScript                                                  |
+| **Python**      | `function_definition` inside class, no decorator                             | `function_definition` decorated with `@classmethod`/`@staticmethod` |
+| **Ruby**        | `method` (`def foo`)                                                         | `singleton_method` (`def self.foo`)                                 |
+| **Go**          | `method_declaration` (has a receiver)                                        | `function_declaration` (top-level — gets `name` form, no parent)    |
+| **Java**        | `method_declaration` without `static` in modifiers                           | `method_declaration` with `static` in modifiers                     |
+| **Rust**        | `function_item` with a `self` / `&self` parameter                            | `function_item` without `self` (associated function)                |
+| **Swift**       | `function_declaration` without `static`/`class` modifier; `init_declaration` | `function_declaration` with a `static`/`class` modifier             |
+| **Bash**        | n/a (no class concept — only top-level functions)                            | n/a                                                                 |
+| **PHP**         | `method_declaration` without a `static_modifier` child                       | `method_declaration` with a `static_modifier` child                 |
+| **Kotlin**      | `fun` in a class or object body, outside a companion object                  | `fun` in a companion object                                         |
+| **Objective-C** | Method declaration or definition with the `-` keyword                        | Method declaration or definition with the `+` keyword               |
 
 A TypeScript class member can also be declared as a FIELD bound to a function
 (`class F { request = async () => {} }`) — a `public_field_definition`, not a

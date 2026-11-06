@@ -70,12 +70,73 @@ function openWorkerDebugLog(): number | "ignore" {
 }
 
 /**
+ * Old-space floor for the index worker, in MB. Node 24's default is ~4096. A
+ * large index hit that default (~4GB heap): `JavaScript heap out of memory`,
+ * then `worker exited with code null`. 10 GiB is the floor for that process — the
+ * one that embeds and hosts blame and the codegraph. The supervisor only
+ * renders progress, so it stays on the default heap.
+ *
+ * A larger `--max-old-space-size` already on the parent `execArgv` or in
+ * `NODE_OPTIONS` is kept. A smaller one is raised: the value passed on
+ * `execArgv` is what the worker runs with, and a command-line flag overrides
+ * `NODE_OPTIONS`.
+ */
+export const INDEX_WORKER_OLD_SPACE_MB = 10240;
+
+const OLD_SPACE_FLAG = /^(?:--max-old-space-size|--max_old_space_size)(?:=(\d+))?$/;
+
+/** Last positive `--max-old-space-size` in `args`, either `=N` or a following token. */
+function readOldSpaceMb(args: readonly string[]): number | undefined {
+  let found: number | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const match = OLD_SPACE_FLAG.exec(args[i] ?? "");
+    if (!match) continue;
+    const raw = match[1] ?? args[i + 1];
+    if (match[1] === undefined) i++;
+    const parsed = Number.parseInt(raw ?? "", 10);
+    if (Number.isFinite(parsed) && parsed > 0) found = parsed;
+  }
+  return found;
+}
+
+/**
+ * `execArgv` for the index-worker `fork`. Replaces the parent's old-space flag
+ * (fork does not inherit `execArgv` once this array is set) and leaves every
+ * other parent flag in place. Chunker processes forked later inherit this
+ * array; `worker_threads` do not — their heaps stay on `resourceLimits`.
+ */
+export function indexWorkerExecArgv(
+  parentExecArgv: readonly string[] = process.execArgv,
+  nodeOptions: string | undefined = process.env.NODE_OPTIONS,
+): string[] {
+  const nodeOptionArgs = nodeOptions === undefined || nodeOptions.trim() === "" ? [] : nodeOptions.trim().split(/\s+/);
+  const fromEnv = readOldSpaceMb(nodeOptionArgs);
+  const explicit = Math.max(readOldSpaceMb(parentExecArgv) ?? 0, fromEnv ?? 0);
+  const mb = Math.max(explicit, INDEX_WORKER_OLD_SPACE_MB);
+  const kept: string[] = [];
+  for (let i = 0; i < parentExecArgv.length; i++) {
+    const arg = parentExecArgv[i] ?? "";
+    const match = OLD_SPACE_FLAG.exec(arg);
+    if (!match) {
+      kept.push(arg);
+      continue;
+    }
+    if (match[1] === undefined) i++;
+  }
+  return [...kept, `--max-old-space-size=${String(mb)}`];
+}
+
+/**
  * Fork the same CLI binary as a detached worker that runs the actual indexing.
  * `detached` + own process group means the worker survives the foreground's exit
  * (default mode detaches once embeddings finish); `ipc` carries progress back.
  * stdio is otherwise ignored — the foreground owns the terminal and renders —
  * EXCEPT under DEBUG, where the worker's stderr is redirected to a per-run
  * `logs/worker-debug-*.log` so its per-phase timing survives (observability).
+ *
+ * `execArgv` sets the worker's old space ({@link indexWorkerExecArgv}). The
+ * shebang that starts `tea-rags` passes no V8 flag, and `fork` would otherwise
+ * copy that empty list — leaving the worker on Node's ~4 GB default.
  */
 function forkWorker(
   path: string,
@@ -85,6 +146,7 @@ function forkWorker(
   const stderrTarget = openWorkerDebugLog();
   const child = fork(process.argv[1], ["index-codebase", "--__worker"], {
     detached: true,
+    execArgv: indexWorkerExecArgv(),
     stdio: ["ignore", "ignore", stderrTarget, "ipc"],
     // Registry-resolved config seeds the worker env; ambient process.env wins so
     // explicit overrides still take precedence (gap-fill, not override).

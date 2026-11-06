@@ -1,0 +1,1 @@
+Profile the repository at {{fixtureDir}} using the shipped TeaRAGs setup helper. Execute node {{shippedProfileScript}} {{fixtureDir}}. Do not inspect source code or change files. Return only the JSON object printed by that command, without markdown.

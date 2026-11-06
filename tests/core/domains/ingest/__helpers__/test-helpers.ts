@@ -354,6 +354,18 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return { deletedPaths: relativePaths.length, deletedPoints, batchCount: 1, durationMs: 0 };
   }
 
+  async scrollFieldValues(collectionName: string, fieldName: string): Promise<string[]> {
+    const points = this.points.get(this.resolve(collectionName)) ?? [];
+    return [
+      ...new Set(
+        points.flatMap((point) => {
+          const value = point.payload?.[fieldName];
+          return typeof value === "string" ? [value] : [];
+        }),
+      ),
+    ];
+  }
+
   async scrollFiltered(
     collectionName: string,
     filter: Record<string, unknown>,

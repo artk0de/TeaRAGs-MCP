@@ -32,7 +32,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajecto
  * `UnsupportedLanguageError`.
  */
 describe("LanguageFactory", () => {
-  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, markdown, yaml)", () => {
+  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, objc, php, kotlin, markdown, yaml)", () => {
     expect(new Set(new LanguageFactory().supported())).toEqual(
       new Set([
         "ruby",
@@ -44,6 +44,9 @@ describe("LanguageFactory", () => {
         "rust",
         "bash",
         "swift",
+        "objc",
+        "php",
+        "kotlin",
         "markdown",
         "yaml",
       ]),

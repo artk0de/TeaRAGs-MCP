@@ -438,6 +438,11 @@ and [measured configurations](/config/providers/llama-server-benchmarks).
 - ⚠️ Reduce `QDRANT_TUNE_UPSERT_BATCH_SIZE`
 - ⚠️ Increase Qdrant memory (docker-compose.yml for external Qdrant)
 - ⚠️ Index subdirectories separately
+- The index worker that embeds and runs blame and the codegraph raises Node's
+  old-space floor to 10 GiB. A large index can exhaust the default ~4 GiB heap.
+  A larger `--max-old-space-size` already set on the process or in
+  `NODE_OPTIONS` is kept; a smaller one is raised. The supervisor that only
+  prints progress stays on the default heap.
 
 ## Monitoring & Debug
 

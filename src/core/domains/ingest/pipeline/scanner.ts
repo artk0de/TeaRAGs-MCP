@@ -5,15 +5,29 @@
  * FileScanner - Discovers code files in a directory while respecting ignore patterns
  */
 
-import { existsSync, promises as fs } from "node:fs";
+import { existsSync, promises as fs, type Dirent } from "node:fs";
+import { homedir } from "node:os";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import ignore, { type Ignore } from "ignore";
 
 import type { IgnoredDirectoryMarker } from "../../../contracts/types/ingest-config.js";
+import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { ScannerConfig } from "../../../types.js";
+import { globalGitIgnorePath, readGlobalExcludesFileSetting, repoInfoExcludePath } from "./git-excludes.js";
 import { BUILTIN_IGNORE_PATTERNS, BUILTIN_IGNORED_DIRECTORY_MARKERS } from "./ignore-defaults.js";
+import { pipelineLog } from "./infra/debug-log/index.js";
 import { isMigrationPath } from "./migration-files.js";
+
+/**
+ * DEBUG scan cadence. A multi-minute `readdir` must show up without a line per
+ * file: name the directory on entry when a heartbeat is due, keep naming it
+ * while that one `readdir` is still in flight, and record the entry count when
+ * a slow read returns.
+ */
+const SCAN_DEBUG_HEARTBEAT_MS = 3_000;
+const SCAN_DEBUG_EVERY_DIRS = 100;
+const SCAN_DEBUG_SLOW_READDIR_MS = 1_000;
 
 export class FileScanner {
   private ig: Ignore = ignore();
@@ -23,6 +37,11 @@ export class FileScanner {
   private directoryMarkers: readonly IgnoredDirectoryMarker[] = BUILTIN_IGNORED_DIRECTORY_MARKERS;
   /** Repo-relative POSIX directory → whether it holds a full marker set; shared by the walk and `accepts`. */
   private readonly markedDirectoryVerdicts = new Map<string, boolean>();
+  /** Wall clock of the current `scanDirectory`, for DEBUG elapsed ms. */
+  private scanStartedAt = 0;
+  private dirsSeen = 0;
+  private dirsSinceLog = 0;
+  private lastScanLogAt = 0;
 
   constructor(private readonly config: ScannerConfig) {
     this.supportedExts = new Set(config.supportedExtensions);
@@ -35,13 +54,16 @@ export class FileScanner {
    * an ignore file is removed drop the now-stale patterns. Long-running
    * indexers (MCP server) reuse a single FileScanner across many syncs.
    *
-   * Order:
+   * Order, lowest precedence first (a later file can re-include with `!`):
    *   1. BUILTIN_IGNORE_PATTERNS (universal framework artefacts, minified
    *      bundles, language caches — see ignore-defaults.ts), then the
    *      patterns of `config.ignoreContributions` (the languages' own).
-   *   2. Project ignore files (.gitignore / .dockerignore / .npmignore /
+   *   2. Git's global excludes (`core.excludesfile`, else `~/.config/git/ignore`)
+   *      and `$GIT_DIR/info/exclude`. These are not the repo `.gitignore`; a
+   *      worktree dir such as `external-worktrees/` is often only listed here.
+   *   3. Project ignore files (.gitignore / .dockerignore / .npmignore /
    *      .contextignore / .contextignore.local), in declared order.
-   *   3. config.ignorePatterns / config.customIgnorePatterns from bootstrap.
+   *   4. config.ignorePatterns / config.customIgnorePatterns from bootstrap.
    *
    * Users can re-include any baseline pattern via explicit `!pattern`
    * negation in their own .contextignore — the `ignore` package honors
@@ -69,6 +91,11 @@ export class FileScanner {
       ...contributions.flatMap((contribution) => contribution.markedDirectories ?? []),
     ];
     this.markedDirectoryVerdicts.clear();
+    const globalExcludes = globalGitIgnorePath(process.env, homedir(), readGlobalExcludesFileSetting());
+    const infoExclude = await repoInfoExcludePath(rootPath);
+    for (const excludePath of [globalExcludes, infoExclude]) {
+      if (excludePath) await this.addIgnoreFile(excludePath);
+    }
     const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore", ".contextignore.local"];
 
     for (const ignoreFile of ignoreFiles) {
@@ -100,6 +127,10 @@ export class FileScanner {
   async scanDirectory(rootPath: string): Promise<string[]> {
     const absoluteRoot = resolve(rootPath);
     const files: string[] = [];
+    this.scanStartedAt = Date.now();
+    this.dirsSeen = 0;
+    this.dirsSinceLog = 0;
+    this.lastScanLogAt = 0;
 
     await this.walkDirectory(absoluteRoot, absoluteRoot, files);
 
@@ -172,10 +203,12 @@ export class FileScanner {
    * Recursively walk directory tree
    */
   private async walkDirectory(currentPath: string, rootPath: string, files: string[]): Promise<void> {
-    try {
-      const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    const entries = await this.readDirectory(currentPath, files);
+    if (!entries) return;
 
+    try {
       for (const entry of entries) {
+        if (isDebug()) this.maybeLogScanProgress(currentPath, files.length);
         const fullPath = join(currentPath, entry.name);
         const relativePath = relative(rootPath, fullPath);
         const isDirectory = entry.isDirectory();
@@ -205,7 +238,86 @@ export class FileScanner {
         }
       }
     } catch (_error) {
-      // Skip directories that can't be read (permission errors, etc.)
+      // Skip entries that can't be classified (permission errors, etc.)
+    }
+  }
+
+  /**
+   * Read one directory. Permission errors skip it, matching the previous
+   * walk. Under DEBUG, a hung `readdir` logs the path before the call and
+   * again every few seconds until it returns; a slow return logs the entry count.
+   */
+  private async readDirectory(currentPath: string, files: string[]): Promise<Dirent[] | null> {
+    if (!isDebug()) {
+      try {
+        return await fs.readdir(currentPath, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+    }
+    return this.readDirectoryDebug(currentPath, files);
+  }
+
+  private async readDirectoryDebug(currentPath: string, files: string[]): Promise<Dirent[] | null> {
+    this.dirsSeen += 1;
+    this.dirsSinceLog += 1;
+    const startedAt = Date.now();
+    const dueByTime = this.lastScanLogAt > 0 && startedAt - this.lastScanLogAt >= SCAN_DEBUG_HEARTBEAT_MS;
+    const announce = this.dirsSeen === 1 || this.dirsSinceLog >= SCAN_DEBUG_EVERY_DIRS || dueByTime;
+    if (announce) {
+      this.logScan("SCAN_READDIR", currentPath, files.length);
+    }
+
+    let heartbeats = 0;
+    const timer = setInterval(() => {
+      heartbeats += 1;
+      this.logScan("SCAN_READDIR", currentPath, files.length, { waiting: "readdir" });
+    }, SCAN_DEBUG_HEARTBEAT_MS);
+    if (typeof timer.unref === "function") timer.unref();
+
+    try {
+      const entries = await fs.readdir(currentPath, { withFileTypes: true });
+      const readdirMs = Date.now() - startedAt;
+      if (announce || heartbeats > 0 || readdirMs >= SCAN_DEBUG_SLOW_READDIR_MS) {
+        this.logScan("SCAN_READDIR_DONE", currentPath, files.length, {
+          entries: entries.length,
+          readdirMs,
+        });
+      }
+      return entries;
+    } catch {
+      return null;
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
+  /** Heartbeat while classifying a directory's entries, not once per file. */
+  private maybeLogScanProgress(dir: string, filesSeen: number): void {
+    const startedAt = Date.now();
+    if (this.lastScanLogAt > 0 && startedAt - this.lastScanLogAt < SCAN_DEBUG_HEARTBEAT_MS) return;
+    this.logScan("SCAN_PROGRESS", dir, filesSeen);
+  }
+
+  private logScan(message: string, dir: string, filesSeen: number, extra?: Record<string, unknown>): void {
+    const startedAt = Date.now();
+    this.lastScanLogAt = startedAt;
+    this.dirsSinceLog = 0;
+    pipelineLog.step({ component: "IndexRun" }, message, {
+      dir,
+      files: filesSeen,
+      dirs: this.dirsSeen,
+      elapsedMs: startedAt - this.scanStartedAt,
+      ...extra,
+    });
+  }
+
+  private async addIgnoreFile(path: string): Promise<void> {
+    if (!(await this.fileExists(path))) return;
+    try {
+      this.ig.add(await fs.readFile(path, "utf-8"));
+    } catch {
+      // A missing or unreadable excludes file leaves the other sources in place.
     }
   }
 

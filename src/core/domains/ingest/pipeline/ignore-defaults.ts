@@ -44,9 +44,11 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
   ".venv/",
   "venv/",
 
-  // Ruby
+  // Ruby gems and Go module copies. `vendor/` is the whole third-party tree
+  // (Go modules, Ruby gems), not project source. A trailing slash matches a
+  // directory of that name anywhere, so the walker does not descend into it.
   ".bundle/",
-  "vendor/bundle/",
+  "vendor/",
 
   // Java/Kotlin/Scala build output (Maven, sbt). Cargo uses the same name but
   // declares it itself (`domains/language/rust/ingest-ignore.ts`) — this entry
@@ -95,13 +97,10 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
   "*-bundle.js",
   "*.chunk.js",
 
-  // Compiled / vendored JS asset locations. These dirs hold readable-but-
-  // compiled bundles (Rails vendored libs like vendor/assets/javascripts/d3.js,
-  // sprockets/webpacker output, JS build dirs) that blow the tree-sitter parse
-  // budget and pollute a code RAG. Narrow on purpose — only the asset dirs, NOT
-  // a bare `**/vendor/**` (general vendored code is handled by the classifier's
-  // enrichment-skip, not by dropping it from the index). Users re-include via a
-  // `.contextignore` `!pattern`.
+  // Compiled JS asset locations. These dirs hold readable-but-compiled
+  // bundles (sprockets/webpacker output, JS build dirs) that blow the
+  // tree-sitter parse budget. `vendor/` itself is excluded above. Users
+  // re-include via a `.contextignore` `!pattern`.
   "**/vendor/assets/**",
   "public/assets/**",
   "public/packs/**",

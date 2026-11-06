@@ -1,0 +1,57 @@
+{
+  "case": "added-languages",
+  "exitCode": 0,
+  "seconds": 143.02,
+  "model": "gpt-6.1-sol",
+  "reasoningEffort": "medium",
+  "runs": 1,
+  "passed": true,
+  "actual": {
+    "files": 5,
+    "loc": 15,
+    "languages": {
+      "php": {
+        "files": 1,
+        "loc": 3,
+        "share": 0.2
+      },
+      "objc": {
+        "files": 2,
+        "loc": 6,
+        "share": 0.4
+      },
+      "kotlin": {
+        "files": 2,
+        "loc": 6,
+        "share": 0.4
+      }
+    },
+    "estimatedChunks": 5
+  },
+  "publicActions": [
+    {
+      "type": "item.started",
+      "item": {
+        "id": "item_1",
+        "type": "command_execution",
+        "command": "/bin/zsh -lc 'node /Users/artk0re/Dev/Tools/tea-rags-mcp/harness/codex/tea-rags-setup/scripts/profile.mjs /tmp/tea-rags-release.WNPdAD/actors/added-languages/repo'",
+        "aggregated_output": "",
+        "exit_code": null,
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "item.completed",
+      "item": {
+        "id": "item_1",
+        "type": "command_execution",
+        "command": "/bin/zsh -lc 'node /Users/artk0re/Dev/Tools/tea-rags-mcp/harness/codex/tea-rags-setup/scripts/profile.mjs /tmp/tea-rags-release.WNPdAD/actors/added-languages/repo'",
+        "aggregated_output": "git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\ngit: error: couldn't create cache file '/tmp/xcrun_db-X1QjxP6n' (errno=Operation not permitted)\n2026-11-06 23:37:55.683 xcodebuild[31258:40155876]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-11-06 23:37:55.933 xcodebuild[31258:40155874] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\ngit: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\ngit: error: couldn't create cache file '/tmp/xcrun_db-QK43PmrD' (errno=Operation not permitted)\n2026-11-06 23:37:56.565 xcodebuild[31260:40155903]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-11-06 23:37:56.688 xcodebuild[31260:40155898] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\ngit: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\ngit: error: couldn't create cache file '/tmp/xcrun_db-rzWXQ3B1' (errno=Operation not permitted)\n2026-11-06 23:37:57.845 xcodebuild[31287:40156019]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-11-06 23:37:57.966 xcodebuild[31287:40156018] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\ngit: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\ngit: error: couldn't create cache file '/tmp/xcrun_db-d07GHgg9' (errno=Operation not permitted)\n2026-11-06 23:37:58.477 xcodebuild[31289:40156033]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-11-06 23:37:58.599 xcodebuild[31289:40156031] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\n{\"files\":5,\"loc\":15,\"languages\":{\"php\":{\"files\":1,\"loc\":3,\"share\":0.2},\"objc\":{\"files\":2,\"loc\":6,\"share\":0.4},\"kotlin\":{\"files\":2,\"loc\":6,\"share\":0.4}},\"estimatedChunks\":5}\n",
+        "exit_code": 0,
+        "status": "completed"
+      }
+    }
+  ],
+  "privateTranscript": "/tmp/tea-rags-release.WNPdAD/actors/added-languages/events.jsonl",
+  "nativeThreadId": "01a1b293-79c5-7e93-a819-4cfc30b88e26"
+}

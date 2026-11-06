@@ -393,6 +393,51 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // alwaysExtractChildren / keepShortChildChunkTypes here 1:1, kernel carries
     // scopeContainerTypes (`.` separator) + disambiguateOverloads.
   },
+  objc: {
+    loadModule: async () => import("tree-sitter-objc"),
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
+    chunkableTypes: [
+      "method_definition",
+      "method_declaration",
+      "function_definition",
+      "class_implementation",
+      "class_interface",
+      "protocol_declaration",
+    ],
+    childChunkTypes: ["method_definition", "method_declaration", "function_definition"],
+    alwaysExtractChildren: true,
+    keepShortChildChunkTypes: ["method_declaration"],
+    // Native `domains/language/objc` provider. This row keeps objc in CODE_LANGUAGES.
+  },
+  php: {
+    loadModule: async () => import("tree-sitter-php"),
+    extractLanguage: (mod: TreeSitterLanguageModule) => {
+      const bag = (mod.default ?? mod) as { php_only?: unknown };
+      return bag.php_only ?? bag;
+    },
+    chunkableTypes: [
+      "method_declaration",
+      "function_definition",
+      "class_declaration",
+      "interface_declaration",
+      "trait_declaration",
+      "enum_declaration",
+    ],
+    childChunkTypes: ["method_declaration", "function_definition"],
+    alwaysExtractChildren: true,
+    keepShortChildChunkTypes: ["method_declaration"],
+    scopeSeparator: "\\",
+    // Native `domains/language/php` provider. php_only grammar. This row keeps php in CODE_LANGUAGES.
+  },
+  kotlin: {
+    loadModule: async () => import("@tree-sitter-grammars/tree-sitter-kotlin"),
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
+    chunkableTypes: ["function_declaration", "class_declaration", "object_declaration"],
+    childChunkTypes: ["function_declaration"],
+    alwaysExtractChildren: true,
+    keepShortChildChunkTypes: ["function_declaration"],
+    // Native `domains/language/kotlin` provider. This row keeps kotlin in CODE_LANGUAGES.
+  },
   ruby: {
     loadModule: async () => import("tree-sitter-ruby"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
@@ -522,6 +567,9 @@ export const LANGUAGE_MAP: Record<string, string> = {
   // Mobile
   ".swift": "swift",
   ".kt": "kotlin",
+  ".kts": "kotlin",
+  ".m": "objc",
+  ".mm": "objc",
   ".dart": "dart",
 
   // Functional

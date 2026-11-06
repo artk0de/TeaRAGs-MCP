@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
 import { fixturePhysicalCollectionName } from "../../../../__helpers__/collection-identity.js";
 import { INDEXING_METADATA_ID } from "../../../../../../src/core/contracts/constants.js";
+import type { RecoveryFileProgress } from "../../../../../../src/core/contracts/types/provider.js";
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import {
@@ -51,6 +52,59 @@ describe("EnrichmentRecovery", () => {
       applyChunkSignals: vi.fn().mockResolvedValue(0),
     };
     recovery = new EnrichmentRecovery(mockQdrant as any, mockApplier as any);
+  });
+
+  describe("recovery progress", () => {
+    it("reports extraction and resolution progress, throttles intermediate updates and closes at the total", async () => {
+      const progress = vi.fn();
+      recovery.setProgress(progress);
+      mockQdrant.scrollFiltered.mockResolvedValue(
+        Array.from({ length: 30 }, (_, i) => ({
+          id: `chunk-${i}`,
+          payload: { relativePath: `src/file${i}.ts`, startLine: 1, endLine: 5 },
+        })),
+      );
+      let report: ((event: RecoveryFileProgress) => void) | undefined;
+      const bindRecoveryProgress = vi.fn((callback: typeof report) => {
+        report = callback;
+      });
+      const buildFileSignals = vi.fn(async () => {
+        report?.({ phase: "extract", done: 10, total: 30 });
+        report?.({ phase: "extract", done: 25, total: 30 });
+        report?.({ phase: "resolve", done: 1, total: 30 });
+        report?.({ phase: "resolve", done: 30, total: 30 });
+        return new Map();
+      });
+      const provider = { ...mockProvider, bindRecoveryProgress, buildFileSignals };
+
+      await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        provider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      expect(progress.mock.calls.map(([event]) => event)).toEqual([
+        { providerKey: "git", level: "file", applied: 0, total: 60, totalFinal: true },
+        { providerKey: "git", level: "file", applied: 25, total: 60, totalFinal: true },
+        { providerKey: "git", level: "file", applied: 60, total: 60, totalFinal: true },
+      ]);
+      expect(bindRecoveryProgress).toHaveBeenLastCalledWith(undefined);
+    });
+
+    it("releases the provider's progress callback when recovery fails", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([{ id: "chunk-1", payload: { relativePath: "src/failed.ts" } }]);
+      mockProvider.buildFileSignals.mockRejectedValue(new Error("recovery unavailable"));
+      const bindRecoveryProgress = vi.fn();
+      const result = await recovery.recoverFileLevel(
+        fixturePhysicalCollectionName("test-collection"),
+        "/repo",
+        { ...mockProvider, bindRecoveryProgress } as any,
+        "2026-01-01T00:00:00Z",
+      );
+      expect(result.remainingUnenriched).toBe(1);
+      expect(bindRecoveryProgress).toHaveBeenLastCalledWith(undefined);
+    });
   });
 
   describe("recoverFileLevel", () => {

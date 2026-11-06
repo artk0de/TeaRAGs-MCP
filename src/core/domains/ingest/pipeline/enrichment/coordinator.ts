@@ -1401,6 +1401,7 @@ export class EnrichmentCoordinator {
    */
   setEnrichmentProgress(cb: EnrichmentProgressCallback | undefined): void {
     this.progressCb = cb;
+    this.recovery?.setProgress(cb);
   }
 
   /**

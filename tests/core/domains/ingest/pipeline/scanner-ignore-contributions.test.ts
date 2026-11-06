@@ -57,19 +57,25 @@ describe("FileScanner ignore contributions", () => {
   });
 
   it("prunes a cargo-vendored crate by its .cargo-checksum.json marker", async () => {
-    write("vendor/serde/.cargo-checksum.json", '{"files":{}}\n');
-    write("vendor/serde/src/lib.rs");
+    // Not named vendor/: the builtin `vendor/` pattern would hide the marker.
+    write("third_party/serde/.cargo-checksum.json", '{"files":{}}\n');
+    write("third_party/serde/src/lib.rs");
     const { walked, scanner } = await scan();
     expect(walked).toEqual(["src/lib.rs"]);
-    expectAgreement(scanner, walked, ["src/lib.rs", "vendor/serde/src/lib.rs"]);
+    expectAgreement(scanner, walked, ["src/lib.rs", "third_party/serde/src/lib.rs"]);
   });
 
-  it("keeps a plain vendor/ directory with no cargo checksum marker", async () => {
+  it("drops a plain vendor/ directory even without a cargo checksum marker", async () => {
+    // `vendor/` is a builtin directory ignore (Go modules, Ruby gems), not only a cargo marker.
     write("vendor/engines/billing/app/models/invoice.rb", "class Invoice; end\n");
     write("vendor/patched/src/lib.rs");
     const { walked, scanner } = await scan();
-    expect(walked).toEqual(["src/lib.rs", "vendor/engines/billing/app/models/invoice.rb", "vendor/patched/src/lib.rs"]);
-    expectAgreement(scanner, walked, walked);
+    expect(walked).toEqual(["src/lib.rs"]);
+    expectAgreement(scanner, walked, [
+      "src/lib.rs",
+      "vendor/engines/billing/app/models/invoice.rb",
+      "vendor/patched/src/lib.rs",
+    ]);
   });
 
   it("prunes a vendored web-platform-tests root recognised by its own root files", async () => {

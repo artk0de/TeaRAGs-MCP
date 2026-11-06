@@ -617,4 +617,128 @@ ${lines(BIG, (i) => `            total += big.count * ${i} + add(${i})`)}
 }
 `,
   },
+
+  objc: {
+    filePath: "src/Worker.m",
+    baseSymbolId: "Worker#run",
+    bigLoopHeader: "for (NSUInteger big = 0; big < items.count; big++) {",
+    constructs: ["if_statement", "else_clause", "for_statement", "while_statement"],
+    code: `@implementation Worker
+- (int)run:(NSArray *)items {
+    int total = 0;
+    if (total > 1) {
+        total += 1;
+    } else {
+        total = 0;
+    }
+    for (id item in items) {
+        total += 1;
+    }
+    while (total > 100) {
+        total -= 10;
+    }
+    for (NSUInteger big = 0; big < items.count; big++) {
+${lines(BIG, (i) => `        total += ${i};`)}
+    }
+    return total;
+}
+@end
+`,
+  },
+  php: {
+    filePath: "src/Worker.php",
+    baseSymbolId: "Worker#run",
+    bigLoopHeader: "for ($big = 0; $big < count($items); $big++) {",
+    constructs: [
+      "if_statement",
+      "else_clause",
+      "for_statement",
+      "foreach_statement",
+      "while_statement",
+      "switch_statement",
+      "try_statement",
+    ],
+    code: `class Worker {
+    public function run(array $items, int $mode): int {
+        $total = 0;
+        if ($mode > 1) {
+            $total += 1;
+        } else {
+            $total = 0;
+        }
+        for ($i = 0; $i < count($items); $i++) {
+            $total += 1;
+        }
+        foreach ($items as $item) {
+            $total += strlen($item);
+        }
+        while ($total > 100) {
+            $total -= 10;
+        }
+        switch ($mode) {
+            case 1:
+                $total += 1;
+                break;
+            default:
+                $total += 2;
+        }
+        try {
+            $total += 1;
+        } catch (Exception $e) {
+            $total = -1;
+        }
+        for ($big = 0; $big < count($items); $big++) {
+${lines(BIG, (i) => `            $total += ${i};`)}
+        }
+        return $total;
+    }
+}
+`,
+  },
+  kotlin: {
+    filePath: "src/Worker.kt",
+    baseSymbolId: "Worker#run",
+    bigLoopHeader: "for (big in items) {",
+    constructs: [
+      "if_expression",
+      "for_statement",
+      "while_statement",
+      "try_expression",
+      "when_expression",
+      "lambda_literal",
+    ],
+    code: `class Worker {
+    fun run(items: List<String>, mode: Int): Int {
+        var total = 0
+        if (mode > 1) {
+            total += 1
+        } else {
+            total = 0
+        }
+        for (item in items) {
+            total += item.length
+        }
+        while (total > 100) {
+            total -= 10
+        }
+        try {
+            total += 1
+        } catch (e: Exception) {
+            total = -1
+        }
+        when (mode) {
+            1 -> total += 1
+            else -> total += 2
+        }
+        val add = { x: Int ->
+            x + 1
+        }
+        for (big in items) {
+${lines(BIG, (i) => `            total += big.length * ${i} + add(${i})`)}
+        }
+        return total
+    }
+}
+`,
+  },
 };

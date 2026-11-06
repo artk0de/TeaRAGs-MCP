@@ -156,6 +156,35 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
     language: "bash",
     scopeSeparator: ".",
   },
+  ".php": {
+    language: "php",
+    scopeSeparator: "\\",
+  },
+  // Objective-C implementation files. `.h` stays C in LANGUAGE_MAP, so it is
+  // not a codegraph row. `.m` and `.mm` share tree-sitter-objc.
+  ".m": {
+    language: "objc",
+    scopeSeparator: ".",
+    disambiguateOverloads: true,
+  },
+  ".mm": {
+    language: "objc",
+    scopeSeparator: ".",
+    disambiguateOverloads: true,
+  },
+  // Kotlin — one grammar for sources and scripts. `.` joins nested types.
+  // Overloads each carry a body, and the chunker already suffixes duplicates
+  // `~N`, so the codegraph row has to disambiguate too.
+  ".kt": {
+    language: "kotlin",
+    scopeSeparator: ".",
+    disambiguateOverloads: true,
+  },
+  ".kts": {
+    language: "kotlin",
+    scopeSeparator: ".",
+    disambiguateOverloads: true,
+  },
 };
 
 /**

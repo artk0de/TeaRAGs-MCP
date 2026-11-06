@@ -1067,8 +1067,9 @@ describe("ontologyLanguageProfiles", () => {
       .filter((p) => p.naming.implicitSelf)
       .map((p) => p.language)
       .sort();
-    // Ruby's implicit `self`, Swift's implicit `self.`; TS / JS `this.m`, Python / Rust `self.m`,
+    // Ruby's implicit `self`, Swift's implicit `self.`, Kotlin's unqualified `paint()`;
+    // TS / JS `this.m`, Python / Rust `self.m`, PHP `$this->`, ObjC `[self …]`,
     // Go's explicit receiver and Java's separate method namespace shadow nothing.
-    expect(implicitSelf).toEqual(["ruby", "swift"]);
+    expect(implicitSelf).toEqual(["kotlin", "ruby", "swift"]);
   });
 });

@@ -565,6 +565,8 @@ describe("seeded support versions", () => {
         ["go", 6],
         ["swift", 9],
         ["bash", 2],
+        // C function names follow their declarator rather than parameter identifiers.
+        ["objc", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

@@ -248,8 +248,11 @@ claude mcp add tea-rags -s user \
   -- tea-rags
 ```
 
-For other MCP clients (Cursor, Roo Code, Continue, …), add this to your
-`mcpServers` JSON config:
+For Cursor, put that object in `~/.cursor/mcp.json` (or `.cursor/mcp.json`
+in one repo) and enable the server under **Cursor Settings → MCP**. A full
+walkthrough — how to tell the chat is connected, and how to call a tool — is
+in [Connect to an Agent](/quickstart/connect-to-agent#cursor). Roo Code,
+Continue, and other clients use the same `mcpServers` shape:
 
 ```json
 {
@@ -276,6 +279,15 @@ Once the MCP server is registered, install the skills plugin to get
 /plugin marketplace add artk0de/TeaRAGs-MCP
 /plugin install tea-rags@tea-rags
 ```
+
+## Languages
+
+The install above is the same for every language. TeaRAGs then chunks and
+builds a call graph for TypeScript, JavaScript, Ruby, Python, Swift, Go, Java,
+Rust, Bash, Objective-C (`.m`, `.mm`), PHP, and Kotlin. Markdown is chunked by
+heading. Other files, including Objective-C headers (`.h`, classified as C),
+SQL, and JSON, are still indexed as plain text. Per-language depth is on
+[Codegraph → Supported Languages](/usage/advanced/codegraph-enrichments#supported-languages).
 
 ## Next Steps
 

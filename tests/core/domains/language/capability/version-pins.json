@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 6,
-      "digest": "sha256:71711f5f5125779040a9e881bd7b62022126c58adba1a5cd3c9aaea903f0a8ce"
+      "digest": "sha256:bc14b53f8c5fdad6429ab9d28f5e651fb7e3d618819d1887c640d59cc30778ab"
     },
     "walker": {
       "version": 8,
-      "digest": "sha256:aeab449b415aa79e6c97b66a2a734de542894dac267f53ecbc3920c0bcccefbe"
+      "digest": "sha256:21114c740c1047230623f6f38e518ab8578f5040996c9bfb4307305b6a3582cc"
     }
   },
   "bash": {
@@ -45,10 +45,32 @@
       "digest": "sha256:f30b28ba3e53740205f6820eb120af3c52cfbc041d0330cacc951c741b03bd0a"
     }
   },
+  "kotlin": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:956f7874df4baf19927c67ef5000043c51ca34025e68de5c6763b9c02311be7d"
+    }
+  },
   "markdown": {
     "walker": {
       "version": 1,
       "digest": "sha256:86d9ac43025e8500e524332a4ec6d8a841456b2be55afb8677f32d50876908b6"
+    }
+  },
+  "objc": {
+    "chunking": {
+      "version": 1,
+      "digest": "sha256:e6240acdf6bd417fdb0704723309fe5d79f4f0de9deab1662924d168defd25ed"
+    },
+    "walker": {
+      "version": 2,
+      "digest": "sha256:108ccd6b4da7981352a0258d3fc26815d7ffb3ce5adf0fffcbce28250d1c336c"
+    }
+  },
+  "php": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:09f26e587602fabf08985e04d69dc514b4a3582d144f23264938d2840c8b5a3b"
     }
   },
   "python": {

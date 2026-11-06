@@ -231,6 +231,19 @@ export class ParallelFileSynchronizer {
   }
 
   /**
+   * Copy of the metadata `computeContentHashes` (or `detectChanges`) cached.
+   * A copy: callers cannot clear the cache the snapshot write still needs.
+   * Empty before that scan, and again after `updateSnapshot` releases it.
+   */
+  getCachedFileMetadata(): Map<string, FileMetadata> {
+    const copy = new Map<string, FileMetadata>();
+    for (const [path, meta] of this.lastComputedHashes ?? []) {
+      copy.set(path, { mtime: meta.mtime, size: meta.size, hash: meta.hash });
+    }
+    return copy;
+  }
+
+  /**
    * Relative paths the loaded snapshot lists — the files the index holds.
    * Empty before `initialize`.
    */

@@ -32,8 +32,7 @@ import {
 import { TeaRagsError } from "../../../primitives/errors/index.js";
 import { installDeclaredTestFiles } from "../../../primitives/paths/index.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
-import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
-import { INDEXING_HEARTBEAT_INTERVAL_MS } from "../infra/index.js";
+import { INDEXING_HEARTBEAT_INTERVAL_MS, type CodegraphDbLister, type CodegraphDbRemover } from "../infra/index.js";
 import { ChunkerPool, type ChunkerPoolPort } from "./chunker/infra/pool.js";
 import type { IngestDependencies } from "./dependencies.js";
 import { EmbeddingThroughputTuner, type EmbeddingEndpointThroughputOptimum } from "./embedding-throughput-tuner.js";
@@ -251,6 +250,7 @@ export abstract class BaseIndexingPipeline {
     // not here — recording it here would wipe the pre-scan setup stages
     // (embed-warmup, qdrant-setup on the reindex path) that ran earlier.
     pipelineLog.stageStart("scan");
+    pipelineLog.step({ component: "IndexRun" }, "SCAN_START", { path: absolutePath });
     await scanner.loadIgnorePatterns(absolutePath);
     const files = await scanner.scanDirectory(absolutePath);
     pipelineLog.stageEnd("scan");
@@ -358,10 +358,10 @@ export abstract class BaseIndexingPipeline {
     ctx: ProcessingContext,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     seal: IndexingRunSealSpec,
-    onFlushed?: () => void,
+    onFlushed?: () => void | Promise<void>,
   ): Promise<EnrichmentStatusResult> {
     const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
-    onFlushed?.();
+    await onFlushed?.();
     // The drained chunk pipeline knows what its throughput tuner settled on and
     // whether its embed stage starved; the registry entry this seal records
     // carries both — the optimum to the next run, the verdict to the run's status.

@@ -34,6 +34,22 @@ const RESIDUAL_LABEL = "residual resolution";
 const RESIDUAL_PHASE = "resolving-residual";
 
 /**
+ * The worker forwards scan, chunk, store and embed on one bar. The label names
+ * the phase that is actually running, with or without DEBUG.
+ */
+const PHASE_LABELS: Readonly<Record<string, string>> = {
+  scanning: "scan",
+  chunking: "chunk",
+  storing: "store",
+  embedding: "embed",
+};
+
+/** Label for the pipeline phase, or the caller's fallback when the phase is unknown. */
+function pipelinePhaseLabel(phase: string, fallback: string): string {
+  return PHASE_LABELS[phase] ?? fallback;
+}
+
+/**
  * Format an ETA (seconds, or null when not yet computable) for a progress bar.
  * Returns empty string when unknown or complete (value ≤ 0 or null).
  */
@@ -167,7 +183,8 @@ export function buildBarLine(params: BuildBarLineParams): string {
 export function formatProgressLine(message: WorkerMessage): string | null {
   switch (message.type) {
     case "embedding": {
-      const label = (message.phase === RESIDUAL_PHASE ? RESIDUAL_LABEL : "embedding").padEnd(LABEL_WIDTH);
+      const fallback = message.phase === RESIDUAL_PHASE ? RESIDUAL_LABEL : "embedding";
+      const label = pipelinePhaseLabel(message.phase, fallback).padEnd(LABEL_WIDTH);
       const pct = message.total > 0 ? Math.round((message.current / message.total) * 100) : 0;
       const base = `${label}${message.current}/${message.total} (${pct}%)`;
       return message.throughput !== null && message.throughput !== undefined
@@ -514,7 +531,7 @@ export class TtyProgressRenderer implements ProgressRenderer {
 
   /** The single embedding bar, shared by every pipeline phase the worker reports. */
   private renderEmbeddingBar(message: WorkerMessageOf<"embedding">): void {
-    const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
+    const label = this.colors.brand(pipelinePhaseLabel(message.phase, "embeddings").padEnd(LABEL_WIDTH));
     // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
     // onto this single bar. Only the embedding phase carries the chunk numerator
     // and a meaningful total — the others must not hijack value/total/totalFinal

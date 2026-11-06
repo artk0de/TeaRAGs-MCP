@@ -1,7 +1,7 @@
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CODE_LANGUAGES,
@@ -53,5 +53,45 @@ describe("profile.mjs", () => {
     const mod = (await import(join(SCRIPTS_DIR, "profile.mjs"))) as { EXTENSION_LANGUAGES: Record<string, string> };
     const expected = Object.fromEntries(Object.entries(LANGUAGE_MAP).filter(([, lang]) => CODE_LANGUAGES.has(lang)));
     expect(mod.EXTENSION_LANGUAGES).toEqual(expected);
+  });
+
+  it("profiles the added languages through the script entrypoint and skips missing tracked files", async () => {
+    const dir = makeRepo({
+      "app.php": "<?php\necho 'ok';",
+      "Main.kt": "fun main() {}\n",
+      "build.kts": "println(1)\n",
+      "main.m": "void greet(void) {}\n",
+      "native.mm": "void greet(void) {}\n",
+      "empty.rb": "",
+      "deleted.ts": lines(10),
+      "ignored.py": lines(20),
+      "README.md": lines(50),
+    });
+    rmSync(join(dir, "deleted.ts"));
+    writeFileSync(join(dir, ".contextignore"), "ignored.py\n");
+    const originalArgv = process.argv;
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      process.argv = [process.execPath, join(SCRIPTS_DIR, "profile.mjs"), dir];
+      vi.resetModules();
+      await import(join(SCRIPTS_DIR, "profile.mjs"));
+      expect(stdout).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(stdout.mock.calls[0][0]))).toEqual({
+        files: 6,
+        loc: 6,
+        estimatedChunks: 6,
+        languages: {
+          php: { files: 1, loc: 2, share: 0.33 },
+          kotlin: { files: 2, loc: 2, share: 0.33 },
+          objc: { files: 2, loc: 2, share: 0.33 },
+          ruby: { files: 1, loc: 0, share: 0 },
+        },
+      });
+    } finally {
+      process.argv = originalArgv;
+      stdout.mockRestore();
+      vi.resetModules();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

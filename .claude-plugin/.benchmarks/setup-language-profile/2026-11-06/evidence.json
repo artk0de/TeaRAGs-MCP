@@ -1,0 +1,46 @@
+{
+  "sourceManifest": {
+    "name": "tea-rags-setup",
+    "description": "One-step TeaRAGs install \u2014 llama-server embeddings, plugin and MCP server, project registration, first index \u2014 plus re-tuning",
+    "version": "0.8.3",
+    "author": {
+      "name": "artk0de"
+    },
+    "keywords": ["setup", "installation", "wizard"]
+  },
+  "sourceSha256": "e1336e8da675a92de2e7115379bf38ee50f6408e48f3cc5cce58e1a36828b73e",
+  "shippedSha256": "e1336e8da675a92de2e7115379bf38ee50f6408e48f3cc5cce58e1a36828b73e",
+  "model": "gpt-6.1-sol",
+  "reasoningEffort": "medium",
+  "n": 1,
+  "results": [
+    {
+      "case": "added-languages",
+      "passed": true,
+      "actionCount": 2,
+      "eventTypes": {
+        "thread.started": 1,
+        "turn.started": 1,
+        "item.completed": 3,
+        "item.started": 1,
+        "turn.completed": 1
+      }
+    },
+    {
+      "case": "existing-and-ignore",
+      "passed": true,
+      "actionCount": 2,
+      "eventTypes": {
+        "thread.started": 1,
+        "turn.started": 1,
+        "item.started": 1,
+        "item.completed": 2,
+        "turn.completed": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Two narrow behavioral cases through the generated Codex setup helper; no full installation, embedding service or first-index validation.",
+    "Raw native transcripts remain private at the recorded temporary paths."
+  ]
+}

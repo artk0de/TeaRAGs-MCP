@@ -1,0 +1,44 @@
+{
+  "method": "exact parsed JSON equality; expected values are not passed to the actor",
+  "expected": {
+    "added-languages": {
+      "files": 5,
+      "loc": 15,
+      "estimatedChunks": 5,
+      "languages": {
+        "php": {
+          "files": 1,
+          "loc": 3,
+          "share": 0.2
+        },
+        "kotlin": {
+          "files": 2,
+          "loc": 6,
+          "share": 0.4
+        },
+        "objc": {
+          "files": 2,
+          "loc": 6,
+          "share": 0.4
+        }
+      }
+    },
+    "existing-and-ignore": {
+      "files": 2,
+      "loc": 9,
+      "estimatedChunks": 2,
+      "languages": {
+        "ruby": {
+          "files": 1,
+          "loc": 6,
+          "share": 0.67
+        },
+        "typescript": {
+          "files": 1,
+          "loc": 3,
+          "share": 0.33
+        }
+      }
+    }
+  }
+}
