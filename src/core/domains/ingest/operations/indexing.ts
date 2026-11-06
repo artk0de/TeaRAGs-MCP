@@ -6,14 +6,16 @@
  *
  * Uses versioned collections with aliases for zero-downtime reindexing:
  * - First index: creates `_v1` collection + alias
+ * - Interrupted first index (no alias, no --force): resumes that `_vN`
  * - forceReindex: creates `_v(N+1)`, switches alias atomically, deletes old
  * - Migration: converts real collection to alias scheme
  */
 
+import { RELATIVE_PATH_EXACT_KEY } from "../../../contracts/relative-path-exact.js";
 import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../primitives/diagnostics/index.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
-import { IndexingFailedError } from "../errors/index.js";
+import { IndexingAlreadyInProgressError, IndexingFailedError } from "../errors/index.js";
 import {
   cleanupOrphanedVersions,
   discardFailedCollectionBuild,
@@ -35,6 +37,16 @@ import { rebuildMigrationCorpus } from "../pipeline/migration-corpus.js";
 import { migrationCollectionName } from "../pipeline/migration-files.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore, SkippedFileStore, type ParallelFileSynchronizer } from "../sync/index.js";
+import { FileStoreGate } from "../sync/resume/file-store-gate.js";
+import {
+  checkpointFromStoredPaths,
+  FirstIndexResumeStore,
+  hasLiveFirstIndexGeneration,
+  loadFirstIndexGenerations,
+  planResumeFiles,
+  repoRelativePath,
+  selectFirstIndexResume,
+} from "../sync/resume/first-index-resume.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { computeNewVersion, findAliasTarget, resolvePhysicalCollection } from "./version-resolver.js";
 
@@ -55,6 +67,11 @@ export interface SetupResult {
   isFirstIndex: boolean;
   /** True if migrating from a real collection to alias scheme */
   isMigration: boolean;
+  /**
+   * True when this run continues an unfinished first-index collection.
+   * The alias is still created only at seal.
+   */
+  resumed?: boolean;
 }
 
 /**
@@ -297,15 +314,24 @@ export class IndexPipeline extends BaseIndexingPipeline {
     return heartbeat.run(async () => {
       // Pause HNSW indexing while we bulk-ingest. Reactive HNSW build during
       // upserts otherwise throttles ingest; deferring to a single post-ingest
-      // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
-      // harmless here (no deletes during initial index).
+      // pass is 2-3× faster on large codebases. A resume also deletes the
+      // paths it is about to rewrite, under the same pause.
       return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
+        const session = await this.beginFirstIndexResume(leg, progressCallback);
+        if (session) {
+          ctx.chunkPipeline.addOnChunksStored((items) => {
+            session.gate.onChunksStored(
+              items.map((item) => repoRelativePath(item.codebasePath, item.chunk.metadata.filePath)),
+            );
+          });
+        }
         const result = await this.processAndTrack(
-          files,
+          session?.files ?? files,
           absolutePath,
           ctx,
           { quarantineStore, skippedFileStore },
           progressCallback,
+          session?.gate,
         );
         stats.filesIndexed = result.filesProcessed;
         stats.chunksCreated = result.chunksCreated;
@@ -330,11 +356,15 @@ export class IndexPipeline extends BaseIndexingPipeline {
             absolutePath,
             modelInfo: leg.modelInfo,
             promote: async () => this.finalizeAlias(aliasCollectionName, setup),
-            persist: async () => this.saveSnapshot(synchronizer, files, stats, skippedFileStore, setup.aliasVersion),
+            persist: async () => {
+              const saved = await this.saveSnapshot(synchronizer, files, stats, skippedFileStore, setup.aliasVersion);
+              if (saved) await session?.store.discard();
+            },
           },
-          () => {
+          async () => {
             this.logPipelineCompletion(ctx);
             this.reportFinalEmbeddingProgress(ctx, result.chunksQueued, progressCallback);
+            await session?.gate.settled();
           },
         );
         stats.enrichmentStatus = enrichmentResult.status;
@@ -414,6 +444,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
         isFirstIndex: false,
         isMigration: false,
       };
+    }
+
+    // Unfinished first index: the alias was never published, so keep writing
+    // the physical collection that already holds the points. --force falls
+    // through and allocates a new version. A live generation is refused; two
+    // checkpoints are not guessed at. Returning here is before orphan cleanup,
+    // so older generations stay, and the in-progress marker is left as it is.
+    if (!exists && options?.forceReindex !== true) {
+      const adopted = await this.adoptUnfinishedFirstIndex(aliasCollectionName, absolutePath);
+      if (adopted) return adopted;
     }
 
     // Derive version from Qdrant truth (NOT from the snapshot, which can lag or
@@ -510,6 +550,88 @@ export class IndexPipeline extends BaseIndexingPipeline {
     };
   }
 
+  /**
+   * Continue the unfinished physical collection when the alias does not exist.
+   * Does not delete it and does not republish `indexingComplete: false` — that
+   * would recreate the marker the crashed run already wrote. Heartbeat starts
+   * later, in `executeIndexLeg`.
+   */
+  private async adoptUnfinishedFirstIndex(
+    aliasCollectionName: CollectionAlias,
+    absolutePath: string,
+  ): Promise<SetupResult | undefined> {
+    const now = Date.now();
+    const generations = await loadFirstIndexGenerations(this.qdrant, this.snapshotDir, aliasCollectionName);
+    if (hasLiveFirstIndexGeneration(generations, now)) {
+      throw new IndexingAlreadyInProgressError(absolutePath);
+    }
+    const selected = selectFirstIndexResume(generations, now);
+    if (!selected) return undefined;
+    return {
+      ready: true,
+      targetCollection: selected.physical,
+      aliasVersion: selected.version,
+      isFirstIndex: true,
+      isMigration: false,
+      resumed: true,
+    };
+  }
+
+  /**
+   * First-index checkpoint for this run. A fresh collection records files as
+   * they finish so the next crash can resume. A resumed collection loads the
+   * checkpoint, or scrolls `relativePathExact` once when that checkpoint is
+   * missing, then ingests only what the plan still owes.
+   */
+  private async beginFirstIndexResume(
+    leg: IndexLegContext,
+    progressCallback: ProgressCallback | undefined,
+  ): Promise<{ store: FirstIndexResumeStore; gate: FileStoreGate; files: string[] } | undefined> {
+    const { setup, files, absolutePath, synchronizer, aliasCollectionName } = leg;
+    if (!setup.isFirstIndex) return undefined;
+
+    const store = new FirstIndexResumeStore(this.snapshotDir, aliasCollectionName, setup.targetCollection);
+    const metadata = synchronizer.getCachedFileMetadata();
+    if (!setup.resumed) {
+      return { store, gate: new FileStoreGate(store, metadata), files };
+    }
+
+    const loaded = await store.load();
+    let done = loaded;
+    let storedPaths: ReadonlySet<string> | undefined;
+    if (done === null) {
+      const stored = await this.qdrant.scrollFieldValues(setup.targetCollection, RELATIVE_PATH_EXACT_KEY);
+      const derived = checkpointFromStoredPaths(stored, metadata);
+      if (derived.missingFromDisk.length > 0) {
+        await this.qdrant.deletePointsByPaths(setup.targetCollection, derived.missingFromDisk);
+      }
+      ({ done } = derived);
+      storedPaths = new Set(stored);
+      await store.save(done);
+    }
+
+    const diskPaths = files.map((file) => repoRelativePath(absolutePath, file));
+    const plan = planResumeFiles({ diskPaths, done, current: metadata, storedPaths });
+    if (plan.pathsToDelete.length > 0) {
+      await this.qdrant.deletePointsByPaths(setup.targetCollection, plan.pathsToDelete);
+    }
+    const kept = plan.unchanged.length;
+    const left = plan.rewrite.length + plan.ingest.length;
+    progressCallback?.({
+      phase: "scanning",
+      current: kept,
+      total: diskPaths.length,
+      percentage: diskPaths.length === 0 ? 100 : Math.round((kept / diskPaths.length) * 100),
+      message: `Resume ${setup.targetCollection}: ${kept} files kept, ${left} left`,
+    });
+    const reingest = new Set([...plan.rewrite, ...plan.ingest]);
+    return {
+      store,
+      gate: new FileStoreGate(store, metadata),
+      files: files.filter((file) => reingest.has(repoRelativePath(absolutePath, file))),
+    };
+  }
+
   // ── Alias finalization ─────────────────────────────────
 
   private async finalizeAlias(collectionName: string, setup: SetupResult): Promise<void> {
@@ -581,6 +703,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     ctx: ProcessingContext,
     stores: { quarantineStore: QuarantineStore; skippedFileStore: SkippedFileStore },
     progressCallback?: ProgressCallback,
+    resumeGate?: FileStoreGate,
   ) {
     const { quarantineStore, skippedFileStore } = stores;
     let filesProcessed = 0;
@@ -628,7 +751,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
           : undefined,
       },
       {
-        onFileProcessed: (_filePath, chunksCount) => {
+        onFileProcessed: (filePath, chunksCount) => {
+          resumeGate?.onFileSubmitted(repoRelativePath(absolutePath, filePath), chunksCount);
           filesProcessed++;
           chunksQueued += chunksCount;
           // Push the growing chunk total so git chunk enrichment divides by the
@@ -722,7 +846,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     stats: IndexStats,
     skippedFileStore: SkippedFileStore,
     aliasVersion?: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const runtimeSkipped = await skippedFileStore.retryablePaths();
       if (runtimeSkipped.size > 0) stats.runtimeSkippedFiles = runtimeSkipped.size;
@@ -730,10 +854,12 @@ export class IndexPipeline extends BaseIndexingPipeline {
         ...(aliasVersion ? { aliasVersion } : {}),
         ...(runtimeSkipped.size > 0 ? { retainPrevious: runtimeSkipped } : {}),
       });
+      return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Failed to save snapshot:", errorMessage);
       stats.errors?.push(`Snapshot save failed: ${errorMessage}`);
+      return false;
     }
   }
 }

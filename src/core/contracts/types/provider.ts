@@ -532,6 +532,17 @@ export type EnrichmentScope = "full" | "file-only" | "none";
 
 // --- Enrichment provider ---
 
+/**
+ * One step inside a recovery batch. `done`/`total` count files in THAT batch.
+ * `extract` is the read; `resolve` is the later write of the same files.
+ * Recovery turns the two into one bar that does not jump backwards.
+ */
+export interface RecoveryFileProgress {
+  phase: "extract" | "resolve";
+  done: number;
+  total: number;
+}
+
 export interface EnrichmentProvider {
   /** Namespace key for Qdrant payload: { [key].file: ..., [key].chunk: ... } */
   readonly key: string;
@@ -769,6 +780,15 @@ export interface EnrichmentProvider {
    * (worker DI via module-path injection).
    */
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
+  /**
+   * In-batch progress for a repeat index's recovery pass. Recovery binds a
+   * listener on the main-thread provider, the provider calls it while it
+   * reads files (`extract`) and again while it writes them (`resolve`), then
+   * recovery unbinds. Optional: a provider that never reports still gets one
+   * update per recovered batch. A function, so it does not cross the
+   * worker-pool clone boundary — there the bar advances per batch only.
+   */
+  bindRecoveryProgress?: (listener: ((event: RecoveryFileProgress) => void) | undefined) => void;
   /**
    * Optional release hook the worker calls when the executor signals
    * `releaseRun(handle)` at the end of the latest run on the collection. The provider drops per-collection in-memory state held on the

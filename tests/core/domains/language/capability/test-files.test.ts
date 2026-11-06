@@ -79,6 +79,8 @@ const CANONICAL_TEST_PATTERNS = [
   "**/*Tests.c",
   "**/*Test.swift",
   "**/*Tests.swift",
+  "**/*Test.m",
+  "**/*Tests.m",
   "**/*Test.kt",
   "**/*_test.dart",
   "**/*Spec.scala",
@@ -174,7 +176,7 @@ describe("test-file masks are owned by the language that declares them (bd tea-r
       expect(conventions[language]).toBe(TEST_FILES_OF_LANGUAGES_WITHOUT_VERTICAL[language]);
     }
     expect(Object.keys(TEST_FILES_OF_LANGUAGES_WITHOUT_VERTICAL).sort()).toEqual(
-      ["c", "c_sharp", "clojure", "cpp", "dart", "kotlin", "php", "scala"].sort(),
+      ["c", "c_sharp", "clojure", "cpp", "dart", "scala"].sort(),
     );
   });
 

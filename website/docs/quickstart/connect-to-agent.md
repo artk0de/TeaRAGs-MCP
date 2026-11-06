@@ -66,6 +66,54 @@ claude mcp add tea-rags -s user \
   -- tea-rags
 ```
 
+## Cursor
+
+`tea-rags call` runs a tool in-process. It does not register the server with
+Cursor. Until an MCP entry exists, a Cursor chat has no TeaRAGs tools.
+
+For every project, create `~/.cursor/mcp.json`. For one repo, use
+`.cursor/mcp.json` in that repo instead:
+
+```json
+{
+  "mcpServers": {
+    "tea-rags": {
+      "command": "tea-rags"
+    }
+  }
+}
+```
+
+`tea-rags` must be on `PATH` (`npm install -g tea-rags`, or `npm link` from a
+local checkout). Qdrant starts embedded. To pin a provider, add an `env`
+object — the same keys as [below](#using-a-different-provider).
+
+Open **Cursor Settings → MCP** and enable **tea-rags**. A chat that was already
+open does not see a server added later; start a new one. The connected server
+lists tools such as `search_code` and `find_symbol`.
+
+Index the repo before asking it anything:
+
+```bash
+tea-rags index-codebase /path/to/repo --name my-app
+```
+
+`--name` is the registry alias later calls pass as `project`. A run that is
+still indexing has no chunks yet, so search comes back empty.
+`tea-rags call get_index_status '{"project":"my-app"}'` shows the chunk count.
+
+With the server connected, ask the agent in ordinary language ("find the
+symbol `FileScanner`", "where is the ignore list loaded"). The same tools work
+from the shell without Cursor:
+
+```bash
+tea-rags call --list
+tea-rags call find_symbol '{"project":"my-app","symbol":"FileScanner"}'
+tea-rags call search_code '{"project":"my-app","query":"where ignore patterns are loaded"}'
+```
+
+What each tool takes is in the [MCP Tools Atlas](/usage/advanced/mcp-tools).
+
 ## HTTP Transport (Remote)
 
 :::warning Security

@@ -15,6 +15,7 @@ export const DEFAULT_CODE_EXTENSIONS = [
   ".rs",
   ".java",
   ".kt",
+  ".kts",
   ".c",
   ".cpp",
   ".h",
@@ -52,6 +53,7 @@ export const DEFAULT_CODE_EXTENSIONS = [
 
 export const DEFAULT_IGNORE_PATTERNS = [
   "node_modules/**",
+  "vendor/**",
   "dist/**",
   "build/**",
   "out/**",

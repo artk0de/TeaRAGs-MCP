@@ -253,8 +253,10 @@ kill -9 <PID>
 
 ### How do I resume interrupted indexing?
 
-Just run `index_codebase` again. Completed steps are cached -- only remaining
-work will be processed.
+Run `index_codebase` again without `--force`. An interrupted first index
+continues in the same unaliased collection; the alias is created only when
+that run finishes. `--force` starts a new generation. After the alias exists,
+a later run processes the remaining changes.
 
 ### Where are cache snapshots and logs stored?
 

@@ -55,6 +55,18 @@ const EXPECTED: Record<string, Row> = {
     receiver: ["class", "module", "constant", ...FN],
   },
   bash: { callee: ["function"], receiver: ["function"] },
+  objc: {
+    callee: ["class", ...FN],
+    receiver: ["class", "interface", ...FN],
+  },
+  php: {
+    callee: FN,
+    receiver: ["class", "interface"],
+  },
+  kotlin: {
+    callee: FN,
+    receiver: ["class", "interface", "enum", ...FN],
+  },
   markdown: { callee: [], receiver: [] },
   yaml: { callee: [], receiver: [] },
 };

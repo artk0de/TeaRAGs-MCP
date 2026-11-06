@@ -93,6 +93,9 @@ const PINNED_FIELD_LOSSES: Readonly<Record<string, readonly string[]>> = {
     "typealias_declaration.value",
   ],
   bash: [],
+  kotlin: [],
+  php: [],
+  objc: [],
 };
 
 describe("materialization field-loss inventory — candidate field names", () => {

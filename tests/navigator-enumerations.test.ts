@@ -49,7 +49,7 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   residualExclusion: ["ruby"],
   residualOverrideMenu: ["ruby"],
   residualReturnType: ["ruby"],
-  resolveFileEdges: ["java", "javascript", "python", "ruby", "swift", "typescript"],
+  resolveFileEdges: ["java", "javascript", "kotlin", "php", "python", "ruby", "swift", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],
   targetsExternalImport: ["java", "javascript", "python", "ruby", "rust", "typescript"],
   targetsUndecidable: ["python", "rust"],
@@ -86,6 +86,9 @@ const LANGUAGE_SPELLINGS: Readonly<Record<string, RegExp>> = {
   python: /\bPython\b/,
   ruby: /\bRuby\b/,
   rust: /\bRust\b/,
+  kotlin: /\bKotlin\b/,
+  objc: /\bObjective-C\b/,
+  php: /\bPHP\b/,
   swift: /\bSwift\b/,
   typescript: /\bTypeScript\b|\bTS\b/,
 };
@@ -145,6 +148,9 @@ const DECLARATION_PROBES: Readonly<Record<string, { readonly relPath: string; re
   python: { relPath: "probe.py", code: "def f():\n    x = 1\n" },
   ruby: { relPath: "probe.rb", code: "def f\n  x = 1\nend\n" },
   rust: { relPath: "probe.rs", code: "fn f() {\n    let x = 1;\n}\n" },
+  kotlin: { relPath: "Probe.kt", code: "fun f(x: Int) {}\n" },
+  objc: { relPath: "Probe.m", code: "@implementation C\n- (void)f:(id)x {}\n@end\n" },
+  php: { relPath: "Probe.php", code: "<?php\nclass C {\n  const x = 1;\n}\n" },
   swift: { relPath: "Probe.swift", code: "func f() {\n  let x = 1\n}\n" },
   typescript: { relPath: "probe.ts", code: "function f() {\n  const x = 1;\n}\n" },
 };

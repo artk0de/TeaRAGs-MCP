@@ -164,6 +164,11 @@ The indexer automatically skips common non-source directories and files:
 - `node_modules/`, `vendor/`, `.git/`, `dist/`, `build/`, `coverage/`
 - Binary files, images, lock files, and minified bundles
 
+`vendor/` is ignored everywhere it appears as a directory, so vendored Go
+modules and Ruby gems stay out of the index. The scan also applies Git's
+global excludes file and `$GIT_DIR/info/exclude`. Details and the load order:
+[Ignoring Files](/usage/ignoring-files).
+
 ### Using .contextignore
 
 Create a `.contextignore` file in your project root to define project-specific
@@ -219,6 +224,12 @@ The indexer will:
 4. Generate vector embeddings in batches
 5. Upsert chunks into a Qdrant collection
 6. Save a file-hash snapshot for future incremental updates
+
+The collection alias is created only when that first run finishes. If the run
+stops before then, the next `tea-rags index-codebase` **without** `--force`
+continues the same unaliased collection and ingests what is left. `--force`
+starts a new generation instead of resuming. See
+[Interrupted first index](/operations/recovery-reindexing#interrupted-first-index).
 
 ### Register and Index in One Step
 

@@ -10,7 +10,7 @@ import { servicePointExclusions } from "../../../../adapters/qdrant/service-poin
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import { isDebug } from "../../../../primitives/diagnostics/index.js";
-import type { ChunkLookupEntry } from "../../../../types.js";
+import type { ChunkLookupEntry, EnrichmentProgressCallback } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-log/index.js";
 import type { ChunkItem } from "../infra/index.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
@@ -145,9 +145,14 @@ export interface RecoveryOptions {
   executor?: EnrichmentExecutor;
 }
 
+/** How often a recovery bar repaints. Finer than a 500-file batch, coarser than every file. */
+const RECOVERY_PROGRESS_EVERY = 25;
+
 export class EnrichmentRecovery {
   private readonly scrollPageSize: number | undefined;
   private readonly executor: EnrichmentExecutor;
+  private progressCb?: EnrichmentProgressCallback;
+  private readonly lastReported = new Map<string, number>();
 
   constructor(
     private readonly qdrant: QdrantPointReader & Partial<Pick<QdrantCollectionCatalog, "getCollectionInfo">>,
@@ -156,6 +161,18 @@ export class EnrichmentRecovery {
   ) {
     this.scrollPageSize = options?.scrollPageSize;
     this.executor = options?.executor ?? new InlineEnrichmentExecutor();
+  }
+
+  /**
+   * CLI progress sink. The coordinator forwards the same callback it uses for
+   * live enrichment, so a repeat index paints `git file` / `codegraph.symbols
+   * file` during recovery instead of sitting on a blank terminal. The
+   * denominator is two steps per owed file: read, then write. A provider that
+   * only reads still moves the bar once per batch.
+   */
+  setProgress(cb: EnrichmentProgressCallback | undefined): void {
+    this.progressCb = cb;
+    this.lastReported.clear();
   }
 
   /**
@@ -326,14 +343,26 @@ export class EnrichmentRecovery {
     const pointsByPath = groupByRelativePath(scan.owed);
     const uniquePaths = [...pointsByPath.keys()];
     const method = level === "file" ? "recoverFileLevel" : "recoverChunkLevel";
+    const steps = uniquePaths.length * 2;
 
     let recoveredFiles = 0;
     let recoveredChunks = 0;
     let failedPoints = 0;
     let handedOffPoints = 0;
 
+    this.reportRecovery(provider.key, level, 0, steps);
+
     for (let i = 0; i < uniquePaths.length; i += RECOVERY_FILE_BATCH_SIZE) {
       const batch = sliceRecoveryBatch(uniquePaths, i, pointsByPath);
+      const batchTotal = batch.paths.length;
+      let extractDone = 0;
+      let resolveDone = 0;
+      provider.bindRecoveryProgress?.((event) => {
+        if (event.phase === "extract") extractDone = event.done;
+        else resolveDone = event.done;
+        const inner = resolveDone > 0 ? batchTotal + resolveDone : extractDone;
+        this.reportRecovery(provider.key, level, recoveredFiles * 2 + inner, steps);
+      });
       try {
         const healed = await healBatch(batch, root);
         recoveredFiles += healed.files;
@@ -349,7 +378,10 @@ export class EnrichmentRecovery {
             `(${batch.paths.length} files, ${batch.points.length} chunks):`,
           error,
         );
+      } finally {
+        provider.bindRecoveryProgress?.(undefined);
       }
+      this.reportRecovery(provider.key, level, recoveredFiles * 2, steps);
     }
 
     // Handed-off points are known un-healed too: the reindex run settles them,
@@ -357,6 +389,21 @@ export class EnrichmentRecovery {
     const remaining = await this.countRemaining(collectionName, provider, level, failedPoints + handedOffPoints);
 
     return { recoveredFiles, recoveredChunks, remainingUnenriched: remaining };
+  }
+
+  /**
+   * Paint the recovery bar. `applied`/`total` are steps (two per file). Skips
+   * paints closer than {@link RECOVERY_PROGRESS_EVERY} steps, but always
+   * paints the start and the end so the bar appears immediately and closes.
+   */
+  private reportRecovery(providerKey: string, level: "file" | "chunk", applied: number, total: number): void {
+    if (!this.progressCb || total <= 0) return;
+    const key = `${providerKey}:${level}`;
+    const prev = this.lastReported.get(key) ?? -1;
+    if (applied === prev) return;
+    if (applied !== 0 && applied !== total && applied - prev < RECOVERY_PROGRESS_EVERY) return;
+    this.lastReported.set(key, applied);
+    this.progressCb({ providerKey, level, applied, total, totalFinal: true });
   }
 
   /**

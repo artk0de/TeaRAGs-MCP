@@ -524,6 +524,47 @@ extension Ledger {
 }
 `;
 
+const KOTLIN_SOURCE = `package ledger
+
+class Ledger(val owner: String) {
+    fun balance(): Int {
+        return 0
+    }
+
+    fun post(amount: Int) {
+        println(amount)
+    }
+}
+
+fun open(owner: String): Ledger {
+    return Ledger(owner)
+}
+`;
+
+const PHP_SOURCE = `<?php
+namespace ledger;
+
+use Vendor\\Clock;
+
+class Ledger {
+    public function post(int $amount): int {
+        return Clock::now() + $amount;
+    }
+}
+`;
+
+const OBJC_SOURCE = `#import "Clock.h"
+
+@implementation Ledger
+- (int)post:(int)amount {
+    return [self scale:amount];
+}
+- (int)scale:(int)amount {
+    return amount;
+}
+@end
+`;
+
 /**
  * One fixture per grammar reachable from `CODEGRAPH_LANGUAGES`. The completeness
  * of this list is asserted by the guards, so adding a language to the production
@@ -570,6 +611,9 @@ export const MATERIALIZATION_PARITY_CORPUS: readonly MaterializationParityFixtur
     source: SWIFT_SOURCE,
   },
   { grammarKey: "bash", language: "bash", extension: ".sh", relPath: "scripts/ledger.sh", source: BASH_SOURCE },
+  { grammarKey: "kotlin", language: "kotlin", extension: ".kt", relPath: "src/Ledger.kt", source: KOTLIN_SOURCE },
+  { grammarKey: "php", language: "php", extension: ".php", relPath: "src/Ledger.php", source: PHP_SOURCE },
+  { grammarKey: "objc", language: "objc", extension: ".m", relPath: "src/Ledger.m", source: OBJC_SOURCE },
 ];
 
 /** Builds the kernels the codegraph extractor loads grammars through. */

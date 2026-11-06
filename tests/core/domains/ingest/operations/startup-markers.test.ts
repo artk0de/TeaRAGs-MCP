@@ -76,14 +76,24 @@ describe("IndexPipeline startup markers", () => {
   });
 
   it("emits the startup stages in order before PIPELINE_START", async () => {
-    await createTestFile(codebaseDir, "marker.ts", "export const marker = 1;");
+    // Longer than the 100-character "too small to fall back" gate and the
+    // 50-character minimum chunk, so the mocked parser's empty tree still
+    // yields one character chunk and the run reaches embed and store.
+    const source = `export const marker = ${"1".repeat(120)};`;
+    await createTestFile(codebaseDir, "marker.ts", source);
 
     await ingest.indexCodebase(codebaseDir);
 
     const names = events.map((e) => e.message);
     expect(names).toContain("RUN_START");
+    expect(names).toContain("SCAN_START");
     expect(names).toContain("SCAN_COMPLETE");
     expect(names).toContain("QDRANT_READY");
+    expect(names.indexOf("SCAN_START")).toBeGreaterThan(names.indexOf("RUN_START"));
+    expect(names.indexOf("SCAN_START")).toBeLessThan(names.indexOf("SCAN_COMPLETE"));
+    expect(names.indexOf("CHUNK_START")).toBeGreaterThan(names.indexOf("SCAN_COMPLETE"));
+    expect(names.indexOf("EMBEDDINGS_START")).toBeGreaterThan(names.indexOf("CHUNK_START"));
+    expect(names.indexOf("STORE_START")).toBeGreaterThan(names.indexOf("EMBEDDINGS_START"));
     const lastStartup = Math.max(
       names.lastIndexOf("RUN_START"),
       names.lastIndexOf("SCAN_COMPLETE"),

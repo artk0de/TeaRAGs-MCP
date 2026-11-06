@@ -86,8 +86,8 @@ describe("App.resolveLanguageCapabilities", () => {
   it("maps a language with no native provider onto the unsupported-fallback descriptor", () => {
     const app = makeApp();
     const [fallback] = UNSUPPORTED_FALLBACK;
-    const resolved = app.resolveLanguageCapabilities(["kotlin"]).get("kotlin");
-    expect(resolved).toEqual({ ...fallback, language: "kotlin" });
+    const resolved = app.resolveLanguageCapabilities(["dart"]).get("dart");
+    expect(resolved).toEqual({ ...fallback, language: "dart" });
   });
 
   it("carries exactly the requested languages", () => {

@@ -91,6 +91,7 @@ export class ChunkPipeline {
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
+  private readonly onChunksStoredCbs: ((items: ChunkItem[]) => void)[] = [];
   private onProgressCb?: (itemsProcessed: number, throughput: number) => void;
   private quarantineStore?: QuarantineStore;
   private isRunning = false;
@@ -102,6 +103,9 @@ export class ChunkPipeline {
   };
   /** Embed batches formed by size or timeout, and the producer-starved ones among them (bd tea-rags-mcp-y1ynz). */
   private readonly batchFormation = { formed: 0, starved: 0 };
+  /** One DEBUG line each, the first time this run actually embeds or stores. */
+  private announcedEmbeddings = false;
+  private announcedStore = false;
 
   constructor(
     qdrant: QdrantPointWriter,
@@ -168,6 +172,14 @@ export class ChunkPipeline {
    */
   setOnBatchUpserted(cb: (items: ChunkItem[]) => void): void {
     this.onBatchUpsertedCb = cb;
+  }
+
+  /**
+   * Extra callback after each successful batch upsert. Does not replace
+   * {@link setOnBatchUpserted} — enrichment already owns that one.
+   */
+  addOnChunksStored(cb: (items: ChunkItem[]) => void): void {
+    this.onChunksStoredCbs.push(cb);
   }
 
   /**
@@ -514,6 +526,10 @@ export class ChunkPipeline {
       const texts = items.map((item) => item.chunk.content);
 
       // 2. Generate embeddings
+      if (!this.announcedEmbeddings) {
+        this.announcedEmbeddings = true;
+        pipelineLog.step({ component: "IndexRun" }, "EMBEDDINGS_START", { texts: texts.length });
+      }
       const embedStart = Date.now();
       let embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>;
       // A bisected batch's wall clock is not a throughput sample of its size.
@@ -558,6 +574,12 @@ export class ChunkPipeline {
         payload: this.payloadBuilder.buildPayload(item.chunk, item.codebasePath),
       }));
 
+      // One line when this run first reaches storage. Later batches stay quiet.
+      if (!this.announcedStore) {
+        this.announcedStore = true;
+        pipelineLog.step({ component: "IndexRun" }, "STORE_START", { points: points.length });
+      }
+
       // 4. Store to Qdrant — wrap in try/catch so AdaptiveBatchSizer observes
       // both success (drives recovery) and yellow failures (halves batch size).
       // We re-throw so WorkerPool's retry logic stays intact.
@@ -595,6 +617,7 @@ export class ChunkPipeline {
 
       // 5. Notify callback after successful upsert (for streaming enrichment)
       this.onBatchUpsertedCb?.(items);
+      for (const onChunksStored of this.onChunksStoredCbs) onChunksStored(items);
     };
   }
 

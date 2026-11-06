@@ -44,7 +44,7 @@ interface LanguageDefinition {
 }
 ```
 
-Shipping languages (excerpt): TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, Bash, Markdown. Plus `LANGUAGE_MAP` extension-to-language bindings for ~30 extensions total.
+Shipping languages (excerpt): TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, Bash, Swift, Objective-C, PHP, Kotlin, Markdown. Plus `LANGUAGE_MAP` extension-to-language bindings for ~30 extensions total.
 
 ## Adding a New Language
 

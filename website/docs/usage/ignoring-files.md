@@ -14,13 +14,15 @@ ignore rules change between reindexes.
 
 ## How Ignore Rules Stack
 
-TeaRAGs loads ignore patterns from multiple sources **in order**. Patterns are
-cumulative — if a file matches **any** source, it is excluded.
+TeaRAGs loads ignore patterns from multiple sources **in order**. A match
+excludes the file. A later `!` pattern can include it again.
 
 <MermaidTeaRAGs>
 {`
 flowchart LR
     subgraph files["📂 Ignore Sources (loaded in order)"]
+        BI["Built-in defaults<br/><small>vendor/, node_modules, dist…</small>"]
+        GE["Git excludes<br/><small>global + info/exclude</small>"]
         G[".gitignore"]
         D[".dockerignore"]
         N[".npmignore"]
@@ -29,7 +31,6 @@ flowchart LR
     end
 
     subgraph config["⚙️ Config Patterns"]
-        BI["Built-in defaults<br/><small>node_modules, dist, .git…</small>"]
         PARAM["ignorePatterns<br/><small>index_codebase param</small>"]
     end
 
@@ -48,19 +49,23 @@ flowchart LR
 
 ### Loading order
 
-| #   | Source                 | Syntax                | Purpose                                      |
-| --- | ---------------------- | --------------------- | -------------------------------------------- |
-| 1   | `.gitignore`           | gitignore             | Respect your existing VCS exclusions         |
-| 2   | `.dockerignore`        | gitignore             | Skip Docker build artifacts                  |
-| 3   | `.npmignore`           | gitignore             | Skip npm publish exclusions                  |
-| 4   | `.contextignore`       | gitignore             | **TeaRAGs-specific** project exclusions      |
-| 5   | `.contextignore.local` | gitignore             | **Personal** overrides (add to `.gitignore`) |
-| 6   | Built-in defaults      | glob                  | Always excluded (see below)                  |
-| 7   | `ignorePatterns` param | glob[]                | Per-call overrides passed to `index_codebase`|
+| #   | Source                 | Syntax    | Purpose                                                                 |
+| --- | ---------------------- | --------- | ----------------------------------------------------------------------- |
+| 1   | Built-in defaults      | gitignore | Always first. Includes `vendor/`, `node_modules/`, build output (below) |
+| 2   | Git global excludes    | gitignore | `core.excludesfile`, or `~/.config/git/ignore` when that is unset       |
+| 3   | `$GIT_DIR/info/exclude`| gitignore | Repo-local excludes that are not the committed `.gitignore`             |
+| 4   | `.gitignore`           | gitignore | Respect your existing VCS exclusions                                    |
+| 5   | `.dockerignore`        | gitignore | Skip Docker build artifacts                                             |
+| 6   | `.npmignore`           | gitignore | Skip npm publish exclusions                                             |
+| 7   | `.contextignore`       | gitignore | **TeaRAGs-specific** project exclusions                                 |
+| 8   | `.contextignore.local` | gitignore | Local overrides (add the file to `.gitignore`)                          |
+| 9   | `ignorePatterns` param | glob[]    | Per-call overrides passed to `index_codebase`                           |
 
-All files use
-[gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format) and are
-read from the project root.
+All of these use
+[gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format). A later
+source can put a path back with a `!` negation. The project ignore files are
+read from the repository root. The global excludes file and `info/exclude` are
+not: a linked worktree's `info/exclude` is the one in the common git directory.
 
 ## Ignore Sources in Detail
 
@@ -68,6 +73,23 @@ read from the project root.
 
 Your existing `.gitignore` is loaded automatically. No configuration needed. If
 Git ignores a file, TeaRAGs ignores it too.
+
+### Git global excludes and `info/exclude`
+
+TeaRAGs also reads the exclude files Git applies outside the committed
+`.gitignore`:
+
+- the global excludes file (`git config --global --get core.excludesfile`,
+  otherwise `~/.config/git/ignore`, or `$XDG_CONFIG_HOME/git/ignore`)
+- `$GIT_DIR/info/exclude`
+
+They are loaded after the built-in defaults and before the project ignore
+files. A directory that only appears in one of those files — for example a
+local worktree checkout — is skipped the same way Git skips it.
+
+`vendor/` is a built-in directory pattern (Go modules, Ruby gems, and any other
+third-party tree of that name). The walker does not descend into it. Re-include
+a path with `!` in a later ignore file when that name is project source.
 
 ### .contextignore (project-level)
 
@@ -123,6 +145,7 @@ These patterns are always applied regardless of your configuration:
 | Pattern                                      | What it excludes          |
 | -------------------------------------------- | ------------------------- |
 | `node_modules/**`                            | Node.js dependencies      |
+| `vendor/**`                                  | Vendored third-party trees (Go modules, Ruby gems) |
 | `dist/**`, `build/**`, `out/**`, `target/**` | Build outputs             |
 | `coverage/**`, `.nyc_output/**`              | Test coverage             |
 | `.git/**`, `.svn/**`, `.hg/**`               | Version control internals |
@@ -141,9 +164,10 @@ so no pattern can catch them:
 | `.cargo-checksum.json` (declared by Rust)         | A crate vendored by `cargo vendor`                   |
 
 Languages declare their own build output too: Rust contributes Cargo's
-`target/`. A plain `vendor/` directory is not ignored, since Rails keeps
-application code there. The project root is never excluded by a marker, and a
-`!pattern` negation does not re-include a marked directory.
+`target/`. A `vendor/` directory is ignored as a third-party tree (Go modules,
+Ruby gems). Re-include it with a later `!` pattern when that name is project
+source. The project root is never excluded by a marker, and a `!pattern`
+negation does not re-include a marked directory.
 
 ### `ignorePatterns` parameter
 

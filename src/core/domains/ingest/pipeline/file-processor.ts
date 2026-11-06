@@ -15,6 +15,7 @@ import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPoolPort } from "./chunker/infra/pool.js";
 import { SourceFileIngestor } from "./file-ingestor.js";
 import type { FileProcessCallbacks, FileProcessorOptions, FileProcessResult } from "./file-process-types.js";
+import { pipelineLog } from "./infra/debug-log/index.js";
 import { parallelLimit } from "./infra/parallel.js";
 
 // Historical import path for the post-chunk navigation pass — it now lives
@@ -51,6 +52,11 @@ export async function processFiles(
     chunkMap: new Map(),
     errors: [],
   };
+
+  pipelineLog.step({ component: "IndexRun" }, "CHUNK_START", {
+    files: absolutePaths.length,
+    parser: "tree-sitter",
+  });
 
   const concurrency = options.concurrency ?? 50;
   // One ingestor for the whole batch: it is stateless apart from the deps it

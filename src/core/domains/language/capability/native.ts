@@ -6,7 +6,10 @@ import { capability as bashCapability } from "../bash/capability.js";
 import { capability as goCapability } from "../go/capability.js";
 import { capability as javaCapability } from "../java/capability.js";
 import { capability as javascriptCapability } from "../javascript/capability.js";
+import { capability as kotlinCapability } from "../kotlin/capability.js";
 import { capability as markdownCapability } from "../markdown/capability.js";
+import { capability as objcCapability } from "../objc/capability.js";
+import { capability as phpCapability } from "../php/capability.js";
 import { capability as pythonCapability } from "../python/capability.js";
 import { capability as rubyCapability } from "../ruby/capability.js";
 import { capability as rustCapability } from "../rust/capability.js";
@@ -35,6 +38,9 @@ export function nativeLanguageCapabilities(): Map<string, LanguageCapability> {
     ["rust", rustCapability],
     ["bash", bashCapability],
     ["swift", swiftCapability],
+    ["objc", objcCapability],
+    ["php", phpCapability],
+    ["kotlin", kotlinCapability],
     ["markdown", markdownCapability],
     ["yaml", yamlCapability],
   ]);

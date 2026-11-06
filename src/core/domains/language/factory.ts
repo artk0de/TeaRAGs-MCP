@@ -21,8 +21,14 @@ import { JavaLanguage } from "./java/index.js";
 import { signalFloors as javaSignalFloors } from "./java/signal-floors.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
 import { signalFloors as javascriptSignalFloors } from "./javascript/signal-floors.js";
+import { KotlinLanguage } from "./kotlin/index.js";
+import { signalFloors as kotlinSignalFloors } from "./kotlin/signal-floors.js";
 import { MarkdownLanguage } from "./markdown/index.js";
 import { signalFloors as markdownSignalFloors } from "./markdown/signal-floors.js";
+import { ObjcLanguage } from "./objc/index.js";
+import { signalFloors as objcSignalFloors } from "./objc/signal-floors.js";
+import { PhpLanguage } from "./php/index.js";
+import { signalFloors as phpSignalFloors } from "./php/signal-floors.js";
 import { PythonLanguage } from "./python/index.js";
 import { signalFloors as pythonSignalFloors } from "./python/signal-floors.js";
 import { RubyLanguage } from "./ruby/index.js";
@@ -55,6 +61,9 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "rust",
   "bash",
   "swift",
+  "objc",
+  "php",
+  "kotlin",
   "markdown",
   "yaml",
 ]);
@@ -212,6 +221,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     }
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
     if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
+    if (lang === "objc") return new ObjcLanguage(this.ambiguousResolveMode);
+    if (lang === "php") return new PhpLanguage(this.ambiguousResolveMode);
+    if (lang === "kotlin") return new KotlinLanguage(this.ambiguousResolveMode);
     // Markdown and YAML are DOC-ONLY — no resolver, so no `mode` is threaded.
     if (lang === "markdown") return new MarkdownLanguage();
     if (lang === "yaml") return new YamlLanguage();
@@ -251,6 +263,9 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       ["rust", rustSignalFloors],
       ["bash", bashSignalFloors],
       ["swift", swiftSignalFloors],
+      ["objc", objcSignalFloors],
+      ["php", phpSignalFloors],
+      ["kotlin", kotlinSignalFloors],
       ["markdown", markdownSignalFloors],
       ["yaml", yamlSignalFloors],
     ]);
