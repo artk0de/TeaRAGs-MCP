@@ -1,6 +1,6 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,6 +68,55 @@ describe("tune command", () => {
     expect(tuneCommand.command).toBe("tune [subcommand]");
     expect(tuneCommand.describe).toContain("Auto-tune");
   });
+
+  it.each(["valid", "unreadable", "absent", "embeddings"] as const)(
+    "handles measured environment persistence after a %s run",
+    async (scenario) => {
+      const dir = mkdtempSync(join(tmpdir(), "tune-measured-env-"));
+      const originalDataDir = process.env.TEA_RAGS_DATA_DIR;
+      process.env.TEA_RAGS_DATA_DIR = dir;
+      const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      try {
+        const registry = new CollectionRegistry(dir);
+        registry.record({
+          collectionName: "code_measured",
+          path: dir,
+          embeddingModel: "model-z",
+          embeddingDimensions: 384,
+          qdrantUrl: "http://qd:6333",
+          indexedAt: "2026-11-06T00:00:00Z",
+          teaRagsVersion: "1.50.0",
+          chunksCount: 1,
+        });
+        registry.setName("code_measured", "measured");
+        const envPath = join(dir, "tuned_environment_variables.env");
+        if (scenario === "unreadable") mkdirSync(envPath);
+        else if (scenario !== "absent") writeFileSync(envPath, "EMBEDDING_CONCURRENCY=9\n");
+        await (tuneCommand.handler as TuneHandler)({
+          project: "measured",
+          ...(scenario === "embeddings" ? { subcommand: "embeddings" } : {}),
+        });
+        mockChild.emit("exit", 0);
+        expect(exitSpy).toHaveBeenCalledWith(0);
+        const stored = new CollectionRegistry(dir).findByName("measured")?.env;
+        expect(stored?.INGEST_PIPELINE_CONCURRENCY).toBe(scenario === "valid" ? "9" : undefined);
+        expect(stored?.EMBEDDING_CONCURRENCY).toBeUndefined();
+        if (scenario === "valid") {
+          expect(stdout.mock.calls.map(([text]) => String(text)).join("")).toContain("measured");
+        }
+        if (scenario === "unreadable") {
+          expect(stderr.mock.calls.map(([text]) => String(text)).join("")).toContain("EISDIR");
+        }
+      } finally {
+        stdout.mockRestore();
+        stderr.mockRestore();
+        if (originalDataDir === undefined) delete process.env.TEA_RAGS_DATA_DIR;
+        else process.env.TEA_RAGS_DATA_DIR = originalDataDir;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("spawns tune.mjs with no extra args when called with defaults", async () => {
     await (tuneCommand.handler as TuneHandler)({ path: undefined, full: false });

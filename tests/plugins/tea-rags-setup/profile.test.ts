@@ -12,6 +12,25 @@ import { makeRepo, runScript, SCRIPTS_DIR } from "./fixtures.js";
 const lines = (n: number): string => `${Array.from({ length: n }, (_, i) => `line ${i}`).join("\n")}\n`;
 
 describe("profile.mjs", () => {
+  it("reports a missing CLI argument through the script entrypoint", async () => {
+    const originalArgv = process.argv;
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    try {
+      process.argv = [process.execPath, join(SCRIPTS_DIR, "profile.mjs")];
+      vi.resetModules();
+      await import(join(SCRIPTS_DIR, "profile.mjs"));
+      expect(JSON.parse(String(stdout.mock.calls[0][0]))).toEqual({
+        error: "projectDir not found: (missing argument)",
+      });
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      process.argv = originalArgv;
+      stdout.mockRestore();
+      exit.mockRestore();
+      vi.resetModules();
+    }
+  });
   it("excludes ignore-file matches and reports the Ruby share", () => {
     const dir = makeRepo({
       "app/a.rb": lines(30),

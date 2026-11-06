@@ -37,6 +37,88 @@ async function sync(runClaude: ReturnType<typeof makeRunClaude>) {
 }
 
 describe("ClaudePluginSyncAdapter", () => {
+  it.each([
+    { stdout: "{broken", code: null, reason: "claude exited with code unknown" },
+    { stdout: '{"outcome":"failed","failureCode":"download-rejected"}', code: 1, reason: "download-rejected" },
+    { stdout: '{"outcome":"failed","message":"update rejected"}', code: 1, reason: "update rejected" },
+  ])("reports a failed in-place update without inventing a result: $reason", async ({ stdout, code, reason }) => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: plugins(["tea-rags@tea-rags", "0.54.0"]),
+      [MARKETPLACE_LIST]: marketplace({
+        source: "git",
+        url: "https://github.com/artk0de/TeaRAGs-MCP.git",
+        ref: "v1.50.0",
+      }),
+      "plugin update tea-rags@tea-rags --json": { stdout, code, missing: false },
+    });
+    expect((await sync(runClaude)).failed).toEqual([{ id: "tea-rags@tea-rags", reason }]);
+  });
+
+  it("reports a scoped install without its project path even when no re-pin is needed", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: plugins(["tea-rags@tea-rags", "0.54.0", "project"]),
+      [MARKETPLACE_LIST]: marketplace({
+        source: "git",
+        url: "https://github.com/artk0de/TeaRAGs-MCP.git",
+        ref: "v1.50.0",
+      }),
+    });
+    const report = await sync(runClaude);
+    expect(report.failed).toEqual([
+      { id: "tea-rags@tea-rags", reason: expect.stringContaining("project Claude did not name") },
+    ]);
+    expect(runClaude).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["{broken", "null", "{}"])(
+    "treats an unreadable installed-plugin inventory as unknown: %s",
+    async (stdout) => {
+      const runClaude = makeRunClaude({ [PLUGIN_LIST]: { code: 0, stdout, missing: false } });
+      expect((await sync(runClaude)).skipped).toBe("none-installed");
+      expect(runClaude).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("reports a missing marketplace that could not be added after a malformed inventory", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: plugins(["tea-rags@tea-rags", "0.54.0"]),
+      [MARKETPLACE_LIST]: { code: 0, stdout: "{broken", missing: false },
+      [`plugin marketplace add ${PINNED_SOURCE} --json`]: line({ message: "tag unavailable" }, 1),
+    });
+    expect((await sync(runClaude)).failed).toEqual([{ id: "tea-rags marketplace", reason: "tag unavailable" }]);
+  });
+
+  it("stops before changing the pin when marketplace removal fails", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: plugins(["tea-rags@tea-rags", "0.54.0"]),
+      [MARKETPLACE_LIST]: marketplace({
+        source: "git",
+        url: "https://github.com/artk0de/TeaRAGs-MCP.git",
+        ref: "v1.49.0",
+      }),
+      "plugin marketplace remove tea-rags --json": line({ message: "removal denied" }, 1),
+    });
+    expect((await sync(runClaude)).failed).toEqual([{ id: "tea-rags marketplace", reason: "removal denied" }]);
+    expect(runClaude).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports a reinstall failure after a successful re-pin", async () => {
+    const runClaude = makeRunClaude({
+      [PLUGIN_LIST]: [plugins(["tea-rags@tea-rags", "0.54.0"]), line([])],
+      [MARKETPLACE_LIST]: marketplace({
+        source: "git",
+        url: "https://github.com/artk0de/TeaRAGs-MCP.git",
+        ref: "v1.49.0",
+      }),
+      "plugin marketplace remove tea-rags --json": line({ outcome: "ok" }),
+      [`plugin marketplace add ${PINNED_SOURCE} --json`]: line({ outcome: "ok" }),
+      "plugin install tea-rags@tea-rags --scope user --json": line({ message: "install rejected" }, 1),
+    });
+    const report = await sync(runClaude);
+    expect(report.repinned?.to).toBe("v1.50.0");
+    expect(report.failed).toEqual([{ id: "tea-rags@tea-rags", reason: "install rejected" }]);
+  });
+
   it("re-pins a marketplace at another ref to v<client version> and reinstalls the plugins the removal uninstalled", async () => {
     const runClaude = makeRunClaude({
       [PLUGIN_LIST]: [

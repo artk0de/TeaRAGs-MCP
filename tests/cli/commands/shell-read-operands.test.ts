@@ -71,4 +71,22 @@ describe("shellReadOperands", () => {
   it("finds nothing in a command with no reader", () => {
     expect(shellReadOperands("ls -la src && git status", CWD)).toEqual([]);
   });
+
+  it.each([
+    ["cat 'unterminated", null],
+    ['cat "$(printf file)"', null],
+    ['cat "`printf file`"', null],
+    ["cat <(printf file)", null],
+    ["cat escaped\\ name.rb", ["/repo/escaped name.rb"]],
+    [String.raw`cat "$FILE" "quoted\"name.rb"`, ['/repo/quoted"name.rb']],
+    ["exec <&0; cat a.rb 2>&-", ["/repo/a.rb"]],
+    ["printf output &>> run.log; cat a.rb &> out.log", ["/repo/a.rb"]],
+    ["sed --expression '1p' --file=script.sed a.rb", ["/repo/a.rb"]],
+    ["sed -nl80 -e1p a.rb", ["/repo/a.rb"]],
+    ["sed --in-place 's/a/b/' a.rb", []],
+    ["cat -- -file.rb '' -", ["/repo/-file.rb"]],
+    ['cd "$DEST"; cat a.rb |& more', ["/repo/a.rb"]],
+  ])("handles shell syntax without treating output destinations as inputs: %s", (command, expected) => {
+    expect(shellReadOperands(command, CWD)).toEqual(expected);
+  });
 });

@@ -152,6 +152,31 @@ describe("checkpointFromStoredPaths", () => {
 });
 
 describe("FirstIndexResumeStore", () => {
+  it.each(["meta.json", "batch-0001.json"])("preserves an I/O failure reading %s", async (name) => {
+    const snapshotDir = await tempDir("resume-io-failure-");
+    const store = new FirstIndexResumeStore(snapshotDir, "code_a1b2c3d4", "code_a1b2c3d4_v4");
+    await store.save(new Map([["a.ts", meta("a")]]));
+    const file = join(firstIndexResumeDirectory(snapshotDir, "code_a1b2c3d4", "code_a1b2c3d4_v4"), name);
+    await rm(file);
+    await mkdir(file);
+    await expect(store.load()).rejects.toMatchObject({ code: "EISDIR" });
+  });
+
+  it("drops malformed batch references and unreadable JSON without losing another batch", async () => {
+    const snapshotDir = await tempDir("resume-malformed-batches-");
+    const store = new FirstIndexResumeStore(snapshotDir, "code_a1b2c3d4", "code_a1b2c3d4_v4");
+    await store.save(new Map([["broken.ts", meta("a")]]));
+    await store.save(new Map([["kept.ts", meta("b")]]));
+    const dir = firstIndexResumeDirectory(snapshotDir, "code_a1b2c3d4", "code_a1b2c3d4_v4");
+    const text = '{"files":';
+    await writeFile(join(dir, "batch-0001.json"), text);
+    const metadata = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
+    metadata.batches[0].sha256 = createHash("sha256").update(text).digest("hex");
+    metadata.batches.unshift(null, 5, { file: "../foreign.json", sha256: "x" }, { file: "batch-0003.json", sha256: 7 });
+    await writeFile(join(dir, "meta.json"), JSON.stringify(metadata));
+    expect([...(await store.load())!.keys()]).toEqual(["kept.ts"]);
+  });
+
   it("treats truncated metadata as unavailable", async () => {
     const snapshotDir = await tempDir("resume-truncated-");
     const dir = firstIndexResumeDirectory(snapshotDir, "code_a1b2c3d4", "code_a1b2c3d4_v4");

@@ -111,6 +111,56 @@ describe("runBackgroundClientUpdate", () => {
     expect(store.read().consecutiveFailures).toBe(1);
   });
 
+  it.each([
+    { outcome: { kind: "npm-missing" as const }, code: 127, message: "npm not found in PATH" },
+    { outcome: { kind: "spawn-failed" as const, message: "spawn denied" }, code: 1, message: "spawn denied" },
+    { outcome: { kind: "not-requested" as const }, code: 1, message: "not requested" },
+  ])("records $outcome.kind and preserves its exit status", async ({ outcome, code, message }) => {
+    const { d, lines } = deps({ install: async () => outcome });
+    expect(await runBackgroundClientUpdate(d)).toBe(code);
+    expect(d.syncPlugins).not.toHaveBeenCalled();
+    expect(store.read()).toMatchObject({ lastFailureAt: NOW, consecutiveFailures: 1 });
+    expect(lines.join("\n")).toContain(message);
+  });
+
+  it.each([new Error("registry rejected"), "registry rejected"])(
+    "records an unexpected rejection: %s",
+    async (error) => {
+      const { d, lines } = deps({
+        releaseTimeline: vi.fn().mockRejectedValue(error),
+      });
+      expect(await runBackgroundClientUpdate(d)).toBe(1);
+      expect(store.read().consecutiveFailures).toBe(1);
+      expect(lines.join("\n")).toContain("registry rejected");
+    },
+  );
+
+  it("reports successful, failed and confirmation-gated plugin changes together", async () => {
+    const { d, lines } = deps({
+      syncPlugins: async () => ({
+        harnesses: [
+          {
+            harness: "claude",
+            report: {
+              repinned: { from: "v1.50.0", to: "v1.51.0" },
+              updated: [{ id: "tea-rags@tea-rags", oldVersion: "0.55.7", newVersion: "0.55.8" }],
+              failed: [{ id: "setup@tea-rags", reason: "CLI rejected update" }],
+              needsConfirmation: [
+                { id: "local@tea-rags", command: "node hook.mjs", sha256: "abc", acceptWith: "tea-rags update --yes" },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    expect(await runBackgroundClientUpdate(d)).toBe(0);
+    const log = lines.join("\n");
+    expect(log).toContain("marketplace pinned to v1.51.0 (was v1.50.0)");
+    expect(log).toContain("tea-rags@tea-rags 0.55.7 → 0.55.8");
+    expect(log).toContain("setup@tea-rags failed — CLI rejected update");
+    expect(log).toContain("local@tea-rags needs confirmation — tea-rags update --yes");
+  });
+
   it("leaves a manual-update hint when the Claude re-pin was refused for project/local-scope installs", async () => {
     const { d, lines } = deps({
       syncPlugins: async () => ({
