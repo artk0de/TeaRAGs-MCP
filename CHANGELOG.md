@@ -2,8 +2,9 @@
 
 ### 🧠 Code intelligence
 
-- Install prebuilt **_Rust_** call-site support with
-  `tea-rags rustc-driver install`, without compiling the driver locally.
+- **_Rust_** driver installation supports verified prebuilt downloads through
+  `tea-rags rustc-driver install`. Binaries for this release are pending a
+  Windows build fix.
 
 ### ⚡ Indexing & performance
 
