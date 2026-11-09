@@ -1,3 +1,12 @@
+## [1.51.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.0...v1.51.1) (2026-11-09)
+
+### Bug Fixes
+
+- **embedding:** split ollama batches that miss the embed deadline
+  ([5577578](https://github.com/artk0de/TeaRAGs-MCP/commit/55775786e32dc0292fa1f47d7418f239bf9e59f6))
+- **embedding:** split ollama batches that miss the embed deadline
+  ([f482be0](https://github.com/artk0de/TeaRAGs-MCP/commit/f482be023755eab36377b3b998554fb3a9cf13fe))
+
 ## [1.51.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.50.0...v1.51.0) (2026-11-06)
 
 ### 🧠 Code intelligence

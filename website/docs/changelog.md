@@ -3,54 +3,94 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.51.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.0...v1.51.1) (2026-11-09)
+
+### Bug Fixes
+
+* **embedding:** split ollama batches that miss the embed deadline ([5577578](https://github.com/artk0de/TeaRAGs-MCP/commit/55775786e32dc0292fa1f47d7418f239bf9e59f6))
+* **embedding:** split ollama batches that miss the embed deadline ([f482be0](https://github.com/artk0de/TeaRAGs-MCP/commit/f482be023755eab36377b3b998554fb3a9cf13fe))
+
 ## [1.51.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.50.0...v1.51.0) (2026-11-06)
 
 ### 🧠 Code intelligence
 
-* ***Rust*** driver installation supports verified prebuilt downloads through `tea-rags rustc-driver install`. Binaries for this release are pending a Windows build fix.
+- **_Rust_** driver installation supports verified prebuilt downloads through
+  `tea-rags rustc-driver install`. Binaries for this release are pending a
+  Windows build fix.
 
 ### ⚡ Indexing & performance
 
-* Resume an interrupted first index without rebuilding files that were already stored.
-* Download a verified local embedding server and a pinned model, and choose a model for the languages in your repository.
-* **Breaking:** managed embedding servers bind to `127.0.0.1` by default; pass `--host 0.0.0.0` when LAN access is required. Start, stop, inspect and benchmark local server pools with automatic recovery after an endpoint outage.
-* ***Rust*** inline tests and Vitest in-source tests are indexed as addressable test scopes, including ***Rust*** test modules declared in other files.
-* Index workers get a 10 GiB heap ceiling by default and preserve higher limits from `NODE_OPTIONS`, helping large repositories avoid Node's smaller default heap.
+- Resume an interrupted first index without rebuilding files that were already
+  stored.
+- Download a verified local embedding server and a pinned model, and choose a
+  model for the languages in your repository.
+- **Breaking:** managed embedding servers bind to `127.0.0.1` by default; pass
+  `--host 0.0.0.0` when LAN access is required. Start, stop, inspect and
+  benchmark local server pools with automatic recovery after an endpoint outage.
+- **_Rust_** inline tests and Vitest in-source tests are indexed as addressable
+  test scopes, including **_Rust_** test modules declared in other files.
+- Index workers get a 10 GiB heap ceiling by default and preserve higher limits
+  from `NODE_OPTIONS`, helping large repositories avoid Node's smaller default
+  heap.
 
 ### 🗣 Language support
 
-* Search and navigate PHP, Kotlin and Objective-C code, with language-specific parsing and call resolution.
+- Search and navigate PHP, Kotlin and Objective-C code, with language-specific
+  parsing and call resolution.
 
 ### 🛠 CLI & workflow
 
-* Automatic client updates are enabled by default and keep the CLI and installed plugins in step. Checks run at most once per day and wait 3 days for minor or patch releases, or 7 days for major releases; disable them with `tea-rags update --auto off` or update manually with `tea-rags update`.
+- Automatic client updates are enabled by default and keep the CLI and installed
+  plugins in step. Checks run at most once per day and wait 3 days for minor or
+  patch releases, or 7 days for major releases; disable them with
+  `tea-rags update --auto off` or update manually with `tea-rags update`.
 
 ### 🧩 Agent plugin
 
-* Set up **TeaRAGs** in Claude Code, Codex or Cursor through one guided installation, including the local embedding server, project registration and first index.
-* Risk and architecture reports explain findings and give concrete next actions, with clearer limits when evidence is incomplete.
-* Code navigation uses smaller, focused reads while preserving broad investigation quality and distinguishing source reads from document write destinations.
+- Set up **TeaRAGs** in Claude Code, Codex or Cursor through one guided
+  installation, including the local embedding server, project registration and
+  first index.
+- Risk and architecture reports explain findings and give concrete next actions,
+  with clearer limits when evidence is incomplete.
+- Code navigation uses smaller, focused reads while preserving broad
+  investigation quality and distinguishing source reads from document write
+  destinations.
 
 ### 📚 Documentation
 
-* **Docusaurus:** installation and update guides cover the guided setup, managed local embedding pools and ***Rust*** driver readiness.
+- **Docusaurus:** installation and update guides cover the guided setup, managed
+  local embedding pools and **_Rust_** driver readiness.
 
 ### 🩹 Fixes
 
-* Production search and call graphs keep ***Rust*** and Vitest test bodies, test-only imports and test module declarations out of production code.
-* `rank_chunks` returns the requested number of distinct files at file level, and per-symbol ranking scores each symbol independently.
-* Indexing reports failures from one **enrichment** provider without discarding successful work from other providers.
-* Agent startup retains project addresses and update hints while search infrastructure is cold, unavailable or still starting.
-* ***Rust*** support handles multiple Cargo workspaces and Windows executables, and local daemon connections respect platform socket-length limits.
-* Client updates preserve project-scoped and local Claude plugin installations instead of silently replacing them.
+- Production search and call graphs keep **_Rust_** and Vitest test bodies,
+  test-only imports and test module declarations out of production code.
+- `rank_chunks` returns the requested number of distinct files at file level,
+  and per-symbol ranking scores each symbol independently.
+- Indexing reports failures from one **enrichment** provider without discarding
+  successful work from other providers.
+- Agent startup retains project addresses and update hints while search
+  infrastructure is cold, unavailable or still starting.
+- **_Rust_** support handles multiple Cargo workspaces and Windows executables,
+  and local daemon connections respect platform socket-length limits.
+- Client updates preserve project-scoped and local Claude plugin installations
+  instead of silently replacing them.
 
 ### 🔧 Environment Variables
 
-* `TEA_RAGS_AUTO_UPDATE` · Control automatic client updates; `0` disables background updates and `1` enables them. · default: `1` (new)
-* `TEA_RAGS_SKIP_RUSTC_DRIVER_DOWNLOAD` · Set to `1` to skip the best-effort ***Rust*** driver download during npm installation. · default: `0` (new)
-* `LLAMA_SERVER_PATH` · Explicit binary path wins over the managed installation, which is preferred to the executable on `PATH`. · default: `unset` (changed)
-* `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` · Removed and ignored. Git signals count commits. Rebuild git **enrichment** for an index previously created with squash-aware sessions using `tea-rags index-codebase --project &lt;alias&gt; --force-enrichments git`. · default: `ignored` (changed)
-* `TRAJECTORY_GIT_SESSION_GAP_MINUTES` · Removed and ignored; no session gap is applied to git signals. · default: `ignored` (changed)
+- `TEA_RAGS_AUTO_UPDATE` · Control automatic client updates; `0` disables
+  background updates and `1` enables them. · default: `1` (new)
+- `TEA_RAGS_SKIP_RUSTC_DRIVER_DOWNLOAD` · Set to `1` to skip the best-effort
+  **_Rust_** driver download during npm installation. · default: `0` (new)
+- `LLAMA_SERVER_PATH` · Explicit binary path wins over the managed installation,
+  which is preferred to the executable on `PATH`. · default: `unset` (changed)
+- `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` · Removed and ignored. Git signals
+  count commits. Rebuild git **enrichment** for an index previously created with
+  squash-aware sessions using
+  `tea-rags index-codebase --project &lt;alias&gt; --force-enrichments git`. ·
+  default: `ignored` (changed)
+- `TRAJECTORY_GIT_SESSION_GAP_MINUTES` · Removed and ignored; no session gap is
+  applied to git signals. · default: `ignored` (changed)
 
 ## [1.50.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.49.0...v1.50.0) (2026-10-31)
 
