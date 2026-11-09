@@ -7,7 +7,7 @@
       "version": "0.55.10",
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
       "category": "developer-tools",
-      "icon": "./tea-rags/icon.png"
+      "icon": "https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/tea-rags.png"
     },
     {
       "name": "dinopowers",
@@ -15,7 +15,7 @@
       "version": "0.25.3",
       "description": "Wrapper skills over superpowers:* that inject tea-rags signals (risk, ownership, churn, impact) into brainstorming, planning, execution, debugging, and review flows",
       "category": "developer-tools",
-      "icon": "./dinopowers/icon.png"
+      "icon": "https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/dinopowers.png"
     },
     {
       "name": "tea-rags-setup",
@@ -23,7 +23,7 @@
       "version": "0.8.5",
       "description": "One-step TeaRAGs install — llama-server embeddings, plugin and MCP server, project registration, first index — plus re-tuning",
       "category": "developer-tools",
-      "icon": "./tea-rags-setup/icon.png"
+      "icon": "https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/tea-rags-setup.png"
     }
   ]
 }

@@ -1,0 +1,7 @@
+You can generate images with the image generation tool. Using the attached logo as the reference (a Victorian lizard gentleman with a top hat, monocle and mustache inside a cream circular badge with the wordmark "TeaRAGs"; palette: badge cream #FEFAD8, skin pale yellow #F9EA9A, gold #CC991C, coat/hat near-black #26221B), generate three plugin icons and save them as PNG files in the current directory, each 512x512 on a transparent background:
+
+1. tea-rags.png — the logo itself, cleaned, centered, small even margins.
+2. tea-rags-setup.png — the same logo plus an install badge: dark disc (#26221B) with a gold ring (#CC991C) and a white down-arrow into a tray, placed bottom-right on the badge circle edge, not covering the wordmark.
+3. dinopowers.png — the logo circular badge with the character, plus a drawn cartoon muscular arm flexing a big pumped bicep (black sleeve, gold cuff, pale-yellow clenched fist, small gold "pump" sparkles) rising on the right, and a claw paw with gold-tipped fingers gripping a small copy of the TeaRAGs badge at bottom-left. Playful mascot style, clean edges.
+
+Save exactly as: tea-rags.png, tea-rags-setup.png, dinopowers.png (512x512, transparent). After saving each file, verify with the "file" command that it is a valid PNG of the right size; resize or crop with ImageMagick if needed. Finish with one line per file confirming name and dimensions.

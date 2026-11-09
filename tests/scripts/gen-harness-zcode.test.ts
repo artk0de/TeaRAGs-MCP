@@ -156,8 +156,11 @@ describe("renderZcodeHarness", () => {
     for (const plugin of marketplace.plugins) {
       expect(rendered.has(`${plugin.source.replace(/^\.\//, "")}/.zcode-plugin/plugin.json`), plugin.source).toBe(true);
       expect(plugin.version).toMatch(/^\d+\.\d+\.\d+/);
-      // Local-directory marketplace: the icon ships next to the plugin (official CDN uses HTTPS URLs).
-      expect(plugin.icon, plugin.name).toBe(`./${plugin.name}/icon.png`);
+      // The app renderer only draws https:// icons, so the catalog points at the committed
+      // assets/icons sources on GitHub (relative paths pass the parse but render nothing).
+      expect(plugin.icon, plugin.name).toBe(
+        `https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/${plugin.name}.png`,
+      );
     }
   });
 
@@ -300,7 +303,7 @@ describe("renderZcodeHarness", () => {
 });
 
 describe("writeZcodeHarness icon assets", () => {
-  it("ships <plugin>/icon.png from assets/icons with the marketplace icon paths resolving", async () => {
+  it("ships <plugin>/icon.png from assets/icons beside the https catalog icons", async () => {
     const root = mkdtempSync(join(tmpdir(), "harness-zcode-icons-"));
     cpSync(join(ROOT, PLUGINS_DIR), join(root, PLUGINS_DIR), { recursive: true });
     cpSync(join(ROOT, ICON_ASSETS_DIR), join(root, ICON_ASSETS_DIR), { recursive: true });
@@ -308,11 +311,13 @@ describe("writeZcodeHarness icon assets", () => {
       await writeZcodeHarness(root);
       const marketplace = JSON.parse(readFileSync(join(root, ZCODE_HARNESS_DIR, ZCODE_MARKETPLACE_PATH), "utf8"));
       for (const plugin of marketplace.plugins) {
-        const icon = join(root, ZCODE_HARNESS_DIR, plugin.icon.replace(/^\.\//, ""));
-        expect(existsSync(icon), plugin.icon).toBe(true);
-        expect(readFileSync(icon), plugin.name).toEqual(
-          readFileSync(join(root, ICON_ASSETS_DIR, `${plugin.name}.png`)),
-        );
+        expect(plugin.icon.startsWith("https://"), plugin.name).toBe(true);
+      }
+      // The catalog points at GitHub, but the package still ships the bytes itself.
+      for (const name of HARNESS_PACKAGES) {
+        const icon = join(root, ZCODE_HARNESS_DIR, name, "icon.png");
+        expect(existsSync(icon), name).toBe(true);
+        expect(readFileSync(icon), name).toEqual(readFileSync(join(root, ICON_ASSETS_DIR, `${name}.png`)));
       }
     } finally {
       rmSync(root, { recursive: true, force: true });

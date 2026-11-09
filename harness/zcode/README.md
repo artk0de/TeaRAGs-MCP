@@ -14,8 +14,9 @@ Discover → +**) as a local directory, then install `tea-rags` (and `dinopowers
 `tea-rags-setup` as needed) from it.
 
 - `marketplace.json` — the marketplace catalog; `source` = `./<plugin>`, `icon`
-  = `./<plugin>/icon.png` (the official CDN marketplace points `icon` at HTTPS
-  URLs; a local directory ships the file itself).
+  = the committed `assets/icons/<plugin>.png` over `raw.githubusercontent.com`
+  (the app draws only `https://` icons; the same PNG also ships as
+  `<plugin>/icon.png` so the package stays self-contained).
 - `tea-rags/.zcode-plugin/plugin.json` — manifest: `skills`, `hooks`,
   `mcpServers`.
 - `tea-rags/.mcp.json` — stdio server `tea-rags server`, auto-connected with the
@@ -123,10 +124,11 @@ exposes no model-side resource tool — the sources' inline fallback
   zcode.cjs): resource reads go through the CLI fallback.
 - Marketplace: local directory root with `marketplace.json` (or
   `.claude-plugin/marketplace.json`); `plugins[].source` a relative path string;
-  `plugins[].icon` any non-empty string — official CDN entries use HTTPS asset
-  URLs, so a local directory marketplace ships `./<plugin>/icon.png` itself
-  [S:zcode.cjs catalog parse; official marketplace.json]; install/enable state
-  in `~/.zcode/cli/config.json`.
+  `plugins[].icon` any non-empty string in the catalog, but the app renderer
+  draws only values starting with `https://` (its image validator, app bundle;
+  six official plugins ship hardcoded data-URIs instead) — hence the
+  raw.githubusercontent URLs and the pushed-to-main requirement; install/enable
+  state in `~/.zcode/cli/config.json`.
 - CLI (`zcode plugins`, verified 0.17.0): `list [--json] [--available]`,
   `install <p>[@<market>]`, `update <p>`, `marketplace add|remove|update`;
   `marketplace remove` KEEPS installed plugins; `plugins update` re-reads a

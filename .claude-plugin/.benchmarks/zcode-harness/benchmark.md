@@ -215,16 +215,38 @@ wired into `syncHarnessPlugins` and `RunUpdateDeps` (4th harness, claude → cod
 ## Plugin icons (2026-11-09, metadata-only)
 
 Per-plugin icons (`assets/icons/<plugin>.png`, derived from `public/logo.png`)
-shipped through every generator that can display one: ZCode marketplace entries
-gained `icon: ./<plugin>/icon.png` (any non-empty string passes the zcode.cjs
-catalog parse; the official CDN marketplace uses HTTPS asset URLs, a local
-directory marketplace ships the file), Cursor and Codex plugin manifests gained
-`logo` (`icon.png` / `./icon.png` — the exact form OpenAI's own runtime-loaded
-bundled plugins use, verified against `~/.cache/codex-runtimes`). Claude Code's
-marketplace and plugin schemas have no icon field (code.claude.com docs
-marketplace-reference), so the Claude packages ship none. npm `files` gained
-`harness/zcode/` — the package's own marketplace directory, which the ZCode
-install path references, was missing from the tarball entirely.
+shipped through every generator that can display one. Cursor and Codex plugin
+manifests gained `logo` (`icon.png` / `./icon.png` — the exact form OpenAI's own
+runtime-loaded bundled plugins use, verified against `~/.cache/codex-runtimes`).
+Claude Code's marketplace and plugin schemas have no icon field (code.claude.com
+docs marketplace-reference), so the Claude packages ship none. npm `files`
+gained `harness/zcode/` — the package's own marketplace directory, which the
+ZCode install path references, was missing from the tarball entirely.
+
+**ZCode icon correction (after live "refresh showed no icons" report).** The
+first wiring used `icon: ./<plugin>/icon.png` — the zcode.cjs catalog parse
+accepts any non-empty string, and `zcode plugins marketplace update` re-read it
+clean, but the app renderer never drew it. App bundle (out/renderer, extracted
+from app.asar): the plugin icon resolver is `img src` gated by a validator that
+is literally `startsWith("https://")` — anything else falls back to the generic
+glyph; the only non-URL icons are six data-URIs hardcoded for official plugins
+(`documents@zcode-plugins-official`, …). So a local directory marketplace cannot
+reference its own files; the catalog now points at
+`https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/<plugin>.png`
+(public repo, verified reachable), and the icon renders once the commit is
+pushed to main. The shipped `<plugin>/icon.png` stays for package
+self-containedness.
+
+**MCP server icons: not configurable.** The `mcp.servers` entry schema in
+zcode.cjs is `.strict()` over {alwaysLoad, protocolVersion, enabled, timeoutMs}
+
+- type/command/args/cwd/env (stdio) or url/headers/oauth (http/sse) — an `icon`
+  key would fail validation and break the connection. The only icon channel in
+  the renderer is the plugin icon (resolved per pluginId from the marketplace
+  listing), so plugin-provided MCP servers inherit their plugin's icon; the
+  manual user-scope `tea-rags` entry stays iconless by design and keeps its
+  tuned env (embedded Qdrant + llama-server pool), which the plugin-provided
+  bare `tea-rags server` does not carry.
 
 No skill, description, routing, reference or hook text changed, so no behavioral
 eval case applies; the changed surface is the marketplace/manifest metadata.
@@ -232,11 +254,11 @@ Verified live through the shipped injection path:
 `zcode plugins marketplace update tea-rags` re-read the regenerated catalog
 without a validation error and surfaced 0.55.10/0.25.3/0.8.5
 (`plugins list --available --json`; its output schema carries no icon field at
-all — icon display is app UI, renderer consumes `pluginIcon` with a
-`zcode-file://` protocol available). Unit coverage: marketplace icon
-assertions + per-harness icon-copy tests (bytes-equal against `assets/icons/`,
-no-copy guard for render-only fixtures); 1343 tests across tests/scripts/ +
-tests/cli/plugin-sync/ green.
+all — icon display is app UI only). Unit coverage: marketplace icon assertions
+
+- per-harness icon-copy tests (bytes-equal against `assets/icons/`, no-copy
+  guard for render-only fixtures); 1343 tests across tests/scripts/ +
+  tests/cli/plugin-sync/ green.
 
 ## Verification observations
 

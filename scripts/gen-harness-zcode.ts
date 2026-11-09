@@ -45,6 +45,14 @@ export const ZCODE_HARNESS_DIR = "harness/zcode";
  * Codex/Cursor, so `harness/zcode/` is the one directory to hand over.
  */
 export const ZCODE_MARKETPLACE_PATH = "marketplace.json";
+/**
+ * Icon URL base for the marketplace catalog. The ZCode app renderer only draws `icon` values that
+ * start with `https://` (verified in the app bundle: the image validator is literally
+ * `startsWith("https://")`, plus six hardcoded data-URIs for official plugins), so the catalog
+ * points at the committed `assets/icons/` sources on GitHub — reachable because the repository
+ * is public. A new icon shows up once its commit is pushed to `main`.
+ */
+const ICON_URL_BASE = "https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons";
 
 /**
  * Hook events ZCode supports — exactly seven [S:zcode-guide diagnosing-hooks;
@@ -422,8 +430,9 @@ locally with \`npm run gen:harness-zcode\`; the release regenerates this package
 This directory is a ZCode marketplace root: add it (**Plugin Management → Discover → +**) as a local
 directory, then install \`tea-rags\` (and \`dinopowers\`, \`tea-rags-setup\` as needed) from it.
 
-- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`, \`icon\` = \`./<plugin>/icon.png\`
-  (the official CDN marketplace points \`icon\` at HTTPS URLs; a local directory ships the file itself).
+- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`, \`icon\` = the committed
+  \`assets/icons/<plugin>.png\` over \`raw.githubusercontent.com\` (the app draws only \`https://\` icons;
+  the same PNG also ships as \`<plugin>/icon.png\` so the package stays self-contained).
 - \`tea-rags/.zcode-plugin/plugin.json\` — manifest: \`skills\`, \`hooks\`, \`mcpServers\`.
 - \`tea-rags/.mcp.json\` — stdio server \`tea-rags server\`, auto-connected with the plugin.
 - \`tea-rags/hooks/hooks.json\` — the wiring, ZCode's seven events only:
@@ -508,9 +517,10 @@ resource tool — the sources' inline fallback \`tea-rags resource <uri>\` (Bash
 - No model-side MCP resource tool in the toolset (\`ReadMcpResource\` absent from zcode.cjs): resource
   reads go through the CLI fallback.
 - Marketplace: local directory root with \`marketplace.json\` (or \`.claude-plugin/marketplace.json\`);
-  \`plugins[].source\` a relative path string; \`plugins[].icon\` any non-empty string — official CDN
-  entries use HTTPS asset URLs, so a local directory marketplace ships \`./<plugin>/icon.png\` itself
-  [S:zcode.cjs catalog parse; official marketplace.json]; install/enable state in \`~/.zcode/cli/config.json\`.
+  \`plugins[].source\` a relative path string; \`plugins[].icon\` any non-empty string in the catalog,
+  but the app renderer draws only values starting with \`https://\` (its image validator, app bundle;
+  six official plugins ship hardcoded data-URIs instead) — hence the raw.githubusercontent URLs and
+  the pushed-to-main requirement; install/enable state in \`~/.zcode/cli/config.json\`.
 - CLI (\`zcode plugins\`, verified 0.17.0): \`list [--json] [--available]\`, \`install <p>[@<market>]\`,
   \`update <p>\`, \`marketplace add|remove|update\`; \`marketplace remove\` KEEPS installed plugins;
   \`plugins update\` re-reads a directory marketplace by itself; the github source schema carries a
@@ -759,9 +769,12 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
           version: packageManifest.version,
           description: packageManifest.description,
           category: "developer-tools",
-          // Any non-empty string passes the catalog parse; the official CDN marketplace uses HTTPS
-          // asset URLs, a local directory marketplace ships the PNG next to the plugin instead.
-          icon: `./${name}/icon.png`,
+          // The app renderer draws only icons that start with https:// (its validator is
+          // `startsWith("https://")`; aside from six hardcoded official data-URIs) — a relative
+          // path passes the catalog parse but is silently dropped for the fallback glyph. So the
+          // catalog points at the committed source files on GitHub; `copyIconAssets` still ships
+          // `<plugin>/icon.png` so the package stays self-contained.
+          icon: `${ICON_URL_BASE}/${name}.png`,
         };
       }),
     }),
