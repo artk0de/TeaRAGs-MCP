@@ -499,6 +499,41 @@
       "results": "15/15 PASS — zcode marketplace row (package dir, no separate MCP add), no env block, .zcode/config.json duplicate reported never written, one-question flow, model verbatim, no Ollama, foreground index, set-env without EMBEDDING_MODEL, first-index export, --force on model change, node floor STOP, auto-update notice, ignore-before-profile, tune routing control, pick-is-confirmation",
       "verification": "detect.mjs live: ZCODE_PROJECT_DIR set → harness 'zcode'; rendered row and duplicate rule byte-checked in harness/zcode",
       "date": "2026-11-09"
+    },
+    {
+      "id": "skill-loading",
+      "artifact": "harness/zcode/{tea-rags,dinopowers,tea-rags-setup}/skills/*/SKILL.md (frontmatter emitted by scripts/harness/transform.ts renderFrontmatter)",
+      "injection_path": "zcode.cjs skills list — the harness's own skill loader over the installed plugin cache (plugins install tea-rags@tea-rags / dinopowers@tea-rags from the marketplace at ~/.npm-global/lib/node_modules/tea-rags/harness/zcode, symlinked to the repo)",
+      "source": "defect found live 2026-11-09: Skill not found: dinopowers:systematic-debugging — every tea-rags:*/dinopowers:* skill absent from the session list (bd tea-rags-mcp-21k3y)",
+      "actor": "deterministic loader probe (no model): the same frontmatter reader that builds the model's skill list; grading = counted entries and parsed fields",
+      "cases": [
+        {
+          "id": "SL1",
+          "prompt": "zcode.cjs skills list | grep -c '^- tea-rags:' after plugins install",
+          "expected": "17",
+          "not": ["0 or partial — dropped frontmatter"]
+        },
+        {
+          "id": "SL2",
+          "prompt": "zcode.cjs skills list | grep -c '^- dinopowers:' after plugins install",
+          "expected": "10 incl. dinopowers:dino-systematic-debugging",
+          "not": ["0 — Skill not found on invoke"]
+        },
+        {
+          "id": "SL3",
+          "prompt": "zcode.cjs skills list | grep -c '^- superpowers:' (control)",
+          "expected": "15 — untouched by the fix (34 pre-fix total + 27 newly loaded = 61)",
+          "not": ["regression in the flat-short-description neighbor"]
+        },
+        {
+          "id": "SL4",
+          "prompt": "vitest tests/scripts/gen-harness-zcode.test.ts -t \"flat frontmatter reader\" (contract: value on the key line — flat or > / | block; description non-empty, <=1024; strict YAML == lenient reader)",
+          "expected": "pass over every generated /skills/*/SKILL.md",
+          "not": [
+            "description: reflowed onto indented continuation lines by Prettier (proseWrap: always)"
+          ]
+        }
+      ]
     }
   ]
 }
