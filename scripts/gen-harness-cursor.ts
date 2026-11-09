@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { hookContext, renderDinopowersSkills, ROUTING_HOOKS, wrapperNames } from "./harness/dinopowers.js";
 import {
+  copyIconAssets,
   DINOPOWERS_NAME,
   DINOPOWERS_SRC,
   formatPackage,
@@ -297,6 +298,7 @@ function renderCursorDinopowers(root: string, teaRagsSkills: ReadonlySet<string>
       description: manifest.description,
       ...(manifest.author ? { author: manifest.author } : {}),
       ...(manifest.keywords ? { keywords: manifest.keywords } : {}),
+      logo: "icon.png",
     }),
   );
   files.set(
@@ -321,6 +323,7 @@ function renderCursorSetup(root: string, teaRagsSkills: ReadonlySet<string>): Ma
       description: manifest.description,
       ...(manifest.author ? { author: manifest.author } : {}),
       ...(manifest.keywords ? { keywords: manifest.keywords } : {}),
+      logo: "icon.png",
     }),
   );
   return files;
@@ -342,6 +345,8 @@ Try an edit locally with \`npm run gen:plugins\`; the release regenerates this p
 ## Layout
 
 - \`tea-rags/.cursor-plugin/plugin.json\` — manifest; components come from the default folders.
+- \`tea-rags/icon.png\` — plugin logo (manifest \`logo\`; relative path per the plugin reference).
+  The same three icons ship as \`assets/icons/<plugin>.png\` in the repository.
 - \`tea-rags/mcp.json\` — stdio server \`tea-rags server\` (explicit \`type\`, required for plugins).
 - \`tea-rags/hooks/hooks.json\` — \`sessionStart\` → \`bash "\${CURSOR_PLUGIN_ROOT}/scripts/session-start.sh"\`, which
   prints \`{ "additional_context": "<tea-rags prime output>" }\` (capped at Cursor's ${HOOK_CONTEXT_MAX_CHARS} chars) for
@@ -617,6 +622,7 @@ export async function renderCursorHarness(root: string): Promise<Map<string, str
       description: manifest.description,
       ...(manifest.author ? { author: manifest.author } : {}),
       ...(manifest.keywords ? { keywords: manifest.keywords } : {}),
+      logo: "icon.png",
     }),
   );
   files.set(
@@ -692,7 +698,9 @@ export async function renderCursorMarketplace(
 
 /** Replace `harness/cursor/` with a fresh render and rewrite the root marketplace manifest. */
 export async function writeCursorHarness(root: string): Promise<number> {
-  const count = writePackage(root, CURSOR_HARNESS_DIR, await renderCursorHarness(root));
+  const count =
+    writePackage(root, CURSOR_HARNESS_DIR, await renderCursorHarness(root)) +
+    copyIconAssets(root, CURSOR_HARNESS_DIR, HARNESS_PACKAGES);
   writeRootFile(root, CURSOR_MARKETPLACE_PATH, await renderCursorMarketplace(root));
   return count;
 }

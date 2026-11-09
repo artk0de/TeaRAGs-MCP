@@ -25,7 +25,7 @@ import {
   TOOLS_RULE_MAX_CHARS,
   writeCursorHarness,
 } from "../../scripts/gen-harness-cursor.js";
-import { PLUGIN_SRC, PLUGINS_DIR } from "../../scripts/harness/package.js";
+import { HARNESS_PACKAGES, PLUGIN_SRC, PLUGINS_DIR } from "../../scripts/harness/package.js";
 import { parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -633,5 +633,27 @@ describe("writeCursorHarness", () => {
     const first = snapshot();
     await writeCursorHarness(fixtureRoot);
     expect(snapshot()).toEqual(first);
+  });
+
+  it("ships <plugin>/icon.png from assets/icons when the root carries them", async () => {
+    // Separate root: the shared fixture has no assets/, and snapshot tests above compare
+    // disk against the text render, which never contains the binary icons.
+    const root = mkdtempSync(join(tmpdir(), "harness-cursor-icons-"));
+    cpSync(join(ROOT, PLUGINS_DIR), join(root, PLUGINS_DIR), { recursive: true });
+    cpSync(join(ROOT, "assets"), join(root, "assets"), { recursive: true });
+    try {
+      await writeCursorHarness(root);
+      for (const name of HARNESS_PACKAGES) {
+        expect(readFileSync(join(root, CURSOR_HARNESS_DIR, name, "icon.png")), name).toEqual(
+          readFileSync(join(ROOT, "assets/icons", `${name}.png`)),
+        );
+        expect(
+          JSON.parse(readFileSync(join(root, CURSOR_HARNESS_DIR, name, ".cursor-plugin/plugin.json"), "utf8")).logo,
+          name,
+        ).toBe("icon.png");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

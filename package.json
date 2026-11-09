@@ -63,6 +63,7 @@
     "build/",
     "benchmarks/",
     "harness/cursor/",
+    "harness/zcode/",
     "scripts/postinstall.js",
     "scripts/install-fish-completion.js",
     "prompts.json",

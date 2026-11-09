@@ -1,11 +1,19 @@
-import { readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
-import { renderZcodeHarness, toZcodeSkill, ZCODE_HOOK_EVENTS } from "../../scripts/gen-harness-zcode.js";
-import { PLUGIN_SRC } from "../../scripts/harness/package.js";
+import {
+  renderZcodeHarness,
+  toZcodeSkill,
+  writeZcodeHarness,
+  ZCODE_HARNESS_DIR,
+  ZCODE_HOOK_EVENTS,
+  ZCODE_MARKETPLACE_PATH,
+} from "../../scripts/gen-harness-zcode.js";
+import { HARNESS_PACKAGES, ICON_ASSETS_DIR, PLUGIN_SRC, PLUGINS_DIR } from "../../scripts/harness/package.js";
 import { parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -148,6 +156,8 @@ describe("renderZcodeHarness", () => {
     for (const plugin of marketplace.plugins) {
       expect(rendered.has(`${plugin.source.replace(/^\.\//, "")}/.zcode-plugin/plugin.json`), plugin.source).toBe(true);
       expect(plugin.version).toMatch(/^\d+\.\d+\.\d+/);
+      // Local-directory marketplace: the icon ships next to the plugin (official CDN uses HTTPS URLs).
+      expect(plugin.icon, plugin.name).toBe(`./${plugin.name}/icon.png`);
     }
   });
 
@@ -285,6 +295,40 @@ describe("renderZcodeHarness", () => {
 
       // Strict YAML and the generator's lenient reader must agree on the text.
       expect(parseFrontmatter(content).fields.description).toBe(fields.description as string);
+    }
+  });
+});
+
+describe("writeZcodeHarness icon assets", () => {
+  it("ships <plugin>/icon.png from assets/icons with the marketplace icon paths resolving", async () => {
+    const root = mkdtempSync(join(tmpdir(), "harness-zcode-icons-"));
+    cpSync(join(ROOT, PLUGINS_DIR), join(root, PLUGINS_DIR), { recursive: true });
+    cpSync(join(ROOT, ICON_ASSETS_DIR), join(root, ICON_ASSETS_DIR), { recursive: true });
+    try {
+      await writeZcodeHarness(root);
+      const marketplace = JSON.parse(readFileSync(join(root, ZCODE_HARNESS_DIR, ZCODE_MARKETPLACE_PATH), "utf8"));
+      for (const plugin of marketplace.plugins) {
+        const icon = join(root, ZCODE_HARNESS_DIR, plugin.icon.replace(/^\.\//, ""));
+        expect(existsSync(icon), plugin.icon).toBe(true);
+        expect(readFileSync(icon), plugin.name).toEqual(
+          readFileSync(join(root, ICON_ASSETS_DIR, `${plugin.name}.png`)),
+        );
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("copies nothing without assets/icons, so render-only fixtures stay stable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "harness-zcode-noicons-"));
+    cpSync(join(ROOT, PLUGINS_DIR), join(root, PLUGINS_DIR), { recursive: true });
+    try {
+      await writeZcodeHarness(root);
+      for (const name of HARNESS_PACKAGES) {
+        expect(existsSync(join(root, ZCODE_HARNESS_DIR, name, "icon.png")), name).toBe(false);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

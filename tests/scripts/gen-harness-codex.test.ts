@@ -26,7 +26,7 @@ import {
   toCodexSkill,
   writeCodexHarness,
 } from "../../scripts/gen-harness-codex.js";
-import { PLUGINS_DIR } from "../../scripts/harness/package.js";
+import { HARNESS_PACKAGES, PLUGINS_DIR } from "../../scripts/harness/package.js";
 import { dropLoadTimeBlocks, extractInjectionBlock, parseFrontmatter } from "../../scripts/harness/transform.js";
 
 const ROOT = resolve(__dirname, "../..");
@@ -1081,5 +1081,27 @@ describe("writeCodexHarness", () => {
     const first = snapshot();
     await writeCodexHarness(fixtureRoot);
     expect(snapshot()).toEqual(first);
+  });
+
+  it("ships <plugin>/icon.png from assets/icons when the root carries them", async () => {
+    // Separate root: the shared fixture has no assets/, and snapshot tests above compare
+    // disk against the text render, which never contains the binary icons.
+    const root = mkdtempSync(join(tmpdir(), "harness-codex-icons-"));
+    cpSync(join(ROOT, PLUGINS_DIR), join(root, PLUGINS_DIR), { recursive: true });
+    cpSync(join(ROOT, "assets"), join(root, "assets"), { recursive: true });
+    try {
+      await writeCodexHarness(root);
+      for (const name of HARNESS_PACKAGES) {
+        expect(readFileSync(join(root, CODEX_HARNESS_DIR, name, "icon.png")), name).toEqual(
+          readFileSync(join(ROOT, "assets/icons", `${name}.png`)),
+        );
+        expect(
+          JSON.parse(readFileSync(join(root, CODEX_HARNESS_DIR, name, ".codex-plugin/plugin.json"), "utf8")).logo,
+          name,
+        ).toBe("./icon.png");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

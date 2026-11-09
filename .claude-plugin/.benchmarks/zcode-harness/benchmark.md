@@ -212,6 +212,32 @@ wired into `syncHarnessPlugins` and `RunUpdateDeps` (4th harness, claude → cod
   Restart prompt: ZCode applies an updated plugin after restart ("Restart zcode
   to apply").
 
+## Plugin icons (2026-11-09, metadata-only)
+
+Per-plugin icons (`assets/icons/<plugin>.png`, derived from `public/logo.png`)
+shipped through every generator that can display one: ZCode marketplace entries
+gained `icon: ./<plugin>/icon.png` (any non-empty string passes the zcode.cjs
+catalog parse; the official CDN marketplace uses HTTPS asset URLs, a local
+directory marketplace ships the file), Cursor and Codex plugin manifests gained
+`logo` (`icon.png` / `./icon.png` — the exact form OpenAI's own runtime-loaded
+bundled plugins use, verified against `~/.cache/codex-runtimes`). Claude Code's
+marketplace and plugin schemas have no icon field (code.claude.com docs
+marketplace-reference), so the Claude packages ship none. npm `files` gained
+`harness/zcode/` — the package's own marketplace directory, which the ZCode
+install path references, was missing from the tarball entirely.
+
+No skill, description, routing, reference or hook text changed, so no behavioral
+eval case applies; the changed surface is the marketplace/manifest metadata.
+Verified live through the shipped injection path:
+`zcode plugins marketplace update tea-rags` re-read the regenerated catalog
+without a validation error and surfaced 0.55.10/0.25.3/0.8.5
+(`plugins list --available --json`; its output schema carries no icon field at
+all — icon display is app UI, renderer consumes `pluginIcon` with a
+`zcode-file://` protocol available). Unit coverage: marketplace icon
+assertions + per-harness icon-copy tests (bytes-equal against `assets/icons/`,
+no-copy guard for render-only fixtures); 1343 tests across tests/scripts/ +
+tests/cli/plugin-sync/ green.
+
 ## Verification observations
 
 - **Package validation** — `plugin-creator`'s `validate-plugin.mjs` on

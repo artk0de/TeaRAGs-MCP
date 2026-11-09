@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { hookContext, renderDinopowersSkills, ROUTING_HOOKS, wrapperNames } from "./harness/dinopowers.js";
 import {
+  copyIconAssets,
   DINOPOWERS_NAME,
   DINOPOWERS_SRC,
   formatPackage,
@@ -717,7 +718,7 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
 
 - \`<repo>/${CODEX_MARKETPLACE_PATH}\` — marketplace \`${MARKETPLACE_NAME}\`; the repository root is its root,
   \`source.path\` = \`./${CODEX_HARNESS_DIR}/<plugin>\`.
-- \`tea-rags/.codex-plugin/plugin.json\` — manifest: \`skills\`, \`mcpServers\`, \`hooks\` paths.
+- \`tea-rags/.codex-plugin/plugin.json\` — manifest: \`skills\`, \`mcpServers\`, \`hooks\` paths, \`logo\`.
 - \`tea-rags/.mcp.json\` — stdio server \`tea-rags server\`, tool calls pre-approved.
 - \`tea-rags/hooks/hooks.json\` — SessionStart, three hooks in order: \`\${PLUGIN_ROOT}/scripts/session-start.sh\`
   (core rules, \`scripts/core.txt\`), \`\${PLUGIN_ROOT}/scripts/session-codex-rules.sh\` (Codex-only rules,
@@ -742,8 +743,8 @@ Rendered from \`plugins/**/skills/**\`, \`plugins/tea-rags/rules/core.md\`,
 - \`tea-rags/skills/\` — curated tea-rags skills (below).
 - \`tea-rags/repair/\`, \`tea-rags/rules/references/\` — plugin files the skills link to by relative path.
 ${core}
-- \`dinopowers/.codex-plugin/plugin.json\` — manifest: \`skills\`, \`hooks\` (no MCP server: the wrappers call
-  the tea-rags plugin's tools).
+- \`dinopowers/.codex-plugin/plugin.json\` — manifest: \`skills\`, \`hooks\`, \`logo\` (no MCP server: the
+  wrappers call the tea-rags plugin's tools).
 - \`dinopowers/hooks/hooks.json\` — SessionStart \`scripts/main-session-routing.sh\` and SubagentStart
   \`scripts/wrapper-routing.sh\`, both \`hookSpecificOutput.additionalContext\` with the routing table
   (\`scripts/*.txt\`, rendered from the Claude Code hook scripts in \`$dino-<s>\` mentions).
@@ -872,6 +873,7 @@ function renderCodexDinopowers(root: string, teaRagsSkills: ReadonlySet<string>)
       description: manifest.description,
       skills: "./skills/",
       hooks: "./hooks/hooks.json",
+      logo: "./icon.png",
     }),
   );
   files.set(
@@ -891,7 +893,13 @@ function renderCodexSetup(root: string, teaRagsSkills: ReadonlySet<string>): Map
   );
   files.set(
     `${SETUP_NAME}/.codex-plugin/plugin.json`,
-    json({ name: SETUP_NAME, version: manifest.version, description: manifest.description, skills: "./skills/" }),
+    json({
+      name: SETUP_NAME,
+      version: manifest.version,
+      description: manifest.description,
+      skills: "./skills/",
+      logo: "./icon.png",
+    }),
   );
   return files;
 }
@@ -995,6 +1003,7 @@ export async function renderCodexHarness(root: string): Promise<Map<string, stri
       skills: "./skills/",
       mcpServers: "./.mcp.json",
       hooks: "./hooks/hooks.json",
+      logo: "./icon.png",
     }),
   );
   files.set(
@@ -1182,7 +1191,7 @@ export async function renderCodexMarketplace(
 export async function writeCodexHarness(root: string): Promise<number> {
   const count = writePackage(root, CODEX_HARNESS_DIR, await renderCodexHarness(root));
   writeRootFile(root, CODEX_MARKETPLACE_PATH, await renderCodexMarketplace(root));
-  return count;
+  return count + copyIconAssets(root, CODEX_HARNESS_DIR, HARNESS_PACKAGES);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

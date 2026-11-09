@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { hookContext, renderDinopowersSkills, ROUTING_HOOKS, wrapperNames } from "./harness/dinopowers.js";
 import {
+  copyIconAssets,
   DINOPOWERS_NAME,
   DINOPOWERS_SRC,
   formatPackage,
@@ -421,7 +422,8 @@ locally with \`npm run gen:harness-zcode\`; the release regenerates this package
 This directory is a ZCode marketplace root: add it (**Plugin Management → Discover → +**) as a local
 directory, then install \`tea-rags\` (and \`dinopowers\`, \`tea-rags-setup\` as needed) from it.
 
-- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`.
+- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`, \`icon\` = \`./<plugin>/icon.png\`
+  (the official CDN marketplace points \`icon\` at HTTPS URLs; a local directory ships the file itself).
 - \`tea-rags/.zcode-plugin/plugin.json\` — manifest: \`skills\`, \`hooks\`, \`mcpServers\`.
 - \`tea-rags/.mcp.json\` — stdio server \`tea-rags server\`, auto-connected with the plugin.
 - \`tea-rags/hooks/hooks.json\` — the wiring, ZCode's seven events only:
@@ -506,7 +508,9 @@ resource tool — the sources' inline fallback \`tea-rags resource <uri>\` (Bash
 - No model-side MCP resource tool in the toolset (\`ReadMcpResource\` absent from zcode.cjs): resource
   reads go through the CLI fallback.
 - Marketplace: local directory root with \`marketplace.json\` (or \`.claude-plugin/marketplace.json\`);
-  \`plugins[].source\` a relative path string; install/enable state in \`~/.zcode/cli/config.json\`.
+  \`plugins[].source\` a relative path string; \`plugins[].icon\` any non-empty string — official CDN
+  entries use HTTPS asset URLs, so a local directory marketplace ships \`./<plugin>/icon.png\` itself
+  [S:zcode.cjs catalog parse; official marketplace.json]; install/enable state in \`~/.zcode/cli/config.json\`.
 - CLI (\`zcode plugins\`, verified 0.17.0): \`list [--json] [--available]\`, \`install <p>[@<market>]\`,
   \`update <p>\`, \`marketplace add|remove|update\`; \`marketplace remove\` KEEPS installed plugins;
   \`plugins update\` re-reads a directory marketplace by itself; the github source schema carries a
@@ -755,6 +759,9 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
           version: packageManifest.version,
           description: packageManifest.description,
           category: "developer-tools",
+          // Any non-empty string passes the catalog parse; the official CDN marketplace uses HTTPS
+          // asset URLs, a local directory marketplace ships the PNG next to the plugin instead.
+          icon: `./${name}/icon.png`,
         };
       }),
     }),
@@ -765,7 +772,8 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
 
 /** Replace `harness/zcode/` with a fresh render (the marketplace lives inside it). */
 export async function writeZcodeHarness(root: string): Promise<number> {
-  return writePackage(root, ZCODE_HARNESS_DIR, await renderZcodeHarness(root));
+  const count = writePackage(root, ZCODE_HARNESS_DIR, await renderZcodeHarness(root));
+  return count + copyIconAssets(root, ZCODE_HARNESS_DIR, HARNESS_PACKAGES);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

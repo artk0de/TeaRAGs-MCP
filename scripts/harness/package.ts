@@ -4,7 +4,17 @@
  * and writes a rendered package. Shared by every `scripts/gen-harness-*.ts`.
  */
 
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { format, resolveConfig } from "prettier";
@@ -24,6 +34,14 @@ export const SETUP_NAME = "tea-rags-setup";
 export const SETUP_SRC = `${PLUGINS_DIR}/${SETUP_NAME}`;
 /** Package folders every harness renders, in marketplace order. */
 export const HARNESS_PACKAGES: readonly string[] = [PLUGIN_NAME, DINOPOWERS_NAME, SETUP_NAME];
+
+/**
+ * Per-plugin icon sources (`<plugin>.png`), derived from `public/logo.png` — the recipe lives in
+ * `assets/icons/README.md`. Shipped by the harnesses whose manifests can show an icon: ZCode
+ * marketplace entries (`icon`) and the Cursor / Codex plugin manifests (`logo`). Claude Code's
+ * marketplace schema has no icon field, so the Claude packages ship none.
+ */
+export const ICON_ASSETS_DIR = "assets/icons";
 
 /**
  * Hook scripts every harness ships verbatim from `plugins/tea-rags/scripts/` (bd tea-rags-mcp-nknkg.2):
@@ -197,6 +215,27 @@ export function writePackage(root: string, packageDir: string, rendered: Map<str
     if (path.endsWith(".sh")) chmodSync(target, 0o755);
   }
   return rendered.size;
+}
+
+/**
+ * Copy `<plugin>.png` icon sources into `<harnessDir>/<plugin>/icon.png` after a text render.
+ * Binary files cannot ride through the Prettier text pipeline, so this runs after `writePackage`.
+ * A root without `assets/icons/` (unit-test fixtures) copies nothing, keeping render-only
+ * fixtures byte-stable; write tests that copy `assets/` in assert the shipped bytes.
+ */
+export function copyIconAssets(root: string, harnessDir: string, plugins: readonly string[]): number {
+  const iconsDir = join(root, ICON_ASSETS_DIR);
+  if (!existsSync(iconsDir)) return 0;
+  let copied = 0;
+  for (const name of plugins) {
+    const source = join(iconsDir, `${name}.png`);
+    if (!existsSync(source)) continue;
+    const target = join(root, harnessDir, name, "icon.png");
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(source, target);
+    copied += 1;
+  }
+  return copied;
 }
 
 /** A repository-root file (a marketplace manifest), Prettier-formatted like the committed one. */
