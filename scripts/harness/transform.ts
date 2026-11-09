@@ -122,9 +122,45 @@ function unquote(value: string): string {
   }
 }
 
-/** `---` block with `name` + `description`, the only keys other harnesses read. */
+/**
+ * `description` as a `>-` block scalar body: lines indented two spaces, wrapped
+ * at the last space before column 78 (printWidth 80 minus the indent).
+ */
+function foldBlockScalar(text: string): string {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.trim().split(/\s+/)) {
+    if (line === "") line = word;
+    else if (`${line} ${word}`.length <= 78) line += ` ${word}`;
+    else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line !== "") lines.push(line);
+  return lines.map((folded) => `  ${folded}`).join("\n");
+}
+
+/**
+ * `---` block with `name` + `description`, the only keys other harnesses read.
+ * The description rides a block scalar: a long flat quoted value is what
+ * Prettier (proseWrap: always) reflows onto indented continuation lines, and
+ * ZCode's frontmatter reader takes those as a missing description and drops
+ * the whole skill from the session; a block scalar Prettier leaves as written,
+ * and every reader (Claude strict YAML, Codex, Cursor, ZCode's `>`/`|`) folds
+ * it back to the same text.
+ */
 export function renderFrontmatter(name: string, description: string): string {
-  return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n`;
+  const body =
+    description === ""
+      ? '""'
+      : description.includes("\n")
+        ? `|-\n${description
+            .split("\n")
+            .map((folded) => `  ${folded}`)
+            .join("\n")}`
+        : `>-\n${foldBlockScalar(description)}`;
+  return `---\nname: ${name}\ndescription: ${body}\n---\n`;
 }
 
 /** First sentence of the first prose paragraph of a body (headings skipped). */

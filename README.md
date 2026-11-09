@@ -343,10 +343,10 @@ Pull the code-embedding model:
 ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
 ```
 
-The repository is a plugin marketplace for Claude Code, Codex and Cursor. Each
-harness gets `tea-rags` (MCP server, skills, session hooks) and `dinopowers`
-(wrappers over [superpowers](https://github.com/obra/superpowers) — install
-superpowers first).
+The repository is a plugin marketplace for Claude Code, Codex, Cursor and ZCode.
+Each harness gets `tea-rags` (MCP server, skills, session hooks) and
+`dinopowers` (wrappers over [superpowers](https://github.com/obra/superpowers) —
+install superpowers first).
 
 <details>
 <summary><b>Claude Code</b> — plugins plus a setup wizard</summary>
@@ -395,6 +395,27 @@ Copy, do not symlink. Then **Reload Window**; enterprise workspaces need "Allow
 Local Plugin Imports". The root `.cursor-plugin/marketplace.json` serves the
 same packages to Cursor builds that add a git repository as a marketplace (not
 yet verified). Details: [`harness/cursor/README.md`](harness/cursor/README.md).
+
+</details>
+
+<details>
+<summary><b>ZCode</b></summary>
+
+```bash
+npm install -g tea-rags
+zcode plugins marketplace add "$(npm root -g)/tea-rags/harness/zcode"
+zcode plugins install tea-rags-setup@tea-rags
+```
+
+Then run the `tea-rags-setup:install` skill in a ZCode session — the wizard
+detects the zcode host and finishes the setup (tea-rags plugin + MCP server,
+project registration, first index). Manual alternative:
+`zcode plugins install tea-rags@tea-rags` (+ `dinopowers@tea-rags`); the plugin
+carries its own MCP server and hooks on ZCode's seven events (no SubagentStart —
+the subagent search block rides a PreToolUse(Agent) hook). `tea-rags update`
+keeps the installed plugins at the client's release through this marketplace. A
+workspace server override lives in `.zcode/config.json` → `mcp.servers`.
+Details: [`harness/zcode/README.md`](harness/zcode/README.md).
 
 </details>
 
@@ -664,6 +685,7 @@ decides how much of the tooling on top of the MCP server you get.
 | **Claude Code**                                 | ✅ stdio                                                 | ✅ plus the plugin's routing rules        | ✅ plugins                              | ✅ `/tea-rags-setup:install` |
 | **Codex CLI**                                   | ✅ stdio                                                 | ✅ plus the plugin's core skill and hooks | ✅ plugins (`$name` skills)             | — manual install             |
 | **Cursor**                                      | ✅ stdio                                                 | ✅ plus the plugin's sessionStart digest  | ✅ plugins (`/name` skills)             | — manual install             |
+| **ZCode**                                       | ✅ stdio                                                 | ✅ plus the plugin's SessionStart hooks   | ✅ plugins (`tea-rags:name` skills)     | ✅ `tea-rags-setup:install`  |
 | **Other stdio clients** (Roo Code, Continue, …) | ✅ `tea-rags server`                                     | ✅ where the client reads MCP resources   | —                                       | — manual install             |
 | **HTTP clients**                                | ✅ `tea-rags server --http` (Streamable HTTP, port 3000) | ✅ where the client reads MCP resources   | —                                       | — manual install             |
 

@@ -1,12 +1,12 @@
 ---
 name: dino-requesting-code-review
-description:
-  'Prepare code-review request bundle: per-file ownership, churn, connected
+description: >-
+  Prepare code-review request bundle: per-file ownership, churn, connected
   taskIds from tea-rags git signals before composing review request — reviewers
   know who to ping, where risk lives. Triggers on "request review", "open a PR",
   "ready for review", "готовлю PR", "запрос на ревью", "code review please". NOT
   for self-review or draft-PR exploration. Wraps /requesting-code-review with
-  tea-rags reviewer-context bundle.'
+  tea-rags reviewer-context bundle.
 ---
 
 # dinopowers: requesting-code-review

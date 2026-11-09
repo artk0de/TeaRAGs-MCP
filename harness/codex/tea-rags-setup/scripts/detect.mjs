@@ -42,6 +42,10 @@ function detectHarness(env) {
   // variable that can be exported under any harness, so it ranks last.
   if (env.CLAUDECODE) return "claude";
   if (env.CURSOR_AGENT) return "cursor";
+  // ZCode injects its own template variables as environment variables into hook
+  // and tool processes (zcode-guide diagnosing-hooks); CLAUDE_* compat names it
+  // also sets are checked only after the ZCode-specific ones.
+  if (env.ZCODE_PROJECT_DIR || env.ZCODE_PLUGIN_ROOT) return "zcode";
   if (env.CODEX_SANDBOX || env.CODEX_HOME) return "codex";
   return "unknown";
 }

@@ -1,9 +1,9 @@
 ---
 name: test-first
-description:
-  "Internal step invoked by $data-driven-generation. Agentic-only RED-phase
-  skill — writes failing tests BEFORE implementation, from spec/plan acceptance
-  criteria or given test code verbatim, else one test per behaviour of the task."
+description: >-
+  Internal step invoked by $data-driven-generation. Agentic-only RED-phase skill
+  — writes failing tests BEFORE implementation, from spec/plan acceptance
+  criteria or given test code verbatim, else one test per behaviour of the task.
 ---
 
 # test-first

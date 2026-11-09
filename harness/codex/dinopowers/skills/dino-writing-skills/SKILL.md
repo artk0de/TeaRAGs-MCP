@@ -1,12 +1,12 @@
 ---
 name: dino-writing-skills
-description:
-  'Author/rewrite SKILL.md inside plugins/dinopowers/ — enforce wrapper pattern
+description: >-
+  Author/rewrite SKILL.md inside plugins/dinopowers/ — enforce wrapper pattern
   (tea-rags enrichment, then chain superpowers:*) and routing description style.
   Triggers "add $dino-X", "create a wrapper skill", "edit/rewrite dinopowers
   SKILL.md", "fix skill description", "improve a dinopowers skill", "tweak
   SKILL.md frontmatter", "напиши скилл", "новый dinopowers скилл". NOT other
-  plugins'' SKILL.md, NOT word/typo swap (→ direct Edit).'
+  plugins' SKILL.md, NOT word/typo swap (→ direct Edit).
 ---
 
 # dinopowers: writing-skills

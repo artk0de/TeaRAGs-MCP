@@ -1,8 +1,8 @@
 ---
 name: refactoring-scan
-description:
-  "Internal step invoked by $bug-hunt, $explore, $refactoring-planning,
-  $risk-assessment. Multi-preset breadth-first scan for refactoring candidates."
+description: >-
+  Internal step invoked by $bug-hunt, $explore, $refactoring-planning,
+  $risk-assessment. Multi-preset breadth-first scan for refactoring candidates.
 ---
 
 # Refactoring Scan

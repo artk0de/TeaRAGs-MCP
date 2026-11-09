@@ -1,0 +1,30 @@
+{
+  "description": "Dinopowers workflow routing for the main session and subagent dispatches",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/main-session-routing.sh\"",
+            "timeout": 10,
+            "statusMessage": "Dinopowers: load workflow routing"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Agent|Task)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/wrapper-routing-agent.sh\"",
+            "timeout": 10,
+            "statusMessage": "Dinopowers: load subagent workflow routing"
+          }
+        ]
+      }
+    ]
+  }
+}

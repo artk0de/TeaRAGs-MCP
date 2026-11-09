@@ -1,12 +1,12 @@
 ---
 name: bug-hunt
-description:
-  'Failure source: buggy + fresh code vs symptom. Triggers "debug X", "why Y
+description: >-
+  Failure source: buggy + fresh code vs symptom. Triggers "debug X", "why Y
   fails", "test fails", stack trace, "падает", "find bugs in X", "bug in X —
   compare Y", "suspects in X, Y", bugFixRate hit, "прочитай весь файл" of a hit,
-  "где в коде строка ''X''", "когда появилась ошибка ''X''". Beats
+  "где в коде строка 'X'", "когда появилась ошибка 'X'". Beats
   explore/risk-assessment. NOT git history w/o error ("посмотри через git":
-  core), health scan, test counts, unindexed-edit empty scan (verification).'
+  core), health scan, test counts, unindexed-edit empty scan (verification).
 ---
 
 # Bug Hunt

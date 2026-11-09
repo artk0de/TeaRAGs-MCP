@@ -1,0 +1,59 @@
+{
+  "mcp": {
+    "servers": {
+      "tea-rags": {
+        "type": "stdio",
+        "command": "/Users/artk0re/.asdf/installs/nodejs/22.14.0/bin/node",
+        "args": [
+          "/Users/artk0re/.npm-global/lib/node_modules/tea-rags/build/index.js"
+        ],
+        "env": {
+          "QDRANT_URL": "embedded",
+          "EMBEDDING_PROVIDER": "llama-server",
+          "EMBEDDING_BASE_URL": "http://192.168.1.71:8081,8082,8083,8084",
+          "EMBEDDING_FALLBACK_URL": "8081,8082,8083",
+          "EMBEDDING_MODEL": "nomic-ai/CodeRankEmbed",
+          "CODE_CHUNK_SIZE": "4500",
+          "CODE_CHUNK_OVERLAP": "450",
+          "CODE_ENABLE_GIT_METADATA": "true",
+          "CODEGRAPH_ENABLED": "true",
+          "CODE_ENABLE_HYBRID": "true",
+          "DEBUG": "1",
+          "EMBEDDING_BATCH_SIZE": "256",
+          "BATCH_FORMATION_TIMEOUT_MS": "100",
+          "QDRANT_UPSERT_BATCH_SIZE": "512",
+          "QDRANT_BATCH_ORDERING": "strong",
+          "QDRANT_FLUSH_INTERVAL_MS": "250",
+          "QDRANT_DELETE_BATCH_SIZE": "1000",
+          "QDRANT_DELETE_CONCURRENCY": "4",
+          "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS": "1000",
+          "EMBEDDING_TUNE_MIN_BATCH_SIZE": "32",
+          "INGEST_TUNE_CHUNKER_POOL_SIZE": "4",
+          "INGEST_TUNE_FILE_CONCURRENCY": "25",
+          "INGEST_TUNE_IO_CONCURRENCY": "25",
+          "TRAJECTORY_GIT_CHUNK_CONCURRENCY": "5",
+          "TRAJECTORY_GIT_BLAME_POOL_SIZE": "12"
+        },
+        "timeoutMs": 60000
+      }
+    }
+  },
+  "hooks": {
+    "enabled": true,
+    "events": {
+      "SessionStart": [
+        {
+          "matcher": "startup|resume",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/ensure-beads-redirect.sh >/dev/null 2>&1",
+              "timeout": 10,
+              "statusMessage": "beads: worktree redirect"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "description": "TeaRAGs context, code navigation, search drift and read steering",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/session-rules.sh\"",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: load core rules"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/session-digest.sh\"",
+            "timeout": 60,
+            "statusMessage": "TeaRAGs: load project digest"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness zcode",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: initialize read ledger"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/turn-routing.sh\" --harness zcode",
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: route this request"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness zcode",
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: reset search tracking"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness zcode",
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: advance read ledger"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness zcode",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: check search scope"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Read|Bash)$|^mcp__.*tea[-_]rags.*__find_symbol$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness zcode",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: check reused code"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Agent|Task)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh\"",
+            "timeout": 30,
+            "statusMessage": "TeaRAGs: load subagent context"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^mcp__.*tea[-_]rags.*__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/search-drift.sh\" --harness zcode",
+            "timeout": 5,
+            "statusMessage": "TeaRAGs: record search results"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness zcode",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: remember delivered MCP code"
+          }
+        ]
+      },
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-clone.sh\"",
+            "timeout": 120,
+            "statusMessage": "TeaRAGs: clean stale worktree clones"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Read|Grep|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*tea[-_]rags.*__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/reread-ledger.mjs\" --harness zcode",
+            "timeout": 10,
+            "statusMessage": "TeaRAGs: remember delivered code"
+          }
+        ]
+      }
+    ]
+  }
+}

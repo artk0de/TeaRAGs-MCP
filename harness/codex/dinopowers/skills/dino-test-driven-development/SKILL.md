@@ -1,12 +1,12 @@
 ---
 name: dino-test-driven-development
-description:
-  'Write failing test BEFORE implementation, matching local test conventions via
+description: >-
+  Write failing test BEFORE implementation, matching local test conventions via
   tea-rags. Triggers "write a test", "TDD", "failing test first", "RED phase",
   "add test for Y", "find test patterns/conventions", "напиши тест", "сначала
   тест", "извлеки паттерны из тестов". NOT production code — function, behaviour
   change, bug fix (→ data-driven-generation). NOT repos with no tests (→
-  $test-driven-development).'
+  $test-driven-development).
 ---
 
 # dinopowers: test-driven-development
@@ -121,6 +121,9 @@ Compose:
 ## Step 2 — Search proven test patterns (split queries)
 
 ### Step 2a — Fixture conventions (mock setup, beforeEach, factory helpers)
+
+Step 2a is always the tests-as-context skill (or its documented semantic_search
+fallback below) — `hybrid_search` has no test-only parameter; never invent one.
 
 Invoke `$tests-as-context` with:
 

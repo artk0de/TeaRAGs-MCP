@@ -128,6 +128,10 @@ sentence). Empty (pure new-file creation) → Step 4, verdict
 
 ## Step 2 — Pre-touch guard call
 
+The guard is the Task's FIRST tea-rags call — a body/outline read of the task
+files never precedes it (content arrives after the verdict, via
+`find_symbol(relativePath:)` outline).
+
 ONE `mcp__tea-rags__semantic_search` — same idiom as `dinopowers:writing-plans`
 Step 2:
 

@@ -1,13 +1,13 @@
 ---
 name: dino-verification-before-completion
-description:
-  'Before claiming done — collateral-damage scan of edits, then verification
+description: >-
+  Before claiming done — collateral-damage scan of edits, then verification
   commands (evidence before claims). Completion claim beats
   finishing-a-development-branch unless merge/PR asked. Triggers "ready to
   commit", "all done", "should be fixed now", "commit and push", "готово",
   "можно коммитить", "проверь перед commit", "все работает", scan empty on an
   unindexed edit (UNVERIFIABLE, no bug). NOT mid-work checks w/o a completion
-  claim.'
+  claim.
 ---
 
 # dinopowers: verification-before-completion

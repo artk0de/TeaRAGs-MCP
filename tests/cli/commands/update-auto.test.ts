@@ -58,6 +58,7 @@ describe("tea-rags update — closing state line", () => {
       spawn: vi.fn(() => new EventEmitter()) as never,
       runClaude: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
       runCodex: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
+      runZcode: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
       homedir: "/nonexistent-home-for-update-auto-test",
       codexHome: "/nonexistent-home-for-update-auto-test/.codex",
       packageRoot: "/nonexistent-package-root",

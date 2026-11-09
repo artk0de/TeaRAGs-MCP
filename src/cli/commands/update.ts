@@ -25,6 +25,7 @@ import {
   type PluginHarness,
   type PluginSyncReport,
 } from "../plugin-sync/index.js";
+import { zcodeCliRunner } from "../plugin-sync/zcode.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { formatForCli } from "../update-check/format.js";
@@ -41,6 +42,8 @@ export interface RunUpdateDeps {
   spawn: SpawnFn;
   runClaude: HarnessCliRunner;
   runCodex: HarnessCliRunner;
+  /** ZCode CLI runner — walks `$TEA_RAGS_ZCODE_CLI`, PATH and the macOS app bundle. */
+  runZcode: HarnessCliRunner;
   /** Installed client version — read only when the registry is unreachable and the status carries none. */
   clientVersion: () => string;
   homedir: string;
@@ -72,7 +75,12 @@ export interface PerformUpdateOptions {
   onInstallStart?: (status: AvailableUpdateStatus) => void;
 }
 
-const HARNESS_PRODUCT: Record<PluginHarness, string> = { claude: "Claude Code", codex: "Codex", cursor: "Cursor" };
+const HARNESS_PRODUCT: Record<PluginHarness, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+  zcode: "ZCode",
+};
 
 function defaultDeps(spawn: SpawnFn): RunUpdateDeps {
   const service = new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
@@ -82,6 +90,7 @@ function defaultDeps(spawn: SpawnFn): RunUpdateDeps {
     spawn,
     runClaude: spawnHarnessCli(spawn, "claude"),
     runCodex: spawnHarnessCli(spawn, "codex"),
+    runZcode: zcodeCliRunner(spawn, process.env),
     clientVersion: () => new PackageJsonVersionSource().getCurrent(),
     homedir: home,
     codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
@@ -223,6 +232,7 @@ async function syncPlugins(
     clientVersion,
     runClaude: deps.runClaude,
     runCodex: deps.runCodex,
+    runZcode: deps.runZcode,
     homedir: deps.homedir,
     codexHome: deps.codexHome,
     packageRoot: deps.packageRoot,

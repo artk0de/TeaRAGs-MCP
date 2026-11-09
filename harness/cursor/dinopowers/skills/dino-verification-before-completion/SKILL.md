@@ -1,13 +1,13 @@
 ---
 name: dino-verification-before-completion
-description:
-  'Before claiming work complete, scan tea-rags imports/churn on just-edited
+description: >-
+  Before claiming work complete, scan tea-rags imports/churn on just-edited
   files for collateral-damage candidates (files whose dependents could break),
   then run verification commands so success claims rest on evidence. Triggers on
   "ready to commit", "all done", "should be fixed now", "готово", "можно
   коммитить", "commit and push", "проверь перед commit", "все работает". NOT for
   mid-work sanity checks without a completion claim. Wraps
-  /verification-before-completion with a tea-rags collateral-damage scan.'
+  /verification-before-completion with a tea-rags collateral-damage scan.
 ---
 
 # dinopowers: verification-before-completion

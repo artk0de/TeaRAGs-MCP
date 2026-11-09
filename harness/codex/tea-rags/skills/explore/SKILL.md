@@ -1,10 +1,10 @@
 ---
 name: explore
-description:
-  "Use for broad code-structure investigations, cross-component flow or impact,
+description: >-
+  Use for broad code-structure investigations, cross-component flow or impact,
   examples, explicit pre-change investigation, or an explicit explore request.
   Not focused behavior questions or locating their implementation, definitions,
-  or local contracts covered by core; not bugs, plans, or code-health audits."
+  or local contracts covered by core; not bugs, plans, or code-health audits.
 ---
 
 # Explore

@@ -1,13 +1,13 @@
 ---
 name: refactoring-planning
-description:
-  'Turn architecture diagnosis into an ordered, simulated refactoring plan —
+description: >-
+  Turn architecture diagnosis into an ordered, simulated refactoring plan —
   restructure ops per finding, ordered by tier, handed to writing-plans as
   Tasks. Use when asked "plan a refactoring", "plan the architecture fix", "fix
   order for these violations", "refactoring roadmap", "спланируй рефакторинг",
   "в каком порядке чинить нарушения" — NOT for diagnosis alone (use
   architecture-diagnostics), NOT for one in-file change (use
-  data-driven-generation), NOT for code health scan (use risk-assessment).'
+  data-driven-generation), NOT for code health scan (use risk-assessment).
 ---
 
 # Refactoring Planning

@@ -30,10 +30,12 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
 - code history — when X appeared/changed, "посмотри через git" → never
   `git log`/`blame`/`-S`/`show`:
   `semantic_search(query: <X>, rerank: "bugHunt")`
-- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`)
-  → ONE `semantic_search(query: "a ||| b ||| c", metaOnly:true, limit:5)` (≤5
-  phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`). Choose
-  anchors before bodies; expand only as needed, never text search for meaning
+- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`;
+  an alternation of exact identifiers you know is the usages row below, never
+  here) → ONE `semantic_search(query: "a ||| b ||| c", metaOnly:true, limit:5)`
+  (≤5 phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`).
+  Choose anchors before bodies; expand only as needed, never text search for
+  meaning
 - non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
   or a search tool demanded on an error → bug-hunt), even "every …" → default
   code search tool, not tea-rags; phrase/error string → plan these three lines,

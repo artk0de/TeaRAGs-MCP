@@ -8,10 +8,12 @@ import { CodexPluginSyncAdapter } from "./codex.js";
 import { CursorPluginSyncAdapter, type CursorPluginFs } from "./cursor.js";
 import {
   emptyPluginSyncReport,
+  spawnCliCommand,
   type HarnessCliRunner,
   type HarnessPluginSyncAdapter,
   type HarnessPluginSyncReport,
 } from "./types.js";
+import { ZcodePluginSyncAdapter, type ZcodePluginFs } from "./zcode.js";
 
 export type {
   HarnessCliRunner,
@@ -28,11 +30,13 @@ export interface HarnessPluginSyncDeps {
   clientVersion: string;
   runClaude: HarnessCliRunner;
   runCodex: HarnessCliRunner;
+  /** ZCode CLI runner — {@link zcodeCliRunner} walks `$TEA_RAGS_ZCODE_CLI`, PATH and the app bundle. */
+  runZcode: HarnessCliRunner;
   homedir: string;
   /** `$CODEX_HOME`, default `<homedir>/.codex`. */
   codexHome: string;
   packageRoot: string;
-  fs?: CursorPluginFs;
+  fs?: CursorPluginFs & ZcodePluginFs;
   /** false → the Claude adapter refuses a re-pin that would uninstall project/local-scope plugins. Default true. */
   repinScopedClaudeInstalls?: boolean;
 }
@@ -57,6 +61,12 @@ export async function syncHarnessPlugins(deps: HarnessPluginSyncDeps): Promise<H
       fs: fsImpl,
     }),
     new CursorPluginSyncAdapter({ homedir: deps.homedir, packageRoot: deps.packageRoot, fs: fsImpl }),
+    new ZcodePluginSyncAdapter({
+      runZcode: deps.runZcode,
+      clientVersion: deps.clientVersion,
+      packageRoot: deps.packageRoot,
+      fs: fsImpl,
+    }),
   ];
 
   const harnesses: HarnessPluginSyncReport["harnesses"] = [];
@@ -77,24 +87,7 @@ export async function syncHarnessPlugins(deps: HarnessPluginSyncDeps): Promise<H
 
 /** Runs `<command> <args>` capturing stdout/stderr; a spawn ENOENT reports `missing`. */
 export function spawnHarnessCli(spawn: typeof nodeSpawn, command: string): HarnessCliRunner {
-  return async (args, options) =>
-    new Promise((resolve) => {
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], cwd: options?.cwd });
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        resolve({ code: null, stdout, stderr, missing: err.code === "ENOENT" });
-      });
-      child.on("close", (code) => {
-        resolve({ code, stdout, stderr, missing: false });
-      });
-    });
+  return spawnCliCommand(spawn, command);
 }
 
 /** The tea-rags package root — `src/cli/plugin-sync` and `build/cli/plugin-sync` both sit three levels below it. */

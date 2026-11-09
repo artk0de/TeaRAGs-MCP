@@ -1,7 +1,7 @@
 ---
 name: dino-executing-plans
-description:
-  'Execute written implementation plan or tracker issue whose Tasks edit code,
+description: >-
+  Execute written implementation plan or tracker issue whose Tasks edit code,
   per-Task SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven
   cascade for code-generation and behavior-modification Tasks (strategy+template
   from proven neighbors, callers + tests-at-risk on modify). Triggers on
@@ -9,7 +9,7 @@ description:
   plan", "implement the plan steps". NOT for one-off edits with no plan, issue
   or quoted Task, NOT a step that drafts a (sub-)plan (→ /dino-writing-plans).
   Wraps /executing-plans with tea-rags git-signal verdicts and
-  /data-driven-generation cascade.'
+  /data-driven-generation cascade.
 ---
 
 # dinopowers: executing-plans
@@ -128,6 +128,10 @@ sentence). Empty (pure new-file creation) → Step 4, verdict
 - Teardown of existing clone: `/dino-finishing-a-development-branch`.
 
 ## Step 2 — Pre-touch guard call
+
+The guard is the Task's FIRST tea-rags call — a body/outline read of the task
+files never precedes it (content arrives after the verdict, via
+`find_symbol(relativePath:)` outline).
 
 ONE `semantic_search` — same idiom as `/dino-writing-plans` Step 2:
 

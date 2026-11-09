@@ -103,6 +103,10 @@ From request or plan draft collect concrete file list:
 | Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                                     |
 | Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                                                |
 
+Files named by the user ARE the file list — go straight to the Step 2 guard; a
+batch read/outline of them never precedes it (only the small-directory
+enumeration row above may).
+
 Output:
 
 - `fileList`: relative paths (5-30 typical; >30 → ask user to narrow scope)

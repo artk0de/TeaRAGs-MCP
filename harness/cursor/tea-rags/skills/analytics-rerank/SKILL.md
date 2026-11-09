@@ -1,10 +1,10 @@
 ---
 name: analytics-rerank
-description:
-  "Internal step invoked by /filter-building, /risk-assessment. Pick tea-rags
+description: >-
+  Internal step invoked by /filter-building, /risk-assessment. Pick tea-rags
   rerank preset, build `{custom: {...}}` weight set, or compose analytics-driven
   search (ownership, tech-debt, hotspots, code-review, security-audit,
-  fragile-silo)."
+  fragile-silo).
 ---
 
 # Analytics Rerank

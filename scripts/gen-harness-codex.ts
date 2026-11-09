@@ -524,9 +524,11 @@ export const CODEX_HOOK_CONTEXT_BUDGET = 9_500;
  * 2026-10-27 probe (one SessionStart hook of ~58-char prose lines, 2 runs per size) delivered 9,686
  * chars whole and cut 10,150 (`…80 tokens truncated…`); the cap is that measured whole size. Raised
  * from 9,650 for the core "lines N–M → ids whose `L<a>-<b>` covers N–M" rule (bd tea-rags-mcp-9f0yn.7),
- * owner rule: a needed rule raises the cap rather than trimming rules.
+ * then from 9,686 for the core exact-identifier-alternation boundary (zcode full-corpus R4 fix,
+ * 2026-11-09; still under the 10,150 measured cut). Owner rule: a needed rule raises the cap rather
+ * than trimming rules.
  */
-export const CODEX_CORE_HOOK_BUDGET = 9_686;
+export const CODEX_CORE_HOOK_BUDGET = 9_765;
 
 /**
  * Fits the prime digest into {@link CODEX_HOOK_CONTEXT_BUDGET} minus the chars already used: sections in

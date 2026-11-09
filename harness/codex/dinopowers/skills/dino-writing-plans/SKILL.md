@@ -1,12 +1,12 @@
 ---
 name: dino-writing-plans
-description:
-  'Implementation plan + per-file tea-rags signals. Plan ask beats explore
+description: >-
+  Implementation plan + per-file tea-rags signals. Plan ask beats explore
   PRE-GEN (even "add X"/"impact analysis"/"before changing") and
   data-driven-generation (class-creating Task too). Triggers "write/draft a
   (sub-)plan", "plan the change to <files>", "plan the refactor", "add Task to
   plan", "напиши/допиши план", "распиши план/задачи по <files>", "Execute plan
-  step: Draft…". NOT plans w/o files/area, NOT "how is X organized" (explore).'
+  step: Draft…". NOT plans w/o files/area, NOT "how is X organized" (explore).
 ---
 
 # dinopowers: writing-plans
@@ -90,6 +90,10 @@ From request or plan draft collect concrete file list:
 | User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `find_symbol(relativePath: "<dir>")` — its files + top-level symbols; the one call before Step 2; never `ls` / glob |
 | Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                                     |
 | Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                                                |
+
+Files named by the user ARE the file list — go straight to the Step 2 guard; a
+batch read/outline of them never precedes it (only the small-directory
+enumeration row above may).
 
 Output:
 

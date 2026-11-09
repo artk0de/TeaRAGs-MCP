@@ -1,8 +1,8 @@
 ---
 name: filter-building
-description:
-  "Internal step invoked by /analytics-rerank, /bug-hunt. Build tea-rags filter
-  beyond `pathPattern`."
+description: >-
+  Internal step invoked by /analytics-rerank, /bug-hunt. Build tea-rags filter
+  beyond `pathPattern`.
 ---
 
 # Filter Building

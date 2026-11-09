@@ -1,15 +1,15 @@
 ---
 name: risk-assessment
-description:
-  'Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
+description: >-
+  Assess project/domain health — multi-preset risk scan (bugs, hotspots, tech
   debt) into tiers. Use to evaluate risks, assess code health, find zones
   needing attention — NOT one-preset asks like bug-prone areas
-  (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something''s
+  (analytics-rerank), NOT bug symptoms (bug-hunt) or an unframed "something's
   off in X" (systematic-debugging), NOT refactoring candidates ("what to
   refactor in X", "cleanup X" → explore), NOT risks of named `Class#method`
   symbols (explore PRE-GEN). Answer: phases 0–5, tier legend,
   Critical/High/Medium tables (Symbol, File:Line, Risk Type, Key Signals, Tests,
-  Commits) + case cards, Low table, Next steps, final Output: line'
+  Commits) + case cards, Low table, Next steps, final Output: line
 ---
 
 # Risk Assessment

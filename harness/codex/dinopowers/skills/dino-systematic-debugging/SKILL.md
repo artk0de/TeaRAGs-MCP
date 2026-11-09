@@ -1,12 +1,12 @@
 ---
 name: dino-systematic-debugging
-description:
-  'Concrete failure: bug-hunt first, ranked suspects. Felt malfunction (zones
+description: >-
+  Concrete failure: bug-hunt first, ranked suspects. Felt malfunction (zones
   too) beats explore/risk-assessment. Triggers "debug X", "why Y fails", "test
   fails", "X feels off", "same bug elsewhere?", "падает", "почему не работает",
   "стектрейс". NOT code review, health scan, "сколько тестов падает", symbol
   body/callers/git history w/o failure, named fix at named spot (→
-  data-driven-generation), unindexed-edit empty scan (→ verification).'
+  data-driven-generation), unindexed-edit empty scan (→ verification).
 ---
 
 # dinopowers: systematic-debugging

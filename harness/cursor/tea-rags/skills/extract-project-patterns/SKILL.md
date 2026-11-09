@@ -1,9 +1,9 @@
 ---
 name: extract-project-patterns
-description:
-  "Internal step invoked by /data-driven-generation. Agentic-only — runs on any
+description: >-
+  Internal step invoked by /data-driven-generation. Agentic-only — runs on any
   behaviorQuery / positiveIds handoff: proven code as code-gen templates, not
-  test patterns."
+  test patterns.
 ---
 
 # extract-project-patterns

@@ -116,7 +116,9 @@ Ambiguous → ask which mode (one question, genuine ambiguity only).
   first move, no new test; file move → Step 6 restructure SIM; same tests re-run
   green, none edited; Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade, don't
-  pre-skip.
+  pre-skip. A NAMED new area (path or module given, directory may not exist yet)
+  IS the area context: run TEMPLATE/STYLE and let them degrade — never STOP for
+  explore.
 - **REUSE never skipped in any mode** — shared infra exists even when the
   feature is new.
 - **RED never skipped** except a named `test-first` exception (no-tests language

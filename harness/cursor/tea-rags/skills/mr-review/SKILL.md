@@ -1,14 +1,14 @@
 ---
 name: mr-review
-description:
-  'Signal-driven review of merge request or local branch — rank diff risks via
+description: >-
+  Signal-driven review of merge request or local branch — rank diff risks via
   tea-rags (blast radius, fragile zones, silo style, missing tests, doc
   invariants, cycles, naming), emit plain-language comments each naming a
   concrete fix. Triggers on "review this MR <url>", "review MR/PR", "проведи
   ревью MR", "сделай ревью ветки", "review my branch". NOT for building reviewer
   context before requesting review (use requesting-code-review), NOT for health
   scan without a diff (use risk-assessment), NOT for debugging a concrete
-  failure (use bug-hunt).'
+  failure (use bug-hunt).
 ---
 
 # MR Review
@@ -70,6 +70,8 @@ inline MR comments behind ONE draft-gate, agent-signed, `[minor]` on style nits.
 2. MAP       → ONE find_symbol(project=<alias>, path=<checkout>, symbols=[<touched files>],
                 rerank="hotspots")
               → hunks × outline → {file, changedSymbols[], chunkUUIDs[], overlay}
+              MAP always precedes the first review_changes / naming call of this
+              review — never jump from ACQUIRE to a verdict call.
 3. SCAN      → 9 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
 5. DELIVER   → local: chat report | external: draft-gate → post

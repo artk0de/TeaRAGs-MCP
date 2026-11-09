@@ -1,9 +1,9 @@
 ---
 name: explore
-description:
-  "Use for questions about existing code behavior, usages, structure, examples,
+description: >-
+  Use for questions about existing code behavior, usages, structure, examples,
   or explicit pre-change context that need investigation. Not bug symptoms,
-  implementation-plan authoring, or broad code-health audits."
+  implementation-plan authoring, or broad code-health audits.
 ---
 
 # Explore

@@ -35,11 +35,13 @@ client upgrade + auto-update notice.
 
 ## Results
 
-| Run | Plugin | Harness / model | Pass | Notes   |
-| --- | ------ | --------------- | ---- | ------- |
-| —   | 0.8.0  | —               | —    | not run |
+| Run        | Plugin | Harness / model                        | Pass  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------- | ------ | -------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-11-09 | 0.8.4  | zcode / GLM-5.3 (ZCode Agent subagent) | 15/15 | ZCode arm: 15 cases re-authored from the changed-behaviour list above (this workspace's prompts.json/grading.json were not on disk), plan-only, rendered `harness/zcode/tea-rags-setup` skills; step-5 zcode row, no-env MCP, duplicate rule, one-question flow, foreground index, set-env, --force, node floor, auto-update notice, tune control all verified. Transcripts: `../zcode-harness/workspace/full-corpus/answers-setup-zcode.md` |
 
-Status: **not run** — suite written 2026-11-02; Codex ×3 pending.
+Status: **zcode arm 15/15**; the ×3 Codex runs over the original 22-case
+prompts.json for the claude/codex/cursor arms remain pending (re-create the
+workspace prompts per this file's list).
 
 ## Superseded
 

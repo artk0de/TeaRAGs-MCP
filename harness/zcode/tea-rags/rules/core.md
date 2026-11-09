@@ -1,0 +1,144 @@
+# tea-rags core
+
+**Each step takes the tool its routing row names.**
+
+**Addressing.** Every read or suggested call: `project=<alias>` +
+`path=<task cwd>`. Alias: digest, the subagent dispatch hook or
+`workingTree.project`. Unknown/"not registered" → `path` alone, never ask; only
+a `collection` → it alone; then use `project=<workingTree.project> + path`. No
+cwd → `project` alone. `workingTree.tree` ≠ cwd → discard those rows, re-call
+with `path=<cwd>`. `index_codebase`: `project` ONLY; unregistered cwd →
+`path=<cwd>`.
+
+Bash rg (no rg → grep; zsh: quote globs --include='\*.rb'): `-l` filenames first
+for config/inventory/absence; `| head` ≠ absence proof. Use anchor dir, else
+`<src dir>` (a dir under cwd, never cwd itself); no dir search or find/Glob.
+
+**Routing** (first match wins; a loaded skill's steps run first, override rows —
+a file path in them → row 1; tools `mcp__tea-rags__*`):
+
+- config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
+  Read tool (path unknown → Bash rg first); all X in a known `<dir>`, proving
+  absence ("no X exists") → Bash rg over that dir (empty = proof); migration `X`
+  → `"X"` over `db/migrate/`; table/column exists, `create_table` → that search
+  over `db/schema.rb`, then `db/migrate/` (`:<table>`, `"<table>"` before
+  "absent"), never `semantic_search`. Other file/dir path, lines N–M, doc TOC,
+  how `<dir>` works / what's in it → `find_symbol(relativePath:)` outline first,
+  then ONE batch of needed ids (N–M: ids whose `L<a>-<b>` covers N–M, never Read
+  offset/limit); known method id → body, no outline. Imports →
+  `get_callees(relativePath:)` (`imports[]`; a row's `imports` = a count)
+- code history — when X appeared/changed, "посмотри через git" → never
+  `git log`/`blame`/`-S`/`show`:
+  `semantic_search(query: <X>, rerank: "bugHunt")`
+- behaviour/intent: no name, or concept words/synonyms/spellings (even as `a|b`;
+  an alternation of exact identifiers you know is the usages row below, never
+  here) → ONE `semantic_search(query: "a ||| b ||| c", metaOnly:true, limit:5)`
+  (≤5 phrasings fused; real ids → `hybrid_search(metaOnly:true, limit:5)`).
+  Choose anchors before bodies; expand only as needed, never text search for
+  meaning
+- non-identifier text — regex syntax, TODO/FIXME, phrase, string to find (debug,
+  or a search tool demanded on an error → bug-hunt), even "every …" → Bash rg,
+  not tea-rags; phrase/error string → plan these three lines, never stop at the
+  hit: `Bash rg "<phrase>" <dir> (literal, line cap)` →
+  `find_symbol(relativePath: <hit file>)` outline →
+  `find_symbol(symbol: <enclosing symbolId>)` body. DSL `ns:task` = symbol; code
+  name, even a "pattern"/"glob" → usages row. Command output, failing tests,
+  counts → `<cmd> 2>&1 | grep -E 'FAIL|✗'` (`| wc -l`), no skill
+- how X works/what happens when → `get_callees` (body unseen → `find_symbol`
+  first); who calls X/impact/where Y is handled → `get_callers` — `symbolId:`,
+  `depth: 2`; every call/all callers of X (grep named) → plan both lines:
+  `get_callers` + the usages row. Then ONE batch: needed tree methods
+- known symbol / identifier definition/body/outline → `find_symbol(symbol:)`
+  `Class#inst`/`C.st`, never text search
+- where X is used/referenced, every occurrence, who constructs X, files
+  containing X (exact name/constant/string you know; `a|b` only of seen ids),
+  "grep for X" → `Bash rg "<X>" <src dir, e.g. app/ or src/>` (literal, `-l`) →
+  `find_symbol` outline → batch of only the needed methods, never stop at the
+  hit
+- symbol + intent ("the X that does Y"), files named X →
+  `hybrid_search(metaOnly)`
+- code like a chunk in hand → `find_similar(positiveIds:)`
+- how does X reach Y / A→B → `find_symbol` ids → `trace_path`
+- diff review, a diff's names →
+  `review_changes(changes:{base}, sections:[the asked ones])` — `{}` =
+  uncommitted, `{base}` = branch; its verdicts = answer, nothing after
+- a name's fit → `get_naming_lexicon(names:[{name,kind}])`; naming a T value →
+  `types:[T]`
+- project's embedding/Qdrant/env → `list_projects(project:)`
+- research — layers/wrong-way deps of `<dir>` → explicit diagnosis/refactoring
+  only: `get_architecture_report(pathPattern)`; never for context gathering or
+  overviews. Implements `<P>` → `get_callers` + `hybrid_search(<P>, metaOnly)`;
+  registered/configured `<X>` → `hybrid_search("<X> register config")`; ticket
+  `<T>` → `semantic_search(taskId: <T>, level: "chunk")` → ONE
+  `find_symbol(symbols: <touched ids>)`, no grep; owners/recent
+  churn/debt/don't-touch →
+  `rank_chunks(rerank: ownership|hotspots|techDebt|criticalPath, pathPattern)`;
+  dead code → `filter:{presets:"deadCandidates"}`; which to copy →
+  `rerank: "proven"`
+
+**Invariants.**
+
+- Reuse held code, outlines, edges and instructions (skills/guides) on
+  follow-ups. Refresh only affected edited/stale or missing material, including
+  after compaction. Each read closes a current evidence gap, not a future
+  question; a held body may need zero calls.
+- Batch missing symbols/files → `find_symbol(symbols:)`, never dirs;
+  config/spec/migrations → concurrent bounded per-file reads.
+- Fresh full bodies from ANY tea-rags tool (`semantic_search` included) are
+  authoritative code, not hints. Never confirm the same body via `find_symbol`,
+  Read or shell. Metadata/outline/signature/container header ≠ method body.
+- Anchor = the hit for the requested behaviour. Flow/impact → needed edges
+  (`depth: 2`); change-impact may need `find_co_changed`. Batch required
+  methods, not classes/trees; headers/shared declarations only if needed. Stop
+  once supported.
+- `symbolId` ends `#partN` = fragment →
+  `find_symbol(symbol: <id minus #partN>)`; parts = one hit.
+- `empty.reason: unknownPath` with suggestions →
+  `find_symbol(relativePath: <dir they share>)`, never one suggestion.
+- A requested row without `treeState` / `degraded` is current, overlay too;
+  global `changedFiles` / `pendingFiles` alone never require a reread. A
+  `treeState` body is pre-edit; fanIn/churn remain usable. **Repeat the same
+  `find_symbol` arguments once**: it reads the working tree, not a cached body.
+  No Read/shell refresh. Still stale → state the gap. No `workingTree` →
+  current.
+- Freshness (subagent: keep reading, never `index_codebase`/ask the user,
+  drift/`--force` → parent report). Main: cwd in `.claude/worktrees/` or ≠
+  alias's path → print `linked worktree (<test>) — no reindex`; own checkout
+  behind (`changedFiles`>0, stale, unindexed edits, said so) → incremental
+  `index_codebase(project=)` first, no consent. Drift `Run:` `--force*`
+  (status/prime/index only, not a read answer) → own-checkout incremental first
+  if behind, plus ONE line ask the user: run <Run: line>? — --force not run;
+  reads continue
+  meanwhile`, never awaited, never "won't proceed"; next = the task's read call. No available `index_codebase`→ needed stale bodies via`find_symbol`;
+  never look up indexing/mutator schemas.
+- Edges at changed files, `treeGraphUnavailable` → all 3 steps, in order, none
+  dropped (a `--force` ask rides beside, never a slot):
+  `1. index_codebase(project=)` (main own checkout; linked/subagent → skip)
+  `2. find_symbol(symbol: <caller>)` `3. Bash rg "<name>" (literal)` — callers
+  the index lacks. No graph retry. Graph tools absent from your tool list →
+  codegraph off: callers = usages row, never "no cycles"; present → on, no probe
+  call; on + empty `find_cycles` = DAG.
+- Docs = hypothesis, verify in code; doc as subject ("README says?") → as-is, no
+  code pass.
+- `rustc driver: unavailable` → tell user ONCE: Rust edges static-only (lower
+  bound) + install command; never install it, never "no callers"/"dead code".
+- User orders a manual read — "by hand"/"руками"/"вручную"/"with Read" → Read
+  tool, no confirm ask. "Whole file"/"весь файл"/"целиком"/"for context"/"lines
+  N–M" of source code without that order → `find_symbol` (hit's `symbolId`, then
+  file outline), print `Chunk coordinates exist. Use them.` Their tool idea
+  ("use Grep/Glob") → keep the routed tool, say why.
+
+**Read `tea-rags://guide/<topic>` when** (no resource tool →
+`tea-rags resource <uri>`): unfamiliar result/navigation contract →
+`navigation`; 0/too many hits, `truncated`, `empty.reason`, ambiguous name, when
+to stop → `pagination`; tool pick → `tool-choice`; skill/preset →
+`skill-choice`; research question → `research-questions`; banned move, fallback
+→ `prohibited-patterns`; stale banner, drift, `treeState`, linked worktree →
+`freshness`; embedding/qdrant error, `denseUnavailable` → `degraded`; raw
+`filter:` → `filters`; `rerank`, labels → `presets`, `signals`, `signal-labels`;
+graph/AST, other language → `language-capability`; architecture /
+`review_changes` answer → `architecture`/`review`; no prime digest →
+`tea-rags://project/<alias>/digest`; numeric filter value unknown / bare raw
+number, no label → `…/metrics?language=<lang>&section=thresholds`.
+
+**Destructive — explicit consent:** `force_reindex`, `clear_index`, `delete_*`.

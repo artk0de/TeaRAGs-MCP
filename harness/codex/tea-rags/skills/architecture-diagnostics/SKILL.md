@@ -1,10 +1,10 @@
 ---
 name: architecture-diagnostics
-description:
-  "Use for explicitly requested architecture diagnostics or structural
+description: >-
+  Use for explicitly requested architecture diagnostics or structural
   refactoring: dependency/layer violations and move candidates. Not for context
   gathering, code overviews, behavior/contract questions, or routine feature
-  work."
+  work.
 ---
 
 # Architecture Diagnostics

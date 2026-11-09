@@ -1,5 +1,7 @@
+import type { spawn as nodeSpawn } from "node:child_process";
+
 /** The agent harnesses whose tea-rags plugins `tea-rags update` keeps current. */
-export type PluginHarness = "claude" | "codex" | "cursor";
+export type PluginHarness = "claude" | "codex" | "cursor" | "zcode";
 
 /** One `<harness-cli> …` invocation; `missing` = the CLI is not on PATH. */
 export interface HarnessCliRunResult {
@@ -55,4 +57,30 @@ export interface HarnessPluginSyncReport {
 
 export function emptyPluginSyncReport(): PluginSyncReport {
   return { updated: [], failed: [], needsConfirmation: [] };
+}
+
+/**
+ * Runs `<command> <args>` capturing stdout/stderr; a spawn ENOENT reports
+ * `missing`. The leaf every harness runner builds on (`spawnHarnessCli` in
+ * index.js, the candidate-walking `zcodeCliRunner` in zcode.js).
+ */
+export function spawnCliCommand(spawn: typeof nodeSpawn, command: string): HarnessCliRunner {
+  return async (args, options) =>
+    new Promise((resolve) => {
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], cwd: options?.cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (err: NodeJS.ErrnoException) => {
+        resolve({ code: null, stdout, stderr, missing: err.code === "ENOENT" });
+      });
+      child.on("close", (code) => {
+        resolve({ code, stdout, stderr, missing: false });
+      });
+    });
 }

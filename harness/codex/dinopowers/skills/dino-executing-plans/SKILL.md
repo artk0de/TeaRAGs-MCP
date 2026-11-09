@@ -1,12 +1,12 @@
 ---
 name: dino-executing-plans
-description:
-  'Execute plan / tracker issue whose Tasks edit code — per-Task
+description: >-
+  Execute plan / tracker issue whose Tasks edit code — per-Task
   SAFE/CAUTION/UNSAFE verdict + data-driven-generation cascade.
   Plan/issue/quoted Task beats data-driven-generation. Triggers "execute the
   plan", "start Task N", "run the plan", "implement the plan steps", "выполни
   план", "начни задачу". NOT one-off edits (→ data-driven-generation), NOT
-  drafting a (sub-)plan, even "Execute plan step: Draft…" (→ writing-plans).'
+  drafting a (sub-)plan, even "Execute plan step: Draft…" (→ writing-plans).
 ---
 
 # dinopowers: executing-plans
@@ -121,6 +121,10 @@ sentence). Empty (pure new-file creation) → Step 4, verdict
 - Teardown of existing clone: `$dino-finishing-a-development-branch`.
 
 ## Step 2 — Pre-touch guard call
+
+The guard is the Task's FIRST tea-rags call — a body/outline read of the task
+files never precedes it (content arrives after the verdict, via
+`find_symbol(relativePath:)` outline).
 
 ONE `semantic_search` — same idiom as `$dino-writing-plans` Step 2:
 

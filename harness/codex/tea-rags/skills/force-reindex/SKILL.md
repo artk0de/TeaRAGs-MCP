@@ -1,10 +1,10 @@
 ---
 name: force-reindex
-description:
-  "Force full re-index, zero downtime: new versioned collection built in
+description: >-
+  Force full re-index, zero downtime: new versioned collection built in
   background while search continues; alias switches atomically. Also for a
   corrupt index. Requires explicit user confirmation — NEVER invoke
-  automatically."
+  automatically.
 ---
 
 # Force Reindex (Background, Zero-Downtime)

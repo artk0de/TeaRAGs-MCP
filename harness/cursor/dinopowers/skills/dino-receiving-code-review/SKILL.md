@@ -1,14 +1,14 @@
 ---
 name: dino-receiving-code-review
-description:
-  'Assess reviewer''s suggested change (rename, refactor, move, extract) — query
+description: >-
+  Assess reviewer's suggested change (rename, refactor, move, extract) — query
   tea-rags imports/churn signals on affected target, measure blast radius before
   agreeing or pushing back. Triggers on "reviewer suggests", "should I rename",
   "ревьюер предлагает", "стоит ли переименовать", "code review feedback", "PR
   comment about", "review feedback says", "PR comment wants", "address the
-  review", "сделай как просит ревьюер", "code review wants me to", "let''s
+  review", "сделай как просит ревьюер", "code review wants me to", "let's
   refactor this per review". NOT for vague stylistic nits without a named
-  symbol. Wraps /receiving-code-review with tea-rags blast-radius signals.'
+  symbol. Wraps /receiving-code-review with tea-rags blast-radius signals.
 ---
 
 # dinopowers: receiving-code-review

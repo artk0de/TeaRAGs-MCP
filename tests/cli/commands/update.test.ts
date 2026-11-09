@@ -86,10 +86,11 @@ const pinnedMarketplace = claudeResult([
   { name: "tea-rags", source: "git", url: "https://github.com/artk0de/TeaRAGs-MCP.git", ref: "v1.24.0" },
 ]);
 
-/** No codex CLI, and HOMEs where no Cursor plugin is installed — keeps every run off the real machine. */
+/** No codex/zcode CLI, and HOMEs where no Cursor plugin is installed — keeps every run off the real machine. */
 const NO_HOME = "/nonexistent-home-for-update-test";
 const isolatedHarnesses = {
   runCodex: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
+  runZcode: vi.fn(async () => ({ code: null, stdout: "", missing: true })),
   homedir: NO_HOME,
   codexHome: `${NO_HOME}/.codex`,
   packageRoot: "/nonexistent-package-root",
@@ -518,7 +519,7 @@ describe("performUpdate", () => {
     expect(stdoutMock).not.toHaveBeenCalled();
     expect(report.install).toEqual({ kind: "not-requested" });
     expect(report.exitCode).toBe(0);
-    expect(report.plugins?.harnesses.map((h) => h.harness)).toEqual(["claude", "codex", "cursor"]);
+    expect(report.plugins?.harnesses.map((h) => h.harness)).toEqual(["claude", "codex", "cursor", "zcode"]);
   });
 
   it("returns the npm exit code and no plugin report when the install fails", async () => {

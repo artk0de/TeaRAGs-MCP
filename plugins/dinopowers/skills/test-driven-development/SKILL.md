@@ -135,6 +135,9 @@ Compose:
 
 ### Step 2a — Fixture conventions (mock setup, beforeEach, factory helpers)
 
+Step 2a is always the tests-as-context skill (or its documented semantic_search
+fallback below) — `hybrid_search` has no test-only parameter; never invent one.
+
 Invoke `Skill(tea-rags:tests-as-context)` with:
 
 ```

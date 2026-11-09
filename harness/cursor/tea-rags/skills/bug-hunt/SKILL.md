@@ -1,18 +1,18 @@
 ---
 name: bug-hunt
-description:
-  'Find source of concrete failure — rank historically buggy code (high
+description: >-
+  Find source of concrete failure — rank historically buggy code (high
   bugFixRate + churn) AND freshly changed never-fixed code (committed or still
   uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
   fails", "stack trace says Z", "find bugs in X", "found a bug in X — show /
   compare Y", "suspects in X and Y — search both", a search hit with bugFixRate
-  / ageDays labels ("proceed?", "проверь там"), "where is error ''X'' in code",
-  "где в коде строка / упоминается ''X''", "when did error ''X'' appear in git
-  history", "когда появилась ошибка ''X''", "read the whole file" / "прочитай
-  весь файл" of a search hit, "падает". NOT for code history without an error
-  string or failure ("when did X change", "посмотри через git" alone) — core
-  routing answers it. NOT for code health scanning without bug intent — use
-  risk-assessment for that.'
+  / ageDays labels ("proceed?", "проверь там"), "where is error 'X' in code",
+  "где в коде строка / упоминается 'X'", "when did error 'X' appear in git
+  history", "когда появилась ошибка 'X'", "read the whole file" / "прочитай весь
+  файл" of a search hit, "падает". NOT for code history without an error string
+  or failure ("when did X change", "посмотри через git" alone) — core routing
+  answers it. NOT for code health scanning without bug intent — use
+  risk-assessment for that.
 ---
 
 # Bug Hunt

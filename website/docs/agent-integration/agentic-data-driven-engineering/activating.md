@@ -71,6 +71,24 @@ After generating code, verify with ripgrep:
 - 0 ripgrep matches = fix the reference before committing
 ```
 
+## ZCode (plugin)
+
+ZCode ships as a first-class harness: install the plugin and everything — routing
+rules, per-turn injections, search-drift guard, subagent context — loads itself.
+No hand-written prompt block needed:
+
+```bash
+npm install -g tea-rags
+zcode plugins marketplace add "$(npm root -g)/tea-rags/harness/zcode"
+zcode plugins install tea-rags-setup@tea-rags
+```
+
+Then run the `tea-rags-setup:install` skill in a ZCode session; the wizard
+detects the zcode host and finishes the setup (tea-rags plugin + MCP server,
+project registration, first index). `tea-rags update` keeps the plugins at the
+client's release. Details: [`harness/zcode/README.md`](https://github.com/artk0de/TeaRAGs-MCP/tree/main/harness/zcode)
+in the repository.
+
 ## Custom Agents (system prompt)
 
 For agents built with the Claude API or other LLM frameworks:

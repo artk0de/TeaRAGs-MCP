@@ -1,12 +1,12 @@
 ---
 name: dino-receiving-code-review
-description:
-  'Weigh reviewer''s change (rename/refactor/move/extract) by tea-rags blast
+description: >-
+  Weigh reviewer's change (rename/refactor/move/extract) by tea-rags blast
   radius before agreeing/pushing back. Triggers "reviewer suggests", "should I
   rename", "code review feedback", "PR comment about/wants", "address the
   review", "refactor this per review", "ревьюер предлагает", "стоит ли
   переименовать", "сделай как просит ревьюер". Structural ask with no named
-  symbol ("extract loop body") still scans first. NOT stylistic nits.'
+  symbol ("extract loop body") still scans first. NOT stylistic nits.
 ---
 
 # dinopowers: receiving-code-review

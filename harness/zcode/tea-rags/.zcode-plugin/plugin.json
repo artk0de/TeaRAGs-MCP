@@ -1,0 +1,11 @@
+{
+  "name": "tea-rags",
+  "version": "0.55.9",
+  "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
+  "author": {
+    "name": "artk0de"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

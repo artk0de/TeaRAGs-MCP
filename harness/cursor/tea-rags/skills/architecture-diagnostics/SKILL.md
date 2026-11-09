@@ -1,12 +1,12 @@
 ---
 name: architecture-diagnostics
-description:
-  "Diagnose structural violations for an explicit architecture audit, an
-  explicit invocation of this skill, or structural refactoring. Assess
-  dependency/layer violations, coupling and move candidates. Not for context
-  gathering, code overviews, behavior or contract questions, or routine feature
-  work. Risk/health uses risk-assessment; failures use bug-hunt; plain cycles
-  use find_cycles."
+description: >-
+  Diagnose structural violations for an explicit architecture audit, an explicit
+  invocation of this skill, or structural refactoring. Assess dependency/layer
+  violations, coupling and move candidates. Not for context gathering, code
+  overviews, behavior or contract questions, or routine feature work.
+  Risk/health uses risk-assessment; failures use bug-hunt; plain cycles use
+  find_cycles.
 ---
 
 # Architecture Diagnostics

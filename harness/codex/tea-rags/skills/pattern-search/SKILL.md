@@ -1,8 +1,8 @@
 ---
 name: pattern-search
-description:
-  "Internal step invoked by $explore, $risk-assessment. Internal strategy for
-  explore skill."
+description: >-
+  Internal step invoked by $explore, $risk-assessment. Internal strategy for
+  explore skill.
 ---
 
 # Pattern Search

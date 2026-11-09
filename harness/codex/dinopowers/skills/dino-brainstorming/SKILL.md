@@ -1,12 +1,12 @@
 ---
 name: dino-brainstorming
-description:
-  'Brainstorm code change grounded in tea-rags risk, ownership, tech-debt
+description: >-
+  Brainstorm code change grounded in tea-rags risk, ownership, tech-debt
   signals. Verb brainstorm/discuss beats explore PRE-GEN ("brainstorm splitting
-  Y"). Triggers "brainstorm X", "design feature", "redesign Y", "let''s
-  discuss", "давай обсудим", "обсудим", "как перестроить", "что может
-  сломаться". NOT research w/o brainstorm verb, NOT "what breaks if I change
-  <symbol>" (explore), NOT trivial edits.'
+  Y"). Triggers "brainstorm X", "design feature", "redesign Y", "let's discuss",
+  "давай обсудим", "обсудим", "как перестроить", "что может сломаться". NOT
+  research w/o brainstorm verb, NOT "what breaks if I change <symbol>"
+  (explore), NOT trivial edits.
 ---
 
 # dinopowers: brainstorming
@@ -21,7 +21,10 @@ identifiable. Right presets (`hotspots`, `ownership`, `techDebt`) + right
 params + right order = wrapper's value.
 
 No code area identifiable (pure conceptual) → skip enrichment, invoke
-`$brainstorming` directly, say so explicitly. Never fabricate area.
+`$brainstorming` directly, say so explicitly. Never fabricate area. An area
+named inside the request phrase ("the chunk cache", "the reranker", "how X
+survives restarts" where X is a component) IS identifiable — run Step 2; pure
+conceptual = a request about no code at all (naming style, workflow).
 
 **User explicitly asks to read named files / find callers of a symbol** → those
 reads are the USER's task, not wrapper enrichment: planned in the SAME answer as

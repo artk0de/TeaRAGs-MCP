@@ -1,7 +1,7 @@
 ---
 name: dino-writing-plans
-description:
-  'Author implementation plan; Affected Files section enriched per-file imports,
+description: >-
+  Author implementation plan; Affected Files section enriched per-file imports,
   churn, ownership, bugFixRate, taskIds from tea-rags — task decomposition
   reflects real impact+risk. Triggers on "write a plan", "draft a plan", "draft
   implementation plan", "draft sub-plan", "напиши план", "допиши план", "add a
@@ -10,7 +10,7 @@ description:
   beats explore PRE-GEN, also when it adds "impact analysis" / "before changing"
   (any [subagent:…] label), and data-driven-generation (a Task that creates a
   class stays a plan Task). NOT for plans with no named files or code area to
-  enrich. Wraps /writing-plans with per-file tea-rags signal enrichment.'
+  enrich. Wraps /writing-plans with per-file tea-rags signal enrichment.
 ---
 
 # dinopowers: writing-plans
@@ -98,6 +98,10 @@ From request or plan draft collect concrete file list:
 | User names a small directory   | `src/core/domains/auth/` → enumerate files (counts as file list — run Step 2 over them): `find_symbol(relativePath: "<dir>")` — its files + top-level symbols; the one call before Step 2; never `ls` / glob |
 | Existing plan draft references | "Task N modifies `x.ts`" → extract paths                                                                                                                                                                     |
 | Bare filenames                 | glob each in the Step 2 brace pattern (`{**/a.ts,**/b.ts}`); no resolve calls (`find_symbol` / `hybrid_search`) before Step 2                                                                                |
+
+Files named by the user ARE the file list — go straight to the Step 2 guard; a
+batch read/outline of them never precedes it (only the small-directory
+enumeration row above may).
 
 Output:
 

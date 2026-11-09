@@ -1,7 +1,7 @@
 ---
 name: data-driven-generation
-description:
-  'Decide HOW to write or change code by inspecting git signals on neighbors —
+description: >-
+  Decide HOW to write or change code by inspecting git signals on neighbors —
   classifies task mode (CREATE / EXTEND / MODIFY), pulls strategy and templates
   from proven low-churn implementations, reuses existing shared helpers.
   Triggers on "implement function X", "add method to class Y", "write a helper
@@ -9,7 +9,7 @@ description:
   метод", "поправь метод", "измени поведение", "overlay labels → strategy?", a
   hotfix with location + fix named (cause known → not bug-hunt). NOT for
   discovery — use /explore. NOT for pure rename/extract; a file MOVE still
-  routes here.'
+  routes here.
 ---
 
 # Data-Driven Generation
@@ -113,7 +113,9 @@ Ambiguous → ask which mode (one question, genuine ambiguity only).
   first move, no new test; file move → Step 6 restructure SIM; same tests re-run
   green, none edited; Step 7 gate.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE degrade, don't
-  pre-skip.
+  pre-skip. A NAMED new area (path or module given, directory may not exist yet)
+  IS the area context: run TEMPLATE/STYLE and let them degrade — never STOP for
+  explore.
 - **REUSE never skipped in any mode** — shared infra exists even when the
   feature is new.
 - **RED never skipped** except a named `test-first` exception (no-tests language

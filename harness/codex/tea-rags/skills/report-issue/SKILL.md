@@ -1,11 +1,11 @@
 ---
 name: report-issue
-description:
-  'File a GitHub issue for a TeaRAGs bug — gather env + diagnostics, check
+description: >-
+  File a GitHub issue for a TeaRAGs bug — gather env + diagnostics, check
   existing issues first, produce a pre-filled issue URL or gh issue create.
   Triggers "report a bug", "file an issue", "open a GitHub issue about this
   error", "зарепорти баг в tea-rags", "это похоже на баг tea-rags". NOT for
-  user-fixable config / setup errors.'
+  user-fixable config / setup errors.
 ---
 
 # Report a TeaRAGs Issue

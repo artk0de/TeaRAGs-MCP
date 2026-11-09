@@ -1,8 +1,8 @@
 ---
 name: index
-description:
-  "Index/reindex codebase: new → alias + index (index-codebase --name); indexed
-  → incremental; corrupt → force-reindex. NOT status checks (get_index_status)."
+description: >-
+  Index/reindex codebase: new → alias + index (index-codebase --name); indexed →
+  incremental; corrupt → force-reindex. NOT status checks (get_index_status).
 ---
 
 # Index Codebase

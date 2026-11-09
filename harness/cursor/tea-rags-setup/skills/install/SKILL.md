@@ -1,13 +1,13 @@
 ---
 name: install
-description:
-  'One-step TeaRAGs install for Claude Code, Cursor and Codex: detects host,
-  writes .contextignore.local, profiles languages, picks embedding model, shows
-  ONE plan, confirms once, then installs tea-rags, llama-server pool, model,
-  plugin + MCP server, registers and indexes the project. Triggers on "install
-  tea-rags", "set up TeaRAGs", "configure tea-rags from scratch", "поставь
-  tea-rags", "установи tea-rags в проект". NOT for re-tuning an existing install
-  — use tune.'
+description: >-
+  One-step TeaRAGs install for Claude Code, Cursor, Codex and ZCode: detects
+  host, writes .contextignore.local, profiles languages, picks embedding model,
+  shows ONE plan, confirms once, then installs tea-rags, llama-server pool,
+  model, plugin + MCP server, registers and indexes the project. Triggers on
+  "install tea-rags", "set up TeaRAGs", "configure tea-rags from scratch",
+  "поставь tea-rags", "установи tea-rags в проект". NOT for re-tuning an
+  existing install — use tune.
 ---
 
 # TeaRAGs install — one plan, one confirmation
@@ -147,11 +147,19 @@ Each command foreground, waited on (long ones: timeout ≥ 10 min).
      `cp -R "$(npm root -g)/tea-rags/harness/cursor/tea-rags" ~/.cursor/plugins/local/`
      · PowerShell:
      `Copy-Item -Recurse "$(npm root -g)\tea-rags\harness\cursor\tea-rags" "$HOME\.cursor\plugins\local\"`.
+   - ZCode — plugin ships the MCP server (auto-connects with the plugin; no
+     separate MCP add). The package's own directory is the release-pinned
+     marketplace — the channel `tea-rags update` refreshes:
+     `zcode plugins marketplace add "$(npm root -g)/tea-rags/harness/zcode"` →
+     `zcode plugins install tea-rags@tea-rags`. ZCode CLI not on PATH → run the
+     bundled one: `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`
+     (macOS).
 
    Marketplace already added at another ref → `tea-rags update` re-pins it to
    `v<ver>` instead of the add. Never add an `env` block to any MCP config;
    project-level MCP entry for tea-rags (`<project>/.mcp.json`,
-   `.cursor/mcp.json`) → report it as duplicate, never write one.
+   `.cursor/mcp.json`, `<project>/.zcode/config.json`) → report it as duplicate,
+   never write one.
 
 8. Index, model exported for this run — registry records it, later runs,
    `tea-rags server`, `tea-rags call` and auto-update replay it unexported.

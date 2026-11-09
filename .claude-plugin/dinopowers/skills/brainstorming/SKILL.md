@@ -26,6 +26,9 @@ right params + right order = wrapper's value.
 
 No code area identifiable (pure conceptual) → skip enrichment, invoke
 `superpowers:brainstorming` directly, say so explicitly. Never fabricate area.
+An area named inside the request phrase ("the chunk cache", "the reranker", "how
+X survives restarts" where X is a component) IS identifiable — run Step 2; pure
+conceptual = a request about no code at all (naming style, workflow).
 
 **User explicitly asks to read named files / find callers of a symbol** → those
 reads are the USER's task, not wrapper enrichment: planned in the SAME answer as

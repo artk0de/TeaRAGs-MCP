@@ -1,12 +1,12 @@
 ---
 name: tune
-description:
-  'Re-tune an existing TeaRAGs install: re-bench the llama-server pool (instance
+description: >-
+  Re-tune an existing TeaRAGs install: re-bench the llama-server pool (instance
   count, -np slots) and restart it, or run the pipeline/Qdrant benchmark for a
   user-chosen Ollama/ONNX provider; writes results into the project registry.
   Triggers on "indexing is slow", "tune performance", "benchmark my hardware",
   "tune llama-server slots", "поднастрой производительность". NOT for first-time
-  install — use install.'
+  install — use install.
 ---
 
 # TeaRAGs re-tune

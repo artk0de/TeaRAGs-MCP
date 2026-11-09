@@ -26,6 +26,7 @@
     "gen:agent-context": "tsx scripts/gen-agent-context.ts",
     "gen:plugins": "tsx scripts/gen-plugins.ts",
     "gen:harness-claude": "tsx scripts/gen-harness-claude.ts",
+    "gen:harness-zcode": "tsx scripts/gen-harness-zcode.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
     "postinstall": "node scripts/postinstall.js",

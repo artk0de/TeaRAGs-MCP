@@ -34,7 +34,7 @@ Never:
 - Modify single-owner code without flagging the owner
 ```
 
-See [Activating in Your Agent](/agent-integration/agentic-data-driven-engineering/activating) for complete configuration examples for Claude Code, Cursor, and custom agents.
+See [Activating in Your Agent](/agent-integration/agentic-data-driven-engineering/activating) for complete configuration examples for Claude Code, Cursor, ZCode, and custom agents.
 
 :::warning
 This is the single most common reason TeaRAGs delivers no value. The tool is available, the index is built, but the agent simply doesn't know to use it.
