@@ -96,6 +96,8 @@ export class FilePhase {
   private coverage: EnrichmentRunCoverage = "subset";
   private languages: readonly string[] = [];
   private chunkPhase: ChunkPhase | null = null;
+  /** Files a deferring provider has extracted this run, for the file progress bar. */
+  private readonly deferredFilesSeen = new Map<string, number>();
 
   constructor(
     private readonly applier: EnrichmentApplier,
@@ -289,7 +291,14 @@ export class FilePhase {
         // instead (bd tea-rags-mcp-o317j).
         contentHashes: this.crossPass ? undefined : this.contentHashes,
       })
-      .then(() => undefined)
+      .then(() => {
+        // Extraction wrote no payload (finalize does), but the file bar must
+        // still move. Otherwise codegraph.symbols file stays 0/N until the
+        // graph is finished — on a 200k-file repo, the whole index.
+        const seen = (this.deferredFilesSeen.get(ctx.key) ?? 0) + enrichPaths.length;
+        this.deferredFilesSeen.set(ctx.key, seen);
+        this.applier.onApply?.({ providerKey: ctx.key, level: "file", applied: seen });
+      })
       .catch(async (error: unknown) => {
         await this.recordPrefetchFailure(ctx, state, error);
       });

@@ -177,6 +177,10 @@ describe("FilePhase", () => {
     const streamFileBatch = vi.fn().mockResolvedValue(new Map());
     const buildFileSignals = vi.fn().mockResolvedValue(new Map());
     const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const fileProgress: number[] = [];
+    applier.onApply = (event) => {
+      if (event.level === "file") fileProgress.push(event.applied);
+    };
     const ctx = {
       key: "codegraph.symbols",
       provider: {
@@ -202,6 +206,8 @@ describe("FilePhase", () => {
     expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["src/a.ts"], expect.anything());
     expect(applySpy).not.toHaveBeenCalled();
     expect(applier.missedFiles).toBe(0);
+    // The file bar moves with extraction. Payload is still applied at finalize.
+    expect(fileProgress).toEqual([1]);
   });
 
   it("applyFinalize applies file overlays keyed by the chunkMap", async () => {

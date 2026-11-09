@@ -17,7 +17,24 @@ type MockClient = ReturnType<typeof createMockClient>;
 function connectionFor(client: MockClient): QdrantConnection {
   const connection = new QdrantConnection("http://127.0.0.1:6333");
   connection.client = client as never;
+  // A transport retry installs a new client. Stay on the stub unless a test
+  // replaces this to prove the dead socket is dropped.
+  connection.createClient = () => client as never;
   return connection;
+}
+
+function abortError(): Error {
+  const error = new Error("The operation was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function nestedSocketReset(): TypeError {
+  return new TypeError("fetch failed", {
+    cause: new TypeError("fetch failed", {
+      cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+    }),
+  });
 }
 
 function staleSocketReset(): TypeError {
@@ -209,6 +226,32 @@ describe("QdrantAliasManager", () => {
 
       expect(await aliases.listAliases()).toEqual([{ aliasName: "code_x", collectionName: "code_x_v4" }]);
       expect(client.getAliases).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries listAliases on a fresh client when the keep-alive socket hangs until abort", async () => {
+      const connection = connectionFor(client);
+      const fresh = createMockClient();
+      fresh.getAliases.mockResolvedValue({ aliases: [{ alias_name: "code_x", collection_name: "code_x_v1" }] });
+      connection.createClient = () => fresh as never;
+      client.getAliases.mockRejectedValueOnce(abortError());
+      const manager = new QdrantAliasManager(connection);
+
+      expect(await manager.listAliases()).toEqual([{ aliasName: "code_x", collectionName: "code_x_v1" }]);
+      expect(client.getAliases).toHaveBeenCalledTimes(1);
+      expect(fresh.getAliases).toHaveBeenCalledTimes(1);
+      expect(connection.client).toBe(fresh);
+    });
+
+    it("retries listAliases when the socket reset is nested under two fetch wrappers", async () => {
+      const connection = connectionFor(client);
+      const fresh = createMockClient();
+      fresh.getAliases.mockResolvedValue({ aliases: [{ alias_name: "code_x", collection_name: "code_x_v1" }] });
+      connection.createClient = () => fresh as never;
+      client.getAliases.mockRejectedValueOnce(nestedSocketReset());
+      const manager = new QdrantAliasManager(connection);
+
+      expect(await manager.listAliases()).toEqual([{ aliasName: "code_x", collectionName: "code_x_v1" }]);
+      expect(fresh.getAliases).toHaveBeenCalledTimes(1);
     });
 
     it("updateCollectionAliases survives a stale keep-alive socket reset via the connection's retry", async () => {
