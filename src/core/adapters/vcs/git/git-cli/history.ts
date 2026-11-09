@@ -195,8 +195,19 @@ export async function readCommitFileNumstat(
  * walk with `--numstat`. `-M` pins rename detection whatever `diff.renames`
  * says, so a rename always arrives paired.
  */
-export async function readCommitPathChanges(repoRoot: string, timeoutMs?: number): Promise<CommitPathChanges[]> {
-  const args = ["log", "HEAD", "-z", "-M", "--name-status", `--format=${COMMIT_PATH_CHANGES_HEADER}%H %at`];
+export async function readCommitPathChanges(
+  repoRoot: string,
+  timeoutMs?: number,
+  range?: { fromSha: string; toSha: string },
+): Promise<CommitPathChanges[]> {
+  const args = [
+    "log",
+    range ? `${range.fromSha}..${range.toSha}` : "HEAD",
+    "-z",
+    "-M",
+    "--name-status",
+    `--format=${COMMIT_PATH_CHANGES_HEADER}%H %at`,
+  ];
   return parseCommitPathChanges(await execFileForPathspec(repoRoot, args, timeoutMs ?? 30000));
 }
 

@@ -363,7 +363,10 @@ export class CompletionRunner {
       // contract; this is a strictly-later second fire so listeners (StatsCache)
       // reflect post-backfill state. Listeners must be idempotent.
       if (backfill.occurred) {
-        await chunkPhase.fireOnComplete(physicalCollectionName);
+        // bd tea-rags-mcp-61gt2: this re-fire carried ~98 s on taxdome with no
+        // log line of its own — it was the unlogged gap between chunkMarkers
+        // and codegraphCompaction.
+        await this.timedStep("statsRefire", async () => chunkPhase.fireOnComplete(physicalCollectionName));
       }
 
       // 10. codegraph storage compaction — after every graph write of the run,

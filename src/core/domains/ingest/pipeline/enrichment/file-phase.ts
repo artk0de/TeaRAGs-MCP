@@ -316,6 +316,17 @@ export class FilePhase {
           pipelineLog.step({ component: "GitEnrich" }, "BLAME", { provider: ctx.key, ...stats });
           pipelineLog.addStageTime("blame", stats.durationMs);
         },
+        // bd tea-rags-mcp-61gt2: whole-history lifetime-read telemetry →
+        // [GitEnrich] LIFETIME_READ / LIFETIME_READ_FAILED. The read is
+        // run-memoized, so this fires once per actual attempt (cached hits
+        // included) — a dormant-file miss in the log now has its cause beside it.
+        onLifetimeRead: (info) => {
+          if (info.mode === "failed") {
+            pipelineLog.enrichmentPhase("LIFETIME_READ_FAILED", { provider: ctx.key, ...info });
+            return;
+          }
+          pipelineLog.enrichmentPhase("LIFETIME_READ", { provider: ctx.key, ...info });
+        },
       })
       .then(async (overlays) => {
         await this.applier.applyFileSignals(

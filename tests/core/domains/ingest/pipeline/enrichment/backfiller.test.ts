@@ -57,6 +57,9 @@ describe("EnrichmentBackfiller", () => {
       // collection-scoped providers (codegraph) hit the right
       // per-collection store.
       collectionName: "coll",
+      // bd tea-rags-mcp-61gt2: the backfill's lifetime-read retry logs its own
+      // LIFETIME_READ / LIFETIME_READ_FAILED phase line.
+      onLifetimeRead: expect.any(Function),
     });
     expect(applier.matchedFiles).toBe(1);
     expect(applier.missedFiles).toBe(0);

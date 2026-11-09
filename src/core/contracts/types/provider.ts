@@ -402,6 +402,23 @@ export interface FileSignalOptions {
    *  another batch of the same run queued or completed (no new `git blame`).
    *  files = hits + misses + joined. */
   onBlameStats?: (stats: { files: number; hits: number; misses: number; joined: number; durationMs: number }) => void;
+  /**
+   * Per-read telemetry for the whole-history file-lifetime stamps (bd
+   * tea-rags-mcp-61gt2): invoked once per actual read attempt — `cold`
+   * (whole-history walk), `incremental` (tip..HEAD top-up onto the persistent
+   * store), `cached` (same HEAD, no git) or `failed` (the read rejected; the
+   * caller's stamps come back empty and dormant files fall to the backfill).
+   * The ingest file phase binds it to the pipeline debug log
+   * ([GitEnrich] LIFETIME_READ / LIFETIME_READ_FAILED). Never serialized:
+   * inline / main-thread dispatch paths only (same precedent as
+   * onBlameStats).
+   */
+  onLifetimeRead?: (info: {
+    mode: "cold" | "incremental" | "cached" | "failed";
+    entries: number;
+    durationMs: number;
+    error?: string;
+  }) => void;
 }
 
 /**

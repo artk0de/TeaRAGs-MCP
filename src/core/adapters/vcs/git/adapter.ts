@@ -52,8 +52,15 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * Every commit on HEAD's whole history, newest → oldest in log order, with
    * the paths it changed (`git log -M --name-status`): renames paired as
    * `{ path, previousPath }`, merges contributing no rows, no line counts.
+   * `range` present narrows to `fromSha..toSha` (incremental top-up for the
+   * persistent lifetime stamps, excludes `fromSha`'s own contribution); an
+   * unknown `fromSha` (rewritten history) rejects and the caller falls back
+   * to the whole-history walk.
    */
-  abstract readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]>;
+  abstract readCommitPathChanges(
+    timeoutMs?: number,
+    range?: { fromSha: string; toSha: string },
+  ): Promise<CommitPathChanges[]>;
   /**
    * The named commits' zero-context patch text, one spawn, each commit headed
    * by a NUL and its full SHA; "" for none. Rename detection on, merges print

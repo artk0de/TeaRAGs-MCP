@@ -32,6 +32,7 @@ import type {
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
+  ProviderRunMetrics,
   WorkerEnrichmentDescriptor,
 } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
@@ -59,10 +60,11 @@ import type { ChunkChurnWalkOutcome } from "./infra/churn-walk/protocol.js";
 import { ChunkChurnWalkPool } from "./infra/churn-walk/walk-pool.js";
 import { FileChurnDiscoveryStore } from "./infra/file-churn-discovery-store.js";
 import { FileChurnDiscovery } from "./infra/file-churn-discovery.js";
+import { GitFileLifetimeStore } from "./infra/file-lifetime-store.js";
 import {
   addDormantFileChurn,
   anchorFileChurn,
-  readFileLifetimeStamps,
+  readFileLifetimeStampsCached,
   type FileLifetimeStamps,
   type WindowedFileChurn,
 } from "./infra/file-lifetime.js";
@@ -194,6 +196,17 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  survive across runs keyed by each file's HEAD blob OID, so
    *  force/incremental reindex only blames CHANGED files. */
   private readonly blameStore = new GitBlameStore();
+  /** Persistent whole-history lifetime stamps (bd tea-rags-mcp-61gt2): one
+   *  tip..HEAD top-up per HEAD move instead of a whole-history walk that is
+   *  marginal against the stall guard on a 200k-commit monolith. */
+  private readonly fileLifetimeStore = new GitFileLifetimeStore();
+  /** Window-gap accounting (bd tea-rags-mcp-61gt2), read-and-clear via
+   *  getRunMetrics: paths a windowed churn call found in NEITHER the discovery
+   *  window NOR the lifetime stamps (untracked / never-committed), and how
+   *  many dormant paths the lifetime stamps settled in-window. */
+  private windowGapFiles = 0;
+  private windowDormantStamped = 0;
+  private windowGapSamples: string[] = [];
   /** In-memory tier of the blame cache — lazily loaded from blameStore per
    *  root, dropped at the finalize seam (finalizeSignals). */
   private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
@@ -385,7 +398,11 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // path's WHOLE numstat history instead, so a file the window missed carried
     // lifetime counters beside everyone else's window counters.
     if (options?.paths) {
-      return this.buildSignalsFromRawData(root, await this.windowedFileChurn(root, options.paths), options);
+      return this.buildSignalsFromRawData(
+        root,
+        await this.windowedFileChurn(root, options.paths, options.onLifetimeRead),
+        options,
+      );
     }
 
     const rawData = await buildFileSignalMap(
@@ -414,7 +431,11 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     if (!existsSync(join(root, ".git"))) {
       return new Map();
     }
-    return this.buildSignalsFromRawData(root, await this.windowedFileChurn(root, batchPaths), options);
+    return this.buildSignalsFromRawData(
+      root,
+      await this.windowedFileChurn(root, batchPaths, options?.onLifetimeRead),
+      options,
+    );
   };
 
   /**
@@ -424,13 +445,30 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * tea-rags-mcp-i6tkc). The live phase stamps such a file itself instead of
    * leaving it to backfill. A path no commit ever touched stays absent.
    */
-  private async windowedFileChurn(root: string, paths: readonly string[]): Promise<Map<string, WindowedFileChurn>> {
+  private async windowedFileChurn(
+    root: string,
+    paths: readonly string[],
+    onLifetimeRead?: FileSignalOptions["onLifetimeRead"],
+  ): Promise<Map<string, WindowedFileChurn>> {
     if (paths.length === 0) return new Map();
     const windowed: Map<string, WindowedFileChurn> = sliceFileSignalsByPaths(await this.getRunDiscovery(root), [
       ...paths,
     ]);
     const dormant = paths.filter((path) => !windowed.has(path));
-    if (dormant.length > 0) addDormantFileChurn(windowed, dormant, await this.getRunLifetime(root));
+    if (dormant.length > 0) {
+      const before = windowed.size;
+      addDormantFileChurn(windowed, dormant, await this.getRunLifetime(root, onLifetimeRead));
+      this.windowDormantStamped += windowed.size - before;
+    }
+    // bd tea-rags-mcp-61gt2: a path in neither map is the residual miss class
+    // (untracked / never-committed at HEAD) — count it so ALL_COMPLETE's
+    // byProvider.git says how big the class is instead of leaving it to be
+    // inferred from missedPathSamples.
+    for (const path of paths) {
+      if (windowed.has(path)) continue;
+      this.windowGapFiles++;
+      if (this.windowGapSamples.length < 5 && !this.windowGapSamples.includes(path)) this.windowGapSamples.push(path);
+    }
     return anchorFileChurn(windowed, await this.getRunHistoryAnchor(root));
   }
 
@@ -464,15 +502,34 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * in the window never pays for it. A failed read yields no stamps (those
    * files fall to the backfill, which retries) and is not memoized.
    */
-  private async getRunLifetime(root: string): Promise<Map<string, FileLifetimeStamps>> {
+  private async getRunLifetime(
+    root: string,
+    onLifetimeRead?: FileSignalOptions["onLifetimeRead"],
+  ): Promise<Map<string, FileLifetimeStamps>> {
     const adapter = await this.adapterFor(root);
     const headSha = await adapter.getHead().catch(() => "");
     if (this.fileLifetime?.root === root && this.fileLifetime.headSha === headSha) return this.fileLifetime.data;
-    const data: Promise<Map<string, FileLifetimeStamps>> = readFileLifetimeStamps(
+    // bd tea-rags-mcp-61gt2: through the persistent store — a same-HEAD rerun
+    // reads no git, a moved HEAD tops the stamps up with tip..HEAD, and only a
+    // missing cache or a rewritten history re-walks the whole history. The
+    // whole-history walk is marginal against the stall guard on a big monolith
+    // (killed under streaming load), and its failure used to dump every
+    // dormant file of the racing batches into the backfill tail.
+    const started = Date.now();
+    const data: Promise<Map<string, FileLifetimeStamps>> = readFileLifetimeStampsCached(
       adapter,
+      root,
       this.config.logTimeoutMs,
+      this.fileLifetimeStore,
+      onLifetimeRead,
     ).catch((error: unknown) => {
       if (this.fileLifetime?.data === data) this.fileLifetime = null;
+      onLifetimeRead?.({
+        mode: "failed",
+        entries: 0,
+        durationMs: Date.now() - started,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (isDebug()) {
         console.error(`[GitEnrich] file lifetime read failed:`, error instanceof Error ? error.message : error);
       }
@@ -480,6 +537,20 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     });
     this.fileLifetime = { root, headSha, data };
     return data;
+  }
+
+  /** Read-and-clear window-gap counters — lands under byProvider.git in
+   *  ALL_COMPLETE (bd tea-rags-mcp-61gt2). */
+  getRunMetrics(): ProviderRunMetrics {
+    const metrics: ProviderRunMetrics = {
+      windowGapFiles: this.windowGapFiles,
+      windowDormantStamped: this.windowDormantStamped,
+    };
+    if (this.windowGapSamples.length > 0) metrics.windowGapSamples = [...this.windowGapSamples];
+    this.windowGapFiles = 0;
+    this.windowDormantStamped = 0;
+    this.windowGapSamples = [];
+    return metrics;
   }
 
   /** git streams file+chunk signals per batch — nothing is deferred, so the

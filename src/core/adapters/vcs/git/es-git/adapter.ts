@@ -124,8 +124,11 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.readCommitFileNumstat(sinceDate, range, timeoutMs);
   }
 
-  async readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]> {
-    return this.cliHistory.readCommitPathChanges(timeoutMs);
+  async readCommitPathChanges(
+    timeoutMs?: number,
+    range?: { fromSha: string; toSha: string },
+  ): Promise<CommitPathChanges[]> {
+    return this.cliHistory.readCommitPathChanges(timeoutMs, range);
   }
 
   async readCommitDiffText(shas: readonly string[], timeoutMs?: number): Promise<string> {

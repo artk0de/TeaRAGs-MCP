@@ -101,8 +101,11 @@ export class GitCliAdapter extends VcsGitAdapter {
     return readCommitFileNumstat(this.repoRoot, sinceDate, range, timeoutMs);
   }
 
-  async readCommitPathChanges(timeoutMs?: number): Promise<CommitPathChanges[]> {
-    return readCommitPathChanges(this.repoRoot, timeoutMs);
+  async readCommitPathChanges(
+    timeoutMs?: number,
+    range?: { fromSha: string; toSha: string },
+  ): Promise<CommitPathChanges[]> {
+    return readCommitPathChanges(this.repoRoot, timeoutMs, range);
   }
 
   async readCommitDiffText(shas: readonly string[], timeoutMs?: number): Promise<string> {

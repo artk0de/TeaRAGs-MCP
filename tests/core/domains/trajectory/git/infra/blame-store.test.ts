@@ -127,6 +127,53 @@ describe("GitBlameStore (bd tea-rags-mcp-v2mlw)", () => {
     expect(store.load(repoRoot)).toBeNull();
   });
 
+  // bd tea-rags-mcp-61gt2: a monolith's blame map sits ON the cap, and the old
+  // skip froze the store at its last under-cap state — every file changed since
+  // then re-blamed on every run. Over the cap the save now EVICTS the files
+  // whose newest line is oldest instead of skipping.
+  it("over-cap save evicts the oldest-newest files and persists the rest", () => {
+    const files = new Map<string, { oid: string; lines: BlameLine[] }>([
+      [
+        "src/old-huge.ts",
+        {
+          oid: "4".repeat(40),
+          // 400 lines — dominates the payload; newest line is the OLDEST of the three files.
+          lines: Array.from({ length: 400 }, (_, i) => ({
+            lineNumber: i + 1,
+            sha: SHA_1,
+            author: "Ancient",
+            authorEmail: "a@e.com",
+            timestamp: 1000 + i,
+          })),
+        },
+      ],
+      [
+        "src/mid.ts",
+        {
+          oid: "5".repeat(40),
+          lines: [{ lineNumber: 1, sha: SHA_1, author: "Mid", authorEmail: "m@e.com", timestamp: 2000 }],
+        },
+      ],
+      [
+        "src/new.ts",
+        {
+          oid: "6".repeat(40),
+          lines: [{ lineNumber: 1, sha: SHA_2, author: "New", authorEmail: "n@e.com", timestamp: 3000 }],
+        },
+      ],
+    ]);
+    // Full payload (old-huge ≈ 400 lines) must not fit; the two small files must.
+    const store = new GitBlameStore(baseDir, 2000);
+
+    store.save(repoRoot, files);
+
+    const loaded = store.load(repoRoot);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.has("src/old-huge.ts")).toBe(false);
+    expect(loaded?.has("src/mid.ts")).toBe(true);
+    expect(loaded?.has("src/new.ts")).toBe(true);
+  });
+
   it("cold load (nothing ever saved) returns null", () => {
     const store = new GitBlameStore(baseDir);
     expect(store.load(repoRoot)).toBeNull();

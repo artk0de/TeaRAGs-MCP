@@ -19,6 +19,7 @@
 
 import type { CommitPathChanges, FileChurnData, VcsGitAdapter } from "../../../../adapters/vcs/index.js";
 import { resolveHeadPaths } from "../history/index.js";
+import type { GitFileLifetimeStore } from "./file-lifetime-store.js";
 
 /** A file's whole-history age stamps, unix seconds of the AUTHOR date. */
 export interface FileLifetimeStamps {
@@ -65,8 +66,24 @@ export function anchorFileChurn(
  * newest author second, the one first in log order names `lastCommitHash`.
  */
 export function foldFileLifetimeStamps(entries: readonly CommitPathChanges[]): Map<string, FileLifetimeStamps> {
-  const attributed = resolveHeadPaths(entries);
   const stamps = new Map<string, FileLifetimeStamps>();
+  foldIntoFileLifetimeStamps(stamps, entries);
+  return stamps;
+}
+
+/**
+ * Fold log entries INTO an existing stamps map — the incremental arm of
+ * `readFileLifetimeStampsCached`. Order-independent (min/max per timestamp), so
+ * folding a `tip..HEAD` range after a cached whole-history fold yields exactly
+ * the fresh full-history fold: a new commit can only raise `lastModifiedAt` and
+ * never lowers `firstCreatedAt` (commits older than the cached tip arrive only
+ * through a rewritten history, which fails the range read and falls back cold).
+ */
+export function foldIntoFileLifetimeStamps(
+  stamps: Map<string, FileLifetimeStamps>,
+  entries: readonly CommitPathChanges[],
+): Map<string, FileLifetimeStamps> {
+  const attributed = resolveHeadPaths(entries);
   entries.forEach((entry, i) => {
     for (const { headPath } of attributed[i]) {
       const known = stamps.get(headPath);
@@ -94,6 +111,62 @@ export async function readFileLifetimeStamps(
   timeoutMs: number,
 ): Promise<Map<string, FileLifetimeStamps>> {
   return foldFileLifetimeStamps(await adapter.readCommitPathChanges(timeoutMs));
+}
+
+/** How a `readFileLifetimeStampsCached` call was served — feeds LIFETIME_READ logging. */
+export interface FileLifetimeReadInfo {
+  mode: "cold" | "incremental" | "cached";
+  entries: number;
+  durationMs: number;
+}
+
+/**
+ * Whole-history age stamps through the persistent `GitFileLifetimeStore`
+ * (bd tea-rags-mcp-61gt2): a same-HEAD rerun reads no git, a moved HEAD tops
+ * the cache up with `tip..HEAD`, and only a missing/invalid cache (or a range
+ * the repo no longer knows — rewritten history) re-walks the whole history.
+ * `store` absent degrades to the plain whole-history read.
+ */
+export async function readFileLifetimeStampsCached(
+  adapter: VcsGitAdapter,
+  root: string,
+  timeoutMs: number,
+  store?: GitFileLifetimeStore,
+  onRead?: (info: FileLifetimeReadInfo) => void,
+): Promise<Map<string, FileLifetimeStamps>> {
+  const started = Date.now();
+  const report = (mode: FileLifetimeReadInfo["mode"], entries: number): void => {
+    onRead?.({ mode, entries, durationMs: Date.now() - started });
+  };
+
+  if (store) {
+    const head = await adapter.getHead().catch(() => "");
+    const cached = head ? store.load(root) : null;
+    if (cached && head && cached.tip === head) {
+      report("cached", cached.stamps.size);
+      return cached.stamps;
+    }
+    if (cached && head && cached.tip !== "") {
+      try {
+        const fresh = await adapter.readCommitPathChanges(timeoutMs, { fromSha: cached.tip, toSha: head });
+        const stamps = foldIntoFileLifetimeStamps(cached.stamps, fresh);
+        store.save(root, head, stamps);
+        report("incremental", stamps.size);
+        return stamps;
+      } catch {
+        // Unknown tip (rewritten history) or a failed range read — fall back
+        // to the whole-history walk below.
+      }
+    }
+  }
+
+  const stamps = foldFileLifetimeStamps(await adapter.readCommitPathChanges(timeoutMs));
+  if (store) {
+    const head = await adapter.getHead().catch(() => "");
+    if (head) store.save(root, head, stamps);
+  }
+  report("cold", stamps.size);
+  return stamps;
 }
 
 /**

@@ -13,7 +13,11 @@
  *      entries are keyed by file blob OID and deliberately survive HEAD moves
  *      (that is the whole point: an unchanged file's blame is valid across
  *      commits). No stale-file sweep needed — the single file IS the size
- *      story, plus the maxBytes skip-save cap.
+ *      story: over `maxBytes` the save EVICTS the files whose newest line is
+ *      oldest (bd tea-rags-mcp-61gt2) instead of skipping. The old skip froze
+ *      a monolith's store at its last under-cap state — taxdome's 128 MiB cap
+ *      was hit around 2026-09-27 and every run after it re-blamed ~22k files
+ *      (~20 min) while the on-disk cache went stale forever.
  *   3. Persisted shape is NORMALIZED: blame lines are bulky, and one commit's
  *      author/email/timestamp repeats on every line it owns — the commit
  *      table dedupes them per sha (~5x smaller than raw BlameLine[] JSON).
@@ -63,6 +67,44 @@ function isValidCommitEntry(value: unknown): value is PersistedGitBlame["commits
 
 function isValidLinePair(value: unknown): value is [number, string] {
   return Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && typeof value[1] === "string";
+}
+
+/** Atomic tmp+rename write of a serialized payload (both save paths share it). */
+function writeAndRename(target: string, data: string): void {
+  mkdirSync(dirname(target), { recursive: true });
+  const tmp = `${target}.tmp`;
+  writeFileSync(tmp, data);
+  renameSync(tmp, target);
+}
+
+/**
+ * Drop the files whose newest line is OLDEST until the estimated serialized
+ * size fits `budgetBytes`, then rebuild the commit table from what survived
+ * (shas referenced only by dropped files leave it too). Skipped-over entries
+ * let smaller newer files still fit. Null when nothing fits — the caller
+ * keeps the previous on-disk file (the pre-eviction skip behaviour).
+ */
+function evictOldestBlameEntries(payload: PersistedGitBlame, budgetBytes: number): PersistedGitBlame | null {
+  const stamped = Object.entries(payload.files).map(([relPath, file]) => {
+    let newest = 0;
+    for (const [, sha] of file.lines) {
+      const ts = payload.commits[sha]?.timestamp ?? 0;
+      if (ts > newest) newest = ts;
+    }
+    return { relPath, file, newest, cost: JSON.stringify(relPath).length + JSON.stringify(file).length + 1 };
+  });
+  stamped.sort((a, b) => b.newest - a.newest || b.cost - a.cost);
+  const commits: PersistedGitBlame["commits"] = {};
+  const files: PersistedGitBlame["files"] = {};
+  let bytes = 0;
+  for (const entry of stamped) {
+    if (bytes + entry.cost > budgetBytes) continue;
+    files[entry.relPath] = entry.file;
+    for (const [, sha] of entry.file.lines) commits[sha] ??= payload.commits[sha];
+    bytes += entry.cost;
+  }
+  if (Object.keys(files).length === 0) return null;
+  return { ...payload, commits, files };
 }
 
 export class GitBlameStore {
@@ -138,14 +180,23 @@ export class GitBlameStore {
         ...(mailmap !== "" ? { mailmap } : {}),
       };
       const data = JSON.stringify(payload);
-      // Oversized blame map → skip persistence; the run keeps its in-memory copy.
-      if (Buffer.byteLength(data) > this.maxBytes) return;
+      if (Buffer.byteLength(data) > this.maxBytes) {
+        // bd tea-rags-mcp-61gt2: a monolith's blame map sits ON the cap, and the
+        // old skip froze the store at its last under-cap state — every file
+        // changed since then re-blamed on every run (taxdome: 22k cold blames,
+        // ~20 min, from 2026-09-27 on). Evict the entries whose newest line is
+        // OLDEST until the estimate fits: a dormant file's blame costs one
+        // pooled ~60 ms spawn the next time it is asked for; a frozen store
+        // costs that for a fifth of the corpus every run.
+        const evicted = evictOldestBlameEntries(payload, Math.floor(this.maxBytes * 0.85));
+        if (!evicted) return; // Still over after eviction — nothing sane to keep.
+        const trimmed = JSON.stringify(evicted);
+        if (Buffer.byteLength(trimmed) > this.maxBytes) return;
+        writeAndRename(this.blamePath(identity), trimmed);
+        return;
+      }
 
-      const target = this.blamePath(identity);
-      mkdirSync(dirname(target), { recursive: true });
-      const tmp = `${target}.tmp`;
-      writeFileSync(tmp, data);
-      renameSync(tmp, target); // atomic replace
+      writeAndRename(this.blamePath(identity), data);
     } catch (error) {
       // Best-effort persistence: a failed save only costs the next run a rebuild.
       this.debugLog("save", error);

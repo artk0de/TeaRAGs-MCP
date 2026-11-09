@@ -50,7 +50,17 @@ than in their own navigators.
   bugFixRate into hotspot presets and every churn percentile, and a 0 bug-fix
   rate would have read `healthy` and passed `battleTested`'s `≤ p25` leg (bd
   tea-rags-mcp-i6tkc). `firstCreatedAt` of a file WITH window commits is still
-  the oldest commit inside the window.
+  the oldest commit inside the window. The whole-history read itself goes
+  through the PERSISTENT `GitFileLifetimeStore` (`infra/file-lifetime-store.ts`,
+  bd tea-rags-mcp-61gt2): same-HEAD rerun = no git, moved HEAD = one `tip..HEAD`
+  top-up (`readCommitPathChanges`'s `range`), missing cache or rewritten history
+  = the cold walk, and every attempt reports
+  `cold`/`incremental`/`cached`/`failed` through
+  `FileSignalOptions.onLifetimeRead` → the pipeline log's LIFETIME_READ /
+  LIFETIME_READ_FAILED line. Why persisted: the cold walk (~24–36 s on taxdome's
+  200k commits) is marginal against the stall guard under a full run's load, and
+  its silent failure dumped every dormant file of the racing batches into the
+  backfill tail — taxdome's chronic ~800-file miss.
 
 - **Every index-time clock read goes through the run's HISTORY ANCHOR, never a
   bare `Date.now()`.** `TRAJECTORY_GIT_ANCHOR` (`trajectoryGitSchema`, default

@@ -88,6 +88,15 @@ export class EnrichmentBackfiller {
       // store, not a stale default one.
       backfillData = await this.executor.runFileSignalsRecovery(ctx.provider, root, missedPaths, {
         collectionName: physicalCollectionName,
+        // bd tea-rags-mcp-61gt2: the backfill's own lifetime read (the retry
+        // after a failed streaming read) gets its LIFETIME_READ line too.
+        onLifetimeRead: (info) => {
+          if (info.mode === "failed") {
+            pipelineLog.enrichmentPhase("LIFETIME_READ_FAILED", { provider: ctx.key, ...info });
+            return;
+          }
+          pipelineLog.enrichmentPhase("LIFETIME_READ", { provider: ctx.key, ...info });
+        },
       });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
@@ -96,6 +105,7 @@ export class EnrichmentBackfiller {
       });
       return;
     }
+    const executorMs = Date.now() - start;
 
     const fileKey = `${ctx.key}.file`;
     const ops: {
@@ -119,7 +129,9 @@ export class EnrichmentBackfiller {
       backfilledPaths.push(relPath);
     }
 
+    const writeStart = Date.now();
     await writeOverlayOps(this.qdrant, physicalCollectionName, ops, fileKey, ctx.provider.optionalOverlayKeys?.file);
+    const writeMs = Date.now() - writeStart;
 
     this.applier.markBackfilled(backfilledPaths);
 
@@ -129,6 +141,10 @@ export class EnrichmentBackfiller {
       backfilledFiles: backfilledPaths.length,
       backfilledChunks: ops.length,
       stillMissed: missedPaths.length - backfilledPaths.length,
+      // bd tea-rags-mcp-61gt2: sub-step split — the provider read (git) vs the
+      // Qdrant writes (rides the concurrent finalize write storm).
+      executorMs,
+      writeMs,
       durationMs: Date.now() - start,
     });
 
