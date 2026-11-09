@@ -106,7 +106,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__.*tea[-_]rags.*__",
+        "matcher": "^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__",
         "hooks": [
           {
             "type": "command",

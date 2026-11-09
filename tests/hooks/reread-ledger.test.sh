@@ -142,6 +142,12 @@ OUTLINE=$(jq -cn '[{type: "text", text: ({results: [{payload: {relativePath: "a.
 post s11 mcp__tea-rags__find_symbol '{"relativePath":"a.ts"}' "$OUTLINE"
 pre s11 Read "$(read_in "$A")"
 silent; note $? "an outline (content far shorter than its range) prints no lines → nothing recorded"
+post sTR1 mcp__TeaRAGs__find_symbol '{"symbol":"line3"}' "$FS_OBJ"
+pre sTR1 Read "$(read_in "$A" 3 10)"
+noted "lines 3–12 of a.ts" "find_symbol"; note $? "display-spelled server name (TeaRAGs) is a tea-rags call too"
+post sTR2 mcp__plugin_tea-rags_tea-rags__semantic_search '{"query":"q"}' "$FS_COL"
+pre sTR2 Bash "$(bash_in "sed -n 20,29p a.ts")"
+noted "lines 20–29 of a.ts" "semantic_search"; note $? "plugin-namespaced server name is a tea-rags call too"
 
 # --- invalidation
 post s12 Read "$(read_in "$A")" "$(read_out "$A")"

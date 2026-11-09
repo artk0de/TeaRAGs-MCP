@@ -15,7 +15,7 @@ for config/inventory/absence; `| head` ≠ absence proof. Use anchor dir, else
 `<src dir>` (a dir under cwd, never cwd itself); no dir search or find/Glob.
 
 **Routing** (first match wins; a loaded skill's steps run first, override rows —
-a file path in them → row 1; tools `mcp__tea-rags__*`):
+a file path in them → row 1; tools `mcp__tea-rags__*` / `mcp__TeaRAGs__*`):
 
 - config/DSL/routes/migrations/specs, an unindexed file, a `find_symbol` stub →
   Read tool (path unknown → Bash rg first); all X in a known `<dir>`, proving

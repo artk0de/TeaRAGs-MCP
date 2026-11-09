@@ -105,11 +105,15 @@ const ZCODE_DIALECT: HarnessDialect = {
  * offers at subagent dispatch).
  */
 function zcodeReplacements(md: string): string {
-  return md
-    .replace(/digest, SubagentStart or/, "digest, the subagent dispatch hook or")
-    .replace(/\bthe SubagentStart line\b/g, "the subagent dispatch hook line")
-    .replace(/\bfrom the SubagentStart line\b/g, "from the subagent dispatch hook line")
-    .replace(/\bSubagentStart\b/g, "the subagent dispatch hook");
+  return (
+    md
+      .replace(/digest, SubagentStart or/, "digest, the subagent dispatch hook or")
+      .replace(/\bthe SubagentStart line\b/g, "the subagent dispatch hook line")
+      .replace(/\bfrom the SubagentStart line\b/g, "from the subagent dispatch hook line")
+      .replace(/\bSubagentStart\b/g, "the subagent dispatch hook")
+      // A manually added ZCode MCP server carries its display spelling in tool names.
+      .replace("tools `mcp__tea-rags__*`", "tools `mcp__tea-rags__*` / `mcp__TeaRAGs__*`")
+  );
 }
 
 function zcodeText(md: string, skillNames: ReadonlySet<string>, wrappers = false): string {
@@ -291,7 +295,7 @@ exit 0
  * normalization — hyphens are legal), so matchers spell the hyphen and the
  * underscore both.
  */
-const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea[-_]rags.*__";
+const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__";
 
 /** The shared reread ledger (Node script) — ZCode payloads are Claude-shaped; the ledger maps zcode→claude. */
 const LEDGER_COMMAND = `node "${PLUGIN_ROOT_VAR}/scripts/reread-ledger.mjs"`;
@@ -430,7 +434,8 @@ locally with \`npm run gen:harness-zcode\`; the release regenerates this package
 This directory is a ZCode marketplace root: add it (**Plugin Management → Discover → +**) as a local
 directory, then install \`tea-rags\` (and \`dinopowers\`, \`tea-rags-setup\` as needed) from it.
 
-- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`, \`icon\` = the committed
+- \`marketplace.json\` — the marketplace catalog; \`source\` = \`./<plugin>\`, \`displayName\` = the brand
+  spelling (TeaRAGs / Dinopowers / TeaRAGs Setup — the UI shows and searches it), \`icon\` = the committed
   \`assets/icons/<plugin>.png\` over \`raw.githubusercontent.com\` (the app draws only \`https://\` icons;
   the same PNG also ships as \`<plugin>/icon.png\` so the package stays self-contained).
 - \`tea-rags/.zcode-plugin/plugin.json\` — manifest: \`skills\`, \`hooks\`, \`mcpServers\`.
@@ -517,7 +522,9 @@ resource tool — the sources' inline fallback \`tea-rags resource <uri>\` (Bash
 - No model-side MCP resource tool in the toolset (\`ReadMcpResource\` absent from zcode.cjs): resource
   reads go through the CLI fallback.
 - Marketplace: local directory root with \`marketplace.json\` (or \`.claude-plugin/marketplace.json\`);
-  \`plugins[].source\` a relative path string; \`plugins[].icon\` any non-empty string in the catalog,
+  \`plugins[].source\` a relative path string; \`plugins[].displayName\` free text over the lowercase id
+  (id pattern \`^[a-z0-9][a-z0-9._-]*$\`; the UI shows and searches displayName, app bundle reads
+  \`listing?.displayName\`); \`plugins[].icon\` any non-empty string in the catalog,
   but the app renderer draws only values starting with \`https://\` (its image validator, app bundle;
   six official plugins ship hardcoded data-URIs instead) — hence the raw.githubusercontent URLs and
   the pushed-to-main requirement; install/enable state in \`~/.zcode/cli/config.json\`.
@@ -696,7 +703,7 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
               statusMessage: "TeaRAGs: check search scope",
             },
           ]),
-          hookEntry("^(Read|Bash)$|^mcp__.*tea[-_]rags.*__find_symbol$", [
+          hookEntry("^(Read|Bash)$|^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__find_symbol$", [
             {
               command: `${LEDGER_COMMAND} --harness zcode`,
               timeout: 10,
@@ -731,13 +738,16 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
               statusMessage: "TeaRAGs: clean stale worktree clones",
             },
           ]),
-          hookEntry("^(Read|Grep|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*tea[-_]rags.*__", [
-            {
-              command: `${LEDGER_COMMAND} --harness zcode`,
-              timeout: 10,
-              statusMessage: "TeaRAGs: remember delivered code",
-            },
-          ]),
+          hookEntry(
+            "^(Read|Grep|Bash|Edit|Write|MultiEdit|NotebookEdit)$|^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__",
+            [
+              {
+                command: `${LEDGER_COMMAND} --harness zcode`,
+                timeout: 10,
+                statusMessage: "TeaRAGs: remember delivered code",
+              },
+            ],
+          ),
         ],
       },
     }),
@@ -765,6 +775,11 @@ export async function renderZcodeHarness(root: string): Promise<Map<string, stri
         const packageManifest = name === PLUGIN_NAME ? manifest : readManifest(join(root, PLUGINS_DIR, name));
         return {
           name,
+          // The id must stay lowercase (`^[a-z0-9][a-z0-9._-]*$`); the catalog parse also reads a
+          // `displayName` per entry, which the plugin UI shows and searches (app bundle reads
+          // `listing?.displayName`). Brand spellings live here, not in the id.
+          displayName:
+            { [PLUGIN_NAME]: "TeaRAGs", [DINOPOWERS_NAME]: "Dinopowers", [SETUP_NAME]: "TeaRAGs Setup" }[name] ?? name,
           source: `./${name}`,
           version: packageManifest.version,
           description: packageManifest.description,

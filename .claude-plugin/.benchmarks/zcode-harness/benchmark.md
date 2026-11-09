@@ -260,6 +260,30 @@ all — icon display is app UI only). Unit coverage: marketplace icon assertions
   guard for render-only fixtures); 1343 tests across tests/scripts/ +
   tests/cli/plugin-sync/ green.
 
+## Display names and the TeaRAGs MCP spelling (2026-11-09, user-requested)
+
+Plugins: the ZCode catalog parse reads a per-entry `displayName` (zcode.cjs
+`t("displayName")`), and the plugin UI shows and searches it (app bundle:
+`listing?.displayName`). Ids must stay lowercase (`^[a-z0-9][a-z0-9._-]*$`), so
+the marketplace entries now carry displayName TeaRAGs / Dinopowers / TeaRAGs
+Setup over the unchanged ids. Codex marketplace entries have no display field
+(name/policy/source/category only) and Cursor/Claude plugin manifests have none
+either — ZCode is the only harness where this is expressible.
+
+MCP: the settings UI shows the config KEY as the server name (no title field in
+the strict schema), so the manual entries were renamed `tea-rags` → `TeaRAGs`
+(user scope and workspace `.zcode/config.json`). Tool names preserve case
+(`mcp__${sanitized(serverName)}__${tool}`, non-alphanumerics → `_`), so the
+renamed entry yields `mcp__TeaRAGs__*` tools — the hook matchers
+(TEA*RAGS_MCP_TOOL_MATCHER, the find_symbol and post-tool ledger matchers in
+both zcode and codex generators) and reread-ledger.mjs's TEA_RAGS_TOOL /
+mcp_server_name checks were widened to case-tolerant character classes
+(`[Tt][Ee][Aa]-*]?[Rr][Aa][Gg][Ss]`) — strictly widening: every prior spelling (tea-rags, tea_rags, plugin-namespaced) still matches, verified by the ledger hook test (175 checks, now including `mcp**TeaRAGs**find_symbol`and`mcp**plugin_tea-rags_tea-rags**semantic_search`
+fixtures). The shipped default ZCode path (plugin-provided server, namespaced
+lowercase) is unchanged; the zcode core header now names both spellings.
+tea-rags bumped 0.55.11; live marketplace refresh surfaced it clean. No
+routing-row wording changed.
+
 ## Verification observations
 
 - **Package validation** — `plugin-creator`'s `validate-plugin.mjs` on

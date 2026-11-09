@@ -153,9 +153,16 @@ describe("renderZcodeHarness", () => {
       "dinopowers",
       "tea-rags-setup",
     ]);
+    const displayNames: Record<string, string> = {
+      "tea-rags": "TeaRAGs",
+      dinopowers: "Dinopowers",
+      "tea-rags-setup": "TeaRAGs Setup",
+    };
     for (const plugin of marketplace.plugins) {
       expect(rendered.has(`${plugin.source.replace(/^\.\//, "")}/.zcode-plugin/plugin.json`), plugin.source).toBe(true);
       expect(plugin.version).toMatch(/^\d+\.\d+\.\d+/);
+      // The id stays lowercase; the brand spelling rides on displayName, which the UI shows.
+      expect(plugin.displayName, plugin.name).toBe(displayNames[plugin.name]);
       // The app renderer only draws https:// icons, so the catalog points at the committed
       // assets/icons sources on GitHub (relative paths pass the parse but render nothing).
       expect(plugin.icon, plugin.name).toBe(

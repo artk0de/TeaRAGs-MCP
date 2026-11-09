@@ -90,8 +90,9 @@ const FULL_TEXT_MAX_LINES = 150;
 const DRIFT_SEARCH_STREAK = 3;
 const DRIFT_COOLDOWN_SEC = 120;
 const DRIFT_JUST_DENIED_SEC = 5;
-// Codex code mode spells a nested MCP tool as a JS identifier: `mcp__tea_rags__<tool>`.
-const TEA_RAGS_TOOL = /^mcp__.*tea[-_]rags.*__(\w+)$/;
+// Codex code mode spells a nested MCP tool as a JS identifier: `mcp__tea_rags__<tool>`;
+// a manually added ZCode server may carry the display spelling `mcp__TeaRAGs__<tool>`.
+const TEA_RAGS_TOOL = /^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__(\w+)$/;
 const HARNESSES = new Set(["claude", "codex", "cursor"]);
 const SHELL_TOOLS = new Set(["Bash", "shell", "exec_command", "Shell"]);
 /** cursor-agent refuses a hook's `additional_context` past this (HookAdditionalContextTooLargeError). */
@@ -1036,7 +1037,9 @@ export function harnessEvent(input, harness) {
   let hookEvent = event;
   if (event === "aftermcpexecution") {
     // Cursor: bare tool_name + mcp_server_name; the result is a JSON string of the MCP CallToolResult.
-    if (!/tea[-_]rags/.test(String(input.mcp_server_name ?? "")) && !TEA_RAGS_TOOL.test(tool)) return null;
+    if (!/[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss]/.test(String(input.mcp_server_name ?? "")) && !TEA_RAGS_TOOL.test(tool)) {
+      return null;
+    }
     if (!TEA_RAGS_TOOL.test(tool)) tool = `mcp__tea-rags__${tool}`;
     response = parsedJson(input.result_json);
     hookEvent = "posttooluse";

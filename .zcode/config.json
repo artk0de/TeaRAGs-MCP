@@ -1,7 +1,7 @@
 {
   "mcp": {
     "servers": {
-      "tea-rags": {
+      "TeaRAGs": {
         "type": "stdio",
         "command": "/Users/artk0re/.asdf/installs/nodejs/22.14.0/bin/node",
         "args": [

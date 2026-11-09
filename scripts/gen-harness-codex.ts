@@ -267,7 +267,7 @@ const SHELL_TOOL_MATCHER = "^(Bash|shell|exec_command)$";
  * identifier (`mcp__tea_rags__<tool>`; codex-cli 0.162.1). A code-mode session denied "3 reads … no
  * tea-rags call" one read after two find_symbol / get_naming_lexicon scripts: the reset never matched.
  */
-const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*tea[-_]rags.*__";
+const TEA_RAGS_MCP_TOOL_MATCHER = "^mcp__.*[Tt][Ee][Aa][-_]?[Rr][Aa][Gg][Ss].*__";
 
 /** The shared reread ledger (Node script) — read steering: re-read note + indexed-source nudge. */
 const LEDGER_COMMAND = `node "${PLUGIN_ROOT_VAR}/scripts/reread-ledger.mjs"`;
