@@ -97,7 +97,7 @@ function getOrThrow(caps: Map<string, LanguageCapability>, key: string): Languag
 }
 
 /**
- * Render the human-facing README "Languages Compatibilities" section — a
+ * Render the human-facing README "Language Support" section — a
  * collapsed `<details>` spoiler with a capability-ranked, moon-badged table.
  * Rows sort by `capabilityScore` desc (ties keep DISPLAY order via the stable
  * sort); the unsupported CharacterChunker fallback languages always trail. The
@@ -114,7 +114,7 @@ export function renderReadme(caps: Map<string, LanguageCapability>): string {
     (f) => `| ***${f.language}*** | 🌑 **none** · CharacterChunker | 🌑 **N/A** | 🌑 **none** |`,
   ).join("\n");
 
-  return `## Languages Compatibilities
+  return `## Language Support
 
 <!-- markdownlint-disable MD033 -->
 <details>

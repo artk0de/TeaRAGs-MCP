@@ -9,7 +9,7 @@ describe("renderReadme", () => {
   const out = renderReadme(caps);
 
   it("emits the section heading wrapped in a details spoiler", () => {
-    expect(out).toContain("## Languages Compatibilities");
+    expect(out).toContain("## Language Support");
     expect(out).toContain("<details>");
     expect(out).toContain("<summary>");
     expect(out).toContain("</details>");

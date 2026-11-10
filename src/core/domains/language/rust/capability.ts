@@ -29,7 +29,7 @@ export const capability: LanguageCapability = {
   testFiles,
   ingestIgnore,
   codegraph: {
-    tier: "moderate",
+    tier: "maximum",
     tech: "10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, generics, assoc-fn heads, aliases); call-result locals; crate impls",
     // Generic return substitution reads the declaring owner's genericParameters.
     resolverReadsTypeDeclarations: true,

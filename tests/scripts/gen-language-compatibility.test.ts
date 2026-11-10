@@ -22,7 +22,7 @@ describe("writeArtifacts", () => {
     expect(first).toContain("# Top");
     expect(first).toContain("# Bottom");
     expect(first).not.toContain("OLD");
-    expect(first).toContain("## Languages Compatibilities");
+    expect(first).toContain("## Language Support");
     expect(first).toContain("<!-- BEGIN lang-compat -->");
     expect(first).toContain("<!-- END lang-compat -->");
 

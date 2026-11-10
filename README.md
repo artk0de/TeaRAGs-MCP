@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://artk0de.github.io/TeaRAGs-MCP/">
-    <img src="public/logo.png" alt="TeaRAGs logo">
+    <img src="public/logo-readme.png" alt="TeaRAGs logo" width="540">
   </a>
 </p>
 
@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>Codebase Intelligence layer for AI coding agents</strong><br>
-  <sub>Trajectory Enrichment-Aware RAG · served over MCP · 100% local</sub>
+  <sub>Trajectory Enrichment-Aware RAG · served over MCP · local by default</sub>
 </p>
 
 <p align="center">
@@ -22,19 +22,139 @@
 
 ---
 
-**Your coding agent copies the first code it finds — not the right one.**
+**🧠 Your codebase grows faster than your team can understand it.**
 
-TeaRAGs is a **Codebase Intelligence layer** your agent queries over MCP. It
-indexes the repository on your machine into five layers — three that read the
-code and two that judge its interfaces:
+Even experienced developers know only parts of a large system. AI agents face
+the same problem: finding similar code is easier than knowing whether it is a
+good example or what a change might affect.
 
-- 🔍 **What it does** — semantic and hybrid search over AST-aware chunks
-- 🕸️ **How it is connected** — callers, callees, fan-in, transitive impact
-- 🧬 **How it has lived** — churn, bug-fix rate, ownership, age
-- 🏛️ **Whether it is laid out right** — dependency direction, leaking facades,
-  files that change together with no edge between them
-- 🔤 **What the project calls things** — the naming vocabulary, inferred from
-  the call graph, and a verdict on every new name
+**🔬 TeaRAGs is a microscope for your codebase.** It gives coding agents
+semantic search, a code graph, Git history, and architecture and naming signals
+over MCP — helping them find relevant code, investigate risks, and prepare
+changes for review. Fully local by default; cloud embeddings are optional.
+
+## 🚀 Quick Start
+
+We recommend Node.js 24+. With Node.js and [Ollama](https://ollama.com)
+installed:
+
+```bash
+npm install -g tea-rags
+ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
+tea-rags index-codebase /path/to/repo --name myrepo
+tea-rags prime /path/to/repo
+```
+
+[Connect your agent](#-installation): setup instructions for Claude Code, Codex,
+Cursor, ZCode, and other MCP clients are below. Qdrant downloads and starts
+automatically on first use. For cloud embeddings or an alternative local
+provider, see the
+[installation guide](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation).
+
+Then ask your agent:
+
+- _"How does auth work in this project?"_
+- _"Find stable examples of retry logic I can reuse."_
+- _"What might be affected if I change the payment module?"_
+
+## 🔬 A closer look
+
+Even experienced developers know a system unevenly: their own modules well,
+neighboring ones less well, and the rest only in broad strokes. Much of a
+project's established practice lives in the code itself. Every change means
+rebuilding context: finding the implementation, tracing dependencies, comparing
+approaches, studying past fixes, and finding people who know the area.
+
+Even human review can miss the problem. Code may look reasonable locally while
+introducing an unwanted dependency, duplicating an existing mechanism, or
+repeating a fragile approach. AI coding agents face the same limitation: finding
+similar code is much easier than knowing whether to use it as a model.
+
+**🔬 TeaRAGs is a microscope for your codebase, helping your agent examine it
+from different angles.** This local **Codebase Intelligence layer**, queried
+over MCP, combines semantic and graph indexes with Git history: what code does,
+how it connects, how it has changed, where risks concentrate, and who knows it
+best. Architecture detectors and project vocabulary analysis help surface
+structural problems and inconsistencies that are easy to miss when reading
+isolated files.
+
+**🔍 Search by meaning, then navigate by relationships.**
+[Semantic indexing](https://arxiv.org/abs/1909.09436) helps locate
+implementations from a description of the task, even before you know method
+names or the project's terminology.
+[Graph indexing](https://docs.joern.io/code-property-graph/) lets you
+investigate structural relationships: who calls the code, which dependencies
+surround it, and which components execution passes through.
+
+TeaRAGs retains the benefits of both approaches. An agent can start with a
+natural-language question, find the relevant code, and follow its connections.
+Git signals add another perspective: how that code has evolved and where to
+exercise caution.
+
+These signals are inferred from observed code and change history. They help
+agents investigate established practices and make decisions; explicit team rules
+and agent instructions retain priority.
+
+This removes much of the routine investigation. Instead of searching through
+files one after another, the agent gets the symbols, relationships, and evidence
+needed for a specific question. Developers have fewer details to keep in their
+heads, fewer search steps to direct manually, and less information to assemble
+by hand.
+
+The benefits extend beyond search:
+
+- **🎯 Better-informed decisions.** Fix history, dependencies, and potential
+  impact help agents choose an implementation, assess risk, and decide how much
+  verification a change needs.
+- **👥 More targeted review.** Authorship and ownership analysis help
+  automatically identify reviewer candidates familiar with the affected code and
+  highlight areas that need their attention.
+- **📉 Less unnecessary context.** Reading the relevant symbols and
+  relationships reduces input tokens and intermediate search steps. Compact,
+  relevant context leaves fewer distractions. This aligns with
+  [context rot research](https://www.trychroma.com/research/context-rot), which
+  shows declining model reliability as context grows, and may make tasks easier
+  for less capable models.
+- **♻️ More purposeful refactoring.** Detectors help locate structural problems
+  and decide where to invest effort. Better structure can reduce the
+  investigation and cost of subsequent changes, paying back the initial
+  investment.
+
+**🧩 Especially useful for less capable models.** In our observations, giving
+these models more relevant code and explicit relationships helps them make
+better use of their capabilities. Frontier models often produce comparable code
+quality with or without TeaRAGs; for them, the benefit is more about the time
+spent finding and assembling context. Semantic search has generally saved
+investigation time in our sessions, although we have not consistently observed
+that speed advantage in Codex. The benefit depends on the model and agent
+harness, not just the search engine.
+
+### 📊 Refactoring TeaRAGs with TeaRAGs
+
+In TeaRAGs' own development, we measured Claude Code agents before and after a
+program of structural refactoring. This compares development before and after
+structural improvements, rather than search with and without TeaRAGs:
+
+| Metric per feature   | Before refactoring |  After | Change |
+| -------------------- | -----------------: | -----: | -----: |
+| Median elapsed time  |             68 min | 17 min |   −75% |
+| Agent steps          |                117 |     68 |   −42% |
+| Context processed    |       23.3M tokens |  12.7M |   −45% |
+| Weighted token cost¹ |               4.5M |   1.8M |   −60% |
+
+¹ `input + 2 × cache_write + 0.1 × cache_read + 5 × output`. This is an
+aggregate cost metric, not a separate measurement of output tokens.
+
+These are observations from real development tasks using the same model, not a
+controlled A/B experiment. The working process did not change substantially. The
+`review_changes` check was added after refactoring, so the reductions already
+include its additional overhead.
+
+**💡 You do not need to keep the whole system in your head. You need to see what
+matters for the change in front of you.**
+
+_Your code should be as powerful as a T-rex, not a collection of dinosaur
+remains. 🦖_
 
 <p align="center">
   <img src="public/five-layers.png" alt="Five layers behind one MCP interface: Semantic index, Codegraph, Trajectory, Architecture, Lexicon. The first three read the code, the last two judge its borders and names; every result comes back as a dossier">
@@ -44,10 +164,6 @@ The first three layers and why an agent needs all of them at once are laid out
 in [Codebase Intelligence для агента](https://habr.com/ru/articles/1084028/)
 (Habr, in Russian).
 
-TeaRAGs also ships agent skills that know which layer a task needs. The agent
-stops guessing which code is safe to copy, what is critical, and what a change
-will break — it reads the dossier instead.
-
 📖 **[Documentation](https://artk0de.github.io/TeaRAGs-MCP/)** · 🏁
 **[15-minute quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation)**
 · 🧠
@@ -55,10 +171,27 @@ will break — it reads the dossier instead.
 
 ## 👀 See It
 
-Three questions an agent asks before touching code, answered by TeaRAGs on its
-own repository. Every number below is a real response, trimmed.
+**One task, several views: make vector writes more resilient.** Before changing
+code, the agent needs to find the write path, choose a retry pattern, understand
+its callers, and decide where review matters most. The examples below use real
+responses from TeaRAGs' own repository, trimmed; they illustrate an
+investigation, not a recorded end-to-end implementation.
 
-### 1. "Find retry logic I can reuse"
+### 1. Find the implementation by meaning
+
+The agent starts with the behavior, without needing to know class names:
+
+`semantic_search { query: "write points to the vector database in batches", rerank: "dangerous" }`
+
+Similarity finds `PointsAccumulator#flushBatch`,
+`QdrantPointStore#addPointsOptimized`, and `QdrantPointStore#addPoints`. The
+same query can rank results by risk, giving the agent places to investigate as
+well as relevant implementations. We return to those signals in step 4.
+
+### 2. Choose a retry pattern with evidence
+
+Finding the write path does not tell the agent which retry implementation to
+reuse. It asks a second question:
 
 `semantic_search { query: "retry a failed request with exponential backoff", rerank: "hotspots" }`
 
@@ -107,26 +240,18 @@ means extreme for this codebase, not for some global average.
 
 </details>
 
-### 2. "What is risky to touch around vector writes?"
+### 3. Trace connections before changing code
 
-`semantic_search { query: "write points to the vector database in batches", rerank: "dangerous" }`
-
-Similarity alone ranks `PointsAccumulator#flushBatch`,
-`QdrantPointStore#addPointsOptimized` and `QdrantPointStore#addPoints` first.
-The `dangerous` preset reorders by risk and says why:
-
-| #   | Ranked by risk                               | Why it moved up                                                             |
-| --- | -------------------------------------------- | --------------------------------------------------------------------------- |
-| 1   | `ChunkPipeline#createBatchHandler`           | 16 outgoing calls, 77 lines, 5 commits · _high_                             |
-| 2   | `QdrantManager#addPointsWithSparseOptimized` | file with 45 commits, relative churn 8.09 · 🔴 _high_, 4 authors            |
-| 3   | `PointsAccumulator#flushBatch`               | one author owns 100% of the live lines · 🟠 _deep-silo_, 158 days untouched |
-
-### 3. "Who calls it before I change it?"
+The agent can inspect callers of a write method rather than infer impact from
+the search results:
 
 `get_callers { symbolId: "QdrantManager#addPointsWithSparse" }`
 
 Ten exact call sites across eight files — method fan-in 10 · _central_, file
 transitive impact 47 · _regional_:
+
+<details>
+<summary>Call sites across ingestion, maintenance, and API operations</summary>
 
 ```text
 ChunkPipeline#createBatchHandler          ingest/pipeline/chunk-pipeline.ts
@@ -140,16 +265,44 @@ SparseStoreAdapter#rebuildSparseVectors   maintenance/migration/adapters/sparse-
 SparseStoreAdapter#storeSparseVersion     maintenance/migration/adapters/sparse-store-adapter.ts
 ```
 
+</details>
+
 Need the whole chain from an entry point to this call? `trace_path` enumerates
 every A→B path and, with a rerank preset, sorts them by how dangerous each step
 is.
 
+### 4. Focus verification and find reviewer candidates
+
+The risk view from step 1 highlights different reasons to look closely:
+
+| #   | Ranked by risk                               | Why it moved up                                                             |
+| --- | -------------------------------------------- | --------------------------------------------------------------------------- |
+| 1   | `ChunkPipeline#createBatchHandler`           | 16 outgoing calls, 77 lines, 5 commits · _high_                             |
+| 2   | `QdrantManager#addPointsWithSparseOptimized` | file with 45 commits, relative churn 8.09 · 🔴 _high_, 4 authors            |
+| 3   | `PointsAccumulator#flushBatch`               | one author owns 100% of the live lines · 🟠 _deep-silo_, 158 days untouched |
+
+These signals lead to concrete review questions: does the batch handler need
+extra verification because of its outgoing calls? What explains the write
+method's churn? Who should verify a change to code maintained by a single
+author?
+
+Ownership analysis helps the agent identify reviewer candidates familiar with
+the affected areas. The single-owner signal above also warns that knowledge is
+concentrated. These are leads for verification, not proof that a change is wrong
+or an automatic assignment of reviewers.
+
+The result is an investigation grounded in meaning, relationships, history, and
+ownership before the agent commits to an implementation.
+
 ## ❓ What It Answers
 
-Ask in plain language. **The plugin picks the skill, tools and rerank presets
-for every question automatically** — it ships a decision table that maps intent
-to the right call, so nobody has to know a preset name. Other MCP clients get
-the same routing guide as an MCP resource (`tea-rags://schema/search-guide`).
+<details>
+<summary>Explore questions, evidence, and agent workflows</summary>
+
+Ask in plain language. **The plugin routes tasks to relevant skills, tools and
+rerank presets** — it ships a decision table that maps intent to the right call,
+so nobody has to know a preset name. Other MCP clients get the same routing
+guide as an MCP resource (`tea-rags://schema/search-guide`).
 
 One question per layer, most distinctive first. Every number is a real response
 on TeaRAGs' own repository.
@@ -207,7 +360,7 @@ Similarity finds all four; history decides. `proven` ranks long-lived,
 low-bug-rate, multi-author code first, and every result carries its dossier —
 commits, bug-fix share, age, owners — labelled against this repository's own
 percentiles. The closest match by text is often the one fixed every sprint; see
-[See It → 1](#1-find-retry-logic-i-can-reuse) for a real pair.
+[See It → 2](#2-choose-a-retry-pattern-with-evidence) for a real pair.
 
 ### 4. 🕸️ _"How does a request get from the API to the card charge, and which step is riskiest?"_
 
@@ -216,8 +369,8 @@ percentiles. The closest match by text is often the one fixed every sprint; see
 Every call path between the two symbols, resolved from the call graph rather
 than guessed from names, with each step ranked by how risky it is to touch. An
 ambiguous call is reported as ambiguous, never picked at random. See
-[See It → 3](#3-who-calls-it-before-i-change-it) for the ten call sites of a
-real write path.
+[See It → 3](#3-trace-connections-before-changing-code) for the ten call sites
+of a real write path.
 
 ### 5. 🔍 _"Where do we charge a bill with a saved card?"_ — when the code says `invoice`
 
@@ -279,6 +432,8 @@ The right column shows what runs under the hood.
 
 </details>
 
+</details>
+
 ## ✨ Features
 
 - 📈 **Git- and codegraph-aware ranking** — 23 rerank presets blend churn,
@@ -286,8 +441,8 @@ The right column shows what runs under the hood.
   (`proven`, `hotspots`, `techDebt`, `blastRadius`, `criticalPath`, …), plus 12
   filter presets
 - 🕸️ **Call graph** — callers, callees, cycles and A→B paths (`get_callers`,
-  `get_callees`, `find_cycles`, `trace_path`) for TypeScript, JavaScript, Ruby,
-  Swift and Python at a high tier
+  `get_callees`, `find_cycles`, `trace_path`) with resolution depth varying by
+  language and driver availability — see [Language Support](#language-support)
 - 🏛️ **Architecture report** — Stable Dependencies at component level, imports
   that leak past an adopted facade, files that change together with no edge
   between them, and distance from the main sequence (`get_architecture_report`)
@@ -295,23 +450,20 @@ The right column shows what runs under the hood.
   off the project vocabulary, co-change partners the change left untouched,
   per-file cohesion, and new edges that break architecture boundaries
   (`review_changes`)
-- 🔤 **Naming review** — the project's vocabulary inferred from the call graph:
-  verdicts on value and type names, the project's own word for a synonym, a
-  review of every name a diff declares (`review_changes`), and a whole-code
-  audit of synonyms, homonyms and outliers (`get_ontology_report`)
-- 🧠 **Agent skills** — the plugin routes every question to the right tools and
-  presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
-  `risk-assessment`, `data-driven-generation`, `mr-review`, …) plus
+- 🧠 **Agent skills** — the plugin routes tasks to relevant tools and presets;
+  15 ready-made workflows (`explore`, `bug-hunt`, `risk-assessment`,
+  `data-driven-generation`, `mr-review`, …) plus
   [`dinopowers`](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers),
   10 wrappers that feed index signals into
   [`superpowers`](https://github.com/obra/superpowers)
-- 🔒 **100% local** — embedded Qdrant and DuckDB, no Docker; embeddings through
-  Ollama — on the laptop or on any machine in your network, with the laptop as
-  an automatic fallback (see [Embedding providers](#embedding-providers)) — with
-  OpenAI, Cohere and Voyage optional
-- 🔄 **Always fresh** — incremental reindex, auto-update on a target branch,
-  per-worktree index clones, and a drift report that names the exact command to
-  run
+- 🔒 **Fully local by default** — embedded Qdrant and DuckDB, no Docker;
+  embeddings through Ollama — on the laptop or on any machine in your network,
+  with the laptop as an automatic fallback (see
+  [Embedding providers](#embedding-providers)) — with OpenAI, Cohere and Voyage
+  optional
+- 🔄 **Incremental updates & worktree support** — incremental reindex,
+  auto-update on a target branch, per-worktree index clones, and a drift report
+  that names the exact command to run
 - 🏢 **Built for enterprise monorepos** — AST chunking for 12 languages,
   parallel pipelines, validated on a 3.5M-line production monolith
 
@@ -334,8 +486,8 @@ Disk taken by real indexes (turbo quantization, dense + sparse vectors):
 | Production monolith (Ruby + TypeScript) | **3.3M lines of Ruby + TypeScript, tests included + 162K lines of docs** · ~34k files · 175k chunks | 2.0 GB                | ~460 MB             |
 | TeaRAGs itself (TypeScript)             | 686K LoC + 290K lines of docs · ~3.5k files · 45k chunks                                            | 1.2 GB                | 40 MB               |
 
-The call graph grows with the code; the vector index much less — a codebase five
-times smaller still takes 1.2 GB.
+These are measured examples, not a sizing formula. Storage depends on chunk
+count, embedding dimensions, quantization, and graph density.
 
 Pull the code-embedding model:
 
@@ -447,34 +599,6 @@ Voyage), an external Qdrant, and the built-in ONNX provider (beta) are covered
 in the
 [installation guide](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation).
 
-### 🕸️ The call graph
-
-The call graph is **on by default**. To index a project without it, set
-`CODEGRAPH_ENABLED=false` for that run, or pin it on an indexed project:
-
-```bash
-tea-rags projects set-env --name <alias> CODEGRAPH_ENABLED=false
-```
-
-The flag is recorded per project, so later runs from the CLI, the MCP server or
-auto-update keep each project's choice. Projects indexed while the call graph
-was opt-in keep the state they were indexed with; turn it on for one with
-`CODEGRAPH_ENABLED=true` in the same command. Details:
-[Codegraph Enrichments](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments).
-
-## 🚀 Quick Start
-
-```bash
-tea-rags index-codebase /path/to/repo --name myrepo   # first index: register + index
-tea-rags prime /path/to/repo                          # index state, drift, signal thresholds
-```
-
-In Claude Code, `/tea-rags:index` does the same. Then ask your agent:
-
-- _"How does auth work in this project?"_
-- _"Find stable examples of retry logic I can copy."_
-- _"What breaks if I change the payment module?"_
-
 ## 🤔 Why TeaRAGs?
 
 |                              | `grep` / `ripgrep` | Embedding search | **TeaRAGs**                                           |
@@ -483,7 +607,7 @@ In Claude Code, `/tea-rags:index` does the same. Then ask your agent:
 | **Knows history**            | —                  | —                | Churn, bug fixes, owners, age                         |
 | **Knows callers**            | —                  | —                | Fan-in, transitive impact, call paths                 |
 | **Ranks for the task**       | —                  | Similarity only  | 23 presets — see [What It Answers](#-what-it-answers) |
-| **Cost on a large monorepo** | Many agent turns   | One query        | One query                                             |
+| **Cost on a large monorepo** | Many agent turns   | One query        | Targeted queries with code, graph and history         |
 
 ### 🆚 Compared to other tools
 
@@ -612,7 +736,7 @@ your own corpus.
 
 <!-- BEGIN lang-compat -->
 
-## Languages Compatibilities
+## Language Support
 
 <!-- markdownlint-disable MD033 -->
 <details>
@@ -629,12 +753,12 @@ Rows are ordered by overall capability, richest support first.
 
 | Language          | AST chunking                                                                                                      | Test chunking                                                                                                                                                                              | Codegraph                                                                                                                                                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **_TypeScript_**  | 🌔 **full** · tree-sitter (comment attachment, method-body splitting, describe/it scopes)                         | 🌖 **high** · testScopeChunker (describe/it scopes, one addressable chunk per example; in-source blocks marked isTest and pruned from the codegraph)                                       | 🌖 **high** — 14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker) + cone dispatch + typeChecker-backed union-receiver fan-out                                                     |
+| **_TypeScript_**  | 🌔 **full** · tree-sitter (comment attachment, method-body splitting, describe/it scopes)                         | 🌖 **high** · testScopeChunker (describe/it scopes, one addressable chunk per example; in-source blocks marked isTest and pruned from the codegraph)                                       | 🌕 **maximum** — 14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker) + cone dispatch + typeChecker-backed union-receiver fan-out                                                  |
+| **_Rust_**        | 🌔 **full** · tree-sitter (named-item extraction, #[cfg(test)] / #[test] scopes)                                  | 🌖 **high** · attribute-AST test scope chunking (#[cfg(test)] with all/any/not evaluation, #[test]-family attributes); inline tests marked isTest and pruned from the codegraph            | 🌕 **maximum** — 10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, generics, assoc-fn heads, aliases); call-result locals; crate impls                 |
 | **_JavaScript_**  | 🌔 **full** · tree-sitter (assignment chunking, describe/it scopes, module/class split)                           | 🌖 **high** · testScopeChunker (describe/it scopes, one addressable chunk per example; in-source blocks marked isTest and pruned from the codegraph)                                       | 🌖 **high** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)                                                                                                                    |
 | **_Ruby_**        | 🌔 **full** · tree-sitter (RSpec block grouping, comment attachment, spec scope splitting, method-body splitting) | 🌖 **high** · RSpec scope chunker (one chunk per example, ancestor setup injected)                                                                                                         | untyped 🌖 **high** · YARD 🌕 **maximum** · RBS/Sorbet 🌑 **TBD** — 15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors |
 | **_Swift_**       | 🌔 **full** · tree-sitter                                                                                         | 🌖 **high** · XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in) | 🌖 **high** — 10-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type and module-value receivers; no import narrowing                                 |
 | **_Python_**      | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌖 **high** — 10-strategy chain + C3 MRO + cone/union/callable-param/dict-table dispatch + re-export-aware imports + inferred return types + gated framework vocabularies                   |
-| **_Rust_**        | 🌔 **full** · tree-sitter (named-item extraction, #[cfg(test)] / #[test] scopes)                                  | 🌖 **high** · attribute-AST test scope chunking (#[cfg(test)] with all/any/not evaluation, #[test]-family attributes); inline tests marked isTest and pruned from the codegraph            | 🌗 **moderate** — 10-strategy (rustc call-site driver first); trait dispatch; return/field chains (Self, generics, assoc-fn heads, aliases); call-result locals; crate impls                |
 | **_Go_**          | 🌔 **full** · tree-sitter (func/type split)                                                                       | 🌓 **medium** · generic AST                                                                                                                                                                | 🌗 **moderate** — 7-pass chain + scope-aware typed locals + struct-field chains + embedding promotion + go.mod module-path imports; no interface dispatch                                   |
 | **_Java_**        | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌗 **moderate** — 6-strategy + java.lang stdlib whitelist + overload disambiguation                                                                                                         |
 | **_PHP_**         | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌗 **moderate** — same-file $this members, typed locals, same-file and imported scoped calls, same-file functions, unique global functions, use-to-file edges                               |
@@ -783,7 +907,7 @@ is incremental — only changed files are re-embedded.
 graph of varying depth: TypeScript, JavaScript, Ruby, Python, Swift, Go, Java,
 Rust, Bash, Objective-C, PHP, and Kotlin. Markdown is chunked by heading and
 YAML by key path; SQL and JSON fall back to plain character chunks. Per-language
-depth is in [Languages Compatibilities](#languages-compatibilities).
+depth is in [Language Support](#language-support).
 
 **How accurate are the git signals?** They are read from your real history; the
 one heuristic is bug-fix detection. A commit counts as a bug fix when its
