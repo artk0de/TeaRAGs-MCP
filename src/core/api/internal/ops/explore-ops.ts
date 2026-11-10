@@ -56,6 +56,7 @@ import {
   outlineAddressOf,
   QUERY_VARIANT_SEPARATOR,
   RAILS_TABLE_ID_PREFIX,
+  recordingTreeGraphReader,
   SimilarSearchStrategy,
   splitQueryVariants,
   SymbolBatchDrill,
@@ -74,7 +75,6 @@ import {
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
-import { recordingTreeGraphReader } from "../../../domains/explore/working-tree/tree-graph-marker.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { migrationCollectionName } from "../../../domains/ingest/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
