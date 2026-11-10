@@ -110,6 +110,12 @@ interface RecoveredCounts {
   readonly chunks: number;
   /** Points handed to the reindex run instead of healed — they count as remaining (bd tea-rags-mcp-fxio5). */
   readonly handedOff?: number;
+  /**
+   * Files in this batch whose chunk signals were handed off, not healed.
+   * The progress bar counts them; `files` does not, so a deferring provider
+   * does not report the batch as recovered.
+   */
+  readonly handedOffFiles?: number;
 }
 
 /**
@@ -287,15 +293,17 @@ export class EnrichmentRecovery {
         // json, markdown, toml, …) never gain a symbol, so the in-place pass
         // below stamps them exactly as the run's deferred pass would.
         let handedOff = 0;
+        let handedOffFiles = 0;
         if (provider.defersChunkEnrichment) {
           const paths = [...chunkMap.keys()];
           for (const relPath of provider.filterExtractablePaths?.(paths, root) ?? paths) {
             const entries = chunkMap.get(relPath) ?? [];
             deferredChunks.set(relPath, entries);
             handedOff += entries.length;
+            handedOffFiles++;
             chunkMap.delete(relPath);
           }
-          if (chunkMap.size === 0) return { files: 0, chunks: 0, handedOff };
+          if (chunkMap.size === 0) return { files: 0, chunks: 0, handedOff, handedOffFiles };
         }
 
         // The deferred pass's bare-stamp rule (bd tea-rags-mcp-39xca.2):
@@ -313,7 +321,7 @@ export class EnrichmentRecovery {
           batchChunkIds,
         );
 
-        return { files: chunkMap.size, chunks: applied, handedOff };
+        return { files: chunkMap.size, chunks: applied, handedOff, handedOffFiles };
       },
     );
     return deferredChunks.size > 0 ? { ...result, deferredChunks } : result;
@@ -359,6 +367,11 @@ export class EnrichmentRecovery {
     let recoveredChunks = 0;
     let failedPoints = 0;
     let handedOffPoints = 0;
+    // Files the bar may move for. Healed files, handed-off files, and a batch
+    // that threw all count: a deferring provider returns `files: 0` for a full
+    // handoff, and a thrown batch used to leave `recoveredFiles` at 0, so
+    // `codegraph.symbols file/chunk` sat at 0/N for the whole pass.
+    let visitedFiles = 0;
 
     this.reportRecovery(provider.key, level, 0, steps);
 
@@ -371,15 +384,17 @@ export class EnrichmentRecovery {
         if (event.phase === "extract") extractDone = event.done;
         else resolveDone = event.done;
         const inner = resolveDone > 0 ? batchTotal + resolveDone : extractDone;
-        this.reportRecovery(provider.key, level, recoveredFiles * 2 + inner, steps);
+        this.reportRecovery(provider.key, level, Math.min(visitedFiles * 2 + inner, steps), steps);
       });
       try {
         const healed = await healBatch(batch, root);
         recoveredFiles += healed.files;
         recoveredChunks += healed.chunks;
         handedOffPoints += healed.handedOff ?? 0;
+        visitedFiles += healed.files + (healed.handedOffFiles ?? 0);
       } catch (error) {
         failedPoints += batch.points.length;
+        visitedFiles += batch.paths.length;
         // Unconditional: a debug-gated log already cost a full debugging
         // session on live damage — silent recovery failures are exactly how a
         // 29k-point damage went unnoticed.
@@ -391,7 +406,7 @@ export class EnrichmentRecovery {
       } finally {
         provider.bindRecoveryProgress?.(undefined);
       }
-      this.reportRecovery(provider.key, level, recoveredFiles * 2, steps);
+      this.reportRecovery(provider.key, level, Math.min(visitedFiles * 2, steps), steps);
     }
 
     // Handed-off points are known un-healed too: the reindex run settles them,

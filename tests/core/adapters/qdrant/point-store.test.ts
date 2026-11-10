@@ -29,7 +29,10 @@ function storeOver(retrieve: () => Promise<unknown>, daemon?: EmbeddedDaemonProb
   const connection = new QdrantConnection(URL, undefined, undefined, daemon);
   const client = { retrieve: vi.fn(retrieve) };
   connection.client = client as never;
-  return { store: new QdrantPointStore(connection), client };
+  // A transport retry installs a new client. Stay on the stub unless a test
+  // replaces this to prove the dead socket is dropped.
+  connection.createClient = () => client as never;
+  return { store: new QdrantPointStore(connection), client, connection };
 }
 
 function daemonIn(phase: "starting" | "recovering"): EmbeddedDaemonProbe {
@@ -54,11 +57,12 @@ describe("QdrantPointStore#getPointOrThrow", () => {
   });
 
   // Each of these came back `null` through `getPoint` — "absent" — and only a
-  // refused connection reached the caller.
+  // refused connection reached the caller. A request timeout is NOT in this
+  // table: a hung read is a transport failure now, retried on a fresh client
+  // (the two tests below), not an answered business failure.
   const answeredFailures: { label: string; make: () => Error }[] = [
     { label: "an HTTP 500", make: () => httpError(500, "Internal Server Error") },
     { label: "an HTTP 503", make: () => httpError(503, "Service Unavailable") },
-    { label: "a request timeout (AbortError)", make: abortError },
     { label: "a client error with no status", make: () => new Error("qdrant timeout") },
   ];
 
@@ -73,6 +77,28 @@ describe("QdrantPointStore#getPointOrThrow", () => {
       await expect(read).rejects.toMatchObject({ code: "INFRA_QDRANT_OPERATION_FAILED", cause: raw });
     });
   }
+
+  it("retries a hung read once on a fresh client and answers from it", async () => {
+    const { store, client, connection } = storeOver(async () => Promise.reject(abortError()));
+    const fresh = { retrieve: vi.fn().mockResolvedValue([{ id: 7, payload: { k: "fresh" } }]) };
+    connection.createClient = () => fresh as never;
+
+    await expect(store.getPointOrThrow("col", "marker")).resolves.toEqual({ id: 7, payload: { k: "fresh" } });
+    expect(client.retrieve).toHaveBeenCalledTimes(1);
+    expect(fresh.retrieve).toHaveBeenCalledTimes(1);
+    expect(connection.client).toBe(fresh);
+  });
+
+  it("keeps a persistent hang typed as unavailability, the abort preserved as cause", async () => {
+    const raw = abortError();
+    const { store, client } = storeOver(async () => Promise.reject(raw));
+
+    const read = store.getPointOrThrow("col", "marker");
+
+    await expect(read).rejects.toBeInstanceOf(QdrantUnavailableError);
+    await expect(read).rejects.toMatchObject({ code: "INFRA_QDRANT_UNAVAILABLE", cause: raw });
+    expect(client.retrieve).toHaveBeenCalledTimes(2);
+  });
 
   it("keeps a daemon that is still starting typed as starting", async () => {
     const { store } = storeOver(async () => Promise.reject(new TypeError("fetch failed")), daemonIn("starting"));
@@ -119,6 +145,12 @@ describe("QdrantPointStore#getPoint", () => {
 
   it("still throws when the connection is refused", async () => {
     const { store } = storeOver(async () => Promise.reject(new TypeError("fetch failed")));
+
+    await expect(store.getPoint("col", 1)).rejects.toBeInstanceOf(QdrantUnavailableError);
+  });
+
+  it("still throws when the read hangs through the fresh-client retry — unknown is not absent", async () => {
+    const { store } = storeOver(async () => Promise.reject(abortError()));
 
     await expect(store.getPoint("col", 1)).rejects.toBeInstanceOf(QdrantUnavailableError);
   });

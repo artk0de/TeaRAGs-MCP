@@ -21,9 +21,9 @@ import { collectSymbols } from "../../../../../../src/core/domains/language/kern
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { RubyCallResolver } from "../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -737,6 +737,53 @@ describe("CodegraphEnrichmentProvider — additional branch coverage", () => {
         await provider.buildFileSignals(root);
         const table = (provider as unknown as TableAccess).deps.symbolTable;
         expect(table.lookup("Foo#regular").length).toBeGreaterThanOrEqual(1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("recovery progress emission (bindRecoveryProgress)", () => {
+    it("paints the walk: extract 0 → every 25 → final, then resolve open and close", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-reprog-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        // 27 files: crosses the every-25 paint so the mid-walk emit is seen,
+        // and ends off the boundary so the final emit is distinct from it.
+        for (let i = 0; i < 27; i++) {
+          writeFileSync(join(root, "src", `f${i}.ts`), `export const v${i} = ${i};\n`);
+        }
+        const events: { phase: string; done: number; total: number }[] = [];
+        provider.bindRecoveryProgress((event) => events.push({ ...event }));
+
+        await provider.buildFileSignals(root);
+
+        const extract = events.filter((e) => e.phase === "extract");
+        // Opening paint, the 25th-file paint, and the final one — all with the
+        // walk's file count as the denominator.
+        expect(extract.map((e) => e.done)).toEqual([0, 25, 27]);
+        for (const e of extract) expect(e.total).toBe(27);
+        // Resolve phase brackets sink.finish().
+        const resolve = events.filter((e) => e.phase === "resolve");
+        expect(resolve.map((e) => e.done)).toEqual([0, 27]);
+        for (const e of resolve) expect(e.total).toBe(27);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("unbinding stops the emission — recovery's finally must silence the walk", async () => {
+      const root = mkdtempSync(join(tmpdir(), "cg-reprog-off-"));
+      try {
+        mkdirSync(join(root, "src"), { recursive: true });
+        writeFileSync(join(root, "src", "one.ts"), "export const one = 1;\n");
+        const events: unknown[] = [];
+        provider.bindRecoveryProgress((event) => events.push(event));
+        provider.bindRecoveryProgress(undefined);
+
+        await provider.buildFileSignals(root);
+
+        expect(events).toEqual([]);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
