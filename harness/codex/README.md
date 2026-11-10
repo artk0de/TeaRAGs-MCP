@@ -18,11 +18,12 @@ commits it.
   pre-approved.
 - `tea-rags/hooks/hooks.json` — SessionStart, three hooks in order:
   `${PLUGIN_ROOT}/scripts/session-start.sh` (core rules, `scripts/core.txt`),
-  `${PLUGIN_ROOT}/scripts/session-codex-rules.sh` (Codex-only rules,
-  `scripts/codex-rules.txt`), then `${PLUGIN_ROOT}/scripts/session-digest.sh`
-  (`tea-rags prime "$PWD"` fitted by `scripts/fit-digest.py`), each its own
-  `hookSpecificOutput.additionalContext` (core and Codex rules ≤ 9765 each,
-  digest ≤ 9500 chars); SubagentStart `${PLUGIN_ROOT}/scripts/subagent-block.sh`
+  `${PLUGIN_ROOT}/scripts/session-codex-rules.sh` (read discipline + Codex-only
+  rules, `scripts/codex-rules.txt`), then
+  `${PLUGIN_ROOT}/scripts/session-digest.sh` (`tea-rags prime "$PWD"` fitted by
+  `scripts/fit-digest.py`), each its own `hookSpecificOutput.additionalContext`
+  (core and Codex rules ≤ 9500 each, digest ≤ 9500 chars); SubagentStart
+  `${PLUGIN_ROOT}/scripts/subagent-block.sh`
   (`hookSpecificOutput.additionalContext`). PreToolUse
   (`^(Bash|shell|exec_command)$`) `${PLUGIN_ROOT}/scripts/one-file-read.sh` —
   exit 2 for a shell command that prints two or more `.md` files (one file per

@@ -406,6 +406,11 @@ describe("renderCodexHarness", () => {
         expect(codexRules).not.toContain("# tea-rags core");
       }
 
+      const coreText = rendered.get("tea-rags/scripts/core.txt") ?? "";
+      const codexRulesText = rendered.get("tea-rags/scripts/codex-rules.txt") ?? "";
+      expect(coreText).not.toContain("**Read ONE file per command");
+      expect(codexRulesText.startsWith("**Read ONE file per command")).toBe(true);
+
       const digest = JSON.parse(run("session-digest.sh", `${bin}:/usr/bin:/bin`)).hookSpecificOutput;
       expect(digest.hookEventName).toBe("SessionStart");
       expect(digest.additionalContext).toContain(`PRIME-DIGEST for ${realpathSync(bin)} (--agent)`);
@@ -605,6 +610,27 @@ describe("renderCodexHarness", () => {
     for (const [path, content] of payloads) {
       const prose = path.endsWith("/core.txt") || path.endsWith("/codex-rules.txt");
       expect(content.length, path).toBeLessThanOrEqual(prose ? CODEX_CORE_HOOK_BUDGET : CODEX_HOOK_CONTEXT_BUDGET);
+    }
+  });
+
+  // bd tea-rags-mcp-9lynw.14 LIVE-TEST 2026-11-10: codex-cli 0.167.0 delivered the 9,765-char core
+  // as 2,508 tokens and elided ~50 tokens mid-core (`…50 tokens truncated…`) — the per-hook cap is
+  // ~2,500 TOKENS, and the char-measured 9,765 budget no longer holds. The read discipline rides
+  // codex-rules.txt (per-hook cap, ~6.7k chars ≈ 1.7k tokens there), leaving the core whole at
+  // ~9,240 chars ≈ 2,380 tokens. A regression here means the core hook silently loses its middle.
+  it("keeps the core hook whole under Codex's token cap: the read discipline rides codex-rules.txt", async () => {
+    const rendered = await renderCodexHarness(ROOT);
+    const core = rendered.get("tea-rags/scripts/core.txt") ?? "";
+    const codexRules = rendered.get("tea-rags/scripts/codex-rules.txt") ?? "";
+    expect(core).not.toContain("**Read ONE file per command");
+    expect(codexRules.startsWith("**Read ONE file per command")).toBe(true);
+    // ~3.9 chars/token under 0.167.0: 9,500 chars ≈ 2,436 tokens < the ~2,500-token cap.
+    expect(core.length).toBeLessThanOrEqual(CODEX_CORE_HOOK_BUDGET);
+    expect(codexRules.length).toBeLessThanOrEqual(CODEX_CORE_HOOK_BUDGET);
+    // The skill and AGENTS copies keep the discipline leading the core text.
+    for (const path of ["tea-rags/skills/tea-rags-core/SKILL.md", "AGENTS.tea-rags.md"]) {
+      const text = rendered.get(path) ?? "";
+      expect(text.indexOf("**Read ONE file per command")).toBeGreaterThan(text.indexOf("# tea-rags core"));
     }
   });
 

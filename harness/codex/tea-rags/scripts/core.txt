@@ -1,11 +1,5 @@
 # tea-rags core
 
-**Read ONE file per command**, any tool alike (`cat`, `sed`, `python3`, a loop):
-output past ~10k tokens loses its middle (`…N tokens truncated…`), and
-a rule you did not see is not a rule you may guess. Missing instructions → read only
-their missing ranges (`sed -n`). For source, follow the tea-rags continuation only
-if needed code is missing; never reread retained bodies because output was truncated.
-
 **Each step takes the tool its routing row names.**
 
 **Addressing.** Every read or suggested call: `project=<alias>` +
