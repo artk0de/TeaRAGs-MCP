@@ -102,4 +102,28 @@ describe("buildChunkPointPayload", () => {
     expect(payload).not.toHaveProperty("imports");
     expect(payload.relativePath).toBe("a.ts");
   });
+
+  it("should list each imported module once when the file imports it twice (type + value)", async () => {
+    const code = `import type { ParsedPath } from "node:path";
+import { join } from "node:path";
+
+export function combine(): string {
+  return join("a", "b");
+}
+`;
+    await createTestFile(codebaseDir, "dupe.ts", code);
+    const pool = warmChunkerPoolFactory(1, { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 });
+    const parsed = await pool.processFile(join(codebaseDir, "dupe.ts"), code, "typescript");
+    // The collector emits one specifier per import statement, so a module the
+    // file imports as both type and value arrives twice (bd tea-rags-mcp-sjxy9).
+    expect(parsed.imports).toEqual(["node:path", "node:path"]);
+
+    const payload = buildChunkPointPayload(parsed.chunks[0], {
+      codebasePath: codebaseDir,
+      imports: parsed.imports ?? [],
+      payloadBuilder: new StaticPayloadBuilder(),
+    });
+
+    expect(payload.imports).toEqual(["node:path"]);
+  });
 });

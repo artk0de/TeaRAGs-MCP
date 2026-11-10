@@ -51,7 +51,10 @@ export function toChunkPointInput(chunk: CodeChunk, imports: readonly string[]):
       headingPath: chunk.metadata.headingPath,
       navigation: chunk.metadata.navigation,
       ...Object.fromEntries(TEST_CHUNK_LINK_METADATA_KEYS.map((key) => [key, chunk.metadata[key]])),
-      ...(imports.length > 0 && { imports: [...imports] }),
+      // One entry per module (bd tea-rags-mcp-sjxy9): collectors emit a
+      // specifier per import statement, and imports-as-count consumers count
+      // distinct modules, not statements.
+      ...(imports.length > 0 && { imports: [...new Set(imports)] }),
     } as CodeChunk["metadata"],
   };
 }
