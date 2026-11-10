@@ -44,7 +44,9 @@ import type {
 } from "../../../contracts/types/trajectory.js";
 import type { WorkingTree, WorkingTreeMarker } from "../../../contracts/types/working-tree.js";
 import {
+  batchedResolvers,
   computeSearchConfidence,
+  containerIdsOf,
   createExploreStrategy,
   EmptyFilterPresetError,
   FileOutlineStrategy,
@@ -62,6 +64,7 @@ import {
   UnknownFilterPresetError,
   withoutWorkingTreeFloors,
   type BaseExploreStrategy,
+  type BatchedResolvers,
   type ExploreContext,
   type ExploreQueryVariant,
   type ExploreRequestScope,
@@ -71,6 +74,7 @@ import {
   type WorkingTreeOverlay,
   type WorkingTreeView,
 } from "../../../domains/explore/index.js";
+import { recordingTreeGraphReader } from "../../../domains/explore/working-tree/tree-graph-marker.js";
 import { NotIndexedError } from "../../../domains/ingest/errors/index.js";
 import { migrationCollectionName } from "../../../domains/ingest/index.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/index.js";
@@ -576,8 +580,20 @@ export class ExploreOps {
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const workingTreeView = await pendingView;
+    // bd tea-rags-mcp-4qdj0 — every address's outline render pays its own
+    // decoration-resolver roundtrips (one ancestors + one visibility call per
+    // address, serialized on the DuckDB daemon socket: ~120ms/address, a
+    // 17-address batch measured 1.9s). One batch, one wrapper: prefetch every
+    // id derivable from the addresses in a single resolver call each, and let
+    // repeats ride the cache. Single-symbol paths are untouched.
+    const resolvers = batchedResolvers(this.containerAncestorResolver, this.visibilityResolver);
+    await resolvers.prefetch(
+      ctx.collectionName,
+      containerIdsOf(symbols),
+      workingTreeView ? recordingTreeGraphReader(workingTreeView) : undefined,
+    );
     const drill = new SymbolBatchDrill(
-      (symbol) => this.buildSymbolSearchStrategy(request, symbol),
+      (symbol) => this.buildSymbolSearchStrategy(request, symbol, resolvers),
       (relativePath) => this.buildFileOutlineStrategy(relativePath, request.language),
     );
     const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
@@ -1042,8 +1058,17 @@ export class ExploreOps {
     );
   }
 
-  /** The symbol-mode strategy for one address — single `symbol` and every batch address alike. */
-  private buildSymbolSearchStrategy(request: FindSymbolRequest, symbol: string): SymbolSearchStrategy {
+  /**
+   * The symbol-mode strategy for one address — single `symbol` and every batch
+   * address alike. A batch hands its `resolvers` (prefetch + cache wrappers,
+   * bd tea-rags-mcp-4qdj0); single-symbol paths pass nothing and use the ops'
+   * own resolvers.
+   */
+  private buildSymbolSearchStrategy(
+    request: FindSymbolRequest,
+    symbol: string,
+    resolvers?: BatchedResolvers,
+  ): SymbolSearchStrategy {
     return new SymbolSearchStrategy(
       this.qdrant,
       this.reranker,
@@ -1052,8 +1077,8 @@ export class ExploreOps {
       this.registry,
       { symbol, language: request.language, pathPattern: request.pathPattern },
       this.chunkResolver,
-      this.visibilityResolver,
-      this.containerAncestorResolver,
+      resolvers?.visibility ?? this.visibilityResolver,
+      resolvers?.ancestors ?? this.containerAncestorResolver,
     );
   }
 
