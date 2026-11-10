@@ -19,5 +19,6 @@ BUILD_TS="$(stat -f %m "$ROOT/build/index.js" 2>/dev/null || stat -c %Y "$ROOT/b
 if [ "$SRC_TS" -gt "$BUILD_TS" ]; then
   iso() { date -r "$1" -u +%FT%TZ 2>/dev/null || date -d "@$1" -u +%FT%TZ; }
   echo "⚠ tea-rags build is older than its source (build $(iso "$BUILD_TS"), last src commit $(iso "$SRC_TS")) — run \`npm run build\` in $ROOT"
+  echo "  After rebuilding, a RUNNING tea-rags MCP server still holds the old build: its index_codebase keeps refusing with INGEST_PROCESS_BUILD_STALE until the server is reconnected/restarted. Workaround without a restart: index via the CLI (\`tea-rags index-codebase <path>\` or \`--project <alias>\`) — a fresh process loads the current build. Reads are unaffected either way."
 fi
 exit 0

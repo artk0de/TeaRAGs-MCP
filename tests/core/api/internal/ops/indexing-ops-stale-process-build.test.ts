@@ -133,7 +133,7 @@ describe("IndexingOps — refuses a run from a process whose build changed on di
     expectNoWork(deps);
   });
 
-  it("names both builds and tells the caller to reconnect the MCP server or rerun the CLI", async () => {
+  it("names both builds and hands an agent an actionable remedy, not just the UI one", async () => {
     const error = await new IndexingOps(makeDeps(staleBuild)).run("/repo").catch((err: unknown) => err);
 
     expect(error).toBeInstanceOf(IndexingProcessBuildStaleError);
@@ -141,8 +141,16 @@ describe("IndexingOps — refuses a run from a process whose build changed on di
     expect(stale.message).toContain("build on disk changed since this process started");
     expect(stale.message).toContain(LOADED);
     expect(stale.message).toContain(ON_DISK);
+    // What happened, in terms a session agent can act on:
+    expect(stale.hint).toContain("replaced the build this process loaded");
+    // Reads are explicitly not affected — the agent keeps working meanwhile.
+    expect(stale.hint).toMatch(/reads? \(search.*find_symbol.*\) keep working/);
+    // The agent-runnable remedy FIRST: a fresh CLI process loads the current build.
+    expect(stale.hint).toContain("tea-rags index-codebase");
+    // The user-side remedy stays (an agent cannot run /mcp reconnect itself).
     expect(stale.hint).toContain("/mcp reconnect");
-    expect(stale.hint).toMatch(/CLI/);
+    // And the anti-move is named: retrying on this same process keeps refusing.
+    expect(stale.hint).toContain("Retrying");
   });
 
   it("proceeds as before when the loaded build matches the build on disk", async () => {

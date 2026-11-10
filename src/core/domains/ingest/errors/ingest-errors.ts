@@ -144,8 +144,10 @@ export class IndexingProcessBuildStaleError extends IngestError {
         `on disk ${build.onDisk}) — indexing was refused before any work, because this process's ` +
         "worker threads would load the new build and disagree with it mid-run",
       hint:
-        "Reconnect the MCP server (`/mcp reconnect`) or rerun the CLI command so the process loads the " +
-        "current build, then index again. Search and read tools keep working meanwhile.",
+        "A rebuild (npm run build / npm install) replaced the build this process loaded at startup; reads (search, " +
+        "find_symbol, graph) keep working. To index now, run the CLI in a fresh process — `tea-rags index-codebase " +
+        "<path>` (or `--project <alias>`) loads the current build — or reconnect/restart the MCP server (`/mcp " +
+        "reconnect`; a user action) and retry index_codebase. Retrying on this same process keeps refusing.",
       httpStatus: 503,
     });
   }
