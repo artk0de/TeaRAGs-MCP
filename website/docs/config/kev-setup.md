@@ -294,14 +294,31 @@ to system memory), and smaller 512-token buckets (more padding, not less).
 | ------------------------------------------- | ------- | ---------------------------------------------------------- |
 | `CODEGRAPH_RESIDUAL_KEV_URL`                | —       | Kev base URL; comma-separate several hosts for round-robin |
 | `CODEGRAPH_RESIDUAL_KEV_THRESHOLD`          | `0.7`   | Minimum confidence for a pick to become an edge            |
+| `CODEGRAPH_RESIDUAL_NAME_PRIOR_ACCEPT_THRESHOLD` | —   | Accept threshold for a name-prior block-1 pick and its confirm; unset = the Kev threshold |
 | `CODEGRAPH_RESIDUAL_CONCURRENCY`            | `16`    | Requests in flight (one per method); Kev packs a few states per pass, so more only queue |
 | `CODEGRAPH_RESIDUAL_REQUEST_TIMEOUT_SEC`    | `300`   | Seconds one request may take, including its wait behind the batches Kev is running; a group that times out is asked once more at the end of the pass |
+| `CODEGRAPH_RESIDUAL_MAX_QUESTIONS_PER_REQUEST` | `8`  | Questions one provider request may carry; capping it keeps one request to seconds, far under the timeout |
+| `CODEGRAPH_RESIDUAL_MAX_CRITERIA_PER_REQUEST` | `120` | Candidates one provider request may carry over all its questions |
 | `CODEGRAPH_RESIDUAL_MENU_LIMIT`             | `40`    | Call sites with more candidates are not asked              |
 | `CODEGRAPH_RESIDUAL_MIN_MENU`               | `1`     | Call sites with fewer candidates are neither asked nor given an edge, even from a stored verdict |
 | `CODEGRAPH_RESIDUAL_NONE_THRESHOLD`         | `0.8`   | Every question ends with "none of these — defined outside the project"; a site answered so at this confidence or above counts as external and leaves the recall denominator |
+| `CODEGRAPH_RESIDUAL_TOURNAMENT_FLOOR`       | `0.5`   | Minimum probability of a tournament block winner to enter the next round |
+| `CODEGRAPH_RESIDUAL_TOURNAMENT_BUDGET`      | `5000`  | Tournament block questions one run may send; a receiver group the rest cannot cover is skipped and counted |
+| `CODEGRAPH_RESIDUAL_FANOUT_FLOOR`           | `0.4`   | Smallest class probability to join a polymorphic-interface fan-out of its receiver group |
+| `CODEGRAPH_RESIDUAL_CONFIRM_STAGE`          | `false` | Ask a mid block-1 or full-menu pick once more as `[pick, none]` and never run plain tournament rounds |
+| `CODEGRAPH_RESIDUAL_ORIGIN_CONTEXT`         | `false` | Append receiver-origin lines (assignments, the returning method's head) to each question's state |
+| `CODEGRAPH_RESIDUAL_AUTO_CALIBRATE`         | `true`  | Apply the stored per-language threshold calibration, asking and storing a new one when it is missing or stale |
 | `CODEGRAPH_RESIDUAL_VERDICT_RETENTION_DAYS` | `180`   | Cached verdicts unseen this long are dropped               |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_URL`        | —       | GPU session broker; set, Kev is leased per pass and asked at the URL the lease names (`CODEGRAPH_RESIDUAL_KEV_URL` is then not needed) |
 | `CODEGRAPH_RESIDUAL_KEV_SESSION_TOKEN`      | —       | Broker `X-Broker-Token`; a secret, never stored with the project |
+
+Receiver-group questions power the large menus: sites sharing one receiver are
+asked as a group, and a group whose class menu exceeds the menu limit is settled
+by tournament blocks (block 1 is opened by the classes the receiver's name
+matches), with `[pick, none]` confirms available through
+`CODEGRAPH_RESIDUAL_CONFIRM_STAGE`. An accepted group verdict can also fan out
+over the classes of one interface (`FANOUT_FLOOR`) and propagate its type fact
+to downstream groups.
 
 Codegraph must be on (it is by default; `CODEGRAPH_ENABLED=false` turns it
 off, and the residual pass then does nothing).
@@ -334,8 +351,12 @@ tea-rags resolve-codegraph-residual --model kev --project my-app
 Add `--cache-only` to re-apply stored verdicts without contacting Kev, and
 `--json` to print the report as JSON. The command prints a report: call sites
 found, menu overflow, menu too small, cache hits, groups, asked, answered, too
-long, failed groups, below threshold, sites edged, external (model), edges applied, the state of the
-derived metrics, and timings. It exits 0 when the pass completed and 1 when it
+long, failed groups, below threshold, sites edged, external (model and by
+propagation), edges applied, the receiver-group counters (tournament groups,
+rounds and questions, name-prior and early-accepted groups, fan-out groups and
+edges, sites edged by verdict or propagation, confirm questions), the accept
+thresholds per language, the state of the derived metrics, a payload-heal
+summary, and timings. It exits 0 when the pass completed and 1 when it
 was skipped.
 
 `sites edged` counts call sites whose pick reached the threshold; `edges applied`
