@@ -100,6 +100,7 @@ import {
 import type { CollectionEmbeddingBinding, CollectionEmbeddingsResolver } from "../collection-embeddings.js";
 import { resolveIndexedWorkingTree, resolveWorkingTree } from "../collection-resolver.js";
 import type { IndexHistoryAnchorResolver } from "../infra/index-history-anchor.js";
+import { leaseWorkingTreeGraphReads, releaseWorkingTreeGraphLease } from "../infra/working-tree-graph-read.js";
 import { explainEmptySearch } from "./empty-search-explanation.js";
 
 export interface ExploreOpsDeps {
@@ -456,32 +457,42 @@ export class ExploreOps {
     }
     const ctx = withHistoryClock(buildFindSymbolContext(request, collectionName), historyAnchorSec);
     if (request.symbols) return this.findSymbolBatch(request, request.symbols, ctx, workingTreeView);
-    const strategy = this.buildFindSymbolStrategy(request);
-    const response = await this.executeExplore(strategy, ctx, {
-      fields: request.fields,
-      outline: strategy instanceof FileOutlineStrategy,
-      workingTreeView,
-    });
-    // Finalize: the per-request symbol strategy records a skipped OPTIONAL
-    // codegraph hop (codegraph unavailable from this process) — attach it so the
-    // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
-    const codegraphWarning = strategy instanceof SymbolSearchStrategy ? strategy.codegraphWarning : undefined;
-    // A directory path is answered by its listing (N2), an unknown path by the
-    // nearest indexed paths (N6 `unknownPath`).
-    const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
-    const empty =
-      strategy instanceof FileOutlineStrategy
-        ? strategy.emptyAnswer
-        : response.results.length === 0 && request.symbol
-          ? ((strategy instanceof SymbolSearchStrategy ? strategy.emptyAnswer : undefined) ??
-            (await this.explainSymbolMiss(request, request.symbol, ctx, workingTreeView)))
-          : undefined;
-    return {
-      ...response,
-      ...(codegraphWarning ? { codegraphWarning } : {}),
-      ...(directory ? { directory } : {}),
-      ...(empty ? { empty } : {}),
-    };
+    // bd tea-rags-mcp-4qdj0 — the single path's decoration reads (ancestors +
+    // visibility, the tree-definition ranges) share ONE leased tree-graph
+    // handle for the request, released when it settles; without the lease each
+    // read pays its own 12-23ms open→query→close on the tree graph file.
+    const readTreeGraph = recordingTreeGraphReader(await workingTreeView);
+    leaseWorkingTreeGraphReads(readTreeGraph);
+    try {
+      const strategy = this.buildFindSymbolStrategy(request);
+      const response = await this.executeExplore(strategy, ctx, {
+        fields: request.fields,
+        outline: strategy instanceof FileOutlineStrategy,
+        workingTreeView,
+      });
+      // Finalize: the per-request symbol strategy records a skipped OPTIONAL
+      // codegraph hop (codegraph unavailable from this process) — attach it so the
+      // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
+      const codegraphWarning = strategy instanceof SymbolSearchStrategy ? strategy.codegraphWarning : undefined;
+      // A directory path is answered by its listing (N2), an unknown path by the
+      // nearest indexed paths (N6 `unknownPath`).
+      const directory = strategy instanceof FileOutlineStrategy ? strategy.directory : undefined;
+      const empty =
+        strategy instanceof FileOutlineStrategy
+          ? strategy.emptyAnswer
+          : response.results.length === 0 && request.symbol
+            ? ((strategy instanceof SymbolSearchStrategy ? strategy.emptyAnswer : undefined) ??
+              (await this.explainSymbolMiss(request, request.symbol, ctx, workingTreeView)))
+            : undefined;
+      return {
+        ...response,
+        ...(codegraphWarning ? { codegraphWarning } : {}),
+        ...(directory ? { directory } : {}),
+        ...(empty ? { empty } : {}),
+      };
+    } finally {
+      await releaseWorkingTreeGraphLease(readTreeGraph);
+    }
   }
 
   /** N6 `unknownSymbol`: why a single `symbol` answered nothing; a failed diagnosis leaves the answer unexplained. */
@@ -586,52 +597,57 @@ export class ExploreOps {
     // 17-address batch measured 1.9s). One batch, one wrapper: prefetch every
     // id derivable from the addresses in a single resolver call each, and let
     // repeats ride the cache. Single-symbol paths are untouched.
-    const resolvers = batchedResolvers(this.containerAncestorResolver, this.visibilityResolver);
-    await resolvers.prefetch(
-      ctx.collectionName,
-      containerIdsOf(symbols),
-      workingTreeView ? recordingTreeGraphReader(workingTreeView) : undefined,
-    );
-    const drill = new SymbolBatchDrill(
-      (symbol) => this.buildSymbolSearchStrategy(request, symbol, resolvers),
-      (relativePath) => this.buildFileOutlineStrategy(relativePath, request.language),
-    );
-    const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
-    const fields = request.fields ?? (request.rerank ? undefined : BATCH_LEAN_FIELDS);
-    const projection = projectSearchResultPayloads(
-      answer.rows.map(({ result }) => ({
-        id: result.id ?? "",
-        score: result.score,
-        payload: result.payload ? stripInternalFields(result.payload) : result.payload,
-        rankingOverlay: result.rankingOverlay,
-        ...(result.treeState ? { treeState: result.treeState } : {}),
-      })),
-      fields,
-      undefined,
-      // Internal batch defaults must not warn about optional absent fields;
-      // mandatory source-locator warnings still pass through without `fields`.
-      request.fields !== undefined,
-    );
-    // metaOnly's lean default drops a symbol row's body, but a file-path row's
-    // `content` IS the outline metaOnly asks for — it stays, as in relativePath
-    // mode (bd tea-rags-mcp-y3trx).
-    const leanMetaOnly = request.metaOnly === true && !request.fields && !request.rerank;
-    const results = projection.results.map((row, i) => {
-      const { request: address, resolvedAs, fileOutline, sameChunkAs } = answer.rows[i];
-      const { content: _body, ...bodyless } = row.payload ?? {};
-      const payload = leanMetaOnly && !fileOutline ? bodyless : row.payload;
-      const marks = { ...(resolvedAs ? { resolvedAs } : {}), ...(sameChunkAs ? { sameChunkAs } : {}) };
-      return { ...row, payload: { request: address, ...marks, ...payload } };
-    });
-    const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
-    return {
-      results,
-      missing: answer.missing,
-      ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
-      ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
-      ...(answer.batchNotice ? { batchNotice: answer.batchNotice } : {}),
-      ...(workingTree ? { workingTree } : {}),
-    };
+    // Iteration 3: the reader is memoized per view and LEASED — every tree read
+    // of the batch (prefetch, each address's decorations) rides ONE open
+    // tree-graph handle, released when the batch settles.
+    const readTreeGraph = workingTreeView ? recordingTreeGraphReader(workingTreeView) : undefined;
+    leaseWorkingTreeGraphReads(readTreeGraph);
+    try {
+      const resolvers = batchedResolvers(this.containerAncestorResolver, this.visibilityResolver);
+      await resolvers.prefetch(ctx.collectionName, containerIdsOf(symbols), readTreeGraph);
+      const drill = new SymbolBatchDrill(
+        (symbol) => this.buildSymbolSearchStrategy(request, symbol, resolvers),
+        (relativePath) => this.buildFileOutlineStrategy(relativePath, request.language),
+      );
+      const answer = await drill.execute(symbols, workingTreeView ? { ...ctx, workingTreeView } : ctx);
+      const fields = request.fields ?? (request.rerank ? undefined : BATCH_LEAN_FIELDS);
+      const projection = projectSearchResultPayloads(
+        answer.rows.map(({ result }) => ({
+          id: result.id ?? "",
+          score: result.score,
+          payload: result.payload ? stripInternalFields(result.payload) : result.payload,
+          rankingOverlay: result.rankingOverlay,
+          ...(result.treeState ? { treeState: result.treeState } : {}),
+        })),
+        fields,
+        undefined,
+        // Internal batch defaults must not warn about optional absent fields;
+        // mandatory source-locator warnings still pass through without `fields`.
+        request.fields !== undefined,
+      );
+      // metaOnly's lean default drops a symbol row's body, but a file-path row's
+      // `content` IS the outline metaOnly asks for — it stays, as in relativePath
+      // mode (bd tea-rags-mcp-y3trx).
+      const leanMetaOnly = request.metaOnly === true && !request.fields && !request.rerank;
+      const results = projection.results.map((row, i) => {
+        const { request: address, resolvedAs, fileOutline, sameChunkAs } = answer.rows[i];
+        const { content: _body, ...bodyless } = row.payload ?? {};
+        const payload = leanMetaOnly && !fileOutline ? bodyless : row.payload;
+        const marks = { ...(resolvedAs ? { resolvedAs } : {}), ...(sameChunkAs ? { sameChunkAs } : {}) };
+        return { ...row, payload: { request: address, ...marks, ...payload } };
+      });
+      const workingTree = workingTreeView ? finalizeWorkingTreeMarker(workingTreeView) : undefined;
+      return {
+        results,
+        missing: answer.missing,
+        ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
+        ...(answer.codegraphWarning ? { codegraphWarning: answer.codegraphWarning } : {}),
+        ...(answer.batchNotice ? { batchNotice: answer.batchNotice } : {}),
+        ...(workingTree ? { workingTree } : {}),
+      };
+    } finally {
+      await releaseWorkingTreeGraphLease(readTreeGraph);
+    }
   }
 
   /**

@@ -117,10 +117,22 @@ export function recordTreeGraphState(marker: WorkingTreeMarker, state: WorkingTr
  * waiting the cap each. Graph tools do not come through here and keep the
  * build-length wait.
  */
+/**
+ * One reader closure per view (bd tea-rags-mcp-4qdj0): a request's every reader
+ * — the symbol strategy's decorations, the file outline's, a batch's prefetch —
+ * must share ONE closure, because its identity is what a request-scoped
+ * tree-graph handle lease keys on. Memoizing the closure never memoizes the
+ * state: each call still reads `view.readTreeGraph` and the remaining budget
+ * fresh.
+ */
+const viewTreeGraphReaders = new WeakMap<WorkingTreeView, WorkingTreeGraphReader>();
+
 export function recordingTreeGraphReader(view: WorkingTreeView | undefined): WorkingTreeGraphReader | undefined {
   const read = view?.readTreeGraph;
   if (!view || !read) return undefined;
-  return async (waitMs) => {
+  const memoized = viewTreeGraphReaders.get(view);
+  if (memoized) return memoized;
+  const reader: WorkingTreeGraphReader = async (waitMs) => {
     const cap = Math.min(waitMs, WORKING_TREE_SEARCH_GRAPH_WAIT_MS);
     const state = await read(Math.min(cap, view.remainingWaitMs?.() ?? cap));
     if (state.kind === "built") {
@@ -131,6 +143,8 @@ export function recordingTreeGraphReader(view: WorkingTreeView | undefined): Wor
     }
     return state;
   };
+  viewTreeGraphReaders.set(view, reader);
+  return reader;
 }
 
 /**
