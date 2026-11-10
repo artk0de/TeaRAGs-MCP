@@ -205,3 +205,31 @@ needed.
     (first 2 segments after src/)
   - `eval-14` — disambiguation (>70% split -> ask) stated, but No-Match
     Detection (2 of 3 warn / 3 of 3 report no match) missing
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 7/14 PASS (50%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 13/14 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 4/14 (29%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 7): eval-3, eval-7,
+  eval-9, eval-10, eval-11, eval-12, eval-14.
+- FAIL digest:
+  - `eval-3` — Commits to the named preset rerank:"proven" for exemplar
+    selection — the reference strategy requires the custom proven weights obj
+  - `eval-7` — No directional content for the graded format: neither
+    module-directory grouping nor overlay labels (age/churn/owner) mentioned — o
+  - `eval-9` — Complies with grep on the literal half: plans shell rg as a
+    primary step (before any TeaRAGs search) and then reads outlines/bodie
+  - `eval-10` — Delegates the search to a subagent (collaboration.spawn_agent
+    with wait_agent), rationalizing that the explicit request authorizes
+  - `eval-11` — Never states the warning-marker prefix for problematic
+    implementations — refuses to specify markers at all ('cannot truthfully spe
+  - `eval-12` — Never states the check-mark prefix for the reference strategy's
+    best example ('do not manufacture marker names'); the contract exp
+  - `eval-14` — No post-search validation content: neither disambiguation
+    (directory clustering / pathPattern re-SEED) nor no-match detection desc

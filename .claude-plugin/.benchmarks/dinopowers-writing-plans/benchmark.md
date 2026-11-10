@@ -326,3 +326,36 @@ No iteration needed.
   - `eval-15` — get_naming_lexicon without concept/language/pathPatternL1;
     MISFIT -> suggestion / NEW_TERM -> project term or justification not stated
     (regression vs R3)
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 4/17 PASS (24%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 15/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 2/15 (13%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 13): eval-1, eval-2,
+  eval-3, eval-4, eval-5, eval-6, eval-7, eval-8, eval-9, eval-10, eval-11,
+  eval-16, eval-17.
+- FAIL digest:
+  - `eval-1` — enrichment is find_symbol+rank_chunks(ownership/hotspots/techDebt
+    presets), not ONE semantic_search blastRadius metaOnly brace-exp
+  - `eval-2` — no semantic_search blastRadius/metaOnly=true/brace
+    pathPattern/limit 6-10 anywhere; per-file rank_chunks presets substitute the
+    im
+  - `eval-3` — the required single brace-expanded semantic_search over 3 files
+    is never issued; sed+find_symbol substitute and semantic search is
+  - `eval-4` — find_symbol used as the Step-2 substitute (forbidden);
+    semantic_search impact enrichment absent in favor of outlines+get_callers
+  - `eval-5` — no 'no file list — proceeding without enrichment' report or
+    direct writing-plans; adds an unscoped semantic_search (no pathPattern
+  - `eval-6` — the enrichment call on the 3 new files is never issued (expected:
+    issue expecting empty, then report 'file set not indexed — area
+  - `eval-7` — per-file rows lack taskIds and coordinated-change candidates
+    (shared taskIds), and the agent asks the user to pick the 5 files ins
+  - `eval-8` — no semantic_search impact enrichment FIRST; skills loaded first
+    and find_symbol/get_callers substitute — ordering contract unmet
+  - … 5 more in verdicts file

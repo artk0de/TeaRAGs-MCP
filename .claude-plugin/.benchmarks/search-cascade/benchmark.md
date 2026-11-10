@@ -1233,3 +1233,18 @@ merges every part — the epic's target.
   B1 was 3/3 in R1 and R2; the row-4 path skipping "path typed first" predates
   this change. T4 R1 r1 planned an extra literal search after the verbatim
   `truncated.next` (graded on its first call).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 69/70 PASS (99%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 12/12 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 11/12 (92%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 1): 9.
+- FAIL digest:
+  - `9` — Reads the doc with bounded sed (the Codex default-read analog of the
+    forbidden Read) instead of find_symbol(relativePath:) for the

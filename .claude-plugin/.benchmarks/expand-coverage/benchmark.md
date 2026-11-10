@@ -155,3 +155,31 @@ execution — one subagent per run, all 14 cases in one prompt, blind to
 - Codex T14: N/A (15/15 N/A). Claude T22: 15/15 (100%).
 - N/A: all 15 cases N/A (expand-coverage not shipped to Codex)
 - FAIL list: none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 8/15 PASS (53%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 15/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 15/15 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 7): eval-4, eval-5,
+  eval-8, eval-11, eval-12, eval-13, eval-14.
+- FAIL digest:
+  - `eval-4` — Existing-test discovery via shell filename inventory + sed reads,
+    not hybrid_search with pathPattern tests/\*\*.
+  - `eval-5` — 'tea-rags for understanding + patterns' only half-met:
+    find_symbol yes, but no tea-rags pattern search (find_similar/hybrid_search
+  - `eval-8` — No hybrid_search for patterns (specs read via sed instead);
+    verification described as affected-tests run AND coverage command rath
+  - `eval-11` — No incremental index_codebase freshness gate before search; on
+    stale/unindexed file falls back to sed instead of reindexing.
+  - `eval-12` — No find_similar/get_callers for how neighbors test the shape
+    (existing specs read directly); exact coverage/coverage-final.json ra
+  - `eval-13` — No freshness-gate incremental reindex of local main before
+    search; bare-subagent fallback is sed on the unindexed file rather than
+  - `eval-14` — Proposes a narrowly scoped coverage exclusion (the forbidden
+    v8-ignore route) / dead-code removal instead of picking a different r

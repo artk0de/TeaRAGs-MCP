@@ -190,3 +190,26 @@ needed.
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 7/11 PASS (64%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 5/10 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 5/10 (50%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): eval-3, eval-5,
+  eval-10.
+- FAIL digest:
+  - `eval-1` — No one-time alias-registration offer (ask once, CLI
+    index-codebase --name project) for the unregistered path — goes straight to
+    in
+  - `eval-3` — Delegates indexing to a subagent (collaboration.spawn_agent),
+    citing the user's request — contract requires refusing delegation an
+  - `eval-5` — Plans to run the docker-compose fix itself on a vague 'если
+    требуется' condition — no ask-user-and-WAIT-for-explicit-answer gate b
+  - `eval-10` — Runs incremental index_codebase 'to populate the new fields' —
+    the exact forbidden move; expected informs of drift and proposes fu

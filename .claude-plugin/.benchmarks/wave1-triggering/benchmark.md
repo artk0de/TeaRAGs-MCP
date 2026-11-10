@@ -196,3 +196,34 @@ Total: +139 / -99 lines in description blocks.
   skills not shipped to Codex).
 - Round-1 Codex: 19/20 (95%). Delta: +5 pp.
 - FAIL list: none.
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 19/30 PASS (63%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 30/30 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 19/20 (95%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 11): 1, 2, 3, 4, 5, 6, 7,
+  8, 9, 10, 13.
+- FAIL digest:
+  - `1` — Routed to $data-driven-generation; expected the specific
+    project:add-derived-signal skill, which is never selected (alt_ok empty).
+  - `2` — Routed to $data-driven-generation; expected project:add-dto, never
+    mentioned.
+  - `3` — Routed to $data-driven-generation; expected project:add-language-hook,
+    never mentioned.
+  - `4` — Routed to $data-driven-generation; expected project:add-mcp-endpoint,
+    never mentioned.
+  - `5` — Routed to $data-driven-generation; expected project:add-migration,
+    never mentioned.
+  - `6` — Routed to $data-driven-generation (analytics-rerank only
+    conditionally); expected project:add-rerank-preset, never mentioned.
+  - `7` — Routed to $dino-systematic-debugging/$bug-hunt instead of
+    project:debug-pipeline-log; bug-hunt is not alt_ok for this case though
+  - `8` — Routed to $superpowers:diagnosing-superpowers + writing-skills instead
+    of project:optimize-skill; the meta-skill for description o
+  - … 3 more in verdicts file

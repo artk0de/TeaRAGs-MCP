@@ -253,3 +253,34 @@ No iteration needed.
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 7/15 PASS (47%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 14/14 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 13/14 (93%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 7): eval-1, eval-2,
+  eval-3, eval-4, eval-8, eval-10, eval-14.
+- FAIL digest:
+  - `eval-1` — Enrichment block off-contract: rank_chunks hotspots/techDebt plus
+    an unpreset semantic_search — no ownership leg, no architectural
+  - `eval-2` — Preset parameters unmet: hotspots/techDebt via rank_chunks,
+    ownership and architecturalHub semantic_search presets missing, and fi
+  - `eval-3` — Parallel-execution case: hybrid_search-led sequential chain
+    (сначала... затем...) with no single parallel A-C enrichment block and
+  - `eval-4` — No semantic_search preset enrichment
+    (hotspots/ownership/techDebt) for the area — rg --files/sed doc reads and
+    optional rank_chunk
+  - `eval-8` — Defers to user pressure and skips the Iron-Rule enrichment
+    entirely ('Не выполнять поиски и сканы tea-rags').
+  - `eval-10` — Serves the requested content via find_symbol BEFORE the
+    enrichment signals instead of keeping enrichment first and fetching conten
+  - `eval-14` — No concept-mode get_naming_lexicon(concept=<intent>, language,
+    pathPattern) in the enrichment block — defers naming queries until
+  - `eval-15` — Batching correct (one find_symbol(symbols:[three files])) but
+    the user-asked reads run BEFORE the Step 2 enrichment block — explic

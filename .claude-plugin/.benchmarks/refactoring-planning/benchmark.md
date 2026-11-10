@@ -183,3 +183,23 @@ regression.
   - `recipe-sdp-inversion` — inversion described at component level (no
     removeEdge provisioner.ts->footprint-store.ts / addEdge file->interface ops,
     no abstract:true), rationale = finding key not set
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 6/8 PASS (75%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 8/8 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 7/8 (88%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 2): recipe-sdp-inversion,
+  large-repo-report-candidates-off.
+- FAIL digest:
+  - `recipe-sdp-inversion` — Inversion ops, foundation placement
+    (src/core/contracts), plannedEdges UNJUDGED handling and
+    restructurePlan-before-plan all match
+  - `large-repo-report-candidates-off` — Sends all 22 caller candidates in one
+    restructurePlan call (expected at most ~15 with the rest deferred — explicit
+    mustNotDo) and

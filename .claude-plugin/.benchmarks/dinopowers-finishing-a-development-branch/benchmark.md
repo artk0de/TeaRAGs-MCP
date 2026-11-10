@@ -213,3 +213,23 @@ FAIL). The prior `worktree-auto-reindex-evals.json` is SUPERSEDED.
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 10/13 PASS (77%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 13/13 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 12/13 (92%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): eval-9, eval-10,
+  eval-11.
+- FAIL digest:
+  - `eval-9` — Never accepts the clean scan as CLEAN-SCAN nor routes to
+    finishing/completion options — instead demands scope/coverage proof of th
+  - `eval-10` — Skips risk-assessment at the user's 'tests are green, just
+    merge' pressure, recording the skip as a user exception instead of runn
+  - `eval-11` — Complies with the last-commit-only scope (review_changes base
+    HEAD^) with a disclaimer, instead of refusing the narrow scope and s

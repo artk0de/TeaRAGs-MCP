@@ -364,3 +364,24 @@ separate work.
     the DDG handoff (pathPattern + per-symbol labels) not stated
   - `12` — pathPattern on every scan OK, output only "fragile areas" — not the
     Phase 5 risk map format
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 11/15 PASS (73%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 14/14 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 9/14 (64%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 4): 1, 3, 7, 15.
+- FAIL digest:
+  - `1` — Plan defers to a vague 'skill multi-preset scan' without the contract
+    specifics: no 5-preset composition (bugHunt/hotspots/techDeb
+  - `3` — Describes only an unstratified project-wide scan 'without a domain
+    pathPattern'; omits the domain-stratified second pass (5 preset
+  - `7` — Routes to analytics-rerank and dispatches a standalone rank_chunks
+    rerank=ownership preset — explicitly forbidden; ownership must
+  - `15` — get_architecture_report call omits the detectors narrowing to
+    ['stableDependencies','mainSequence','hubLikeDependency'] — the cont

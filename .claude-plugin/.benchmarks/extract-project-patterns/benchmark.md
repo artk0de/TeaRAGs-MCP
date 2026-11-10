@@ -199,3 +199,23 @@ preset hint correctly without help.
 - Result: 8/8 PASS (100.0%) (N/A excluded: 0).
 - Round-2 Codex: 6/8 (75.0%). Delta: +25.0 pp.
 - FAIL list: none.
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 6/8 PASS (75%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 6/8 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 6/8 (75%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 1):
+  Eval-5-shallow-l1-skip-l2.
+- FAIL digest:
+  - `Eval-4-triple-fail-diagnostic` — Relax-on-empty production re-runs per
+    level (4-call sequence) and the 1-segment L2-skip not described; diagnostic
+    call sequence de
+  - `Eval-5-shallow-l1-skip-l2` — Skips L2 for the 2-segment path — expected
+    derives L2='**/chunker/**' (L2 must NOT be skipped; skip only for <=1
+    semantic segment)

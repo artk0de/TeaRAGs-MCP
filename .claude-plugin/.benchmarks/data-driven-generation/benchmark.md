@@ -547,3 +547,29 @@ boundary against regression rather than measuring a delta.
   `find_symbol(symbols: [Reranker])` / conditional label lookup for Step 1).
 - Final round: every case 3/3 on Codex and 3/3 on Claude. `verify-symbol-risk`
   runs list only the unlabelled id (`Billing::Ledger#post`).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 64/68 PASS (94%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 62/67 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 42/67 (63%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 4): eval-4,
+  tdd-hotfix-no-exception, gate-line-missing,
+  prewrite-sim-new-file-new-component.
+- FAIL digest:
+  - `eval-4` — Rejects the legacy+low-commits hard rule ('сами по себе не
+    доказывают') and picks STANDARD — the contract mandates CONSERVATIVE an
+  - `tdd-hotfix-no-exception` — Defers the boundary test until after the
+    one-character fix, accepting the user's 'тесты потом' as an override — the
+    contract says
+  - `gate-line-missing` — Adds a bespoke multi-field gate line (scope/base,
+    before/after counts, scopeSkippedFiles) instead of the verbatim 'GATE
+    review_cha
+  - `prewrite-sim-new-file-new-component` — Runs the pre-write architecture
+    simulation for a new file/component — the contract says to skip it and let
+    the Step 7 gate judge p

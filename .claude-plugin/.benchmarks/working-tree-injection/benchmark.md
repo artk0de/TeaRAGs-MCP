@@ -223,3 +223,20 @@ Answers: `workspace/iteration-{12,13}-answers.md`.
 - Result: 17/17 PASS (100%) over graded cases (N/A excluded: 0).
 - Codex T14: 14/17 (82%). Claude T22: 17/17 (100%).
 - FAIL list: none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 15/17 PASS (88%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 17/17 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 14/17 (82%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 2): WT2, WT7.
+- FAIL digest:
+  - `WT2` — Primary tool is get_callers(depth:2) plus rg, not hybrid_search
+    metaOnly; assertion 'tool is hybrid_search' unsatisfied though pat
+  - `WT7` — First call is shell rg -F ChunkerPool — exactly the failure_mode
+    'Bash rg for an identifier'; expected hybrid_search query=Chunker

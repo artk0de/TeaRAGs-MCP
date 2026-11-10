@@ -117,3 +117,23 @@
   - `2` — report-only / must-fix split OK, but compositionRoot-as-evidence vs
     bare "by design" never stated; repair/mainSequence.md + hubLike.md not
     loaded (wrong path)
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 4/7 PASS (57%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 2/2 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 2/2 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): 1, 2, 7.
+- FAIL digest:
+  - `1` — Expected plan loads repair/stableDependencies.md and classes the
+    finding cheap-preExisting; answer explicitly declares 'No additio
+  - `2` — Treats hubLike without preExisting as 'does not establish when it
+    arose' instead of introduced/must-fix per repair/hubLike.md, and
+  - `7` — Count 76 is correct, but the plan never names the
+    includeExplainedPairs:true re-call and instead proposes guide-reading with a
+    wro

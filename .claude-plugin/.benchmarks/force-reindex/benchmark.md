@@ -106,3 +106,23 @@ needed — delta reflects the skill's narrow unique contribution.
 - Claude T22 for comparison: 10/10 (100%)
 - FAIL list:
   - none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 7/10 PASS (70%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 9/10 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 8/10 (80%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): eval-2, eval-4,
+  eval-7.
+- FAIL digest:
+  - `eval-2` — No background subagent dispatch (run_in_background:true)
+    described; 'follow the skill's procedure' + 'verify completion before rep
+  - `eval-4` — Reclassifies the request as incremental with 'No confirmation
+    needed'; contract requires refusing the skip and asking for confirma
+  - `eval-7` — Plans to run the rebuild 'in the foreground, honoring the user's
+    execution preference' — the forbidden foreground execution instea

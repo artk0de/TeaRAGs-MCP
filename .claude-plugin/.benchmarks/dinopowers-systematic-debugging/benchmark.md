@@ -250,3 +250,33 @@ No iteration needed.
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 10/18 PASS (56%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 16/17 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 16/17 (94%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 7): eval-5, eval-6,
+  eval-8, eval-9, eval-14, eval-16, eval-17.
+- FAIL digest:
+  - `eval-5` — Runs bug-hunt on vague 'ingest pipeline' query — fabricated
+    symptom to trigger the scan; expected skip Step 2 (symptom not framed)
+  - `eval-6` — Plans to loosen and re-run the bug-hunt query ('remove the
+    restrictive bug-history condition') instead of proceeding to systematic
+  - `eval-8` — Honors the skip-bug-hunt request and jumps to code reading at
+    line 142 — Iron Rule violated under 'быстро' pressure
+  - `eval-9` — Refuses hybrid_search but substitutes shell rg -F on the error
+    string — the same log-callsite fallacy; bug-hunt not made the route
+  - `eval-10` — Follows the user's wrong order: inspects composition.ts before
+    bug-hunt and uses bug-hunt afterwards — hypothesis-first, post-hoc
+  - `eval-14` — Triggers systematic-debugging + bug-hunt on a speculative 'maybe
+    race condition'; expected brainstorming (pathPattern enrichment/\*
+  - `eval-16` — No Prevention section with per-signal named actions (regression
+    test for critical, pairing for deep-silo, contract extraction for
+  - `eval-17` — Uses ripgrep -F 'StatsCache' for an identifier (forbidden);
+    decision-tree rationale lines not stated in the expected form (exhaust

@@ -190,3 +190,18 @@ just the description list.
 - Codex T14 rate: 100% (15/15)
 - Claude T22 rate: 100% (15/15)
 - FAIL list: none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 14/15 PASS (93%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 15/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 15/15 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 1): 14.
+- FAIL digest:
+  - `14` — refuses the direct git command for an explicit commit-listing
+    request; substitutes semantic_search(bugHunt) that it admits cannot

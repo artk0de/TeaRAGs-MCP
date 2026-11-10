@@ -128,3 +128,21 @@
   both, with two strict-grading notes: Codex r2 wrote `review_changes` for D8
   without inline `project`/`path`, and Claude's external `get_naming_lexicon`
   carries no `pathPattern` (same as the HEAD baseline).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 2/4 PASS (50%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 2/3 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 1/3 (33%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 0): none.
+- FAIL digest:
+  - `naming-diff-misfit` — Runs review_changes without sections:["naming"] (full
+    review instead of the naming call) and never describes turning MISFIT into a
+  - `batch-map-and-blast` — Phase-2 MAP and D1 never happen: no ONE
+    find_symbol(symbols:[both files], rerank:'hotspots') outline batch, no
+    get_callers per cha

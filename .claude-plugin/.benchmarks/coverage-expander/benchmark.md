@@ -145,3 +145,25 @@ exploration, and double test runs. After optimization, all operations use
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 6/10 PASS (60%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 7/10 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 9/10 (90%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 4): eval-4, eval-5,
+  eval-8, eval-9.
+- FAIL digest:
+  - `eval-4` — Existing-test discovery via scoped rg filename inventory +
+    bounded sed reads instead of hybrid_search with pathPattern '\*_/_.test.
+  - `eval-5` — Targets the named file and uses find_symbol (good), but sibling
+    test conventions come from 'inspect relevant existing test files s
+  - `eval-8` — Coverage command + find_symbol/semantic_search + single
+    verification are right, but test-pattern discovery follows the answer's gl
+  - `eval-9` — Honors the prompt's semantic_search suggestion for discovery
+    (explicitly forbidden — targets must come from one jq over coverage-s

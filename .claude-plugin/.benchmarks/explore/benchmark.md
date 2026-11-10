@@ -455,3 +455,34 @@ docs-as-subject route lives only in cascade, not in the SKILL intent table.
   `not` list does not forbid it, so it does not break the case's intent (listing
   via find_symbol instead of ls / Glob / Read). It is an over-read, not the
   yz10n path-batch defect; no wording change.
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 15/28 PASS (54%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 27/27 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 19/27 (70%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 13): 3, 5, 6, 7, 12, 13,
+  17, 19, 20, 21, 22, 25, 28.
+- FAIL digest:
+  - `3` — Test existence via rg -l over test roots + sed reads of specs, not
+    find_symbol/hybrid_search with tests pathPattern.
+  - `5` — Uses semantic_search with rerank=bugHunt instead of rank_chunks with
+    rerank=codeReview for recent-change analytics.
+  - `6` — semantic_search without pathPattern scoping (query text only) and
+    metaOnly:true refetch instead of trusting chunk content.
+  - `7` — Searches directly (find_symbol/get_callers/hybrid_search/rg
+    inventory); no delegation to pattern-search skill.
+  - `12` — Filename inventory rg --files '_Provider_' instead of hybrid_search
+    symbol discovery; only literally avoids Glob, keeps third-part
+  - `13` — find_symbol without metaOnly=true for the existence check;
+    existence/absence then established via rg -l.
+  - `17` — Skips Step-0 ORIENT (semantic_search rerank=entryPoint with
+    testFile/documentation excludes before breadth); goes straight to dire
+  - `19` — No rerank=onboarding orientation and no content-inferred honesty
+    flag; orients via directory outlines + rg instead.
+  - … 5 more in verdicts file

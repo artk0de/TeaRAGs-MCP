@@ -162,3 +162,31 @@ gap (typed sugar is canonical, level=file is mandatory for time fields).
 - Claude T22 for comparison: 26/26 (100%, incl. analytics T-cases)
 - FAIL list:
   - none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 5/12 PASS (42%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 23/26 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 14/14 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 7): T1, T6, T8, T9, T10,
+  T11, T12.
+- FAIL digest:
+  - `T1` — Plan says only 'filtering by Alice and that date range using the
+    documented fields' — never commits to recentAuthor (commit-side)
+  - `T6` — 'documented age and low-change signals' leaves chunk-level minAgeDays
+    (explicitly forbidden) as likely as modifiedBefore or minAge
+  - `T8` — Only test/script exclusion planned; no minCommitCount for 'not
+    throwaway' — an explicit NOT ('missing minCommitCount').
+  - `T9` — Answers from the bundled tea-rags://guide/presets resource instead of
+    semantic_search + documentation:'only'; the documentation ty
+  - `T10` — Runs shell ripgrep on the literal paymentService identifier — an
+    explicit NOT — instead of hybrid_search with project-relative pat
+  - `T11` — 'filtering by Alice and that window' does not discriminate
+    recentAuthor from blame-owner author (the case's point) and has no '\*\*/
+  - `T12` — 'using documented author filtering' never commits to contributor
+    ('everything Dana touched'); forbidden author/recentAuthor readin

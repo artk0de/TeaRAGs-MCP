@@ -286,3 +286,34 @@ needed.
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 14/22 PASS (64%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 21/21 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 10/21 (48%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 8): eval-1, eval-3,
+  eval-4, eval-12, eval-17, eval-19, eval-20, eval-21.
+- FAIL digest:
+  - `eval-1` — No step-0 git status --porcelain -uall, no fresh probe
+    (modifiedAfter) and no uncommitted probe in the same message; a single hist
+  - `eval-3` — Complies with the user's 'проверь там' and reads the
+    healthy/old/non-fresh file anyway instead of skipping with the 'neither
+    suspe
+  - `eval-4` — Plans exactly three per-zone semantic_search calls (one each for
+    adapters/pipeline/tests) — the forbidden parallel anti-pattern; n
+  - `eval-12` — Dispatches a collaboration.spawn_agent subagent for the bug
+    investigation, rationalizing that the user's request authorizes delega
+  - `eval-17` — No trace_path from SignupController#create to QuotaPolicy#check
+    with rerank=bugHunt (mustCall); substitutes get_callers plus manua
+  - `eval-19` — No fresh probe with brace pathPattern + modifiedAfter +
+    rerank=bugHunt over the three stack-trace files (mustDo); goes straight to
+  - `eval-20` — No step-0 git status --porcelain -uall; single historical search
+    only — no fresh (modifiedAfter) or uncommitted (brace exact-path)
+  - `eval-21` — No git status -uall listing each untracked file and no per-file
+    brace-pathPattern uncommitted probe; falls back to rg and per-file

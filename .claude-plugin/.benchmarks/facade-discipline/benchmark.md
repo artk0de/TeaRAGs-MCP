@@ -308,3 +308,17 @@ Rule is deployed. Next work in this thread:
 - Context: new SessionStart core+digest / SubagentStart block (rebuilt from live
   hook output); plugins tea-rags 0.46.12 / dinopowers 0.24.5; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 12/12 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 11/12 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 16/19 (84%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 0): none.
+- FAIL digest:
+  - none

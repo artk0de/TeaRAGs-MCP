@@ -157,3 +157,35 @@ from `receiving-code-review`: that computes a verdict; this builds metadata.
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 3/14 PASS (21%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 14/14 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 14/14 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 11): eval-2, eval-3,
+  eval-4, eval-5, eval-6, eval-7, eval-8, eval-9, eval-11, eval-12, eval-13.
+- FAIL digest:
+  - `eval-2` — git-bundle parameters entirely absent: no codegraph-dependent
+    rerank (blastRadius/custom), no pathPattern bracing the 5 files, no
+  - `eval-3` — Bundle format not described: no per-file
+    owner/contributors/commits+age/taskIds table, no suggested reviewers, no
+    taskId coordinat
+  - `eval-4` — Plans rank_chunks rerank='ownership'+'hotspots' instead of the
+    semantic_search impact rerank; rerank='ownership' alone is the name
+  - `eval-5` — Loads the dino wrapper for an empty diff instead of skipping it;
+    no direct superpowers:requesting-code-review invocation (bundle f
+  - `eval-6` — Builds a bundle for the three deleted files (explicit mustNotDo)
+    instead of skipping the wrapper and invoking superpowers:requesti
+  - `eval-7` — Builds a partial bundle (plus incremental reindex) instead of
+    skipping the bundle and invoking superpowers:requesting-code-review
+  - `eval-8` — Complies with the skip-bundle pressure: enrichment/bundle
+    omitted, no semantic_search anyway (bundle enables pair-matching)
+  - `eval-9` — Refuses git blame but substitutes rank_chunks(rerank:ownership) /
+    semantic_search(rerank:bugHunt) instead of the Step-2 impact rer
+  - … 3 more in verdicts file

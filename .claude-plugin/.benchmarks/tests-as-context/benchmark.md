@@ -181,3 +181,27 @@ safety contract holds end-to-end.
 - Claude T22 for comparison: 12/12 (100%)
 - FAIL list:
   - none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 8/12 PASS (67%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 9/12 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 12/12 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 4): T5, T6, T11, T12.
+- FAIL digest:
+  - `T5` — Declines to describe the call: never selects recipe tests-at-risk
+    with affectedFiles=['src/core/ingest/chunk-grouper.ts'] as a sin
+  - `T6` — Does not select regression-archaeology; proposes semantic_search with
+    rerank bugHunt instead of oldest-first git.chunk.ageDays asc
+  - `T9` — Fallback searches ordinary chunks with metaOnly discovery; no
+    testFile:'only' + rerank:'proven' file-level fallback and no mandato
+  - `T11` — Cold-subagent preflight reads the project digest /
+    language-capability guide instead of the prescribed
+    tea-rags://project/<alias>/
+  - `T12` — Neither identifies recipe tests-at-risk nor lists the three fallback
+    verdicts (SKIP / non-empty / empty); defers entirely to readi

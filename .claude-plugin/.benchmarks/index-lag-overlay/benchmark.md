@@ -239,3 +239,24 @@ These came from the incident case study and need code changes, not rule text.
     index_codebase on own checkout with a changed file
   - `E15` — incremental OK, but the read is left vague ("the relevant tea-rags
     read") — no semantic_search / $explore for "explain retry logic"
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 15/19 PASS (79%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 11/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 15/15 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): E2, E7, E13.
+- FAIL digest:
+  - `E1` — Reads the 4 ticket files with bounded sed — an explicit NOT
+    (cat/sed/Read) instead of find_symbol; incremental, the separate --for
+  - `E2` — Adds a bounded sed fallback for the constant's surrounding
+    declarations; contract says NOT grep/Read — retrieval of indexed code m
+  - `E7` — Plans to 'read specs using separate bounded sed commands' — the
+    explicit NOT (ls/cat specs) — instead of index-based test-chunk re
+  - `E13` — Follows the override with a shell sed read of the indexed file and
+    explicitly refuses find_symbol — the deny-hook case requires fi

@@ -254,3 +254,22 @@ skill boundary collisions and reduced total line count by 36%.
     only "if corpus primarily English")
   - `15` — explore -> DDG strategy/template OK, but Step 6a RED via
     tea-rags:test-first / "no production edit before recorded RED" not stated
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 12/15 PASS (80%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 15/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 14/15 (93%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 3): 1, 3, 9.
+- FAIL digest:
+  - `1` — PG-2 risk signals deferred to vague 'skill risk/pattern enrichment';
+    find_symbol lacks the rerank=techDebt overlay param and the p
+  - `3` — Uses semantic_search rerank=bugHunt instead of the recent-changes
+    EXPLAIN pattern rank_chunks rerank=codeReview with maxAgeDays=14
+  - `9` — DEEP TRACE not limited: traces throwing/wrapping/handling paths with
+    get_callees/get_callers plus rg sweep instead of find_symbol

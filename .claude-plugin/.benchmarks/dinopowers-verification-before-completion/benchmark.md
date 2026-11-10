@@ -202,3 +202,34 @@ without-rule. Delta +87pp.
 - Result: 15/15 PASS (100%) (N/A excluded: 0).
 - Round-2 Codex: 13/15 (86.7%). Delta: +13.3 pp.
 - FAIL list: none.
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 5/15 PASS (33%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 15/15 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 13/15 (87%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 10): eval-1, eval-2,
+  eval-4, eval-5, eval-6, eval-7, eval-8, eval-10, eval-11, eval-13.
+- FAIL digest:
+  - `eval-1` — $superpowers:verification-before-completion is listed before the
+    wrapper's scan (mustNot) and the impact rerank/metaOnly/brace-exp
+  - `eval-2` — parameter case unmet: no codegraph-state impact rerank, no
+    metaOnly=true, no brace-expanded 3-file pathPattern, no limit~9 — all d
+  - `eval-4` — treats new-files-only session as scan-then-UNVERIFIABLE instead
+    of SAFE (no existing-file edits) skip with an explicit 'no existin
+  - `eval-5` — withholds the HIGH-BLAST classification (imports=47, top 3% > 20
+    importers) and the full-suite recommendation; defers to guide rea
+  - `eval-6` — refuses the LOW-BLAST classification and targeted-unit-run
+    sufficiency for a test file with imports=0; over-gates
+  - `eval-7` — UNVERIFIABLE verdict is right, but the conservative full-suite
+    run and superpowers:verification-before-completion invocation are m
+  - `eval-8` — ordering inverted: $superpowers:verification-before-completion
+    invoked before the scan; per-file verdict step not described
+  - `eval-10` — skips the scan at the user's 'don't bother' request instead of
+    running it anyway (private visibility does not prove isolation)
+  - … 2 more in verdicts file

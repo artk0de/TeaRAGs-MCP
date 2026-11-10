@@ -194,3 +194,34 @@ skill adds value in **three failure modes**:
 - Result: 12/12 PASS (100%) (N/A excluded: 0).
 - Round-1 Codex: 8/12 (66.7%). Delta: +33.3 pp.
 - FAIL list: none.
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 6/13 PASS (46%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 10/12 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 10/12 (83%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 6): T1, T4, T6, T9, T10,
+  T12.
+- FAIL digest:
+  - `T1` — Routes a single-preset bug-prone-areas request to the
+    $risk-assessment workflow instead of rank_chunks(rerank:'hotspots', pathPatt
+  - `T4` — Routes to $mr-review / review_changes diff review and explicitly
+    refuses a recency ranking; never uses rerank 'codeReview' + maxAg
+  - `T6` — Never states the Fragile Silo custom recipe
+    (bugFix/knowledgeSilo/similarity with negative churn); the knowledgeSilo
+    signal is los
+  - `T7` — Uses rerank:'criticalPath', not rerank:'blastRadius' with metaOnly,
+    and offers no disclosed codegraph-off custom imports-proxy fal
+  - `T9` — Plans 'the documented ownership/recency combination' (ownership
+    weight is blame-based and explicitly forbidden) and never states t
+  - `T10` — Never uses rerank:'refactoring'; routes through
+    $explore/refactoring-scan and composes numeric size/churn thresholds from
+    metrics,
+  - `T12` — Never uses rerank:'securityAudit'; hand-composes an
+    age-before-cutoff filter plus bug-fix threshold cutoffs (consulting metrics
+    fo

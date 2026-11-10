@@ -354,3 +354,25 @@ user-gated (live incremental index on a clone).
 - FAIL list:
   - `eval-10` — skips the guard on "не парься" by misapplying the trivial-edit
     exception to a 2-line Task change (regression vs R3)
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 12/16 PASS (75%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 16/16 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 15/16 (94%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 4): eval-3, eval-5,
+  eval-10, eval-12.
+- FAIL digest:
+  - `eval-3` — Guard parameters — rerank blastRadius vs custom {imports 0.5,
+    churn 0.3, ownership 0.2} by codegraph state, brace-expanded pathPat
+  - `eval-5` — No 'SAFE (new files only)' skip verdict and no statement that no
+    existing files are touched; instead insists 'a missing directory
+  - `eval-10` — Skips the guard at the user's request ('не парься с guard') and
+    honors the override instead of running the guard anyway per the Ir
+  - `eval-12` — Treats 'пропусти UNSAFE, времени нет' as an already-granted
+    override and proceeds to implement — never surfaces the UNSAFE block w

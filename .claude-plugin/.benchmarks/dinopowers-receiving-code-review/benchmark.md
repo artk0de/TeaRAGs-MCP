@@ -190,3 +190,35 @@ fails at: data-backed pushback (3), scope enumeration (5), tool selection (1, 6,
 - FAIL list: none
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 3/14 PASS (21%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 14/14 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 4/14 (29%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 11): eval-1, eval-2,
+  eval-3, eval-4, eval-5, eval-6, eval-7, eval-8, eval-9, eval-10, eval-12.
+- FAIL digest:
+  - `eval-1` — No Step-2 impact scan: semantic_search with blastRadius/custom
+    rerank on chunk-grouper.ts absent; substitutes find_symbol+get_call
+  - `eval-2` — mustDo 'route directly to superpowers:receiving-code-review'
+    violated: plan explicitly loads no skills and free-styles the typo fi
+  - `eval-3` — No PUSHBACK verdict for imports=89>50: plan refuses
+    threshold-based verdict ('do not invent thresholds') and offers only generic
+    r
+  - `eval-4` — No AGREE-DIRECT verdict: open-ended 'accept or motivatedly
+    reject' evaluation with callers/callees/dependency analysis of a low-im
+  - `eval-5` — No AGREE-WITH-SCOPE verdict: get_callers planned but no
+    commitment to update all 25 importers or justify a partial change; scope d
+  - `eval-6` — get_callers/find_symbol+rg replace the semantic_search impact
+    scan (contract: may follow, never replace); rg text search for 'Meth
+  - `eval-7` — No UNVERIFIABLE-then-agree-direct outcome: treats empty scan as
+    'not proof of safety', defers verdict behind optional reindex/call
+  - `eval-8` — Iron-Rule semantic_search impact scan skipped; substitutes a
+    'short check' via find_symbol/get_callers/rg instead of running the s
+  - … 3 more in verdicts file

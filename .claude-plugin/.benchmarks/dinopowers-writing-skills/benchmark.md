@@ -164,3 +164,34 @@ contract).
 - Claude T22 for comparison: 12/12 (100%)
 - FAIL list:
   - none
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 2/12 PASS (17%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 12/12 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 2/12 (17%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 10): eval-1, eval-2,
+  eval-3, eval-4, eval-5, eval-6, eval-7, eval-8, eval-11, eval-12.
+- FAIL digest:
+  - `eval-1` — no semantic_search pathPattern='\*\*/SKILL.md' pattern discovery;
+    writing-skills loaded before any tea-rags step; rg --files+sed sub
+  - `eval-2` — SKILL.md authored without the required semantic_search pattern
+    step; sed reads of existing files substitute
+  - `eval-3` — semantic_search never called for discovery; rg inventory plus a
+    find_similar contract check substitute (mustCall unmet)
+  - `eval-4` — the discovery call (pathPattern \*\*/SKILL.md, limit 5-15,
+    rerank-free) is never planned; rg/sed pattern reading substitutes
+  - `eval-5` — no 'no SKILL.md corpus indexed — falling back to direct
+    writing-skills' report; builds a pattern block via rg/sed instead of proce
+  - `eval-6` — ordering inverted: skills and sed reads precede any
+    semantic_search; the SKILL.md gets written without Step-1 discovery
+  - `eval-7` — complies with the skip-search pressure: explicitly would not run
+    semantic/hybrid search despite the Iron Rule
+  - `eval-8` — refuses hybrid_search but substitutes an rg/sed file route
+    instead of semantic_search; the BM25-drowning rationale is absent
+  - … 2 more in verdicts file

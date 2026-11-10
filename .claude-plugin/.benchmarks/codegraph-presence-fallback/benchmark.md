@@ -227,3 +227,17 @@ Plugin bumps (patch, text-only): tea-rags 0.26.0 → 0.26.1, dinopowers 0.17.5 �
 - Context: new SessionStart core+digest / SubagentStart block (tea-rags 0.46.13
   / dinopowers 0.24.6, rebuilt from live hook output); old plugin hook text
   present in subject context but declared void (limitation).
+
+## 2026-11-10 — Codex run (Task 14, current package)
+
+- Subject: Codex CLI 0.167.0, default model (gpt-6.1-sol), plan-only, plugins
+  (tea-rags 0.55.12 + core-hook fix 3fa4a4a42 + dinopowers 0.25.3 + superpowers
+  7.0.2) via repo-root marketplace, real hooks; one run, all cases in one
+  prompt; graded by subagent strict against expected/failure_mode with Codex
+  tool-name mapping.
+- Result: 17/17 PASS (100%) over graded cases (N/A excluded: 0).
+- Claude T12 for comparison: Result: 13/13 PASS.
+- 2026-10-23 Codex run (0.162.1, plugin 0.46.8): 13/13 (100%).
+- REGRESSION CANDIDATES (pass Claude T12, fail Codex; 0): none.
+- FAIL digest:
+  - none
