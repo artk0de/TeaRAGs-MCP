@@ -16,7 +16,7 @@ import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../src/cor
 const chunker = new TreeSitterChunker(
   { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
   new DefaultSymbolIdComposer(),
-  new LanguageFactory(),
+  await LanguageFactory.preloaded(),
 );
 
 const ESM_MODULE = [

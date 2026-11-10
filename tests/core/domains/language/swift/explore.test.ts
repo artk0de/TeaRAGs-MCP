@@ -35,7 +35,7 @@ async function invoiceScrollChunks(): Promise<ScrollChunk[]> {
   const chunker = new TreeSitterChunker(
     { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
   const code = readFileSync(join(FIXTURES, "Invoice.swift"), "utf8");
   const chunks: CodeChunk[] = await chunker.chunk(code, INVOICE_REL, "swift");
@@ -113,7 +113,7 @@ describe("swift tier 1 — find_symbol over real fixture chunks", () => {
     const chunker = new TreeSitterChunker(
       { chunkSize: 800, chunkOverlap: 50, maxChunkSize: 1500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const body = "    findings += inspect(record: 1)\n".repeat(400);
     const code = `func bigAudit() -> Int {

@@ -84,7 +84,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     await methods("ruby", ".rb", 1, "fetch_invoice");
   }
 
-  function build(): NamingLexiconOps {
+  async function build(): Promise<NamingLexiconOps> {
     // The ops closes its reader in `finally`; the fixture owns the connection.
     const graphDb = new Proxy(db, {
       get(target, prop, receiver) {
@@ -100,7 +100,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
       explore: { semanticSearch },
       namingConventions: NAMING,
       ontologyLanguages: ontologyLanguageProfiles(),
-      extractDeclarations: createNamingReviewExtractor(new LanguageFactory({})),
+      extractDeclarations: createNamingReviewExtractor(await LanguageFactory.preloaded({})),
     });
   }
 
@@ -110,7 +110,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
     semanticSearch = vi.fn(async () => ({ results: [], driftWarning: null }));
-    ops = build();
+    ops = await build();
   });
 
   afterEach(async () => {
@@ -163,7 +163,7 @@ describe("NamingLexiconOps — untyped methods judged by the method vocabulary",
   describe("diff mode", () => {
     let repo: string;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       repo = join(dir, "repo");
       mkdirSync(join(repo, "app/users"), { recursive: true });
       git(repo, "init", "-q", "-b", "main");

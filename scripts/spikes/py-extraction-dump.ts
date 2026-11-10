@@ -38,7 +38,7 @@ function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value === null || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+  for (const key of Object.keys(value).sort()) {
     out[key] = canonical((value as Record<string, unknown>)[key]);
   }
   return out;
@@ -52,7 +52,7 @@ function readFlag(argv: string[], name: string): string | undefined {
 /** Dump one corpus. `outPath` undefined → stdout. */
 async function dumpCorpus(root: string, outPath: string | undefined, label: string): Promise<void> {
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const selection = await collectSourceFiles(
     root,
     root,

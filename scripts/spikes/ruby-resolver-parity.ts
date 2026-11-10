@@ -242,7 +242,7 @@ export async function run(
   polyglot = false,
 ): Promise<ResolverParityResult> {
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const production = factory.create("ruby").resolver;
   if (!production) throw new Error("ruby provider exposes no resolver");
   const after = new RubyCallResolver();

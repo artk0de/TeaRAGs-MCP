@@ -75,11 +75,11 @@ const nestedClass = (): string => `class Billing::Holders\n  class Row\n${NESTED
 describe("TreeSitterChunker — Ruby nested containers keep their own span (bd mfnvp)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

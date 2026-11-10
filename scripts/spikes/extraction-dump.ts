@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   const extensions = walkedExtensions(readFlag(argv, "--lang"));
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const selection = await collectSourceFiles(root, root, await buildCorpusExclusionFilter(root, factory), extensions);
 
   const sink = outPath === undefined ? process.stdout : createWriteStream(outPath);

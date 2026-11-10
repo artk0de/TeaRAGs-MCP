@@ -182,9 +182,11 @@ const DATA: RustExternalSignatureTableData = {
 };
 const SIGNATURES = new RustExternalSignatureLookup(DATA, "t3b-identity");
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -242,7 +244,7 @@ impl Store { fn m(&self) {} } impl Other { fn m(&self) {} }`;
 const storeM = { targetRelPath: "src/main.rs", targetSymbolId: "Store#m" };
 
 describe("Rust external signature table — member returns and Deref targets (s3i8m.7 T3b)", () => {
-  it("follows a Mutex guard's table Deref::Target: `self.m.lock().unwrap().m()` reaches Store#m", () => {
+  it("follows a Mutex guard's table Deref::Target: `self.m.lock().unwrap().m()` reaches Store#m", async () => {
     const f = fixture({
       "src/main.rs": `use std::sync::Mutex;
 ${STORES}
@@ -252,7 +254,7 @@ impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
     expect(f.resolve("self.m.lock().unwrap().m()")).toEqual(storeM);
   });
 
-  it("follows a RefCell Ref's Deref::Target: `self.c.borrow().m()` reaches Store#m", () => {
+  it("follows a RefCell Ref's Deref::Target: `self.c.borrow().m()` reaches Store#m", async () => {
     const f = fixture({
       "src/main.rs": `use std::cell::RefCell;
 ${STORES}
@@ -262,7 +264,7 @@ impl Holder { fn run(&self) { self.c.borrow().m(); } }`,
     expect(f.resolve("self.c.borrow().m()")).toEqual(storeM);
   });
 
-  it("types a std member the hand tables do not know from the table's declared return", () => {
+  it("types a std member the hand tables do not know from the table's declared return", async () => {
     const f = fixture({
       "src/main.rs": `${STORES}
 struct Holder { r: Result<Store, String> }
@@ -271,7 +273,7 @@ impl Holder { fn run(&self) { self.r.ok().unwrap().m(); } }`,
     expect(f.resolve("self.r.ok().unwrap().m()")).toEqual(storeM);
   });
 
-  it("is byte-identical to the old read without a table", () => {
+  it("is byte-identical to the old read without a table", async () => {
     const f = fixture({
       "src/main.rs": `use std::sync::Mutex;
 ${STORES}
@@ -281,7 +283,7 @@ impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
     expect(f.resolve("self.m.lock().unwrap().m()", false)).not.toEqual(storeM);
   });
 
-  it("lets a project namesake of a std type in the answer veto the table read", () => {
+  it("lets a project namesake of a std type in the answer veto the table read", async () => {
     const f = fixture({
       "src/main.rs": `use std::sync::Mutex;
 ${STORES}
@@ -295,7 +297,7 @@ impl Holder { fn run(&self) { self.m.lock().unwrap().m(); } }`,
     expect(language.resolver.resolve(call, ctx)).toEqual(language.resolver.resolve(without.call, without.ctx));
   });
 
-  it("never places a dependency type's return on a project namesake", () => {
+  it("never places a dependency type's return on a project namesake", async () => {
     const f = fixture({
       "src/main.rs": `use demo::Client;
 ${STORES}
@@ -310,7 +312,7 @@ fn run(c: Client) { c.get(); }`,
     expect(rustDeclaredMemberReturnType(instance("Client"), "get", plain.ctxOf("c.get()", false).ctx)).toBeUndefined();
   });
 
-  it("keeps a guard whose Deref target the fold cannot see unproven (CONTINUE, never a dropped edge)", () => {
+  it("keeps a guard whose Deref target the fold cannot see unproven (CONTINUE, never a dropped edge)", async () => {
     const f = fixture({ "src/main.rs": `${STORES}\nfn run(c: Client) { c.get(); }` });
     const { ctx } = f.ctxOf("c.get()", true);
     expect(rustTypedMissIsProven(instance("std::sync::MutexGuard"), "m", ctx)).toBe(false);
@@ -318,7 +320,7 @@ fn run(c: Client) { c.get(); }`,
     expect(rustTypedMissIsProven(instance("std::sync::MutexGuard"), "m", without)).toBe(true);
   });
 
-  it("judges a guard's terminal member on its Deref target, never on the guard alone", () => {
+  it("judges a guard's terminal member on its Deref target, never on the guard alone", async () => {
     const f = fixture({ "src/main.rs": `${STORES}\nfn run(c: Client) { c.get(); }` });
     const { ctx } = f.ctxOf("c.get()", true);
     const guardOf = (args?: TypeRef[]) => instance("std::sync::MutexGuard", args);
@@ -340,22 +342,22 @@ describe("Rust external signature table — `ExtType::assoc(..)` path-call resul
     return rustDeclaredCallResultType(local, call.startLine, ctx);
   };
 
-  it("types `let v = Vec::new()` as the table's `Self`", () => {
+  it("types `let v = Vec::new()` as the table's `Self`", async () => {
     const code = `fn run() {\n  let v = Vec::new();\n  v.len();\n}`;
     expect(callResultOf(code, "v", "v.len()")).toEqual(instance("Vec"));
   });
 
-  it("is byte-identical to the old read without a table", () => {
+  it("is byte-identical to the old read without a table", async () => {
     const code = `fn run() {\n  let v = Vec::new();\n  v.len();\n}`;
     expect(callResultOf(code, "v", "v.len()", false)).toBeUndefined();
   });
 
-  it("drops arguments nothing binds: `HashMap::with_capacity(n)` is a bare `HashMap`", () => {
+  it("drops arguments nothing binds: `HashMap::with_capacity(n)` is a bare `HashMap`", async () => {
     const code = `fn run() {\n  let h = HashMap::with_capacity(4);\n  h.len();\n}`;
     expect(callResultOf(code, "h", "h.len()")).toEqual(instance("HashMap"));
   });
 
-  it("wraps a typed argument: `Arc::new(s)` with `s: Store` is `Arc<Store>`", () => {
+  it("wraps a typed argument: `Arc::new(s)` with `s: Store` is `Arc<Store>`", async () => {
     const code = `${STORES}
 fn run(s: Store) {
   let a = Arc::new(s);
@@ -364,17 +366,17 @@ fn run(s: Store) {
     expect(callResultOf(code, "a", "a.m()")).toEqual(instance("Arc", [instance("src/main.rs::Store")]));
   });
 
-  it("types the wrapped local through its own call-result binding: `Arc::new(Vec::new())` via `v`", () => {
+  it("types the wrapped local through its own call-result binding: `Arc::new(Vec::new())` via `v`", async () => {
     const code = `fn run() {\n  let v = Vec::new();\n  let a = Arc::new(v);\n  a.len();\n}`;
     expect(callResultOf(code, "a", "a.len()")).toEqual(instance("Arc", [instance("Vec")]));
   });
 
-  it("keeps `Arc::new(x)` argument-less when `x` is untyped", () => {
+  it("keeps `Arc::new(x)` argument-less when `x` is untyped", async () => {
     const code = `fn run() {\n  let a = Arc::new(make());\n  a.len();\n}`;
     expect(callResultOf(code, "a", "a.len()")).toEqual(instance("Arc"));
   });
 
-  it("canonicalises a dependency type through the caller's imports and unwraps `?`", () => {
+  it("canonicalises a dependency type through the caller's imports and unwraps `?`", async () => {
     const code = `use demo::Url;
 fn run(s: &str) -> Option<()> {
   let u = Url::parse(s)?;
@@ -384,19 +386,19 @@ fn run(s: &str) -> Option<()> {
     expect(callResultOf(code, "u", "u.host()")).toEqual(instance("demo::Url"));
   });
 
-  it("lets a project namesake veto the table", () => {
+  it("lets a project namesake veto the table", async () => {
     const code = `struct Vec;\nfn run() {\n  let v = Vec::new();\n  v.len();\n}`;
     expect(callResultOf(code, "v", "v.len()")).toBeUndefined();
   });
 
-  it("never types a module function call", () => {
+  it("never types a module function call", async () => {
     const code = `fn run() {\n  let d = fs::read(p);\n  d.len();\n}`;
     expect(callResultOf(code, "d", "d.len()")).toBeUndefined();
   });
 });
 
 describe("Rust external signature table — public fields of external types (s3i8m.7 T3c)", () => {
-  it("types `self.r.start` from `Range<Store>`'s table field and reaches Store#m", () => {
+  it("types `self.r.start` from `Range<Store>`'s table field and reaches Store#m", async () => {
     const f = fixture({
       "src/main.rs": `${STORES}
 struct Holder { r: std::ops::Range<Store> }
@@ -406,7 +408,7 @@ impl Holder { fn run(&self) { self.r.start.m(); } }`,
     expect(f.resolve("self.r.start.m()", false)).not.toEqual(storeM);
   });
 
-  it("types a dependency struct's public field through its canonical path", () => {
+  it("types a dependency struct's public field through its canonical path", async () => {
     const f = fixture({ "src/main.rs": `use demo::Config;\nfn run(c: Config) { c.client.get(); }` });
     const { ctx } = f.ctxOf("c.client.get()", true);
     expect(rustExternalFieldType(instance("Config"), "client", ctx)).toEqual(instance("demo::Client"));
@@ -415,7 +417,7 @@ impl Holder { fn run(&self) { self.r.start.m(); } }`,
     expect(rustExternalFieldType(instance("Config"), "client", without)).toBeUndefined();
   });
 
-  it("lets a project namesake of the field's type veto the table", () => {
+  it("lets a project namesake of the field's type veto the table", async () => {
     const code = `use demo::Config;\nstruct Client;\nfn run(c: Config) { c.client.get(); }`;
     const { ctx } = fixture({ "src/main.rs": code }).ctxOf("c.client.get()", true);
     expect(rustExternalFieldType(instance("Config"), "client", ctx)).toBeUndefined();
@@ -428,7 +430,7 @@ describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / H
   const store = instance("src/main.rs::Store");
   const ordering = instance("Ordering");
 
-  it("answers the implementor-independent returns on a typed receiver", () => {
+  it("answers the implementor-independent returns on a typed receiver", async () => {
     const ctx = ctxFor(STORES);
     const client = instance("demo::Client");
     expect(rustDeclaredMemberReturnType(client, "to_string", ctx)).toEqual(instance("String"));
@@ -439,7 +441,7 @@ describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / H
     expect(rustDeclaredMemberReturnType(store, "to_string", ctx)).toEqual(instance("String"));
   });
 
-  it("answers `Self` for clone / to_owned when the receiver has no Deref target to hand them to", () => {
+  it("answers `Self` for clone / to_owned when the receiver has no Deref target to hand them to", async () => {
     const ctx = ctxFor(STORES);
     const vecOfStore = instance("Vec", [store]);
     expect(rustDeclaredMemberReturnType(vecOfStore, "clone", ctx)).toEqual(vecOfStore);
@@ -449,7 +451,7 @@ describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / H
     expect(rustDeclaredMemberReturnType(instance("str"), "to_owned", ctx)).toEqual(instance("String"));
   });
 
-  it("hands clone through a dependency type's Deref and stays silent when the target is unspellable", () => {
+  it("hands clone through a dependency type's Deref and stays silent when the target is unspellable", async () => {
     const ctx = ctxFor(STORES);
     expect(rustDeclaredMemberReturnType(instance("demo::Handle", [store]), "clone", ctx)).toEqual(store);
     expect(rustDeclaredMemberReturnType(instance("demo::Handle"), "clone", ctx)).toBeUndefined();
@@ -457,20 +459,20 @@ describe("Rust std-trait return model — Clone / ToString / Ord / PartialEq / H
     expect(rustDeclaredMemberReturnType(instance("demo::Handle"), "to_string", ctx)).toEqual(instance("String"));
   });
 
-  it("keeps a project impl's declared clone and lets a project namesake veto the model", () => {
+  it("keeps a project impl's declared clone and lets a project namesake veto the model", async () => {
     const declared = ctxFor(`${STORES}\nimpl Clone for Store { fn clone(&self) -> Self { Store } }`);
     expect(rustDeclaredMemberReturnType(store, "clone", declared)).toEqual(store);
     const shadowed = ctxFor(`${STORES}\nstruct Ordering;`);
     expect(rustDeclaredMemberReturnType(instance("demo::Client"), "cmp", shadowed)).toBeUndefined();
   });
 
-  it("is byte-identical to the old read without a table", () => {
+  it("is byte-identical to the old read without a table", async () => {
     const ctx = ctxFor(STORES, false);
     expect(rustDeclaredMemberReturnType(instance("demo::Client"), "to_string", ctx)).toBeUndefined();
     expect(rustDeclaredMemberReturnType(store, "clone", ctx)).toBeUndefined();
   });
 
-  it("types `Type::default()` on an external type as the type itself", () => {
+  it("types `Type::default()` on an external type as the type itself", async () => {
     const f = fixture({
       "src/main.rs": `use demo::Client;\nfn run() {\n  let c = Client::default();\n  c.get();\n}`,
     });
@@ -490,34 +492,34 @@ describe("Rust external signature table — free-function roots (s3i8m.7 T-A2)",
   };
   const main = (code: string) => ({ "src/main.rs": code });
 
-  it("types `let (tx, rx) = channel()` through `use std::sync::mpsc::channel`", () => {
+  it("types `let (tx, rx) = channel()` through `use std::sync::mpsc::channel`", async () => {
     const code = `use std::sync::mpsc::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::Sender"));
   });
 
-  it("types a module-qualified call through `use std::sync::mpsc`", () => {
+  it("types a module-qualified call through `use std::sync::mpsc`", async () => {
     const code = `use std::sync::mpsc;\nfn run() {\n  let (tx, _) = mpsc::sync_channel(1);\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::SyncSender"));
   });
 
-  it("types a call whose head is a dependency crate name", () => {
+  it("types a call whose head is a dependency crate name", async () => {
     const code = `fn run() {\n  let (s, r) = crossbeam_channel::unbounded();\n  r.recv();\n}`;
     expect(patternTypeOf(main(code), "r", "r.recv()")).toEqual(instance("crossbeam_channel::Receiver"));
   });
 
-  it("peels an `.unwrap()` tail off a `Result<(A, B), E>` scrutinee", () => {
+  it("peels an `.unwrap()` tail off a `Result<(A, B), E>` scrutinee", async () => {
     const code = `fn run() {\n  let (a, b) = ipc::channel().unwrap();\n  a.send(1);\n}`;
     expect(patternTypeOf(main(code), "a", "a.send(1)")).toEqual(instance("ipc::IpcSender"));
   });
 
-  it("peels `?` and `.expect(..)` tails alike", () => {
+  it("peels `?` and `.expect(..)` tails alike", async () => {
     const tried = `fn run() -> std::io::Result<()> {\n  let (a, b) = ipc::channel()?;\n  a.send(1);\n  Ok(())\n}`;
     expect(patternTypeOf(main(tried), "a", "a.send(1)")).toEqual(instance("ipc::IpcSender"));
     const expected = `fn run() {\n  let (a, b) = ipc::channel().expect("ipc (pair)");\n  b.recv();\n}`;
     expect(patternTypeOf(main(expected), "b", "b.recv()")).toEqual(instance("ipc::IpcReceiver"));
   });
 
-  it("vetoes only the tuple element a project namesake shadows (tikv's own `Receiver`)", () => {
+  it("vetoes only the tuple element a project namesake shadows (tikv's own `Receiver`)", async () => {
     const code = `use std::sync::mpsc;
 struct Receiver;
 fn run() {\n  let (tx, rx) = mpsc::sync_channel(1);\n  tx.send(1);\n  rx.recv();\n}`;
@@ -525,24 +527,24 @@ fn run() {\n  let (tx, rx) = mpsc::sync_channel(1);\n  tx.send(1);\n  rx.recv();
     expect(patternTypeOf(main(code), "rx", "rx.recv()")).toBeUndefined();
   });
 
-  it("types a glob-only binding when the project declares no function of the name", () => {
+  it("types a glob-only binding when the project declares no function of the name", async () => {
     const code = `use std::sync::mpsc::*;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toEqual(instance("std::sync::mpsc::Sender"));
   });
 
-  it("lets a same-file project `fn channel()` answer: the table is never asked", () => {
+  it("lets a same-file project `fn channel()` answer: the table is never asked", async () => {
     const code = `${STORES}
 fn channel() -> (Store, Other) { todo!() }
 fn run() {\n  let (tx, rx) = channel();\n  tx.m();\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.m()")).toEqual(instance("src/main.rs::Store"));
   });
 
-  it("gives no table answer for a name an import binds to `crate::`", () => {
+  it("gives no table answer for a name an import binds to `crate::`", async () => {
     const code = `use crate::chan::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(code), "tx", "tx.send(1)")).toBeUndefined();
   });
 
-  it("declines a glob-only binding when the project declares a `fn channel`", () => {
+  it("declines a glob-only binding when the project declares a `fn channel`", async () => {
     const files = {
       "src/main.rs": `use std::sync::mpsc::*;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`,
       "src/chan.rs": `pub fn channel() -> u8 { 0 }`,
@@ -550,19 +552,19 @@ fn run() {\n  let (tx, rx) = channel();\n  tx.m();\n}`;
     expect(patternTypeOf(files, "tx", "tx.send(1)")).toBeUndefined();
   });
 
-  it("declines a module head the project declares", () => {
+  it("declines a module head the project declares", async () => {
     const code = `mod ipc { pub fn channel() {} }\nfn run() {\n  let (a, b) = ipc::channel().unwrap();\n  a.send(1);\n}`;
     expect(patternTypeOf(main(code), "a", "a.send(1)")).toBeUndefined();
   });
 
-  it("leaves an unknown function, or a missing table, untyped", () => {
+  it("leaves an unknown function, or a missing table, untyped", async () => {
     const unknown = `use std::sync::mpsc::bounded;\nfn run() {\n  let (tx, rx) = bounded();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(unknown), "tx", "tx.send(1)")).toBeUndefined();
     const known = `use std::sync::mpsc::channel;\nfn run() {\n  let (tx, rx) = channel();\n  tx.send(1);\n}`;
     expect(patternTypeOf(main(known), "tx", "tx.send(1)", false)).toBeUndefined();
   });
 
-  it("types a plain `let d = tempfile::tempdir()?` through the table's alias-expanded return", () => {
+  it("types a plain `let d = tempfile::tempdir()?` through the table's alias-expanded return", async () => {
     const code = `fn run() -> std::io::Result<()> {\n  let d = tempfile::tempdir()?;\n  d.path();\n  Ok(())\n}`;
     const f = fixture(main(code));
     const { call, ctx } = f.ctxOf("d.path()", true);

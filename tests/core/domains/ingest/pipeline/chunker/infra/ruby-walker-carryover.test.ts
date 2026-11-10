@@ -37,8 +37,8 @@ function rubySource(i: number): string {
 }
 
 // Replicates the worker's per-file flow (worker.ts:106-129) on a shared engine.
-function buildEngine() {
-  const factory = new LanguageFactory();
+async function buildEngine() {
+  const factory = await LanguageFactory.preloaded();
   const composer = new DefaultSymbolIdComposer();
   const chunker = new TreeSitterChunker(CONFIG, composer, factory);
   return { factory, composer, chunker };
@@ -62,7 +62,7 @@ function treeFingerprint(tree: MaterializedTree): string {
   return parts.join("|");
 }
 
-async function walkFile(engine: ReturnType<typeof buildEngine>, path: string, code: string) {
+async function walkFile(engine: Awaited<ReturnType<typeof buildEngine>>, path: string, code: string) {
   const { tree } = await engine.chunker.chunkWithTree(code, path, "ruby");
   const provider = engine.factory.create("ruby");
   const { walker, kernel } = provider;
@@ -83,10 +83,10 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
   // rdv7d regression sentinel: GREEN since the materialize boundary landed —
   // walker call count no longer carries over between files (was flaky before).
   it("walking service_1 alone vs after 49 predecessors yields the same tree AND the same call count", async () => {
-    const isolatedEngine = buildEngine();
+    const isolatedEngine = await buildEngine();
     const isolated = await walkFile(isolatedEngine, "service_1.rb", rubySource(1));
 
-    const sharedEngine = buildEngine();
+    const sharedEngine = await buildEngine();
     for (let i = 0; i < 50; i++) {
       if (i === 1) continue;
       await walkFile(sharedEngine, `service_${i}.rb`, rubySource(i));
@@ -115,7 +115,7 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
     const CODE = rubySource(1);
     const rows: { calls: number; textOk: boolean; posFp: string }[] = [];
     for (let r = 0; r < 40; r++) {
-      const engine = buildEngine();
+      const engine = await buildEngine();
       const { tree } = await engine.chunker.chunkWithTree(CODE, "service_1.rb", "ruby");
       // node.text fingerprint vs source slice: if rootNode.text !== CODE, the
       // native tree's text buffer is corrupt (positions can still match).
@@ -145,7 +145,7 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
 
   it("DIAGNOSTIC: walk the SAME tree object 30× — does call count vary on a fixed tree?", async () => {
     const CODE = rubySource(1);
-    const engine = buildEngine();
+    const engine = await buildEngine();
     const { tree } = await engine.chunker.chunkWithTree(CODE, "service_1.rb", "ruby");
     const provider = engine.factory.create("ruby");
     const { walker, kernel } = provider;
@@ -171,7 +171,7 @@ describe("ruby walker carryover (engine-level, no pool, no concurrency)", () => 
 
   it("DECIDER: is an EAGER single-pass capture of the fragile accessors (childForFieldName/.parent) stable across N materializations of the same tree?", async () => {
     const CODE = rubySource(1);
-    const engine = buildEngine();
+    const engine = await buildEngine();
     const { tree } = await engine.chunker.chunkWithTree(CODE, "service_1.rb", "ruby");
     const FIELDS = ["name", "parameters", "receiver", "method", "left", "right", "superclass", "body", "value"];
     // One eager top-down pass: touch each node ONCE, immediately record its

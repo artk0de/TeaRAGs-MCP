@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { renderReadme } from "../../../../../src/core/domains/language/capability/readme.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 
+const caps = (await LanguageFactory.preloaded()).capabilities();
+
 describe("renderReadme", () => {
-  const out = renderReadme(new LanguageFactory().capabilities());
+  const out = renderReadme(caps);
 
   it("emits the section heading wrapped in a details spoiler", () => {
     expect(out).toContain("## Languages Compatibilities");
@@ -94,8 +96,8 @@ describe("renderReadme", () => {
     expect(out).toContain("CharacterChunker");
   });
 
-  it("renders a descriptor's codegraph summary in place of its full tech", () => {
-    const caps = new LanguageFactory().capabilities();
+  it("renders a descriptor's codegraph summary in place of its full tech", async () => {
+    const caps = (await LanguageFactory.preloaded()).capabilities();
     const python = caps.get("python")!;
     caps.set("python", {
       ...python,

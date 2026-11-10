@@ -117,18 +117,18 @@ function bare(member: string): CallRef {
 const TIKV_BOX_ERR_TARGET = { targetRelPath: "components/tikv_util/src/macros.rs", targetSymbolId: "box_err" };
 
 describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => {
-  it("a macro_use workspace crate's exported macro is reachable bare", () => {
+  it("a macro_use workspace crate's exported macro is reachable bare", async () => {
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), [crate("tikv_util", 1)]))).toEqual(
       TIKV_BOX_ERR_TARGET,
     );
   });
 
-  it("a later `#[macro_use] extern crate log` shadows the workspace crate's warn! — external, no edge", () => {
+  it("a later `#[macro_use] extern crate log` shadows the workspace crate's warn! — external, no edge", async () => {
     const macroUse = [crate("tikv_util", 1), crate("log", 3)];
     expect(resolver().resolve(bare("warn"), ctx(table([TIKV_WARN]), macroUse))).toBeNull();
   });
 
-  it("an earlier log does not shadow a later workspace crate exporting warn!", () => {
+  it("an earlier log does not shadow a later workspace crate exporting warn!", async () => {
     const macroUse = [crate("log", 1), crate("tikv_util", 3)];
     expect(resolver().resolve(bare("warn"), ctx(table([TIKV_WARN]), macroUse))).toEqual({
       targetRelPath: "components/tikv_util/src/log.rs",
@@ -136,23 +136,23 @@ describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => 
     });
   });
 
-  it("a later unknown external crate declines — its shadowing cannot be proven", () => {
+  it("a later unknown external crate declines — its shadowing cannot be proven", async () => {
     const macroUse = [crate("tikv_util", 1), crate("mystery_macros", 3)];
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), macroUse))).toBeNull();
   });
 
-  it("an earlier unknown external crate never shadows a later exporter", () => {
+  it("an earlier unknown external crate never shadows a later exporter", async () => {
     const macroUse = [crate("mystery_macros", 1), crate("tikv_util", 3)];
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), macroUse))).toEqual(TIKV_BOX_ERR_TARGET);
   });
 
-  it("a renamed `extern crate tikv_util as tu` still brings its macros in", () => {
+  it("a renamed `extern crate tikv_util as tu` still brings its macros in", async () => {
     expect(
       resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), [crate("tikv_util", 1, { alias: "tu" })])),
     ).toEqual(TIKV_BOX_ERR_TARGET);
   });
 
-  it("an in-crate macro_rules! wins over a macro_use crate", () => {
+  it("an in-crate macro_rules! wins over a macro_use crate", async () => {
     const local: MacroSpec = { relPath: "components/api_version/src/macros.rs", name: "box_err" };
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR, local]), [crate("tikv_util", 1)]))).toEqual({
       targetRelPath: "components/api_version/src/macros.rs",
@@ -160,12 +160,12 @@ describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => 
     });
   });
 
-  it("a non-exported macro of the macro_use crate stays invisible", () => {
+  it("a non-exported macro of the macro_use crate stays invisible", async () => {
     const hidden: MacroSpec = { ...TIKV_BOX_ERR, visibility: "private" };
     expect(resolver().resolve(bare("box_err"), ctx(table([hidden]), [crate("tikv_util", 1)]))).toBeNull();
   });
 
-  it("two workspace crates exporting the macro — the last macro_use wins", () => {
+  it("two workspace crates exporting the macro — the last macro_use wins", async () => {
     const macroUse = [crate("tikv_util", 1), crate("other_util", 3)];
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR, OTHER_BOX_ERR]), macroUse))).toEqual({
       targetRelPath: "components/other_util/src/lib.rs",
@@ -173,19 +173,19 @@ describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => 
     });
   });
 
-  it("a `#[macro_use(other)]` list that omits the macro does not provide it", () => {
+  it("a `#[macro_use(other)]` list that omits the macro does not provide it", async () => {
     const macroUse = [crate("tikv_util", 1), crate("other_util", 3, { macros: ["other"] })];
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR, OTHER_BOX_ERR]), macroUse))).toEqual(
       TIKV_BOX_ERR_TARGET,
     );
   });
 
-  it("a workspace crate that exports nothing of the name is skipped, not unknown", () => {
+  it("a workspace crate that exports nothing of the name is skipped, not unknown", async () => {
     const macroUse = [crate("tikv_util", 1), crate("other_util", 3)];
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), macroUse))).toEqual(TIKV_BOX_ERR_TARGET);
   });
 
-  it("an external `use slog_global::info` shadows the macro_use prelude — no edge", () => {
+  it("an external `use slog_global::info` shadows the macro_use prelude — no edge", async () => {
     const tikvInfo: MacroSpec = { relPath: "components/tikv_util/src/log.rs", name: "info", visibility: "public" };
     const context = {
       ...ctx(table([tikvInfo]), [crate("tikv_util", 1)]),
@@ -194,7 +194,7 @@ describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => 
     expect(resolver().resolve(bare("info"), context)).toBeNull();
   });
 
-  it("a std module of the same name (`use std::error`) binds no macro and does not shadow", () => {
+  it("a std module of the same name (`use std::error`) binds no macro and does not shadow", async () => {
     const tikvError: MacroSpec = { relPath: "components/tikv_util/src/log.rs", name: "error", visibility: "public" };
     const context = {
       ...ctx(table([tikvError]), [crate("tikv_util", 1)]),
@@ -206,14 +206,14 @@ describe("#[macro_use] extern crate — bare macro scoping (s3i8m.4 B2)", () => 
     });
   });
 
-  it("without a macro_use list the call stays unresolved, as before", () => {
+  it("without a macro_use list the call stays unresolved, as before", async () => {
     expect(resolver().resolve(bare("box_err"), ctx(table([TIKV_BOX_ERR]), []))).toBeNull();
   });
 });
 
 describe("#[macro_use] extern crate — walked end to end (s3i8m.4 B2)", () => {
-  function edges(files: Record<string, string>, callerFile: string): string[] {
-    const factory = new LanguageFactory({ repoRoot: ROOT, manifestFilesReader: stubReader(MANIFESTS) });
+  async function edges(files: Record<string, string>, callerFile: string): Promise<string[]> {
+    const factory = await LanguageFactory.preloaded({ repoRoot: ROOT, manifestFilesReader: stubReader(MANIFESTS) });
     const language = new RustLanguage();
     const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
     const symbolTable = new InMemoryGlobalSymbolTable();
@@ -246,8 +246,8 @@ describe("#[macro_use] extern crate — walked end to end (s3i8m.4 B2)", () => {
       .methodEdges.map((edge) => `${edge.sourceSymbolId}->${edge.targetRelPath}:${edge.targetSymbolId}`);
   }
 
-  it("a submodule's bare box_err! reaches tikv_util through the crate root's #[macro_use] extern crate", () => {
-    const found = edges(
+  it("a submodule's bare box_err! reaches tikv_util through the crate root's #[macro_use] extern crate", async () => {
+    const found = await edges(
       {
         "components/tikv_util/src/lib.rs": "#[macro_use]\npub mod macros;\n",
         "components/tikv_util/src/macros.rs":

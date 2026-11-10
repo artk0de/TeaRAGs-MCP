@@ -13,9 +13,11 @@ import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -80,7 +82,7 @@ impl Product { fn finish(&self) {} } impl Other { fn finish(&self) {} }`;
 const productFinish = { targetRelPath: "src/main.rs", targetSymbolId: "Product#finish" };
 
 describe.each([false, true])("Rust declared field chains (materialized=%s)", (materialized) => {
-  it("publishes placed fields without changing the legacy field map", () => {
+  it("publishes placed fields without changing the legacy field map", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder<T> { value: T, wrapped: Wrapper<T>, product: Product }
@@ -135,7 +137,7 @@ fn run(${parameter}) { ${call}; }`,
     expect(f.resolve(call)).toEqual(productFinish);
   });
 
-  it("uses the declaring module's exact owner and nominal scope", () => {
+  it("uses the declaring module's exact owner and nominal scope", async () => {
     const f = fixture(
       {
         "src/main.rs": `
@@ -155,7 +157,7 @@ mod inner {
     });
   });
 
-  it("seeds compound self chains from the lexical class rather than the method frame", () => {
+  it("seeds compound self chains from the lexical class rather than the method frame", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder { inner: Inner } struct Inner { product: Product }
@@ -167,7 +169,7 @@ impl Holder { fn run(&self) { self.inner.product.finish(); } }`,
     expect(f.resolve("self.inner.product.finish()")).toEqual(productFinish);
   });
 
-  it("does not seed self inside an associated function without an instance receiver", () => {
+  it("does not seed self inside an associated function without an instance receiver", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder { inner: Inner } struct Inner { product: Product }
@@ -179,7 +181,7 @@ impl Holder { fn run() { self.inner.product.finish(); } }`,
     expect(f.resolve("self.inner.product.finish()")).toBeNull();
   });
 
-  it("does not inherit an instance self seed inside a nested free function", () => {
+  it("does not inherit an instance self seed inside a nested free function", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder { inner: Inner } struct Inner { product: Product }
@@ -199,7 +201,7 @@ fn nested() { self.inner.product.finish(); }
     expect(f.resolve("self.inner.product.finish()", "src/main.rs", /^Holder#run\.nested$/)).toBeNull();
   });
 
-  it("threads fields after declared method returns and constructor results", () => {
+  it("threads fields after declared method returns and constructor results", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder; struct Inner { product: Product }
@@ -213,7 +215,7 @@ fn run(holder: Holder) { holder.get().product.finish(); Holder::new().get().prod
     expect(f.resolve("Holder::new().get().product.finish()")).toEqual(productFinish);
   });
 
-  it("carries placed fields and generic facts through absorb and the production runner", () => {
+  it("carries placed fields and generic facts through absorb and the production runner", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder<T> { wrapped: Wrapper<T> } struct Wrapper<U> { item: U }
@@ -249,7 +251,7 @@ fn run(holder: Holder<Product>) { holder.wrapped.item.finish(); }`,
     expect(persisted.typeDeclarations).toEqual([
       expect.objectContaining({ typeId: "Holder", genericParameters: ["T"], genericFieldParameters: { value: "T" } }),
     ]);
-    const factory = new LanguageFactory();
+    const factory = await LanguageFactory.preloaded();
     const hydrated = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
     const caller = f.extractions.find((entry) => entry.relPath === "src/main.rs")!;
     hydrated.absorb(caller, []);
@@ -309,7 +311,7 @@ fn run(holder: Holder<Product>) { holder.wrapped.item.finish(); }`,
     expect(f.resolve(call)).toBeNull();
   });
 
-  it("does not consume an imported field alias despite local namesakes", () => {
+  it("does not consume an imported field alias despite local namesakes", async () => {
     const f = fixture(
       {
         "src/main.rs": `use external::Product;
@@ -321,7 +323,7 @@ fn run(holder: Holder) { holder.product.finish(); }`,
     expect(f.resolve("holder.product.finish()")).toBeNull();
   });
 
-  it("does not resolve a declaring file's nominal field using the caller's imports", () => {
+  it("does not resolve a declaring file's nominal field using the caller's imports", async () => {
     const f = fixture(
       {
         "src/holder.rs": "use external::Product; struct Holder { product: Product }",
@@ -332,7 +334,7 @@ fn run(holder: Holder) { holder.product.finish(); }`,
     expect(f.resolve("holder.product.finish()")).toBeNull();
   });
 
-  it("does not type fields after an external declared method return", () => {
+  it("does not type fields after an external declared method return", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Holder; struct Inner { product: Product } ${finishers}

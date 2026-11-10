@@ -12,7 +12,7 @@ import { memberSetupText, setupChainOf } from "../../../language/__helpers__/set
 // builds every native language provider itself — so factory.create("ruby")
 // returns a real provider with chunker hooks. Runs in the MAIN process (not the
 // worker), so it may construct a factory that serves ruby directly.
-const testLanguageFactoryDescriptor = new LanguageFactory();
+const testLanguageFactoryDescriptor = await LanguageFactory.preloaded();
 
 describe("TreeSitterChunker", () => {
   let chunker: TreeSitterChunker;

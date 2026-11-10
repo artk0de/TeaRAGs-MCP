@@ -278,7 +278,7 @@ async function productionRun(
   sourcedAnswers: string[];
   kinds: Record<ReceiverKind, ReceiverKindTally>;
 }> {
-  const factory = new LanguageFactory({ repoRoot: corpus });
+  const factory = await LanguageFactory.preloaded({ repoRoot: corpus });
   const composer = new DefaultSymbolIdComposer();
   const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
   state.bindProjectRoot(corpus);

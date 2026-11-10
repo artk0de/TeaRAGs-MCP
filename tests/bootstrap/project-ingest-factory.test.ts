@@ -55,7 +55,7 @@ function registryOf(entries: CollectionEntry[]): FakeRegistry {
 const facade = (id: string): { id: string } => ({ id });
 
 describe("ProjectIngestFactory", () => {
-  it("builds the ingest facade from the target project's registry env", () => {
+  it("builds the ingest facade from the target project's registry env", async () => {
     const seen: Record<string, string>[] = [];
     const factory = new ProjectIngestFactory({
       registry: registryOf([entry({ path: "/repo/alpha", env: { INGEST_CHUNK_OVERLAP: "450" } })]),
@@ -67,14 +67,14 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: { INGEST_PIPELINE_CONCURRENCY: "2" },
     });
 
-    const resolved = factory.forPath("/repo/alpha");
+    const resolved = await factory.forPath("/repo/alpha");
 
     expect(resolved).toEqual(facade("alpha"));
     expect(seen).toHaveLength(1);
     expect(seen[0].INGEST_CHUNK_OVERLAP).toBe("450");
   });
 
-  it("seeds a NEW project with another repository's backend only, never its indexing env (bd tea-rags-mcp-h4l6k)", () => {
+  it("seeds a NEW project with another repository's backend only, never its indexing env (bd tea-rags-mcp-h4l6k)", async () => {
     const seen: Record<string, string>[] = [];
     const factory = new ProjectIngestFactory({
       registry: registryOf([
@@ -96,7 +96,7 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: {},
     });
 
-    factory.forPath("/repo/brand-new");
+    await factory.forPath("/repo/brand-new");
 
     expect(seen).toHaveLength(1);
     expect(seen[0]).not.toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
@@ -109,7 +109,7 @@ describe("ProjectIngestFactory", () => {
     });
   });
 
-  it("reuses the process-wide facade when the registry has no entry for the path", () => {
+  it("reuses the process-wide facade when the registry has no entry for the path", async () => {
     let built = 0;
     const factory = new ProjectIngestFactory({
       registry: registryOf([]),
@@ -121,11 +121,11 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: {},
     });
 
-    expect(factory.forPath("/repo/unknown")).toEqual(facade("process"));
+    expect(await factory.forPath("/repo/unknown")).toEqual(facade("process"));
     expect(built).toBe(0);
   });
 
-  it("reuses the process-wide facade when the ambient env already carries every registered value", () => {
+  it("reuses the process-wide facade when the ambient env already carries every registered value", async () => {
     // The CLI worker's situation: its env was seeded from the registry before
     // the fork, so replay has nothing left to contribute and the run must stay
     // on the single composition-root facade.
@@ -144,11 +144,11 @@ describe("ProjectIngestFactory", () => {
       },
     });
 
-    expect(factory.forPath("/repo/alpha")).toEqual(facade("process"));
+    expect(await factory.forPath("/repo/alpha")).toEqual(facade("process"));
     expect(built).toBe(0);
   });
 
-  it("lets the ambient env override the registered value, matching CLI precedence", () => {
+  it("lets the ambient env override the registered value, matching CLI precedence", async () => {
     const seen: Record<string, string>[] = [];
     const factory = new ProjectIngestFactory({
       registry: registryOf([
@@ -167,13 +167,13 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: { INGEST_CHUNK_OVERLAP: "300" },
     });
 
-    factory.forPath("/repo/alpha");
+    await factory.forPath("/repo/alpha");
 
     expect(seen[0].INGEST_CHUNK_OVERLAP).toBe("300");
     expect(seen[0].INGEST_PIPELINE_CONCURRENCY).toBe("6");
   });
 
-  it("hands back-to-back runs of one project the same facade", () => {
+  it("hands back-to-back runs of one project the same facade", async () => {
     // The facade owns the run state a repeat index depends on — the enrichment
     // coordinator, its background settle promise, the stats-refresh hook. A
     // fresh one per request would strand the previous run's enrichment.
@@ -188,14 +188,14 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: {},
     });
 
-    const first = factory.forPath("/repo/alpha");
-    const second = factory.forPath("/repo/alpha");
+    const first = await factory.forPath("/repo/alpha");
+    const second = await factory.forPath("/repo/alpha");
 
     expect(second).toBe(first);
     expect(built).toBe(1);
   });
 
-  it("gives projects with different registered env their own facade", () => {
+  it("gives projects with different registered env their own facade", async () => {
     const factory = new ProjectIngestFactory({
       registry: registryOf([
         entry({ path: "/repo/alpha", env: { INGEST_CHUNK_OVERLAP: "450" } }),
@@ -206,8 +206,8 @@ describe("ProjectIngestFactory", () => {
       ambientEnv: {},
     });
 
-    expect(factory.forPath("/repo/alpha")).toEqual(facade("scoped-450"));
-    expect(factory.forPath("/repo/beta")).toEqual(facade("scoped-300"));
+    expect(await factory.forPath("/repo/alpha")).toEqual(facade("scoped-450"));
+    expect(await factory.forPath("/repo/beta")).toEqual(facade("scoped-300"));
   });
 
   it("keeps two overlapping index runs on different projects from clobbering each other", async () => {
@@ -241,12 +241,12 @@ describe("ProjectIngestFactory", () => {
     });
 
     const runs = Promise.all([
-      (factory.forPath("/repo/alpha") as unknown as { indexCodebase: (p: string) => Promise<void> }).indexCodebase(
-        "/repo/alpha",
-      ),
-      (factory.forPath("/repo/beta") as unknown as { indexCodebase: (p: string) => Promise<void> }).indexCodebase(
-        "/repo/beta",
-      ),
+      (
+        (await factory.forPath("/repo/alpha")) as unknown as { indexCodebase: (p: string) => Promise<void> }
+      ).indexCodebase("/repo/alpha"),
+      (
+        (await factory.forPath("/repo/beta")) as unknown as { indexCodebase: (p: string) => Promise<void> }
+      ).indexCodebase("/repo/beta"),
     ]);
     releaseBoth();
     await runs;
@@ -290,7 +290,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     return { factory, seen };
   }
 
-  it("builds a registered project with its own stamped index shape, and the server's runtime tuning", () => {
+  it("builds a registered project with its own stamped index shape, and the server's runtime tuning", async () => {
     const { factory, seen } = serverFactoryFor([
       entry({
         path: "/repo/taxdome",
@@ -302,7 +302,7 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
       }),
     ]);
 
-    factory.forPath("/repo/taxdome");
+    void factory.forPath("/repo/taxdome");
     const config = parseAppConfigZod(seen[0]);
 
     expect(config.ingest.chunkSize).toBe(4500);
@@ -310,18 +310,18 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     expect(config.ingest.tune.chunkerPoolSize).toBe(8);
   });
 
-  it("lets a legacy alias spelling in the stamp beat the server's canonical one", () => {
+  it("lets a legacy alias spelling in the stamp beat the server's canonical one", async () => {
     const { factory, seen } = serverFactoryFor(
       [entry({ path: "/repo/legacy", tuning: { CODE_CHUNK_OVERLAP: "300" } })],
       { INGEST_CHUNK_OVERLAP: "450" },
     );
 
-    factory.forPath("/repo/legacy");
+    void factory.forPath("/repo/legacy");
 
     expect(parseAppConfigZod(seen[0]).ingest.chunkOverlap).toBe(300);
   });
 
-  it("keeps handing out the process facade when the server env already carries every stamped value", () => {
+  it("keeps handing out the process facade when the server env already carries every stamped value", async () => {
     const { factory, seen } = serverFactoryFor([
       entry({
         path: "/repo/tea-rags",
@@ -329,14 +329,14 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
       }),
     ]);
 
-    expect(factory.forPath("/repo/tea-rags")).toEqual(facade("process"));
+    expect(await factory.forPath("/repo/tea-rags")).toEqual(facade("process"));
     expect(seen).toHaveLength(0);
   });
 
   // Round-4 P1: a READER of a project's index (the working tree's on-demand git
   // signals) must compute with the config that index was written with, by the
   // same resolution an index run of the project takes.
-  it("hands a reader of a project's index the env its index runs resolve to", () => {
+  it("hands a reader of a project's index the env its index runs resolve to", async () => {
     const { factory } = serverFactoryFor(
       [
         entry({
@@ -355,10 +355,10 @@ describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", (
     expect(unregistered.trajectoryGit.logMaxAgeMonths).toBe(6);
   });
 
-  it("lets the server env win over a BORROWED seed — only a project's own stamp outranks it", () => {
+  it("lets the server env win over a BORROWED seed — only a project's own stamp outranks it", async () => {
     const { factory, seen } = serverFactoryFor([entry({ path: "/repo/taxdome", env: { INGEST_CHUNK_SIZE: "4500" } })]);
 
-    factory.forPath("/repo/brand-new");
+    await factory.forPath("/repo/brand-new");
 
     expect(parseAppConfigZod(seen[0] ?? SERVER_ENV).ingest.chunkSize).toBe(2000);
   });
@@ -398,15 +398,15 @@ describe("ProjectIngestFactory path addressing", () => {
       },
       ambientEnv: {},
     });
-    factory.forPath(target);
+    void factory.forPath(target);
     return { overlapUsed: () => used };
   }
 
-  it("matches the entry when the project is addressed through a symlink", () => {
+  it("matches the entry when the project is addressed through a symlink", async () => {
     expect(factoryFor(linkDir).overlapUsed()).toBe("450");
   });
 
-  it("matches the entry when the project is addressed with a trailing slash", () => {
+  it("matches the entry when the project is addressed with a trailing slash", async () => {
     expect(factoryFor(`${realDir}/`).overlapUsed()).toBe("450");
   });
 });

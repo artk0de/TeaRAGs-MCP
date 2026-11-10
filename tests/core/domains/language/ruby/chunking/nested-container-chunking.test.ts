@@ -126,11 +126,11 @@ function scrollRowOf(chunk: CodeChunk, i: number) {
 describe("Ruby chunking — nested-form containers and class constants (bd tea-rags-mcp-1x85g)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 
@@ -270,7 +270,7 @@ describe("Ruby chunking — nested-form containers and class constants (bd tea-r
       const small = new TreeSitterChunker(
         { chunkSize: 400, chunkOverlap: 40, maxChunkSize: 400 },
         new DefaultSymbolIdComposer(),
-        new LanguageFactory(),
+        await LanguageFactory.preloaded(),
       );
       const chunks = await small.chunk(NESTED, "/repo/app/billing/reports/ledger_exporter.rb", "ruby");
 

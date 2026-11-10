@@ -81,7 +81,7 @@ async function cleanup(qdrant, embeddings) {
   // 1. Clear indexed paths (removes Qdrant collection + snapshots)
   if (resources.indexedPaths.size > 0) {
     log("info", `Clearing ${resources.indexedPaths.size} indexed codebases (Qdrant collections + snapshots)...`);
-    const { ingest: cleanupIngest } = createTestFacades(qdrant, embeddings);
+    const { ingest: cleanupIngest } = await createTestFacades(qdrant, embeddings);
     for (const indexPath of resources.indexedPaths) {
       try {
         await cleanupIngest.clearIndex(indexPath);

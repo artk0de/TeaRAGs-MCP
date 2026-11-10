@@ -1532,6 +1532,14 @@ export interface LanguageCrossRunParseCache {
  * worker is a second composition root that imports the concrete factory.
  */
 export interface LanguageFactoryDescriptor {
+  /**
+   * Load the provider modules behind `create` (bd tea-rags-mcp-zkd96): the real
+   * factory reaches per-language verticals lazily, so `create(lang)` only
+   * serves languages this has loaded. Optional so test doubles need not carry
+   * it — consumers call it as `await factory.preload?.()` before the first
+   * `create`; the composition root and worker entries always preload.
+   */
+  preload?: (langs?: readonly string[]) => Promise<void>;
   /** Spawn a fresh `LanguageProvider` (with its own Parser) for `lang`. */
   create: (lang: string) => LanguageProvider;
   /** The languages this factory can `create`. */

@@ -63,7 +63,7 @@ describe("Rake task symbols in the Ruby walker (bd tea-rags-mcp-k0602)", () => {
     const chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const taskChunks = (await chunker.chunk(RAKE_FILE, RAKE_PATH, "ruby")).filter(
       (c) => c.metadata.symbolId !== undefined && c.metadata.symbolId !== "sync_logger",

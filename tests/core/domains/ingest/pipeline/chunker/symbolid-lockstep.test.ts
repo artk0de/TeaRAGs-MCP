@@ -33,7 +33,7 @@ import { typescriptKernel } from "../../../../../../src/core/domains/language/ty
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 const composer = new DefaultSymbolIdComposer();
-const languages = new LanguageFactory();
+const languages = await LanguageFactory.preloaded();
 
 interface LockstepLanguage {
   /** Chunker-side language name + file extension. */

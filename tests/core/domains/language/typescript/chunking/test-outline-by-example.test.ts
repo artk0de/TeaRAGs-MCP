@@ -238,7 +238,7 @@ ${body("anon")}
       const chunker = new TreeSitterChunker(
         { chunkSize: 2500, chunkOverlap: 0, maxChunkSize: 5000 },
         new DefaultSymbolIdComposer(),
-        new LanguageFactory(),
+        await LanguageFactory.preloaded(),
       );
       const chunks = await chunker.chunk(source, relativePath, "typescript");
       return chunks

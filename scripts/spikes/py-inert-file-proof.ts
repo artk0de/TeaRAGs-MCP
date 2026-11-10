@@ -79,7 +79,7 @@ function corpusRoots(): Record<string, string> {
 
 async function proveCorpus(alias: string, root: string): Promise<number> {
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const selection = await collectSourceFiles(
     root,
     root,

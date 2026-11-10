@@ -63,11 +63,11 @@ const COMPONENT = [
 describe("TreeSitterChunker — .tsx is chunked under the tsx grammar", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

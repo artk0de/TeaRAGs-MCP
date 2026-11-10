@@ -8,7 +8,10 @@
 
 import { TeaRagsError } from "../../primitives/errors/index.js";
 
-export type LanguageErrorCode = "LANGUAGE_UNSUPPORTED" | "LANGUAGE_GRAMMAR_NOT_INSTALLED";
+export type LanguageErrorCode =
+  | "LANGUAGE_UNSUPPORTED"
+  | "LANGUAGE_GRAMMAR_NOT_INSTALLED"
+  | "LANGUAGE_MODULE_NOT_PRELOADED";
 
 /**
  * Abstract base for all language-domain errors. Default httpStatus: 500.
@@ -31,6 +34,25 @@ export class UnsupportedLanguageError extends LanguageError {
       code: "LANGUAGE_UNSUPPORTED",
       message: `No language provider registered for "${lang}"`,
       hint: "Per-language providers are wired in their verticals (spec §2, migration step 2). The factory is currently a skeleton with no registered languages.",
+    });
+  }
+}
+
+/**
+ * bd tea-rags-mcp-zkd96 — `LanguageFactory.create(lang)` was called for a
+ * language whose provider module is not loaded yet. The factory reaches
+ * per-language verticals through a lazy module registry (dynamic import), so a
+ * language must be `preload()`ed before `create()` can build it synchronously.
+ * The production seams (composition root, chunker worker init, codegraph
+ * runtime builder) preload before first use; a factory constructed directly in
+ * a test or script must preload the languages it exercises.
+ */
+export class LanguageModuleNotPreloadedError extends LanguageError {
+  constructor(lang: string) {
+    super({
+      code: "LANGUAGE_MODULE_NOT_PRELOADED",
+      message: `Language "${lang}" is supported but its provider module is not loaded`,
+      hint: `await factory.preload(["${lang}"]) (or preload() for every language) before create("${lang}") — the composition root and worker entries preload; direct factory constructions in tests/scripts preload what they use (bd tea-rags-mcp-zkd96).`,
     });
   }
 }

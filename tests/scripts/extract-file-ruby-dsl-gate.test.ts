@@ -15,17 +15,18 @@ end
 `;
 
 /** bd tea-rags-mcp-0qaht.48: the harness walks Ruby with the run's Gemfile gate, like production. */
+const factory = await LanguageFactory.preloaded({ repoRoot: tmpdir() });
+
 describe("extractFile Ruby DSL gate", () => {
   let root: string;
-  const factory = new LanguageFactory({ repoRoot: tmpdir() });
   const composer = new DefaultSymbolIdComposer();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), "extract-file-gate-"));
     mkdirSync(join(root, "app"), { recursive: true });
     writeFileSync(join(root, "app", "ability.rb"), ABILITY);
   });
-  afterEach(() => {
+  afterEach(async () => {
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -38,7 +39,7 @@ describe("extractFile Ruby DSL gate", () => {
     );
   };
 
-  it("emits the cancancan rule-subject fact only when the Gemfile declares the gem", () => {
+  it("emits the cancancan rule-subject fact only when the Gemfile declares the gem", async () => {
     const without = subjectRefCalls("source 'https://rubygems.org'\ngem 'rails'\n");
     const withGem = subjectRefCalls("source 'https://rubygems.org'\ngem 'rails'\ngem 'cancancan'\n");
     expect(without).toEqual([]);

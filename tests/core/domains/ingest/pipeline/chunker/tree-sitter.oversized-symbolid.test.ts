@@ -4,7 +4,7 @@ import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pip
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
-const testLanguageFactoryDescriptor = new LanguageFactory();
+const testLanguageFactoryDescriptor = await LanguageFactory.preloaded();
 
 /**
  * Regression test for the symbolId stability fix in chunkOversizedNode

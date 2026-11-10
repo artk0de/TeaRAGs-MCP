@@ -263,16 +263,16 @@ interface InfraContext {
 }
 
 interface CompositionContext {
-  registry: ReturnType<typeof createComposition>["registry"];
-  reranker: ReturnType<typeof createComposition>["reranker"];
-  allPayloadSignalDescriptors: ReturnType<typeof createComposition>["allPayloadSignalDescriptors"];
-  allStatsAccumulators: ReturnType<typeof createComposition>["allStatsAccumulators"];
-  signalFloors: ReturnType<typeof createComposition>["signalFloors"];
-  languageCodeVersions: ReturnType<typeof createComposition>["languageCodeVersions"];
-  languageChunkSetBumpScopes: ReturnType<typeof createComposition>["languageChunkSetBumpScopes"];
-  namingConventions: ReturnType<typeof createComposition>["namingConventions"];
+  registry: Awaited<ReturnType<typeof createComposition>>["registry"];
+  reranker: Awaited<ReturnType<typeof createComposition>>["reranker"];
+  allPayloadSignalDescriptors: Awaited<ReturnType<typeof createComposition>>["allPayloadSignalDescriptors"];
+  allStatsAccumulators: Awaited<ReturnType<typeof createComposition>>["allStatsAccumulators"];
+  signalFloors: Awaited<ReturnType<typeof createComposition>>["signalFloors"];
+  languageCodeVersions: Awaited<ReturnType<typeof createComposition>>["languageCodeVersions"];
+  languageChunkSetBumpScopes: Awaited<ReturnType<typeof createComposition>>["languageChunkSetBumpScopes"];
+  namingConventions: Awaited<ReturnType<typeof createComposition>>["namingConventions"];
   /** The composition's language factory — the naming review walks changed files with it. */
-  languageFactory: ReturnType<typeof createComposition>["languageFactory"];
+  languageFactory: Awaited<ReturnType<typeof createComposition>>["languageFactory"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -413,7 +413,10 @@ function workingTreeGitSignalConfigOf(zodConfig: ReturnType<typeof getZodConfig>
   };
 }
 
-function wireComposition(zodConfig: ReturnType<typeof getZodConfig>, codegraph?: CodegraphDeps): CompositionContext {
+async function wireComposition(
+  zodConfig: ReturnType<typeof getZodConfig>,
+  codegraph?: CodegraphDeps,
+): Promise<CompositionContext> {
   // Thread git provider config into composition so the registry surfaces a
   // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
   // IngestFacade no longer constructs git inline — single source of truth is
@@ -447,7 +450,7 @@ function wireComposition(zodConfig: ReturnType<typeof getZodConfig>, codegraph?:
     languageChunkSetBumpScopes,
     namingConventions,
     languageFactory,
-  } = createComposition({
+  } = await createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
     // The symbol-commit buffer rides the codegraph deps (minted once in
     // wireCodegraph, bd tea-rags-mcp-3gz4f) — the same instance the temporal
@@ -1329,12 +1332,12 @@ function activeEnrichmentProviders(
  * sizing, the tuning, and the env snapshot recorded back into the registry —
  * while `shared` supplies the handles that must stay process-wide.
  */
-function createIngestFacade(
+async function createIngestFacade(
   zodConfig: ReturnType<typeof getZodConfig>,
   config: AppConfig,
   shared: IngestSliceDeps,
-): IngestFacade {
-  const facadeComposition = wireComposition(zodConfig, shared.codegraphDeps);
+): Promise<IngestFacade> {
+  const facadeComposition = await wireComposition(zodConfig, shared.codegraphDeps);
   const enrichmentProviders = activeEnrichmentProviders(facadeComposition.registry, config.trajectoryIngest);
 
   const pipelineTuning = {
@@ -1539,7 +1542,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // after `codegraphContext` exists: snapshot retention compares against the
   // live base graph.
   const stopWorkingTreeGraphSweep = scheduleWorkingTreeGraphSweep(workingTreeGraphCache);
-  const composition = wireComposition(zodConfig, codegraphContext?.deps);
+  const composition = await wireComposition(zodConfig, codegraphContext?.deps);
   manifestLanguages.factory = composition.languageFactory;
 
   const { tracePathOps, ontologyReportOps } = createCodegraphOpsSection({
@@ -1567,7 +1570,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     composition,
   });
 
-  const { ingest, projectIngestFactory, projectRegistryOps, worktreeOps } = createIngestSection({
+  const { ingest, projectIngestFactory, projectRegistryOps, worktreeOps } = await createIngestSection({
     config,
     zodConfig,
     ambientEnvRole,
@@ -1613,7 +1616,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     ingest,
-    ingestForPath: (path) => projectIngestFactory.forPath(path),
+    ingestForPath: async (path) => projectIngestFactory.forPath(path),
     workingTreeIndexOf: async (path) => explore.workingTreeIndexOf(path),
     explore,
     reranker: composition.reranker,
@@ -1840,10 +1843,10 @@ function createWorkingTreeSection(deps: WorkingTreeSectionDeps): WorkingTreeSect
   // The base index's chunker config: its project's registry env replayed
   // over the server's (`ProjectIngestFactory#forPath`, built below and only
   // read at request time), with the size its embedding model derives.
-  const resolveWorkingTreeChunkerConfig = async (tree: WorkingTree) =>
-    projectIngestFactory()
-      .forPath(tree.baseIndex.root ?? tree.root)
-      .resolveChunkerConfig(tree.baseIndex.collectionName);
+  const resolveWorkingTreeChunkerConfig = async (tree: WorkingTree) => {
+    const facade = await projectIngestFactory().forPath(tree.baseIndex.root ?? tree.root);
+    return facade.resolveChunkerConfig(tree.baseIndex.collectionName);
+  };
   // One overlay per process (bd tea-rags-mcp-xi2r9): its delta reader caches per
   // tree, and every read surface — explore, graph, trace_path — shares it.
   const workingTreeOverlay = new WorkingTreeOverlay({
@@ -2113,7 +2116,7 @@ interface IngestSection {
  * factory, the server's own ingest slice, the per-project ingest factory over
  * it, and the project registry and worktree ops.
  */
-function createIngestSection(deps: {
+async function createIngestSection(deps: {
   config: AppConfig;
   zodConfig: ReturnType<typeof getZodConfig>;
   ambientEnvRole: AmbientEnvRole;
@@ -2124,7 +2127,7 @@ function createIngestSection(deps: {
   composition: CompositionContext;
   driftReporter: IndexDriftReporter;
   codegraphContext: CodegraphContext | undefined;
-}): IngestSection {
+}): Promise<IngestSection> {
   const {
     config,
     zodConfig,
@@ -2211,7 +2214,7 @@ function createIngestSection(deps: {
     driftReporter,
     footprintFactory,
   };
-  const ingest = createIngestFacade(zodConfig, config, ingestSlice);
+  const ingest = await createIngestFacade(zodConfig, config, ingestSlice);
 
   // Per-project registry env at request scope. The server's process env is
   // fixed for its lifetime, so an index run can only pick up the target
@@ -2222,13 +2225,16 @@ function createIngestSection(deps: {
     registry: collectionRegistry,
     ambientEnvRole,
     processIngest: ingest,
-    buildIngest: (env): IngestFacade => {
+    buildIngest: async (env): Promise<IngestFacade> => {
       const projectZodConfig = parseAppConfigZod(env);
       // The project's own embedding identity too (bd tea-rags-mcp-b91f5): a
       // project whose stamp names another model than this server's indexes
       // with that model, guarded against it, instead of being refused.
       const embedding = collectionEmbeddings.forEmbeddingConfig(projectZodConfig.embedding);
-      return createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), { ...ingestSlice, ...embedding });
+      return await createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), {
+        ...ingestSlice,
+        ...embedding,
+      });
     },
   });
   const projectRegistryOps = new ProjectRegistryOps({
@@ -2319,7 +2325,7 @@ function createExploreSection(deps: {
     // frame is resolved per request from the same `ProjectIngestFactory#forPath`
     // slice `App.getIndexStatus` reads. A project whose registry env disables
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
-    enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
+    enrichmentHealthFrameForPath: async (path) => (await projectIngestFactory.forPath(path)).enrichmentProviderKeys,
     workingTreeOverlay,
     historyAnchor,
   });

@@ -9,9 +9,9 @@ import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 describe("TreeSitterChunker — Rust module remainder keeps imports' attributes and test-only mod declarations out", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const CODE = `pub fn production_value(input: usize) -> usize {

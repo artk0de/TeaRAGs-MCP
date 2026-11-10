@@ -73,6 +73,9 @@ const FIXTURES: Record<string, string> = {
   ].join("\n"),
 };
 
+/** Preloaded once at module scope; the extractor below is built from it. */
+const languageFactory = await LanguageFactory.preloaded();
+
 describe("CodegraphFileExtractor#parse and extractFileInMemory — one extraction core", () => {
   const root = mkdtempSync(join(tmpdir(), "cg-extraction-parity-"));
   for (const [relPath, text] of Object.entries(FIXTURES)) {
@@ -80,11 +83,10 @@ describe("CodegraphFileExtractor#parse and extractFileInMemory — one extractio
     writeFileSync(join(root, relPath), text);
   }
 
-  afterAll(() => {
+  afterAll(async () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const languageFactory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
   const extractor = new CodegraphFileExtractor({
     languageFactory,

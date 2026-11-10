@@ -364,7 +364,7 @@ export function run(): number {
 
   describe("ranking (live probe regression)", () => {
     it("ranks an enriched delta row of a modified file with its git history under hotspots", async () => {
-      const { reranker } = createComposition();
+      const { reranker } = await createComposition();
       const readTouchedBasePoints = basePointsHolding([basePoint("b1", FOO, "Foo#kept", 30)]);
       const source = sourceReading(readTouchedBasePoints, unopenable);
       const raw = deltaRow("delta", FOO, "Foo#kept", [1, 40]);

@@ -37,11 +37,11 @@ function chunkClaiming(chunks: CodeChunk[], row: number): CodeChunk | undefined 
 describe("leaf chunk leading comment", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 0, maxChunkSize: 2500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

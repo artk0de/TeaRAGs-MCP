@@ -41,13 +41,13 @@ end
 `;
 
 describe("codegraph walks .rake as Ruby (bd tea-rags-mcp-k0602)", () => {
-  it("has a ruby row with the `::` scope separator", () => {
+  it("has a ruby row with the `::` scope separator", async () => {
     expect(CODEGRAPH_LANGUAGES[".rake"]).toEqual(CODEGRAPH_LANGUAGES[".rb"]);
     expect(CODEGRAPH_LANGUAGES[".rake"]?.scopeSeparator).toBe("::");
     expect(CODEGRAPH_LANGUAGE_BY_EXTENSION[".rake"]).toBe("ruby");
   });
 
-  it("discovers and admits a lib/tasks .rake file for extraction", () => {
+  it("discovers and admits a lib/tasks .rake file for extraction", async () => {
     const extractor = new CodegraphFileExtractor({ exclusionFilter: { ignores: () => false } } as never);
     const repo = mkdtempSync(join(tmpdir(), "k0602-cg-rake-"));
     try {
@@ -61,8 +61,8 @@ describe("codegraph walks .rake as Ruby (bd tea-rags-mcp-k0602)", () => {
     }
   });
 
-  it("walks the .rake file with the Ruby walker and composes Ruby symbolIds", () => {
-    const factory = new LanguageFactory();
+  it("walks the .rake file with the Ruby walker and composes Ruby symbolIds", async () => {
+    const factory = await LanguageFactory.preloaded();
     const row = CODEGRAPH_LANGUAGES[".rake"];
     if (!row) throw new Error("no .rake codegraph row");
     const parser = new Parser();

@@ -10,63 +10,33 @@ import type {
   RustExternalSignatureSources,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
-import { BashLanguage } from "./bash/index.js";
 import { signalFloors as bashSignalFloors } from "./bash/signal-floors.js";
 import { nativeLanguageCapabilities } from "./capability/native.js";
 import type { CrossRunParseCache } from "./cross-run-parse-cache.js";
-import { GrammarPackageNotInstalledError, UnsupportedLanguageError } from "./errors.js";
-import { GoLanguage } from "./go/index.js";
+import {
+  GrammarPackageNotInstalledError,
+  LanguageModuleNotPreloadedError,
+  UnsupportedLanguageError,
+} from "./errors.js";
 import { signalFloors as goSignalFloors } from "./go/signal-floors.js";
-import { JavaLanguage } from "./java/index.js";
 import { signalFloors as javaSignalFloors } from "./java/signal-floors.js";
-import { JavaScriptLanguage } from "./javascript/index.js";
 import { signalFloors as javascriptSignalFloors } from "./javascript/signal-floors.js";
-import { KotlinLanguage } from "./kotlin/index.js";
 import { signalFloors as kotlinSignalFloors } from "./kotlin/signal-floors.js";
-import { MarkdownLanguage } from "./markdown/index.js";
 import { signalFloors as markdownSignalFloors } from "./markdown/signal-floors.js";
-import { ObjcLanguage } from "./objc/index.js";
 import { signalFloors as objcSignalFloors } from "./objc/signal-floors.js";
-import { PhpLanguage } from "./php/index.js";
 import { signalFloors as phpSignalFloors } from "./php/signal-floors.js";
-import { PythonLanguage } from "./python/index.js";
+import {
+  NATIVE_LANGUAGES,
+  providerSources,
+  type ProviderBuilder,
+  type ProviderConstructionDeps,
+} from "./provider-sources.js";
 import { signalFloors as pythonSignalFloors } from "./python/signal-floors.js";
-import { RubyLanguage } from "./ruby/index.js";
 import { signalFloors as rubySignalFloors } from "./ruby/signal-floors.js";
-import { RustLanguage } from "./rust/index.js";
 import { signalFloors as rustSignalFloors } from "./rust/signal-floors.js";
-import { SwiftLanguage } from "./swift/index.js";
 import { signalFloors as swiftSignalFloors } from "./swift/signal-floors.js";
-import { TypeScriptLanguage } from "./typescript/index.js";
 import { signalFloors as typescriptSignalFloors } from "./typescript/signal-floors.js";
-import { YamlLanguage } from "./yaml/index.js";
 import { signalFloors as yamlSignalFloors } from "./yaml/signal-floors.js";
-
-/**
- * Languages the factory builds NATIVELY from a `domains/language/<lang>`
- * provider. The factory owns the construction (`new RubyLanguage(mode)`) so the
- * native switch lives in ONE place — `create(lang)` — not at every composition
- * root. ALL supported languages are now native (the legacy adapter / chunker
- * registry that wrapped per-language `LANGUAGE_DEFINITIONS` / `CODEGRAPH_LANGUAGES`
- * into thunks was removed by tea-rags-mcp-jh40 once every vertical migrated).
- * bd tea-rags-mcp-cen6.
- */
-const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
-  "ruby",
-  "typescript",
-  "javascript",
-  "python",
-  "go",
-  "java",
-  "rust",
-  "bash",
-  "swift",
-  "objc",
-  "php",
-  "kotlin",
-  "markdown",
-  "yaml",
-]);
 
 /**
  * Whether an npm package resolves from this module — the factory's default
@@ -85,11 +55,21 @@ function isPackageResolvable(packageName: string): boolean {
 }
 
 /**
- * Real `LanguageFactoryDescriptor`. `create(lang)` ENCAPSULATES construction — it builds
- * the native `domains/language/<lang>` provider itself (`new RubyLanguage(mode)`,
- * …), applying the configured ambiguous-resolve `mode`, rather than reading one
- * from a consumer-assembled registry. Unknown languages throw
- * `UnsupportedLanguageError`.
+ * Real `LanguageFactoryDescriptor`. `create(lang)` ENCAPSULATES construction — it
+ * builds the native `domains/language/<lang>` provider itself, applying the
+ * configured ambiguous-resolve `mode`, rather than reading one from a
+ * consumer-assembled registry. Unknown languages throw
+ * `UnsupportedLanguageError`; a known language whose module was not loaded
+ * throws `LanguageModuleNotPreloadedError`.
+ *
+ * bd tea-rags-mcp-zkd96 — the factory reaches the per-language verticals
+ * through the LAZY registry in `provider-sources.ts` (dynamic `import()`), not
+ * static imports: the static closure `factory -> <lang>/index.ts -> <lang>
+ * resolver/walker` put every pipeline-booting test into `vitest related` for
+ * any resolver edit. `preload()` loads the sources (idempotent, deduped);
+ * `create()` stays synchronous and only serves preloaded languages. The
+ * composition root and the worker entries preload before first use; capability
+ * descriptors and signal floors stay statically readable.
  *
  * Each built provider is cached per language (spec §5: `create` is expensive —
  * it loads the grammar / builds a Parser — so callers MUST cache; the factory
@@ -111,11 +91,15 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * codegraph run learns which repository it is indexing only when the run
    * starts. So the authoritative root travels per run on
    * `CallContext.projectRoot` and a provider binds to it lazily; this value is
-   * what a resolve falls back to when no context root was supplied, which is
-   * the shape scripts and unit tests running inside the target repo rely on.
+   * what a resolve falls back to when no context root was supplied, which is the
+   * shape scripts and unit tests running inside the target repo rely on.
    */
   private readonly repoRoot: string;
   private readonly cache = new Map<string, LanguageProvider>();
+  /** Sync builders materialized by `preload` — empty until a language is loaded. */
+  private readonly builders = new Map<string, ProviderBuilder>();
+  /** In-flight loads, so concurrent `preload` calls share one module import. */
+  private readonly loading = new Map<string, Promise<void>>();
   /**
    * bd tea-rags-mcp-e2pu7 — whether a grammar package is installed. Checked in
    * `create` against the built provider's `kernel.grammarPackage`.
@@ -181,53 +165,85 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     this.crossRunParseCache = options.crossRunParseCache;
   }
 
+  /** The construction args threaded into every lazy-built provider. */
+  private get constructionDeps(): ProviderConstructionDeps {
+    return {
+      ambiguousResolveMode: this.ambiguousResolveMode,
+      repoRoot: this.repoRoot,
+      ...(this.crossRunParseCache !== undefined ? { crossRunParseCache: this.crossRunParseCache } : {}),
+      ...(this.manifestFilesReader !== undefined ? { manifestFilesReader: this.manifestFilesReader } : {}),
+      ...(this.rustExternalSignatureSources !== undefined
+        ? { rustExternalSignatureSources: this.rustExternalSignatureSources }
+        : {}),
+      ...(this.rustcCallSiteSource !== undefined ? { rustcCallSiteSource: this.rustcCallSiteSource } : {}),
+    };
+  }
+
+  /**
+   * Load the provider modules for `langs` (default: every supported language),
+   * materializing the sync builders `create()` constructs from. Idempotent —
+   * an already-loaded language is a map lookup; concurrent calls for the same
+   * language share one module import. Unknown languages are skipped silently:
+   * `create` reports them as unsupported. The composition root, worker entries
+   * and test setups call this before the first `create`.
+   */
+  async preload(langs?: readonly string[]): Promise<void> {
+    const wanted = langs ?? [...NATIVE_LANGUAGES];
+    await Promise.all(
+      [...new Set(wanted)].map(async (lang) => {
+        if (this.builders.has(lang)) return;
+        const existing = this.loading.get(lang);
+        if (existing) return existing;
+        const source = providerSources.get(lang);
+        if (!source) return;
+        const load = (async () => {
+          this.builders.set(lang, await source(this.constructionDeps));
+        })();
+        this.loading.set(lang, load);
+        try {
+          await load;
+        } finally {
+          this.loading.delete(lang);
+        }
+      }),
+    );
+  }
+
+  /**
+   * Convenience for direct constructions (tests, scripts): construct and
+   * preload every supported language in one await — the composition root and
+   * worker entries preload explicitly instead.
+   */
+  static async preloaded(options?: ConstructorParameters<typeof LanguageFactory>[0]): Promise<LanguageFactory> {
+    const factory = new LanguageFactory(options);
+    await factory.preload();
+    return factory;
+  }
+
   /**
    * Build (or return the cached) provider for `lang`. Throws
    * `GrammarPackageNotInstalledError` when the provider's grammar package does
    * not resolve — nothing is cached then, so a call after `npm install`
-   * re-checks — and `UnsupportedLanguageError` for an unknown language.
+   * re-checks — `LanguageModuleNotPreloadedError` for a supported language
+   * whose module was not preloaded, and `UnsupportedLanguageError` for an
+   * unknown language.
    */
   create(lang: string): LanguageProvider {
     const cached = this.cache.get(lang);
     if (cached) return cached;
 
-    const provider = this.build(lang);
+    const builder = this.builders.get(lang);
+    if (!builder) {
+      if (providerSources.has(lang)) throw new LanguageModuleNotPreloadedError(lang);
+      throw new UnsupportedLanguageError(lang);
+    }
+    const provider = builder();
     const { grammarPackage } = provider.kernel;
     if (grammarPackage !== undefined && !this.isGrammarPackageInstalled(grammarPackage)) {
       throw new GrammarPackageNotInstalledError(lang, grammarPackage);
     }
     this.cache.set(lang, provider);
     return provider;
-  }
-
-  /** Construct (never cache) — `create` owns the cache. */
-  private build(lang: string): LanguageProvider {
-    // Native switch — extend with one branch per language vertical.
-    if (lang === "ruby") return new RubyLanguage(this.ambiguousResolveMode);
-    if (lang === "typescript") {
-      return new TypeScriptLanguage(this.ambiguousResolveMode, this.repoRoot, this.crossRunParseCache?.typescript);
-    }
-    if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
-    if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
-    if (lang === "go") return new GoLanguage(this.ambiguousResolveMode, this.manifestFilesReader);
-    if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
-    if (lang === "rust") {
-      return new RustLanguage(
-        this.ambiguousResolveMode,
-        this.manifestFilesReader,
-        this.rustExternalSignatureSources,
-        this.rustcCallSiteSource,
-      );
-    }
-    if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
-    if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
-    if (lang === "objc") return new ObjcLanguage(this.ambiguousResolveMode);
-    if (lang === "php") return new PhpLanguage(this.ambiguousResolveMode);
-    if (lang === "kotlin") return new KotlinLanguage(this.ambiguousResolveMode);
-    // Markdown and YAML are DOC-ONLY — no resolver, so no `mode` is threaded.
-    if (lang === "markdown") return new MarkdownLanguage();
-    if (lang === "yaml") return new YamlLanguage();
-    throw new UnsupportedLanguageError(lang);
   }
 
   supported(): string[] {

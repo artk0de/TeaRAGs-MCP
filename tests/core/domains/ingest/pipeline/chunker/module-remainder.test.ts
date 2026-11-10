@@ -61,11 +61,11 @@ function loadersObject(entries: number): string {
 describe("TreeSitterChunker — module remainder", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: MAX, chunkOverlap: 450, maxChunkSize: MAX },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

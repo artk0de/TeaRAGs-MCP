@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   const target = resolvePath(repoRoot, targetArg);
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const resolver = new TSCallResolver(loadTsConfig(repoRoot), "strict", repoRoot);
   const symbolTable = new InMemoryGlobalSymbolTable();
 

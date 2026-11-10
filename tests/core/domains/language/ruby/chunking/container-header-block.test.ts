@@ -76,11 +76,11 @@ function headerBlock(chunks: CodeChunk[], owner: string): CodeChunk {
 describe("Ruby container header block", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 
@@ -162,7 +162,7 @@ describe("Ruby container header block", () => {
       const small = new TreeSitterChunker(
         { chunkSize: 800, chunkOverlap: 0, maxChunkSize: 800 },
         new DefaultSymbolIdComposer(),
-        new LanguageFactory(),
+        await LanguageFactory.preloaded(),
       );
       const notes = Array.from(
         { length: 40 },

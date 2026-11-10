@@ -63,7 +63,7 @@ describe("ReviewChangesOps — sections run together", () => {
   let dir: string;
   let repo: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // The committed repository is built once per process and copied: its three
     // git spawns cost seconds each on a loaded machine (bd tea-rags-mcp-x1r2a).
     dir = realpathSync(
@@ -85,11 +85,11 @@ describe("ReviewChangesOps — sections run together", () => {
     writeFileSync(join(repo, CHANGED), "export function load(): void {}\nexport function scan(): void {}\n");
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function build(getNamingLexicon: () => Promise<unknown>, readTemporalSymbolCommits: () => Promise<unknown>) {
+  async function build(getNamingLexicon: () => Promise<unknown>, readTemporalSymbolCommits: () => Promise<unknown>) {
     // Cohesion's graph read is the event "a later section started": awaited,
     // not polled under a time bound the review's own git spawns could outlast.
     // Sequential sections never reach it while naming is held — the test then
@@ -107,7 +107,7 @@ describe("ReviewChangesOps — sections run together", () => {
       collectionRegistry: { get: () => ({}) } as unknown as CollectionRegistry,
       lexiconOps: { getNamingLexicon: vi.fn(getNamingLexicon) } as never,
       reviewEdgeExtraction: {
-        languageFactory: new LanguageFactory({}),
+        languageFactory: await LanguageFactory.preloaded({}),
         collectSymbols,
         composer: new DefaultSymbolIdComposer(),
       },
@@ -118,7 +118,7 @@ describe("ReviewChangesOps — sections run together", () => {
 
   it("a later section starts while an earlier one is still running; the envelope keeps the requested order", async () => {
     const naming = held<unknown>();
-    const { ops, graph, cohesionStarted } = build(
+    const { ops, graph, cohesionStarted } = await build(
       async () => naming.promise,
       async () => ({ relPath: CHANGED, symbols: [] }),
     );
@@ -136,7 +136,7 @@ describe("ReviewChangesOps — sections run together", () => {
 
   it("a failing section fails the review only after every section settled — the handle outlives them", async () => {
     const cohesion = held<unknown>();
-    const { ops, graph, cohesionStarted } = build(
+    const { ops, graph, cohesionStarted } = await build(
       async () => {
         throw new Error("naming broke");
       },

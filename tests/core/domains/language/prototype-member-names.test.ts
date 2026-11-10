@@ -26,11 +26,11 @@ import {
 import { loadCodegraphGrammarSync } from "../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 
-function extract(relPath: string, lines: string[]): FileExtraction {
+async function extract(relPath: string, lines: string[]): Promise<FileExtraction> {
   const code = `${lines.join("\n")}\n`;
   const extension = relPath.slice(relPath.lastIndexOf("."));
   const config = CODEGRAPH_LANGUAGES[extension];
-  const factory = new LanguageFactory({ repoRoot: "/nonexistent" });
+  const factory = await LanguageFactory.preloaded({ repoRoot: "/nonexistent" });
   const { walker } = factory.create(config.language);
   if (!walker) throw new Error(`no walker for ${config.language}`);
   const parser = new Parser();
@@ -58,8 +58,8 @@ function ownBindingNames(extraction: FileExtraction): Set<string> {
 const PROTOTYPE_NAMES = ["toString", "constructor", "__proto__"] as const;
 
 describe("extraction keys identifiers named like Object.prototype members as own keys (bd tea-rags-mcp-f4ce0)", () => {
-  it("Java — locals named toString / constructor / __proto__ are bound, not crashed on", () => {
-    const r = extract("src/Foo.java", [
+  it("Java — locals named toString / constructor / __proto__ are bound, not crashed on", async () => {
+    const r = await extract("src/Foo.java", [
       "class Foo {",
       "  Bar toString;",
       "  Bar __proto__;",
@@ -79,13 +79,13 @@ describe("extraction keys identifiers named like Object.prototype members as own
     }
   });
 
-  it("Java — a class named constructor keys its fields as an own entry", () => {
-    const r = extract("src/Odd.java", ["class hasOwnProperty {", "  Bar valueOf;", "}"]);
+  it("Java — a class named constructor keys its fields as an own entry", async () => {
+    const r = await extract("src/Odd.java", ["class hasOwnProperty {", "  Bar valueOf;", "}"]);
     expect(r.classFieldTypes && Object.hasOwn(r.classFieldTypes, "hasOwnProperty")).toBe(true);
   });
 
-  it("TypeScript — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("src/foo.ts", [
+  it("TypeScript — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("src/foo.ts", [
       "export function render(): void {",
       "  const toString: Baz = make();",
       "  const constructor: Baz = make();",
@@ -97,8 +97,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     for (const name of PROTOTYPE_NAMES) expect(names.has(name), name).toBe(true);
   });
 
-  it("TypeScript — a field named toString keys classFieldTypes as an own entry", () => {
-    const r = extract("src/foo.ts", [
+  it("TypeScript — a field named toString keys classFieldTypes as an own entry", async () => {
+    const r = await extract("src/foo.ts", [
       "export class Foo {",
       "  private toString: Bar;",
       "  private constructor_: Bar;",
@@ -108,8 +108,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     expect(r.classFieldTypes?.Foo && Object.hasOwn(r.classFieldTypes.Foo, "toString")).toBe(true);
   });
 
-  it("Python — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("pkg/foo.py", [
+  it("Python — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("pkg/foo.py", [
       "def render():",
       "    toString = Baz()",
       "    constructor = Baz()",
@@ -120,8 +120,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     for (const name of PROTOTYPE_NAMES) expect(names.has(name), name).toBe(true);
   });
 
-  it("Python — a class named constructor with a field named toString", () => {
-    const r = extract("pkg/foo.py", [
+  it("Python — a class named constructor with a field named toString", async () => {
+    const r = await extract("pkg/foo.py", [
       "class constructor:",
       "    def __init__(self):",
       "        self.toString = Bar()",
@@ -134,8 +134,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     expect(r.classExtends && Object.hasOwn(r.classExtends, "valueOf")).toBe(true);
   });
 
-  it("Ruby — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("app/foo.rb", [
+  it("Ruby — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("app/foo.rb", [
       "class Foo",
       "  def render",
       "    constructor = Baz.new",
@@ -149,8 +149,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     for (const name of PROTOTYPE_NAMES) expect(names.has(name), name).toBe(true);
   });
 
-  it("Go — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("app/app.go", [
+  it("Go — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("app/app.go", [
       "package app",
       "func render(toString Baz) {",
       "\tvar constructor Baz",
@@ -163,8 +163,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     for (const name of PROTOTYPE_NAMES) expect(names.has(name), name).toBe(true);
   });
 
-  it("Rust — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("src/main.rs", [
+  it("Rust — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("src/main.rs", [
       "fn render(toString: Baz) {",
       "  let constructor: Baz = make();",
       "  let __proto__: Baz = make();",
@@ -175,8 +175,8 @@ describe("extraction keys identifiers named like Object.prototype members as own
     for (const name of PROTOTYPE_NAMES) expect(names.has(name), name).toBe(true);
   });
 
-  it("Swift — locals named toString / constructor / __proto__ are bound", () => {
-    const r = extract("Sources/Foo.swift", [
+  it("Swift — locals named toString / constructor / __proto__ are bound", async () => {
+    const r = await extract("Sources/Foo.swift", [
       "func render() {",
       "  let toString: Baz = make()",
       "  let constructor: Baz = make()",
@@ -195,12 +195,12 @@ describe("resolveLocalBinding reads own entries only (bd tea-rags-mcp-f4ce0)", (
   const record = JSON.parse('{"x":[{"line":1,"type":"X"}]}') as Record<string, { line: number; type: string }[]>;
 
   for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
-    it(`an unbound receiver named ${name} resolves to nothing`, () => {
+    it(`an unbound receiver named ${name} resolves to nothing`, async () => {
       expect(resolveLocalBinding(record, name, 10)).toBeUndefined();
     });
   }
 
-  it("a bound receiver named constructor still resolves", () => {
+  it("a bound receiver named constructor still resolves", async () => {
     const bound = JSON.parse('{"constructor":[{"line":1,"type":"Baz"}]}') as typeof record;
     expect(resolveLocalBinding(bound, "constructor", 5)?.type).toBe("Baz");
   });

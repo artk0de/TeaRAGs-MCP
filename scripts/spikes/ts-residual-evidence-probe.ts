@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   const sampleCap = Number(argOf(argv, "--samples", "12"));
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const tsOptions = loadTsConfig(repoRoot);
   const resolver = new TSCallResolver(tsOptions, "strict", repoRoot);
   // The resolver's OWN cache, never a second one: two caches mean two whole-project

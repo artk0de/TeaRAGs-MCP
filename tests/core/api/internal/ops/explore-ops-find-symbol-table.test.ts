@@ -26,7 +26,7 @@ async function corpusRows(): Promise<Row[]> {
   const parser = new TreeSitterChunker(
     { chunkSize: 4500, chunkOverlap: 0, maxChunkSize: 4500 },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
   const rows: Row[] = [];
   for (const [relativePath, code] of Object.entries(OAUTH_MIGRATIONS)) {

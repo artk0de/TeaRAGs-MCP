@@ -59,11 +59,11 @@ function expectUniqueSymbolIds(chunks: CodeChunk[]): void {
 describe("TreeSitterChunker — container remainder (bd tea-rags-mcp-deoki)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

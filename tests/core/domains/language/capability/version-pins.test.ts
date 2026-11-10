@@ -23,8 +23,9 @@ const PINS_PATH = "tests/core/domains/language/capability/version-pins.json";
  * bump (byte-identical claim, recorded in git). `npm run pin:lang-versions`
  * regenerates the pin file.
  */
+const caps = (await LanguageFactory.preloaded()).capabilities();
+
 describe("language version pins", () => {
-  const caps = new LanguageFactory().capabilities();
   const pins = JSON.parse(readFileSync(PINS_PATH, "utf8")) as VersionPins;
   // `*` has no capability descriptor — the sources it stands for belong to no
   // language, so its numbers live in `kernel/capability.ts` instead.

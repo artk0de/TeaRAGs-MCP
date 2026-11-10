@@ -107,7 +107,7 @@ function parseArgs(argv: readonly string[]): { db: string; corpus: string; json:
 async function computeTypeOnlyEdges(
   root: string,
 ): Promise<{ source: RelPath; target: RelPath; importText: string | null }[]> {
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const composer = new DefaultSymbolIdComposer();
   const runState = new CodegraphRunState(
     collectSchemaColumnSources(factory),

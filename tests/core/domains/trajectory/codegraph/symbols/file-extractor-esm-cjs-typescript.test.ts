@@ -22,6 +22,9 @@ import {
 import { CodegraphPhaseTimings } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/phase-timings.js";
 import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 
+/** Preloaded once at module scope; the extractor below is built from it. */
+const languageFactory = await LanguageFactory.preloaded();
+
 describe("CodegraphFileExtractor .mts / .cts (bd tea-rags-mcp-1y13c)", () => {
   const root = mkdtempSync(join(tmpdir(), "cg-esm-cjs-ts-"));
   mkdirSync(join(root, "src"), { recursive: true });
@@ -40,12 +43,13 @@ describe("CodegraphFileExtractor .mts / .cts (bd tea-rags-mcp-1y13c)", () => {
   writeFileSync(join(root, "src", "worker.mts"), source);
   writeFileSync(join(root, "src", "legacy.cts"), source);
 
-  afterAll(() => {
+  afterAll(async () => {
     rmSync(root, { recursive: true, force: true });
   });
 
   const extractor = new CodegraphFileExtractor({
-    languageFactory: new LanguageFactory(),
+    languageFactory,
+
     collectSymbols,
     composer: new DefaultSymbolIdComposer(),
     runState: new CodegraphRunState(),
@@ -53,7 +57,7 @@ describe("CodegraphFileExtractor .mts / .cts (bd tea-rags-mcp-1y13c)", () => {
     exclusionFilter: ignore(),
   });
 
-  it("walks both extensions as TypeScript", () => {
+  it("walks both extensions as TypeScript", async () => {
     expect(CODEGRAPH_LANGUAGE_BY_EXTENSION[".mts"]).toBe("typescript");
     expect(CODEGRAPH_LANGUAGE_BY_EXTENSION[".cts"]).toBe("typescript");
     expect(extractor.isExtractable("src/worker.mts")).toBe(true);

@@ -13,9 +13,11 @@ import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, materialized: boolean, mainFile = "src/main.rs") {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -76,7 +78,7 @@ impl Other { fn finish(&self) {} }
 const productFinish = { targetRelPath: "src/main.rs", targetSymbolId: "Product#finish" };
 
 describe.each([false, true])("Rust method-call result locals (materialized=%s)", (materialized) => {
-  it("types a binding from the init method's declared return on the receiver's type", () => {
+  it("types a binding from the init method's declared return on the receiver's type", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -96,7 +98,7 @@ fn run(e: &Engine) {
     );
   });
 
-  it("declines when the receiver's type declares the member on neither itself nor its deref", () => {
+  it("declines when the receiver's type declares the member on neither itself nor its deref", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -113,7 +115,7 @@ fn run(e: &Engine) {
     expect(f.resolve("wb.missing()")).toBeNull();
   });
 
-  it("keeps a self-receiver init inside its declaring type's method returns", () => {
+  it("keeps a self-receiver init inside its declaring type's method returns", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}

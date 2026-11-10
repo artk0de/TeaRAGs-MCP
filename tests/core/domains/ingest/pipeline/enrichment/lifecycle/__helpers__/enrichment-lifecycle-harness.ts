@@ -413,7 +413,7 @@ async function startCodegraphFixture(options: CodegraphFixtureOptions): Promise<
   const provider = new CodegraphEnrichmentProvider(
     {
       pool: mainPool,
-      languageFactory: new LanguageFactory(),
+      languageFactory: await LanguageFactory.preloaded(),
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     },

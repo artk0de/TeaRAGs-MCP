@@ -54,8 +54,8 @@ describe("payload signal tree dependence (registry-derived)", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  function liveRecompute(): PayloadSignalTreeRecompute {
-    const composition = createComposition({
+  async function liveRecompute(): Promise<PayloadSignalTreeRecompute> {
+    const composition = await createComposition({
       codegraph: {
         pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
         composer: new DefaultSymbolIdComposer(),
@@ -66,8 +66,8 @@ describe("payload signal tree dependence (registry-derived)", () => {
     return composition.registry.getPayloadSignalTreeRecompute();
   }
 
-  it("every registered payload signal declares a known tree dependence", () => {
-    const { descriptors } = liveRecompute();
+  it("every registered payload signal declares a known tree dependence", async () => {
+    const { descriptors } = await liveRecompute();
     expect(descriptors.length).toBeGreaterThan(0);
     const unclassified = descriptors
       .filter((descriptor) => !TREE_DEPENDENCES.has(descriptor.treeDependence))
@@ -75,15 +75,15 @@ describe("payload signal tree dependence (registry-derived)", () => {
     expect(unclassified).toEqual([]);
   });
 
-  it("every line-count signal has its owning trajectory's formula, and every formula a line-count signal", () => {
-    const { descriptors, lineCountFormulas } = liveRecompute();
+  it("every line-count signal has its owning trajectory's formula, and every formula a line-count signal", async () => {
+    const { descriptors, lineCountFormulas } = await liveRecompute();
     const lineCountKeys = descriptors.filter((d) => d.treeDependence === "line-count").map((d) => d.key);
     expect([...lineCountKeys].sort()).toEqual(PINNED_LINE_COUNT_KEYS);
     expect([...lineCountFormulas.keys()].sort()).toEqual([...lineCountKeys].sort());
   });
 
-  it("the full-registry recompute the overlay is wired with matches a composition with every trajectory", () => {
-    const live = liveRecompute();
+  it("the full-registry recompute the overlay is wired with matches a composition with every trajectory", async () => {
+    const live = await liveRecompute();
     const full = fullRegistryPayloadSignalTreeRecompute();
     const policyOf = (recompute: PayloadSignalTreeRecompute) =>
       Object.fromEntries(recompute.descriptors.map((d) => [d.key, d.treeDependence]));

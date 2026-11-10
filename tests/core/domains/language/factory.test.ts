@@ -32,8 +32,8 @@ import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajecto
  * `UnsupportedLanguageError`.
  */
 describe("LanguageFactory", () => {
-  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, objc, php, kotlin, markdown, yaml)", () => {
-    expect(new Set(new LanguageFactory().supported())).toEqual(
+  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, objc, php, kotlin, markdown, yaml)", async () => {
+    expect(new Set((await LanguageFactory.preloaded()).supported())).toEqual(
       new Set([
         "ruby",
         "typescript",
@@ -53,40 +53,40 @@ describe("LanguageFactory", () => {
     );
   });
 
-  it("create() builds the native ruby provider itself", () => {
-    expect(new LanguageFactory().create("ruby")).toBeInstanceOf(RubyLanguage);
+  it("create() builds the native ruby provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("ruby")).toBeInstanceOf(RubyLanguage);
   });
 
-  it("create() builds the native typescript provider itself", () => {
-    expect(new LanguageFactory().create("typescript")).toBeInstanceOf(TypeScriptLanguage);
+  it("create() builds the native typescript provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("typescript")).toBeInstanceOf(TypeScriptLanguage);
   });
 
-  it("create() builds the native javascript provider itself", () => {
-    expect(new LanguageFactory().create("javascript")).toBeInstanceOf(JavaScriptLanguage);
+  it("create() builds the native javascript provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("javascript")).toBeInstanceOf(JavaScriptLanguage);
   });
 
-  it("create() builds the native python provider itself", () => {
-    expect(new LanguageFactory().create("python")).toBeInstanceOf(PythonLanguage);
+  it("create() builds the native python provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("python")).toBeInstanceOf(PythonLanguage);
   });
 
-  it("create() builds the native go provider itself", () => {
-    expect(new LanguageFactory().create("go")).toBeInstanceOf(GoLanguage);
+  it("create() builds the native go provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("go")).toBeInstanceOf(GoLanguage);
   });
 
-  it("create() builds the native java provider itself", () => {
-    expect(new LanguageFactory().create("java")).toBeInstanceOf(JavaLanguage);
+  it("create() builds the native java provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("java")).toBeInstanceOf(JavaLanguage);
   });
 
-  it("create() builds the native rust provider itself", () => {
-    expect(new LanguageFactory().create("rust")).toBeInstanceOf(RustLanguage);
+  it("create() builds the native rust provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("rust")).toBeInstanceOf(RustLanguage);
   });
 
-  it("create() builds the native bash provider itself", () => {
-    expect(new LanguageFactory().create("bash")).toBeInstanceOf(BashLanguage);
+  it("create() builds the native bash provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("bash")).toBeInstanceOf(BashLanguage);
   });
 
-  it("create() builds the native swift provider itself", () => {
-    expect(new LanguageFactory().create("swift")).toBeInstanceOf(SwiftLanguage);
+  it("create() builds the native swift provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("swift")).toBeInstanceOf(SwiftLanguage);
   });
 
   // Swift shipped as tier 1 (chunks only) and this case pinned the absent
@@ -94,20 +94,20 @@ describe("LanguageFactory", () => {
   // full vertical like java/rust, and the facade must forward
   // `hasInProjectDefinition` — the runner reads the facade, never the
   // `CallResolver` behind it (bd tea-rags-mcp-x9qsh).
-  it("the native swift provider is a full vertical — chunkerHooks, walker and resolver", () => {
-    const swift = new LanguageFactory().create("swift");
+  it("the native swift provider is a full vertical — chunkerHooks, walker and resolver", async () => {
+    const swift = (await LanguageFactory.preloaded()).create("swift");
     expect(swift.chunkerHooks).toBeDefined();
     expect(swift.walker).toBeDefined();
     expect(swift.resolver).toBeDefined();
     expect(swift.resolver?.hasInProjectDefinition).toBeDefined();
   });
 
-  it("create() builds the native markdown provider itself", () => {
-    expect(new LanguageFactory().create("markdown")).toBeInstanceOf(MarkdownLanguage);
+  it("create() builds the native markdown provider itself", async () => {
+    expect((await LanguageFactory.preloaded()).create("markdown")).toBeInstanceOf(MarkdownLanguage);
   });
 
-  it("create() builds the native yaml provider: doc-only, sections from its own splitter", () => {
-    const yaml = new LanguageFactory().create("yaml");
+  it("create() builds the native yaml provider: doc-only, sections from its own splitter", async () => {
+    const yaml = (await LanguageFactory.preloaded()).create("yaml");
     expect(yaml).toBeInstanceOf(YamlLanguage);
     expect(yaml.chunkerHooks?.isDocumentation).toBe(true);
     expect(yaml.chunkerHooks?.sectionSplitter).toBeDefined();
@@ -115,65 +115,69 @@ describe("LanguageFactory", () => {
     expect(yaml.resolver).toBeUndefined();
   });
 
-  it("the native markdown provider is doc-only — chunkerHooks but no walker/resolver", () => {
-    const md = new LanguageFactory().create("markdown");
+  it("the native markdown provider is doc-only — chunkerHooks but no walker/resolver", async () => {
+    const md = (await LanguageFactory.preloaded()).create("markdown");
     expect(md.chunkerHooks).toBeDefined();
     expect(md.chunkerHooks?.isDocumentation).toBe(true);
     expect(md.walker).toBeUndefined();
     expect(md.resolver).toBeUndefined();
   });
 
-  it("caches the native ruby provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native ruby provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("ruby")).toBe(factory.create("ruby"));
   });
 
-  it("caches the native typescript provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native typescript provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("typescript")).toBe(factory.create("typescript"));
   });
 
-  it("caches the native javascript provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native javascript provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("javascript")).toBe(factory.create("javascript"));
   });
 
-  it("caches the native go provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native go provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("go")).toBe(factory.create("go"));
   });
 
-  it("caches the native java provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native java provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("java")).toBe(factory.create("java"));
   });
 
-  it("caches the native rust provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native rust provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("rust")).toBe(factory.create("rust"));
   });
 
-  it("caches the native bash provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native bash provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("bash")).toBe(factory.create("bash"));
   });
 
-  it("caches the native swift provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native swift provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("swift")).toBe(factory.create("swift"));
   });
 
-  it("caches the native markdown provider across calls", () => {
-    const factory = new LanguageFactory();
+  it("caches the native markdown provider across calls", async () => {
+    const factory = await LanguageFactory.preloaded();
     expect(factory.create("markdown")).toBe(factory.create("markdown"));
   });
 
-  it("create() throws a typed UnsupportedLanguageError for an unregistered language", () => {
-    expect(() => new LanguageFactory().create("cobol")).toThrow(UnsupportedLanguageError);
+  it("create() throws a typed UnsupportedLanguageError for an unregistered language", async () => {
+    const factoryUnderTest = await LanguageFactory.preloaded();
+
+    expect(() => factoryUnderTest.create("cobol")).toThrow(UnsupportedLanguageError);
   });
 
-  it("the thrown error names the requested language", () => {
-    expect(() => new LanguageFactory().create("cobol")).toThrow(/cobol/);
+  it("the thrown error names the requested language", async () => {
+    const factoryUnderTest = await LanguageFactory.preloaded();
+
+    expect(() => factoryUnderTest.create("cobol")).toThrow(/cobol/);
   });
 });
 
@@ -198,7 +202,7 @@ describe("LanguageFactory", () => {
 describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
   let repoRoot: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     repoRoot = mkdtempSync(join(tmpdir(), "language-factory-root-"));
     mkdirSync(join(repoRoot, "app"), { recursive: true });
     writeFileSync(join(repoRoot, "app", "client.ts"), "export const client = { get: (u: string) => u };\n");
@@ -208,7 +212,7 @@ describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     rmSync(repoRoot, { recursive: true, force: true });
   });
 
@@ -224,27 +228,27 @@ describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
     };
   }
 
-  it("reads the tsconfig of the root it was given, not of process.cwd()", () => {
-    const provider = new LanguageFactory({ repoRoot }).create("typescript");
+  it("reads the tsconfig of the root it was given, not of process.cwd()", async () => {
+    const provider = (await LanguageFactory.preloaded({ repoRoot })).create("typescript");
     const { call, ctx } = callAndContext("client", "client");
     expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(false);
   });
 
-  it("still calls a genuine npm import external under that same root", () => {
+  it("still calls a genuine npm import external under that same root", async () => {
     // Guards the other direction: threading a root must not turn the classifier
     // into a rubber stamp that maps everything into the project.
-    const provider = new LanguageFactory({ repoRoot }).create("typescript");
+    const provider = (await LanguageFactory.preloaded({ repoRoot })).create("typescript");
     const { call, ctx } = callAndContext("axios", "axios");
     expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(true);
   });
 
-  it("defaults to process.cwd() when no root is supplied, so existing callers are unaffected", () => {
-    const provider = new LanguageFactory().create("typescript");
+  it("defaults to process.cwd() when no root is supplied, so existing callers are unaffected", async () => {
+    const provider = (await LanguageFactory.preloaded()).create("typescript");
     const { call, ctx } = callAndContext("node:fs", "fs");
     expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(true);
   });
 
-  it("keeps its own default root when TypeScriptLanguage is constructed directly", () => {
+  it("keeps its own default root when TypeScriptLanguage is constructed directly", async () => {
     // Anything building the provider outside the factory (tests, scripts run
     // from the target repo) must not have to learn a new parameter.
     const provider = new TypeScriptLanguage();
@@ -254,7 +258,7 @@ describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
 });
 
 describe("LanguageFactory Rust external signature sources threading (bd s3i8m.7)", () => {
-  it("threads the injected sources port to the Rust resolver's pass-start seam", () => {
+  it("threads the injected sources port to the Rust resolver's pass-start seam", async () => {
     const root = "/nonexistent/s3i8m7-factory-root";
     const sources: RustExternalSignatureSources = {
       locate: vi.fn(() => ({ std: undefined, dependencies: [], lockDigest: undefined, missingCrates: [] })),
@@ -262,7 +266,7 @@ describe("LanguageFactory Rust external signature sources threading (bd s3i8m.7)
       writeCached: vi.fn(),
       sizeCapBytes: 1,
     };
-    const factory = new LanguageFactory({ rustExternalSignatureSources: sources });
+    const factory = await LanguageFactory.preloaded({ rustExternalSignatureSources: sources });
     factory.create("rust").resolver?.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: root });
     expect(sources.locate).toHaveBeenCalledWith(root);
   });

@@ -10,11 +10,11 @@ import { LanguageFactory } from "../../../../../src/core/domains/language/factor
 import { collectStructuralConformanceDerivers } from "../../../../../src/core/domains/trajectory/codegraph/exclusion/index.js";
 
 describe("collectStructuralConformanceDerivers", () => {
-  it("is empty without a factory", () => {
+  it("is empty without a factory", async () => {
     expect(collectStructuralConformanceDerivers(undefined).size).toBe(0);
   });
 
-  it("keeps only the languages offering a deriver", () => {
+  it("keeps only the languages offering a deriver", async () => {
     const derive = () => [];
     const factory = {
       supported: () => ["typescript", "ruby"],
@@ -24,8 +24,8 @@ describe("collectStructuralConformanceDerivers", () => {
     expect([...collectStructuralConformanceDerivers(factory)]).toEqual([["typescript", derive]]);
   });
 
-  it("finds TypeScript and Python in the production factory, and not Ruby", () => {
-    const languages = [...collectStructuralConformanceDerivers(new LanguageFactory()).keys()];
+  it("finds TypeScript and Python in the production factory, and not Ruby", async () => {
+    const languages = [...collectStructuralConformanceDerivers(await LanguageFactory.preloaded()).keys()];
 
     expect(languages).toContain("typescript");
     expect(languages).toContain("python");

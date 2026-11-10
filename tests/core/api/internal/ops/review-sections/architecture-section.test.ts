@@ -47,11 +47,11 @@ import {
 /** One temp working tree per test; removed afterwards. */
 let workTree: string | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
   workTree = mkdtempSync(join(tmpdir(), "architecture-section-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (workTree !== undefined) rmSync(workTree, { recursive: true, force: true });
   workTree = undefined;
 });
@@ -63,9 +63,12 @@ function writeFile(relPath: string, text: string): void {
   writeFileSync(absolute, text);
 }
 
+/** Preloaded once at module scope; `realDeps()` stays a cheap sync builder. */
+const languageFactory = await LanguageFactory.preloaded({});
+
 /** The real extraction trio — the same wires the naming review extractor uses. */
 function realDeps(): ReviewEdgeExtractionDeps {
-  return { languageFactory: new LanguageFactory({}), collectSymbols, composer: new DefaultSymbolIdComposer() };
+  return { languageFactory, collectSymbols, composer: new DefaultSymbolIdComposer() };
 }
 
 function graphFile(relPath: RelPath): FileDependencyGraphFile {
@@ -225,7 +228,7 @@ function persistingSubjects(payload: unknown, family: string): string[] {
 }
 
 describe("architectureSectionProvider.isBuilt", () => {
-  it("needs the graph reader and the extraction trio — the same substrate conditions its siblings name", () => {
+  it("needs the graph reader and the extraction trio — the same substrate conditions its siblings name", async () => {
     const graphDb = graphDbStub({ files: [], edges: [] });
     expect(architectureSectionProvider.isBuilt(runContext({ graphDb }))).toEqual({ built: true });
     expect(architectureSectionProvider.isBuilt(runContext({ graphDb, reviewEdgeExtraction: undefined }))).toMatchObject(
@@ -776,7 +779,7 @@ describe("architectureSectionProvider.run — diff base wiring", () => {
     ).findings.filter((finding) => finding.detector === "cycles");
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     execFileSync("git", ["init", "-q"], { cwd: workTree! });
   });
 
@@ -1195,7 +1198,7 @@ describe("architectureSectionProvider.run — splitCandidates wiring", () => {
 });
 
 describe("WiredGraphReader", () => {
-  it("serves indexed rows verbatim in both directions from one bulk read", () => {
+  it("serves indexed rows verbatim in both directions from one bulk read", async () => {
     const reader = new WiredGraphReader([graphEdge("src/a.ts", "src/b.ts"), graphEdge("src/b.ts", "src/c.ts")]);
     expect(reader.edgesFrom("src/b.ts")).toEqual([{ source: "src/b.ts", target: "src/c.ts" }]);
     expect(reader.edgesTo("src/b.ts")).toEqual([{ source: "src/a.ts", target: "src/b.ts" }]);

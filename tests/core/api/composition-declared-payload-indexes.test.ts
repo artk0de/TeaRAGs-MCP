@@ -49,21 +49,21 @@ describe("declaredPayloadIndexSet", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  function compositionWithEveryTrajectory() {
-    return createComposition({ codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) } });
+  async function compositionWithEveryTrajectory() {
+    return await createComposition({ codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) } });
   }
 
-  it("fullRegistryDerivedSignals covers every derived signal a composition with every trajectory registers", () => {
+  it("fullRegistryDerivedSignals covers every derived signal a composition with every trajectory registers", async () => {
     const declared = new Set(fullRegistryDerivedSignals().map((signal) => signal.name));
-    const registered = compositionWithEveryTrajectory().allDerivedSignals.map((signal) => signal.name);
+    const registered = (await compositionWithEveryTrajectory()).allDerivedSignals.map((signal) => signal.name);
 
     expect(registered.filter((name) => !declared.has(name))).toEqual([]);
   });
 
-  it("requires every field rank_chunks can order by, with the schema its declaration implies", () => {
+  it("requires every field rank_chunks can order by, with the schema its declaration implies", async () => {
     const { required } = declaredPayloadIndexSet();
 
-    for (const composition of [createComposition(), compositionWithEveryTrajectory()]) {
+    for (const composition of [await createComposition(), await compositionWithEveryTrajectory()]) {
       const rankModule = new RankModule(
         composition.reranker,
         composition.allDerivedSignals,
@@ -88,8 +88,8 @@ describe("declaredPayloadIndexSet", () => {
   // orders by but no index schema serves (an unpinned `timestamp`) would fail
   // the scroll instead of ranking — the age/recency legs order by the pinned
   // `git.*.lastModifiedAt` integer indexes (bd tea-rags-mcp-xi2r9).
-  it("orders only by keys some index schema serves", () => {
-    const composition = compositionWithEveryTrajectory();
+  it("orders only by keys some index schema serves", async () => {
+    const composition = await compositionWithEveryTrajectory();
     const rankModule = new RankModule(
       composition.reranker,
       composition.allDerivedSignals,
@@ -117,7 +117,7 @@ describe("declaredPayloadIndexSet", () => {
 
   // The keys the bead measured: taxdome lacked the first five, the self-index
   // the last — each collection had only what its rank_chunks history created.
-  it("requires every key the two live collections disagreed on", () => {
+  it("requires every key the two live collections disagreed on", async () => {
     const { required } = declaredPayloadIndexSet();
 
     expect(
@@ -141,8 +141,8 @@ describe("declaredPayloadIndexSet", () => {
     });
   });
 
-  it("fullRegistryFilters and fullRegistryFilterPresets cover what a composition with every trajectory registers", () => {
-    const composition = compositionWithEveryTrajectory();
+  it("fullRegistryFilters and fullRegistryFilterPresets cover what a composition with every trajectory registers", async () => {
+    const composition = await compositionWithEveryTrajectory();
     const params = new Set(fullRegistryFilters().map((filter) => filter.param));
     const presets = new Set(fullRegistryFilterPresets().map((preset) => preset.name));
 
@@ -155,7 +155,7 @@ describe("declaredPayloadIndexSet", () => {
   // among them, which the default production filter preset reads on nearly
   // every search. The oracle probes each registered filter with a battery of
   // its own, independent of the values a descriptor declares.
-  it("requires every key a registered filter or filter preset can condition on", () => {
+  it("requires every key a registered filter or filter preset can condition on", async () => {
     const { required } = declaredPayloadIndexSet();
     const battery: Record<FilterDescriptor["type"], unknown[]> = {
       string: ["only", "exclude", "include", "x", "!x", "src/**", "2024-01-01"],
@@ -164,7 +164,7 @@ describe("declaredPayloadIndexSet", () => {
       "string[]": [["x"], []],
     };
 
-    for (const composition of [createComposition(), compositionWithEveryTrajectory()]) {
+    for (const composition of [await createComposition(), await compositionWithEveryTrajectory()]) {
       const types = new Map(fullRegistryPayloadSignalDescriptors().map((d) => [toPhysicalPayloadKey(d.key), d.type]));
       const emitted = new Set<string>();
       const collect = (node: unknown): void => {
@@ -198,15 +198,15 @@ describe("declaredPayloadIndexSet", () => {
 
   // A descriptor whose toCondition branches on an enumeration must declare its
   // `values`, or the probe learns nothing from it.
-  it("learns at least one key from every registered filter descriptor", () => {
-    for (const filter of compositionWithEveryTrajectory().registry.getAllFilters()) {
+  it("learns at least one key from every registered filter descriptor", async () => {
+    for (const filter of (await compositionWithEveryTrajectory()).registry.getAllFilters()) {
       expect(filterPayloadKeys([filter], []).size, filter.param).toBeGreaterThan(0);
     }
   });
 
   // The four keys the bead measured missing on both live collections, plus
   // the email arm of recentAuthor, which no payload signal descriptor names.
-  it("requires the filter-only keys both live collections lacked", () => {
+  it("requires the filter-only keys both live collections lacked", async () => {
     const { required } = declaredPayloadIndexSet();
 
     expect(
@@ -228,7 +228,7 @@ describe("declaredPayloadIndexSet", () => {
     });
   });
 
-  it("requires the schema pipeline's own indexes, with the schema initializeSchema creates them with", () => {
+  it("requires the schema pipeline's own indexes, with the schema initializeSchema creates them with", async () => {
     const { required } = declaredPayloadIndexSet();
 
     for (const key of SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS) {
@@ -239,7 +239,7 @@ describe("declaredPayloadIndexSet", () => {
   // A declared payload signal nothing orders by (`startLine`) is not created,
   // but an index on it is not undeclared either — v16 kept it on the same
   // grounds.
-  it("knows every full-registry payload key without requiring the ones nothing orders by", () => {
+  it("knows every full-registry payload key without requiring the ones nothing orders by", async () => {
     const { required, known } = declaredPayloadIndexSet();
 
     for (const descriptor of fullRegistryPayloadSignalDescriptors()) {

@@ -624,7 +624,7 @@ export const MATERIALIZATION_PARITY_CORPUS: readonly MaterializationParityFixtur
 ];
 
 /** Builds the kernels the codegraph extractor loads grammars through. */
-const grammarFactory = new LanguageFactory();
+const grammarFactory = await LanguageFactory.preloaded();
 
 /** Parse a fixture with the SAME grammar the codegraph extractor would use. */
 export function parseFixture(fixture: MaterializationParityFixture): Parser.Tree {
@@ -760,7 +760,7 @@ export interface FixtureExtractionRun {
   extraction: FileExtraction;
 }
 
-const parityFactory = new LanguageFactory();
+const parityFactory = await LanguageFactory.preloaded();
 const parityComposer = new DefaultSymbolIdComposer();
 
 /**

@@ -536,7 +536,7 @@ function requireRubyProviderPart<T>(part: T | undefined, name: string): T {
   return part;
 }
 
-const factory = new LanguageFactory(); // ambiguousResolveMode defaults to "strict"
+const factory = await LanguageFactory.preloaded(); // ambiguousResolveMode defaults to "strict"
 const composer = new DefaultSymbolIdComposer();
 const ruby = factory.create("ruby");
 const walker = requireRubyProviderPart(ruby.walker, "walker");

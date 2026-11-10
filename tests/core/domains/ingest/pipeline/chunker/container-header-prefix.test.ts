@@ -49,11 +49,11 @@ function partsOf(chunks: CodeChunk[], base: string): CodeChunk[] {
 describe("TreeSitterChunker — container header on own-rows chunks and member parts", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize: MAX_CHUNK_SIZE },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

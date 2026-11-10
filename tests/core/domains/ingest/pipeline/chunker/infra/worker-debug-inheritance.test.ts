@@ -78,5 +78,8 @@ describe("chunker worker debug inheritance", () => {
     // while it is still loading — vitest tears the environment down under it and
     // reports an unhandled EnvironmentTeardownError on a loaded runner.
     await import(languageModulePath);
+    // bd tea-rags-mcp-zkd96: the engine build now also preloads every provider
+    // module through the same registry — join that too, or teardown lands mid-load.
+    await (await import(languageModulePath)).LanguageFactory.preloaded();
   });
 });

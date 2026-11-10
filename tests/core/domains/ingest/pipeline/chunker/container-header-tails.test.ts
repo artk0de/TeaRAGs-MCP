@@ -39,11 +39,11 @@ function offenders(of: CodeChunk[], header: string): string[] {
 describe("TreeSitterChunker — every #partN tail names its container (bd tea-rags-mcp-j4jrn)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize: MAX_CHUNK_SIZE },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

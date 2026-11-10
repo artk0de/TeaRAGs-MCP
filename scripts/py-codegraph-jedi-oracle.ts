@@ -262,7 +262,7 @@ export async function walkCorpus(
   // (`resolution-runner.ts:557`). `--no-dispatch` is the harness's historical
   // behaviour and is kept only so the identity gate has something to diff.
   const withDispatch = options.dispatch !== false;
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const composer = new DefaultSymbolIdComposer();
   // `--include-tests` walks the files production excludes unconditionally, so
   // `pytestFixture` can be counted at all (spec D5). It is a SEPARATE

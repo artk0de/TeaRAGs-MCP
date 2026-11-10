@@ -159,7 +159,7 @@ function graphDbStub(overrides: Partial<GraphStub> = {}): GraphStub {
   return stub;
 }
 
-function makeOps(graph: GraphStub, registryEntry: unknown = {}, extraDeps: Partial<ReviewChangesOpsDeps> = {}) {
+async function makeOps(graph: GraphStub, registryEntry: unknown = {}, extraDeps: Partial<ReviewChangesOpsDeps> = {}) {
   return new ReviewChangesOps({
     pool: {
       acquireReader: vi.fn(async () => ({ graphDb: graph, symbolTable: {} })),
@@ -168,7 +168,7 @@ function makeOps(graph: GraphStub, registryEntry: unknown = {}, extraDeps: Parti
     collectionRegistry: { get: () => registryEntry } as unknown as CollectionRegistry,
     lexiconOps: lexiconOpsStub(),
     reviewEdgeExtraction: {
-      languageFactory: new LanguageFactory({}),
+      languageFactory: await LanguageFactory.preloaded({}),
       collectSymbols,
       composer: new DefaultSymbolIdComposer(),
     },
@@ -178,7 +178,7 @@ function makeOps(graph: GraphStub, registryEntry: unknown = {}, extraDeps: Parti
 }
 
 /** The same ops against a registry that stamped an index at another commit. */
-function makeLaggingOps(graph: GraphStub) {
+async function makeLaggingOps(graph: GraphStub) {
   return makeOps(graph, { git: { indexedCommit: "0".repeat(40) } });
 }
 
@@ -229,7 +229,7 @@ describe("ReviewChangesOps", () => {
 
   it("no sections param → every registered section built, envelope carries the read", async () => {
     const graph = graphDbStub();
-    const result = await makeOps(graph).reviewChanges(request());
+    const result = await (await makeOps(graph)).reviewChanges(request());
 
     expect(Object.keys(result.review.sections).sort()).toEqual([
       "architecture",
@@ -310,9 +310,9 @@ describe("ReviewChangesOps", () => {
     const readTreeChunks = vi.fn(async (_tree: { root: string }, relPaths: readonly string[]) => {
       return new Map(relPaths.flatMap((relPath) => (treeRows[relPath] ? [[relPath, treeRows[relPath]] as const] : [])));
     });
-    const result = await makeOps(graph, {}, { readTreeChunks }).reviewChanges(
-      request({ sections: ["incompleteChange"] }),
-    );
+    const result = await (
+      await makeOps(graph, {}, { readTreeChunks })
+    ).reviewChanges(request({ sections: ["incompleteChange"] }));
     expect(readTreeChunks).toHaveBeenCalledTimes(1);
     expect(readTreeChunks.mock.calls[0][0].root).toBe(repo);
     expect(result.review.sections.incompleteChange).toMatchObject({
@@ -355,9 +355,9 @@ describe("ReviewChangesOps", () => {
     });
     const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([[CHANGED, ["./theme.css"]]]));
 
-    const result = await makeOps(graph, {}, { readImportSpecifiers }).reviewChanges(
-      request({ sections: ["architecture"] }),
-    );
+    const result = await (
+      await makeOps(graph, {}, { readImportSpecifiers })
+    ).reviewChanges(request({ sections: ["architecture"] }));
 
     expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
     const [calledCollection, calledRelPaths] = readImportSpecifiers.mock.calls[0];
@@ -400,9 +400,9 @@ describe("ReviewChangesOps", () => {
       ]),
     );
 
-    const result = await makeOps(graph, {}, { readFileMaintenanceSignals }).reviewChanges(
-      request({ sections: ["architecture"] }),
-    );
+    const result = await (
+      await makeOps(graph, {}, { readFileMaintenanceSignals })
+    ).reviewChanges(request({ sections: ["architecture"] }));
 
     expect(readFileMaintenanceSignals).toHaveBeenCalledExactlyOnceWith("code_test");
     const { findings } = result.review.sections.architecture as {
@@ -416,7 +416,9 @@ describe("ReviewChangesOps", () => {
   it("reads the review collection's test imports once, for the architecture section's test-support exclusion (bd tea-rags-mcp-89k7k.35.3)", async () => {
     const readIndexedFileImports = vi.fn().mockResolvedValue(new Map());
 
-    await makeOps(graphDbStub(), {}, { readIndexedFileImports }).reviewChanges(request({ sections: ["architecture"] }));
+    await (
+      await makeOps(graphDbStub(), {}, { readIndexedFileImports })
+    ).reviewChanges(request({ sections: ["architecture"] }));
 
     expect(readIndexedFileImports).toHaveBeenCalledExactlyOnceWith("code_test");
   });
@@ -426,7 +428,7 @@ describe("ReviewChangesOps", () => {
     const listFileContentHashes = vi.fn(async () => [{ relPath: CHANGED, contentHash: null }]);
     const graph = graphDbStub({ listAllSymbols, listFileContentHashes });
 
-    const result = await makeOps(graph).reviewChanges(request({ sections: ["architecture", "norms"] }));
+    const result = await (await makeOps(graph)).reviewChanges(request({ sections: ["architecture", "norms"] }));
 
     expect(result.review.sections.architecture?.built).toBe(true);
     expect(result.review.sections.norms?.built).toBe(true);
@@ -437,12 +439,12 @@ describe("ReviewChangesOps", () => {
   it("walks the diff once per review: architecture and norms share one change-edge read (bd tea-rags-mcp-nehn5)", async () => {
     const walksFor = async (sections: ReviewChangesRequest["sections"]): Promise<number> => {
       const walk = vi.fn(collectSymbols);
-      const ops = makeOps(
+      const ops = await makeOps(
         graphDbStub(),
         {},
         {
           reviewEdgeExtraction: {
-            languageFactory: new LanguageFactory({}),
+            languageFactory: await LanguageFactory.preloaded({}),
             collectSymbols: walk,
             composer: new DefaultSymbolIdComposer(),
           },
@@ -464,9 +466,9 @@ describe("ReviewChangesOps", () => {
     const readIndexedFileImports = vi.fn().mockResolvedValue(new Map());
     const readDeclaredTestDependencies = vi.fn(() => new Set<string>());
 
-    const result = await makeOps(graph, {}, { readIndexedFileImports, readDeclaredTestDependencies }).reviewChanges(
-      request({ sections: ["architecture", "norms"] }),
-    );
+    const result = await (
+      await makeOps(graph, {}, { readIndexedFileImports, readDeclaredTestDependencies })
+    ).reviewChanges(request({ sections: ["architecture", "norms"] }));
 
     expect(result.review.sections.architecture?.built).toBe(true);
     expect(result.review.sections.norms?.built).toBe(true);
@@ -483,14 +485,16 @@ describe("ReviewChangesOps", () => {
         .mock.calls.filter(([, args]) => (args as string[]).includes("--exclude-standard")).length;
     const before = lsFilesSpawns();
 
-    await makeOps(
-      graph,
-      {},
-      {
-        readIndexedFileImports: vi.fn().mockResolvedValue(new Map()),
-        readDeclaredTestDependencies: (root: string) =>
-          readDeclaredTestDependencies(root, [PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST]),
-      },
+    await (
+      await makeOps(
+        graph,
+        {},
+        {
+          readIndexedFileImports: vi.fn().mockResolvedValue(new Map()),
+          readDeclaredTestDependencies: (root: string) =>
+            readDeclaredTestDependencies(root, [PACKAGE_JSON_TEST_DEPENDENCY_MANIFEST]),
+        },
+      )
     ).reviewChanges(request({ sections: ["architecture", "norms"] }));
 
     expect(lsFilesSpawns() - before).toBe(1);
@@ -500,14 +504,14 @@ describe("ReviewChangesOps", () => {
     const listAllSymbols = vi.fn(async () => []);
     const graph = graphDbStub({ listAllSymbols });
 
-    await makeOps(graph).reviewChanges(request({ sections: ["cohesion"] }));
+    await (await makeOps(graph)).reviewChanges(request({ sections: ["cohesion"] }));
 
     expect(listAllSymbols).not.toHaveBeenCalled();
   });
 
   it("a section allowlist omits the others entirely — absence is not not-built", async () => {
     const graph = graphDbStub();
-    const result = await makeOps(graph).reviewChanges(request({ sections: ["cohesion"] }));
+    const result = await (await makeOps(graph)).reviewChanges(request({ sections: ["cohesion"] }));
 
     expect(Object.keys(result.review.sections)).toEqual(["cohesion"]);
     // The temporal graph read is skipped when incompleteChange was not asked for.
@@ -516,7 +520,7 @@ describe("ReviewChangesOps", () => {
   });
 
   it("an unknown section id fails loud, naming the id and the registered set", async () => {
-    const ops = makeOps(graphDbStub());
+    const ops = await makeOps(graphDbStub());
     await expect(ops.reviewChanges(request({ sections: ["nope" as "cohesion"] }))).rejects.toBeInstanceOf(
       InvalidParameterError,
     );
@@ -563,7 +567,7 @@ describe("ReviewChangesOps", () => {
   it("a temporal graph that cannot be read is a not-built incompleteChange, not a failed review", async () => {
     const graph = graphDbStub();
     graph.readTemporalCochangeGraph.mockRejectedValue(new Error("wal corrupt"));
-    const result = await makeOps(graph).reviewChanges(request());
+    const result = await (await makeOps(graph)).reviewChanges(request());
     expect(result.review.sections.incompleteChange).toMatchObject({ built: false });
     expect(result.review.sections.incompleteChange?.reason).toMatch(/wal corrupt/);
     expect(result.review.sections.cohesion?.built).toBe(true);
@@ -575,7 +579,9 @@ describe("ReviewChangesOps", () => {
 
   it("a file with no symbol commits is a cohesion notJudged entry — absence, never a zero", async () => {
     writeFileSync(join(repo, "src/git/second.ts"), "export const second = 2;\n");
-    const result = await makeOps(graphDbStub()).reviewChanges(request({ files: [CHANGED, "src/git/second.ts"] }));
+    const result = await (
+      await makeOps(graphDbStub())
+    ).reviewChanges(request({ files: [CHANGED, "src/git/second.ts"] }));
     // The file is listed once at review level (bd tea-rags-mcp-56fax); the section keeps the count.
     expect(result.review.notJudged).toContainEqual(
       expect.objectContaining({
@@ -588,7 +594,7 @@ describe("ReviewChangesOps", () => {
   });
 
   it("the registry's indexedCommit behind the tree's HEAD surfaces as indexLag", async () => {
-    const result = await makeLaggingOps(graphDbStub()).reviewChanges(request());
+    const result = await (await makeLaggingOps(graphDbStub())).reviewChanges(request());
     expect(result.review.indexLag).toEqual({
       indexedCommit: "0".repeat(40),
       treeCommit: git(repo, "rev-parse", "HEAD").trim(),
@@ -599,7 +605,7 @@ describe("ReviewChangesOps", () => {
     git(repo, "add", "-A");
     git(repo, "commit", "-q", "-m", "change committed");
     const graph = graphDbStub();
-    const result = await makeOps(graph).reviewChanges(request());
+    const result = await (await makeOps(graph)).reviewChanges(request());
 
     expect(result.review.changedFiles).toBe(0);
     expect(result.review.notices?.[0]).toMatch(/^no changes/);
@@ -632,7 +638,7 @@ describe("ReviewChangesOps", () => {
     for (let i = 0; i < 201; i++) {
       writeFileSync(join(repo, `src/git/bulk${String(i).padStart(3, "0")}.ts`), `${bulk}\n`);
     }
-    const result = await makeOps(graphDbStub()).reviewChanges(request({ sections: ["incompleteChange"] }));
+    const result = await (await makeOps(graphDbStub())).reviewChanges(request({ sections: ["incompleteChange"] }));
     expect(result.review.changedFiles).toBe(202);
     expect(result.review).not.toHaveProperty("skipped");
     expect(result.review).not.toHaveProperty("truncated");

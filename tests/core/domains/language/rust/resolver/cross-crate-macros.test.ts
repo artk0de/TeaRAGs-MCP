@@ -111,81 +111,81 @@ function macroCall(member: string, receiver: string | null = null): CallRef {
 const BOX_ERR_TARGET = { targetRelPath: "components/tikv_util/src/macros.rs", targetSymbolId: "box_err" };
 
 describe("cross-crate exported macros (s3i8m.4 B1)", () => {
-  it("finding 4: `use tikv_util::{box_err, codec::{…}}` binds the sibling crate's exported box_err", () => {
+  it("finding 4: `use tikv_util::{box_err, codec::{…}}` binds the sibling crate's exported box_err", async () => {
     const imports = [
       "use tikv_util::{\n    box_err,\n    codec::{\n        number::{self, NumberEncoder},\n    },\n};",
     ];
     expect(resolver().resolve(macroCall("box_err"), ctx(table([TIKV_BOX_ERR]), imports))).toEqual(BOX_ERR_TARGET);
   });
 
-  it("a plain `use tikv_util::box_err;` binds it", () => {
+  it("a plain `use tikv_util::box_err;` binds it", async () => {
     expect(resolver().resolve(macroCall("box_err"), ctx(table([TIKV_BOX_ERR]), ["use tikv_util::box_err;"]))).toEqual(
       BOX_ERR_TARGET,
     );
   });
 
-  it("a renamed `use tikv_util::{box_err as be};` binds it under the local name", () => {
+  it("a renamed `use tikv_util::{box_err as be};` binds it under the local name", async () => {
     expect(
       resolver().resolve(macroCall("be"), ctx(table([TIKV_BOX_ERR]), ["use tikv_util::{box_err as be};"])),
     ).toEqual(BOX_ERR_TARGET);
   });
 
-  it("the use-bound crate picks its own export even when another crate exports a namesake", () => {
+  it("the use-bound crate picks its own export even when another crate exports a namesake", async () => {
     const twin: MacroSpec = { relPath: "components/other_util/src/lib.rs", name: "box_err", visibility: "public" };
     expect(
       resolver().resolve(macroCall("box_err"), ctx(table([TIKV_BOX_ERR, twin]), ["use tikv_util::box_err;"])),
     ).toEqual(BOX_ERR_TARGET);
   });
 
-  it("a `tikv_util::box_err!` path whose head is a workspace member resolves onto that crate's export", () => {
+  it("a `tikv_util::box_err!` path whose head is a workspace member resolves onto that crate's export", async () => {
     const twin: MacroSpec = { relPath: "components/other_util/src/lib.rs", name: "box_err", visibility: "public" };
     expect(resolver().resolve(macroCall("box_err", "tikv_util"), ctx(table([TIKV_BOX_ERR, twin]), []))).toEqual(
       BOX_ERR_TARGET,
     );
   });
 
-  it("a non-exported macro of another crate is never visible through `use`", () => {
+  it("a non-exported macro of another crate is never visible through `use`", async () => {
     const hidden: MacroSpec = { ...TIKV_BOX_ERR, visibility: "private" };
     expect(resolver().resolve(macroCall("box_err"), ctx(table([hidden]), ["use tikv_util::box_err;"]))).toBeNull();
   });
 
-  it("a non-exported macro of another crate is never visible through a path", () => {
+  it("a non-exported macro of another crate is never visible through a path", async () => {
     const hidden: MacroSpec = { ...TIKV_BOX_ERR, visibility: "private" };
     expect(resolver().resolve(macroCall("box_err", "tikv_util"), ctx(table([hidden]), []))).toBeNull();
   });
 
-  it("an external `slog::warn!` stays external although the project declares a fn `warn`", () => {
+  it("an external `slog::warn!` stays external although the project declares a fn `warn`", async () => {
     const fnWarn: MacroSpec = { relPath: "components/tikv_util/src/lib.rs", name: "warn", kind: "function" };
     expect(resolver().resolve(macroCall("warn", "slog"), ctx(table([fnWarn]), ["use slog::warn;"]))).toBeNull();
   });
 
-  it("a member that re-exports another crate's macro (`use api_version::box_err`) reaches the sole export", () => {
+  it("a member that re-exports another crate's macro (`use api_version::box_err`) reaches the sole export", async () => {
     // servo: `use servo::{pref}` where servo `pub use servo_config::pref`.
     expect(
       resolver().resolve(macroCall("box_err"), ctx(table([TIKV_BOX_ERR]), ["use api_version::{box_err};"])),
     ).toEqual(BOX_ERR_TARGET);
   });
 
-  it("a re-export path through a member (`api_version::tikv_util::box_err!`) keeps the project pick", () => {
+  it("a re-export path through a member (`api_version::tikv_util::box_err!`) keeps the project pick", async () => {
     expect(resolver().resolve(macroCall("box_err", "api_version::tikv_util"), ctx(table([TIKV_BOX_ERR]), []))).toEqual(
       BOX_ERR_TARGET,
     );
   });
 
-  it("a re-exporting member never exposes a non-exported macro", () => {
+  it("a re-exporting member never exposes a non-exported macro", async () => {
     const hidden: MacroSpec = { ...TIKV_BOX_ERR, visibility: "private" };
     expect(resolver().resolve(macroCall("box_err"), ctx(table([hidden]), ["use api_version::box_err;"]))).toBeNull();
   });
 
-  it("two crates exporting the same macro, with neither imported, give no edge", () => {
+  it("two crates exporting the same macro, with neither imported, give no edge", async () => {
     const twin: MacroSpec = { relPath: "components/other_util/src/lib.rs", name: "box_err", visibility: "public" };
     expect(resolver().resolve(macroCall("box_err"), ctx(table([TIKV_BOX_ERR, twin]), []))).toBeNull();
   });
 });
 
 describe("cross-crate exported macros — walked end to end (finding 4)", () => {
-  function edges(files: Record<string, string>, callerFile: string): string[] {
-    const factory = new LanguageFactory({ repoRoot: ROOT, manifestFilesReader: stubReader(MANIFESTS) });
+  async function edges(files: Record<string, string>, callerFile: string): Promise<string[]> {
+    const factory = await LanguageFactory.preloaded({ repoRoot: ROOT, manifestFilesReader: stubReader(MANIFESTS) });
     const language = new RustLanguage();
     const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
     const symbolTable = new InMemoryGlobalSymbolTable();
@@ -216,8 +216,8 @@ describe("cross-crate exported macros — walked end to end (finding 4)", () => 
       .methodEdges.map((edge) => `${edge.sourceSymbolId}->${edge.targetRelPath}:${edge.targetSymbolId}`);
   }
 
-  it("api_v1ttl.rs: `box_err!` inside an impl method reaches tikv_util's exported macro", () => {
-    const found = edges(
+  it("api_v1ttl.rs: `box_err!` inside an impl method reaches tikv_util's exported macro", async () => {
+    const found = await edges(
       {
         "components/tikv_util/src/lib.rs": "#[macro_use]\npub mod macros;\npub mod codec;\n",
         "components/tikv_util/src/macros.rs":

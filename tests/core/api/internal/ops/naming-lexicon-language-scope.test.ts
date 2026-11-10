@@ -96,7 +96,7 @@ describe("NamingLexiconOps — evidence stays within the draft's language namesp
     ]);
   }
 
-  function build(): NamingLexiconOps {
+  async function build(): Promise<NamingLexiconOps> {
     // The ops closes its reader in `finally`; the fixture owns the connection.
     const graphDb = new Proxy(db, {
       get(target, prop, receiver) {
@@ -112,7 +112,7 @@ describe("NamingLexiconOps — evidence stays within the draft's language namesp
       explore: { semanticSearch },
       namingConventions: NAMING,
       ontologyLanguages: ontologyLanguageProfiles(),
-      extractDeclarations: createNamingReviewExtractor(new LanguageFactory({})),
+      extractDeclarations: createNamingReviewExtractor(await LanguageFactory.preloaded({})),
     });
   }
 
@@ -122,7 +122,7 @@ describe("NamingLexiconOps — evidence stays within the draft's language namesp
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
     semanticSearch = vi.fn(async () => ({ results: [], driftWarning: null }));
-    ops = build();
+    ops = await build();
   });
 
   afterEach(async () => {
@@ -156,7 +156,7 @@ describe("NamingLexiconOps — evidence stays within the draft's language namesp
   });
 
   describe("diff mode", () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       repo = join(dir, "repo");
       mkdirSync(join(repo, "app/sync"), { recursive: true });
       mkdirSync(join(repo, "src/sync"), { recursive: true });

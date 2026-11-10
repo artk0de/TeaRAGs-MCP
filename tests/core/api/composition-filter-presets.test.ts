@@ -48,16 +48,16 @@ describe("Composition — filter-preset registry assembly + gating", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("all trajectories registered: static + git + codegraph + composite names present", () => {
-    const { registry } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+  it("all trajectories registered: static + git + codegraph + composite names present", async () => {
+    const { registry } = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     const names = new Set(registry.filterPresetNames());
     for (const name of [...STATIC_NAMES, ...GIT_NAMES, ...CODEGRAPH_NAMES, ...COMPOSITE_NAMES]) {
       expect(names.has(name), `${name} must be registered when all trajectories are on`).toBe(true);
     }
   });
 
-  it("codegraph OFF: codegraph filter-preset names absent; static + git + composite present", () => {
-    const { registry } = createComposition();
+  it("codegraph OFF: codegraph filter-preset names absent; static + git + composite present", async () => {
+    const { registry } = await createComposition();
     const names = new Set(registry.filterPresetNames());
     for (const name of CODEGRAPH_NAMES) {
       expect(names.has(name), `${name} must be ABSENT when codegraph is OFF`).toBe(false);
@@ -70,7 +70,7 @@ describe("Composition — filter-preset registry assembly + gating", () => {
   // createComposition always registers git, so the git-off gating branch is
   // exercised directly on the pure assembly helper (per Task 13 fallback).
   describe("assembleFilterPresets gating (pure helper)", () => {
-    it("git NOT registered: git + composite names absent, static still present", () => {
+    it("git NOT registered: git + composite names absent, static still present", async () => {
       const names = new Set(assembleFilterPresets(new Set(["static"])).map((p) => p.name));
       for (const name of [...GIT_NAMES, ...COMPOSITE_NAMES]) {
         expect(names.has(name), `${name} must be ABSENT when git is OFF`).toBe(false);
@@ -80,7 +80,7 @@ describe("Composition — filter-preset registry assembly + gating", () => {
       }
     });
 
-    it("codegraph NOT registered: codegraph names absent", () => {
+    it("codegraph NOT registered: codegraph names absent", async () => {
       const names = new Set(assembleFilterPresets(new Set(["static", "git"])).map((p) => p.name));
       for (const name of CODEGRAPH_NAMES) {
         expect(names.has(name)).toBe(false);
@@ -90,7 +90,7 @@ describe("Composition — filter-preset registry assembly + gating", () => {
       }
     });
 
-    it("all keys registered: full catalog assembled", () => {
+    it("all keys registered: full catalog assembled", async () => {
       const names = new Set(assembleFilterPresets(new Set(["static", "git", "codegraph.symbols"])).map((p) => p.name));
       for (const name of [...STATIC_NAMES, ...GIT_NAMES, ...CODEGRAPH_NAMES, ...COMPOSITE_NAMES]) {
         expect(names.has(name)).toBe(true);

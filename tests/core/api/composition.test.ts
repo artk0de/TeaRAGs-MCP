@@ -10,45 +10,45 @@ import { createComposition } from "../../../src/core/api/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("createComposition", () => {
-  it("builds registry with GitTrajectory", () => {
-    const { registry } = createComposition();
+  it("builds registry with GitTrajectory", async () => {
+    const { registry } = await createComposition();
     expect(registry.has("git")).toBe(true);
   });
 
   // bd tea-rags-mcp-4p3sb.12 — the naming lexicon reads the descriptors' naming facts from here.
-  it("resolves namingConventions for exactly the languages whose descriptor declares naming", () => {
-    const { namingConventions, languageFactory } = createComposition();
+  it("resolves namingConventions for exactly the languages whose descriptor declares naming", async () => {
+    const { namingConventions, languageFactory } = await createComposition();
     expect(namingConventions.get("ruby")?.casing.local[0]).toBe("snake");
     expect(namingConventions.get("typescript")?.casing.local[0]).toBe("camel");
     expect(namingConventions.has("markdown")).toBe(false);
     for (const language of namingConventions.keys()) expect(languageFactory.supported()).toContain(language);
   });
 
-  it("aggregates payload signals from BASE + trajectories", () => {
-    const { allPayloadSignalDescriptors } = createComposition();
+  it("aggregates payload signals from BASE + trajectories", async () => {
+    const { allPayloadSignalDescriptors } = await createComposition();
     // BASE has relativePath, language, etc. + git has git.file.*, git.chunk.*
     expect(allPayloadSignalDescriptors.length).toBeGreaterThan(12);
     expect(allPayloadSignalDescriptors.find((s) => s.key === "relativePath")).toBeDefined();
     expect(allPayloadSignalDescriptors.find((s) => s.key === "git.file.commitCount")).toBeDefined();
   });
 
-  it("aggregates derived signals from trajectories + structural", () => {
-    const { allDerivedSignals } = createComposition();
+  it("aggregates derived signals from trajectories + structural", async () => {
+    const { allDerivedSignals } = await createComposition();
     // Git: 15 derived + structural: 8
     expect(allDerivedSignals.length).toBe(23);
     expect(allDerivedSignals.find((d) => d.name === "recency")).toBeDefined();
     expect(allDerivedSignals.find((d) => d.name === "similarity")).toBeDefined();
   });
 
-  it("resolves presets from relevance + trajectory", () => {
-    const { resolvedPresets } = createComposition();
+  it("resolves presets from relevance + trajectory", async () => {
+    const { resolvedPresets } = await createComposition();
     expect(resolvedPresets.length).toBeGreaterThan(0);
     expect(resolvedPresets.find((p) => p.name === "relevance")).toBeDefined();
     expect(resolvedPresets.find((p) => p.name === "techDebt")).toBeDefined();
   });
 
-  it("creates a functional reranker", () => {
-    const { reranker } = createComposition();
+  it("creates a functional reranker", async () => {
+    const { reranker } = await createComposition();
     expect(reranker.getAvailablePresets("semantic_search")).toContain("techDebt");
     expect(reranker.getAvailablePresets("search_code")).toContain("relevance");
   });
@@ -59,18 +59,18 @@ describe("createComposition", () => {
     // GitTrajectory and the registry surfaces it through
     // getAllEnrichmentProviders(). This test pins the new contract: a
     // git provider is always present, with or without explicit config.
-    it("returns a git enrichment provider from the registry without config", () => {
-      const { registry } = createComposition();
+    it("returns a git enrichment provider from the registry without config", async () => {
+      const { registry } = await createComposition();
       const providers = registry.getAllEnrichmentProviders();
       expect(providers.some((p) => p.key === "git")).toBe(true);
     });
 
-    it("threads git config through GitTrajectory to the registered provider", () => {
+    it("threads git config through GitTrajectory to the registered provider", async () => {
       // The provider should construct without throwing; full config
       // round-trip is verified by GitTrajectory unit tests. Here we only
       // verify the option plumbing accepts the shape and the resulting
       // composition is well-formed.
-      const { registry } = createComposition({
+      const { registry } = await createComposition({
         git: {
           config: { logMaxAgeMonths: 6, chunkMaxAgeMonths: 6 },
         },
@@ -97,38 +97,38 @@ describe("createComposition", () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it("git provider has NO workerDescriptor by default (production path — inline executor)", () => {
-      // Production path: createComposition({ git: { config } }) omits
+    it("git provider has NO workerDescriptor by default (production path — inline executor)", async () => {
+      // Production path: await createComposition({ git: { config } }) omits
       // workerDescriptor. WorkerPoolEnrichmentExecutor sees !provider.workerDescriptor
       // and falls through to InlineEnrichmentExecutor (in-process, zero postMessage
       // overhead, automatic blame-cache reuse). This is the correct path per
       // live taxdome evidence: collection-affinity made git enrichment ~4x SLOWER.
-      const { registry } = createComposition();
+      const { registry } = await createComposition();
       const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
       expect(git?.workerDescriptor).toBeUndefined();
     });
 
-    it("surfaces a defined workerDescriptor on the git provider when supplied", () => {
+    it("surfaces a defined workerDescriptor on the git provider when supplied", async () => {
       const gitDescriptor = {
         providerModulePath: "/abs/git/factory.js",
         providerFactoryExport: "createGitEnrichmentProvider",
         dispatch: "collection-affinity" as const,
         serializableConfig: {},
       };
-      const { registry } = createComposition({ git: { workerDescriptor: gitDescriptor } });
+      const { registry } = await createComposition({ git: { workerDescriptor: gitDescriptor } });
       const git = registry.getAllEnrichmentProviders().find((p) => p.key === "git");
       expect(git?.workerDescriptor).toBeDefined();
       expect(git?.workerDescriptor?.dispatch).toBe("collection-affinity");
     });
 
-    it("surfaces a defined workerDescriptor on the codegraph provider when supplied", () => {
+    it("surfaces a defined workerDescriptor on the codegraph provider when supplied", async () => {
       const codegraphDescriptor = {
         providerModulePath: "/abs/codegraph/factory.js",
         providerFactoryExport: "createCodegraphEnrichmentProvider",
         dispatch: "collection-affinity" as const,
         serializableConfig: {},
       };
-      const { registry } = createComposition({
+      const { registry } = await createComposition({
         codegraph: {
           pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
           workerDescriptor: codegraphDescriptor,
@@ -159,8 +159,8 @@ describe("createComposition", () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it("registers SymbolsTrajectory and surfaces its payload signals + presets", () => {
-      const { registry, allPayloadSignalDescriptors, resolvedPresets } = createComposition({
+    it("registers SymbolsTrajectory and surfaces its payload signals + presets", async () => {
+      const { registry, allPayloadSignalDescriptors, resolvedPresets } = await createComposition({
         codegraph: {
           pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
         },
@@ -184,11 +184,11 @@ describe("createComposition", () => {
     // contract: codegraph enabled → composite blastRadius reaches the
     // resolved set; codegraph disabled → blastRadius absent (its
     // signals would be unpopulated).
-    it("composite blastRadius is in resolved presets only when codegraph is wired", () => {
-      const withCodegraph = createComposition({
+    it("composite blastRadius is in resolved presets only when codegraph is wired", async () => {
+      const withCodegraph = await createComposition({
         codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
-      const withoutCodegraph = createComposition();
+      const withoutCodegraph = await createComposition();
 
       const blastRadiusWith = withCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
       const blastRadiusWithout = withoutCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
@@ -210,11 +210,11 @@ describe("createComposition", () => {
     // and the weights include a non-zero `fanIn` entry. Without
     // codegraph, the override is skipped and the trajectory preset
     // wins unchanged.
-    it("composite overrides supersede trajectory presets for hotspots / techDebt / dangerous / ownership / securityAudit / codeReview", () => {
-      const withCodegraph = createComposition({
+    it("composite overrides supersede trajectory presets for hotspots / techDebt / dangerous / ownership / securityAudit / codeReview", async () => {
+      const withCodegraph = await createComposition({
         codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
-      const withoutCodegraph = createComposition();
+      const withoutCodegraph = await createComposition();
       const overriddenNames = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
 
       for (const name of overriddenNames) {
@@ -228,11 +228,11 @@ describe("createComposition", () => {
       }
     });
 
-    it("architecturalHub is a new composite — present only when codegraph is wired", () => {
-      const withCodegraph = createComposition({
+    it("architecturalHub is a new composite — present only when codegraph is wired", async () => {
+      const withCodegraph = await createComposition({
         codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
       });
-      const withoutCodegraph = createComposition();
+      const withoutCodegraph = await createComposition();
 
       const hub = withCodegraph.resolvedPresets.find((p) => p.name === "architecturalHub");
       expect(hub).toBeDefined();

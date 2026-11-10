@@ -12,9 +12,9 @@ const isTestChunk = (chunk: { metadata: { chunkType?: string } }): boolean =>
 describe("TreeSitterChunker — Rust test scopes", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   it("emits test chunks for cfg(test) modules with stable scope and parent identity", async () => {
@@ -95,9 +95,9 @@ mod tests {
 describe("TreeSitterChunker — Rust inline tests read from attribute AST", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const LIB_RS = `pub fn add(left: usize, right: usize) -> usize {
@@ -329,9 +329,9 @@ pub fn other_production_value(input: usize) -> usize {
 describe("TreeSitterChunker — Rust file made test-only by an inner #![cfg(test)]", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const BODY = `use std::vec::Vec;
@@ -473,9 +473,9 @@ pub fn make_fixture() -> Vec<u8> {
 describe("TreeSitterChunker — Rust test items nested in a non-test module", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const ENGINE_RS = `pub mod inner {
@@ -549,7 +549,7 @@ pub mod outer {
 });
 
 describe("Rust test files by path", () => {
-  it("classifies tests.rs — the body of `#[cfg(test)] mod tests;` — as a test file", () => {
+  it("classifies tests.rs — the body of `#[cfg(test)] mod tests;` — as a test file", async () => {
     expect(classify("src/foo/tests.rs").isTest).toBe(true);
   });
 });
@@ -557,9 +557,9 @@ describe("Rust test files by path", () => {
 describe("TreeSitterChunker — a short Rust inline test node never becomes production code (52wk3.9)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const PRODUCTION = `pub fn production_value(input: usize) -> usize {
@@ -650,9 +650,9 @@ pub fn other_production_value(input: usize) -> usize {
 describe("TreeSitterChunker — a test-only declaration inside a non-test module (52wk3.9)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
   });
 
   const TEST_ONLY_DECLARATIONS = `pub mod inner {

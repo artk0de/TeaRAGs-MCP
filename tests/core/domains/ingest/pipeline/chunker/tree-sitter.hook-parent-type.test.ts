@@ -46,7 +46,7 @@ describe("TreeSitterChunker hook-provided parentType", () => {
   }
 
   async function chunkSpec() {
-    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
     const chunks = await chunker.chunk(code, "src/cart.test.ts", "typescript");
     return chunks.filter((c) => c.metadata.chunkType === "test");
   }

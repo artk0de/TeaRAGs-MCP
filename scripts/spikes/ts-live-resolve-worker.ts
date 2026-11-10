@@ -378,7 +378,7 @@ async function main(): Promise<void> {
   }
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: ROOT });
+  const factory = await LanguageFactory.preloaded({ repoRoot: ROOT });
   const language = factory.create("typescript");
   const symbolTable = new InMemoryGlobalSymbolTable();
 

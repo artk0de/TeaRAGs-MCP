@@ -58,7 +58,7 @@ public class Billing {
 `;
 
 const swiftRow = CODEGRAPH_LANGUAGES[".swift"];
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 const composer = new DefaultSymbolIdComposer();
 
 function extract(code: string, relPath: string): FileExtraction {

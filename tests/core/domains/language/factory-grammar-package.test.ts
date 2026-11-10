@@ -11,8 +11,10 @@ import { LanguageFactory } from "../../../../src/core/domains/language/factory.j
  * installed raises a typed, actionable error.
  */
 describe("LanguageFactory — missing grammar package", () => {
-  it("raises GrammarPackageNotInstalledError naming the package and the fix", () => {
-    const factory = new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" });
+  it("raises GrammarPackageNotInstalledError naming the package and the fix", async () => {
+    const factory = await LanguageFactory.preloaded({
+      isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift",
+    });
 
     let thrown: unknown;
     try {
@@ -29,22 +31,24 @@ describe("LanguageFactory — missing grammar package", () => {
     expect(`${typed.message} ${typed.hint}`).toContain("npm install");
   });
 
-  it("does not cache a provider whose grammar was missing — a later create re-checks", () => {
+  it("does not cache a provider whose grammar was missing — a later create re-checks", async () => {
     let installed = false;
-    const factory = new LanguageFactory({ isGrammarPackageInstalled: () => installed });
+    const factory = await LanguageFactory.preloaded({ isGrammarPackageInstalled: () => installed });
     expect(() => factory.create("rust")).toThrow(GrammarPackageNotInstalledError);
     installed = true;
     expect(factory.create("rust").kernel.grammarPackage).toBe("tree-sitter-rust");
   });
 
-  it("leaves other languages alone when one grammar is missing", () => {
-    const factory = new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" });
+  it("leaves other languages alone when one grammar is missing", async () => {
+    const factory = await LanguageFactory.preloaded({
+      isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift",
+    });
     expect(() => factory.create("ruby")).not.toThrow();
   });
 
-  it("never checks a doc-only language that has no grammar", () => {
+  it("never checks a doc-only language that has no grammar", async () => {
     const checked: string[] = [];
-    const factory = new LanguageFactory({
+    const factory = await LanguageFactory.preloaded({
       isGrammarPackageInstalled: (pkg) => {
         checked.push(pkg);
         return false;
@@ -54,13 +58,13 @@ describe("LanguageFactory — missing grammar package", () => {
     expect(checked).toEqual([]);
   });
 
-  it("creates every supported language with the real resolver in an installed checkout", () => {
-    const factory = new LanguageFactory();
+  it("creates every supported language with the real resolver in an installed checkout", async () => {
+    const factory = await LanguageFactory.preloaded();
     for (const lang of factory.supported()) expect(() => factory.create(lang)).not.toThrow();
   });
 
   it("names the grammar package each kernel actually loads — derived from loadModule, not listed", async () => {
-    const factory = new LanguageFactory();
+    const factory = await LanguageFactory.preloaded();
     for (const lang of factory.supported()) {
       const { kernel } = factory.create(lang);
       const loaded = await kernel.loadModule();

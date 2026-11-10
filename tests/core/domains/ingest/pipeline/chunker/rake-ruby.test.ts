@@ -5,7 +5,7 @@
  * answered "unknown", so every `lib/tasks/*.rake` stayed invisible to search
  * while grep saw it.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   detectLanguage,
@@ -37,17 +37,20 @@ end
 `;
 
 describe("ingest .rake as Ruby (bd tea-rags-mcp-k0602)", () => {
-  const chunker = new TreeSitterChunker(
-    { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
-    new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
-  );
+  let chunker: TreeSitterChunker;
+  beforeAll(async () => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
+      new DefaultSymbolIdComposer(),
+      await LanguageFactory.preloaded(),
+    );
+  });
 
-  it("routes .rake to the ruby language", () => {
+  it("routes .rake to the ruby language", async () => {
     expect(detectLanguage("lib/tasks/billing.rake")).toBe("ruby");
   });
 
-  it("selects .rake under a ruby language scope", () => {
+  it("selects .rake under a ruby language scope", async () => {
     expect(extensionsForLanguages(["ruby"])).toEqual(expect.arrayContaining([".rb", ".rake"]));
   });
 

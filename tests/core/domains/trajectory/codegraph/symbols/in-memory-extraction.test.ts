@@ -11,7 +11,7 @@ import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/lang
 import { extractFileInMemory } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/in-memory-extraction.js";
 
 const deps = {
-  languageFactory: new LanguageFactory(),
+  languageFactory: await LanguageFactory.preloaded(),
   collectSymbols,
   composer: new DefaultSymbolIdComposer(),
 };

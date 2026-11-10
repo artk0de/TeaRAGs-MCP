@@ -20,7 +20,7 @@ end`;
     const parser = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const { tree } = await parser.chunkWithTree(code, path, "ruby");
     expect(tree).not.toBeNull();
@@ -71,7 +71,7 @@ end`;
     const parser = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const { tree } = await parser.chunkWithTree(code, path, "ruby");
     const chunks = chunkRailsMigration(tree!.rootNode, code, path);
@@ -103,7 +103,7 @@ end`;
     const parser = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const { tree } = await parser.chunkWithTree(code, path, "ruby");
     const chunks = chunkRailsMigration(tree!.rootNode, code, path);
@@ -115,7 +115,7 @@ end`;
     const parser = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const { tree } = await parser.chunkWithTree(code, path, "ruby");
     return chunkRailsMigration(tree!.rootNode, code, path);

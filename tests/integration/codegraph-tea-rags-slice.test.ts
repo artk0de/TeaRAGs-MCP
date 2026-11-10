@@ -30,10 +30,10 @@ import { LanguageFactory } from "../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../src/core/domains/language/kernel/symbol-id.js";
 import { extractFromTypescriptFile } from "../../src/core/domains/language/typescript/walker/walker.js";
+import { runMigrations } from "../../src/core/domains/maintenance/migration/database/runner.js";
 import { createSymbolsTrajectory } from "../../src/core/domains/trajectory/codegraph/symbols/index.js";
 import type { CodegraphEnrichmentProvider } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
@@ -122,7 +122,7 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
     const trajectory = createSymbolsTrajectory({
       graphDb: client,
       symbolTable,
-      languageFactory: new LanguageFactory(),
+      languageFactory: await LanguageFactory.preloaded(),
       composer: new DefaultSymbolIdComposer(),
       collectSymbols,
     });

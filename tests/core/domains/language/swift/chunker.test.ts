@@ -19,7 +19,7 @@ import type { CodeChunk } from "../../../../../src/core/types.js";
 
 const FIXTURES = join("tests/__fixtures__/sample-swift");
 
-const testLanguageFactory = new LanguageFactory();
+const testLanguageFactory = await LanguageFactory.preloaded();
 
 describe("TreeSitterChunker — swift", () => {
   let chunker: TreeSitterChunker;

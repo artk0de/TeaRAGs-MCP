@@ -37,12 +37,12 @@ describe("createNamingReviewExtractor", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("hands the walk the working tree's Gemfile and declared dependencies, read once per review", () => {
+  it("hands the walk the working tree's Gemfile and declared dependencies, read once per review", async () => {
     // Each language's gate reads its own manifests: Ruby the root Gemfile, Python its requirements.
     const gemfile = 'source "https://rubygems.org"\ngem "rails"\n';
     writeFileSync(join(root, "Gemfile"), gemfile);
     writeFileSync(join(root, "requirements.txt"), "django==5.0\n");
-    const extract = createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root);
+    const extract = createNamingReviewExtractor(await LanguageFactory.preloaded({})).forWorkingTree(root);
 
     const first = extract("app/models/doc.rb", "class Doc\n  def total\n    1\n  end\nend\n");
     extract("app/models/other.rb", "class Other\nend\n");
@@ -56,28 +56,30 @@ describe("createNamingReviewExtractor", () => {
     expect(contexts[1]).toBe(contexts[0]);
   });
 
-  it("a working tree with no manifest walks with every vocabulary active", () => {
-    const extract = createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root);
+  it("a working tree with no manifest walks with every vocabulary active", async () => {
+    const extract = createNamingReviewExtractor(await LanguageFactory.preloaded({})).forWorkingTree(root);
     extract("src/a.ts", "export class A {}\n");
     const context = extractFileInMemory.mock.calls[0][3] as Record<string, unknown>;
     expect((context.declaredDependencies as ReadonlyMap<string, ReadonlySet<string>>).size).toBe(0);
   });
 
-  it("returns the chunks' line ranges, so the review can quote a declaration's enclosing code", () => {
-    const extract = createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root);
+  it("returns the chunks' line ranges, so the review can quote a declaration's enclosing code", async () => {
+    const extract = createNamingReviewExtractor(await LanguageFactory.preloaded({})).forWorkingTree(root);
     const declarations = extract("src/a.ts", "export class A {\n  run(): void {\n    go();\n  }\n}\n");
     expect(declarations?.chunks.length).toBeGreaterThan(0);
     for (const chunk of declarations?.chunks ?? []) expect(chunk.startLine).toBeLessThanOrEqual(chunk.endLine);
   });
 
-  it("a path no codegraph language walks → null", () => {
-    expect(createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root)("notes.md", "# x\n")).toBeNull();
+  it("a path no codegraph language walks → null", async () => {
+    expect(
+      createNamingReviewExtractor(await LanguageFactory.preloaded({})).forWorkingTree(root)("notes.md", "# x\n"),
+    ).toBeNull();
   });
 
-  it("marks a callable a macro composed: its name is not spelled on its declaration line", () => {
+  it("marks a callable a macro composed: its name is not spelled on its declaration line", async () => {
     // `has_one :account` composes account / account= / build_account / create_account; `belongs_to :owner`
     // adds owner_id / owner_id= — `owner` is a token there, `owner_id` is not.
-    const extract = createNamingReviewExtractor(new LanguageFactory({})).forWorkingTree(root);
+    const extract = createNamingReviewExtractor(await LanguageFactory.preloaded({})).forWorkingTree(root);
     const declarations = extract(
       "app/models/firm.rb",
       "class Firm < ApplicationRecord\n  has_one :account\n  belongs_to :owner\n  scope :with_firm, -> { all }\n  def refresh_auth_token = 1\nend\n",
@@ -98,7 +100,7 @@ describe("createNamingReviewExtractor", () => {
 });
 
 describe("spellsIdentifier", () => {
-  it("matches the name as a whole token, trailing marker included", () => {
+  it("matches the name as a whole token, trailing marker included", async () => {
     expect(spellsIdentifier("  has_one :account", "account")).toBe(true);
     expect(spellsIdentifier("  def save!", "save!")).toBe(true);
     expect(spellsIdentifier("  def valid?", "valid?")).toBe(true);
@@ -106,7 +108,7 @@ describe("spellsIdentifier", () => {
     expect(spellsIdentifier("  loadUser(): void {", "loadUser")).toBe(true);
   });
 
-  it("never matches inside a longer identifier or across a marker", () => {
+  it("never matches inside a longer identifier or across a marker", async () => {
     expect(spellsIdentifier("  belongs_to :account_id", "account")).toBe(false);
     expect(spellsIdentifier("  has_one :my_account", "account")).toBe(false);
     expect(spellsIdentifier("  belongs_to :account", "account_id=")).toBe(false);

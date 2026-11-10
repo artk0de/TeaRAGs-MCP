@@ -19,7 +19,7 @@ function stubReader(files: ManifestFile[]): ManifestFilesReader & ReturnType<typ
 }
 
 describe("GoModuleMapCache — injected manifest reader", () => {
-  it("builds the module map from what the injected reader answers", () => {
+  it("builds the module map from what the injected reader answers", async () => {
     const reader = stubReader([
       { relDir: "", fileName: "go.mod", content: "module example.com/synthetic\n" },
       { relDir: "tools/lint", fileName: "go.mod", content: "module example.com/synthetic/tools/lint\n" },
@@ -34,22 +34,24 @@ describe("GoModuleMapCache — injected manifest reader", () => {
     expect(matches("go.sum")).toBe(false);
   });
 
-  it("answers no module map without a reader — nothing to read", () => {
+  it("answers no module map without a reader — nothing to read", async () => {
     expect(new GoModuleMapCache().forRoot(ROOT)).toBeUndefined();
   });
 });
 
 describe("GoLanguage / LanguageFactory — the reader reaches the resolver", () => {
-  it("GoLanguage re-reads through the injected reader at pass start", () => {
+  it("GoLanguage re-reads through the injected reader at pass start", async () => {
     const reader = stubReader([{ relDir: "", fileName: "go.mod", content: "module example.com/synthetic\n" }]);
     new GoLanguage(undefined, reader).resolver.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
     expect(reader).toHaveBeenCalledTimes(1);
     expect(reader.mock.calls[0]?.[0]).toBe(ROOT);
   });
 
-  it("LanguageFactory threads its manifestFilesReader into the Go provider", () => {
+  it("LanguageFactory threads its manifestFilesReader into the Go provider", async () => {
     const reader = stubReader([{ relDir: "", fileName: "go.mod", content: "module example.com/synthetic\n" }]);
-    const go = new LanguageFactory({ manifestFilesReader: reader, isGrammarPackageInstalled: () => true }).create("go");
+    const go = (
+      await LanguageFactory.preloaded({ manifestFilesReader: reader, isGrammarPackageInstalled: () => true })
+    ).create("go");
     go.resolver?.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
     expect(reader).toHaveBeenCalledTimes(1);
     expect(reader.mock.calls[0]?.[0]).toBe(ROOT);

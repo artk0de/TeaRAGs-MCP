@@ -343,7 +343,7 @@ export function fullRegistryStatsAccumulators(): StatsAccumulatorDescriptor[] {
   return [...staticStatsAccumulators, ...gitStatsAccumulators];
 }
 
-export function createComposition(options: CompositionOptions = {}): CompositionResult {
+export async function createComposition(options: CompositionOptions = {}): Promise<CompositionResult> {
   // Real LanguageFactoryDescriptor: it ENCAPSULATES construction. All languages are
   // native `domains/language/<lang>` providers built by the factory itself; each
   // native provider carries its own resolver, built with the configured
@@ -357,6 +357,12 @@ export function createComposition(options: CompositionOptions = {}): Composition
       ? { rustcCallSiteSource: processRustcCallSiteSource(options.codegraph.rustDriver) }
       : {}),
   });
+  // bd tea-rags-mcp-zkd96 — the factory reaches per-language verticals through
+  // a lazy module registry, and the codegraph trajectory's provider eagerly
+  // constructs providers for every supported language at registration. The
+  // composition root is the seam that makes every language loadable: preload
+  // the full set before any trajectory sees the factory.
+  await languageFactory.preload();
 
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());

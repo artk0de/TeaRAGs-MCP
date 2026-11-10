@@ -13,7 +13,7 @@ import { registerAllTools } from "../../../../../src/core/api/tools/index.js";
 
 async function listToolNames(experimentalLocate?: boolean): Promise<string[]> {
   const app = { hasProvider: () => false, reviewSectionIds: () => [] } as unknown as App;
-  const schemaBuilder = new SchemaBuilder(createComposition({}).reranker);
+  const schemaBuilder = new SchemaBuilder((await createComposition({})).reranker);
   const server = new McpServer({ name: "locate-reg", version: "0.0.0" });
   registerAllTools(server, {
     app,

@@ -168,9 +168,11 @@ async function warmedResolver(sources: { callSites?: RustCallSiteIndex } = {}): 
 }
 
 async function facade(sources: { callSites?: RustCallSiteIndex } = {}): Promise<LanguageSymbolResolver> {
-  const resolver = new LanguageFactory({
-    ...(sources.callSites === undefined ? {} : { rustcCallSiteSource: callSiteSource(sources.callSites) }),
-  }).create("rust").resolver!;
+  const resolver = (
+    await LanguageFactory.preloaded({
+      ...(sources.callSites === undefined ? {} : { rustcCallSiteSource: callSiteSource(sources.callSites) }),
+    })
+  ).create("rust").resolver!;
   await resolver.warmResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
   return resolver;
 }

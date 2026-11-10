@@ -849,7 +849,7 @@ export async function run(
   const driverAcquisitions: { outcome: RustcCallSiteAcquisition; wallMs: number }[] = [];
   // Production's composition always injects the external signature sources (bd s3i8m.7).
   const signatureSources = processRustExternalSignatureSources();
-  const factory = new LanguageFactory({
+  const factory = await LanguageFactory.preloaded({
     repoRoot: root,
     manifestFilesReader: readManifestFiles,
     rustExternalSignatureSources: signatureSources,

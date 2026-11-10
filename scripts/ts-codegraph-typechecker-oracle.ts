@@ -1670,7 +1670,7 @@ interface OracleRunResult {
  */
 async function runOracle(repoRoot: string, targetDir: string, limit: number, quiet: boolean): Promise<OracleRunResult> {
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const resolver = new TSCallResolver(loadTsConfig(repoRoot), "strict", repoRoot);
   const cache = resolver.programCache;
   if (cache === null) {

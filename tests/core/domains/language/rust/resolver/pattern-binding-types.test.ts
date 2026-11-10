@@ -12,9 +12,11 @@ import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(code: string, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const relPath = "src/main.rs";
@@ -73,7 +75,7 @@ impl Rx { fn recv(&self) {} }
 // bd tea-rags-mcp-s3i8m Task 1a — a pattern-bound name is typed only by folding
 // its projection over the scrutinee's type; it never reads the outer binding.
 describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (materialized) => {
-  it("does not let an outer typed binding leak into a Some(x) arm", () => {
+  it("does not let an outer typed binding leak into a Some(x) arm", async () => {
     const f = fixture(
       `${types}\nfn run(x: Foo, o: Option<Missing>) {\n    if let Some(x) = o {\n        x.m();\n    }\n}\n`,
       materialized,
@@ -81,7 +83,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("x.m()")).not.toBe("Foo#m");
   });
 
-  it("types an if-let payload through a method's declared Option return", () => {
+  it("types an if-let payload through a method's declared Option return", async () => {
     const f = fixture(
       `${types}\nstruct Holder;\nimpl Holder {\n    fn find(&self) -> Option<Peer> { None }\n    fn run(&self) {\n        if let Some(p) = self.find() {\n            p.m();\n        }\n    }\n}\n`,
       materialized,
@@ -89,13 +91,13 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("p.m()", "Holder#run")).toBe("Peer#m");
   });
 
-  it("reads the outer binding inside a same-line scrutinee", () => {
+  it("reads the outer binding inside a same-line scrutinee", async () => {
     const f = fixture(`${types}\nfn run(x: Foo) {\n    if let Some(x) = x.get() { x.m(); }\n}\n`, materialized);
     expect(f.target("x.get()")).toBe("Foo#get");
     expect(f.target("x.m()")).toBe("Bar#m");
   });
 
-  it("types a destructured tuple from a free function's declared tuple return", () => {
+  it("types a destructured tuple from a free function's declared tuple return", async () => {
     const f = fixture(
       `${types}\nfn make_pair() -> (Tx, Rx) { (Tx, Rx) }\nfn run() {\n    let (tx, rx) = make_pair();\n    rx.recv();\n    tx.recv();\n}\n`,
       materialized,
@@ -104,7 +106,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("tx.recv()")).toBe("Tx#recv");
   });
 
-  it("types a nested Some((a, b)) through a method's Option of a tuple", () => {
+  it("types a nested Some((a, b)) through a method's Option of a tuple", async () => {
     const f = fixture(
       `${types}\nstruct Holder;\nimpl Holder {\n    fn pair(&self) -> Option<(Tx, Rx)> { None }\n    fn run(&self) {\n        if let Some((_, b)) = self.pair() {\n            b.recv();\n        }\n    }\n}\n`,
       materialized,
@@ -112,7 +114,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("b.recv()", "Holder#run")).toBe("Rx#recv");
   });
 
-  it("types a struct-pattern field through the declared field type", () => {
+  it("types a struct-pattern field through the declared field type", async () => {
     const f = fixture(
       `${types}\nstruct Holder { peer: Peer }\nfn run(holder: Holder, peer: Foo) {\n    let Holder { peer, .. } = holder;\n    peer.m();\n}\n`,
       materialized,
@@ -120,12 +122,12 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("peer.m()")).toBe("Peer#m");
   });
 
-  it("types a typed closure param", () => {
+  it("types a typed closure param", async () => {
     const f = fixture(`${types}\nfn run(items: Items) {\n    items.for_each(|x: Foo| x.m());\n}\n`, materialized);
     expect(f.target("x.m()")).toBe("Foo#m");
   });
 
-  it("leaves a while-let element pop untyped without an element table", () => {
+  it("leaves a while-let element pop untyped without an element table", async () => {
     const f = fixture(
       `${types}\nfn run(n: Foo, mut stack: Vec<Bar>) {\n    while let Some(n) = stack.pop() {\n        n.m();\n    }\n}\n`,
       materialized,
@@ -133,12 +135,12 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("n.m()")).not.toBe("Foo#m");
   });
 
-  it("leaves a callback param untyped", () => {
+  it("leaves a callback param untyped", async () => {
     const f = fixture(`${types}\nfn run(cb: Foo) {\n    apply(|cb| cb.m());\n}\n`, materialized);
     expect(f.target("cb.m()")).not.toBe("Foo#m");
   });
 
-  it("leaves an or-pattern with mismatched payloads untyped", () => {
+  it("leaves an or-pattern with mismatched payloads untyped", async () => {
     const f = fixture(
       `${types}\nenum E { A(Bar), B(Peer) }\nfn run(w: Foo, e: E) {\n    match e {\n        E::A(w) | E::B(w) => w.m(),\n    }\n}\n`,
       materialized,
@@ -146,7 +148,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("w.m()")).not.toBe("Foo#m");
   });
 
-  it("shadows a for-loop element (untyped in this slice)", () => {
+  it("shadows a for-loop element (untyped in this slice)", async () => {
     const f = fixture(
       `${types}\nfn run(p: Foo, v: Vec<Bar>) {\n    for p in v {\n        p.m();\n    }\n}\n`,
       materialized,
@@ -157,21 +159,21 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
   // bd tea-rags-mcp-s3i8m Task 1c — an untyped pattern binding still shadows
   // the outer name, but the call falls through the chain exactly as an unbound
   // receiver does (additive invariant), instead of dropping.
-  it("lets an untyped pattern binding read exactly like an unbound receiver", () => {
+  it("lets an untyped pattern binding read exactly like an unbound receiver", async () => {
     const body = (recv: string) =>
       `${types}\nstruct Error;\nimpl Error { fn clone(&self) -> Error { Error } }\nfn run(path: &Cow<'_, [u8]>) {\n    match *path {\n        Cow::Owned(ref path) => {\n            let copy = ${recv}.clone();\n        }\n        _ => {}\n    }\n}\n`;
     const unbound = fixture(body("other"), materialized).target("other.clone()");
     expect(fixture(body("path"), materialized).target("path.clone()")).toBe(unbound);
   });
 
-  it("resolves an untyped if-let payload through the short-name pass like an unbound receiver", () => {
+  it("resolves an untyped if-let payload through the short-name pass like an unbound receiver", async () => {
     const body = (recv: string) =>
       `${types}\nstruct Key;\nimpl Key { fn as_encoded(&self) {} }\nfn run() {\n    let maybe_key = compute();\n    if let Some(k) = &maybe_key {\n        ${recv}.as_encoded();\n    }\n}\n`;
     expect(fixture(body("other"), materialized).target("other.as_encoded()")).toBe("Key#as_encoded");
     expect(fixture(body("k"), materialized).target("k.as_encoded()")).toBe("Key#as_encoded");
   });
 
-  it("keeps shadowing: an untyped pattern binding never reads the outer binding's type", () => {
+  it("keeps shadowing: an untyped pattern binding never reads the outer binding's type", async () => {
     const body = (recv: string) =>
       `${types}\nstruct Baz;\nimpl Foo { fn new() -> Foo { Foo } fn bar(&self) {} }\nimpl Baz { fn bar(&self) {} }\nfn run() {\n    let k = Foo::new();\n    let opt = compute();\n    if let Some(k) = opt {\n        ${recv}.bar();\n    }\n}\n`;
     const unbound = fixture(body("other"), materialized).target("other.bar()");
@@ -180,7 +182,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(shadowed).toBe(unbound);
   });
 
-  it("reads the outer binding after a closure on the same line", () => {
+  it("reads the outer binding after a closure on the same line", async () => {
     const f = fixture(
       `${types}\nfn run(w: Foo, o: Option<Missing>) {\n    let same = o.map(|w| w.m()) == Some(w.m());\n}\n`,
       materialized,
@@ -189,7 +191,7 @@ describe.each([false, true])("Rust pattern binding typing (materialized=%s)", (m
     expect(f.target("w.m()", "run", 1)).toBe("Foo#m");
   });
 
-  it("restores the outer binding after the pattern scope ends", () => {
+  it("restores the outer binding after the pattern scope ends", async () => {
     const f = fixture(
       `${types}\nfn run(x: Foo, o: Option<Missing>) {\n    if let Some(x) = o {\n        x.m();\n    }\n    x.m();\n}\n`,
       materialized,
@@ -223,15 +225,15 @@ impl Error {
 }
 `;
 
-  it("derefs a Box<T> variant payload to T's member", () => {
+  it("derefs a Box<T> variant payload to T's member", async () => {
     expect(fixture(boxed, materialized).target("err.is_io()", "Error#is_io")).toBe("Error#is_io");
   });
 
-  it("resolves a pointer-answered member on Box<T> to T's own declaration", () => {
+  it("resolves a pointer-answered member on Box<T> to T's own declaration", async () => {
     expect(fixture(boxed, materialized).target("err.clone()", "Error#clone")).toBe("Error#clone");
   });
 
-  it("derefs a project smart pointer payload through its Deref impl", () => {
+  it("derefs a project smart pointer payload through its Deref impl", async () => {
     const code = `
 struct DomRoot<T> { ptr: T }
 impl<T> std::ops::Deref for DomRoot<T> {
@@ -250,7 +252,7 @@ fn run(e: Ev) {
     expect(fixture(code, materialized).target("ws.close()")).toBe("Ws#close");
   });
 
-  it("falls through an unproven typed miss exactly like an unbound receiver", () => {
+  it("falls through an unproven typed miss exactly like an unbound receiver", async () => {
     const body = (recv: string) => `
 struct Wrap<T> { inner: T }
 impl<T> std::ops::Deref for Wrap<T> {
@@ -271,7 +273,7 @@ fn run(s: Slot) {
     expect(fixture(body("w"), materialized).target("w.ping()")).toBe(unbound);
   });
 
-  it("falls through a typed closure parameter whose alias type the fold cannot follow", () => {
+  it("falls through a typed closure parameter whose alias type the fold cannot follow", async () => {
     const body = (recv: string) => `
 struct Font;
 impl Font { fn has_glyph(&self) -> bool { true } }
@@ -285,7 +287,7 @@ fn run(fonts: Vec<FontRef>) {
     expect(fixture(body("font"), materialized).target("font.has_glyph()")).toBe(unbound);
   });
 
-  it("keeps dropping a typed closure parameter's proven miss on a primitive", () => {
+  it("keeps dropping a typed closure parameter's proven miss on a primitive", async () => {
     const code = `
 struct Datum;
 impl Datum { fn to_string(&self) -> String { String::new() } }
@@ -296,7 +298,7 @@ fn run(ids: Vec<usize>) {
     expect(fixture(code, materialized).target("id.to_string()")).toBeNull();
   });
 
-  it("derefs a typed closure parameter through a project Deref impl", () => {
+  it("derefs a typed closure parameter through a project Deref impl", async () => {
     const code = `
 struct DomRoot<T> { ptr: T }
 impl<T> std::ops::Deref for DomRoot<T> {

@@ -15,9 +15,12 @@ import {
 } from "../../../../../../src/core/domains/language/javascript/chunking/test-scope-chunker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
+/** Preloaded once at module scope; the end-to-end describe builds its chunker from it. */
+const factory = await LanguageFactory.preloaded();
+
 let jsParser: Parser;
 
-beforeAll(() => {
+beforeAll(async () => {
   jsParser = new Parser();
   jsParser.setLanguage(JsLang);
 });
@@ -43,13 +46,13 @@ const defaultConfig = { maxChunkSize: 5000 };
 // ── Hook chain composition (bd tea-rags-mcp-1etj8) ──────────────────
 
 describe("javascriptHooks composition", () => {
-  it("composes the test DSL filter and the test-scope chunker alongside the assignment filter", () => {
+  it("composes the test DSL filter and the test-scope chunker alongside the assignment filter", async () => {
     const names = javascriptHooks.map((h) => h.name);
     expect(names).toContain("js-test-dsl-filter");
     expect(names).toContain("js-test-scope-chunker");
   });
 
-  it("orders filter hooks first, then the scope chunker (chunker-hooks.md canonical order)", () => {
+  it("orders filter hooks first, then the scope chunker (chunker-hooks.md canonical order)", async () => {
     const names = javascriptHooks.map((h) => h.name);
     const dslFilter = names.indexOf("js-test-dsl-filter");
     const assignmentFilter = names.indexOf("js-assignment-filter");
@@ -63,28 +66,28 @@ describe("javascriptHooks composition", () => {
 // ── jsTestDslFilterHook (filterNode) ─────────────────────────────────
 
 describe("jsTestDslFilterHook filterNode", () => {
-  it("accepts DSL calls in test files", () => {
-    const code = `describe('User', () => { it('works with a reasonably long assertion', () => { expect(1).toBe(1); }); });`;
+  it("accepts DSL calls in test files", async () => {
+    const code = `describe('User', () => { it('works with a reasonably long assertion', async () => { expect(1).toBe(1); }); });`;
     const tree = parseJs(code);
     const call = findTopLevelCall(tree);
     expect(jsTestDslFilterHook.filterNode?.(call as never, code, "tests/user.test.js")).toBe(true);
   });
 
-  it("rejects DSL calls in non-test files", () => {
-    const code = `describe('User', () => { it('works with a reasonably long assertion', () => { expect(1).toBe(1); }); });`;
+  it("rejects DSL calls in non-test files", async () => {
+    const code = `describe('User', () => { it('works with a reasonably long assertion', async () => { expect(1).toBe(1); }); });`;
     const tree = parseJs(code);
     const call = findTopLevelCall(tree);
     expect(jsTestDslFilterHook.filterNode?.(call as never, code, "src/user/service.js")).toBe(false);
   });
 
-  it("rejects non-DSL calls in test files", () => {
+  it("rejects non-DSL calls in test files", async () => {
     const code = `renderNothing(here);`;
     const tree = parseJs(code);
     const call = findTopLevelCall(tree);
     expect(jsTestDslFilterHook.filterNode?.(call as never, code, "tests/user.test.js")).toBe(false);
   });
 
-  it("has no opinion on non-call_expression nodes (undefined — other filters decide)", () => {
+  it("has no opinion on non-call_expression nodes (undefined — other filters decide)", async () => {
     const code = `class User { render() {} }`;
     const tree = parseJs(code);
     const classDecl = tree.rootNode.namedChildren.find((c) => c.type === "class_declaration");
@@ -100,13 +103,13 @@ describe("jsTestDslFilterHook filterNode", () => {
 // `children.length === 0` (was `isLeaf`) and a scope's own examples are
 // `examples` (was `ownItBlocks`); the tree each case builds is unchanged.
 describe("buildScopeTree", () => {
-  it("builds a single leaf scope from describe with only it blocks", () => {
+  it("builds a single leaf scope from describe with only it blocks", async () => {
     const code = `describe('User', () => {
-  it('validates name', () => {
+  it('validates name', async () => {
     expect(user.name).toBeDefined();
   });
 
-  it('validates email', () => {
+  it('validates email', async () => {
     expect(user.email).toBeDefined();
   });
 });`;
@@ -121,16 +124,16 @@ describe("buildScopeTree", () => {
     expect(scope.setupLines).toHaveLength(0);
   });
 
-  it("builds intermediate + leaf scopes (describe/it nesting)", () => {
+  it("builds intermediate + leaf scopes (describe/it nesting)", async () => {
     const code = `describe('User', () => {
   describe('when admin', () => {
-    it('has admin role', () => {
+    it('has admin role', async () => {
       expect(user.role).toBe('admin');
     });
   });
 
   describe('when guest', () => {
-    it('has guest role', () => {
+    it('has guest role', async () => {
       expect(user.role).toBe('guest');
     });
   });
@@ -148,15 +151,15 @@ describe("buildScopeTree", () => {
     expect(scope.children[1].children).toHaveLength(0);
   });
 
-  it("collects setup lines (beforeEach, beforeAll) at each level", () => {
+  it("collects setup lines (beforeEach, beforeAll) at each level", async () => {
     const code = `describe('User', () => {
-  beforeEach(() => { signIn(user); });
-  beforeAll(() => { setupDb(); });
+  beforeEach(async () => { signIn(user); });
+  beforeAll(async () => { setupDb(); });
 
   describe('when admin', () => {
-    beforeEach(() => { user.role = 'admin'; });
+    beforeEach(async () => { user.role = 'admin'; });
 
-    it('returns true', () => {
+    it('returns true', async () => {
       expect(user.isAdmin()).toBe(true);
     });
   });
@@ -174,14 +177,14 @@ describe("buildScopeTree", () => {
     expect(childScope.setupLines[0].text).toContain("user.role = 'admin'");
   });
 
-  it("recognises member-expression DSL calls (it.skip, describe.only) as scope members", () => {
+  it("recognises member-expression DSL calls (it.skip, describe.only) as scope members", async () => {
     const code = `describe('User', () => {
   describe.only('focused suite', () => {
     it.skip('pending', () => {
       expect(1).toBe(1);
     });
 
-    it('runs', () => {
+    it('runs', async () => {
       expect(true).toBe(true);
     });
   });
@@ -197,7 +200,7 @@ describe("buildScopeTree", () => {
     expect(focused.examples).toHaveLength(2);
   });
 
-  it("handles function-expression callbacks (Jest/Mocha idiom)", () => {
+  it("handles function-expression callbacks (Jest/Mocha idiom)", async () => {
     const code = `describe('User', function () {
   it('validates name', function () {
     expect(user.name).toBeDefined();
@@ -215,14 +218,14 @@ describe("buildScopeTree", () => {
 // ── produceScopeChunks ───────────────────────────────────────────────
 
 describe("produceScopeChunks", () => {
-  it("produces a single test chunk for a leaf scope", () => {
+  it("produces a single test chunk for a leaf scope", async () => {
     const code = `describe('User', () => {
-  it('validates name correctly with full assertion coverage', () => {
+  it('validates name correctly with full assertion coverage', async () => {
     expect(user.name).toBeDefined();
     expect(user.name.length).toBeGreaterThan(0);
   });
 
-  it('validates email correctly with full assertion coverage', () => {
+  it('validates email correctly with full assertion coverage', async () => {
     expect(user.email).toBeDefined();
     expect(user.email).toMatch(/@/);
   });
@@ -246,13 +249,13 @@ describe("produceScopeChunks", () => {
     expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'"]);
   });
 
-  it("injects parent setup into leaf chunks (scope preserved)", () => {
+  it("injects parent setup into leaf chunks (scope preserved)", async () => {
     const code = `describe('User', () => {
-  beforeEach(() => { signIn(user); });
-  beforeAll(() => { setupDatabase(); });
+  beforeEach(async () => { signIn(user); });
+  beforeAll(async () => { setupDatabase(); });
 
   describe('when admin', () => {
-    it('has admin role and full permission set for management ops', () => {
+    it('has admin role and full permission set for management ops', async () => {
       expect(user.role).toBe('admin');
       expect(user.permissions).toContain('manage');
     });
@@ -279,10 +282,10 @@ describe("produceScopeChunks", () => {
     expect(example.startLine).toBeGreaterThanOrEqual(5);
   });
 
-  it("uses 2-level symbolId format: TopLevelName.leafScopeName", () => {
+  it("uses 2-level symbolId format: TopLevelName.leafScopeName", async () => {
     const code = `describe('User', () => {
   describe('when admin', () => {
-    it('has permissions for managing all system resources globally', () => {
+    it('has permissions for managing all system resources globally', async () => {
       expect(user.isAdmin()).toBe(true);
       expect(user.permissions).toContain('manage');
     });
@@ -303,7 +306,7 @@ describe("produceScopeChunks", () => {
     expect(chunks[0].name).toBe("it 'has permissions for managing all system resources globally'");
   });
 
-  it("produces no chunks for empty describe block", () => {
+  it("produces no chunks for empty describe block", async () => {
     const code = `describe('User', () => {});`;
 
     const tree = parseJs(code);
@@ -313,17 +316,17 @@ describe("produceScopeChunks", () => {
     expect(chunks).toHaveLength(0);
   });
 
-  it("splits oversized leaf by it blocks when exceeding maxChunkSize", () => {
+  it("splits oversized leaf by it blocks when exceeding maxChunkSize", async () => {
     const longBody = "    expect(result).toBe('x');\n".repeat(20);
     const code = `describe('User', () => {
   describe('validations', () => {
-    it('validates name', () => {
+    it('validates name', async () => {
 ${longBody}    });
 
-    it('validates email', () => {
+    it('validates email', async () => {
 ${longBody}    });
 
-    it('validates phone', () => {
+    it('validates phone', async () => {
 ${longBody}    });
   });
 });`;
@@ -366,8 +369,8 @@ describe("jsTestScopeChunkerHook process guards", () => {
     };
   }
 
-  it("no-ops on non-test files (does not touch bodyChunks)", () => {
-    const code = `describe('User', () => { it('validates name correctly with full coverage', () => { expect(user.name).toBeDefined(); expect(user.name.length).toBeGreaterThan(0); }); });`;
+  it("no-ops on non-test files (does not touch bodyChunks)", async () => {
+    const code = `describe('User', () => { it('validates name correctly with full coverage', async () => { expect(user.name).toBeDefined(); expect(user.name.length).toBeGreaterThan(0); }); });`;
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
     const ctx = makeCtx(node, code, "src/foo/bar.js");
@@ -378,7 +381,7 @@ describe("jsTestScopeChunkerHook process guards", () => {
     expect(ctx.skipChildren).toBe(false);
   });
 
-  it("no-ops when containerNode is not a call_expression (e.g. class_declaration)", () => {
+  it("no-ops when containerNode is not a call_expression (e.g. class_declaration)", async () => {
     const code = `class Foo { method() {} }`;
     const tree = parseJs(code);
     const classDecl = tree.rootNode.namedChildren.find((c) => c.type === "class_declaration");
@@ -391,8 +394,8 @@ describe("jsTestScopeChunkerHook process guards", () => {
     expect(ctx.skipChildren).toBe(false);
   });
 
-  it("no-ops when containerNode is a non-container DSL call (it()) — only describe/context/suite produce scopes", () => {
-    const code = `it('top-level it call outside describe — should not produce a scope', () => { expect(true).toBe(true); });`;
+  it("no-ops when containerNode is a non-container DSL call (it()) — only describe/context/suite produce scopes", async () => {
+    const code = `it('top-level it call outside describe — should not produce a scope', async () => { expect(true).toBe(true); });`;
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
     const ctx = makeCtx(node, code, "tests/foo.test.js");
@@ -403,9 +406,9 @@ describe("jsTestScopeChunkerHook process guards", () => {
     expect(ctx.skipChildren).toBe(false);
   });
 
-  it("populates bodyChunks and sets skipChildren on valid describe in test file", () => {
+  it("populates bodyChunks and sets skipChildren on valid describe in test file", async () => {
     const code = `describe('User', () => {
-  it('validates name and ensures correct behaviour across the suite', () => {
+  it('validates name and ensures correct behaviour across the suite', async () => {
     expect(user.name).toBeDefined();
     expect(user.name).not.toBe('');
   });
@@ -424,7 +427,7 @@ describe("jsTestScopeChunkerHook process guards", () => {
 // ── isDslContainerCall ───────────────────────────────────────────────
 
 describe("isDslContainerCall", () => {
-  it("returns false for non-call_expression nodes (defensive guard)", () => {
+  it("returns false for non-call_expression nodes (defensive guard)", async () => {
     const code = `class Foo { method() {} }`;
     const tree = parseJs(code);
     const classDecl = tree.rootNode.namedChildren.find((c) => c.type === "class_declaration");
@@ -433,7 +436,7 @@ describe("isDslContainerCall", () => {
     expect(isDslContainerCall(classDecl as never, code)).toBe(false);
   });
 
-  it("returns true for describe/context/suite calls", () => {
+  it("returns true for describe/context/suite calls", async () => {
     for (const name of ["describe", "context", "suite"]) {
       const code = `${name}('x', () => {})`;
       const tree = parseJs(code);
@@ -442,8 +445,8 @@ describe("isDslContainerCall", () => {
     }
   });
 
-  it("returns false for example methods (it/test) at top level", () => {
-    const code = `it('x', () => {})`;
+  it("returns false for example methods (it/test) at top level", async () => {
+    const code = `it('x', async () => {})`;
     const tree = parseJs(code);
     const call = findTopLevelCall(tree);
     expect(isDslContainerCall(call, code)).toBe(false);
@@ -458,21 +461,21 @@ describe("TreeSitterChunker JS test-scope chunking (end-to-end)", () => {
     chunkOverlap: 50,
     maxChunkSize: 1000,
   };
-  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), factory);
 
   it("produces test chunks with parent setup injection for a nested .test.js file", async () => {
     const code = `describe('UserService', () => {
-  beforeEach(() => { signIn(user); });
+  beforeEach(async () => { signIn(user); });
 
   describe('when admin', () => {
-    it('has admin access and can manage every resource in the system', () => {
+    it('has admin access and can manage every resource in the system', async () => {
       expect(user).toBeAdmin();
       expect(user.permissions).toContain('manage');
     });
   });
 
   describe('when regular', () => {
-    it('has limited access and cannot manage any resource globally', () => {
+    it('has limited access and cannot manage any resource globally', async () => {
       expect(user).not.toBeAdmin();
     });
   });
@@ -507,7 +510,7 @@ describe("TreeSitterChunker JS test-scope chunking (end-to-end)", () => {
   it("does not claim DSL containers in non-test JS files", async () => {
     const code = `function renderUser(user) {
   describe('stray describe in production code', () => {
-    it('would be an unexpected test chunk in a source file', () => {
+    it('would be an unexpected test chunk in a source file', async () => {
       expect(user).toBeDefined();
     });
   });

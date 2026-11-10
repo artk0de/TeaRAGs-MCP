@@ -16,7 +16,7 @@ import {
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { SHARED_LANGUAGE } from "../../../../../src/core/domains/language/kernel/capability.js";
 
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 
 describe("resolveLanguageCodeVersions", () => {
   it("combines the descriptor's hand-bumped versions with the installed grammar version", () => {

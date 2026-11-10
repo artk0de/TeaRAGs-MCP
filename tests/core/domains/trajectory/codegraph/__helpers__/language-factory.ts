@@ -3,6 +3,12 @@ import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contr
 import { LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 
 /**
+ * Preloaded once at module scope (top-level await), so the helpers below stay
+ * SYNC and every existing call site keeps its shape (bd tea-rags-mcp-zkd96).
+ */
+const factory = await LanguageFactory.preloaded();
+
+/**
  * Build a `LanguageFactoryDescriptor` for codegraph provider tests. All languages are
  * native `domains/language/<lang>` providers built by the factory itself — the
  * provider reads each walker (`walk`/`nameOf`) and resolver from
@@ -10,7 +16,7 @@ import { LanguageFactory } from "../../../../../../src/core/domains/language/ind
  * by tea-rags-mcp-jh40.
  */
 export function languageFactory(): LanguageFactoryDescriptor {
-  return new LanguageFactory();
+  return factory;
 }
 
 /**
@@ -26,5 +32,5 @@ export function languageFactory(): LanguageFactoryDescriptor {
 export function buildTestCodegraphDeps(_resolvers?: Map<string, CallResolver>): {
   languageFactory: LanguageFactoryDescriptor;
 } {
-  return { languageFactory: languageFactory() };
+  return { languageFactory: factory };
 }

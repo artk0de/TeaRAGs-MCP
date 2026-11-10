@@ -62,11 +62,11 @@ function requestMethods(from: number, count: number): string {
 describe("TreeSitterChunker — TypeScript class body rows and short methods (bd xiki8)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

@@ -286,8 +286,8 @@ export function buildTestTrajectoryConfig(overrides = {}) {
  * @param overrides    Optional: { config, trajectoryConfig, snapshotDir, pipelineTuning, syncTuning }.
  * @returns            { ingest, explore, statsCache, collectionRegistry, composition, snapshotDir }
  */
-export function createTestFacades(qdrant, embeddings, overrides = {}) {
-  const composition = createComposition();
+export async function createTestFacades(qdrant, embeddings, overrides = {}) {
+  const composition = await createComposition();
   const dataDir = process.env.TEA_RAGS_DATA_DIR || join(homedir(), ".tea-rags");
   const snapshotDir = overrides.snapshotDir || join(dataDir, "snapshots");
 

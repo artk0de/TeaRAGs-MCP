@@ -54,7 +54,7 @@ export async function buildToolSurface(codegraph: boolean): Promise<ToolSurface>
   // Registering the codegraph trajectory never touches its deps; listing tools
   // runs no enrichment, so an empty stub stands in for the real pool.
   const codegraphDeps = { pool: {} as GraphDbClientPool } as unknown as CodegraphDeps;
-  const { registry, reranker } = createComposition(codegraph ? { codegraph: codegraphDeps } : {});
+  const { registry, reranker } = await createComposition(codegraph ? { codegraph: codegraphDeps } : {});
   const schemaBuilder = new SchemaBuilder(reranker);
   const app = {
     hasProvider: (key: string) => codegraph && key === "codegraph.symbols",

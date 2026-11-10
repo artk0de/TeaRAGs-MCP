@@ -37,7 +37,7 @@ import { collectSymbols } from "../../../../../../src/core/domains/language/kern
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
 const composer = new DefaultSymbolIdComposer();
-const languages = new LanguageFactory();
+const languages = await LanguageFactory.preloaded();
 
 /**
  * An object literal passed straight as a call argument — the reproducer from

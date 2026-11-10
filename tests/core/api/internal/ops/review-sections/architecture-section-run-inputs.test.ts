@@ -56,12 +56,12 @@ vi.mock("../../../../../../src/core/api/internal/ops/diff-detector-run.js", asyn
 
 let workTree: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   workTree = mkdtempSync(join(tmpdir(), "architecture-section-run-inputs-"));
   captured.deps.length = 0;
 });
 
-afterEach(() => {
+afterEach(async () => {
   rmSync(workTree, { recursive: true, force: true });
 });
 
@@ -124,6 +124,9 @@ function graphDbStub(graph: FileDependencyGraph) {
   };
 }
 
+/** Preloaded once at module scope; `runContext()` stays a cheap sync builder. */
+const languageFactory = await LanguageFactory.preloaded({});
+
 function runContext(graph: FileDependencyGraph): ReviewSectionContext {
   const scope: DiffScopeRead = {
     workTree,
@@ -144,7 +147,7 @@ function runContext(graph: FileDependencyGraph): ReviewSectionContext {
     temporalCochangeError: undefined,
     lexiconOps: undefined,
     reviewEdgeExtraction: {
-      languageFactory: new LanguageFactory({}),
+      languageFactory,
       collectSymbols,
       composer: new DefaultSymbolIdComposer(),
     },

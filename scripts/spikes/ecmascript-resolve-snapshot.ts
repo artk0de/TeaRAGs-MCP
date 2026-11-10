@@ -151,7 +151,7 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
     await import("../ts-codegraph-typechecker-oracle.js");
 
   const root = resolvePath(opts.root);
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const composer = new DefaultSymbolIdComposer();
   const filters = await buildCorpusExclusionFilter(root, factory);
 

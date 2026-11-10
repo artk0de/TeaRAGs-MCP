@@ -20,7 +20,7 @@ import type { CodeChunk } from "../../../../../../src/core/types.js";
 import { OVERSIZED_SYMBOL_FIXTURES } from "./__helpers__/oversized-symbol-fixtures.js";
 
 const BUDGET = 600;
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 
 /** Every language chunked through tree-sitter — derived, never hand-listed. */
 const AST_LANGUAGES = factory.supported().filter((lang) => {

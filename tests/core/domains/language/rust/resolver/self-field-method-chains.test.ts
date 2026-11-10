@@ -19,13 +19,13 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * included. A chain that ends on a std type with no project impl of the
  * member classifies EXTERNAL; one that ends on a project type resolves.
  */
-function fixture(code: string) {
+async function fixture(code: string) {
   const language = new RustLanguage();
   const runState = new CodegraphRunState(
     [],
     new Map(),
     new Map(),
-    collectTypeDeclarationReaders(new LanguageFactory()),
+    collectTypeDeclarationReaders(await LanguageFactory.preloaded()),
   );
   const symbolTable = new InMemoryGlobalSymbolTable();
   const relPath = "src/main.rs";
@@ -84,21 +84,21 @@ impl Other { fn finish(&self) {} fn push(&self) {} fn is_empty(&self) {} fn clon
 const productFinish = { targetRelPath: "src/main.rs", targetSymbolId: "Product#finish" };
 
 describe("Rust self-field and method-return chains (2g2og.24)", () => {
-  it("records tuple-struct positional fields in the placed field map", () => {
-    const f = fixture(`${project}
+  it("records tuple-struct positional fields in the placed field map", async () => {
+    const f = await fixture(`${project}
 struct Wrap(Product, Vec<u8>);`);
     expect(f.extraction.classFieldTypesByClassKey?.["src/main.rs::Wrap"]).toEqual({ "0": "Product", "1": "Vec" });
   });
 
-  it("resolves a tuple field receiver `self.0`", () => {
-    const f = fixture(`${project}
+  it("resolves a tuple field receiver `self.0`", async () => {
+    const f = await fixture(`${project}
 struct Wrap(Product);
 impl Wrap { fn run(&self) { self.0.finish(); } }`);
     expect(f.resolve("self.0.finish()")).toEqual(productFinish);
   });
 
-  it("resolves a multi-line self-field chain", () => {
-    const f = fixture(`${project}
+  it("resolves a multi-line self-field chain", async () => {
+    const f = await fixture(`${project}
 struct Inner { product: Product }
 struct Holder { inner: Inner }
 impl Holder { fn run(&self) {
@@ -112,8 +112,8 @@ impl Holder { fn run(&self) {
     expect(f.resolve(text)).toEqual(productFinish);
   });
 
-  it("types a method return through owner generics it cannot substitute", () => {
-    const f = fixture(`${project}
+  it("types a method return through owner generics it cannot substitute", async () => {
+    const f = await fixture(`${project}
 struct Store<E> { e: E }
 impl<E> Store<E> { fn applied(&self) {} }
 impl Other { fn applied(&self) {} }
@@ -128,8 +128,8 @@ impl<E> Peer<E> {
     });
   });
 
-  it("unwraps a declared Option return only through unwrap / expect / ?", () => {
-    const f = fixture(`${project}
+  it("unwraps a declared Option return only through unwrap / expect / ?", async () => {
+    const f = await fixture(`${project}
 struct Holder;
 impl Holder {
     fn product(&self) -> Option<Product> { None }
@@ -145,8 +145,8 @@ impl Holder {
     expect(f.resolve("self.product()?.finish()")).toEqual(productFinish);
   });
 
-  it("derefs a std smart-pointer field to its project target, but not for the pointer's own members", () => {
-    const f = fixture(`${project}
+  it("derefs a std smart-pointer field to its project target, but not for the pointer's own members", async () => {
+    const f = await fixture(`${project}
 use std::sync::Arc;
 struct Holder { product: Arc<Product> }
 impl Holder { fn run(&self) { self.product.finish(); self.product.clone(); } }`);
@@ -155,8 +155,8 @@ impl Holder { fn run(&self) { self.product.finish(); self.product.clone(); } }`)
     expect(f.external("self.product.clone()")).toBe(true);
   });
 
-  it("derefs a Box field like Rust's auto-deref (PIN-UPDATED: was 'Box is not transparent')", () => {
-    const f = fixture(`${project}
+  it("derefs a Box field like Rust's auto-deref (PIN-UPDATED: was 'Box is not transparent')", async () => {
+    const f = await fixture(`${project}
 struct Holder { value: Box<Product> }
 fn run(holder: Holder) { holder.value.finish(); }`);
     expect(f.resolve("holder.value.finish()")).toEqual(productFinish);
@@ -175,24 +175,27 @@ fn run(holder: Holder) { holder.value.finish(); }`);
       "struct Holder { maybe: Option<Product> }",
       "impl Holder { fn run(&self) { self.maybe.is_some(); } }",
     ],
-  ])("classifies %s — a typed chain ending on a std type — external, never a short-name edge", (call, decl, body) => {
-    const f = fixture(`${project}
+  ])(
+    "classifies %s — a typed chain ending on a std type — external, never a short-name edge",
+    async (call, decl, body) => {
+      const f = await fixture(`${project}
 ${decl}
 ${body}`);
-    expect(f.resolve(call)).toBeNull();
-    expect(f.external(call)).toBe(true);
-  });
+      expect(f.resolve(call)).toBeNull();
+      expect(f.external(call)).toBe(true);
+    },
+  );
 
-  it("keeps a chain ending on a project type in the denominator when the member is missing", () => {
-    const f = fixture(`${project}
+  it("keeps a chain ending on a project type in the denominator when the member is missing", async () => {
+    const f = await fixture(`${project}
 struct Holder { product: Product }
 impl Holder { fn run(&self) { self.product.push(); } }`);
     expect(f.resolve("self.product.push()")).toBeNull();
     expect(f.external("self.product.push()")).toBe(false);
   });
 
-  it("keeps a std-typed chain in the denominator when the project implements the member on that std type", () => {
-    const f = fixture(`${project}
+  it("keeps a std-typed chain in the denominator when the project implements the member on that std type", async () => {
+    const f = await fixture(`${project}
 trait Grow { fn grow(&mut self); }
 impl Grow for Vec<u8> { fn grow(&mut self) {} }
 struct Holder { items: Vec<u8> }

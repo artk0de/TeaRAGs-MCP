@@ -45,8 +45,12 @@ export interface ProjectIngestFactoryDeps {
    * so the CLI keeps running on the single composition-root facade.
    */
   processIngest: IngestFacade;
-  /** Builds an IngestFacade from a fully-resolved env map. */
-  buildIngest: (env: Record<string, string>) => IngestFacade;
+  /**
+   * Builds an IngestFacade from a fully-resolved env map. May be async: the
+   * per-project composition preloads the lazy language provider modules
+   * (bd tea-rags-mcp-zkd96).
+   */
+  buildIngest: (env: Record<string, string>) => IngestFacade | Promise<IngestFacade>;
   /** Env this process was started with. Read only — never mutated. */
   ambientEnv?: NodeJS.ProcessEnv;
   /**
@@ -73,7 +77,7 @@ export class ProjectIngestFactory {
   constructor(private readonly deps: ProjectIngestFactoryDeps) {}
 
   /** The IngestFacade an index run of `path` must use. */
-  forPath(path: string): IngestFacade {
+  async forPath(path: string): Promise<IngestFacade> {
     const ambient = this.deps.ambientEnv ?? process.env;
     const overlay = this.overlayFor(path, ambient);
     // Replay dropped every key the ambient env may override, so an empty
@@ -83,7 +87,7 @@ export class ProjectIngestFactory {
     const key = fingerprint(overlay);
     const cached = this.byEnv.get(key);
     if (cached) return cached;
-    const built = this.deps.buildIngest(overlayOnto(ambient, overlay));
+    const built = await this.deps.buildIngest(overlayOnto(ambient, overlay));
     this.byEnv.set(key, built);
     return built;
   }

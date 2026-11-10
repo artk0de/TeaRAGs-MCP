@@ -39,19 +39,19 @@ describe("fullRegistryPayloadSignalDescriptors", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  function compositionWithEveryTrajectory() {
-    return createComposition({ codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) } });
+  async function compositionWithEveryTrajectory() {
+    return await createComposition({ codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) } });
   }
 
-  it("covers every payload signal a composition with every trajectory registers", () => {
+  it("covers every payload signal a composition with every trajectory registers", async () => {
     const declared = physicalKeys(fullRegistryPayloadSignalDescriptors());
-    const registered = physicalKeys(compositionWithEveryTrajectory().allPayloadSignalDescriptors);
+    const registered = physicalKeys((await compositionWithEveryTrajectory()).allPayloadSignalDescriptors);
 
     expect([...registered].filter((key) => !declared.has(key))).toEqual([]);
   });
 
-  it("declares the codegraph keys even when the running composition leaves codegraph out", () => {
-    const withoutCodegraph = physicalKeys(createComposition().allPayloadSignalDescriptors);
+  it("declares the codegraph keys even when the running composition leaves codegraph out", async () => {
+    const withoutCodegraph = physicalKeys((await createComposition()).allPayloadSignalDescriptors);
     const declared = physicalKeys(fullRegistryPayloadSignalDescriptors());
 
     expect(withoutCodegraph.has("codegraph.symbols.chunk.pageRank")).toBe(false);
@@ -67,9 +67,9 @@ describe("fullRegistryPayloadSignalDescriptors", () => {
   // The historical shape of the bug: codegraph's derived signals resolved
   // without codegraph's payload descriptors. RankModule used to guess
   // `git.file.fanIn` there; it must order by nothing instead.
-  it("orders by nothing when a derived signal's payload descriptors are absent", () => {
-    const withCodegraph = compositionWithEveryTrajectory();
-    const withoutCodegraph = createComposition();
+  it("orders by nothing when a derived signal's payload descriptors are absent", async () => {
+    const withCodegraph = await compositionWithEveryTrajectory();
+    const withoutCodegraph = await createComposition();
     const codegraphOnly = withCodegraph.allDerivedSignals.filter(
       (signal) => !withoutCodegraph.allDerivedSignals.some((other) => other.name === signal.name),
     );
@@ -87,10 +87,10 @@ describe("fullRegistryPayloadSignalDescriptors", () => {
     }
   });
 
-  it("leaves rank_chunks no order_by key outside the declared set, codegraph on or off", () => {
+  it("leaves rank_chunks no order_by key outside the declared set, codegraph on or off", async () => {
     const declared = physicalKeys(fullRegistryPayloadSignalDescriptors());
 
-    for (const composition of [createComposition(), compositionWithEveryTrajectory()]) {
+    for (const composition of [await createComposition(), await compositionWithEveryTrajectory()]) {
       const rankModule = new RankModule(
         composition.reranker,
         composition.allDerivedSignals,

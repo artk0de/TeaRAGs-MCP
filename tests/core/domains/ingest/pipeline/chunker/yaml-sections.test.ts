@@ -33,11 +33,11 @@ function paths(chunks: CodeChunk[]): string[][] {
 describe("yaml section splitting (TreeSitterChunker, language yaml)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize: MAX },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

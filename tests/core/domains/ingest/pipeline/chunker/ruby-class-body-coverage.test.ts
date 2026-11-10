@@ -61,11 +61,11 @@ function requestMethods(count: number, indent: string): string {
 describe("TreeSitterChunker — Ruby class body rows and short defs (bd 30qdc)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

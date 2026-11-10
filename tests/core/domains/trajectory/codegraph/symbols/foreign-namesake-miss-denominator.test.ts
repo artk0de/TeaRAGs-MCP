@@ -35,7 +35,7 @@ function tableWith(files: Record<string, readonly string[]>): InMemoryGlobalSymb
   return table;
 }
 
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 
 const CASES = [
   { language: "ruby", callerFile: "app/services/report.rb", ownFile: "app/models/widget.rb" },

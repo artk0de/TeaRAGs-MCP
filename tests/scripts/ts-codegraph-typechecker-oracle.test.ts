@@ -985,7 +985,7 @@ describe("collectSourceFiles corpus scope", () => {
   });
 
   it("keeps the source files production builds codegraph nodes for", async () => {
-    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+    const exclude = await buildCorpusExclusionFilter(repoRoot, await LanguageFactory.preloaded());
 
     const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
 
@@ -993,7 +993,7 @@ describe("collectSourceFiles corpus scope", () => {
   });
 
   it("counts a gitignored file apart from one the codegraph layer drops", async () => {
-    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+    const exclude = await buildCorpusExclusionFilter(repoRoot, await LanguageFactory.preloaded());
 
     const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
 

@@ -69,7 +69,7 @@ export interface ExploreFacadeDeps {
    * through to IndexMetricsQuery. Resolved per request because the slice is
    * per project (bd tea-rags-mcp-uebug).
    */
-  enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  enrichmentHealthFrameForPath?: (path: string) => readonly string[] | Promise<readonly string[]>;
   /** The `workingTree` marker source (bd tea-rags-mcp-xi2r9), threaded through to ExploreOps. */
   workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
   /** The query clock of an index (bd tea-rags-mcp-zwu7m), threaded through to ExploreOps. */

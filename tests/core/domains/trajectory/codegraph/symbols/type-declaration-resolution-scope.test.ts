@@ -40,25 +40,25 @@ function resolvingFactory(languages: string[]): LanguageFactoryDescriptor {
 const EMPTY_TABLE = { lookup: () => [], lookupByShortName: () => [] } as unknown as GlobalSymbolTable;
 
 describe("collectTypeDeclarationReaders", () => {
-  it("names exactly the languages whose capability says their resolver reads type declarations", () => {
-    expect([...collectTypeDeclarationReaders(new LanguageFactory())]).toEqual(["rust", "swift"]);
+  it("names exactly the languages whose capability says their resolver reads type declarations", async () => {
+    expect([...collectTypeDeclarationReaders(await LanguageFactory.preloaded())]).toEqual(["rust", "swift"]);
   });
 
-  it("names none without a factory, or with one that publishes no capabilities", () => {
+  it("names none without a factory, or with one that publishes no capabilities", async () => {
     expect(collectTypeDeclarationReaders(undefined).size).toBe(0);
     expect(collectTypeDeclarationReaders(resolvingFactory(["swift"])).size).toBe(0);
   });
 });
 
 describe("CodegraphRunState bound to the type-declaration readers", () => {
-  it("keeps a reading language's declarations in the run-global map", () => {
+  it("keeps a reading language's declarations in the run-global map", async () => {
     const runState = new CodegraphRunState([], new Map(), new Map(), new Set(["swift"]));
     runState.absorb(extraction("Sources/Account.swift", "swift"), []);
     expect(runState.typeDeclarations).toEqual({ "Sources/Account.swift": DECLARATIONS });
   });
 
-  it("retains Rust generic parameters through native reader selection", () => {
-    const readers = collectTypeDeclarationReaders(new LanguageFactory());
+  it("retains Rust generic parameters through native reader selection", async () => {
+    const readers = collectTypeDeclarationReaders(await LanguageFactory.preloaded());
     const runState = new CodegraphRunState([], new Map(), new Map(), readers);
     const rustDeclarations: readonly TypeDeclarationFact[] = [
       { typeId: "Holder", symbolKind: "class", line: 1, reopens: false, genericParameters: ["T"] },
@@ -67,7 +67,7 @@ describe("CodegraphRunState bound to the type-declaration readers", () => {
     expect(runState.typeDeclarations).toEqual({ "src/holder.rs": rustDeclarations });
   });
 
-  it("leaves another language's declarations out of the run-global map", () => {
+  it("leaves another language's declarations out of the run-global map", async () => {
     const runState = new CodegraphRunState([], new Map(), new Map(), new Set(["swift"]));
     runState.absorb(extraction("app/models/account.rb", "ruby"), []);
     expect(runState.typeDeclarations).toEqual({});
@@ -81,11 +81,11 @@ describe("CallEdgeResolutionRunner persists type declarations only for a reading
     return runner.resolve(extraction(relPath, language), EMPTY_TABLE).pass1Aggregates;
   }
 
-  it("carries a reading language's declarations in the pass-1 slice", () => {
+  it("carries a reading language's declarations in the pass-1 slice", async () => {
     expect(sliceOf("swift", "Sources/Account.swift")?.typeDeclarations).toEqual(DECLARATIONS);
   });
 
-  it("writes no slice for another language whose only run-global fact is its declarations", () => {
+  it("writes no slice for another language whose only run-global fact is its declarations", async () => {
     expect(sliceOf("ruby", "app/models/account.rb")).toBeUndefined();
   });
 });

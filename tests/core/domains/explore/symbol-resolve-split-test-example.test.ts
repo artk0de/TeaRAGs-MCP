@@ -69,7 +69,7 @@ describe("find_symbol over a test example split into #partN parts", () => {
       ctx.skipChildren = true;
     });
     const config: ChunkerConfig = { chunkSize: 300, chunkOverlap: 0, maxChunkSize: MAX_CHUNK_SIZE };
-    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
     const chunks = await chunker.chunk(code, PATH, "typescript");
     return chunks
       .filter((c) => c.metadata.chunkType === "test")
@@ -179,7 +179,7 @@ describe("find_symbol over a test example whose container header pushes it past 
       ctx.skipChildren = true;
     });
     const config: ChunkerConfig = { chunkSize: 300, chunkOverlap: 0, maxChunkSize: tightMax };
-    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+    const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), await LanguageFactory.preloaded());
     const chunks = await chunker.chunk(tightCode, PATH, "typescript");
     return chunks
       .filter((c) => c.metadata.chunkType === "test")

@@ -53,11 +53,11 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("registry.getRegisteredKeys() reflects the actual composition", () => {
-    const off = createComposition();
+  it("registry.getRegisteredKeys() reflects the actual composition", async () => {
+    const off = await createComposition();
     expect(new Set(off.registry.getRegisteredKeys())).toEqual(new Set(["static", "git"]));
 
-    const on = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+    const on = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     // The codegraph family registers its temporal co-change sub-graph beside
     // symbols (bd tea-rags-mcp-x4rpp, epic l1ot Slice 5).
     expect(new Set(on.registry.getRegisteredKeys())).toEqual(
@@ -65,40 +65,40 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     );
   });
 
-  it("codegraph OFF: NEW composites (blastRadius, architecturalHub, entryPoint) absent from preset enum", () => {
-    const { reranker } = createComposition();
+  it("codegraph OFF: NEW composites (blastRadius, architecturalHub, entryPoint) absent from preset enum", async () => {
+    const { reranker } = await createComposition();
     const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
     for (const name of NEW_CODEGRAPH_COMPOSITES) {
       expect(semanticPresets.has(name), `${name} must NOT be in preset enum when codegraph is OFF`).toBe(false);
     }
   });
 
-  it("codegraph ON: NEW composites present in preset enum", () => {
-    const { reranker } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+  it("codegraph ON: NEW composites present in preset enum", async () => {
+    const { reranker } = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
     for (const name of NEW_CODEGRAPH_COMPOSITES) {
       expect(semanticPresets.has(name), `${name} must be in preset enum when codegraph is ON`).toBe(true);
     }
   });
 
-  it("codegraph OFF: pure codegraph presets (criticalMethod, hotMethod, godMethod) absent from preset enum", () => {
-    const { reranker } = createComposition();
+  it("codegraph OFF: pure codegraph presets (criticalMethod, hotMethod, godMethod) absent from preset enum", async () => {
+    const { reranker } = await createComposition();
     const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
     for (const name of CODEGRAPH_TRAJECTORY_PRESETS) {
       expect(semanticPresets.has(name), `${name} must NOT be in preset enum when codegraph is OFF`).toBe(false);
     }
   });
 
-  it("codegraph ON: pure codegraph presets present in preset enum", () => {
-    const { reranker } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+  it("codegraph ON: pure codegraph presets present in preset enum", async () => {
+    const { reranker } = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
     for (const name of CODEGRAPH_TRAJECTORY_PRESETS) {
       expect(semanticPresets.has(name), `${name} must be in preset enum when codegraph is ON`).toBe(true);
     }
   });
 
-  it("codegraph OFF: override composites fall back to trajectory presets (resolved by name, not weighted with fanIn)", () => {
-    const { resolvedPresets } = createComposition();
+  it("codegraph OFF: override composites fall back to trajectory presets (resolved by name, not weighted with fanIn)", async () => {
+    const { resolvedPresets } = await createComposition();
     for (const name of OVERRIDE_COMPOSITES) {
       const preset = resolvedPresets.find((p) => p.name === name);
       // The trajectory preset of the same name is still resolved — composite override is the one that's gone.
@@ -108,8 +108,8 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     }
   });
 
-  it("codegraph ON: override composites win resolution (weights include fanIn)", () => {
-    const { resolvedPresets } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+  it("codegraph ON: override composites win resolution (weights include fanIn)", async () => {
+    const { resolvedPresets } = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     for (const name of OVERRIDE_COMPOSITES) {
       const preset = resolvedPresets.find((p) => p.name === name);
       expect(preset).toBeDefined();
@@ -118,16 +118,16 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     }
   });
 
-  it("codegraph OFF: codegraph-owned derived signals (pageRank, transitiveImpact) absent from descriptorInfo", () => {
-    const { reranker } = createComposition();
+  it("codegraph OFF: codegraph-owned derived signals (pageRank, transitiveImpact) absent from descriptorInfo", async () => {
+    const { reranker } = await createComposition();
     const names = new Set(reranker.getDescriptorInfo().map((d) => d.name));
     expect(names.has("pageRank")).toBe(false);
     expect(names.has("transitiveImpact")).toBe(false);
     expect(names.has("isHub")).toBe(false);
   });
 
-  it("codegraph ON: codegraph-owned derived signals present in descriptorInfo", () => {
-    const { reranker } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+  it("codegraph ON: codegraph-owned derived signals present in descriptorInfo", async () => {
+    const { reranker } = await createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     const names = new Set(reranker.getDescriptorInfo().map((d) => d.name));
     expect(names.has("pageRank")).toBe(true);
     expect(names.has("transitiveImpact")).toBe(true);

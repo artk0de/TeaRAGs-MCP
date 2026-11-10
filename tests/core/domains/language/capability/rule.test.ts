@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { renderRule } from "../../../../../src/core/domains/language/capability/rule.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 
+const caps = (await LanguageFactory.preloaded()).capabilities();
+
 describe("renderRule", () => {
-  const out = renderRule(new LanguageFactory().capabilities());
+  const out = renderRule(caps);
 
   it("emits the H1 and the matrix header", () => {
     expect(out).toContain("# Language Compatibility");
@@ -42,8 +44,8 @@ describe("renderRule", () => {
     expect(out).toContain("GENERATED");
   });
 
-  it("keeps the full resolution tech for humans even when a descriptor declares a summary", () => {
-    const caps = new LanguageFactory().capabilities();
+  it("keeps the full resolution tech for humans even when a descriptor declares a summary", async () => {
+    const caps = (await LanguageFactory.preloaded()).capabilities();
     const python = caps.get("python")!;
     caps.set("python", {
       ...python,

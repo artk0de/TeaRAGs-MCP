@@ -115,8 +115,8 @@ function declaredOptionalCapabilities(): string[] {
 }
 
 /** Languages whose FACADE exposes `capability`, in the order the factory reports. */
-function languagesForwarding(capability: keyof LanguageSymbolResolver): string[] {
-  const factory = new LanguageFactory();
+async function languagesForwarding(capability: keyof LanguageSymbolResolver): Promise<string[]> {
+  const factory = await LanguageFactory.preloaded();
   return factory
     .supported()
     .filter((language) => typeof factory.create(language).resolver?.[capability] === "function")
@@ -174,7 +174,7 @@ function languagesComposingExtractionPasses(): string[] {
  * hands it, since a composed walker does not expose its pass list.
  */
 async function languagesPublishingIdentifierDeclarations(): Promise<string[]> {
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const publishing: string[] = [];
   for (const language of factory.supported()) {
     const { kernel, walker } = factory.create(language);
@@ -207,7 +207,7 @@ function stripComments(source: string): string {
  * Navigator prose split on top-level list items — the unit an invariant is
  * written in. Everything before the first item is one leading block.
  */
-function bullets(markdown: string): string[] {
+async function bullets(markdown: string): Promise<string[]> {
   const blocks: string[][] = [[]];
   for (const line of markdown.split("\n")) {
     if (line.startsWith("- ")) blocks.push([]);
@@ -228,9 +228,9 @@ interface EnumerationOffense {
  * the file that derives the set. One language is a worked example; two is an
  * enumeration, and an enumeration kept by hand is the thing that drifts.
  */
-function enumerationOffenses(markdown: string): EnumerationOffense[] {
+async function enumerationOffenses(markdown: string): Promise<EnumerationOffense[]> {
   let line = 1;
-  return bullets(markdown).flatMap((block) => {
+  return (await bullets(markdown)).flatMap((block) => {
     const at = line;
     line += block.split("\n").length;
     if (block.includes(PIN_TEST)) return [];
@@ -244,24 +244,24 @@ function enumerationOffenses(markdown: string): EnumerationOffense[] {
 }
 
 describe("LanguageSymbolResolver capability sets", () => {
-  it("pins every optional capability the contract declares", () => {
+  it("pins every optional capability the contract declares", async () => {
     expect(declaredOptionalCapabilities()).toEqual(Object.keys(PINNED_CAPABILITY_LANGUAGES).sort());
   });
 
-  it("spells every supported language the guard must recognise", () => {
-    expect(new Set(new LanguageFactory().supported())).toEqual(new Set(Object.keys(LANGUAGE_SPELLINGS)));
+  it("spells every supported language the guard must recognise", async () => {
+    expect(new Set((await LanguageFactory.preloaded()).supported())).toEqual(new Set(Object.keys(LANGUAGE_SPELLINGS)));
   });
 
   it.each(Object.entries(PINNED_CAPABILITY_LANGUAGES))(
     "%s is forwarded by exactly the pinned facades",
-    (capability, expected) => {
-      expect(languagesForwarding(capability as keyof LanguageSymbolResolver)).toEqual([...expected]);
+    async (capability, expected) => {
+      expect(await languagesForwarding(capability as keyof LanguageSymbolResolver)).toEqual([...expected]);
     },
   );
 });
 
 describe("resolver deferral", () => {
-  it("parks a candidate at exactly the pinned strategies", () => {
+  it("parks a candidate at exactly the pinned strategies", async () => {
     expect(parkSites()).toEqual([...PINNED_PARK_SITES]);
   });
 });
@@ -276,7 +276,7 @@ describe("identifier declarations", () => {
   // bd tea-rags-mcp-4p3sb.18 — a language whose walker declares identifiers
   // must say how it cases them, and only such a language may.
   it("are published by exactly the languages whose capability declares a naming convention", async () => {
-    const capabilities = new LanguageFactory().capabilities();
+    const capabilities = (await LanguageFactory.preloaded()).capabilities();
     const declaringNaming = [...capabilities.values()]
       .filter((capability) => capability.naming !== undefined)
       .map((capability) => capability.language)
@@ -287,12 +287,17 @@ describe("identifier declarations", () => {
 });
 
 describe("domain navigators", () => {
-  it("name the contract instead of enumerating its implementers", () => {
-    const offenses = navigators().flatMap((path) =>
-      enumerationOffenses(readFileSync(join(REPO_ROOT, path), "utf8")).map(
-        (offense) => `${path} bullet at line ${offense.line} → ${offense.set} over ${offense.languages.join(", ")}`,
-      ),
-    );
+  it("name the contract instead of enumerating its implementers", async () => {
+    const offenses = (
+      await Promise.all(
+        navigators().map(async (path) => {
+          const found = await enumerationOffenses(readFileSync(join(REPO_ROOT, path), "utf8"));
+          return found.map(
+            (offense) => `${path} bullet at line ${offense.line} → ${offense.set} over ${offense.languages.join(", ")}`,
+          );
+        }),
+      )
+    ).flat();
     // Joined, not compared as an array: the failure IS the list of places to fix.
     expect(
       offenses.join("\n"),

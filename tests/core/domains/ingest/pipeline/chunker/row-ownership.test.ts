@@ -43,11 +43,11 @@ function doublyOwnedRows(code: string, chunks: CodeChunk[]): string[] {
 describe("TreeSitterChunker — every non-blank row has one owning chunk (5ndal)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 
@@ -90,7 +90,7 @@ describe("TreeSitterChunker — every non-blank row has one owning chunk (5ndal)
     const small = new TreeSitterChunker(
       { chunkSize: 600, chunkOverlap: 150, maxChunkSize: 600 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
     const entries = Array.from(
       { length: 30 },
@@ -138,11 +138,11 @@ describe("TreeSitterChunker — every non-blank row has one owning chunk (5ndal)
 describe("TreeSitterChunker — a leaf value-class container opens with its assignment row (0k8zt)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

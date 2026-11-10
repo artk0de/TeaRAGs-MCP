@@ -61,11 +61,11 @@ describe("TreeSitterChunker — member comments ride the member's chunk (bd u7tj
   const maxChunkSize = 1000;
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 
@@ -226,11 +226,11 @@ describe("TreeSitterChunker — a split method's doc comment stays with its sign
   const signature = "render(run: Run): void {";
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 
@@ -295,11 +295,11 @@ describe("TreeSitterChunker — a split type declaration's doc-only parts carry 
   const maxChunkSize = 1000;
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

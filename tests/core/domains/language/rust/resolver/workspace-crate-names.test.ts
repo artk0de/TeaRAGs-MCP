@@ -72,35 +72,35 @@ function preparedResolver(files: ManifestFile[] = RIPGREP_MANIFESTS): RustCallRe
 }
 
 describe("parseRustCrateManifest", () => {
-  it("names the crate after [package] name with '-' normalised to '_', rooted at src/lib.rs", () => {
+  it("names the crate after [package] name with '-' normalised to '_', rooted at src/lib.rs", async () => {
     expect(parseRustCrateManifest('[package]\nname = "grep-matcher"\nversion = "0.1.7"\n')).toEqual({
       crateName: "grep_matcher",
       rootFile: "src/lib.rs",
     });
   });
 
-  it("prefers [lib] name and [lib] path over the package defaults", () => {
+  it("prefers [lib] name and [lib] path over the package defaults", async () => {
     const manifest = '[package]\nname = "script-bindings"\n\n[lib]\nname = "script_bindings"\npath = "lib.rs"\n';
     expect(parseRustCrateManifest(manifest)).toEqual({ crateName: "script_bindings", rootFile: "lib.rs" });
   });
 
-  it("never reads a name from another table ([[bin]], [dependencies])", () => {
+  it("never reads a name from another table ([[bin]], [dependencies])", async () => {
     const manifest =
       '[[bin]]\nname = "rg"\npath = "crates/core/main.rs"\n\n[package]\nname = "ripgrep"\n\n[dependencies]\nname = "x"\n';
     expect(parseRustCrateManifest(manifest)?.crateName).toBe("ripgrep");
   });
 
-  it("answers no crate for a virtual workspace manifest (no [package])", () => {
+  it("answers no crate for a virtual workspace manifest (no [package])", async () => {
     expect(parseRustCrateManifest('[workspace]\nmembers = ["crates/matcher"]\n')).toBeUndefined();
   });
 
-  it("tolerates single quotes and trailing comments", () => {
+  it("tolerates single quotes and trailing comments", async () => {
     expect(parseRustCrateManifest("[package]\nname = 'grep-cli' # the cli helpers\n")?.crateName).toBe("grep_cli");
   });
 });
 
 describe("RustWorkspaceCrateMap", () => {
-  it("maps each member's crate name to the directory of its crate root file", () => {
+  it("maps each member's crate name to the directory of its crate root file", async () => {
     const map = RustWorkspaceCrateMap.fromManifests(RIPGREP_MANIFESTS);
     expect(map.rootFilesOf("grep_matcher")).toEqual(["crates/matcher/src/lib.rs"]);
     expect(map.rootDirsOf("grep_matcher")).toEqual(["crates/matcher/src"]);
@@ -109,7 +109,7 @@ describe("RustWorkspaceCrateMap", () => {
     expect(map.declares("regex")).toBe(false);
   });
 
-  it("is read through the injected reader, matching only Cargo.toml", () => {
+  it("is read through the injected reader, matching only Cargo.toml", async () => {
     const reader = stubReader(RIPGREP_MANIFESTS);
     const map = new RustWorkspaceCrateMapCache(reader).forRoot(ROOT);
     expect(map?.declares("grep_matcher")).toBe(true);
@@ -119,28 +119,28 @@ describe("RustWorkspaceCrateMap", () => {
     expect(matches("Cargo.lock")).toBe(false);
   });
 
-  it("answers no map without a reader", () => {
+  it("answers no map without a reader", async () => {
     expect(new RustWorkspaceCrateMapCache().forRoot(ROOT)).toBeUndefined();
   });
 });
 
 describe("Rust resolver — workspace crate names map to member directories", () => {
-  it("resolves `use grep_matcher::{Match as Range}` + `Range::zero` onto crates/matcher", () => {
+  it("resolves `use grep_matcher::{Match as Range}` + `Range::zero` onto crates/matcher", async () => {
     const target = preparedResolver().resolve(RANGE_ZERO, callerCtx(ripgrepTable()));
     expect(target).toEqual({ targetRelPath: "crates/matcher/src/lib.rs", targetSymbolId: "Match.zero" });
   });
 
-  it("never classifies a call through a workspace member's crate name as external", () => {
+  it("never classifies a call through a workspace member's crate name as external", async () => {
     expect(preparedResolver().targetsExternalImport(RANGE_ZERO, callerCtx(ripgrepTable()))).toBe(false);
   });
 
-  it("keeps a crate that is neither std nor a workspace member external", () => {
+  it("keeps a crate that is neither std nor a workspace member external", async () => {
     const call: CallRef = { callText: "Regex::new(p)", receiver: "Regex", member: "new", startLine: 9 };
     const ctx = callerCtx(ripgrepTable(), "use regex::Regex;");
     expect(preparedResolver().targetsExternalImport(call, ctx)).toBe(true);
   });
 
-  it("resolves a plain `use grep_matcher::Match` item import at the member's crate root", () => {
+  it("resolves a plain `use grep_matcher::Match` item import at the member's crate root", async () => {
     const call: CallRef = { callText: "Match::zero(i)", receiver: "Match", member: "zero", startLine: 12 };
     const target = preparedResolver().resolve(call, callerCtx(ripgrepTable(), "use grep_matcher::Match;"));
     expect(target).toEqual({ targetRelPath: "crates/matcher/src/lib.rs", targetSymbolId: "Match.zero" });
@@ -180,12 +180,12 @@ describe("Rust resolver — an imported type alias does not pin its members to t
 
   const CRATE_IMPORT = "use crate::{\n    lines::{self, LineStep},\n    searcher::{Config, Range, Searcher},\n};";
 
-  it("resolves `Range::zero` through `use crate::{searcher::{Range}}` onto Match.zero", () => {
+  it("resolves `Range::zero` through `use crate::{searcher::{Range}}` onto Match.zero", async () => {
     const target = preparedResolver().resolve(RANGE_ZERO, callerCtx(aliasTable(), CRATE_IMPORT));
     expect(target).toEqual({ targetRelPath: "crates/matcher/src/lib.rs", targetSymbolId: "Match.zero" });
   });
 
-  it("reads the alias from the run's declaration facts when the table holds no row for it (private `type`)", () => {
+  it("reads the alias from the run's declaration facts when the table holds no row for it (private `type`)", async () => {
     const t = ripgrepTable();
     t.upsertFile("crates/searcher/src/searcher/mod.rs", [
       {
@@ -212,25 +212,25 @@ describe("Rust resolver — an imported type alias does not pin its members to t
     });
   });
 
-  it("still drops a member the imported STRUCT's file does not declare", () => {
+  it("still drops a member the imported STRUCT's file does not declare", async () => {
     const call: CallRef = { callText: "Searcher::zero(i)", receiver: "Searcher", member: "zero", startLine: 40 };
     expect(preparedResolver().resolve(call, callerCtx(aliasTable(), CRATE_IMPORT))).toBeNull();
   });
 });
 
 describe("RustLanguage / LanguageFactory — the reader reaches the resolver", () => {
-  it("RustLanguage re-reads the crate map through the injected reader at pass start", () => {
+  it("RustLanguage re-reads the crate map through the injected reader at pass start", async () => {
     const reader = stubReader(RIPGREP_MANIFESTS);
     new RustLanguage(undefined, reader).resolver.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
     expect(reader).toHaveBeenCalledTimes(1);
     expect(reader.mock.calls[0]?.[0]).toBe(ROOT);
   });
 
-  it("LanguageFactory threads its manifestFilesReader into the Rust provider", () => {
+  it("LanguageFactory threads its manifestFilesReader into the Rust provider", async () => {
     const reader = stubReader(RIPGREP_MANIFESTS);
-    const rust = new LanguageFactory({ manifestFilesReader: reader, isGrammarPackageInstalled: () => true }).create(
-      "rust",
-    );
+    const rust = (
+      await LanguageFactory.preloaded({ manifestFilesReader: reader, isGrammarPackageInstalled: () => true })
+    ).create("rust");
     rust.resolver?.prepareResolvePass?.({ expectedFileCount: 1, projectRoot: ROOT });
     expect(reader).toHaveBeenCalledTimes(1);
   });

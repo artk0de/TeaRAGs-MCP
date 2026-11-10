@@ -50,7 +50,7 @@ async function chunkSpec(maxChunkSize: number, rootLets: string[]): Promise<Code
   const chunker = new TreeSitterChunker(
     { chunkSize: maxChunkSize, chunkOverlap: 0, maxChunkSize },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
   return chunker.chunk(specCode(rootLets), `/repo/${SPEC}`, "ruby");
 }

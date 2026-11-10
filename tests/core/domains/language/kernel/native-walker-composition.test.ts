@@ -211,7 +211,7 @@ const CASES: readonly LanguageCase[] = [
   },
 ];
 
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 const inputs = new Map<string, WalkInput>();
 
 /**

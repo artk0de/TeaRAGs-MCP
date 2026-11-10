@@ -22,9 +22,11 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * re-export the first hop landed on a project namesake (`Res#unwrap`,
  * `PessimisticLockKeyResult#unwrap_err`).
  */
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, callerFile: string, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -100,7 +102,7 @@ ${body}
 describe.each([false, true])("Rust re-exported project Result alias (materialized=%s)", (materialized) => {
   const reexported = "pub use self::error::{Error, Result};";
 
-  it("types `T::assoc(..)` returning a re-exported alias as std `Result`: first hop std, next hop `Res`", () => {
+  it("types `T::assoc(..)` returning a re-exported alias as std `Result`: first hop std, next hop `Res`", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -113,7 +115,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()")).toBe("Res#unwrap");
   });
 
-  it("keeps std `unwrap` / `unwrap_err` on the alias off project namesakes inside a `mod tests` glob scope", () => {
+  it("keeps std `unwrap` / `unwrap_err` on the alias off project namesakes inside a `mod tests` glob scope", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -129,7 +131,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("d.unwrap()", "tests.run")).toBe("Res#unwrap");
   });
 
-  it("types the alias the same way for a caller in another file", () => {
+  it("types the alias the same way for a caller in another file", async () => {
     const target = fixture(
       {
         ...codec(`${reexported}\npub mod arith;`),
@@ -144,7 +146,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()")).toBe("Res#unwrap");
   });
 
-  it("expands an alias whose body names std `Result` through a renaming `use` (backup-stream `StdResult`)", () => {
+  it("expands an alias whose body names std `Result` through a renaming `use` (backup-stream `StdResult`)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -159,7 +161,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()")).toBe("Res#unwrap");
   });
 
-  it("keeps a trait-provided default method on a receiver the alias types (tikv runner `Exec::new(..)?.collect_summary(..)`)", () => {
+  it("keeps a trait-provided default method on a receiver the alias types (tikv runner `Exec::new(..)?.collect_summary(..)`)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -173,7 +175,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap().collect_summary(1)")).toBe("BatchExecutor#collect_summary");
   });
 
-  it("reads `StdResult` through its `use` over a same-name impl block in the alias file (backup-stream errors.rs)", () => {
+  it("reads `StdResult` through its `use` over a same-name impl block in the alias file (backup-stream errors.rs)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -188,7 +190,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()")).toBe("Res#unwrap");
   });
 
-  it("keeps the alias std when its argument is an unplaced external type (`-> Result<TimeStamp>`)", () => {
+  it("keeps the alias std when its argument is an unplaced external type (`-> Result<TimeStamp>`)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -202,7 +204,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("DataFile::begin_ts(1).unwrap()")).toBeUndefined();
   });
 
-  it("drops a std method a typed project receiver provably lacks instead of binding a namesake (tikv `p.to_string()`)", () => {
+  it("drops a std method a typed project receiver provably lacks instead of binding a namesake (tikv `p.to_string()`)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -218,7 +220,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("p.to_string()")).toBeUndefined();
   });
 
-  it("reads the alias past a grouped `use super::{X, *}` in the tests module (tikv decimal.rs:2931)", () => {
+  it("reads the alias past a grouped `use super::{X, *}` in the tests module (tikv decimal.rs:2931)", async () => {
     const target = fixture(
       {
         ...codec(reexported),
@@ -233,7 +235,7 @@ describe.each([false, true])("Rust re-exported project Result alias (materialize
     expect(target("Decimal::from_bytes(s).unwrap().unwrap()", "tests.run")).toBe("Res#unwrap");
   });
 
-  it("refuses an alias the re-export chain cannot place: no hop is typed, nothing binds by name", () => {
+  it("refuses an alias the re-export chain cannot place: no hop is typed, nothing binds by name", async () => {
     const target = fixture(
       {
         ...codec("pub use self::error::Error;"),
@@ -282,7 +284,7 @@ impl LayoutStyle<'_> {
 }
 `;
 
-  it("keeps the impl-block member when the declaring file's import places nothing (servo style_ext.rs:1167)", () => {
+  it("keeps the impl-block member when the declaring file's import places nothing (servo style_ext.rs:1167)", async () => {
     const target = fixture(
       {
         "src/lib.rs": "pub mod style_ext;\n",
@@ -306,7 +308,7 @@ impl LayoutStyle<'_> {
    * the lexical one keeps that impl block's members in reach, which the
    * imported `node.rs::Node` cannot when `Node` is not unique in the crate.
    */
-  it("keeps the declaring file's inherent impl block when the import places the same project type elsewhere (servo focus.rs:967)", () => {
+  it("keeps the declaring file's inherent impl block when the import places the same project type elsewhere (servo focus.rs:967)", async () => {
     const target = fixture(
       {
         "script/lib.rs": "pub mod dom;\npub mod xpath;\n",
@@ -406,14 +408,14 @@ fn run(window: &Window) {
 });
 
 describe.each([false, true])("Rust impl block on a re-exported type alias (materialized=%s)", (materialized) => {
-  it("answers a member the alias's impl block declares on the expanded type (servo intersectionobserver.rs:148)", () => {
+  it("answers a member the alias's impl block declares on the expanded type (servo intersectionobserver.rs:148)", async () => {
     const target = fixture(domRootFiles(""), "script/dom/observer.rs", materialized);
     expect(target("window.Document().as_traced()")).toBe("DomRoot#as_traced");
     // The deref chain through the expanded type still answers the pointee.
     expect(target("window.Document().url()")).toBe("Document#url");
   });
 
-  it("auto-derefs a field read through the expanded alias (servo eventsource.rs:638)", () => {
+  it("auto-derefs a field read through the expanded alias (servo eventsource.rs:638)", async () => {
     // `let event_source = EventSource::new(..)` (a `DomRoot<EventSource>`), then
     // `event_source.droppable.set_controller(..)` in the struct's own file.
     const target = fixture(

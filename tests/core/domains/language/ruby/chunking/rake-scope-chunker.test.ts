@@ -15,11 +15,11 @@ import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/
 import type { CodeChunk } from "../../../../../../src/core/types.js";
 import { RAKE_FILE, RAKE_PATH } from "../fixtures/billing-rake.js";
 
-function newChunker(): TreeSitterChunker {
+async function newChunker(): Promise<TreeSitterChunker> {
   return new TreeSitterChunker(
     { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
 }
 
@@ -50,7 +50,7 @@ function asScrollRows(chunks: CodeChunk[]): { id: string; payload: Record<string
 
 describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
   it("addresses every task by its namespace-qualified Rake name, in source order", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
     const taskIds = chunks.map((c) => c.metadata.symbolId).filter((id) => id !== "sync_logger");
 
     expect(taskIds).toEqual([
@@ -67,7 +67,7 @@ describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
   });
 
   it("chunks a task as production code under its namespace, never as a test", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
     const seed = byId(chunks, "billing:sync");
     const reset = byId(chunks, "billing:invoices:reconcile");
 
@@ -78,7 +78,7 @@ describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
   });
 
   it("carries a task's desc with the task, under the namespace title path", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
     const seed = byId(chunks, "billing:sync");
     const reset = byId(chunks, "billing:invoices:reconcile");
 
@@ -90,7 +90,7 @@ describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
   });
 
   it("keeps every leaf of a namespace as its own chunk, however small", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
 
     expect(byId(chunks, "billing:parallel_sync").content).toContain("multitask parallel_sync:");
     expect(byId(chunks, "billing.csv").content).toContain('file "billing.csv"');
@@ -98,20 +98,20 @@ describe("Rake DSL chunking (bd tea-rags-mcp-k0602)", () => {
   });
 
   it("names a top-level task by its Rake name and keeps a top-level def a normal Ruby chunk", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
 
     expect(byId(chunks, "billing_all").metadata.chunkType).toBe("function");
     expect(byId(chunks, "sync_logger").content).toContain("ActiveSupport::Logger.new");
   });
 
   it("chunks the same source in a .rb file as plain Ruby", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, "lib/billing.rb", "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, "lib/billing.rb", "ruby");
 
     expect(chunks.map((c) => c.metadata.symbolId)).not.toContain("billing:sync");
   });
 
   it("answers find_symbol for a task id with that task, and outlines the file by Rake names", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
     const rows = asScrollRows(chunks);
 
     const [hit] = resolveSymbols(
@@ -151,7 +151,7 @@ end
 
 describe("Rake DSL chunking keeps Ruby declarations and top-level descs (bd tea-rags-mcp-k0602)", () => {
   it("keeps a def inside a namespace its own method chunk", async () => {
-    const chunks = await newChunker().chunk(RAKE_WITH_HELPER, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_WITH_HELPER, RAKE_PATH, "ruby");
     const helper = byId(chunks, "sync_scope");
 
     expect(helper.metadata.chunkType).toBe("function");
@@ -162,7 +162,7 @@ describe("Rake DSL chunking keeps Ruby declarations and top-level descs (bd tea-
   });
 
   it("opens a top-level task at the desc above it", async () => {
-    const chunks = await newChunker().chunk(RAKE_FILE, RAKE_PATH, "ruby");
+    const chunks = await (await newChunker()).chunk(RAKE_FILE, RAKE_PATH, "ruby");
     const all = byId(chunks, "billing_all");
 
     expect(all.startLine).toBe(38);
@@ -171,7 +171,7 @@ describe("Rake DSL chunking keeps Ruby declarations and top-level descs (bd tea-
 
   it("still carries every non-blank line of a .rake file in some chunk (bd tea-rags-mcp-6xdwe)", async () => {
     for (const source of [RAKE_FILE, RAKE_WITH_HELPER]) {
-      const chunks = await newChunker().chunk(source, RAKE_PATH, "ruby");
+      const chunks = await (await newChunker()).chunk(source, RAKE_PATH, "ruby");
       // `require` lines are the file's imports payload, not chunk text.
       // A namespace row is carried as its scope title, without the block opener.
       const missing = source

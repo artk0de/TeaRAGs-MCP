@@ -45,10 +45,10 @@ const CASES: SplitExampleCase[] = [
     language: "typescript",
     path: "tests/reranker.test.ts",
     containerRow: `describe("Reranker", () => {`,
-    exampleRow: `it("ranks every candidate by its blended score", () => {`,
+    exampleRow: `it("ranks every candidate by its blended score", async () => {`,
     exampleName: `it "ranks every candidate by its blended score"`,
     code: `describe("Reranker", () => {
-  it("ranks every candidate by its blended score", () => {
+  it("ranks every candidate by its blended score", async () => {
 ${statements((i) => `    expect(rank(candidate${i}, weights)).toBeGreaterThan(${i});`)}
   });
 });
@@ -58,10 +58,10 @@ ${statements((i) => `    expect(rank(candidate${i}, weights)).toBeGreaterThan(${
     language: "javascript",
     path: "test/router.test.js",
     containerRow: `describe("Router", () => {`,
-    exampleRow: `it("dispatches every registered route", () => {`,
+    exampleRow: `it("dispatches every registered route", async () => {`,
     exampleName: `it "dispatches every registered route"`,
     code: `describe("Router", () => {
-  it("dispatches every registered route", () => {
+  it("dispatches every registered route", async () => {
 ${statements((i) => `    expect(router.dispatch("/route/${i}")).toBe(handler${i});`)}
   });
 });
@@ -85,11 +85,11 @@ end
 describe("TreeSitterChunker — every part of a split test example carries its example row (bd tea-rags-mcp-l24yk)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 300, chunkOverlap: 0, maxChunkSize: MAX_CHUNK_SIZE },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

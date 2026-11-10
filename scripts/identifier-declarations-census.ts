@@ -198,7 +198,7 @@ function describeError(error: unknown): string {
 export async function runIdentifierDeclarationsCensus(root: string): Promise<IdentifierDeclarationsCensus> {
   const started = performance.now();
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: root });
+  const factory = await LanguageFactory.preloaded({ repoRoot: root });
   const selection = await collectSourceFiles(
     root,
     root,

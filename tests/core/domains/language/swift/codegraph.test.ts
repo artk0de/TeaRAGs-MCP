@@ -41,7 +41,7 @@ const INVOICE = "Sources/Payables/Invoice.swift";
 const LEDGER = "Sources/Payables/Ledger.swift";
 
 const swiftRow = CODEGRAPH_LANGUAGES[".swift"];
-const factory = new LanguageFactory();
+const factory = await LanguageFactory.preloaded();
 const provider: LanguageProvider = factory.create("swift");
 const composer = new DefaultSymbolIdComposer();
 

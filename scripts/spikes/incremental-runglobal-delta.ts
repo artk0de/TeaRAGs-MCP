@@ -734,7 +734,7 @@ async function main(): Promise<void> {
   const dumpFullEdges = flag("--dump-full-edges", undefined);
   const dumpedFullAnswers: CallSiteAnswers = new Map();
 
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const composer = new DefaultSymbolIdComposer();
   const extensions = extensionsFor(language);
   const selection = await collectSourceFiles(root, root, await buildCorpusExclusionFilter(root, factory), extensions);

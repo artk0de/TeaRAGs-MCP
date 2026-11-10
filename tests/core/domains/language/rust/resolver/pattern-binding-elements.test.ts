@@ -12,9 +12,11 @@ import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(code: string, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const relPath = "src/main.rs";
@@ -74,7 +76,7 @@ const source = (body: string) => `${types}\n${body}\n`;
 // bd tea-rags-mcp-s3i8m Task 1b — loop elements, closure adapter parameters,
 // std element accessors and project enum variant payloads fold to a type.
 describe.each([false, true])("Rust pattern binding element typing (materialized=%s)", (materialized) => {
-  it("types a for element over a Vec field's iter()", () => {
+  it("types a for element over a Vec field's iter()", async () => {
     const f = fixture(
       source(
         `struct Holder { peers: Vec<Peer> }\nimpl Holder {\n    fn run(&self) {\n        for p in self.peers.iter() {\n            p.m();\n        }\n    }\n}`,
@@ -84,12 +86,12 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("p.m()", "Holder#run")).toBe("Peer#m");
   });
 
-  it("types a for element over a borrowed Vec param", () => {
+  it("types a for element over a borrowed Vec param", async () => {
     const f = fixture(source(`fn run(v: Vec<Peer>) {\n    for p in &v {\n        p.m();\n    }\n}`), materialized);
     expect(f.target("p.m()")).toBe("Peer#m");
   });
 
-  it("types the key and value of a for (k, v) over a HashMap", () => {
+  it("types the key and value of a for (k, v) over a HashMap", async () => {
     const f = fixture(
       source(`fn run(map: HashMap<Key, Peer>) {\n    for (k, v) in map {\n        v.m();\n        k.m();\n    }\n}`),
       materialized,
@@ -98,7 +100,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("k.m()")).toBe("Key#m");
   });
 
-  it("types map values() and enumerate() elements", () => {
+  it("types map values() and enumerate() elements", async () => {
     const f = fixture(
       source(
         `struct Holder { by_id: HashMap<Key, Peer>, list: Vec<Bar> }\nimpl Holder {\n    fn run(&self) {\n        for p in self.by_id.values() {\n            p.m();\n        }\n        for (i, b) in self.list.iter().enumerate() {\n            b.m();\n        }\n    }\n}`,
@@ -109,7 +111,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("b.m()", "Holder#run")).toBe("Bar#m");
   });
 
-  it("settles .map by the receiver's type: Option payload vs iterator element", () => {
+  it("settles .map by the receiver's type: Option payload vs iterator element", async () => {
     const f = fixture(
       source(`fn run(opt: Option<Peer>, vec: Vec<Bar>) {\n    opt.map(|p| p.m());\n    vec.iter().map(|b| b.m());\n}`),
       materialized,
@@ -118,7 +120,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("b.m()")).toBe("Bar#m");
   });
 
-  it("types Result map_err to the error and fold's second param to the element", () => {
+  it("types Result map_err to the error and fold's second param to the element", async () => {
     const f = fixture(
       source(
         `fn run(res: Result<Foo, Bar>, v: Vec<Peer>) {\n    res.map_err(|e| e.m());\n    v.iter().fold(0, |acc, p| p.m());\n}`,
@@ -129,12 +131,12 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("p.m()")).toBe("Peer#m");
   });
 
-  it("leaves an iterator adapter on an untyped receiver untyped", () => {
+  it("leaves an iterator adapter on an untyped receiver untyped", async () => {
     const f = fixture(source(`fn run(p: Foo) {\n    unknown().iter().map(|p| p.m());\n}`), materialized);
     expect(f.target("p.m()")).toBeNull();
   });
 
-  it("types while let Some(n) = stack.pop()", () => {
+  it("types while let Some(n) = stack.pop()", async () => {
     const f = fixture(
       source(`fn run(n: Foo, mut stack: Vec<Bar>) {\n    while let Some(n) = stack.pop() {\n        n.m();\n    }\n}`),
       materialized,
@@ -142,7 +144,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("n.m()")).toBe("Bar#m");
   });
 
-  it("types map insert / remove_entry and Option as_mut / take", () => {
+  it("types map insert / remove_entry and Option as_mut / take", async () => {
     const f = fixture(
       source(
         `struct Holder { boxes: HashMap<Key, Peer>, cms: Option<Bar>, sink: Option<Foo> }\nimpl Holder {\n    fn run(&mut self, k: Key, v: Peer) {\n        if let Some(mailbox) = self.boxes.insert(k, v) {\n            mailbox.m();\n        }\n        if let Some((key, _)) = self.boxes.remove_entry(&k) {\n            key.m();\n        }\n        if let Some(cms) = self.cms.as_mut() {\n            cms.m();\n        }\n        if let Some(sink) = self.sink.take() {\n            sink.m();\n        }\n    }\n}`,
@@ -155,7 +157,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("sink.m()", "Holder#run")).toBe("Foo#m");
   });
 
-  it("types a project enum variant payload, positional and named", () => {
+  it("types a project enum variant payload, positional and named", async () => {
     const f = fixture(
       source(
         `enum Msg { A(Bar), B { peer: Peer } }\nfn run(msg: Msg) {\n    match msg {\n        Msg::A(w) => w.m(),\n        Msg::B { peer } => peer.m(),\n    }\n}`,
@@ -166,7 +168,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("peer.m()")).toBe("Peer#m");
   });
 
-  it("types match self { Self::A(w) } inside the enum's impl", () => {
+  it("types match self { Self::A(w) } inside the enum's impl", async () => {
     const f = fixture(
       source(
         `enum Slot { A(Bar), B }\nimpl Slot {\n    fn run(&self) {\n        match self {\n            Self::A(w) => w.m(),\n            Self::B => {}\n        }\n    }\n}`,
@@ -176,7 +178,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("w.m()", "Slot#run")).toBe("Bar#m");
   });
 
-  it("substitutes a generic enum's payload from the scrutinee's type arguments", () => {
+  it("substitutes a generic enum's payload from the scrutinee's type arguments", async () => {
     const f = fixture(
       source(
         `enum Slot<T> { Full(T), Empty }\nfn run(s: Slot<Peer>) {\n    if let Slot::Full(p) = s {\n        p.m();\n    }\n}`,
@@ -186,7 +188,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("p.m()")).toBe("Peer#m");
   });
 
-  it("types if let Some(k) = &end where the local is a cloned Option field", () => {
+  it("types if let Some(k) = &end where the local is a cloned Option field", async () => {
     const f = fixture(
       source(
         `struct Holder { end: Option<Key> }\nimpl Holder {\n    fn run(&self) {\n        let end = self.end.clone();\n        if let Some(k) = &end {\n            k.m();\n        }\n    }\n}`,
@@ -196,7 +198,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("k.m()", "Holder#run")).toBe("Key#m");
   });
 
-  it("types a for element over a slice param", () => {
+  it("types a for element over a slice param", async () => {
     const f = fixture(
       source(`fn run(keys: &[Key]) {\n    for k in keys.iter() {\n        k.m();\n    }\n}`),
       materialized,
@@ -204,7 +206,7 @@ describe.each([false, true])("Rust pattern binding element typing (materialized=
     expect(f.target("k.m()")).toBe("Key#m");
   });
 
-  it("does not type a variant the scrutinee's enum does not declare", () => {
+  it("does not type a variant the scrutinee's enum does not declare", async () => {
     const f = fixture(
       source(
         `enum Msg { A(Bar) }\nenum Other { A(Peer) }\nfn run(msg: Msg) {\n    if let Other::A(w) = msg {\n        w.m();\n    }\n}`,

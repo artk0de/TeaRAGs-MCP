@@ -13,9 +13,11 @@ import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -85,7 +87,7 @@ impl Other { fn finish(&self) {} }
 const productFinish = { targetRelPath: "src/main.rs", targetSymbolId: "Product#finish" };
 
 describe.each([false, true])("Rust declared call-result locals (materialized=%s)", (materialized) => {
-  it("types a bare-call result through exact declaration facts and the production runner", () => {
+  it("types a bare-call result through exact declaration facts and the production runner", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -105,7 +107,7 @@ fn run() {
     );
   });
 
-  it("keeps namesake free functions and nominal returns in their declaring module", () => {
+  it("keeps namesake free functions and nominal returns in their declaring module", async () => {
     const f = fixture(
       {
         "src/main.rs": `
@@ -133,7 +135,7 @@ mod sibling {
     });
   });
 
-  it("does not borrow the return of a cross-file namesake", () => {
+  it("does not borrow the return of a cross-file namesake", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -150,7 +152,7 @@ fn run() {
     expect(f.resolve("value.finish()")).toBeNull();
   });
 
-  it("does not infer from a cross-file-only free function", () => {
+  it("does not infer from a cross-file-only free function", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -166,7 +168,7 @@ fn run() {
     expect(f.resolve("value.finish()")).toBeNull();
   });
 
-  it("borrows a cross-file free function's return when an internal import binds it", () => {
+  it("borrows a cross-file free function's return when an internal import binds it", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -192,7 +194,7 @@ pub fn make() -> Product { todo!() }
     });
   });
 
-  it("borrows a lifetime-generic cross-file return the way servo's enter_auto_realm reads", () => {
+  it("borrows a lifetime-generic cross-file return the way servo's enter_auto_realm reads", async () => {
     const f = fixture(
       {
         "src/main.rs": `
@@ -226,7 +228,7 @@ pub(crate) fn enter_auto_realm<'cx>(cx: &'cx mut JSContext, o: &Ctx) -> Root<'cx
     });
   });
 
-  it("refuses an imported callee despite an exact same-file namesake", () => {
+  it("refuses an imported callee despite an exact same-file namesake", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -266,7 +268,7 @@ fn run() {
     expect(f.resolve("value.finish()")).toBeNull();
   });
 
-  it("withholds a generic callee without changing its existing declared return fact", () => {
+  it("withholds a generic callee without changing its existing declared return fact", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -287,7 +289,7 @@ fn run() {
   // Moved pin: an item the module declares outranks every glob-imported name
   // (Rust reference, "Use declarations": glob imports are shadowed by items),
   // so `use external::*;` never hides the same-file `fn make`.
-  it("reads a same-file callee through a wildcard import, which never shadows a declared item", () => {
+  it("reads a same-file callee through a wildcard import, which never shadows a declared item", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -326,7 +328,7 @@ fn run() {
     expect(f.edges().filter((edge) => edge.targetSymbolId === "Product#finish")).toEqual([]);
   });
 
-  it("does not treat an associated function as an inferred instance method", () => {
+  it("does not treat an associated function as an inferred instance method", async () => {
     const f = fixture(
       {
         "src/main.rs": `
@@ -371,7 +373,7 @@ fn run() {
     },
   );
 
-  it("does not call an instance method as a placed class constructor", () => {
+  it("does not call an instance method as a placed class constructor", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -389,7 +391,7 @@ fn run() {
     expect(f.resolve("Holder::new().finish()")).toBeNull();
   });
 
-  it("does not place a nominal return in a different file", () => {
+  it("does not place a nominal return in a different file", async () => {
     const f = fixture(
       {
         "src/main.rs": `struct Other;\nimpl Other { fn finish(&self) {} }
@@ -406,7 +408,7 @@ fn run() {
     expect(f.resolve("value.finish()")).toBeNull();
   });
 
-  it("does not use a result before its binding or inside its initializer", () => {
+  it("does not use a result before its binding or inside its initializer", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -428,7 +430,7 @@ fn run() {
     expect(f.edges().filter((edge) => edge.targetSymbolId === "Product#finish")).toHaveLength(1);
   });
 
-  it("declines same-line uses without column proof", () => {
+  it("declines same-line uses without column proof", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -489,7 +491,7 @@ fn run() {
   // bd tea-rags-mcp-s3i8m — a destructuring `let` that rebinds the result
   // once withheld it outright; it now cuts the result's window at its own end,
   // so a use after it never reads the call's type.
-  it("does not type a use after a destructuring let that rebinds the result", () => {
+  it("does not type a use after a destructuring let that rebinds the result", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -508,7 +510,7 @@ fn run() {
 
   // Since bd tea-rags-mcp-2g2og.24 the gate is per name: an unrelated nested
   // fn keeps the binding, and a block-local `let` is windowed to its block.
-  it("keeps a binding beside a nested fn that names neither it nor its callee", () => {
+  it("keeps a binding beside a nested fn that names neither it nor its callee", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -527,7 +529,7 @@ fn run() {
 
   // Cross-cutting guard: a call-result local whose typed lookup misses must
   // not DROP a member a project trait may supply by default.
-  it("lets a typed miss on a call-result local continue when a project trait declares the member", () => {
+  it("lets a typed miss on a call-result local continue when a project trait declares the member", async () => {
     const f = fixture(
       {
         "src/main.rs": `
@@ -548,7 +550,7 @@ fn run() {
     );
   });
 
-  it("does not type a use past the block a block-local result lives in", () => {
+  it("does not type a use past the block a block-local result lives in", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -604,7 +606,7 @@ fn run() {
   // A dotted method init is a proven initializer since bd tea-rags-mcp-2g2og:
   // the receiver is fold-typed and the method's declared return answers, so it
   // moved out of the withheld list above.
-  it("records a dotted method init and types the binding from it", () => {
+  it("records a dotted method init and types the binding from it", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}
@@ -624,7 +626,7 @@ fn run(source: &Source) {
     expect(f.resolve("value.finish()")).toEqual(productFinish);
   });
 
-  it("keeps annotated locals and constructor bindings unchanged", () => {
+  it("keeps annotated locals and constructor bindings unchanged", async () => {
     const f = fixture(
       {
         "src/main.rs": `${finishers}

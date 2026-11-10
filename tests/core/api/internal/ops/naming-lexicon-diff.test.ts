@@ -160,7 +160,10 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
   }
 
-  function build(embeddings?: NamingLexiconEmbeddings, collectionRegistry: unknown = {}): NamingLexiconOps {
+  async function build(
+    embeddings?: NamingLexiconEmbeddings,
+    collectionRegistry: unknown = {},
+  ): Promise<NamingLexiconOps> {
     return new NamingLexiconOps({
       pool: { acquireReader: vi.fn(async () => ({ graphDb: proxiedGraphDb(), symbolTable: {} })) } as never,
       collectionRegistry: collectionRegistry as never,
@@ -168,7 +171,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       explore: { semanticSearch },
       namingConventions: NAMING,
       ontologyLanguages: ontologyLanguageProfiles(),
-      extractDeclarations: createNamingReviewExtractor(new LanguageFactory({})),
+      extractDeclarations: createNamingReviewExtractor(await LanguageFactory.preloaded({})),
       ...(embeddings !== undefined ? { embeddings } : {}),
     });
   }
@@ -188,7 +191,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     await runMigrations(db, DATABASE_MIGRATIONS);
     await seedIndex();
     semanticSearch = vi.fn(async () => ({ results: [], driftWarning: null }));
-    ops = build();
+    ops = await build();
   });
 
   afterEach(async () => {
@@ -437,7 +440,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     );
     mkdirSync(join(repo, "src/emb"), { recursive: true });
     writeFileSync(join(repo, "src/emb/backend.ts"), "export class EmbeddingBackend {}\n");
-    const result = await build({ embedBatch }).getNamingLexicon({
+    const result = await (
+      await build({ embedBatch })
+    ).getNamingLexicon({
       collection: "c",
       path: repo,
       files: ["src/emb/backend.ts"],
@@ -490,7 +495,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
           return { embedding };
         }),
       );
-      const result = await build({ embedBatch }).getNamingLexicon({
+      const result = await (
+        await build({ embedBatch })
+      ).getNamingLexicon({
         collection: "c",
         path: repo,
         files: ["src/emb/backend.ts"],
@@ -753,7 +760,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
   describe("the working tree the review reads", () => {
     /** `project` addresses the index, registered at the main checkout; `path` names the tree. */
-    const aliased = () =>
+    const aliased = async () =>
       build(undefined, {
         findByName: (name: string) => (name === "p" ? { name: "p", collectionName: "c", path: repo } : null),
         list: () => [],
@@ -776,13 +783,13 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
 
     it("an alias alone reads the main checkout the alias is registered at", async () => {
-      const { review } = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      const { review } = await (await aliased()).getNamingLexicon({ project: "p", changes: {} });
       expect(review?.workTree).toBe(repo);
     });
 
     it("an empty diff says what it could not see — never a bare changedFiles: 0", async () => {
       const tree = addWorkTree();
-      const result = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      const result = await (await aliased()).getNamingLexicon({ project: "p", changes: {} });
       expect(result.review?.changedFiles).toBe(0);
       const notice = (result.notices ?? []).find((n) => n.startsWith("no changes"));
       expect(notice).toBeDefined();
@@ -822,7 +829,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   // section exists to raise, and asserts BOTH through ReviewChangesOps' `naming` section.
   describe("review_changes naming section over a rename-bearing diff", () => {
     /** ReviewChangesOps wired to the REAL lexicon ops and the fixture's own graph. */
-    function reviewOps(): ReviewChangesOps {
+    async function reviewOps(): Promise<ReviewChangesOps> {
       return new ReviewChangesOps({
         pool: {
           acquireReader: vi.fn(async () => ({ graphDb: proxiedGraphDb(), symbolTable: {} })),
@@ -831,7 +838,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         collectionRegistry: { get: () => ({}) } as never,
         lexiconOps: ops,
         reviewEdgeExtraction: {
-          languageFactory: new LanguageFactory({}),
+          languageFactory: await LanguageFactory.preloaded({}),
           collectSymbols,
           composer: new DefaultSymbolIdComposer(),
         },
@@ -854,7 +861,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       // edge — the 89k7k.15 twin suppression must not eat this one.
       writeFileSync(join(repo, "src/git/commit.ts"), "export class Commit {}\n");
 
-      const result = await reviewOps().reviewChanges({
+      const result = await (
+        await reviewOps()
+      ).reviewChanges({
         collection: "c",
         path: repo,
         sections: ["naming"],
@@ -879,7 +888,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       writeFileSync(join(repo, "src/git/commit.ts"), "export class Commit {}\n");
       vi.mocked(readDiffScope).mockClear();
 
-      const result = await reviewOps().reviewChanges({ collection: "c", path: repo, sections: ["naming"] });
+      const result = await (await reviewOps()).reviewChanges({ collection: "c", path: repo, sections: ["naming"] });
 
       expect(result.review.sections.naming?.built).toBe(true);
       expect(readDiffScope).toHaveBeenCalledTimes(1);
@@ -890,7 +899,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     const registryAt = (indexedCommit: string) => ({ get: () => ({ git: { indexedCommit } }) });
 
     it("marks the answer when the index was built at another commit than the tree's HEAD", async () => {
-      const lagging = build(undefined, registryAt("0".repeat(40)));
+      const lagging = await build(undefined, registryAt("0".repeat(40)));
       const result = await lagging.getNamingLexicon({ collection: "c", path: repo, changes: {} });
       expect(result.indexLag).toEqual({
         indexedCommit: "0".repeat(40),
@@ -899,7 +908,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
 
     it("carries no mark when the index is at the tree's HEAD", async () => {
-      const fresh = build(undefined, registryAt(git(repo, "rev-parse", "HEAD").trim()));
+      const fresh = await build(undefined, registryAt(git(repo, "rev-parse", "HEAD").trim()));
       const result = await fresh.getNamingLexicon({
         collection: "c",
         path: repo,

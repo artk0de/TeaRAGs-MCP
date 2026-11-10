@@ -21,9 +21,11 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * The fold now types both; the no-evidence rule still drops an untyped
  * `x.unwrap()`.
  */
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function edgesOf(code: string, materialized: boolean, symbolId = "run") {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const relPath = "src/codec/decimal.rs";
@@ -81,7 +83,7 @@ fn fix_word_cnt_err(a: u8, b: u8) -> Res<Decimal> { todo!() }
 `;
 
 describe.each([false, true])("Rust R5 typed std-name receivers (materialized=%s)", (materialized) => {
-  it("types a same-file free-fn result local behind a glob import (A: `let res = fix(..); res.unwrap()`)", () => {
+  it("types a same-file free-fn result local behind a glob import (A: `let res = fix(..); res.unwrap()`)", async () => {
     const target = edgesOf(
       `${declarations}
 fn run(a: u8) {
@@ -94,7 +96,7 @@ fn run(a: u8) {
     expect(target("res.unwrap()")).toBe("Res#unwrap");
   });
 
-  it("types an associated-fn chain head by its declared return (B: `Decimal::from_bytes(s).unwrap().unwrap()`)", () => {
+  it("types an associated-fn chain head by its declared return (B: `Decimal::from_bytes(s).unwrap().unwrap()`)", async () => {
     const target = edgesOf(
       `${declarations}
 fn run(s: &[u8]) {
@@ -108,7 +110,7 @@ fn run(s: &[u8]) {
     expect(target("Decimal::from_bytes(s).unwrap()")).toBeUndefined();
   });
 
-  it("types an associated-fn result local (A: `let d = Decimal::from_bytes(s).unwrap(); d.unwrap()`)", () => {
+  it("types an associated-fn result local (A: `let d = Decimal::from_bytes(s).unwrap(); d.unwrap()`)", async () => {
     const target = edgesOf(
       `${declarations}
 fn run(s: &[u8]) {
@@ -121,7 +123,7 @@ fn run(s: &[u8]) {
     expect(target("d.unwrap()")).toBe("Res#unwrap");
   });
 
-  it("keeps a method-call chain head typed (B: `dec.round(2).unwrap()` on a `Decimal` param)", () => {
+  it("keeps a method-call chain head typed (B: `dec.round(2).unwrap()` on a `Decimal` param)", async () => {
     const target = edgesOf(
       `${declarations}
 fn run(dec: Decimal) {
@@ -133,7 +135,7 @@ fn run(dec: Decimal) {
     expect(target("dec.round(2).unwrap()")).toBe("Res#unwrap");
   });
 
-  it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", () => {
+  it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", async () => {
     const target = edgesOf(
       `${declarations}
 fn run() {
@@ -167,7 +169,7 @@ fn fix_word_cnt_err(a: u8, b: u8) -> Res<(u8, u8)> { todo!() }
 `;
 
 describe.each([false, true])("Rust R5 walker-typed std-name receivers (materialized=%s)", (materialized) => {
-  it("types a local bound from a return holding primitives (`-> Res<(u8, u8)>`)", () => {
+  it("types a local bound from a return holding primitives (`-> Res<(u8, u8)>`)", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 fn run(a: u8) {
@@ -180,7 +182,7 @@ fn run(a: u8) {
     expect(target("res.unwrap()")).toBe("Res#unwrap");
   });
 
-  it("keeps a reassigned `let` typed through a generic-returning method (`let mut d = res.map(..); d = ..;`)", () => {
+  it("keeps a reassigned `let` typed through a generic-returning method (`let mut d = res.map(..); d = ..;`)", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 fn run(a: u8) {
@@ -195,7 +197,7 @@ fn run(a: u8) {
     expect(target("d.unwrap()")).toBe("Res#unwrap");
   });
 
-  it("types an `if` initializer from its agreeing constructor arm", () => {
+  it("types an `if` initializer from its agreeing constructor arm", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 fn run(c: bool, a: u8) {
@@ -213,7 +215,7 @@ fn run(c: bool, a: u8) {
     expect(target("res.unwrap()")).toBe("Res#unwrap");
   });
 
-  it("types a `*self` copy inside an impl (`let mut dec = *self; dec.round(2).unwrap()`)", () => {
+  it("types a `*self` copy inside an impl (`let mut dec = *self; dec.round(2).unwrap()`)", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 impl fmt::Display for Decimal {
@@ -229,7 +231,7 @@ impl fmt::Display for Decimal {
     expect(target("dec.round(2).unwrap()")).toBe("Res#unwrap");
   });
 
-  it("lets a later shadowing `let` retype the name", () => {
+  it("lets a later shadowing `let` retype the name", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 fn run(c: bool) {
@@ -243,7 +245,7 @@ fn run(c: bool) {
     expect(target("res.unwrap()")).toBeUndefined();
   });
 
-  it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", () => {
+  it("still drops `x.unwrap()` on an untyped receiver bound only to the lone project `Res#unwrap`", async () => {
     const target = edgesOf(
       `${tikvDecimal}
 fn run() {

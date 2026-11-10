@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import ignore from "ignore";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { GrammarPackageNotInstalledError, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -41,13 +41,13 @@ describe("CodegraphFileExtractor — grammar loading through the language kernel
   writeFileSync(join(root, "ledger.swift"), "class Ledger {\n  func post() { audit() }\n  func audit() {}\n}\n");
   writeFileSync(join(root, "pool.ts"), "export class Pool {\n  run(): void { helper(); }\n}\nfunction helper() {}\n");
 
-  afterAll(() => {
+  afterAll(async () => {
     rmSync(root, { recursive: true, force: true });
   });
 
   it("raises the typed error for the language whose grammar package is missing", async () => {
     const extractor = extractorWith(
-      new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" }),
+      await LanguageFactory.preloaded({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" }),
     );
     await expect(extractor.parse(root, "ledger.swift")).rejects.toBeInstanceOf(GrammarPackageNotInstalledError);
     await expect(extractor.extract(root, "ledger.swift")).rejects.toThrow(/tree-sitter-swift/);
@@ -55,7 +55,7 @@ describe("CodegraphFileExtractor — grammar loading through the language kernel
 
   it("still extracts every other language when one grammar is missing", async () => {
     const extractor = extractorWith(
-      new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" }),
+      await LanguageFactory.preloaded({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" }),
     );
     await expect(extractor.parse(root, "ledger.swift")).rejects.toBeInstanceOf(GrammarPackageNotInstalledError);
     const extraction = await extractor.parse(root, "pool.ts");
@@ -66,7 +66,9 @@ describe("CodegraphFileExtractor — grammar loading through the language kernel
   it("extracts the language again once its grammar is installed — a failed load is not cached", async () => {
     let swiftInstalled = false;
     const extractor = extractorWith(
-      new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" || swiftInstalled }),
+      await LanguageFactory.preloaded({
+        isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-swift" || swiftInstalled,
+      }),
     );
     await expect(extractor.parse(root, "ledger.swift")).rejects.toBeInstanceOf(GrammarPackageNotInstalledError);
     swiftInstalled = true;
@@ -74,7 +76,7 @@ describe("CodegraphFileExtractor — grammar loading through the language kernel
     expect(extraction.chunks.map((chunk) => chunk.symbolId)).toEqual(expect.arrayContaining(["Ledger#post"]));
   });
 
-  it("imports no tree-sitter grammar package statically — a missing one cannot break module load", () => {
+  it("imports no tree-sitter grammar package statically — a missing one cannot break module load", async () => {
     const source = readFileSync(
       new URL("../../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.ts", import.meta.url),
       "utf8",
@@ -85,7 +87,10 @@ describe("CodegraphFileExtractor — grammar loading through the language kernel
 });
 
 describe("loadCodegraphGrammar", () => {
-  const factory = new LanguageFactory();
+  let factory: Awaited<ReturnType<typeof LanguageFactory.preloaded>>;
+  beforeAll(async () => {
+    factory = await LanguageFactory.preloaded();
+  });
 
   // The grammar object each extension parsed with before the kernel owned the
   // load: the per-extension selection must survive the move, `.tsx` included.
@@ -103,8 +108,8 @@ describe("loadCodegraphGrammar", () => {
     }
   });
 
-  it("raises the typed error synchronously too", () => {
-    const missing = new LanguageFactory({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-rust" });
+  it("raises the typed error synchronously too", async () => {
+    const missing = await LanguageFactory.preloaded({ isGrammarPackageInstalled: (pkg) => pkg !== "tree-sitter-rust" });
     expect(() => loadCodegraphGrammarSync(missing, ".rs")).toThrow(GrammarPackageNotInstalledError);
   });
 });

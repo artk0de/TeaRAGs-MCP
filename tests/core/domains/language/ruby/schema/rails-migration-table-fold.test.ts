@@ -10,7 +10,7 @@ import { OAUTH_MIGRATIONS } from "../fixtures/oauth-migrations.js";
 const parser = new TreeSitterChunker(
   { chunkSize: 4500, chunkOverlap: 0, maxChunkSize: 4500 },
   new DefaultSymbolIdComposer(),
-  new LanguageFactory(),
+  await LanguageFactory.preloaded(),
 );
 
 /** The corpus points for `table`, in file order — what the read path hands the fold. */

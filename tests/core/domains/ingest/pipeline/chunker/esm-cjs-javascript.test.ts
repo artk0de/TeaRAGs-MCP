@@ -4,7 +4,7 @@
  * as a `.js` module does. Without it the scanner never offered the file, so an
  * ESM/CJS JavaScript module had no chunks while the codegraph walked it.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { detectLanguage } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
@@ -42,13 +42,16 @@ export class Pool {
 `;
 
 describe("ingest .mjs / .cjs as JavaScript (bd tea-rags-mcp-oxodb)", () => {
-  const chunker = new TreeSitterChunker(
-    { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
-    new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
-  );
+  let chunker: TreeSitterChunker;
+  beforeAll(async () => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
+      new DefaultSymbolIdComposer(),
+      await LanguageFactory.preloaded(),
+    );
+  });
 
-  it("routes both extensions to the javascript language", () => {
+  it("routes both extensions to the javascript language", async () => {
     expect(detectLanguage("src/app.mjs")).toBe("javascript");
     expect(detectLanguage("src/legacy.cjs")).toBe("javascript");
   });

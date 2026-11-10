@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 
 describe("LanguageFactory.capabilities", () => {
-  const factory = new LanguageFactory();
+  let factory: Awaited<ReturnType<typeof LanguageFactory.preloaded>>;
+  beforeAll(async () => {
+    factory = await LanguageFactory.preloaded();
+  });
 
-  it("has a capability descriptor for every supported() language", () => {
+  it("has a capability descriptor for every supported() language", async () => {
     const caps = factory.capabilities();
     for (const lang of factory.supported()) {
       expect(caps.has(lang)).toBe(true);
@@ -13,17 +16,17 @@ describe("LanguageFactory.capabilities", () => {
     }
   });
 
-  it("covers exactly the supported() set (no extra, no missing)", () => {
+  it("covers exactly the supported() set (no extra, no missing)", async () => {
     const caps = factory.capabilities();
     expect([...caps.keys()].sort()).toEqual([...factory.supported()].sort());
   });
 
-  it("ports Ruby codegraph as a typing-tiered object", () => {
+  it("ports Ruby codegraph as a typing-tiered object", async () => {
     const ruby = factory.capabilities().get("ruby")!;
     expect(ruby.codegraph.tier).toMatchObject({ untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" });
   });
 
-  it("ports markdown AST as full and codegraph as none", () => {
+  it("ports markdown AST as full and codegraph as none", async () => {
     const md = factory.capabilities().get("markdown")!;
     expect(md.ast.tier).toBe("full");
     expect(md.codegraph.tier).toBe("none");

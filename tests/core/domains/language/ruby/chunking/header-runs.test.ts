@@ -107,11 +107,11 @@ const nonBlankRows = (code: string): number[] =>
 describe("Ruby container header runs (bd tea-rags-mcp-9f0yn.3)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

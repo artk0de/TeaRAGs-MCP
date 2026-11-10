@@ -321,6 +321,9 @@ export async function createCodegraphProviderRuntime(
     ...rustIndexSourcesOf(config),
     ...(runtimeDeps.crossRunParseCache ? { crossRunParseCache: runtimeDeps.crossRunParseCache } : {}),
   });
+  // bd tea-rags-mcp-zkd96 — the factory's provider modules are lazy; this
+  // runtime resolves arbitrary languages, so load the full set once here.
+  await languageFactory.preload?.();
   const composer = new lang.DefaultSymbolIdComposer();
   const { collectSymbols } = lang;
 

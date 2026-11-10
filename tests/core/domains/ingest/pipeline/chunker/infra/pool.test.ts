@@ -11,7 +11,7 @@ import { TreeSitterChunker } from "../../../../../../../src/core/domains/ingest/
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../../src/core/domains/language/index.js";
 import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
 
-const testLanguageFactoryDescriptor = new LanguageFactory();
+const testLanguageFactoryDescriptor = await LanguageFactory.preloaded();
 
 const CHUNKER_CONFIG: ChunkerConfig = {
   chunkSize: 500,

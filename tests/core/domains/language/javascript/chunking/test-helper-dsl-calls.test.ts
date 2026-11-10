@@ -68,7 +68,7 @@ async function chunk(source: string): Promise<CodeChunk[]> {
   const chunker = new TreeSitterChunker(
     { chunkSize: 2500, chunkOverlap: 0, maxChunkSize: 5000 },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
   return chunker.chunk(source, RELATIVE_PATH, LANGUAGE);
 }

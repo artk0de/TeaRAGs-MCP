@@ -32,11 +32,11 @@ import {
 
 let workTree: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   workTree = mkdtempSync(join(tmpdir(), "architecture-section-change-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
   rmSync(workTree, { recursive: true, force: true });
 });
 
@@ -79,7 +79,7 @@ function scopeOf(files: readonly string[], extra: Partial<DiffScopeRead> = {}): 
   };
 }
 
-function runContext(graph: FileDependencyGraph, scope: DiffScopeRead, extra: Partial<ReviewSectionContext> = {}) {
+async function runContext(graph: FileDependencyGraph, scope: DiffScopeRead, extra: Partial<ReviewSectionContext> = {}) {
   const context: ReviewSectionContext = {
     scope,
     graphDb: graphDbStub(graph),
@@ -87,7 +87,7 @@ function runContext(graph: FileDependencyGraph, scope: DiffScopeRead, extra: Par
     temporalCochangeError: undefined,
     lexiconOps: undefined,
     reviewEdgeExtraction: {
-      languageFactory: new LanguageFactory({}),
+      languageFactory: await LanguageFactory.preloaded({}),
       collectSymbols,
       composer: new DefaultSymbolIdComposer(),
     },
@@ -130,7 +130,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
     writeUiTree();
     writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
 
-    const payload = await run(runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"])));
+    const payload = await run(await runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"])));
 
     expect(payload.findings.filter((f) => f.detector === "stableDependencies")).not.toEqual([]);
     expect(payload.change?.introducedCount).toBeGreaterThanOrEqual(1);
@@ -142,7 +142,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
     writeFile("src/core/k.ts", "export const K = 1;\n");
 
     const payload = await run(
-      runContext(stableUnstableGraph([edge("src/core/k.ts", "src/ui/v.ts")]), scopeOf(["src/core/k.ts"])),
+      await runContext(stableUnstableGraph([edge("src/core/k.ts", "src/ui/v.ts")]), scopeOf(["src/core/k.ts"])),
     );
 
     expect(payload.change?.resolved).toContainEqual({
@@ -158,7 +158,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
 
     // core/j.ts already carried core → ui in the index; the diff adds a second carrier.
     const graph = stableUnstableGraph([edge("src/core/j.ts", "src/ui/v.ts")], ["src/core/j.ts"]);
-    const payload = await run(runContext(graph, scopeOf(["src/core/k.ts"])));
+    const payload = await run(await runContext(graph, scopeOf(["src/core/k.ts"])));
 
     expect(payload.findings.filter((f) => f.detector === "stableDependencies")).toEqual([]);
     expect(payload.change?.persisting).toContainEqual(expect.objectContaining({ family: "stableDependencies" }));
@@ -172,7 +172,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
 
     const graph = stableUnstableGraph([edge("src/core/old.ts", "src/ui/v.ts")], ["src/core/old.ts"]);
     const payload = await run(
-      runContext(
+      await runContext(
         graph,
         scopeOf(["src/core/moved.ts", "src/core/old.ts"], {
           renamedFrom: new Map([["src/core/moved.ts", "src/core/old.ts"]]),
@@ -190,7 +190,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
     writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
     const indexLag = { indexedCommit: "older", treeCommit: "mb" };
 
-    const payload = await run(runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"]), { indexLag }));
+    const payload = await run(await runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"]), { indexLag }));
 
     expect(payload.change).toMatchObject({ indexLag, maybeAlreadyCommitted: true });
   });
@@ -199,7 +199,7 @@ describe("architecture section change block (bd tea-rags-mcp-89k7k.1.7)", () => 
     writeUiTree();
     writeFile("src/core/k.ts", "export const K = 1;\n");
 
-    const payload = await run(runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"])));
+    const payload = await run(await runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"])));
 
     expect(payload.change).toBeDefined();
     expect(payload.change?.indexLag).toBeUndefined();
@@ -235,7 +235,7 @@ describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () =
     writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
 
     const payload = await run(
-      runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"]), {
+      await runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"]), {
         temporalCochange: cochangeWith(["src/core/k.ts", "src/ui/v.ts"]),
       }),
     );
@@ -248,7 +248,7 @@ describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () =
     writeFile("src/core/k.ts", 'import { V } from "../ui/v";\nexport const K = V;\n');
 
     const payload = await run(
-      runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"], { diffCommits: ownCommits }), {
+      await runContext(stableUnstableGraph(), scopeOf(["src/core/k.ts"], { diffCommits: ownCommits }), {
         temporalCochange: cochangeWith(["src/core/k.ts", "src/ui/v.ts"]),
       }),
     );
@@ -262,7 +262,7 @@ describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () =
 
     const graph = stableUnstableGraph([edge("src/core/j.ts", "src/ui/v.ts")], ["src/core/j.ts"]);
     const payload = await run(
-      runContext(graph, scopeOf(["src/core/j.ts"]), {
+      await runContext(graph, scopeOf(["src/core/j.ts"]), {
         temporalCochange: cochangeWith(["src/core/j.ts", "src/ui/v.ts"]),
       }),
     );
@@ -279,7 +279,7 @@ describe("architecture section impact tiers (bd tea-rags-mcp-r8hme.53 T2)", () =
 
     const graph = stableUnstableGraph([edge("src/core/j.ts", "src/ui/v.ts")], ["src/core/j.ts"]);
     const payload = await run(
-      runContext(graph, scopeOf(["src/core/j.ts"]), {
+      await runContext(graph, scopeOf(["src/core/j.ts"]), {
         temporalCochange: cochangeWith(["src/dep3/d.ts", "src/ext3/e.ts"]),
       }),
     );
@@ -305,8 +305,8 @@ describe("architecture and norms over one shared production graph (bd tea-rags-m
     const scope = scopeOf(["src/core/k.ts"]);
     const sections = async (extra: Partial<ReviewSectionContext>) =>
       Promise.all([
-        architectureSectionProvider.run(runContext(stableUnstableGraph(), scope, extra)),
-        normsSectionProvider.run(runContext(stableUnstableGraph(), scope, extra)),
+        architectureSectionProvider.run(await runContext(stableUnstableGraph(), scope, extra)),
+        normsSectionProvider.run(await runContext(stableUnstableGraph(), scope, extra)),
       ]);
     const shared = deepFreeze(await readProductionArchitectureGraph(graphDbStub(stableUnstableGraph())));
 

@@ -79,6 +79,9 @@ function scopeAt(mergeBase: string): DiffScopeRead {
   };
 }
 
+/** Preloaded once at module scope; `runContext()` stays a cheap sync builder. */
+const languageFactory = await LanguageFactory.preloaded({});
+
 function runContext(scope: DiffScopeRead): ReviewSectionContext {
   return {
     scope,
@@ -90,7 +93,7 @@ function runContext(scope: DiffScopeRead): ReviewSectionContext {
     temporalCochangeError: undefined,
     lexiconOps: undefined,
     reviewEdgeExtraction: {
-      languageFactory: new LanguageFactory({}),
+      languageFactory,
       collectSymbols,
       composer: new DefaultSymbolIdComposer(),
     },
@@ -121,7 +124,7 @@ function cycleLocations(payload: unknown): { listed: number; persisting: string[
 const PRE_EXISTING_CYCLE = { listed: 0, persisting: ["src/app/a.ts -> src/lib/b.ts"] };
 
 describe("architectureSectionProvider.run — diff-base ancestry", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     workTree = mkdtempSync(join(tmpdir(), "architecture-base-ancestry-"));
     git("init", "-q", "-b", "main");
     writeFile("src/app/a.ts", 'import { B } from "../lib/b";\nexport const A = 1;\n');
@@ -132,7 +135,7 @@ describe("architectureSectionProvider.run — diff-base ancestry", () => {
     vi.mocked(vcs.isAncestor).mockClear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     rmSync(workTree, { recursive: true, force: true });
   });
 

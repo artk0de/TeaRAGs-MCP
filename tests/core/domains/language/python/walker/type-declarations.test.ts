@@ -32,6 +32,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "__fixtures__");
 const ORACLE_PKG = join(HERE, "../../../../../fixtures/py-oracle/pkg");
 
+/** The in-memory extraction deps the INERT-module describe runs with. */
+const deps = {
+  languageFactory: await LanguageFactory.preloaded(),
+  collectSymbols,
+  composer: new DefaultSymbolIdComposer(),
+};
+
 /** The `FileExtraction` of `src` through the seam production runs: materialize, `collectSymbols`, `walker.walk`. */
 function extract(src: string, relPath = "app/a.py"): FileExtraction {
   const language = new PythonLanguage();
@@ -65,7 +72,7 @@ function factsOf(src: string): Record<string, { kind: string; line: number; conf
 }
 
 describe("Python walker — type and constant declarations", () => {
-  it("emits every class, type alias and module-level constant of the fixture, and nothing else", () => {
+  it("emits every class, type alias and module-level constant of the fixture, and nothing else", async () => {
     expect(factsOf(FIXTURE_SOURCE)).toEqual({
       MAX_RETRIES: { kind: "constant", line: 6 },
       _DEFAULT_TIMEOUT: { kind: "constant", line: 7 },
@@ -91,7 +98,7 @@ describe("Python walker — type and constant declarations", () => {
     });
   });
 
-  it("does not emit a lower-case module assignment, a dunder, a class-body constant or a function local", () => {
+  it("does not emit a lower-case module assignment, a dunder, a class-body constant or a function local", async () => {
     const ids = Object.keys(factsOf(FIXTURE_SOURCE));
     for (const absent of ["retries", "__all__", "Service.LIMIT", "LIMIT", "Color.RED", "RED", "LOCAL_CONST", "INNER"]) {
       expect(ids).not.toContain(absent);
@@ -99,17 +106,17 @@ describe("Python walker — type and constant declarations", () => {
     expect(ids.some((id) => id.endsWith("LocalType"))).toBe(false);
   });
 
-  it("emits the declarations in source order", () => {
+  it("emits the declarations in source order", async () => {
     const lines = (extract(FIXTURE_SOURCE).typeDeclarations ?? []).map((fact) => fact.line);
     expect(lines).toEqual([...lines].sort((a, b) => a - b));
   });
 
-  it("keeps the first of two module-level declarations of one name, as collectSymbols keeps the first symbol", () => {
+  it("keeps the first of two module-level declarations of one name, as collectSymbols keeps the first symbol", async () => {
     const src = ["try:", "    MODE = 1", "except ImportError:", "    MODE = 2", ""].join("\n");
     expect(factsOf(src)).toEqual({ MODE: { kind: "constant", line: 2 } });
   });
 
-  it("does not read a type variable as a constant", () => {
+  it("does not read a type variable as a constant", async () => {
     const src = [
       "from typing import ParamSpec, TypeVar, TypeVarTuple",
       "T = TypeVar('T')",
@@ -121,12 +128,11 @@ describe("Python walker — type and constant declarations", () => {
     expect(extract(src).typeDeclarations).toBeUndefined();
   });
 
-  it("leaves the channel absent for a file declaring no type and no constant", () => {
+  it("leaves the channel absent for a file declaring no type and no constant", async () => {
     expect(extract(["def f():", "    X = 1", "    return X", ""].join("\n")).typeDeclarations).toBeUndefined();
   });
 
   describe("an INERT module (no def, class, call or import) — the pre-materialization fast path", () => {
-    const deps = { languageFactory: new LanguageFactory(), collectSymbols, composer: new DefaultSymbolIdComposer() };
     const CONSTANTS_ONLY = [
       "MAX_RETRIES = 3",
       "TIMEOUT: Final = 10",
@@ -145,7 +151,7 @@ describe("Python walker — type and constant declarations", () => {
     ].join("\n");
     const TYPE_ALIAS_ONLY = ["type Pair = tuple[int, int]", "type Box[T] = list[T]", ""].join("\n");
 
-    it("publishes a constants-only module's facts through the production extraction path", () => {
+    it("publishes a constants-only module's facts through the production extraction path", async () => {
       expect(extractFileInMemory(deps, "pkg/settings.py", CONSTANTS_ONLY)).toEqual({
         relPath: "pkg/settings.py",
         language: "python",
@@ -166,14 +172,14 @@ describe("Python walker — type and constant declarations", () => {
       });
     });
 
-    it("publishes a bare `type X = …` module's aliases through the production extraction path", () => {
+    it("publishes a bare `type X = …` module's aliases through the production extraction path", async () => {
       expect(extractFileInMemory(deps, "pkg/types.py", TYPE_ALIAS_ONLY)?.typeDeclarations).toEqual([
         { typeId: "Pair", symbolKind: "type_alias", line: 1, reopens: false },
         { typeId: "Box", symbolKind: "type_alias", line: 2, reopens: false },
       ]);
     });
 
-    it("gives a module with no module-level declaration the empty inert result plus the 0/0 census", () => {
+    it("gives a module with no module-level declaration the empty inert result plus the 0/0 census", async () => {
       const extraction = extractFileInMemory(deps, "pkg/data.py", "codes = {'AD': 'Andorra'}\n");
       expect(extraction).toEqual({
         relPath: "pkg/data.py",
@@ -186,13 +192,13 @@ describe("Python walker — type and constant declarations", () => {
       expect(extraction).not.toHaveProperty("typeDeclarations");
     });
 
-    it("answers from the native root the WHOLE extraction the full walk answers from the materialized tree", () => {
+    it("answers from the native root the WHOLE extraction the full walk answers from the materialized tree", async () => {
       for (const src of [CONSTANTS_ONLY, TYPE_ALIAS_ONLY, "codes = {'AD': 'Andorra'}\n", ""]) {
         expect(extractFileInMemory(deps, "pkg/m.py", src)).toEqual(extract(src, "pkg/m.py"));
       }
     });
 
-    it("counts a type in the abstractness census only on a node type that makes a file walked", () => {
+    it("counts a type in the abstractness census only on a node type that makes a file walked", async () => {
       // The inert path answers the census 0/0 without a traversal; that holds only
       // while the census reader answers on extraction-bearing node types alone.
       const bearing = new Set(new PythonLanguage().walker.extractionBearingNodeTypes);
@@ -226,7 +232,7 @@ describe("Python walker — type and constant declarations", () => {
     });
   });
 
-  it("keeps the chunk set, symbols and CallRefs byte-identical to the pre-channel golden", () => {
+  it("keeps the chunk set, symbols and CallRefs byte-identical to the pre-channel golden", async () => {
     const golden = JSON.parse(readFileSync(join(FIXTURES, "extraction-golden.json"), "utf8")) as Record<
       string,
       unknown

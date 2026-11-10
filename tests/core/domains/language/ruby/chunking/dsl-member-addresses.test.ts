@@ -69,11 +69,11 @@ function scrollRowOf(chunk: CodeChunk, i: number) {
 describe("Ruby chunking — class-level DSL statements are addressable (bd tea-rags-mcp-5ivtb)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 4500, chunkOverlap: 450, maxChunkSize: 4500 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

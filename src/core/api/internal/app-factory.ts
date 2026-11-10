@@ -92,7 +92,7 @@ export interface AppDeps {
    * facade rather than mutating env, so concurrent runs on different projects
    * cannot clobber each other (tea-rags-mcp-pmfm4).
    */
-  ingestForPath?: (path: string) => IngestFacade;
+  ingestForPath?: (path: string) => IngestFacade | Promise<IngestFacade>;
   /**
    * The base index a working-tree path is read against (live D10, bd
    * tea-rags-mcp-xi2r9): `getIndexStatus` of a linked worktree answers with
@@ -221,7 +221,7 @@ export function createApp(deps: AppDeps): App {
     // (bd tea-rags-mcp-uebug). Clear reads no composition and stays on the
     // process-wide facade.
     indexCodebase: async (path, options, progress, enrichmentProgress) =>
-      (deps.ingestForPath?.(path) ?? facades.ingest).indexCodebase(path, options, progress, enrichmentProgress),
+      (await (deps.ingestForPath?.(path) ?? facades.ingest)).indexCodebase(path, options, progress, enrichmentProgress),
     whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
     getIndexStatus: async (path) => readIndexStatus(path, deps, facades.ingest),
     clearIndex: async (path) => facades.ingest.clearIndex(path),
@@ -338,7 +338,8 @@ export function createApp(deps: AppDeps): App {
 async function readIndexStatus(path: string, deps: AppDeps, ingest: IngestFacade): Promise<IndexStatus> {
   const target = await deps.workingTreeIndexOf?.(path);
   const indexPath = target?.indexPath ?? path;
-  const status = await (deps.ingestForPath?.(indexPath) ?? ingest).getIndexStatus(indexPath);
+  const facadeForPath = await (deps.ingestForPath?.(indexPath) ?? ingest);
+  const status = await facadeForPath.getIndexStatus(indexPath);
   if (!target) return status;
   return { ...status, indexPath, ...(target.workingTree ? { workingTree: target.workingTree } : {}) };
 }

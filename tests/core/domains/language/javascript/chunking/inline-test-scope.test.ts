@@ -4,13 +4,16 @@ import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pip
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../../../../../src/core/domains/language/index.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
 
+/** Preloaded once at module scope; every describe builds its chunker from it. */
+const factory = await LanguageFactory.preloaded();
+
 /**
  * Vitest in-source tests (`if (import.meta.vitest) { … }`) in a SOURCE file
  * chunk as a test scope; every other top-level `if` chunks as before.
  */
 describe("TreeSitterChunker — Vitest in-source test blocks (JavaScript)", () => {
   const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), factory);
 
   const inSourceFixture = `export function add(a, b) {
   const total = a + b;
@@ -19,7 +22,7 @@ describe("TreeSitterChunker — Vitest in-source test blocks (JavaScript)", () =
 
 if (import.meta.vitest) {
   const { it, expect } = import.meta.vitest;
-  it("adds", () => {
+  it("adds", async () => {
     expect(add(1, 2)).toBe(3);
   });
 }
@@ -57,7 +60,7 @@ if (import.meta.vitest) {
   const doubled = value * 2;
   if (import.meta.vitest) {
     const { it, expect } = import.meta.vitest;
-    it("doubles", () => {
+    it("doubles", async () => {
       expect(nestedInSource(2)).toBe(4);
     });
   }
@@ -146,10 +149,10 @@ const isTestChunk = (chunk: { metadata: { chunkType?: string } }): boolean =>
 
 describe("TreeSitterChunker — an in-source block never becomes production code (52wk3.9)", () => {
   const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), factory);
 
-  const UNRECOGNISED_CALL = 'import.meta.vitest.it("t", () => expect(1).toBe(1));';
-  const TINY_EXAMPLE = 'it("t", () => {});';
+  const UNRECOGNISED_CALL = 'import.meta.vitest.it("t", async () => expect(1).toBe(1));';
+  const TINY_EXAMPLE = 'it("t", async () => {});';
   const topLevel = (body: string): string =>
     `export function add(a, b) {\n  const total = a + b;\n  return total;\n}\n\nif (import.meta.vitest) {\n  ${body}\n}\n`;
   const nested = (body: string): string =>
@@ -200,14 +203,14 @@ describe("TreeSitterChunker — an in-source block never becomes production code
 
 describe("TreeSitterChunker — residual in-source leaks into production chunks (52wk3.9)", () => {
   const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
-  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), new LanguageFactory());
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), factory);
 
   const productionHolding = (chunks: { content: string; metadata: { chunkType?: string } }[], text: string): string[] =>
     chunks.filter((chunk) => !isTestChunk(chunk) && chunk.content.includes(text)).map((c) => c.content);
 
   const SHORT_NESTED = `export function scale(value) {
   const scaled = value * 3;
-  if (import.meta.vitest) { it("s", () => {}); }
+  if (import.meta.vitest) { it("s", async () => {}); }
   return scaled;
 }
 `;

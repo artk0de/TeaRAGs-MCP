@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   const chunker = new TreeSitterChunker(
     { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
 
   const paths = JSON.parse(readFileSync(list, "utf8")) as string[];

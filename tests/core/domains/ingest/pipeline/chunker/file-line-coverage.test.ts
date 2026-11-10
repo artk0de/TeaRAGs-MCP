@@ -51,11 +51,11 @@ function bigFunction(name: string): string {
 describe("TreeSitterChunker — every non-blank line is chunked", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: MAX, chunkOverlap: 450, maxChunkSize: MAX },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

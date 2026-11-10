@@ -4,7 +4,7 @@
  * as a `.ts` module does. Without it the scanner never offered the file, so an
  * ESM/CJS TypeScript module had no chunks while the codegraph walked it.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { detectLanguage } from "../../../../../../src/core/domains/ingest/pipeline/chunker/language-config/index.js";
 import { TreeSitterChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
@@ -23,13 +23,16 @@ export function start(): Pool {
 `;
 
 describe("ingest .mts / .cts as TypeScript (bd tea-rags-mcp-1y13c)", () => {
-  const chunker = new TreeSitterChunker(
-    { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
-    new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
-  );
+  let chunker: TreeSitterChunker;
+  beforeAll(async () => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 },
+      new DefaultSymbolIdComposer(),
+      await LanguageFactory.preloaded(),
+    );
+  });
 
-  it("routes both extensions to the typescript language", () => {
+  it("routes both extensions to the typescript language", async () => {
     expect(detectLanguage("src/worker.mts")).toBe("typescript");
     expect(detectLanguage("src/legacy.cts")).toBe("typescript");
   });

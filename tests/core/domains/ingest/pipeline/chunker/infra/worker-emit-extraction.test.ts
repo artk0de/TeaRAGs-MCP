@@ -9,7 +9,7 @@
  */
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { AstNode, MaterializedTree } from "../../../../../../../src/core/contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../../../src/core/contracts/types/codegraph.js";
@@ -67,6 +67,9 @@ function extractFromTree(
 
 describe("worker single-parse extraction equivalence (yl9tv)", () => {
   const factory = new LanguageFactory();
+  beforeAll(async () => {
+    await factory.preload();
+  });
   const composer = new DefaultSymbolIdComposer();
   const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
 
@@ -106,6 +109,9 @@ describe("worker single-parse extraction equivalence (yl9tv)", () => {
 // on the chunk tree lost its JSX-embedded call sites on the full-index path.
 describe("cross-pass extraction walks under the extension's codegraph grammar (vqdi6)", () => {
   const factory = new LanguageFactory();
+  beforeAll(async () => {
+    await factory.preload();
+  });
   const composer = new DefaultSymbolIdComposer();
   const config: ChunkerConfig = { chunkSize: 500, chunkOverlap: 50, maxChunkSize: 1000 };
   const TSX_PATH = "/repo/app/javascript/PriorityPill.tsx";

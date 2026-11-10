@@ -79,6 +79,9 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
   }
   const lang = (await import(config.languageModulePath)) as LanguageModule;
   const languageFactory = new lang.LanguageFactory();
+  // bd tea-rags-mcp-zkd96 — the factory's provider modules are lazy; the worker
+  // chunks arbitrary languages, so load the full set once at engine build.
+  await languageFactory.preload?.();
   const composer = new lang.DefaultSymbolIdComposer();
   const chunker = new TreeSitterChunker(config, composer, languageFactory);
   return {

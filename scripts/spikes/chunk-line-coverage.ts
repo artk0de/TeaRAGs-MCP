@@ -119,7 +119,7 @@ async function measure(dump: Record<string, FileDump>) {
   const chunker = new TreeSitterChunker(
     { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: MAX_CHUNK_SIZE },
     new DefaultSymbolIdComposer(),
-    new LanguageFactory(),
+    await LanguageFactory.preloaded(),
   );
   // Probe-only access to the engine's private container discovery, so the
   // "inside a container" denominator is the SAME node set the engine walked.

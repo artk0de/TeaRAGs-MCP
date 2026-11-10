@@ -14,9 +14,11 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 import { collectTypeDeclarationReaders } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/type-declaration-readers.js";
 
 // Multi-file fixture mirrored from declared-call-result-locals.test.ts.
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -110,7 +112,7 @@ const edgeTarget = (f: ReturnType<typeof fixture>, callExpression: string): stri
 describe.each([false, true])("Rust receiver binding precedence (materialized=%s)", (materialized) => {
   // The untyped `Some(sink)` let CONTINUES the call; with `take` declared on two
   // project types (servo declares many) no later pass picks BodySink's.
-  it("a later call-result let shadows the parameter type (servo http_loader sink)", () => {
+  it("a later call-result let shadows the parameter type (servo http_loader sink)", async () => {
     const f = fixture(
       {
         "src/main.rs": `${bodySink}
@@ -130,7 +132,7 @@ fn run(sink: BodySink) {
     expect(target(f.resolve("sink.transmit()"))).toBe("BodySink#transmit");
   });
 
-  it("keeps the parameter type when no later let rebinds it", () => {
+  it("keeps the parameter type when no later let rebinds it", async () => {
     const f = fixture(
       {
         "src/main.rs": `${bodySink}
@@ -147,7 +149,7 @@ fn run(sink: BodySink) {
     expect(target(f.resolve("sink.take()"))).toBe("BodySink#take");
   });
 
-  it("keeps an earlier call-result let's type when nothing rebinds it", () => {
+  it("keeps an earlier call-result let's type when nothing rebinds it", async () => {
     const f = fixture(
       {
         "src/main.rs": `${bodySink}
@@ -166,7 +168,7 @@ fn run(sink: BodySink) {
     expect(target(f.resolve("other.take()"))).toBe("Other#take");
   });
 
-  it("types a constructor local by the constructor's declared Option return (tikv analyze_context cms)", () => {
+  it("types a constructor local by the constructor's declared Option return (tikv analyze_context cms)", async () => {
     const f = fixture(
       {
         "src/cmsketch.rs": cmSketch("Option<Self>"),
@@ -187,7 +189,7 @@ fn run(bytes: &[u8]) {
     expect(target(f.resolve("cms.insert(bytes)"))).toBe("CmSketch#insert");
   });
 
-  it("keeps the constructor heuristic when the constructor returns Self", () => {
+  it("keeps the constructor heuristic when the constructor returns Self", async () => {
     const f = fixture(
       {
         "src/cmsketch.rs": cmSketch("Self"),
@@ -300,23 +302,23 @@ describe.each([false, true])(
         ),
       );
 
-    it("types the servo shape: agreeing twin constructors returning a `Self::Target` deref", () => {
+    it("types the servo shape: agreeing twin constructors returning a `Self::Target` deref", async () => {
       expect(resolvePromise(promiseFile({ traitImpl: true, derefReturn: "&Self::Target" }))).toBe(
         "Promise#reject_error",
       );
     });
 
-    it("types a constructor an inherent and a trait impl both declare with one return", () => {
+    it("types a constructor an inherent and a trait impl both declare with one return", async () => {
       expect(resolvePromise(promiseFile({ traitImpl: true, derefReturn: "&Promise" }))).toBe("Promise#reject_error");
     });
 
-    it("derefs a non-generic wrapper through its impl's concrete `type Target`", () => {
+    it("derefs a non-generic wrapper through its impl's concrete `type Target`", async () => {
       expect(resolvePromise(promiseFile({ traitImpl: false, derefReturn: "&Self::Target" }))).toBe(
         "Promise#reject_error",
       );
     });
 
-    it("still declines a constructor whose declarations disagree on the return", () => {
+    it("still declines a constructor whose declarations disagree on the return", async () => {
       const disagreeing = promiseFile({ traitImpl: true, derefReturn: "&Promise", traitReturn: "Stream" });
       expect(resolvePromise(disagreeing)).toBeNull();
     });
@@ -387,25 +389,25 @@ describe.each([false, true])("Rust re-rooted Trusted<T> receiver (materialized=%
     ...overrides,
   });
 
-  it("types the servo shape: Trusted::new(&Window).root() derefs to Window", () => {
+  it("types the servo shape: Trusted::new(&Window).root() derefs to Window", async () => {
     expect(resolveDocument(corpus(trustedCaller("&Window")))).toBe("src/window.rs::Window#Document");
   });
 
-  it("expands the alias even when an `impl DomRoot<T>` block shares its name (servo root.rs)", () => {
+  it("expands the alias even when an `impl DomRoot<T>` block shares its name (servo root.rs)", async () => {
     const aliasImpl = `${rootFile}impl<T> DomRoot<T> { pub fn as_traced(&self) {} }\n`;
     expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/root.rs": aliasImpl }))).toBe(
       "src/window.rs::Window#Document",
     );
   });
 
-  it("places the argument's type through the caller's imports when a trait impl elsewhere shares its name (servo GlobalScope)", () => {
+  it("places the argument's type through the caller's imports when a trait impl elsewhere shares its name (servo GlobalScope)", async () => {
     const helpers = "use crate::window::Window;\npub trait Helper {}\nimpl Helper for Window {}\n";
     expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/helpers.rs": helpers }))).toBe(
       "src/window.rs::Window#Document",
     );
   });
 
-  it("keeps the type after the pin itself is re-bound by a clone (servo fetch.rs trusted_global)", () => {
+  it("keeps the type after the pin itself is re-bound by a clone (servo fetch.rs trusted_global)", async () => {
     const caller = trustedCaller("&Window").replace(
       "        window.Document();\n",
       "        let trusted_window = trusted_window.clone();\n        window.Document();\n",
@@ -413,14 +415,14 @@ describe.each([false, true])("Rust re-rooted Trusted<T> receiver (materialized=%
     expect(resolveDocument(corpus(caller))).toBe("src/window.rs::Window#Document");
   });
 
-  it("binds the generic argument through `&mut T` too", () => {
+  it("binds the generic argument through `&mut T` too", async () => {
     const mutRefcounted = refcountedFile.replace("pub fn new(ptr: &T)", "pub fn new(ptr: &mut T)");
     expect(resolveDocument(corpus(trustedCaller("&mut Window"), { "src/refcounted.rs": mutRefcounted }))).toBe(
       "src/window.rs::Window#Document",
     );
   });
 
-  it("expands a project alias spelled in the declaring file (alias declared there)", () => {
+  it("expands a project alias spelled in the declaring file (alias declared there)", async () => {
     const inline = `${rootFile}
 pub struct Trusted<T> { ptr: *const T }
 impl<T> Trusted<T> {
@@ -433,7 +435,7 @@ impl<T> Trusted<T> {
     expect(resolveDocument(files)).toBe("src/window.rs::Window#Document");
   });
 
-  it("derefs `Root<Dom<W>>` straight to W through `<T as Deref>::Target`, past Dom's own members", () => {
+  it("derefs `Root<Dom<W>>` straight to W through `<T as Deref>::Target`, past Dom's own members", async () => {
     const domMember = rootFile.replace(
       "pub struct Root<T>",
       "impl<T> Dom<T> { pub fn Document(&self) {} }\npub struct Root<T>",
@@ -443,12 +445,12 @@ impl<T> Trusted<T> {
     );
   });
 
-  it("leaves the re-rooted name untyped when the argument's type is unknown", () => {
+  it("leaves the re-rooted name untyped when the argument's type is unknown", async () => {
     const caller = trustedCaller("&Window").replace("Trusted::new(window)", "Trusted::new(make())");
     expect(resolveDocument(corpus(caller))).toBeNull();
   });
 
-  it("leaves it untyped when the constructor parameter is not the bare generic", () => {
+  it("leaves it untyped when the constructor parameter is not the bare generic", async () => {
     const wrapped = refcountedFile.replace("pub fn new(ptr: &T)", "pub fn new(ptr: Vec<T>)");
     expect(resolveDocument(corpus(trustedCaller("&Window"), { "src/refcounted.rs": wrapped }))).toBeNull();
   });
@@ -496,16 +498,16 @@ describe.each([false, true])("Rust `?`-unwrapped method result shadowing (materi
       "image.metadata()",
     );
 
-  it("types the servo shape: `?` unwraps Result<CachedImage, _> to the renamed import", () => {
+  it("types the servo shape: `?` unwraps Result<CachedImage, _> to the renamed import", async () => {
     expect(resolveMetadata("self.get_cached_image_for_url(url)?")).toBe("src/image_cache.rs::Image#metadata");
   });
 
-  it("does not type the shadowing let as the Result's payload without `?`", () => {
+  it("does not type the shadowing let as the Result's payload without `?`", async () => {
     expect(resolveMetadata("self.get_cached_image_for_url(url)")).not.toBe("src/main.rs::Style#metadata");
     expect(resolveMetadata("self.get_cached_image_for_url(url)")).not.toBe("src/image_cache.rs::Image#metadata");
   });
 
-  it("keeps a project `Result` the declaring file declares itself", () => {
+  it("keeps a project `Result` the declaring file declares itself", async () => {
     const init = "self.get_cached_image_for_url(url)?";
     const ownResult = `${layoutContext(init)}pub struct Result<T, E>(T, E);\n`;
     expect(resolveMetadata(init, ownResult)).toBeNull();

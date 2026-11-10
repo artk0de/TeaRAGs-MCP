@@ -59,11 +59,11 @@ const DATA_DEFINE_BODY = (indent: string): string =>
 describe("TreeSitterChunker — Ruby value-class builder block bodies (bd 0td4h)", () => {
   let chunker: TreeSitterChunker;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     chunker = new TreeSitterChunker(
       { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 },
       new DefaultSymbolIdComposer(),
-      new LanguageFactory(),
+      await LanguageFactory.preloaded(),
     );
   });
 

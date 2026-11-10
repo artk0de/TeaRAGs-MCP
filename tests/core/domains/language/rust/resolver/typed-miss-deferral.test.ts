@@ -20,13 +20,13 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * PROVEN miss — a declared project type with no such member anywhere and no
  * `Deref`, or a field whose declared type is provably foreign — still drops.
  */
-function fixture(files: Record<string, string>) {
+async function fixture(files: Record<string, string>) {
   const language = new RustLanguage();
   const runState = new CodegraphRunState(
     [],
     new Map(),
     new Map(),
-    collectTypeDeclarationReaders(new LanguageFactory()),
+    collectTypeDeclarationReaders(await LanguageFactory.preloaded()),
   );
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -73,10 +73,10 @@ function fixture(files: Record<string, string>) {
 }
 
 describe("Rust chain typing defers to the prior read on an unplaceable typed hop (s3i8m.5)", () => {
-  it("resolves `self.0.borrow_mut()` on a tuple field whose project wrapper type the fold cannot place", () => {
+  it("resolves `self.0.borrow_mut()` on a tuple field whose project wrapper type the fold cannot place", async () => {
     // DomRefCell has impl blocks in two files, so its short name is not a
     // sole placement candidate — the typed hop is silent, not a miss.
-    const f = fixture({
+    const f = await fixture({
       "src/cell.rs": `
 pub struct DomRefCell<T> { value: T }
 impl<T> DomRefCell<T> { pub fn borrow_mut(&self) -> &T { &self.value } }
@@ -101,8 +101,8 @@ impl AttributeStorage {
     });
   });
 
-  it("keeps a tuple field of a provably foreign type unresolved instead of landing on a namesake", () => {
-    const f = fixture({
+  it("keeps a tuple field of a provably foreign type unresolved instead of landing on a namesake", async () => {
+    const f = await fixture({
       "src/lib.rs": `
 use std::sync::Arc;
 use url::Url;
@@ -115,8 +115,8 @@ impl ServoUrl {
     expect(f.resolve("username", "src/lib.rs")).toBeNull();
   });
 
-  it("resolves through a project Deref whose target the fold cannot follow (`get_store().commit_index()`)", () => {
-    const f = fixture({
+  it("resolves through a project Deref whose target the fold cannot follow (`get_store().commit_index()`)", async () => {
+    const f = await fixture({
       "src/entry_storage.rs": `
 pub struct EntryStorage<EK> { engine: EK }
 impl<EK> EntryStorage<EK> { pub fn commit_index(&self) -> u64 { 0 } }
@@ -145,8 +145,8 @@ impl<EK> Peer<EK> {
     });
   });
 
-  it("resolves a multi-line field chain whose type the caller file only reopens with an impl block", () => {
-    const f = fixture({
+  it("resolves a multi-line field chain whose type the caller file only reopens with an impl block", async () => {
+    const f = await fixture({
       "src/engine.rs": `
 pub struct MemoryEngine;
 impl MemoryEngine { pub fn bg_worker_manager(&self) -> u64 { 0 } }
@@ -171,8 +171,8 @@ impl WriteBatch {
     });
   });
 
-  it("resolves through a project Deref whose target is a type alias (`self.ctx.router.state_cnt()`)", () => {
-    const f = fixture({
+  it("resolves through a project Deref whose target is a type alias (`self.ctx.router.state_cnt()`)", async () => {
+    const f = await fixture({
       "src/router.rs": `
 pub struct Router<N> { n: N }
 impl<N> Router<N> { pub fn state_cnt(&self) -> usize { 0 } }
@@ -199,8 +199,8 @@ impl StoreFsmDelegate {
     });
   });
 
-  it("still drops a miss whose Deref declares a target no project type names (`-> &AttrValue`)", () => {
-    const f = fixture({
+  it("still drops a miss whose Deref declares a target no project type names (`-> &AttrValue`)", async () => {
+    const f = await fixture({
       "src/main.rs": `
 use std::ops::Deref;
 use style::attr::AttrValue;
@@ -221,8 +221,8 @@ impl Attr {
     expect(f.resolve("as_atom", "src/main.rs")).toBeNull();
   });
 
-  it("still drops a proven miss: a declared project type with no such member and no Deref", () => {
-    const f = fixture({
+  it("still drops a proven miss: a declared project type with no such member and no Deref", async () => {
+    const f = await fixture({
       "src/main.rs": `
 pub struct Engine;
 impl Engine { pub fn start(&self) {} }

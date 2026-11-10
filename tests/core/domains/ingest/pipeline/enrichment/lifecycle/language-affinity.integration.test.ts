@@ -149,7 +149,12 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
     }),
   });
   const provider = new CodegraphEnrichmentProvider(
-    { pool: mainPool, languageFactory: new LanguageFactory(), composer: new DefaultSymbolIdComposer(), collectSymbols },
+    {
+      pool: mainPool,
+      languageFactory: await LanguageFactory.preloaded(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    },
     descriptor,
   );
 

@@ -58,12 +58,12 @@ function formatEdges(relPath: string, edges: GraphEdges): string[] {
   return lines.sort();
 }
 
-function run(shape: FixtureShape, dumpPath: string | null): void {
+async function run(shape: FixtureShape, dumpPath: string | null): Promise<void> {
   generateFixture(FIXTURE_ROOT, shape);
   const files = collectProjectFiles(FIXTURE_ROOT);
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory({ repoRoot: FIXTURE_ROOT });
+  const factory = await LanguageFactory.preloaded({ repoRoot: FIXTURE_ROOT });
   const language = factory.create("typescript");
   const symbolTable = new InMemoryGlobalSymbolTable();
 
@@ -156,4 +156,4 @@ const argv = process.argv.slice(2);
 const dumpIndex = argv.indexOf("--dump");
 const dumpPath = dumpIndex >= 0 ? (argv[dumpIndex + 1] ?? null) : null;
 const args = parseShapeArgs(argv, DEFAULT_SHAPE);
-run(args.shape, dumpPath);
+await run(args.shape, dumpPath);

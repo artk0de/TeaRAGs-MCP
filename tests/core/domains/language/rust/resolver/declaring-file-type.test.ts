@@ -18,9 +18,11 @@ import { collectTypeDeclarationReaders } from "../../../../../../src/core/domain
  * field) is placed through THAT file's own `use` imports
  * (bd tea-rags-mcp-s3i8m letCall S4b).
  */
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function fixture(files: Record<string, string>, materialized: boolean) {
   const language = new RustLanguage();
-  const factory = new LanguageFactory();
   const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
   const symbolTable = new InMemoryGlobalSymbolTable();
   const extractions: FileExtraction[] = [];
@@ -83,7 +85,7 @@ pub struct B; impl B { pub fn m(&self) {} }
 };
 
 describe.each([false, true])("Rust declaring-file type placement (materialized=%s)", (materialized) => {
-  it("places a callee's return through the callee file's own import", () => {
+  it("places a callee's return through the callee file's own import", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::dir::tmpdir;
@@ -103,7 +105,7 @@ pub fn tmpdir() -> TempDir { todo!() }
     expect(f.resolve("td.path()")).toEqual({ targetRelPath: "src/tests.rs", targetSymbolId: "TempDir#path" });
   });
 
-  it("places a method return spelled through a renamed import", () => {
+  it("places a method return spelled through a renamed import", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::builder::Builder;
@@ -123,7 +125,7 @@ impl Builder { pub fn c(&self) -> C { todo!() } }
     expect(f.resolve("builder.c().m()")).toEqual({ targetRelPath: "src/a.rs", targetSymbolId: "B#m" });
   });
 
-  it("climbs a callee's `use super::` from the callee's own module", () => {
+  it("climbs a callee's `use super::` from the callee's own module", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::store::fsm::make_peer;
@@ -143,7 +145,7 @@ pub fn make_peer() -> Peer { todo!() }
     expect(f.resolve("p.m()")).toEqual({ targetRelPath: "src/store/peer.rs", targetSymbolId: "Peer#m" });
   });
 
-  it("places a struct field's smart-pointer argument through the struct file's import", () => {
+  it("places a struct field's smart-pointer argument through the struct file's import", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::holder::Holder;
@@ -163,7 +165,7 @@ pub struct Holder { pub inner: Arc<Peer> }
     expect(f.resolve("h.inner.m()")).toEqual({ targetRelPath: "src/peer.rs", targetSymbolId: "Peer#m" });
   });
 
-  it("follows a `pub use` re-export the callee's import names", () => {
+  it("follows a `pub use` re-export the callee's import names", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::dir::make_peer;
@@ -210,7 +212,7 @@ pub fn tmpdir() -> TempDir { todo!() }
   // Moved pin: `crate::tests::TempDir` names the module's top-level item; the
   // inline `mod inner` namesake is `crate::tests::inner::TempDir`, a different
   // path, so the module-system placement is no longer ambiguous.
-  it("places a return bound by more than one candidate onto the item the path names", () => {
+  it("places a return bound by more than one candidate onto the item the path names", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::dir::tmpdir;
@@ -231,7 +233,7 @@ pub fn tmpdir() -> TempDir { todo!() }
     expect(f.resolve("td.path()")).toEqual({ targetRelPath: "src/tests.rs", targetSymbolId: "TempDir#path" });
   });
 
-  it("lets a typed miss on a placed type continue when a project trait declares the member", () => {
+  it("lets a typed miss on a placed type continue when a project trait declares the member", async () => {
     const f = fixture(
       {
         "src/main.rs": `use crate::dir::tmpdir;

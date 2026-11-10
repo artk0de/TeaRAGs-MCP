@@ -97,7 +97,7 @@ function judged(
 }
 
 describe("judgeAddedEdgeNorms", () => {
-  it("CONFORMS an added edge along a direction the ledger holds", () => {
+  it("CONFORMS an added edge along a direction the ledger holds", async () => {
     const { addedEdgeVerdicts } = judged([{ source: "src/controllers/c1.ts", target: "src/services/s2.ts" }]);
     expect(addedEdgeVerdicts).toEqual([
       {
@@ -113,7 +113,7 @@ describe("judgeAddedEdgeNorms", () => {
     ]);
   });
 
-  it("MISFITs an added edge against the established direction and names it as expectedPath", () => {
+  it("MISFITs an added edge against the established direction and names it as expectedPath", async () => {
     const { addedEdgeVerdicts } = judged([{ source: "src/services/s1.ts", target: "src/controllers/c2.ts" }]);
     expect(addedEdgeVerdicts).toEqual([
       expect.objectContaining({
@@ -128,14 +128,14 @@ describe("judgeAddedEdgeNorms", () => {
     expect(addedEdgeVerdicts[0].pValue).toBeLessThan(0.05);
   });
 
-  it("reads a role pair with no history as NEW_PATTERN", () => {
+  it("reads a role pair with no history as NEW_PATTERN", async () => {
     const { addedEdgeVerdicts } = judged([{ source: "src/services/s1.ts", target: "src/repositories/r1.ts" }]);
     expect(addedEdgeVerdicts).toEqual([
       expect.objectContaining({ verdict: "NEW_PATTERN", roleSrc: "service", roleDst: "repository", pairSupport: 0 }),
     ]);
   });
 
-  it("never counts the added edges as their own precedent — ledgers read the indexed graph only", () => {
+  it("never counts the added edges as their own precedent — ledgers read the indexed graph only", async () => {
     const added = Array.from({ length: 8 }, (_, i) => ({
       source: `src/services/s${i + 1}.ts`,
       target: "src/repositories/r1.ts",
@@ -144,7 +144,7 @@ describe("judgeAddedEdgeNorms", () => {
     expect(addedEdgeVerdicts.map((row) => row.verdict)).toEqual(Array(8).fill("NEW_PATTERN"));
   });
 
-  it("marks UNJUDGED with a reason: endpoint not indexed, untyped, weak role, cross-language", () => {
+  it("marks UNJUDGED with a reason: endpoint not indexed, untyped, weak role, cross-language", async () => {
     const { addedEdgeVerdicts } = judged([
       { source: "src/controllers/c1.ts", target: "src/brand-new.ts" },
       { source: "src/controllers/c1.ts", target: "src/util/untyped.ts" },
@@ -160,7 +160,7 @@ describe("judgeAddedEdgeNorms", () => {
     expect(addedEdgeVerdicts.every((row) => row.exclusionsUnchecked === undefined)).toBe(true);
   });
 
-  it("names the weak side of a weakRole row: source, target or both (8up12)", () => {
+  it("names the weak side of a weakRole row: source, target or both (8up12)", async () => {
     const { addedEdgeVerdicts } = judged([
       { source: "src/util/weak.ts", target: "src/services/s1.ts" },
       { source: "src/controllers/c1.ts", target: "src/util/weak.ts" },
@@ -170,7 +170,7 @@ describe("judgeAddedEdgeNorms", () => {
     expect(addedEdgeVerdicts.map((row) => row.weakSide)).toEqual(["source", "target", "both", undefined]);
   });
 
-  it("counts UNJUDGED reasons over every added edge, including rows past the cap", () => {
+  it("counts UNJUDGED reasons over every added edge, including rows past the cap", async () => {
     const result = judged(
       [
         { source: "src/controllers/c1.ts", target: "src/brand-new.ts" },
@@ -186,12 +186,12 @@ describe("judgeAddedEdgeNorms", () => {
     expect(result.verdictCounts.UNJUDGED).toBe(4);
   });
 
-  it("reports an empty unjudgedReasonCounts when every edge is judged", () => {
+  it("reports an empty unjudgedReasonCounts when every edge is judged", async () => {
     const result = judged([{ source: "src/controllers/c1.ts", target: "src/services/s2.ts" }]);
     expect(result.unjudgedReasonCounts).toEqual({});
   });
 
-  it("applies an injected exclusion check: its class is UNJUDGED, its classes leave exclusionsUnchecked", () => {
+  it("applies an injected exclusion check: its class is UNJUDGED, its classes leave exclusionsUnchecked", async () => {
     const { addedEdgeVerdicts } = judged(
       [
         { source: "src/controllers/c1.ts", target: "src/services/s2.ts" },
@@ -214,7 +214,7 @@ describe("judgeAddedEdgeNorms", () => {
     ]);
   });
 
-  it("reads a subclass's edge to its own superclass file as UNJUDGED inheritance, and stops listing the class unchecked", () => {
+  it("reads a subclass's edge to its own superclass file as UNJUDGED inheritance, and stops listing the class unchecked", async () => {
     const { graph, fileRoles } = indexedFixture();
     const fileSuperclassFiles = new Map([["src/services/s1.ts", new Set(["src/controllers/c2.ts"])]]);
     const result = judgeAddedEdgeNorms({
@@ -237,7 +237,7 @@ describe("judgeAddedEdgeNorms", () => {
     ]);
   });
 
-  it("reads a displaced role through the shared exclusion resolver: UNJUDGED displacedRole, not a verdict", () => {
+  it("reads a displaced role through the shared exclusion resolver: UNJUDGED displacedRole, not a verdict", async () => {
     const { graph, fileRoles } = indexedFixture();
     fileRoles.set("src/services/s2.ts", { role: "service", strong: true, displaced: "outsideRoleHome" });
     const result = judgeAddedEdgeNorms({
@@ -260,7 +260,7 @@ describe("judgeAddedEdgeNorms", () => {
     ]);
   });
 
-  it("counts an added edge touching a non-production file instead of judging it", () => {
+  it("counts an added edge touching a non-production file instead of judging it", async () => {
     const result = judged(
       [
         { source: "tests/c1.test.ts", target: "src/services/s1.ts" },
@@ -272,7 +272,7 @@ describe("judgeAddedEdgeNorms", () => {
     expect(result.nonProductionEdgeCount).toBe(1);
   });
 
-  it("lists MISFITs first, caps the list and counts the rest", () => {
+  it("lists MISFITs first, caps the list and counts the rest", async () => {
     const result = judged(
       [
         { source: "src/controllers/c1.ts", target: "src/services/s2.ts" },
@@ -292,11 +292,11 @@ describe("judgeAddedEdgeNorms", () => {
 /** One temp working tree per run test; removed afterwards. */
 let workTree: string | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
   workTree = mkdtempSync(join(tmpdir(), "norms-section-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (workTree !== undefined) rmSync(workTree, { recursive: true, force: true });
   workTree = undefined;
 });
@@ -332,6 +332,9 @@ function graphDbStub(graph: FileDependencyGraph) {
   };
 }
 
+/** Preloaded once at module scope; `runContext()` stays a cheap sync builder. */
+const languageFactory = await LanguageFactory.preloaded({});
+
 function runContext(overrides: Partial<ReviewSectionContext>): ReviewSectionContext {
   return {
     scope: scopeOf([]),
@@ -340,7 +343,7 @@ function runContext(overrides: Partial<ReviewSectionContext>): ReviewSectionCont
     temporalCochangeError: undefined,
     lexiconOps: undefined,
     reviewEdgeExtraction: {
-      languageFactory: new LanguageFactory({}),
+      languageFactory,
       collectSymbols,
       composer: new DefaultSymbolIdComposer(),
     },
@@ -353,7 +356,7 @@ function runContext(overrides: Partial<ReviewSectionContext>): ReviewSectionCont
 }
 
 describe("normsSectionProvider", () => {
-  it("is not built without the indexed graph or the edge extraction", () => {
+  it("is not built without the indexed graph or the edge extraction", async () => {
     expect(normsSectionProvider.isBuilt(runContext({}))).toEqual({ built: true });
     expect(normsSectionProvider.isBuilt(runContext({ graphDb: undefined }))).toMatchObject({ built: false });
     expect(normsSectionProvider.isBuilt(runContext({ reviewEdgeExtraction: undefined }))).toMatchObject({

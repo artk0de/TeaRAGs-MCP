@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   const walkBefore = await beforeWalker(before.root);
 
   const config = CODEGRAPH_LANGUAGES[".rb"];
-  const factory = new LanguageFactory();
+  const factory = await LanguageFactory.preloaded();
   const { walker } = factory.create(config.language);
   if (!walker) throw new Error("ruby provider exposes no walker");
   const composer = new DefaultSymbolIdComposer();

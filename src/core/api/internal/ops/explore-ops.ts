@@ -140,7 +140,7 @@ export interface ExploreOpsDeps {
    * `get_index_status` frames on, not the server's (bd tea-rags-mcp-uebug).
    * Omitted → no frame, and a run-pointer marker reports no providers.
    */
-  enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  enrichmentHealthFrameForPath?: (path: string) => readonly string[] | Promise<readonly string[]>;
   /**
    * Measures the tree a request reads against its index (bd tea-rags-mcp-xi2r9).
    * Present → every answer carries `workingTree`; absent (unit wiring) → none.
@@ -265,7 +265,7 @@ export class ExploreOps {
   private readonly chunkResolver?: SymbolChunkResolver;
   private readonly visibilityResolver?: SymbolVisibilityResolver;
   private readonly containerAncestorResolver?: ContainerAncestorResolver;
-  private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+  private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[] | Promise<readonly string[]>;
   private readonly workingTreeOverlay?: Pick<WorkingTreeOverlay, "view">;
   private readonly historyAnchor?: Pick<IndexHistoryAnchorResolver, "anchorSecOf">;
 
@@ -647,7 +647,7 @@ export class ExploreOps {
     const metrics = await this.indexMetricsQuery.run(
       collectionName,
       path,
-      this.enrichmentHealthFrameForPath?.(path) ?? [],
+      await (this.enrichmentHealthFrameForPath?.(path) ?? []),
     );
     return workingTreeView ? { ...metrics, workingTree: (await workingTreeView).marker } : metrics;
   }

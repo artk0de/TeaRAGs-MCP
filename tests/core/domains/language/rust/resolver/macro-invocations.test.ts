@@ -38,6 +38,9 @@ interface DefSpec {
   scope?: string[];
 }
 
+/** Preloaded once at module scope; the fixture helpers build from it. */
+const factory = await LanguageFactory.preloaded();
+
 function table(defs: DefSpec[]): InMemoryGlobalSymbolTable {
   const t = new InMemoryGlobalSymbolTable();
   const byFile = new Map<string, DefSpec[]>();
@@ -78,37 +81,37 @@ function macroCall(member: string, startLine: number, receiver: string | null = 
 }
 
 describe("Rust macro invocations — external classification in the macro namespace", () => {
-  it("classifies a std macro external even when the project declares a fn of that name", () => {
+  it("classifies a std macro external even when the project declares a fn of that name", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/fmt.rs", name: "format", kind: "function" }]);
     expect(r.targetsExternalImport?.(macroCall("format", 9), ctx("src/main.rs", t))).toBe(true);
   });
 
-  it("keeps a std macro name in the denominator when the project declares a macro of that name", () => {
+  it("keeps a std macro name in the denominator when the project declares a macro of that name", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/macros.rs", name: "format", kind: "macro" }]);
     expect(r.targetsExternalImport?.(macroCall("format", 9), ctx("src/main.rs", t))).toBe(false);
   });
 
-  it("classifies a std-path macro invocation external", () => {
+  it("classifies a std-path macro invocation external", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/out.rs", name: "println", kind: "function" }]);
     expect(r.targetsExternalImport?.(macroCall("println", 3, "std"), ctx("src/main.rs", t))).toBe(true);
   });
 
-  it("classifies an external-crate macro path external", () => {
+  it("classifies an external-crate macro path external", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/walk.rs", name: "debug", kind: "function" }]);
     expect(r.targetsExternalImport?.(macroCall("debug", 3, "log"), ctx("src/main.rs", t))).toBe(true);
   });
 
-  it("keeps a macro path through a project module in the denominator", () => {
+  it("keeps a macro path through a project module in the denominator", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/macros.rs", name: "emit", kind: "macro" }]);
     expect(r.targetsExternalImport?.(macroCall("emit", 3, "macros"), ctx("src/main.rs", t))).toBe(false);
   });
 
-  it("answers hasInProjectDefinition for a macro invocation from macro definitions only", () => {
+  it("answers hasInProjectDefinition for a macro invocation from macro definitions only", async () => {
     const r = new RustCallResolver();
     const fnOnly = table([{ relPath: "src/lib.rs", name: "matches", kind: "function" }]);
     const macro = table([{ relPath: "src/lib.rs", name: "matches", kind: "macro" }]);
@@ -116,7 +119,7 @@ describe("Rust macro invocations — external classification in the macro namesp
     expect(r.hasInProjectDefinition?.(macroCall("matches", 4), ctx("src/main.rs", macro))).toBe(true);
   });
 
-  it("never counts a macro definition as the in-project definition of a plain call", () => {
+  it("never counts a macro definition as the in-project definition of a plain call", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/lib.rs", name: "helper", kind: "macro" }]);
     const call = { callText: "helper(x)", receiver: null, member: "helper", startLine: 4 };
@@ -125,7 +128,7 @@ describe("Rust macro invocations — external classification in the macro namesp
 });
 
 describe("Rust macro invocations — resolution in the macro namespace", () => {
-  it("resolves to the same-file macro defined before the call, never to a same-named fn", () => {
+  it("resolves to the same-file macro defined before the call, never to a same-named fn", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "src/util.rs", name: "emit", kind: "function", startLine: 1 },
@@ -137,13 +140,13 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     });
   });
 
-  it("does not resolve a macro invocation to a fn when no macro of that name exists", () => {
+  it("does not resolve a macro invocation to a fn when no macro of that name exists", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/util.rs", name: "matches", kind: "function", startLine: 1 }]);
     expect(r.resolve(macroCall("matches", 12), ctx("src/main.rs", t))).toBeNull();
   });
 
-  it("picks the latest same-file definition before the call (textual shadowing)", () => {
+  it("picks the latest same-file definition before the call (textual shadowing)", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "src/main.rs", name: "emit", kind: "macro", startLine: 1, scope: [] },
@@ -153,7 +156,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     expect(r.resolve(macroCall("emit", 30), ctx("src/main.rs", t, [], ["inner"]))?.targetSymbolId).toBe("inner::emit");
   });
 
-  it("does not see a same-file definition from a sibling module", () => {
+  it("does not see a same-file definition from a sibling module", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "src/main.rs", name: "emit", kind: "macro", startLine: 1, scope: ["a"] },
@@ -162,13 +165,13 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     expect(r.resolve(macroCall("emit", 30), ctx("src/main.rs", t, [], ["c"]))).toBeNull();
   });
 
-  it("declines a same-file definition that follows the call", () => {
+  it("declines a same-file definition that follows the call", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/main.rs", name: "emit", kind: "macro", startLine: 40 }]);
     expect(r.resolve(macroCall("emit", 10), ctx("src/main.rs", t))).toBeNull();
   });
 
-  it("resolves to the sole macro of the caller's crate over another crate's namesake", () => {
+  it("resolves to the sole macro of the caller's crate over another crate's namesake", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "crates/printer/src/macros.rs", name: "assert_eq_printed", kind: "macro", startLine: 1 },
@@ -180,7 +183,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     });
   });
 
-  it("declines when several macros of the caller's crate share the name", () => {
+  it("declines when several macros of the caller's crate share the name", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "crates/printer/src/a.rs", name: "find", kind: "macro", startLine: 1 },
@@ -189,20 +192,20 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     expect(r.resolve(macroCall("find", 30), ctx("crates/printer/src/standard.rs", t))).toBeNull();
   });
 
-  it("declines a bare macro defined only in another crate and not imported", () => {
+  it("declines a bare macro defined only in another crate and not imported", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "crates/searcher/src/testutil.rs", name: "ext", kind: "macro", startLine: 1 }]);
     expect(r.resolve(macroCall("ext", 30), ctx("crates/printer/src/standard.rs", t))).toBeNull();
   });
 
-  it("resolves a bare macro bound by a project `use` to the sole project definition", () => {
+  it("resolves a bare macro bound by a project `use` to the sole project definition", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "crates/matcher/src/lib.rs", name: "ext", kind: "macro", startLine: 1 }]);
     const c = ctx("crates/printer/src/standard.rs", t, [{ importText: "matcher::ext", startLine: 2 }]);
     expect(r.resolve(macroCall("ext", 30), c)?.targetRelPath).toBe("crates/matcher/src/lib.rs");
   });
 
-  it("resolves a crate-qualified macro path within the caller's crate", () => {
+  it("resolves a crate-qualified macro path within the caller's crate", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "crates/printer/src/macros.rs", name: "emit", kind: "macro", startLine: 1 },
@@ -213,7 +216,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     );
   });
 
-  it("resolves a module-level invocation inside the module that defines the macro", () => {
+  it("resolves a module-level invocation inside the module that defines the macro", async () => {
     // `mod tests { macro_rules! toregex {…} toregex!(case, …); }` — the call
     // site's chunk IS the `tests` module, whose declaration scope is `[]`.
     const r = new RustCallResolver();
@@ -222,7 +225,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     expect(r.resolve(macroCall("toregex", 40), c)?.targetSymbolId).toBe("tests::toregex");
   });
 
-  it("scopes the crate by its crate-root file, not by the caller's directory", () => {
+  it("scopes the crate by its crate-root file, not by the caller's directory", async () => {
     const r = new RustCallResolver();
     const t = table([
       { relPath: "crates/core/main.rs", name: "main", kind: "function", startLine: 1 },
@@ -233,7 +236,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     );
   });
 
-  it("declines a std macro name whose only project namesake lives in another file", () => {
+  it("declines a std macro name whose only project namesake lives in another file", async () => {
     // `writeln!` in main.rs is std's; man.rs's local `macro_rules! writeln`
     // reaches it only through a `#[macro_use]` the table cannot see.
     const r = new RustCallResolver();
@@ -244,7 +247,7 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
     expect(r.resolve(macroCall("writeln", 367), ctx("crates/core/main.rs", t))).toBeNull();
   });
 
-  it("declines a std-path macro invocation", () => {
+  it("declines a std-path macro invocation", async () => {
     const r = new RustCallResolver();
     const t = table([{ relPath: "src/main.rs", name: "println", kind: "macro", startLine: 1 }]);
     expect(r.resolve(macroCall("println", 30, "std"), ctx("src/main.rs", t))).toBeNull();
@@ -254,7 +257,6 @@ describe("Rust macro invocations — resolution in the macro namespace", () => {
 describe("Rust macro invocations — walked end to end", () => {
   function edges(files: Record<string, string>, callerFile: string) {
     const language = new RustLanguage();
-    const factory = new LanguageFactory();
     const runState = new CodegraphRunState([], new Map(), new Map(), collectTypeDeclarationReaders(factory));
     const symbolTable = new InMemoryGlobalSymbolTable();
     const extractions: FileExtraction[] = [];
@@ -282,7 +284,7 @@ describe("Rust macro invocations — walked end to end", () => {
       .methodEdges.map((edge) => `${edge.sourceSymbolId}->${edge.targetRelPath}:${edge.targetSymbolId}`);
   }
 
-  it("never resolves a plain call to a macro_rules! definition of the same name", () => {
+  it("never resolves a plain call to a macro_rules! definition of the same name", async () => {
     const found = edges(
       {
         "src/macros.rs": "macro_rules! helper { () => {} }\n",
@@ -293,7 +295,7 @@ describe("Rust macro invocations — walked end to end", () => {
     expect(found).toEqual([]);
   });
 
-  it("links a macro invocation to its macro_rules! definition, not to the same-named fn", () => {
+  it("links a macro invocation to its macro_rules! definition, not to the same-named fn", async () => {
     const found = edges(
       {
         "src/util.rs": "pub fn emit() {}\n",

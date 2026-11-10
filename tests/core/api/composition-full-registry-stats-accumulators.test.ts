@@ -36,10 +36,12 @@ describe("fullRegistryStatsAccumulators", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("covers every accumulator a composition with every trajectory registers", () => {
-    const registered = createComposition({
-      codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
-    }).allStatsAccumulators;
+  it("covers every accumulator a composition with every trajectory registers", async () => {
+    const registered = (
+      await createComposition({
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()) },
+      })
+    ).allStatsAccumulators;
     const declared = new Set(fullRegistryStatsAccumulators().map((accumulator) => accumulator.key));
 
     expect(registered.length).toBeGreaterThan(0);
@@ -49,7 +51,7 @@ describe("fullRegistryStatsAccumulators", () => {
   // `totalFiles` is the denominator the stats migration compares a file-scope
   // sample against to decide whether that sample counted files or chunks.
   // Lose the accumulator behind it and every collection reads as up-to-date.
-  it("declares the distinct-path accumulator that totalFiles is built from", () => {
+  it("declares the distinct-path accumulator that totalFiles is built from", async () => {
     const declared = new Set(fullRegistryStatsAccumulators().map((accumulator) => accumulator.key));
 
     expect(declared.has(STATS_ACCUMULATOR_KEYS.DISTINCT_PATHS)).toBe(true);

@@ -45,7 +45,7 @@ import { catalogOf, graphOf } from "./__helpers__/diff-run-fixtures.js";
 /** One temp working tree per test; removed afterwards. */
 let workTree: string | undefined;
 
-afterEach(() => {
+afterEach(async () => {
   if (workTree !== undefined) rmSync(workTree, { recursive: true, force: true });
   workTree = undefined;
 });
@@ -63,10 +63,13 @@ function freshWorkTree(): string {
   return workTree;
 }
 
+/** Preloaded once at module scope; `realDeps()` stays a cheap sync builder. */
+const languageFactory = await LanguageFactory.preloaded({});
+
 /** The real trio, the same wires `createNamingReviewExtractor` uses. */
 function realDeps(): ReviewEdgeExtractionDeps {
   return {
-    languageFactory: new LanguageFactory({}),
+    languageFactory,
     collectSymbols,
     composer: new DefaultSymbolIdComposer(),
   };
@@ -178,7 +181,7 @@ describe("readWorkingTreeFileEdges", () => {
     writeFile("src/b.ts", "export const B = 1;\n");
     writeFile("src/a.ts", 'import { B } from "./b";\nexport function f(): void {}\n');
     const throwing: ReviewEdgeExtractionDeps = {
-      languageFactory: new LanguageFactory({}),
+      languageFactory: await LanguageFactory.preloaded({}),
       collectSymbols: () => {
         throw new Error("collectSymbols exploded");
       },
@@ -341,20 +344,20 @@ describe("readWorkingTreeFileEdges — type-only imports", () => {
 });
 
 describe("workingTreeExtractionContext", () => {
-  it("carries the working tree's Gemfile gems as Ruby's declared set when one is present", () => {
+  it("carries the working tree's Gemfile gems as Ruby's declared set when one is present", async () => {
     const tree = freshWorkTree();
     writeFile("Gemfile", 'source "https://rubygems.org"\ngem "rails"\n');
 
-    const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
+    const context = workingTreeExtractionContext(tree, await LanguageFactory.preloaded({}));
 
     expect(context.declaredDependencies?.get("ruby")).toEqual(new Set(["rails"]));
     expect(context.declaredDependencies?.has("python")).toBe(false);
   });
 
-  it("carries no language's set when the tree declares no manifest", () => {
+  it("carries no language's set when the tree declares no manifest", async () => {
     const tree = freshWorkTree();
 
-    const context = workingTreeExtractionContext(tree, new LanguageFactory({}));
+    const context = workingTreeExtractionContext(tree, await LanguageFactory.preloaded({}));
 
     expect(context.declaredDependencies?.size).toBe(0);
   });
