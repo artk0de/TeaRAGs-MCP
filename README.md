@@ -169,89 +169,59 @@ in [Codebase Intelligence для агента](https://habr.com/ru/articles/1084
 · 🧠
 **[Core concepts](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts)**
 
-## 👀 See It
+## 👀 See What Changes the Decision
 
-**One task, several views: make vector writes more resilient.** Before changing
-code, the agent needs to find the write path, choose a retry pattern, understand
-its callers, and decide where review matters most. The examples below use real
-responses from TeaRAGs' own repository, trimmed; they illustrate an
-investigation, not a recorded end-to-end implementation.
+Finding code is the beginning. The useful question is what the evidence changes
+about the next step. These independent examples use real TeaRAGs responses from
+its own repository, trimmed. The decisions below illustrate how an agent can use
+that evidence; they are not a recorded implementation session.
 
-### 1. Find the implementation by meaning
+### 1. 🧬 The closest match may be the wrong example
 
-The agent starts with the behavior, without needing to know class names:
+**Question:** “Which retry implementation should I reuse?”
 
-`semantic_search { query: "write points to the vector database in batches", rerank: "dangerous" }`
+Similarity puts `OllamaEmbeddings#retryWithBackoff` first. Its history gives the
+agent a reason to look beyond that first result:
 
-Similarity finds `PointsAccumulator#flushBatch`,
-`QdrantPointStore#addPointsOptimized`, and `QdrantPointStore#addPoints`. The
-same query can rank results by risk, giving the agent places to investigate as
-well as relevant implementations. We return to those signals in step 4.
+| Evidence                      | First semantic match: `OllamaEmbeddings#retryWithBackoff` | Second match: `DeletionRetryHelper#execute` |
+| ----------------------------- | --------------------------------------------------------: | ------------------------------------------: |
+| Commits to the file           |                                                        28 |                                           1 |
+| Share classified as bug fixes |                                       54% · 🔴 concerning |                             0% · 🟢 healthy |
+| Last changed                  |                                                2 days ago |                                 86 days ago |
+| Callers                       |                                                         2 |                                           1 |
 
-### 2. Choose a retry pattern with evidence
+**Decision:** investigate why the closest match keeps being fixed before copying
+it, and compare the quieter helper's approach. One commit and no recorded fixes
+are limited evidence, not a guarantee of quality.
 
-Finding the write path does not tell the agent which retry implementation to
-reuse. It asks a second question:
+<details>
+<summary>Query and how to read the signals</summary>
 
 `semantic_search { query: "retry a failed request with exponential backoff", rerank: "hotspots" }`
 
-Similarity alone puts `OllamaEmbeddings#retryWithBackoff` first. The dossiers of
-the top two candidates tell different stories:
-
-|                           | 🥇 `OllamaEmbeddings#retryWithBackoff` | 🥈 `DeletionRetryHelper#execute` |
-| ------------------------- | -------------------------------------- | -------------------------------- |
-| Similarity rank           | #1                                     | #2 (`retry-helper.ts`)           |
-| Commits to the file       | 28                                     | 1                                |
-| Share that were bug fixes | 54% · 🔴 _concerning_                  | 0% · 🟢 _healthy_                |
-| Last changed              | 2 days ago · _recent_                  | 86 days ago · _old_              |
-| Callers                   | 2                                      | 1                                |
-
-The closest match keeps getting fixed. The agent copies the quiet helper's shape
-— or learns why the first one keeps breaking before it repeats the mistake.
-
-<details>
-<summary>Raw response for the first hit (trimmed)</summary>
-
-```json
-{
-  "symbolId": "OllamaEmbeddings#retryWithBackoff",
-  "relativePath": "src/core/adapters/embeddings/ollama.ts",
-  "startLine": 290,
-  "endLine": 378,
-  "preset": "hotspots",
-  "git": {
-    "file": {
-      "commitCount": 28,
-      "ageDays": { "value": 2, "label": "recent" },
-      "bugFixRate": { "value": 54, "label": "concerning" },
-      "relativeChurn": { "value": 2.55, "label": "normal" }
-    },
-    "chunk": {
-      "commitCount": { "value": 11, "label": "extreme" },
-      "relativeChurn": { "value": 9.09, "label": "high" }
-    }
-  },
-  "codegraph": { "symbols": { "chunk": { "fanIn": 2, "fanOut": 6 } } }
-}
-```
-
-Labels are computed from **this repository's own percentiles**, so _extreme_
-means extreme for this codebase, not for some global average.
+The semantic match locates candidates; Git history gives another axis for
+comparison. Labels are computed from this repository's own distributions.
+Bug-fix classification is a history heuristic, not a count of defects in the
+current implementation.
 
 </details>
 
-### 3. Trace connections before changing code
+### 2. 🕸️ A local edit can reach far beyond the file
 
-The agent can inspect callers of a write method rather than infer impact from
-the search results:
+**Question:** “What needs verification before I change this write method?”
 
-`get_callers { symbolId: "QdrantManager#addPointsWithSparse" }`
+`QdrantManager#addPointsWithSparse` has **10 call sites across 8 files**. Its
+file has a **transitive impact of 47 files**. Callers span ingestion, API
+operations, schema management, and migrations.
 
-Ten exact call sites across eight files — method fan-in 10 · _central_, file
-transitive impact 47 · _regional_:
+**Decision:** include those entry points in the verification plan rather than
+judge the change by the size of the method. Transitive impact identifies
+potential exposure; it does not mean all 47 files will break.
 
 <details>
-<summary>Call sites across ingestion, maintenance, and API operations</summary>
+<summary>Query and call sites</summary>
+
+`get_callers { symbolId: "QdrantManager#addPointsWithSparse" }`
 
 ```text
 ChunkPipeline#createBatchHandler          ingest/pipeline/chunk-pipeline.ts
@@ -265,34 +235,82 @@ SparseStoreAdapter#rebuildSparseVectors   maintenance/migration/adapters/sparse-
 SparseStoreAdapter#storeSparseVersion     maintenance/migration/adapters/sparse-store-adapter.ts
 ```
 
+`trace_path` can follow A→B call paths; risk ranking helps decide which steps
+deserve closer investigation. Ownership signals help identify reviewer
+candidates familiar with the affected areas.
+
 </details>
 
-Need the whole chain from an entry point to this call? `trace_path` enumerates
-every A→B path and, with a rerank preset, sorts them by how dangerous each step
-is.
+### 3. 🔗 No graph edge does not mean independent changes
 
-### 4. Focus verification and find reviewer candidates
+**Question:** “Why do these two resolvers keep changing together?”
 
-The risk view from step 1 highlights different reasons to look closely:
+The Go and Java resolvers changed together in **5 sessions**. Every Java change
+in that sample came with a Go change (**lift 86.5**), despite no import or call
+connecting them.
 
-| #   | Ranked by risk                               | Why it moved up                                                             |
-| --- | -------------------------------------------- | --------------------------------------------------------------------------- |
-| 1   | `ChunkPipeline#createBatchHandler`           | 16 outgoing calls, 77 lines, 5 commits · _high_                             |
-| 2   | `QdrantManager#addPointsWithSparseOptimized` | file with 45 commits, relative churn 8.09 · 🔴 _high_, 4 authors            |
-| 3   | `PointsAccumulator#flushBatch`               | one author owns 100% of the live lines · 🟠 _deep-silo_, 158 days untouched |
+**Decision:** investigate a shared convention or duplicated responsibility
+before changing either resolver in isolation. Check whether the other needs a
+matching update, or whether common behavior belongs in the language kernel.
+Co-change is a lead for investigation, not proof of a missing abstraction.
 
-These signals lead to concrete review questions: does the batch handler need
-extra verification because of its outgoing calls? What explains the write
-method's churn? Who should verify a change to code maintained by a single
-author?
+<details>
+<summary>Where the evidence comes from</summary>
 
-Ownership analysis helps the agent identify reviewer candidates familiar with
-the affected areas. The single-owner signal above also warns that knowledge is
-concentrated. These are leads for verification, not proof that a change is wrong
-or an automatic assignment of reviewers.
+`get_architecture_report` combines structural relationships with change history.
+Its silent-coupling detector surfaces co-change that has no corresponding graph
+edge. A call graph alone would not reveal this relationship.
 
-The result is an investigation grounded in meaning, relationships, history, and
-ownership before the agent commits to an implementation.
+</details>
+
+### 4. 🔤 A reasonable name can introduce a second vocabulary
+
+**Question:** “Does this new name speak the project's language?”
+
+| Draft                        | Evidence from the project                                                            | Review result                     |
+| ---------------------------- | ------------------------------------------------------------------------------------ | --------------------------------- |
+| `const meta: GitFileSignals` | Values of this type are named after `assembleFileSignals`                            | **MISFIT** → `fileSignals`        |
+| `type SignalStatistics`      | Existing term `stats` has semantic similarity 0.93, above the chance-corrected floor | **NEW_TERM**, alternative `stats` |
+
+**Decision:** prefer the established name when it describes the same role or
+concept. The agent gets evidence for a naming discussion instead of adding
+another plausible synonym. Explicit team naming rules retain priority.
+
+<details>
+<summary>Review query and evidence isolation</summary>
+
+`review_changes { changes: { base: "main" }, sections: ["naming"] }`
+
+The vocabulary is inferred from the project's call graph. Only declarations on
+added lines are judged, and changed files are excluded from the evidence so a
+diff cannot establish its own convention. `get_ontology_report` can audit the
+wider vocabulary for synonyms, homonyms, and outliers.
+
+</details>
+
+### 5. 🏛️ A working import can still cross the wrong boundary
+
+**Question:** “Does this change fit how the component is used?”
+
+`bootstrap/factory.ts` reaches past the `bootstrap/config` facade into
+`env-snapshot.ts` for **3 names the facade does not export**. Meanwhile, **7 of
+9 importers** use the facade.
+
+**Decision:** examine whether the factory should use the facade or whether the
+facade's contract needs an intentional change. A valid import and passing local
+tests do not answer that architectural question.
+
+<details>
+<summary>Detector and interpretation</summary>
+
+`get_architecture_report` identifies the bypass using import edges and observed
+facade adoption. This is an inferred boundary to investigate; an explicit
+architectural rule or an intentional exception can take precedence.
+
+</details>
+
+**The microscope changes what the agent checks, copies, names, and asks a human
+to verify — with evidence attached to each decision.**
 
 ## ❓ What It Answers
 
@@ -360,7 +378,8 @@ Similarity finds all four; history decides. `proven` ranks long-lived,
 low-bug-rate, multi-author code first, and every result carries its dossier —
 commits, bug-fix share, age, owners — labelled against this repository's own
 percentiles. The closest match by text is often the one fixed every sprint; see
-[See It → 2](#2-choose-a-retry-pattern-with-evidence) for a real pair.
+[retry comparison](#1--the-closest-match-may-be-the-wrong-example) for a real
+pair.
 
 ### 4. 🕸️ _"How does a request get from the API to the card charge, and which step is riskiest?"_
 
@@ -369,8 +388,8 @@ percentiles. The closest match by text is often the one fixed every sprint; see
 Every call path between the two symbols, resolved from the call graph rather
 than guessed from names, with each step ranked by how risky it is to touch. An
 ambiguous call is reported as ambiguous, never picked at random. See
-[See It → 3](#3-trace-connections-before-changing-code) for the ten call sites
-of a real write path.
+[impact example](#2--a-local-edit-can-reach-far-beyond-the-file) for the ten
+call sites of a real write path.
 
 ### 5. 🔍 _"Where do we charge a bill with a saved card?"_ — when the code says `invoice`
 
