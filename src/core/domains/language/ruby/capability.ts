@@ -189,7 +189,12 @@ export const capability: LanguageCapability = {
   // and every fold stays inside its run: a visibility-only group (`private`,
   // `module_function`) joins the next group of its run whatever the class header
   // length, the previous one when last, and keeps its own chunk when alone.
-  versions: { chunking: 3, walker: 11, codegraphSchema: 2 },
+  // chunking 4: bd tea-rags-mcp-50v59 — a comment directly after `describe … do`
+  // (before the first statement) parents to the do_block, not the body, so the
+  // RSpec scope reader never collected it and the line sat in no chunk. RSpec now
+  // opts into collectRowsAboveBody (Rake's k0602 behavior); a chunking-3 index
+  // still drops those lines (`--force --languages ruby` repopulates).
+  versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

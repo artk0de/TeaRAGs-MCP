@@ -94,7 +94,10 @@ const RSPEC_SCOPE_VOCABULARY: RubyDslScopeVocabulary = {
   delegatingSetupMethods: DELEGATING_TEST_METHODS,
   descriptionMethods: new Set(),
   unscopedLeafMethods: new Set(),
-  collectRowsAboveBody: false,
+  // A comment between `describe … do` and the first statement parents to the
+  // do_block, not the body (bd tea-rags-mcp-50v59); without this flag it lands
+  // in no chunk — the same guarantee Rake has held since k0602.
+  collectRowsAboveBody: true,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────

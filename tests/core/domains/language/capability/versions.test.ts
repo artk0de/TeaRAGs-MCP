@@ -592,6 +592,9 @@ describe("seeded support versions", () => {
       // the Rake DSL, one chunk per task under its Rake name.
       // Same ruby chunking 3 (one bump per release), bd tea-rags-mcp-9f0yn.3 —
       // container rows are grouped per run between two extracted children.
+      // ruby chunking 4: bd tea-rags-mcp-50v59 — RSpec opts into
+      // collectRowsAboveBody, so a comment between `describe … do` and the
+      // first statement joins its scope chunk instead of landing in none.
       // typescript chunking 2 / javascript chunking 3: bd tea-rags-mcp-39xca.19
       // — a method of the literal a named function returns is written as
       // `factory#member`, and a declarator-bound factory's members gain its
@@ -608,7 +611,7 @@ describe("seeded support versions", () => {
         ["javascript", 4],
         ["swift", 4],
         ["bash", 2],
-        ["ruby", 3],
+        ["ruby", 4],
         ["rust", 5],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;

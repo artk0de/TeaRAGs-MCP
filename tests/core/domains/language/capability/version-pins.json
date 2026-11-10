@@ -81,8 +81,8 @@
   },
   "ruby": {
     "chunking": {
-      "version": 3,
-      "digest": "sha256:8ed1d88ac476b5492489717b9ac3d489c80dcfc8a456642ae45917f5a4a6d153"
+      "version": 4,
+      "digest": "sha256:125068cb4016e6ee71e4e4fc9a63e3ca7a51a9afcb05056258a7846027870244"
     },
     "walker": {
       "version": 11,

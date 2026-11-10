@@ -206,6 +206,34 @@ describe("TreeSitterChunker — every non-blank line is chunked", () => {
     expect(missingFromContent(searchable, chunks)).toEqual([]);
   });
 
+  it("keeps a comment directly after 'describe … do' in some chunk (bd tea-rags-mcp-50v59)", async () => {
+    const code = [
+      'require "rspec"',
+      "",
+      "describe Billing do",
+      "  # Syncs every billing invoice nightly.",
+      "  describe '#charge' do",
+      "    it 'charges the card' do",
+      "      expect(Billing.new.charge).to eq(1)",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const chunks = await chunker.chunk(code, "/repo/spec/billing_spec.rb", "ruby");
+
+    // tree-sitter parents a comment between the block opener and the first
+    // statement to the do_block, not the body, so the reader only collects it
+    // when the vocabulary opts into rows above the body (Rake does since
+    // k0602; this is RSpec's pin of the same coverage guarantee).
+    const searchable = code
+      .split("\n")
+      .filter((text) => text.trim() !== "" && text.trim() !== "end" && text.trim() !== 'require "rspec"')
+      .map((text) => text.replace(/\s+do$/, ""))
+      .join("\n");
+    expect(missingFromContent(searchable, chunks)).toEqual([]);
+  });
+
   it("still yields no chunk for a blank markdown or YAML file", async () => {
     expect(await chunker.chunk("\n \n", "/repo/blank.md", "markdown")).toEqual([]);
     expect(await chunker.chunk("\n", "/repo/config/blank.yaml", "yaml")).toEqual([]);
