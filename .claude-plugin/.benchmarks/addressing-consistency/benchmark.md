@@ -120,6 +120,43 @@ Schema strings are shorter than first drafted. The existing budgets were kept:
 - Context: new SessionStart core+digest / SubagentStart block; old plugin hook
   text present in subject context but declared void (limitation).
 
+## 2026-11-10 — live verification of the merged surfaces (1v7n3 close-out)
+
+No plugin behavior changed in this pass; the recorded eval runs stand. This
+section persists the live evidence behind the completion claim (beads 55u9i,
+iqx9x, epic 1v7n3).
+
+- Server under test: `~/.npm-global/lib/node_modules/tea-rags/build/index.js`
+  (npm-link → this repo, build 2026-11-10T02:33:50Z; all addressing commits of
+  2026-10-21/22 predate it). Spawned over stdio, `tools/list` asserted
+  programmatically.
+- `tools/list` (55u9i remaining item): 28 tools — 19 project-aware tools all
+  carry `project` = "Alias from list_projects/prime; pass every call." and
+  `path` = "Your working tree (cwd / worktree); pass WITH project." (or the
+  project-or-path hint on get_index_status / get_index_metrics / clear_index);
+  `index_codebase` keeps the project-only reindex / new-root `path` texts. The 6
+  collection tools omit both; `list_projects` / `register_project` /
+  `unregister_project` take `project`/`path` as arguments (alias selector,
+  registration target), not addressing — descriptions unambiguous. PASS.
+- `workingTree.project` (iqx9x remaining item), live in a ZCode session on the
+  linked server: `find_symbol` answered with
+  `workingTree:{tree, project:"tea-rags"}` both when addressed `project+path`
+  and when addressed by `path` alone — the path-alone caller learns the alias.
+  Prime digest banner reads "pass `project: "tea-rags"` + `path`". PASS.
+- CLI resolver:
+  `tea-rags project exist --path <subdir> --repository --print-name` →
+  `tea-rags` from inside the repository. PASS.
+- Skill surface since the 2026-10-30 delegation refactor (97afcd582): skills
+  defer addressing to the core rules + freshness guide "Addressing the Codebase"
+  — both audited consistent with the schema. Behavioral coverage of that state:
+  12/12 addressing cases in the 2026-11-09 full-corpus run
+  (`.benchmarks/zcode-harness/evals.json`, plugin 0.55.9, GLM actor).
+- Limitations: SubagentStart alias prepend is unit-covered but not
+  ZCode-live-checkable (no SubagentStart event in that harness; the zcode
+  dialect injects via PreToolUse(Agent) instead — covered by the zcode-harness
+  suite); worktree CLI resolution was verified from a subdirectory only (no
+  linked worktree existed on the machine at check time).
+
 ## 2026-10-23 — Codex re-run round 2 (Task 22)
 
 - Subject: Codex CLI 0.162.1, default model, plan-only; plugins tea-rags 0.46.11
