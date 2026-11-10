@@ -194,10 +194,31 @@ describe("QdrantAliasManager", () => {
     });
 
     it("should throw AliasOperationError on failure", async () => {
-      client.getAliases.mockRejectedValue(new Error("network error"));
+      client.getAliases.mockRejectedValue(new Error("server exploded"));
 
       await expect(aliases.listAliases()).rejects.toThrow(AliasOperationError);
       await expect(aliases.listAliases()).rejects.toThrow(/listAliases/);
+      // The failure's own message is kept — "failed to list aliases" alone
+      // hid what actually broke behind a generic label.
+      await expect(aliases.listAliases()).rejects.toThrow(/server exploded/);
+    });
+
+    it("falls back to the generic label when the failure carries no message", async () => {
+      client.getAliases.mockRejectedValue("not an error");
+
+      const err = await aliases.listAliases().catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AliasOperationError);
+      expect((err as AliasOperationError).message).toContain("failed to list aliases");
+    });
+
+    it("throws when the response carries no aliases array", async () => {
+      client.getAliases.mockResolvedValue(undefined);
+
+      const err = await aliases.listAliases().catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AliasOperationError);
+      expect((err as AliasOperationError).message).toContain("returned no aliases array");
     });
   });
 

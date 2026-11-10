@@ -742,6 +742,27 @@ describe("EnrichmentRecovery deferred-chunk handoff (bd tea-rags-mcp-fxio5)", ()
     expect(paints.at(-1)).toEqual({ applied: 4, total: 4 });
   });
 
+  it("still moves the chunk bar when a healing batch throws — the files were visited", async () => {
+    const { recovery, contexts, markerStore, executor } = harness(provider("git", false));
+    executor.runChunkBatch.mockRejectedValue(new Error("worker died"));
+    const paints: number[] = [];
+    recovery.setProgress((event) => {
+      if (event.level === "chunk") paints.push(event.applied);
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await recovery.recoverAll(fixturePhysicalCollectionName("coll"), "/repo", contexts as any, markerStore as any);
+    } finally {
+      errSpy.mockRestore();
+    }
+
+    // 2 owed files × 2 steps. The healed count stays 0 (the batch failed), but
+    // the bar must not sit at 0/4 as if nothing had been attempted.
+    expect(paints[0]).toBe(0);
+    expect(paints.at(-1)).toBe(4);
+  });
+
   it("keeps healing a streaming provider's chunks in place, with nothing handed off", async () => {
     const { applier, executor, markerStore, recovery, contexts } = harness(provider("git", false));
 

@@ -3811,6 +3811,47 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     await coord.awaitCompletion(run);
   });
 
+  it("keeps a deferred provider's real file events determinate only once extraction applied something", async () => {
+    // The early start bar is synthetic (totalFinal hardcoded false); the REAL
+    // file events of a deferred provider come from FilePhase's extraction
+    // prefetch, which applies no payload yet. Those must not paint 0/N as a
+    // determinate percentage — determinate follows the applied count.
+    const deferredProvider = {
+      key: "codegraph.symbols",
+      signals: [],
+      derivedSignals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      streamFileBatch: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      defersChunkEnrichment: true,
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, deferredProvider);
+    const events: EnrichmentProgressEvent[] = [];
+    coord.setEnrichmentProgress((e) => events.push(e));
+
+    const run = coord.beginRun(runSpec("/repo", "test-col", { fileCount: 10 }));
+    coord.onChunksStored(run, [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await coord.awaitCompletion(run);
+
+    // The extraction prefetch ran, so at least one real (non-synthetic) file
+    // event arrived through the applier wiring.
+    expect(deferredProvider.streamFileBatch).toHaveBeenCalled();
+    const realFileEvents = events.filter(
+      (e) => e.level === "file" && e.providerKey === "codegraph.symbols" && e.applied > 0,
+    );
+    expect(realFileEvents.length).toBeGreaterThan(0);
+    for (const ev of realFileEvents) {
+      expect(ev.total).toBe(10);
+      // applied > 0 ⇒ determinate — the bar has moved off zero.
+      expect(ev.totalFinal).toBe(true);
+    }
+  });
+
   it("does NOT emit an early indeterminate event for a streaming (non-deferred) provider", async () => {
     // git streams its applies, so its bars appear with real progress naturally —
     // no synthetic indeterminate placeholder.

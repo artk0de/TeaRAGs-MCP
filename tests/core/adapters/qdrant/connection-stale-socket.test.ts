@@ -112,3 +112,76 @@ describe("QdrantConnection#call — stale keep-alive socket reset", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The other face of a dead keep-alive socket: the request sits on it until the
+ * client aborts, and undici surfaces that as `AbortError` / `TimeoutError` /
+ * `QdrantClientTimeoutError` — or only as a message — rather than ECONNRESET.
+ * `call` treats every one of them as transport, retried once on a fresh client.
+ */
+describe("QdrantConnection#call — hung keep-alive socket until abort", () => {
+  const abortError = () => Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
+
+  const hungTransports: { label: string; make: () => Error }[] = [
+    { label: "an AbortError name", make: abortError },
+    {
+      label: "a TimeoutError name",
+      make: () => Object.assign(new Error("The operation timed out"), { name: "TimeoutError" }),
+    },
+    {
+      label: "a QdrantClientTimeoutError name",
+      make: () => Object.assign(new Error("client timed out"), { name: "QdrantClientTimeoutError" }),
+    },
+    {
+      label: "an aborted message on a plain Error",
+      make: () => new Error("This operation was aborted due to timeout"),
+    },
+    { label: "a headers timeout message", make: () => new Error("headers timeout") },
+    { label: "a body timeout message", make: () => new Error("body timeout") },
+  ];
+
+  for (const { label, make } of hungTransports) {
+    it(`retries once on ${label} and returns the retry's result`, async () => {
+      const connection = new QdrantConnection("http://qdrant.example:6333");
+      const fn = vi.fn().mockRejectedValueOnce(make()).mockResolvedValueOnce("second");
+
+      await expect(connection.call(fn)).resolves.toBe("second");
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+  }
+
+  it("drops the pooled client before the retry", async () => {
+    const connection = new QdrantConnection("http://qdrant.example:6333");
+    const pooled = connection.client;
+    const fn = vi.fn().mockRejectedValueOnce(abortError()).mockResolvedValueOnce("ok");
+
+    await expect(connection.call(fn)).resolves.toBe("ok");
+    expect(connection.client).not.toBe(pooled);
+  });
+
+  it("keeps the abort as the cause of the typed unavailability when the fresh client hangs too", async () => {
+    const reconnect = vi.fn(async () => null);
+    const connection = new QdrantConnection("http://127.0.0.1:6333", undefined, reconnect);
+    const raw = abortError();
+    const fn = vi.fn().mockRejectedValue(raw);
+
+    const err = await connection.call(fn).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(QdrantUnavailableError);
+    expect((err as QdrantUnavailableError).cause).toBe(raw);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(reconnect).toHaveBeenCalledOnce();
+  });
+
+  it("terminates the cause-chain walk on a cycle instead of looping", async () => {
+    const connection = new QdrantConnection("http://qdrant.example:6333");
+    const looped = new TypeError("fetch failed");
+    (looped as { cause?: unknown }).cause = looped; // self-referential chain
+    const fn = vi.fn().mockRejectedValueOnce(looped).mockResolvedValueOnce("must not be reached");
+
+    // A fetch failure that is no reset: no fast retry, and with no reconnect
+    // it stays typed unavailability.
+    await expect(connection.call(fn)).rejects.toThrow(QdrantUnavailableError);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});

@@ -210,6 +210,44 @@ describe("FilePhase", () => {
     expect(fileProgress).toEqual([1]);
   });
 
+  it("a deferring provider's file bar accumulates across batches instead of restarting", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const streamFileBatch = vi.fn().mockResolvedValue(new Map());
+    const fileProgress: number[] = [];
+    applier.onApply = (event) => {
+      if (event.level === "file") fileProgress.push(event.applied);
+    };
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        defersChunkEnrichment: true,
+        streamFileBatch,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn(),
+        resolveRoot: (p: string) => p,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null as any,
+    };
+
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    phase.init(new Map([[ctx.key, ctx]]), fixturePhysicalCollectionName("coll"), "run-1", "ts");
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", items);
+    phase.onBatch(fixturePhysicalCollectionName("coll"), "/repo", [
+      {
+        chunkId: "c2",
+        chunk: { metadata: { filePath: "/repo/src/b.ts" }, startLine: 1, endLine: 5 },
+      } as any,
+    ]);
+    await phase.drain();
+
+    // Second batch's paint is cumulative (2 files seen this run), not a fresh 1.
+    expect(fileProgress).toEqual([1, 2]);
+  });
+
   it("applyFinalize applies file overlays keyed by the chunkMap", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);
