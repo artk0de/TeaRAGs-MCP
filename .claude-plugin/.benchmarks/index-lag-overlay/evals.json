@@ -4,11 +4,11 @@
   "date": "2026-10-21",
   "incident": "taxdome TD-105125 session: first tea-rags answers carried workingTree {changedFiles:1833, floors:[], pendingFiles:1577, denseUnavailable} + driftWarning (HEAD moved + language versions, Run: --force). Inside dinopowers:brainstorming the agent wrote 'index lags 1833 files, reading key files directly from disk' and did all decisive navigation via Bash cat/sed/grep/git; repeated the same in dinopowers:test-driven-development. Alias's own checkout, so incremental index_codebase was due without consent; overlay was warming (pendingFiles 1609 -> 1033 across four calls).",
   "harness": {
-    "method": "optimize-skill Phase 2 tool-selection eval: one opus subagent per arm, all 15 cases in one prompt (cases.md), agent states next actions per case, executes nothing. Auto-mode harness note ('read files with cat… search with grep') injected in every arm to reproduce the conflicting instruction.",
+    "method": "optimize-skill Phase 2 tool-selection eval: one opus subagent per arm, all 15 cases in one prompt (cases.md), agent states next actions per case, executes nothing. Auto-mode harness note ('read files with cat\u2026 search with grep') injected in every arm to reproduce the conflicting instruction.",
     "arms": {
       "no-rule": "tool list only",
       "full-rules": "search-cascade + index-freshness + FRESHNESS + brainstorming + TDD wrapper texts, read fresh",
-      "wrapper-only": "brainstorming + TDD wrapper + FRESHNESS only — in-situ condition: global rules injected hours earlier, out of focus, the executing skill is what the agent reads at the decision point"
+      "wrapper-only": "brainstorming + TDD wrapper + FRESHNESS only \u2014 in-situ condition: global rules injected hours earlier, out of focus, the executing skill is what the agent reads at the decision point"
     },
     "contamination_note": "Installed SubagentStart hook appends the subagent Search Tools block (already carries a Bash-channel rule) to every eval agent; prompts tell the agent to ignore it. No-rule arm therefore overstates baseline slightly."
   },
@@ -31,15 +31,15 @@
     },
     {
       "id": "A5",
-      "description": "Delivery: corpus needed 9 parts, plugin.json wired 8 slots — tail silently dropped (human-only section at the time; any growth would drop agent rules)."
+      "description": "Delivery: corpus needed 9 parts, plugin.json wired 8 slots \u2014 tail silently dropped (human-only section at the time; any growth would drop agent rules)."
     }
   ],
   "eval_cases": [
     {
       "id": "E1",
-      "context": "main, own checkout, dinopowers:brainstorming, first tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
+      "context": "main, own checkout, dinopowers:brainstorming, first tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 \u2192 5\\n  *.walker: 6 \u2192 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) \u2192 d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
       "prompt": "read 4 ticket files + find who else calls new_session_url(location_after_sign_in:)",
-      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol for the tickets' code; who else calls → get_callers AND the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `new_session_url`; NOT Bash cat/sed, Read",
+      "expected": "index_codebase incremental (no consent) + AskUserQuestion for --force + find_symbol for the tickets' code; who else calls \u2192 get_callers AND the default code search tool (Claude: Grep; Codex: its shell grep/rg) for the literal `new_session_url`; NOT Bash cat/sed, Read",
       "audit_finding": "A1,A2,A3,A4",
       "results": {
         "no_rule": "FAIL",
@@ -121,7 +121,7 @@
     },
     {
       "id": "E7",
-      "context": "main, dinopowers:test-driven-development Step 2, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
+      "context": "main, dinopowers:test-driven-development Step 2, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 \u2192 5\\n  *.walker: 6 \u2192 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) \u2192 d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
       "prompt": "test conventions",
       "expected": "incremental + ask --force + tests-as-context / semantic_search test chunks; NOT ls/cat specs",
       "audit_finding": "A1,A4",
@@ -135,7 +135,7 @@
     },
     {
       "id": "E8",
-      "context": "subagent: task-agent, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; a get_index_status call shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
+      "context": "subagent: task-agent, tool answers carry MARKER-COLD [\"workingTree\":{\"tree\":\"/work/acme\",\"indexedCommit\":\"cbb76f5\",\"treeCommit\":\"d569ae8\", \"indexedDirty\":true,\"changedFiles\":1833,\"deletedFiles\":184,\"floors\":[],\"pendingFiles\":1577, \"denseUnavailable\":{\"reason\":\"104 rows pending\"}}]; a get_index_status call shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 \u2192 5\\n  *.walker: 6 \u2192 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) \u2192 d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field)",
       "prompt": "body of oauth_redirect? + callers",
       "expected": "find_symbol + get_callers/hybrid_search; never reindex; drift remedy to parent",
       "audit_finding": "A2,A4",
@@ -177,7 +177,7 @@
     },
     {
       "id": "E11",
-      "context": "control, the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 → 5\\n  *.walker: 6 → 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) → d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field), changedFiles 0",
+      "context": "control, the session digest `## Drift` shows DRIFT-FORCE [\"Language versions:\\n  *.chunking: 4 \u2192 5\\n  *.walker: 6 \u2192 7\\nWorking tree:\\nfix/TD-1: cbb76f5 (dirty) \u2192 d569ae8 (fix/TD-2) (HEAD moved since the last index run)\\nRun: tea-rags index-codebase --project acme --force\"] (drift lives only in get_index_status / the digest; read answers carry no drift field), changedFiles 0",
       "prompt": "run --force?",
       "expected": "no; ask consent, keep working",
       "audit_finding": "control",
@@ -206,7 +206,7 @@
     {
       "id": "E13",
       "context": "edge, Russian, explicit user override",
-      "prompt": "user: просто прочитай lib/navigation_urls.rb руками",
+      "prompt": "user: \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0439 lib/navigation_urls.rb \u0440\u0443\u043a\u0430\u043c\u0438",
       "expected": "lib/navigation_urls.rb is indexed: tell the user the tea-rags plugin hook blocks a manual Read of indexed code, read it via find_symbol(relativePath: \"lib/navigation_urls.rb\") (lag does not license shell reads); no shell cat/sed workaround, no confirm question (0jt47; was 'Read (user override wins)' before the ueplg deny hook)",
       "audit_finding": "edge (over-correction guard)",
       "results": {
@@ -249,7 +249,7 @@
       "id": "H6",
       "audit_finding": "q1g6s.17 trust a clean index: no verify search",
       "context": "main, own checkout /work/acme (alias acme), codegraph on; semantic_search(project: 'acme', path: '/work/acme', query: 'tax rounding') answered workingTree {tree: '/work/acme', changedFiles: 0, pendingFiles: 0, floors: []}, no row has treeState, no degraded / denseUnavailable. Top row TaxCalc#round_cents, content (whole method): \"def round_cents(amount)\\n  (amount * 100).round(half: :even) / 100.0\\nend\"",
-      "prompt": "Explain how TaxCalc#round_cents rounds — and is that the current code?",
+      "prompt": "Explain how TaxCalc#round_cents rounds \u2014 and is that the current code?",
       "expected": "NO tool call: the clean answer IS the current code; explains banker's rounding (half to even) to cents from the row",
       "not": [
         "find_symbol / search to verify the row",
@@ -263,7 +263,7 @@
       "audit_finding": "q1g6s.17 guard: treeState row still re-read",
       "context": "main, own checkout /work/acme (alias acme), codegraph on; hybrid_search(project: 'acme', path: '/work/acme', query: 'Pricing apply discount') answered workingTree {tree: '/work/acme', changedFiles: 3, pendingFiles: 0, floors: []}; row Pricing#apply carries treeState: 'modified' (pre-edit index copy) with its old content.",
       "prompt": "What does Pricing#apply do now?",
-      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Pricing#apply') — reads the current tree; the row's content is not the answer",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Pricing#apply') \u2014 reads the current tree; the row's content is not the answer",
       "not": [
         "answer from the treeState row's content alone",
         "Read / cat",
@@ -287,18 +287,34 @@
       "audit_finding": "q1g6s.17 guard: summary line is not the body",
       "context": "main, own checkout /work/acme (alias acme), codegraph on; earlier turns were compacted. The summary says only: 'read Ledger#post earlier (find_symbol)'. Its body is NOT in this context.",
       "prompt": "Does Ledger#post lock the account row before writing?",
-      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Ledger#post') — the body is not in context, so it is read again",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Ledger#post') \u2014 the body is not in context, so it is read again",
       "not": [
         "answer from memory of the summary line",
         "Read / cat",
         "a search instead of find_symbol"
       ]
+    },
+    {
+      "id": "H10",
+      "audit_finding": "bxt63: global changedFiles + commit provenance mismatch without row treeState \u2014 global counters alone never require a reread",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; find_symbol(symbol: 'Ledger#post') returned the full body, row carries no treeState and no degraded marker; the response's workingTree block reports {tree: '/work/acme', changedFiles: 2, pendingFiles: 0} and the row's provenance commit abc1234 differs from the checkout HEAD def5678",
+      "prompt": "Is this the current Ledger#post, or stale?",
+      "expected": "NO re-read: the row has no treeState/degraded, so it IS current (the overlay applies; global changedFiles and a provenance-commit mismatch alone never require a reread) \u2014 answers from the held body; no git diff/log, no Read, no second find_symbol",
+      "not": "git diff / git log / Read tool to verify currency; a second find_symbol for the same body already held"
+    },
+    {
+      "id": "H11",
+      "audit_finding": "bxt63: a row-level treeState marker means the held body is pre-edit \u2014 repeat the same find_symbol arguments once",
+      "context": "main, own checkout /work/acme (alias acme), codegraph on; an earlier find_symbol(symbol: 'Pricing#apply') body sits in context, but its row carries treeState (maybe-stale pre-edit copy); workingTree reports {tree: '/work/acme', changedFiles: 1, pendingFiles: 0}",
+      "prompt": "What does Pricing#apply write to the ledger now?",
+      "expected": "find_symbol(project: 'acme', path: '/work/acme', symbol: 'Pricing#apply') with the SAME arguments once \u2014 it reads the working tree, not the cached body; the treeState row is pre-edit, the held body is not the answer; no Read/shell refresh, no graph retry",
+      "not": "answering from the held (pre-edit) body; Read tool or sed/cat of the file; re-calling find_symbol more than once"
     }
   ],
   "summary": {
     "no_rule": "6/15 (40%)",
     "full_rules_before": "13/15 (87%)",
-    "wrapper_only_before": "7/15 (47%) — reproduces the incident",
+    "wrapper_only_before": "7/15 (47%) \u2014 reproduces the incident",
     "full_rules_after": "15/15 (100%)",
     "wrapper_only_after": "15/15 (100%)"
   }

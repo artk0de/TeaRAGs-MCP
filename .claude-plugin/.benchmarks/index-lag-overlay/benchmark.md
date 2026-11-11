@@ -260,3 +260,19 @@ These came from the incident case study and need code changes, not rule text.
     explicit NOT (ls/cat specs) — instead of index-based test-chunk re
   - `E13` — Follows the override with a shell sed read of the indexed file and
     explicitly refuses find_symbol — the deny-hook case requires fi
+
+## 2026-11-11 — H10/H11 written (bd tea-rags-mcp-bxt63)
+
+- Cases added: H10 (global changedFiles + provenance-commit mismatch, no row
+  `treeState` → the held body IS current; no git diff/Read/re-read) and H11 (row
+  `treeState` → repeat the same `find_symbol` arguments once; no Read/shell
+  refresh). q1g6s.17's unwritten remainder.
+- Subject: Codex CLI 0.167.0, gpt-6.1-sol, plan-only, one session with
+  H10/H11/H6/H7, ×3 runs, package 0.55.12 + core wording fix (uncommitted).
+- Result: H10 3/3, H11 3/3, H6 3/3, H7 3/3 — 12/12.
+- H11/H7 note: every run plans the freshness-guide read (`treeState` is its
+  trigger) and the incremental `index_codebase(project=)` (own checkout,
+  changedFiles > 0) before the same-args `find_symbol` re-read — both per the
+  shipped core contract, neither on the case's forbidden list.
+- Claude side skipped (user instruction 2026-11-11); R4/R9 evidence in
+  search-cascade's section of the same date.

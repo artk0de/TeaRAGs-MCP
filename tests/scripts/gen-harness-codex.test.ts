@@ -423,14 +423,17 @@ describe("renderCodexHarness", () => {
     }
   });
 
-  it("fits the combined static startup and per-turn context into 17000 characters", async () => {
+  it("fits the combined static startup and per-turn context into 17200 characters", async () => {
     const rendered = await renderCodexHarness(ROOT);
     // 0.55.4 injected 17385 chars before the dynamic digest. The combined
     // budget catches duplication that the individual hook caps cannot catch.
+    // Raised 17000 -> 17200 for the bxt63 routing hooks (alternation = regex
+    // mode; definition questions never grep) — still under the 17385
+    // duplication regression, per-hook token caps unchanged.
     const paths = ["core.txt", "codex-rules.txt", "turn-routing.txt"];
     const total = paths.reduce((sum, path) => sum + (rendered.get(`tea-rags/scripts/${path}`)?.length ?? 0), 0);
     expect(total).toBeGreaterThan(0);
-    expect(total).toBeLessThanOrEqual(17000);
+    expect(total).toBeLessThanOrEqual(17200);
   });
 
   it("tells the session that $tea-rags-core is the core it already holds, so the skills rule never sends it to re-open that SKILL.md", async () => {

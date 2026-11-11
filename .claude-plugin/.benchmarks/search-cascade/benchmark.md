@@ -1248,3 +1248,18 @@ merges every part — the epic's target.
 - FAIL digest:
   - `9` — Reads the doc with bounded sed (the Codex default-read analog of the
     forbidden Read) instead of find_symbol(relativePath:) for the
+
+## 2026-11-11 — core wording fixes for R4/R9 (bd tea-rags-mcp-bxt63)
+
+- Change (plugins/tea-rags/rules/core.md, regenerated into every harness): the
+  usages row now reads
+  `(literal, `-l`; `a|b`= regex mode — plain`grep`needs`-E`; never quote the pipe)`;
+  the known-symbol row opens with
+  `("where is X defined?" — grep never finds a definition)`.
+- Subject: Codex CLI 0.167.0, gpt-6.1-sol, plan-only, one session with
+  R4/R9/R1/R3, ×3 runs, package 0.55.12 + the wording fix.
+- Result: R4 3/3 (was 0/3 — every run now plans `rg 'Alpha::Beta|Gamma::Delta'`
+  as regex alternation, no quoted-literal pipe), R9 3/3 (was 1/3 — every run
+  opens with `find_symbol(symbol: "PaymentGateway")`, no grep), controls R1 3/3,
+  R3 3/3 (literal `-F`-style searches unchanged). 12/12.
+- Claude side skipped (user instruction 2026-11-11).

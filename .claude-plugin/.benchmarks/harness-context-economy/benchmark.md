@@ -118,9 +118,11 @@ assertions, Codex tool-name mapping (read_mcp_resource ≙ ReadMcpResourceTool, 
 
 Limitations: single run per case (no repetition, quota); grader model = session
 subagent, not sonnet as the plan named; plan-only (no live tool execution except
-the five scripted checks in harness/codex/LIVE-TEST.md); raw transcripts and
-verdict JSONs session-local (/tmp/codex-eval), not committed — per-suite
-sections carry the graded results. Two data-driven- generation case prompts
-carry committed prose references to a taxdome-like fixture (fixture area
+the five scripted checks in
+harness-context-economy/codex-live-test-2026-11-10.md (moved out of
+harness/codex — regeneration wipes the dir)); raw transcripts and verdict JSONs
+session-local (/tmp/codex-eval), not committed — per-suite sections carry the
+graded results. Two data-driven- generation case prompts carry committed prose
+references to a taxdome-like fixture (fixture area
 `app/services/tax_preparation/`, fictional); no taxdome code or index was read
 by any run (all runs `-C` this repo, plan-only).
