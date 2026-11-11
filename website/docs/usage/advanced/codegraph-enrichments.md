@@ -134,6 +134,36 @@ That is about 1.5 GB. Homebrew's `rust` has no `rustc-dev` and cannot build the
 driver. The toolchain is only used by tea-rags; your project keeps building
 with whatever toolchain it pins.
 
+#### Prebuilt binaries (no compile, no local Rust)
+
+Every GitHub release of tea-rags carries prebuilt driver archives — one per
+platform (darwin-arm64, darwin-x64, linux-x64, linux-arm64, windows-x64) —
+plus `rustc-driver-manifest.json`, which pins the toolchain, the driver's
+source hash and each archive's sha256:
+
+```bash
+tea-rags rustc-driver install
+```
+
+downloads the archive for your platform from the release matching your
+installed tea-rags version, verifies the sha256 and publishes the binaries
+under `~/.tea-rags/rustc-driver/bin/<pin>-<sourceHash>/` — no cargo, no
+compiler build. The managed toolchain the driver links against is installed
+into `~/.tea-rags/rust/` (rustup homes, never touching your own). The npm
+postinstall attempts the same download silently; it is best-effort and can be
+skipped with `TEA_RAGS_SKIP_RUSTC_DRIVER_DOWNLOAD=1`. Offline, or when the
+release has no archive for your platform, the install falls back to the local
+compile above and says so.
+
+The archives are produced by the Release workflow: each platform builds the
+driver against the pinned nightly, the binary's banner is checked against the
+pin and source hash, a smoke job runs it on a clean runner against a minimal
+toolchain, and only then are the archives and manifest attached to the
+release. If a release's assets are missing or incomplete, maintainers rebuild
+them in place — Actions → **Release** → *Run workflow* → pass the existing
+tag (e.g. `v1.51.2`) as `driver-tag`; `tea-rags rustc-driver install` picks
+the repaired assets up without a new release.
+
 What a run costs:
 
 - **First run.** tea-rags compiles the driver from the crate source and

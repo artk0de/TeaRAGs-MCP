@@ -17,3 +17,10 @@ tests/core/domains/language/capability/version-pins.json merge=version-pins
 .cursor-plugin/marketplace.json merge=tea-rags-generated
 harness/** merge=tea-rags-generated
 src/mcp/resources/generated/** merge=tea-rags-generated
+
+# Vendored crate sources: cargo verifies every file's sha256 against each
+# crate's .cargo-checksum.json under `cargo build --locked`. Git's Windows
+# autocrlf checkout rewrites "text" files to CRLF and breaks that check
+# (rustc_plugin's .cargo_vcs_info.json was the first mismatch) — check the
+# trees out byte-exact on every platform.
+native/tea-rags-rustc-driver/vendor/** -text
