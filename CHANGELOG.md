@@ -1,18 +1,9 @@
 ## [1.52.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.52.0...v1.52.1) (2026-11-25)
 
-### Bug Fixes
+### 🩹 Fixes
 
-- **adapters:** take a tea-rags advisory lock on read-write codegraph opens
-  ([ae4098c](https://github.com/artk0de/TeaRAGs-MCP/commit/ae4098ce26fabaac05bd2b39094b0958a9c8be21))
-- **release:** check the whole rustc driver crate out byte-exact on Windows
-  (hjbow.13)
-  ([3bb083f](https://github.com/artk0de/TeaRAGs-MCP/commit/3bb083f4d14501e207414141d4551b8072a32cbe))
-- **release:** driver repair dispatch actually builds, smokes and publishes
-  (hjbow.13)
-  ([8325e9c](https://github.com/artk0de/TeaRAGs-MCP/commit/8325e9cb7b2fc20ec648ecc9314f89a97c06e7ba))
-- **release:** put the toolchain bin dir on PATH before the Windows driver
-  banner check (hjbow.13)
-  ([089ca5e](https://github.com/artk0de/TeaRAGs-MCP/commit/089ca5ec43c75bbe96720bda32b1dc51423a2ada))
+* Two tea-rags processes can no longer open the same **codegraph** database for writing at once, even on hosts where the database's own file lock silently fails; the second process waits or reports which process holds the database, and a lock left behind by a crashed process is reclaimed automatically
+* The prebuilt ***Rust*** compiler driver for Windows x64 now builds, passes its self-check and is published, so Windows users get compiler-accurate ***Rust*** call graphs instead of a driver that failed its version check
 
 ## [1.52.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.2...v1.52.0) (2026-11-25)
 
