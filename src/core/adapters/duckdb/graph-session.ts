@@ -21,6 +21,7 @@ import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb
 
 import type { CodegraphStorageCompactionOutcome, CodegraphStorageFootprint } from "../../contracts/types/codegraph.js";
 import { compactionStagingPath, storageConversionExportPath } from "./codegraph-db-files.js";
+import { acquireDatabaseFileAdvisoryLock, type DatabaseFileAdvisoryLockHandle } from "./database-file-advisory-lock.js";
 import {
   readStorageFootprint,
   readStorageFormat,
@@ -173,6 +174,12 @@ export class DuckDbGraphSession {
    * instance or the file being replaced.
    */
   private swapping?: Promise<void>;
+  /**
+   * The cross-process advisory lock a read-write session holds from `open` to
+   * close (bd tea-rags-mcp-rmbl9) — held across a compaction's reopen, which
+   * keeps the path.
+   */
+  private advisoryLock?: DatabaseFileAdvisoryLockHandle;
 
   constructor(private readonly options: DuckDbGraphSessionOptions) {}
 
@@ -184,7 +191,26 @@ export class DuckDbGraphSession {
   async open(): Promise<void> {
     this.closing = undefined;
     this.refusingCalls = false;
-    await this.openNative();
+    // DuckDB's own file lock is not taken on every host, so a second process
+    // could open the file read-write beside this one. The advisory lock
+    // arbitrates first; a held one throws the lock-shaped cause that
+    // `DuckDbOpenFailedError` treats as retryable contention.
+    if (this.accessMode === "READ_WRITE" && !this.advisoryLock) {
+      mkdirSync(dirname(this.options.path), { recursive: true });
+      this.advisoryLock = acquireDatabaseFileAdvisoryLock(this.options.path);
+    }
+    try {
+      await this.openNative();
+    } catch (err) {
+      this.releaseAdvisoryLock();
+      throw err;
+    }
+  }
+
+  private releaseAdvisoryLock(): void {
+    const lock = this.advisoryLock;
+    this.advisoryLock = undefined;
+    lock?.release();
   }
 
   /**
@@ -361,6 +387,8 @@ export class DuckDbGraphSession {
     } finally {
       conn?.closeSync();
       instance?.closeSync();
+      // After the instance: the file is free only once DuckDB let go of it.
+      this.releaseAdvisoryLock();
     }
   }
 
