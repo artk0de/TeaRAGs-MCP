@@ -68,16 +68,24 @@ export class QdrantPointStore {
       );
       return result.count;
     } catch (error: unknown) {
-      if (error instanceof QdrantUnavailableError) throw error;
+      // A refused connection is typed unavailability. A request that hung
+      // through the fresh-client retry also lands here, but the daemon may
+      // still be answering — a yellow collection counts slowly, exactly when
+      // counts time out — so the probe runs anyway and unavailability is kept
+      // only when the probe itself cannot answer.
+      const unavailable = error instanceof QdrantUnavailableError ? error : undefined;
 
       // Probe: is Qdrant still alive (yellow) or genuinely unreachable?
       try {
         const info = await this.connection.call(async () => this.connection.client.getCollection(collectionName));
         if (info.status === "yellow") {
-          throw new QdrantOptimizationInProgressError(collectionName, error instanceof Error ? error : undefined);
+          const cause =
+            unavailable?.cause instanceof Error ? unavailable.cause : error instanceof Error ? error : undefined;
+          throw new QdrantOptimizationInProgressError(collectionName, cause);
         }
       } catch (probeError) {
         if (probeError instanceof QdrantOptimizationInProgressError) throw probeError;
+        if (unavailable) throw unavailable;
         // probe failed too → fall through to generic QdrantOperationError below
       }
 
@@ -114,7 +122,9 @@ export class QdrantPointStore {
    * One point by ID, where `null` means only that Qdrant answered and the point
    * is not there. Every failure throws an `InfraError`: the connection's typed
    * ones (unavailable / starting / recovering) as they are, anything the client
-   * raised — an HTTP 5xx, a request timeout — as a {@link QdrantOperationError}.
+   * raised — an HTTP 5xx, a request timeout the fresh-client retry could not
+   * lift — as a {@link QdrantOperationError} (a timeout that survives the
+   * retry arrives typed as unavailability, its abort preserved as cause).
    */
   async getPointOrThrow(
     collectionName: string,

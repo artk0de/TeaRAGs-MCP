@@ -122,6 +122,7 @@ export class OllamaTimeoutError extends EmbeddingError {
       message: `Ollama embedding timed out at ${url} (${batchSize} texts, ${timeoutMs}ms limit)`,
       hint:
         `The embedding request exceeded the timeout.\n` +
+        `Multi-text batches are retried in halves automatically; this error is the request that still did not finish.\n` +
         `Try reducing EMBEDDING_BATCH_SIZE (current batch: ${batchSize} texts).\n` +
         `Timeout formula: 30s base + ${batchSize} × 200ms/item = ${timeoutMs}ms`,
       httpStatus: 504,

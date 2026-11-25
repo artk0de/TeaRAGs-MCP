@@ -36,6 +36,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
+import type { RecoveryFileProgress } from "../../../../contracts/types/provider.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
@@ -247,6 +248,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * in `finalizeSignals` / `onRelease`.
    */
   private readonly runBatchChains = new Map<string, Promise<unknown>>();
+  /** Main-thread recovery listener. Does not cross the worker-pool boundary. */
+  private recoveryProgress?: (event: RecoveryFileProgress) => void;
   /**
    * yl9tv Task 5b — MAIN-thread per-collection dedup set for cross-pass input
    * spill writes, so a file whose chunks span several processing units is spilled
@@ -753,6 +756,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return collectionName ?? "__direct__";
   }
 
+  /**
+   * In-batch recovery progress. Bound on the main-thread provider; a worker-pool
+   * dispatch does not see it (the bar then moves once per batch).
+   */
+  bindRecoveryProgress(listener: ((event: RecoveryFileProgress) => void) | undefined): void {
+    this.recoveryProgress = listener;
+  }
+
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Per-file hashes for this run (bd tea-rags-mcp-6goqa), assigned before any
     // walk so both branches below stamp them.
@@ -775,7 +786,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
     // Walk each file through this provider's own sink; `finish` resolves pass-2.
     const sink = this.asExtractionSink(options?.collectionName);
-    for (const relPath of targetRelPaths) {
+    const progressTotal = targetRelPaths.length;
+    this.recoveryProgress?.({ phase: "extract", done: 0, total: progressTotal });
+    for (let index = 0; index < targetRelPaths.length; index++) {
+      const relPath = targetRelPaths[index] ?? "";
       try {
         await sink.write(await this.extractOneFile(root, relPath));
       } catch (err) {
@@ -785,8 +799,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           process.stderr.write(`[codegraph] skip ${relPath}: ${(err as Error).message}\n`);
         }
       }
+      const done = index + 1;
+      if (done === progressTotal || done % 25 === 0) {
+        this.recoveryProgress?.({ phase: "extract", done, total: progressTotal });
+      }
     }
+    this.recoveryProgress?.({ phase: "resolve", done: 0, total: progressTotal });
     await sink.finish();
+    this.recoveryProgress?.({ phase: "resolve", done: progressTotal, total: progressTotal });
 
     // Emit an overlay for every relPath the caller listed (or every walked file),
     // so the coordinator sees a consistent overlay map shape.

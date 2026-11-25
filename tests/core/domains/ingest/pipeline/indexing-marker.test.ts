@@ -231,7 +231,11 @@ describe("pending worktree seed on the marker (bd k8gac)", () => {
    */
   function qdrantRetrieving(retrieve: () => Promise<unknown>): QdrantManager {
     const manager = new QdrantManager("http://127.0.0.1:6333");
-    (manager as unknown as { client: unknown }).client = { retrieve: vi.fn(retrieve) };
+    const client = { retrieve: vi.fn(retrieve) };
+    (manager as unknown as { client: unknown }).client = client;
+    // A hung read is retried on a client the connection builds itself — keep
+    // that on the stub too, or the retry opens a live socket instead.
+    (manager as unknown as { connection: { createClient: unknown } }).connection.createClient = () => client;
     return manager;
   }
 

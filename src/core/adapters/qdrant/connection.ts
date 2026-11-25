@@ -86,6 +86,12 @@ export class QdrantConnection {
   private readonly reconnect?: () => Promise<string | null>;
   private _aliases?: QdrantAliasManager;
 
+  /**
+   * Builds the client installed after a dead keep-alive socket. Tests replace
+   * it so a retry does not open a live socket; production leaves the default.
+   */
+  createClient: (url: string, apiKey?: string) => QdrantClient = createRestClient;
+
   constructor(
     url = "http://localhost:6333",
     apiKey?: string,
@@ -110,9 +116,11 @@ export class QdrantConnection {
    *
    * A stale-socket reset (the server closed an idle keep-alive socket while
    * this process's event loop was blocked, so the request went out on a dead
-   * socket) is retried ONCE immediately — the pool opens a fresh socket. Neither
-   * reconnect path can recover it: a live embedded daemon on an unchanged port
-   * declines to reconnect, and an external Qdrant has no reconnect at all.
+   * socket) is retried ONCE on a NEW client. The undici agent keeps that
+   * socket for `keepAliveTimeout` (10s) and will hand it out again — a retry
+   * on the same client hangs until the 300s abort, which is how `listAliases`
+   * died after a long index. A hung abort is the same failure: the socket
+   * never errored, the timer fired, and the pool still holds it.
    * ECONNREFUSED is not a reset and skips this retry.
    *
    * For embedded mode: on connection error, tries to reconnect to a daemon
@@ -127,13 +135,16 @@ export class QdrantConnection {
     try {
       return await fn();
     } catch (error: unknown) {
-      if (!isConnectionError(error)) throw error;
+      if (!isConnectionError(error) && !isHungTransportError(error)) throw error;
       let connError: unknown = error;
-      if (isStaleSocketReset(error)) {
+      if (isStaleSocketReset(error) || isHungTransportError(error)) {
+        // Drop the pooled socket before the retry. Collaborators read
+        // `connection.client` at call time, so the retried `fn` uses this one.
+        this.recycleClient();
         try {
           return await fn();
         } catch (resetRetryError: unknown) {
-          if (!isConnectionError(resetRetryError)) throw resetRetryError;
+          if (!isConnectionError(resetRetryError) && !isHungTransportError(resetRetryError)) throw resetRetryError;
           connError = resetRetryError;
         }
       }
@@ -165,6 +176,11 @@ export class QdrantConnection {
    * Attempt to re-resolve the embedded daemon URL (re-read port, or respawn a
    * dead daemon). Returns true if the URL was updated and a retry is warranted.
    */
+  /** Replace the REST client so the next call cannot reuse a dead keep-alive socket. */
+  private recycleClient(): void {
+    this.client = this.createClient(this.url, this.apiKey);
+  }
+
   private async tryReconnect(): Promise<boolean> {
     if (!this.reconnect) return false;
     const newUrl = await this.reconnect();
@@ -295,13 +311,37 @@ const STALE_SOCKET_MESSAGES = ["other side closed", "socket hang up", "econnrese
  * the `cause` is inspected: a top-level message alone does not say whether the
  * socket was a reused one, and ECONNREFUSED (nothing listening) never qualifies.
  */
-function isStaleSocketReset(error: unknown): boolean {
+/**
+ * A request that sat on a dead keep-alive socket until the client aborted it.
+ * undici does not always surface that as ECONNRESET: the abort arrives as
+ * `AbortError` / `TimeoutError` / `QdrantClientTimeoutError`, and `call` used
+ * to treat it as a business failure. One fresh client retries it.
+ */
+function isHungTransportError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const { cause } = error;
-  if (typeof cause !== "object" || cause === null) return false;
-  const { code } = cause as { code?: unknown };
-  if (typeof code === "string") return STALE_SOCKET_CODES.has(code);
-  if (!(cause instanceof Error)) return false;
-  const msg = cause.message.toLowerCase();
-  return STALE_SOCKET_MESSAGES.some((marker) => msg.includes(marker));
+  if (error.name === "AbortError" || error.name === "TimeoutError" || error.name === "QdrantClientTimeoutError") {
+    return true;
+  }
+  const msg = error.message.toLowerCase();
+  return msg.includes("operation was aborted") || msg.includes("headers timeout") || msg.includes("body timeout");
+}
+
+function isStaleSocketReset(error: unknown): boolean {
+  // Only the cause chain: a top-level message does not say the socket was a
+  // reused one (ECONNREFUSED never qualifies). The openapi client wraps fetch,
+  // so the socket error can sit more than one `cause` down — a single-level
+  // check missed it and listAliases failed instead of retrying.
+  const seen = new Set<unknown>();
+  let current: unknown = (error as { cause?: unknown }).cause;
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const { code } = current as { code?: unknown };
+    if (typeof code === "string" && STALE_SOCKET_CODES.has(code)) return true;
+    if (current instanceof Error) {
+      const msg = current.message.toLowerCase();
+      if (STALE_SOCKET_MESSAGES.some((marker) => msg.includes(marker))) return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }

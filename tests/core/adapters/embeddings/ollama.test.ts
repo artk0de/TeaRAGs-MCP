@@ -1081,6 +1081,160 @@ describe("OllamaEmbeddings", () => {
       });
     });
 
+    describe("batch that exceeds its deadline", () => {
+      // Deadline is 30s + 200ms per text. A smaller request pays the 30s base
+      // again, so halving gives each text more time. The caller still chooses
+      // how many texts to pass (EMBEDDING_BATCH_SIZE); only a request that
+      // actually times out is subdivided, and every text is still embedded.
+      const embedInput = (init?: { body?: unknown }): string[] | undefined => {
+        if (typeof init?.body !== "string") return undefined;
+        return (JSON.parse(init.body) as { input?: string[] }).input;
+      };
+      const sentBatchSizes = () =>
+        mockFetch.mock.calls
+          .map(([, init]: [string, { body?: string }]) => embedInput(init))
+          .filter((input: string[] | undefined): input is string[] => input !== undefined)
+          .map((input: string[]) => input.length);
+      const hangAbove = (limit: number) => {
+        mockFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+          const input = embedInput(init);
+          if (!input) return { ok: true };
+          if (input.length > limit) {
+            return await new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                reject(new DOMException("The operation was aborted", "AbortError"));
+              });
+            });
+          }
+          return {
+            ok: true,
+            json: async () => ({ embeddings: input.map((text) => [Number(text.slice(1))]) }),
+          };
+        });
+      };
+
+      it("splits the timed-out batch and returns every vector in input order", async () => {
+        vi.useFakeTimers();
+        try {
+          hangAbove(2);
+          const pending = batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          pending.catch(() => {});
+          // 4 texts: 30000 + 4*200 = 30800ms, then the halves answer immediately.
+          await vi.advanceTimersByTimeAsync(31_000);
+
+          await expect(pending).resolves.toMatchObject([
+            { embedding: [1] },
+            { embedding: [2] },
+            { embedding: [3] },
+            { embedding: [4] },
+          ]);
+          expect(sentBatchSizes()).toEqual([4, 2, 2]);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("keeps bisecting until every text is embedded", async () => {
+        vi.useFakeTimers();
+        try {
+          hangAbove(1);
+          const pending = batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          pending.catch(() => {});
+          // 4 texts time out, then the first half of 2 does too; the rest are singles.
+          await vi.advanceTimersByTimeAsync(62_000);
+
+          await expect(pending).resolves.toMatchObject([
+            { embedding: [1] },
+            { embedding: [2] },
+            { embedding: [3] },
+            { embedding: [4] },
+          ]);
+          expect(sentBatchSizes()).toEqual([4, 2, 1, 1, 1, 1]);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("sends later batches at the size that finished before the deadline", async () => {
+        vi.useFakeTimers();
+        try {
+          hangAbove(2);
+          const first = batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          first.catch(() => {});
+          await vi.advanceTimersByTimeAsync(31_000);
+          await first;
+          mockFetch.mockClear();
+          hangAbove(2);
+
+          const results = await batchEmbeddings.embedBatch(["t5", "t6", "t7", "t8"]);
+
+          expect(sentBatchSizes()).toEqual([2, 2]);
+          expect(results.map((result) => result.embedding)).toEqual([[5], [6], [7], [8]]);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("leaves the next caller-sized batch to an attached observer", async () => {
+        vi.useFakeTimers();
+        try {
+          hangAbove(2);
+          const events: unknown[] = [];
+          batchEmbeddings.observeServerBatchFailures((event) => events.push(event));
+          const first = batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+          first.catch(() => {});
+          await vi.advanceTimersByTimeAsync(31_000);
+          await first;
+          expect(events[0]).toEqual({ failedSize: 4, retrySize: 2, endpointUrl: "http://localhost:11434" });
+
+          mockFetch.mockClear();
+          mockFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+            const input = embedInput(init) ?? [];
+            return { ok: true, json: async () => ({ embeddings: input.map((text) => [Number(text.slice(1))]) }) };
+          });
+
+          await batchEmbeddings.embedBatch(["t5", "t6", "t7", "t8"]);
+
+          expect(sentBatchSizes()[0]).toBe(4);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("does not pre-split a batch that finishes in time when EMBEDDING_BATCH_SIZE is set", async () => {
+        const previous = process.env.EMBEDDING_BATCH_SIZE;
+        process.env.EMBEDDING_BATCH_SIZE = "2";
+        try {
+          mockFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+            const input = embedInput(init) ?? [];
+            return { ok: true, json: async () => ({ embeddings: input.map(() => [0.1]) }) };
+          });
+
+          const results = await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+
+          expect(sentBatchSizes()).toEqual([4]);
+          expect(results).toHaveLength(4);
+        } finally {
+          if (previous === undefined) delete process.env.EMBEDDING_BATCH_SIZE;
+          else process.env.EMBEDDING_BATCH_SIZE = previous;
+        }
+      });
+
+      it("rethrows when a single text still exceeds the deadline", async () => {
+        vi.useFakeTimers();
+        try {
+          hangAbove(0);
+          const pending = batchEmbeddings.embedBatch(["t1", "t2"]);
+          pending.catch(() => {});
+          await vi.advanceTimersByTimeAsync(61_000);
+
+          await expect(pending).rejects.toThrow(OllamaTimeoutError);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+
     it("should respect numGpu constructor parameter in batch mode", async () => {
       const cpuEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, false, 0);
 
@@ -2148,7 +2302,7 @@ describe("OllamaEmbeddings", () => {
       expect(lastUrl).toContain("primary");
     });
 
-    it("should throw OllamaTimeoutError on batch embed timeout without fallback", async () => {
+    it("retries a timed-out batch in halves on the primary instead of failing over", async () => {
       vi.useFakeTimers();
       try {
         // Constructor: primary up, native batch (legacyApi = false)
@@ -2156,36 +2310,30 @@ describe("OllamaEmbeddings", () => {
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, false, 999, FALLBACK);
         await vi.advanceTimersByTimeAsync(0);
 
-        // Mock fetch that hangs until abort signal fires (simulates slow Ollama)
-        mockFetch.mockImplementationOnce(
-          async (_url: string, init: RequestInit) =>
-            new Promise((_resolve, reject) => {
+        mockFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+          if (!init?.body) return { ok: true }; // GET / health probe
+          const { input } = JSON.parse(init.body as string) as { input: string[] };
+          if (input.length > 1) {
+            return await new Promise((_resolve, reject) => {
               init.signal?.addEventListener("abort", () => {
                 reject(new DOMException("The operation was aborted", "AbortError"));
               });
-            }),
-        );
+            });
+          }
+          return {
+            ok: true,
+            json: async () => ({ model: "nomic-embed-text", embeddings: [[input[0] === "text1" ? 0.1 : 0.2]] }),
+          };
+        });
 
         const embedPromise = provider.embedBatch(["text1", "text2"]);
-        // Prevent unhandled rejection during timer advancement
         embedPromise.catch(() => {});
-        // Background probe fires at 30s while embed hangs — report primary alive so the
-        // probe doesn't falsely switch to fallback (embed hang ≠ primary down at / health)
-        mockFetch.mockResolvedValueOnce({ ok: true });
-        // Advance past batch timeout: 30000 + 2*200 = 30400ms
+        // 2 texts: 30000 + 2*200 = 30400ms. The probe at 30s must keep the primary "up".
         await vi.advanceTimersByTimeAsync(31_000);
 
-        await expect(embedPromise).rejects.toThrow(OllamaTimeoutError);
-
-        // Next call should STILL go to primary (no fallback switch)
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1], [0.2]] }),
-        });
-        await provider.embedBatch(["a", "b"]);
-
-        const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
-        expect(lastUrl).toContain("primary");
+        await expect(embedPromise).resolves.toMatchObject([{ embedding: [0.1] }, { embedding: [0.2] }]);
+        const urls = mockFetch.mock.calls.map(([url]: [string]) => url);
+        expect(urls.every((url: string) => url.startsWith(PRIMARY))).toBe(true);
       } finally {
         vi.useRealTimers();
       }

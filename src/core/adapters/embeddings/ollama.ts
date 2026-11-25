@@ -571,13 +571,20 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   /**
-   * Did the server fail on the SIZE of a native batch? A crashed runner
-   * (`OllamaRunnerCrashError`, whatever status relayed it) or any other 5xx.
-   * A caller-side 4xx fails identically at any size, and a timeout does not
-   * shrink with the batch (the same work under a smaller budget), so neither
-   * is split.
+   * Did a smaller native batch have a chance this request did not? A crashed
+   * runner (`OllamaRunnerCrashError`, whatever status relayed it), any other
+   * 5xx, or a deadline overrun. A caller-side 4xx fails at any size, so it is
+   * not split.
+   *
+   * A timeout gets more time per text when halved. The budget is 30s base +
+   * 200ms per text, so each half pays the base again (64 texts → 669ms each,
+   * 32 texts → 1138ms each). The halves embed the same texts in full — nothing
+   * is dropped or truncated. The caller still chooses the batch
+   * (`EMBEDDING_BATCH_SIZE`); it is subdivided only after a request misses
+   * its deadline.
    */
   private isServerBatchFailure(error: unknown): boolean {
+    if (error instanceof OllamaTimeoutError) return true;
     if (error instanceof OllamaRunnerCrashError) return true;
     return error instanceof OllamaResponseError && error.responseStatus >= 500;
   }
@@ -617,10 +624,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   /**
    * Embed `texts` natively, never sending more than `bound.ceiling` in one
-   * request. A batch the server fails on size is halved and its slices sent
-   * one after another; the halved size becomes the bound for the rest of THIS
-   * call — and, when nobody observes, for the rest of the run: each failure
-   * costs a runner restart plus a model reload on the server.
+   * request. A batch the server fails on size — or that exceeds its deadline —
+   * is halved and its slices sent one after another. The halved size becomes
+   * the bound for the rest of THIS call and, when nobody observes, for the
+   * rest of the run: a runner crash costs a restart and a model reload, and a
+   * timeout has already spent its whole deadline. An attached observer (the
+   * throughput tuner) owns the size across calls and may raise it back toward
+   * the configured batch. Every input text is still embedded.
    */
   private async embedNativeBounded(texts: string[], bound: NativeBatchBound): Promise<EmbeddingResult[]> {
     if (bound.ceiling !== undefined && texts.length > bound.ceiling) {
@@ -635,10 +645,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (!bound.observed) this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
       // Unconditional: a batch size the server cannot take is an operator-facing
       // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
-      console.error(
-        `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
-          `retrying in batches of ${half}`,
-      );
+      const detail = error instanceof Error ? error.message : String(error);
+      const failed = error instanceof OllamaTimeoutError ? "timed out on" : "server failed";
+      console.error(`[Ollama] ${failed} a ${texts.length}-text batch (${detail}); retrying in batches of ${half}`);
       const event: EmbeddingServerBatchFailure = {
         failedSize: texts.length,
         retrySize: half,

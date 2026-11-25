@@ -1450,7 +1450,11 @@ export class EnrichmentCoordinator {
     // chunkTotal (chunksQueued) leads the stored count; max keeps the denominator
     // honest if a stored batch races ahead of the latest push.
     const total = isFile ? run.grandFileCount : Math.max(run.chunkTotal, run.chunkTotalAccumulated);
-    const totalFinal = isFile ? true : total > 0;
+    // A deferring provider (codegraph) applies nothing until the graph exists.
+    // Forcing file events determinate painted `0/N (0%)` for the whole build
+    // whenever an apply of 0 landed, which reads as a hung index.
+    const deferred = run.contexts.get(event.providerKey)?.provider.defersChunkEnrichment === true;
+    const totalFinal = deferred ? event.applied > 0 : isFile ? true : total > 0;
     run.progress.set(key, { applied: event.applied, total });
     this.progressCb({ providerKey: event.providerKey, level: event.level, applied: event.applied, total, totalFinal });
   }

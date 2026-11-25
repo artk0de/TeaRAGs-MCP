@@ -3448,7 +3448,10 @@ describe("QdrantManager", () => {
 
     it("throws QdrantOptimizationInProgressError when count fails and collection is yellow", async () => {
       const rawError = new Error("This operation was aborted");
-      mockClient.count.mockRejectedValueOnce(rawError);
+      // Two rejections: the count hangs on the first client AND on the fresh
+      // one the transport retry installs — both attempts must time out for the
+      // yellow probe to matter.
+      mockClient.count.mockRejectedValueOnce(rawError).mockRejectedValueOnce(rawError);
       mockClient.getCollection.mockResolvedValueOnce({
         collection_name: "col",
         status: "yellow",
@@ -3457,9 +3460,23 @@ describe("QdrantManager", () => {
         points_count: 100,
       });
 
+      const callsBefore = mockClient.count.mock.calls.length;
       const err = await manager.countPoints("col").catch((e) => e);
 
       expect(err).toBeInstanceOf(QdrantOptimizationInProgressError);
+      expect(err.cause).toBe(rawError);
+      expect(mockClient.count.mock.calls.length - callsBefore).toBe(2);
+    });
+
+    it("keeps a persistent hang typed as unavailability when the probe cannot answer either", async () => {
+      const { QdrantUnavailableError: Unavailable } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      const rawError = new Error("This operation was aborted");
+      mockClient.count.mockRejectedValueOnce(rawError).mockRejectedValueOnce(rawError);
+      mockClient.getCollection.mockRejectedValueOnce(new Error("fetch failed"));
+
+      const err = await manager.countPoints("col").catch((e) => e);
+
+      expect(err).toBeInstanceOf(Unavailable);
       expect(err.cause).toBe(rawError);
     });
 

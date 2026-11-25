@@ -17,6 +17,12 @@ import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../..
 import { AliasOperationError } from "./errors.js";
 import type { QdrantAliasAdmin, QdrantConnectionTransport } from "./ports.js";
 
+/** The transport failure, so a listAliases abort is not only "failed to list aliases". */
+function aliasFailureDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+  return message.length > 0 ? message : "failed to list aliases";
+}
+
 export class QdrantAliasManager implements QdrantAliasAdmin {
   constructor(private readonly connection: QdrantConnectionTransport) {}
 
@@ -101,11 +107,15 @@ export class QdrantAliasManager implements QdrantAliasAdmin {
   async listAliases(): Promise<CollectionAliasEntry[]> {
     try {
       const response = await this.connection.call(async () => this.connection.client.getAliases());
-      return response.aliases.map((a) => collectionAliasEntryFromQdrant(a));
+      const aliases = response?.aliases;
+      if (!Array.isArray(aliases)) {
+        throw new Error("Qdrant getAliases returned no aliases array");
+      }
+      return aliases.map((a) => collectionAliasEntryFromQdrant(a));
     } catch (error: unknown) {
       throw new AliasOperationError(
         "listAliases",
-        "failed to list aliases",
+        aliasFailureDetail(error),
         error instanceof Error ? error : undefined,
       );
     }
