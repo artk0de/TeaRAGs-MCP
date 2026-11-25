@@ -5,7 +5,7 @@
       "name": "tea-rags",
       "displayName": "TeaRAGs",
       "source": "./tea-rags",
-      "version": "0.55.12",
+      "version": "0.55.13",
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
       "category": "developer-tools",
       "icon": "https://raw.githubusercontent.com/artk0de/TeaRAGs-MCP/main/assets/icons/tea-rags.png"
