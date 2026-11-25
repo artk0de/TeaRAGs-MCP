@@ -149,6 +149,45 @@ the dead run's lock and reclaims its unfinished, never-promoted build version
 in the same pass, instead of refusing with `INGEST_INDEXING_IN_PROGRESS`
 against a marker whose writer no longer exists.
 
+## Index Holes — Files Without Points
+
+An **index hole** is a file the snapshot lists as indexed that holds no points
+in Qdrant, while being neither a deliberate skip (secrets gate, compiled bundle,
+blank file) nor quarantined. `get_index_status` and the `index-codebase --json`
+result report the count as `indexHoles`.
+
+Every incremental run repairs them: when the count is above zero, the run lists
+the stored paths, marks each hole stale in the snapshot and re-chunks it as a
+modified file. Nothing to do by hand — run `index_codebase` (or
+`tea-rags index-codebase --project <alias>`) and the holes are re-embedded.
+
+### Indexes built with 1.51.2 or earlier on a slow embedder
+
+Up to 1.51.2 a chunk the pipeline refused under backpressure was dropped
+silently once a 30-second wait timed out
+([#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10)). It happens when
+embedding is slow enough to keep the queue full for longer than that — a CPU
+build of Ollama or llama-server, an overloaded GPU host. A run still exited
+with `"status": "indexed"`.
+
+Such an index has two kinds of damage:
+
+- **Whole files without points** — reported as `indexHoles` and repaired by
+  the next incremental run, as above.
+- **Files that kept only some of their chunks** — not visible to `indexHoles`,
+  which counts files, and not repaired automatically: nothing records how many
+  chunks a file should have. On a measured Markdown corpus these were about as
+  many files as the whole-file holes.
+
+If an index was built under those conditions, rebuild it once after upgrading:
+
+```bash
+tea-rags index-codebase --project <alias> --force
+```
+
+The rebuild runs in the background behind the alias, so search keeps working
+until it completes.
+
 ## Schema Drift Recovery
 
 Payload-key drift is one axis of a broader check that also watches language versions, the indexing environment and the commit the index was built from, and the report it produces already names the single cheapest command that repairs every finding — run that rather than reaching for `forceReindex: true`. What each axis compares, how to read a report and what each remedy costs: [Drift Detection](/operations/drift-detection).
