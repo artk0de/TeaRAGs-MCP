@@ -247,10 +247,17 @@ jobs:
         working-directory: native/tea-rags-rustc-driver
         run: RUSTUP_TOOLCHAIN="$PIN" cargo build --release --locked
 
+      # Windows has no rpath: the driver finds rustc_driver-*.dll only through
+      # PATH, so `-V` exits 127 (DLL not found) unless the pinned toolchain's
+      # bin directory is on it. Linux/macOS resolve it via the build rpath.
       - name: Archive driver
         run: |
           ext=""
-          if [ "${{ matrix.platform }}" = "windows-x64" ]; then ext=".exe"; fi
+          if [ "${{ matrix.platform }}" = "windows-x64" ]; then
+            ext=".exe"
+            PATH="$(cygpath -u "$(RUSTUP_TOOLCHAIN="$PIN" rustc --print sysroot)")/bin:$PATH"
+            export PATH
+          fi
           release=native/tea-rags-rustc-driver/target/release
           banner=$("$release/tea-rags-rustc-driver$ext" -V)
           echo "banner: $banner"
