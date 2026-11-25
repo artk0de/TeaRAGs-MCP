@@ -29,7 +29,10 @@
   unfinished files stale on disk, so the next run of any kind (auto-update
   included) re-chunks them; a work set held only in memory would lose them, and
   a separate delete/upsert path would duplicate the ordering the modified path
-  already gets right.
+  already gets right. Index hole repair (`ReindexPipeline#repairIndexHoles`,
+  GitHub #10) enters the work set the same way, and runs FIRST in the run: its
+  count-level gate compares the snapshot with stats written after the previous
+  seal, so any snapshot write ahead of it turns the verdict into "none".
 - **A file whose DECLARED test-ness moved re-enters the work set the same way,
   although its content did not change** (bd tea-rags-mcp-52wk3.10). Both
   pipelines read the run's declared test files once, before change detection

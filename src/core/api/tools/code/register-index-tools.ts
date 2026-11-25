@@ -85,6 +85,7 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
           if (d.filesRechunked !== undefined) {
             statusMessage += `  Re-chunked in place (scoped force): ${d.filesRechunked}\n`;
           }
+          if (d.filesHolesRepaired) statusMessage += `  Index holes repaired: ${d.filesHolesRepaired}\n`;
           const chunkDiff = d.chunksAdded - d.chunksDeleted;
           const sign = chunkDiff >= 0 ? "+" : "";
           statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;

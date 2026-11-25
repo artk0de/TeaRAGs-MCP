@@ -51,7 +51,7 @@ import {
   STALE_INDEXING_THRESHOLD_MS,
   type IndexingLockLivenessProbe,
 } from "../infra/index.js";
-import { ParallelFileSynchronizer, QuarantineStore, ShardedSnapshotManager, SkippedFileStore } from "../sync/index.js";
+import { countIndexHoles, ParallelFileSynchronizer, QuarantineStore, SkippedFileStore } from "../sync/index.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
 import { migrationCollectionName } from "./migration-files.js";
 
@@ -812,12 +812,8 @@ export class StatusModule {
     quarantinedCount: number,
   ): Promise<IndexHolesSummary | undefined> {
     if (!this.snapshotDir) return undefined;
-    const snapshot = await new ShardedSnapshotManager(this.snapshotDir, reportedName).readSummary();
-    const statsWrittenAt = new StatsCache(this.snapshotDir).lastWrittenAt(reportedName);
-    if (!snapshot || statsWrittenAt === undefined || statsWrittenAt < snapshot.timestamp) return undefined;
-    const deterministicSkips = (await new SkippedFileStore(this.snapshotDir, reportedName).paths()).size;
-    const holes = snapshot.fileCount - pointFileCount - deterministicSkips - quarantinedCount;
-    return holes > 0 ? { count: holes } : undefined;
+    const holes = await countIndexHoles(this.snapshotDir, reportedName, { pointFileCount, quarantinedCount });
+    return holes ? { count: holes } : undefined;
   }
 
   /**

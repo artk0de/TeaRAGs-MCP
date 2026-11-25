@@ -195,6 +195,8 @@ export interface IndexStats {
     filesFailedToDelete?: number;
     /** Mirrors `ChangeStats.filesRechunked`; present only on a scoped force. */
     filesRechunked?: number;
+    /** Mirrors `ChangeStats.filesHolesRepaired`; present only when non-zero. */
+    filesHolesRepaired?: number;
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
@@ -250,6 +252,12 @@ export interface ChangeStats {
    * counts them too.
    */
   filesRechunked?: number;
+  /**
+   * Index holes this pass repaired (GitHub #10): files the snapshot listed as
+   * indexed that held no points. They re-chunk as modified files, so
+   * `filesModified` counts them too. Present only when non-zero.
+   */
+  filesHolesRepaired?: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -51,8 +51,10 @@ pipeline, operations and enrichment halves each carry their own.
   snapshot stays the single source of truth for the work set — no side list like
   the quarantine retry. Why: stamping the scanned hash made every skip a
   permanent hole (bd muj77: nav93 lost 63/2018 files, incl. a benchmark gold
-  file). `StatusModule#probeIndexHoles` reports the pre-fix holes still in old
-  snapshots.
+  file). A hole has ONE definition (`sync/index-holes.ts`): the count-level
+  `countIndexHoles` behind `StatusModule#probeIndexHoles`, and the path-level
+  `selectIndexHolePaths` behind `ReindexPipeline#repairIndexHoles`, which every
+  incremental run consults to re-ingest holes left by older builds (GitHub #10).
 
 ## Boundaries
 

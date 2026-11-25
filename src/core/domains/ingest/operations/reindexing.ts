@@ -30,7 +30,14 @@ import { migrationCollectionName } from "../pipeline/migration-files.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import type { DeletionOutcome } from "../sync/deletion/outcome.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
-import { QuarantineStore, SkippedFileStore, type ParallelFileSynchronizer } from "../sync/index.js";
+import {
+  countIndexHoles,
+  QuarantineStore,
+  readPointFileCount,
+  selectIndexHolePaths,
+  SkippedFileStore,
+  type ParallelFileSynchronizer,
+} from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { selectRechunkWorkSet } from "./rechunk-work-set.js";
 import { executeReindexPipelines } from "./reindex-parallel-executor.js";
@@ -121,6 +128,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const ctx = await this.prepareReindexContext(absolutePath, aliasCollectionName);
+      const holesRepaired = await this.repairIndexHoles(ctx);
+      if (holesRepaired > 0) stats.filesHolesRepaired = holesRepaired;
       await rebuildMigrationCorpus({
         root: absolutePath,
         codeCollection: aliasCollectionName,
@@ -359,6 +368,47 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     await ctx.synchronizer.invalidateEntries(workSet);
     pipelineLog.reindexPhase("RECHUNK_SCOPED", { files: workSet.length, selector });
     return workSet.length;
+  }
+
+  // ── Index hole repair ────────────────────────────────────
+  /**
+   * Re-ingest index holes — snapshot files that hold no points (GitHub #10).
+   * Their content is unchanged, so change detection alone would skip them
+   * forever. Marked stale through the scoped force's own path
+   * (`invalidateEntries`), they re-chunk as MODIFIED files, crash-safe the
+   * same way.
+   *
+   * The count-level verdict gates the scan: only when the snapshot lists more
+   * files than the persisted stats saw in the points does this scroll the
+   * collection's `relativePath` values (one payload field, no vectors) to name
+   * the holes. Runs before any other snapshot write of this run, while the
+   * stats written after the previous run's seal still describe this snapshot.
+   * `relativePath` rather than its keyword twin: every chunk point carries it,
+   * whatever the collection's schema version. Returns how many files were
+   * marked.
+   */
+  private async repairIndexHoles(ctx: ReindexContext): Promise<number> {
+    const pointFileCount = readPointFileCount(this.snapshotDir, ctx.collectionName);
+    if (pointFileCount === undefined) return 0;
+    const quarantineStore = new QuarantineStore(this.snapshotDir, ctx.collectionName);
+    const quarantinedPaths = new Set((await quarantineStore.load()).keys());
+    const holeCount = await countIndexHoles(this.snapshotDir, ctx.collectionName, {
+      pointFileCount,
+      quarantinedCount: quarantinedPaths.size,
+    });
+    if (!holeCount) return 0;
+
+    const base = ctx.absolutePath;
+    const holes = selectIndexHolePaths({
+      snapshotPaths: [...ctx.synchronizer.getSnapshotPaths()],
+      scannedPaths: ctx.currentFiles.map((f) => (f.startsWith(base) ? f.slice(base.length + 1) : f)),
+      indexedPaths: new Set(await this.qdrant.scrollFieldValues(ctx.targetCollection, "relativePath")),
+      skippedPaths: await new SkippedFileStore(this.snapshotDir, ctx.collectionName).paths(),
+      quarantinedPaths,
+    });
+    const marked = await ctx.synchronizer.invalidateEntries(holes);
+    pipelineLog.reindexPhase("INDEX_HOLES_REPAIR", { counted: holeCount, marked });
+    return marked;
   }
 
   /**

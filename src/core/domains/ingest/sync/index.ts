@@ -9,3 +9,4 @@ export { classifyQuarantinable, classifyEmbeddingQuarantinable } from "./quarant
 export * from "./snapshot/index.js";
 export * from "./deletion/index.js";
 export * from "./infra/index.js";
+export { countIndexHoles, readPointFileCount, selectIndexHolePaths } from "./index-holes.js";

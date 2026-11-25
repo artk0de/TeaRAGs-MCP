@@ -1971,6 +1971,7 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
         : {}),
       ...(changeStats.filesFailedToDelete ? { filesFailedToDelete: changeStats.filesFailedToDelete } : {}),
       ...(changeStats.filesRechunked !== undefined ? { filesRechunked: changeStats.filesRechunked } : {}),
+      ...(changeStats.filesHolesRepaired ? { filesHolesRepaired: changeStats.filesHolesRepaired } : {}),
     },
   };
 }
