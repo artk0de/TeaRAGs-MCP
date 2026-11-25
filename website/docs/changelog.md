@@ -3,13 +3,45 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.52.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.2...v1.52.0) (2026-11-25)
+
+### 🧩 Agent plugin
+
+* **TeaRAGs** now runs in ZCode: the tea-rags, dinopowers and setup plugins install from their own marketplace, `tea-rags update` keeps them in sync without ever downgrading, and the setup plugin detects ZCode and wires the **MCP** server
+* Plugins show proper names (**TeaRAGs**, Dinopowers, **TeaRAGs** Setup) and icons in the ZCode, Cursor and Codex plugin UIs, and the hooks keep working when the **MCP** server is named **TeaRAGs** instead of `tea-rags`
+* Codex 0.167.0 no longer cuts a routing rule out of the middle of the **TeaRAGs** startup guidance
+* Agents search several known names in one regex pass and look up a definition with `find_symbol` instead of grepping for it first
+
+### 📚 Documentation
+
+* **README:** rewritten positioning, quickstart and language support, with examples of how **TeaRAGs** evidence changes coding decisions
+* **Docusaurus:** Recovery & Reindexing explains index holes, what incremental runs now repair, and when an older index needs one `--force` rebuild
+* **Docusaurus:** the Kev setup page lists every shipped configuration variable and explains receiver-group questions, tournaments and fan-out
+
+### 🩹 Fixes
+
+* Indexing with a slow embedder no longer silently drops chunks (up to half of a corpus was lost while the run still exited cleanly), and every incremental run now re-indexes files left without any search results by earlier runs
+* Prebuilt rustc-driver binaries are published with releases again, so `tea-rags rustc-driver install` and the npm postinstall find them
+* Git **enrichment** on very large repositories finishes in minutes instead of stalling: file history is cached between runs and the blame cache keeps working past its size cap
+* A comment right after an ***RSpec*** `describe … do` line is searchable again; existing ***Ruby*** indexes pick it up after `--force --languages ruby`
+* A file that imports the same module twice no longer counts it twice, so the `imports` signal and import counts are accurate
+* When `index_codebase` refuses to run on an outdated server build, the message tells agents to index through the `tea-rags index-codebase` CLI instead of retrying
+
+### 🔧 Environment Variables
+
+* `TEA_RAGS_ZCODE_CLI` · Path to the ZCode CLI that `tea-rags update` uses to sync ZCode plugins, when it is not on PATH or in the app bundle · default: `unset` (new)
+
 ## [1.51.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.1...v1.51.2) (2026-11-10)
 
 ### Bug Fixes
 
-* **qdrant:** keep yellow count classification through the hung-transport retry (tea-rags-mcp-18b93) ([f46f3e2](https://github.com/artk0de/TeaRAGs-MCP/commit/f46f3e24420e82ea76e903e37a1b5dbb6a9a8440))
-* **qdrant:** retry listAliases on a dropped keep-alive socket ([673a3be](https://github.com/artk0de/TeaRAGs-MCP/commit/673a3be1f3b6f1b4499be4273ae583c900ab3215))
-* **qdrant:** retry listAliases on a dropped keep-alive socket ([ca5f851](https://github.com/artk0de/TeaRAGs-MCP/commit/ca5f8514e7e40f436a02b84fa752f83fcf8fa783))
+- **qdrant:** keep yellow count classification through the hung-transport retry
+  (tea-rags-mcp-18b93)
+  ([f46f3e2](https://github.com/artk0de/TeaRAGs-MCP/commit/f46f3e24420e82ea76e903e37a1b5dbb6a9a8440))
+- **qdrant:** retry listAliases on a dropped keep-alive socket
+  ([673a3be](https://github.com/artk0de/TeaRAGs-MCP/commit/673a3be1f3b6f1b4499be4273ae583c900ab3215))
+- **qdrant:** retry listAliases on a dropped keep-alive socket
+  ([ca5f851](https://github.com/artk0de/TeaRAGs-MCP/commit/ca5f8514e7e40f436a02b84fa752f83fcf8fa783))
 
 ## [1.51.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.0...v1.51.1) (2026-11-09)
 

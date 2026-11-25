@@ -56,14 +56,14 @@ a file path in them → row 1; tools `mcp__tea-rags__*`):
   `depth: 2`; every call/all callers of X (grep named) → plan both lines:
   `get_callers` + the usages row. Then ONE batch: needed tree methods
 - known symbol / identifier definition/body/outline ("where is X defined?" —
-  grep never finds a definition) → `find_symbol(symbol:)`
-  `Class#inst`/`C.st`, never text search
+  grep never finds a definition) → `find_symbol(symbol:)` `Class#inst`/`C.st`,
+  never text search
 - where X is used/referenced, every occurrence, who constructs X, files
   containing X (exact name/constant/string you know; `a|b` only of seen ids),
   "grep for X" → Grep tool `"<X>" <src dir, e.g. app/ or src/>`
   (literal, `-l`; `a|b` = regex mode — plain `grep` needs `-E`; never quote the
-  pipe) → `find_symbol` outline → batch of only the needed methods,
-  never stop at the hit
+  pipe) → `find_symbol` outline → batch of only the needed methods, never stop
+  at the hit
 - symbol + intent ("the X that does Y"), files named X →
   `hybrid_search(metaOnly)`
 - code like a chunk in hand → `find_similar(positiveIds:)`
