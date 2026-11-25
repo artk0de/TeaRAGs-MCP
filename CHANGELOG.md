@@ -1,85 +1,30 @@
 ## [1.52.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.2...v1.52.0) (2026-11-25)
 
-### Features
+### 🧩 Agent plugin
 
-- **icons:** per-plugin icons shipped where harness manifests can show them
-  ([63db2df](https://github.com/artk0de/TeaRAGs-MCP/commit/63db2df4fcb0e5d2e1fe7900c8d973df1164dba3))
-- **zcode:** display names TeaRAGs and case-tolerant tool matchers
-  ([89f59fb](https://github.com/artk0de/TeaRAGs-MCP/commit/89f59fb4bf90ced7b9704f9c5c82c5d660efb578))
-- **zcode:** ZCode harness — plugin package, update sync, setup install,
-  eval-driven pins
-  ([60a940c](https://github.com/artk0de/TeaRAGs-MCP/commit/60a940cc83bee9b91881bf4e622a21ad23d471f1))
+* **TeaRAGs** now runs in ZCode: the tea-rags, dinopowers and setup plugins install from their own marketplace, `tea-rags update` keeps them in sync without ever downgrading, and the setup plugin detects ZCode and wires the **MCP** server
+* Plugins show proper names (**TeaRAGs**, Dinopowers, **TeaRAGs** Setup) and icons in the ZCode, Cursor and Codex plugin UIs, and the hooks keep working when the **MCP** server is named **TeaRAGs** instead of `tea-rags`
+* Codex 0.167.0 no longer cuts a routing rule out of the middle of the **TeaRAGs** startup guidance
+* Agents search several known names in one regex pass and look up a definition with `find_symbol` instead of grepping for it first
 
-### Bug Fixes
+### 📚 Documentation
 
-- **chunker:** RSpec keeps a comment directly after 'describe … do'
-  (tea-rags-mcp-50v59)
-  ([bec9d9d](https://github.com/artk0de/TeaRAGs-MCP/commit/bec9d9d23432ccd53dc8a0aa4a005b593b76eaed))
-- **codex:** keep the core hook whole under 0.167.0's token cap
-  (tea-rags-mcp-9lynw.14)
-  ([3fa4a4a](https://github.com/artk0de/TeaRAGs-MCP/commit/3fa4a4a4255b89f23bdee08e5985ccb687daa5fc))
-- **explore:** route recordingTreeGraphReader through the facade barrel (4qdj0
-  follow-up)
-  ([8cf6eba](https://github.com/artk0de/TeaRAGs-MCP/commit/8cf6eba0867542bf9a3d221377795a2a2ad1fe32))
-- **ingest:** actionable INGEST_PROCESS_BUILD_STALE hints for agents (r4z09
-  follow-up)
-  ([73331ac](https://github.com/artk0de/TeaRAGs-MCP/commit/73331ac839d33a5c07808a32ef11d35fd6818fe7))
-- **ingest:** incremental runs repair index holes left by lost chunks (GitHub
-  [#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10))
-  ([3415058](https://github.com/artk0de/TeaRAGs-MCP/commit/3415058b905e59e2cfc3d97778cd11a88badd75b)),
-  closes
-  [ReindexPipeline#repairIndexHoles](https://github.com/artk0de/ReindexPipeline/issues/repairIndexHoles)
-  [ParallelFileSynchronizer#invalidateEntries](https://github.com/artk0de/ParallelFileSynchronizer/issues/invalidateEntries)
-  [StatusModule#probeIndexHoles](https://github.com/artk0de/StatusModule/issues/probeIndexHoles)
-- **ingest:** payload.imports lists each module once (tea-rags-mcp-sjxy9)
-  ([a72c2cf](https://github.com/artk0de/TeaRAGs-MCP/commit/a72c2cf4fc5a49e4797439fee0245be333e12455))
-- **ingest:** resubmit chunks refused under backpressure instead of dropping
-  them (GitHub [#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10))
-  ([d385ab8](https://github.com/artk0de/TeaRAGs-MCP/commit/d385ab82bfd8945cd8ff3f0a8a44e25b98599673)),
-  closes
-  [SourceFileIngestor#submitChunks](https://github.com/artk0de/SourceFileIngestor/issues/submitChunks)
-  [ChunkPipeline#addChunk](https://github.com/artk0de/ChunkPipeline/issues/addChunk)
-  [ChunkPipeline#onQueueChange](https://github.com/artk0de/ChunkPipeline/issues/onQueueChange)
-- **release:** rustc-driver assets land on releases again (hjbow.13 blocker)
-  ([89952b0](https://github.com/artk0de/TeaRAGs-MCP/commit/89952b05f6b94d1edb90ac1e5b1b6f6785590808))
-- **routing:** alternation regex wording and definition-first row
-  (tea-rags-mcp-bxt63)
-  ([459cd4d](https://github.com/artk0de/TeaRAGs-MCP/commit/459cd4d5a33daa89742747bab0315e05b5ab18b4))
-- **trajectory:** persist lifetime stamps, evict blame store over cap (61gt2)
-  ([d44dea5](https://github.com/artk0de/TeaRAGs-MCP/commit/d44dea5cb8eb56fe711356618e39f235f9282f2d))
-- **zcode:** marketplace icons over https + codex-generated icon set
-  ([f0eef25](https://github.com/artk0de/TeaRAGs-MCP/commit/f0eef25b03cffb28ce1318935eb50827ac035cf5))
+* **README:** rewritten positioning, quickstart and language support, with examples of how **TeaRAGs** evidence changes coding decisions
+* **Docusaurus:** Recovery & Reindexing explains index holes, what incremental runs now repair, and when an older index needs one `--force` rebuild
+* **Docusaurus:** the Kev setup page lists every shipped configuration variable and explains receiver-group questions, tournaments and fan-out
 
-### Performance Improvements
+### 🩹 Fixes
 
-- **explore:** batch the find_symbol symbols[] decoration resolvers
-  (tea-rags-mcp-4qdj0)
-  ([2dcdf09](https://github.com/artk0de/TeaRAGs-MCP/commit/2dcdf0976521bd0edc50a9a1dfa6cdd4d5da8ace)),
-  closes [#member](https://github.com/artk0de/TeaRAGs-MCP/issues/member)
-- **explore:** request-scoped tree-graph handle lease for find_symbol
-  (tea-rags-mcp-4qdj0)
-  ([0fde7dd](https://github.com/artk0de/TeaRAGs-MCP/commit/0fde7dd855afe9d3d8baa9db1d0fb3576951d488))
+* Indexing with a slow embedder no longer silently drops chunks (up to half of a corpus was lost while the run still exited cleanly), and every incremental run now re-indexes files left without any search results by earlier runs
+* Prebuilt rustc-driver binaries are published with releases again, so `tea-rags rustc-driver install` and the npm postinstall find them
+* Git **enrichment** on very large repositories finishes in minutes instead of stalling: file history is cached between runs and the blame cache keeps working past its size cap
+* A comment right after an ***RSpec*** `describe … do` line is searchable again; existing ***Ruby*** indexes pick it up after `--force --languages ruby`
+* A file that imports the same module twice no longer counts it twice, so the `imports` signal and import counts are accurate
+* When `index_codebase` refuses to run on an outdated server build, the message tells agents to index through the `tea-rags index-codebase` CLI instead of retrying
 
-### Documentation
+### 🔧 Environment Variables
 
-- **bench:** live verification record for the addressing epic (1v7n3)
-  ([5b6688a](https://github.com/artk0de/TeaRAGs-MCP/commit/5b6688ab602f023effe100053f2745a6e6a3ab1c))
-- **kev:** reconcile setup page config table with shipped feature
-  (tea-rags-mcp-2m83f.14)
-  ([821026f](https://github.com/artk0de/TeaRAGs-MCP/commit/821026f31f262b81d46fefcec06f66760ca6e7f4))
-- refresh README positioning, quickstart and language support
-  ([104709d](https://github.com/artk0de/TeaRAGs-MCP/commit/104709d48fa3698e9ac472899dc430a456dc3682))
-- show how TeaRAGs evidence changes coding decisions
-  ([83c2293](https://github.com/artk0de/TeaRAGs-MCP/commit/83c2293e4dd83aa88defe366a0d94ae3fff52733))
-- **website:** index holes and the one-time rebuild after GitHub
-  [#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10)
-  ([c636ab0](https://github.com/artk0de/TeaRAGs-MCP/commit/c636ab0592359bf1abb1b197a4614d98ae9aba9b))
-
-### Code Refactoring
-
-- **language:** LanguageFactory reaches verticals via lazy module registry
-  (tea-rags-mcp-zkd96)
-  ([c6fcfd0](https://github.com/artk0de/TeaRAGs-MCP/commit/c6fcfd022914782ac0f5bba3d796546641a45ee5))
+* `TEA_RAGS_ZCODE_CLI` · Path to the ZCode CLI that `tea-rags update` uses to sync ZCode plugins, when it is not on PATH or in the app bundle · default: `unset` (new)
 
 ## [1.51.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.51.1...v1.51.2) (2026-11-10)
 
