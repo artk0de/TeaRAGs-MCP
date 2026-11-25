@@ -237,14 +237,17 @@ jobs:
         with:
           ref: v${{ needs.rustc-driver-version.outputs.version }}
 
-      # Tags cut before the `.gitattributes` vendor `-text` rule re-checkout
-      # "text" files with CRLF on Windows (autocrlf), and `cargo build --locked`
-      # then rejects the vendored crate: the sha256 of e.g.
-      # rustc_plugin/.cargo_vcs_info.json no longer matches .cargo-checksum.json.
-      # Restore the index bytes verbatim; a no-op on Linux/macOS and on trees
-      # that already carry the attribute.
-      - name: Restore exact vendored bytes
-        run: git -c core.autocrlf=false checkout HEAD -- native/tea-rags-rustc-driver
+      # Windows runners check "text" files out with CRLF (autocrlf). That breaks
+      # `cargo build --locked` on the vendored crates (.cargo-checksum.json) AND
+      # the sourceHash the driver bakes in, which is defined over raw bytes of
+      # src/, build_support/, Cargo.* — the banner check then rejects it. Tags
+      # cut before the `-text` rule carry the old attributes, so delete the
+      # tree and check it out again with autocrlf off: a plain `git checkout`
+      # skips files git already considers clean. A no-op on Linux/macOS.
+      - name: Restore exact driver bytes
+        run: |
+          rm -rf native/tea-rags-rustc-driver
+          git -c core.autocrlf=false checkout HEAD -- native/tea-rags-rustc-driver
 
       - name: Install pinned nightly
         run: rustup toolchain install "$PIN" --profile minimal -c rustc-dev,rust-src,llvm-tools-preview
