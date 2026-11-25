@@ -203,7 +203,13 @@ jobs:
   rustc-driver-build:
     name: Build rustc driver (${{ matrix.platform }})
     needs: rustc-driver-version
-    if: ${{ needs.rustc-driver-version.outputs.version != '' }}
+    # An `if:` without a status function is ANDed with success() over ALL
+    # ancestors, and `release` is skipped on workflow_dispatch — so without
+    # !cancelled() the repair dispatch skips build, smoke and publish.
+    if: >-
+      ${{ !cancelled() &&
+      needs.rustc-driver-version.result == 'success' &&
+      needs.rustc-driver-version.outputs.version != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -284,6 +290,7 @@ jobs:
   rustc-driver-smoke:
     name: Smoke rustc driver (${{ matrix.platform }})
     needs: [rustc-driver-version, rustc-driver-build]
+    if: ${{ !cancelled() && needs.rustc-driver-build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -344,6 +351,7 @@ jobs:
     name: Publish rustc driver archives
     runs-on: ubuntu-latest
     needs: [rustc-driver-version, rustc-driver-build, rustc-driver-smoke]
+    if: ${{ !cancelled() && needs.rustc-driver-smoke.result == 'success' }}
     env:
       VERSION: ${{ needs.rustc-driver-version.outputs.version }}
       PIN: ${{ needs.rustc-driver-version.outputs.pin }}
