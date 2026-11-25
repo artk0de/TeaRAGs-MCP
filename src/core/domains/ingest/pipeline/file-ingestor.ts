@@ -41,6 +41,9 @@ const DETERMINISTIC_SKIP_REASONS: Partial<Record<PreParseSkipReason, Determinist
   compiled: "compiled",
 };
 
+/** One backpressure wait slice; a refused chunk is retried after each. */
+const BACKPRESSURE_WAIT_MS = 30_000;
+
 /** What submitting one file's chunks to the pipeline produced. */
 interface FileChunkSubmissionOutcome {
   chunksAdded: number;
@@ -201,14 +204,15 @@ export class SourceFileIngestor {
 
       const baseChunk = toChunkPointInput(chunk, imports);
 
-      // Wait for backpressure if needed
-      if (chunkPipeline.isBackpressured()) {
-        await chunkPipeline.waitForBackpressure(30000);
-      }
-
-      // Send chunk to pipeline immediately
+      // A backpressured pipeline refuses the chunk (`addChunk` → false) and
+      // keeps no copy, and a wait can time out with the pause still on — so
+      // resubmit until accepted. A refused chunk left unsent is missing from
+      // the index while the snapshot lists its file (GitHub #10). The pause
+      // always lifts: every dequeue re-judges it (`ChunkPipeline#onQueueChange`).
       const chunkId = generateChunkId(chunk);
-      chunkPipeline.addChunk(baseChunk, chunkId, basePath);
+      while (!chunkPipeline.addChunk(baseChunk, chunkId, basePath)) {
+        await chunkPipeline.waitForBackpressure(BACKPRESSURE_WAIT_MS);
+      }
       result.chunksCreated++;
       chunksAdded++;
 

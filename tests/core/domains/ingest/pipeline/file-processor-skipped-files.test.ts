@@ -31,7 +31,7 @@ const chunkerPool = {
 
 const chunkPipeline = {
   isBackpressured: () => false,
-  addChunk: () => undefined,
+  addChunk: () => true,
 } as unknown as ChunkPipeline;
 
 describe("processFiles — deterministic-skip record", () => {
